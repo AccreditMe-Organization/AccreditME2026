@@ -1,0 +1,44 @@
+{
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "view": "عرض",
+    "create": "إنشاء",
+    "submit": "إرسال",
+    "approve": "اعتماد",
+    "reject": "رفض",
+    "search": "بحث",
+    "filter": "تصفية",
+    "export": "تصدير",
+    "loading": "جاري التحميل...",
+    "noResults": "لا توجد نتائج",
+    "confirmDelete": "هل أنت متأكد من حذف هذا العنصر؟",
+    "yes": "نعم",
+    "no": "لا"
+  },
+  "nav": {
+    "dashboard": "لوحة التحكم",
+    "standards": "المعايير",
+    "documents": "الوثائق",
+    "qualityImprovement": "تحسين الجودة",
+    "audit": "التدقيق",
+    "committees": "اللجان",
+    "meetings": "الاجتماعات",
+    "tasks": "المهام",
+    "users": "المستخدمون",
+    "roles": "الأدوار",
+    "lookups": "القوائم المرجعية",
+    "workflows": "سير العمل",
+    "settings": "الإعدادات"
+  },
+  "auth": {
+    "login": "تسجيل الدخول",
+    "logout": "تسجيل الخروج",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "forgotPassword": "نسيت كلمة المرور؟",
+    "loginFailed": "بيانات الاعتماد غير صحيحة"
+  }
+}

@@ -1,0 +1,47 @@
+// AccreditMe — Global styles (app shell only)
+// Module-specific styles belong in their component SCSS files.
+@use 'styles/tokens';
+
+// PrimeNG theme
+@import 'primeicons/primeicons.css';
+
+// Layout constants
+$topbar-height: 64px;
+$sidebar-width: 260px;
+$sidebar-collapsed-width: 72px;
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Inter', sans-serif;
+  background-color: var(--am-surface);
+  color: var(--am-text-primary);
+}
+
+// RTL support — activated by [dir="rtl"] on <html>
+[dir='rtl'] {
+  .sidebar-active-stripe {
+    border-right: 3px solid var(--am-green-accent);
+    border-left: none;
+  }
+}
+
+[dir='ltr'] {
+  .sidebar-active-stripe {
+    border-left: 3px solid var(--am-green-accent);
+    border-right: none;
+  }
+}
+
+// PrimeNG scrollable table
+.p-datatable-scrollable {
+  .p-datatable-wrapper {
+    overflow: auto;
+  }
+}

@@ -1,0 +1,32 @@
+// AccreditMe Design Tokens
+// Always use these tokens — never hardcode colors anywhere in the app.
+
+:root {
+  --am-blue-primary:    #2E6FA3;
+  --am-blue-light:      #64B5D9;
+  --am-green-accent:    #8DC63F;
+  --am-green-dark:      #6FA028;
+  --am-charcoal:        #3D3D3D;
+  --am-sidebar-bg:      #1E2A38;
+  --am-sidebar-hover:   #28394D;
+  --am-sidebar-active:  #2E6FA3;
+  --am-surface:         #F4F7FA;
+  --am-card:            #FFFFFF;
+  --am-border:          #E2E8F0;
+  --am-text-primary:    #2D3748;
+  --am-text-secondary:  #718096;
+
+  // Status — distinct from brand colors
+  --am-status-draft:      #718096;
+  --am-status-review:     #D69E2E;
+  --am-status-approved:   #38A169;
+  --am-status-rejected:   #E53E3E;
+  --am-status-published:  #2E6FA3;
+  --am-status-archived:   #4A5568;
+
+  // Severity
+  --am-severity-critical: #E53E3E;
+  --am-severity-high:     #DD6B20;
+  --am-severity-medium:   #D69E2E;
+  --am-severity-low:      #38A169;
+}

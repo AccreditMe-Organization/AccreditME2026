@@ -1,0 +1,596 @@
+// AccreditMe — Prisma Schema
+// Single source of truth for the entire database.
+// After ANY change: npx prisma migrate dev --name "describe-the-change"
+// AuditLog is append-only — no UPDATE or DELETE ever permitted.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum AuthProvider {
+  LOCAL
+  AZURE_AD
+  GOOGLE
+}
+
+enum StorageProvider {
+  S3
+  MINIO
+  LOCAL_FILESYSTEM
+}
+
+enum AiProvider {
+  ANTHROPIC
+  AZURE_OPENAI
+  OPENAI
+  OLLAMA
+}
+
+enum SubscriptionPlan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+  OFFBOARDING
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum WorkflowStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  WITHDRAWN
+  CANCELLED
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  CANCELLED
+  DELEGATED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  DISMISSED
+}
+
+enum LookupLayer {
+  SYSTEM
+  TENANT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  VIEW
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+  SUBMIT
+  APPROVE
+  REJECT
+  PUBLISH
+  ARCHIVE
+  RESTORE
+  DELEGATE
+}
+
+// ---------------------------------------------------------------------------
+// Organization (Tenant)
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id               String           @id @default(cuid())
+  name             String
+  slug             String           @unique
+  country          String
+  timezone         String           @default("Asia/Riyadh")
+  language         String           @default("en")
+  authProvider     AuthProvider     @default(LOCAL)
+  storageProvider  StorageProvider  @default(S3)
+  aiProvider       AiProvider       @default(ANTHROPIC)
+  plan             SubscriptionPlan @default(STARTER)
+  status           TenantStatus     @default(TRIAL)
+  trialEndsAt      DateTime?
+  stripeCustomerId String?
+  maxUsers         Int              @default(25)
+  maxStorageGb     Int              @default(10)
+
+  // Encrypted provider config (JSON blob, encrypted at rest)
+  authConfig       String?
+  storageConfig    String?
+  aiConfig         String?
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  users            User[]
+  roles            Role[]
+  lookupValues     LookupValue[]
+  workflowTemplates WorkflowTemplate[]
+  workingCalendar  WorkingCalendar?
+  tasks            Task[]
+  notifications    Notification[]
+  committees       Committee[]
+  meetings         Meeting[]
+  auditLogs        AuditLog[]
+
+  @@index([slug])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// User
+// ---------------------------------------------------------------------------
+
+model User {
+  id               String       @id @default(cuid())
+  organizationId   String
+  email            String
+  name             String
+  avatarUrl        String?
+  status           UserStatus   @default(INVITED)
+  tokenVersion     Int          @default(0)
+  language         String?
+  hijriDisplay     Boolean      @default(false)
+  tosAcceptedAt    DateTime?
+  tosVersion       String?
+  lastLoginAt      DateTime?
+  lastLoginIp      String?
+
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  userRoles        UserRole[]
+  tasksAssigned    Task[]       @relation("TaskAssignee")
+  tasksCreated     Task[]       @relation("TaskCreator")
+  notifications    Notification[]
+  committeeMembers CommitteeMember[]
+  meetings         Meeting[]    @relation("MeetingOrganizer")
+  auditLogs        AuditLog[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([email])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Roles and Permissions
+// ---------------------------------------------------------------------------
+
+model Role {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  isSystem       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  userRoles      UserRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  module      String
+  action      String
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@unique([module, action])
+  @@index([module])
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  roleId String
+
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+}
+
+// ---------------------------------------------------------------------------
+// Lookup System
+// ---------------------------------------------------------------------------
+
+model LookupCategory {
+  id              String        @id @default(cuid())
+  key             String        @unique
+  labelEn         String
+  labelAr         String
+  attributeSchema Json?
+  isActive        Boolean       @default(true)
+  sortOrder       Int           @default(0)
+
+  values          LookupValue[]
+}
+
+model LookupValue {
+  id              String         @id @default(cuid())
+  organizationId  String?
+  categoryId      String
+  key             String
+  labelEn         String
+  labelAr         String
+  layer           LookupLayer    @default(SYSTEM)
+  attributes      Json?
+  isActive        Boolean        @default(true)
+  isHidden        Boolean        @default(false)
+  labelOverrideEn String?
+  labelOverrideAr String?
+  sortOrder       Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization    Organization?  @relation(fields: [organizationId], references: [id])
+  category        LookupCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([categoryId, key, organizationId])
+  @@index([organizationId])
+  @@index([categoryId])
+  @@index([layer])
+}
+
+// ---------------------------------------------------------------------------
+// Working Calendar
+// ---------------------------------------------------------------------------
+
+model WorkingCalendar {
+  id               String         @id @default(cuid())
+  organizationId   String         @unique
+  timezone         String         @default("Asia/Riyadh")
+  workingDays      Int[]
+  workingHoursStart String        @default("08:00")
+  workingHoursEnd   String        @default("16:00")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  organization     Organization   @relation(fields: [organizationId], references: [id])
+  publicHolidays   PublicHoliday[]
+}
+
+model PublicHoliday {
+  id                String          @id @default(cuid())
+  workingCalendarId String
+  nameEn            String
+  nameAr            String
+  date              DateTime
+  isRecurring       Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+
+  workingCalendar   WorkingCalendar @relation(fields: [workingCalendarId], references: [id])
+
+  @@index([workingCalendarId])
+  @@index([date])
+}
+
+// ---------------------------------------------------------------------------
+// Workflow Engine
+// ---------------------------------------------------------------------------
+
+model WorkflowTemplate {
+  id             String              @id @default(cuid())
+  organizationId String
+  name           String
+  objectType     String
+  isDefault      Boolean             @default(false)
+  isActive       Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  stages         WorkflowStage[]
+  instances      WorkflowInstance[]
+
+  @@index([organizationId])
+  @@index([objectType])
+}
+
+model WorkflowStage {
+  id                 String             @id @default(cuid())
+  workflowTemplateId String
+  name               String
+  description        String?
+  order              Int
+  slaWorkingHours    Int?
+  requiredPermission String?
+  isInitial          Boolean            @default(false)
+  isFinal            Boolean            @default(false)
+
+  workflowTemplate   WorkflowTemplate   @relation(fields: [workflowTemplateId], references: [id])
+  transitionsFrom    WorkflowTransition[] @relation("TransitionFrom")
+  transitionsTo      WorkflowTransition[] @relation("TransitionTo")
+  instanceStages     WorkflowInstanceStage[]
+
+  @@index([workflowTemplateId])
+}
+
+model WorkflowTransition {
+  id              String        @id @default(cuid())
+  fromStageId     String
+  toStageId       String
+  label           String
+  requiredPermission String?
+  conditionJson   Json?
+
+  fromStage       WorkflowStage @relation("TransitionFrom", fields: [fromStageId], references: [id])
+  toStage         WorkflowStage @relation("TransitionTo", fields: [toStageId], references: [id])
+
+  @@index([fromStageId])
+  @@index([toStageId])
+}
+
+model WorkflowInstance {
+  id                 String                  @id @default(cuid())
+  workflowTemplateId String
+  objectType         String
+  objectId           String
+  status             WorkflowStatus          @default(PENDING)
+  currentStageId     String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  workflowTemplate   WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
+  stages             WorkflowInstanceStage[]
+  tasks              Task[]
+
+  @@index([workflowTemplateId])
+  @@index([objectType, objectId])
+  @@index([status])
+}
+
+model WorkflowInstanceStage {
+  id                 String           @id @default(cuid())
+  workflowInstanceId String
+  stageId            String
+  enteredAt          DateTime         @default(now())
+  exitedAt           DateTime?
+  actorId            String?
+  comment            String?
+
+  workflowInstance   WorkflowInstance @relation(fields: [workflowInstanceId], references: [id])
+  stage              WorkflowStage    @relation(fields: [stageId], references: [id])
+
+  @@index([workflowInstanceId])
+  @@index([stageId])
+}
+
+// ---------------------------------------------------------------------------
+// Task Management
+// ---------------------------------------------------------------------------
+
+model Task {
+  id                 String           @id @default(cuid())
+  organizationId     String
+  title              String
+  description        String?
+  objectType         String?
+  objectId           String?
+  workflowInstanceId String?
+  assigneeId         String
+  createdById        String
+  status             TaskStatus       @default(PENDING)
+  priority           TaskPriority     @default(MEDIUM)
+  dueAt              DateTime?
+  slaBreachedAt      DateTime?
+  completedAt        DateTime?
+  delegatedToId      String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  organization       Organization     @relation(fields: [organizationId], references: [id])
+  assignee           User             @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy          User             @relation("TaskCreator", fields: [createdById], references: [id])
+  workflowInstance   WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
+
+  @@index([organizationId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([dueAt])
+  @@index([objectType, objectId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id             String              @id @default(cuid())
+  organizationId String
+  userId         String
+  titleEn        String
+  titleAr        String?
+  bodyEn         String
+  bodyAr         String?
+  channel        NotificationChannel @default(IN_APP)
+  status         NotificationStatus  @default(UNREAD)
+  objectType     String?
+  objectId       String?
+  sentAt         DateTime?
+  readAt         DateTime?
+  createdAt      DateTime            @default(now())
+
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  user           User                @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Committee Management
+// ---------------------------------------------------------------------------
+
+model Committee {
+  id             String            @id @default(cuid())
+  organizationId String
+  name           String
+  typeValueId    String
+  description    String?
+  quorum         Int               @default(0)
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization   Organization      @relation(fields: [organizationId], references: [id])
+  members        CommitteeMember[]
+  meetings       Meeting[]
+
+  @@index([organizationId])
+}
+
+model CommitteeMember {
+  id           String    @id @default(cuid())
+  committeeId  String
+  userId       String
+  roleValueId  String
+  joinedAt     DateTime  @default(now())
+  leftAt       DateTime?
+
+  committee    Committee @relation(fields: [committeeId], references: [id])
+  user         User      @relation(fields: [userId], references: [id])
+
+  @@unique([committeeId, userId])
+  @@index([committeeId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Meeting Management
+// ---------------------------------------------------------------------------
+
+model Meeting {
+  id             String          @id @default(cuid())
+  organizationId String
+  committeeId    String?
+  organizerId    String
+  title          String
+  typeValueId    String
+  scheduledAt    DateTime
+  location       String?
+  meetingUrl     String?
+  status         String          @default("DRAFT")
+  minutesText    String?
+  minutesApprovedAt DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  committee      Committee?      @relation(fields: [committeeId], references: [id])
+  organizer      User            @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  agendaItems    AgendaItem[]
+
+  @@index([organizationId])
+  @@index([committeeId])
+  @@index([scheduledAt])
+}
+
+model AgendaItem {
+  id          String   @id @default(cuid())
+  meetingId   String
+  title       String
+  description String?
+  order       Int
+  duration    Int?
+  presenter   String?
+
+  meeting     Meeting  @relation(fields: [meetingId], references: [id])
+
+  @@index([meetingId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit Log (append-only — no UPDATE or DELETE ever)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id             String      @id @default(cuid())
+  organizationId String
+  actorId        String?
+  action         AuditAction
+  objectType     String
+  objectId       String?
+  before         Json?
+  after          Json?
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime    @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  actor          User?        @relation(fields: [actorId], references: [id])
+
+  @@index([organizationId])
+  @@index([actorId])
+  @@index([objectType, objectId])
+  @@index([createdAt])
+  @@index([action])
+}

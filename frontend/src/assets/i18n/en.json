@@ -1,0 +1,44 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "create": "Create",
+    "submit": "Submit",
+    "approve": "Approve",
+    "reject": "Reject",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export",
+    "loading": "Loading...",
+    "noResults": "No results found",
+    "confirmDelete": "Are you sure you want to delete this?",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "standards": "Standards",
+    "documents": "Documents",
+    "qualityImprovement": "Quality Improvement",
+    "audit": "Audit",
+    "committees": "Committees",
+    "meetings": "Meetings",
+    "tasks": "Tasks",
+    "users": "Users",
+    "roles": "Roles",
+    "lookups": "Lookups",
+    "workflows": "Workflows",
+    "settings": "Settings"
+  },
+  "auth": {
+    "login": "Sign In",
+    "logout": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot password?",
+    "loginFailed": "Invalid credentials"
+  }
+}
