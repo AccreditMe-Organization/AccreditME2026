@@ -39,7 +39,11 @@ function verifyJwt(token: string, secret: string): JwtPayload {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Malformed token');
 
-  const [headerB64, payloadB64, signatureB64] = parts;
+  const [headerB64, payloadB64, signatureB64] = parts as [
+    string,
+    string,
+    string,
+  ];
 
   const expected = createHmac('sha256', secret)
     .update(`${headerB64}.${payloadB64}`)
@@ -60,7 +64,7 @@ function verifyJwt(token: string, secret: string): JwtPayload {
 
 @Injectable()
 export class TenantGuard implements CanActivate {
-  async canActivate(ctx: ExecutionContext): Promise<boolean> {
+  canActivate(ctx: ExecutionContext): boolean {
     const request = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
     const authHeader = request.headers['authorization'];
 
