@@ -142,6 +142,10 @@ model Organization {
   storageConfig    String?
   aiConfig         String?
 
+  // Bootstrap lifecycle — prevents double-provisioning of system defaults
+  isBootstrapped   Boolean          @default(false)
+  bootstrappedAt   DateTime?
+
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
