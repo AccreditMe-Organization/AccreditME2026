@@ -806,6 +806,25 @@ Status pills use semantic colors distinct from brand colors.
 
 ---
 
+## Step 1 Outcomes — Available After ACC-5 Merges
+
+These are wired and ready for all subsequent steps to import:
+
+- `TenantModule` — import this in every foundation and functional module
+  to get `TenantService`, `AuditLogService`, and all three provider tokens
+- `AuditLogService` — call `log()` on every create/update/delete mutation
+- `STORAGE_PROVIDER` (Symbol) — inject for file operations (S3 default)
+- `AI_PROVIDER` (Symbol) — inject for AI completions (Anthropic default)
+- `AUTH_PROVIDER` (Symbol) — inject for token validation (BetterAuth default)
+- `TenantGuard` + `PermissionGuard` — apply `@UseGuards(TenantGuard, PermissionGuard)` at class level on every controller
+- `@CurrentTenant()` — use this decorator (never `request.body.organizationId`) to get the tenant ID in controllers
+- `@CurrentUser()` — use this decorator to get the actor ID for audit logs
+- `@Permissions()` + permission constants in `common/constants/permissions.ts` — use on every endpoint
+- `PermissionGuard` is **stubbed until Step 5** — all authenticated requests pass through; do not mistake this for real access control
+- `bootstrap()` in `TenantService` has TODO stubs for Steps 4–7 — fill each in as the corresponding module is built
+
+---
+
 ## What Claude Must Always Do
 
 - Scope EVERY database query by organizationId — no exceptions ever
