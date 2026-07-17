@@ -101,3 +101,13 @@ export const PLATFORM_PERMISSIONS = {
   ADMIN:       'platform:admin',
   IMPERSONATE: 'platform:impersonate',
 } as const;
+
+export const KPI_PERMISSIONS = {
+  VIEW_OWN:        'kpi:view_own',
+  VIEW_DEPARTMENT: 'kpi:view_department',
+  VIEW_ALL:        'kpi:view_all',
+  ENTER_DATA:      'kpi:enter_data',
+  VERIFY:          'kpi:verify',
+  MANAGE:          'kpi:manage',
+  MANAGE_SYSTEM:   'kpi:manage_system',
+} as const;
