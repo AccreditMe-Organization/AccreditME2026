@@ -324,7 +324,7 @@ model PublicHoliday {
   id                String          @id @default(cuid())
   workingCalendarId String
   nameEn            String
-  nameAr            String
+  nameAr            String?
   date              DateTime
   isRecurring       Boolean         @default(false)
   createdAt         DateTime        @default(now())
