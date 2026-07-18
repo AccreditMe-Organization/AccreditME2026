@@ -19,7 +19,7 @@ import {
 interface CascadeOption {
   label: string;
   value: string;
-  children?: CascadeOption[];
+  items?: CascadeOption[];
 }
 
 @Component({
@@ -103,7 +103,7 @@ interface CascadeOption {
           optionLabel="label"
           optionValue="value"
           optionGroupLabel="label"
-          optionGroupChildren="children"
+          optionGroupChildren="items"
           [placeholder]="'organization.parentUnit' | translate"
           styleClass="w-full"
         />
@@ -158,7 +158,8 @@ export class OrgUnitFormComponent implements OnInit {
 
   private readonly flatUnits = signal<OrgUnitDto[]>([]);
 
-  readonly cascadeOptions = computed<CascadeOption[]>(() =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly cascadeOptions = computed<any[]>(() =>
     this.buildCascadeOptions(this.flatUnits(), this.editId(), null),
   );
 
@@ -271,11 +272,11 @@ export class OrgUnitFormComponent implements OnInit {
     return all
       .filter((u) => u.parentId === parentId && u.id !== excludeId && u.isActive)
       .map((u) => {
-        const children = this.buildCascadeOptions(all, excludeId, u.id);
+        const items = this.buildCascadeOptions(all, excludeId, u.id);
         return {
           label: orgUnitDisplayName(u),
           value: u.id,
-          ...(children.length ? { children } : {}),
+          ...(items.length ? { items } : {}),
         };
       });
   }
