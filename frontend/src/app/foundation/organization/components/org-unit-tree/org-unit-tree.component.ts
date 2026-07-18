@@ -1,0 +1,148 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { TreeNode } from 'primeng/api';
+import { TranslatePipe } from '@ngx-translate/core';
+import { TreeTableModule } from 'primeng/treetable';
+import { ButtonModule } from 'primeng/button';
+import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
+import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/org-unit.service';
+
+@Component({
+  selector: 'app-org-unit-tree',
+  standalone: true,
+  imports: [RouterLink, TranslatePipe, TreeTableModule, ButtonModule, TagModule, TooltipModule],
+  template: `
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-semibold">{{ 'organization.title' | translate }}</h2>
+      <p-button
+        icon="pi pi-plus"
+        [label]="'organization.addUnit' | translate"
+        [routerLink]="['new']"
+      />
+    </div>
+
+    @if (error()) {
+      <p class="text-red-500 mb-4">{{ error() }}</p>
+    }
+
+    <p-treeTable
+      [value]="treeNodes()"
+      [loading]="loading()"
+      styleClass="w-full"
+    >
+      <ng-template pTemplate="header">
+        <tr>
+          <th style="width: 45%">{{ 'organization.nameEn' | translate }}</th>
+          <th style="width: 15%">{{ 'organization.code' | translate }}</th>
+          <th style="width: 20%">{{ 'organization.type' | translate }}</th>
+          <th style="width: 10%" class="text-center">Status</th>
+          <th style="width: 10%"></th>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="body" let-rowNode let-rowData="rowData">
+        <tr [ttRow]="rowNode" [class.opacity-50]="!rowData.isActive">
+          <td>
+            <p-treeTableToggler [rowNode]="rowNode" />
+            {{ displayName(rowData) }}
+          </td>
+          <td>
+            <span class="font-mono text-sm">{{ rowData.code }}</span>
+          </td>
+          <td>{{ rowData.type ?? '—' }}</td>
+          <td class="text-center">
+            <p-tag
+              [value]="rowData.isActive ? 'Active' : 'Inactive'"
+              [severity]="rowData.isActive ? 'success' : 'secondary'"
+            />
+          </td>
+          <td>
+            <div class="flex gap-1 justify-end">
+              <p-button
+                icon="pi pi-plus"
+                [text]="true"
+                size="small"
+                [routerLink]="['new']"
+                [queryParams]="{ parentId: rowData.id }"
+                [pTooltip]="'organization.addChildUnit' | translate"
+              />
+              <p-button
+                icon="pi pi-pencil"
+                [text]="true"
+                size="small"
+                [routerLink]="[rowData.id, 'edit']"
+                [pTooltip]="'common.edit' | translate"
+              />
+              <p-button
+                icon="pi pi-ban"
+                [text]="true"
+                size="small"
+                severity="danger"
+                [disabled]="!rowData.isActive"
+                [pTooltip]="'organization.deactivate' | translate"
+                (onClick)="onDeactivate(rowData)"
+              />
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template pTemplate="emptymessage">
+        <tr>
+          <td colspan="5" class="text-center py-8 text-surface-400">
+            {{ 'organization.noUnits' | translate }}
+          </td>
+        </tr>
+      </ng-template>
+    </p-treeTable>
+  `,
+})
+export class OrgUnitTreeComponent implements OnInit {
+  private readonly orgUnitService = inject(OrgUnitService);
+
+  readonly loading = signal(false);
+  readonly treeNodes = signal<TreeNode<OrgUnitDto>[]>([]);
+  readonly error = signal<string | null>(null);
+
+  ngOnInit(): void {
+    this.loadTree();
+  }
+
+  displayName(unit: OrgUnitDto): string {
+    return orgUnitDisplayName(unit);
+  }
+
+  onDeactivate(unit: OrgUnitDto): void {
+    // TODO: replace with PrimeNG ConfirmationService dialog
+    // for proper RTL support and translation
+    // Tracked for follow-up in this commit
+    this.orgUnitService.deactivate(unit.id).subscribe({
+      next: () => this.loadTree(),
+      error: (err) => this.error.set(err?.error?.message ?? 'Deactivation failed'),
+    });
+  }
+
+  private loadTree(): void {
+    this.loading.set(true);
+    this.error.set(null);
+    this.orgUnitService.getTree().subscribe({
+      next: (units) => {
+        this.treeNodes.set(this.toTreeNodes(units));
+        this.loading.set(false);
+      },
+      error: () => {
+        this.error.set('Failed to load organization units');
+        this.loading.set(false);
+      },
+    });
+  }
+
+  private toTreeNodes(units: OrgUnitDto[]): TreeNode<OrgUnitDto>[] {
+    return units.map((unit) => ({
+      data: unit,
+      children: unit.children?.length ? this.toTreeNodes(unit.children) : [],
+      expanded: true,
+    }));
+  }
+}

@@ -3,9 +3,13 @@
 ## What Is AccreditMe
 
 AccreditMe is a multi-tenant SaaS Digital Quality Management Platform for organizations
-managing accreditation and quality assurance processes. Target market is GCC and broader
-MENA region — hospitals, clinics, government bodies, and organizations pursuing JCI,
-CBAHI, ISO 9001, and local MOH accreditation standards.
+managing accreditation and quality assurance processes. Target market: Any organization
+pursuing formal accreditation or quality management — healthcare, education, government,
+manufacturing, financial services, energy, technology, and others.
+GCC and MENA region is the primary geographic focus but the platform is designed for
+global use.
+Healthcare examples are used throughout this document for illustration only. No
+industry-specific logic is hardcoded anywhere in the platform.
 
 The platform is AI-first — every workflow has an AI assistance layer designed into it,
 not retrofitted. AI is assistive, never autonomous. Pattern is always:
@@ -185,12 +189,14 @@ Phase 2 — Functional Modules
   Step 19: Module 4 — Audit management
            (checklists generated from standards, reference documents,
             findings may trigger quality improvement — depends on all above)
+  Step 20: KPI and performance indicators module
 
 Phase 3 — Enhancements
-  Step 20: Public API + webhooks + developer portal
-  Step 21: Custom report builder
-  Step 22: Power BI embed for enterprise tenants
-  Step 23: draw.io enhancements
+  Step 21: Public API + webhooks + developer portal
+  Step 22: Custom report builder
+  Step 23: Power BI embed for enterprise tenants
+  Step 24: Organization structure change management workflow
+  Step 25: draw.io enhancements
 ```
 
 ---
@@ -822,6 +828,81 @@ These are wired and ready for all subsequent steps to import:
 - `@Permissions()` + permission constants in `common/constants/permissions.ts` — use on every endpoint
 - `PermissionGuard` is **stubbed until Step 5** — all authenticated requests pass through; do not mistake this for real access control
 - `bootstrap()` in `TenantService` has TODO stubs for Steps 4–7 — fill each in as the corresponding module is built
+
+---
+
+## KPI Module — Business Requirements
+
+### Industry Scope
+AccreditMe is industry-agnostic. Healthcare examples are used
+for illustration only. All standard bodies, KPI names, and
+measurement frameworks are tenant-configurable via the lookup
+system. No industry-specific logic is hardcoded anywhere.
+
+### Two KPI Types
+
+INTERNATIONAL — from accreditation bodies (JCI, CBAHI, ISO, ABET, etc.)
+  Predefined names, formulas, and targets from the standard body
+  Loaded as system definitions per selected standard
+  Cannot be deleted — only deactivated
+  Standard bodies are lookup values — not hardcoded
+  Any accreditation body can be added by tenant admin
+
+ORGANIZATIONAL — defined by quality dept or department managers
+  Custom to the organization's own improvement goals
+  Created and managed by authorized users
+  Can be organization-wide or department-level
+
+### KPI Scope
+  Organization-wide:   orgUnitId = null
+  Department-level:    orgUnitId = specific org unit
+
+### Permission Model
+  kpi:view_own          — KPIs where user is owner or data entry person
+  kpi:view_department   — all KPIs for user's org unit
+  kpi:view_all          — all KPIs organization-wide
+  kpi:enter_data        — enter measurement values for assigned KPIs
+  kpi:verify            — verify and approve entered measurements
+  kpi:manage            — create and manage KPI definitions
+  kpi:manage_system     — load internationally defined KPI sets
+
+### Data Model
+  KpiCategory       — groups KPIs by source and topic
+  KpiDefinition     — the KPI definition with target and threshold
+  KpiMeasurement    — actual measured values per period
+
+### Direction
+  HIGHER_IS_BETTER  — e.g. compliance rate, completion rate
+  LOWER_IS_BETTER   — e.g. error rate, incident rate, waiting time
+
+### Traffic Light Thresholds
+  Green:  at or better than target
+  Amber:  between threshold and target
+  Red:    below threshold
+
+### AI Integration Points
+  1. Measurement narrative — generated after each data entry
+     "The error rate for March exceeded target for the second
+      consecutive month. ICU accounts for 67% of cases."
+  2. Trend analysis — generated on KPI dashboard view
+     "Compliance has improved steadily over 6 months.
+      Current trajectory suggests target reached by Q3."
+  3. Standard KPI setup assistant — when tenant selects
+     their accreditation standard, AI suggests all required
+     mandatory KPIs with standard targets and frequencies
+
+### Module Dependencies
+  Linked to: Standards module (KPIs as evidence for measurable elements)
+  Linked to: Quality improvement (incidents trigger KPI review)
+  Linked to: Audit module (findings linked to relevant KPIs)
+  Linked to: Org structure (department-level KPI ownership)
+  Linked to: Lookup system (standard bodies, units of measure,
+             measurement frequencies as configurable values)
+
+### Build Position
+  Phase 2, Step 20 — after all four functional modules are complete
+  Reason: depends on data from documents, incidents, audits,
+  and standards modules for auto-calculated measurements
 
 ---
 

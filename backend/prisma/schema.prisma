@@ -154,6 +154,7 @@ model Organization {
   lookupValues     LookupValue[]
   workflowTemplates WorkflowTemplate[]
   workingCalendar  WorkingCalendar?
+  orgUnits         OrgUnit[]
   tasks            Task[]
   notifications    Notification[]
   committees       Committee[]
@@ -323,7 +324,7 @@ model PublicHoliday {
   id                String          @id @default(cuid())
   workingCalendarId String
   nameEn            String
-  nameAr            String
+  nameAr            String?
   date              DateTime
   isRecurring       Boolean         @default(false)
   createdAt         DateTime        @default(now())
@@ -332,6 +333,34 @@ model PublicHoliday {
 
   @@index([workingCalendarId])
   @@index([date])
+}
+
+// ---------------------------------------------------------------------------
+// Organization Units
+// ---------------------------------------------------------------------------
+
+model OrgUnit {
+  id             String       @id @default(cuid())
+  organizationId String
+  parentId       String?
+  nameEn         String
+  nameAr         String?
+  code           String
+  type           String?
+  description    String?
+  isActive       Boolean      @default(true)
+  isCodeLocked   Boolean      @default(false)
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  parent         OrgUnit?     @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
+  children       OrgUnit[]    @relation("OrgUnitHierarchy")
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([parentId])
 }
 
 // ---------------------------------------------------------------------------
