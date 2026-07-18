@@ -164,7 +164,8 @@ export class WorkingCalendarService {
 
   // THE CRITICAL METHOD — used by every module that needs SLA/due dates.
   // Returns the DateTime that is `workingHours` working hours after `start`.
-  // O(days) algorithm: advances day-by-day, drops to minute precision only on the final partial day.
+  // O(days) algorithm: accounts for remaining hours in the current working day first,
+  // then advances day-by-day, dropping to minute precision only on the final partial day.
   // workingHours = 0 is valid: returns the next working period start (normalizes the input).
   async calculateDeadline(
     start: DateTime,
@@ -176,18 +177,31 @@ export class WorkingCalendarService {
 
     const [startHour, startMin] = this.parseHHmm(calendar.workingHoursStart);
     const [endHour, endMin] = this.parseHHmm(calendar.workingHoursEnd);
-    const workingMinutesPerDay = endHour * 60 + endMin - (startHour * 60 + startMin);
-    const workingHoursPerDay = workingMinutesPerDay / 60;
+    const workingHoursPerDay = (endHour * 60 + endMin - (startHour * 60 + startMin)) / 60;
 
+    // Normalize: advance to next valid working period if start is outside one
     let current: DateTime = start.setZone(calendar.timezone);
     current = this.nextWorkingStart(current, calendar, holidays, startHour, startMin, endHour, endMin);
 
+    // Hours remaining in the current working day from `current`
+    const todayEnd = current.startOf('day').set({ hour: endHour, minute: endMin }) as DateTime;
+    const remainingInToday = todayEnd.diff(current, 'hours').hours;
+
     let remainingHours = workingHours;
 
-    while (remainingHours >= workingHoursPerDay) {
+    // Fits entirely within today's remaining working hours
+    if (remainingHours <= remainingInToday) {
+      return current.plus({ hours: remainingHours }).toUTC();
+    }
+
+    // Use up today, then advance to the next working day
+    remainingHours -= remainingInToday;
+    current = this.nextWorkingDayStart(current, calendar, holidays, startHour, startMin);
+
+    // Subtract full working days until less than one day remains
+    while (remainingHours > workingHoursPerDay) {
       remainingHours -= workingHoursPerDay;
-      current = current.plus({ days: 1 }).startOf('day').set({ hour: startHour, minute: startMin });
-      current = this.nextWorkingStart(current, calendar, holidays, startHour, startMin, endHour, endMin);
+      current = this.nextWorkingDayStart(current, calendar, holidays, startHour, startMin);
     }
 
     return current.plus({ hours: remainingHours }).toUTC();
@@ -229,6 +243,21 @@ export class WorkingCalendarService {
     }
 
     let candidate = dt.plus({ days: 1 }).startOf('day') as DateTime;
+    while (!this.isWorkingDay(candidate, calendar, holidays)) {
+      candidate = candidate.plus({ days: 1 }) as DateTime;
+    }
+    return candidate.set({ hour: startHour, minute: startMin }) as DateTime;
+  }
+
+  // Always advances to the START of the next working day — never returns the current day.
+  private nextWorkingDayStart(
+    current: DateTime,
+    calendar: IWorkingCalendar,
+    holidays: IPublicHoliday[],
+    startHour: number,
+    startMin: number,
+  ): DateTime {
+    let candidate = current.plus({ days: 1 }).startOf('day') as DateTime;
     while (!this.isWorkingDay(candidate, calendar, holidays)) {
       candidate = candidate.plus({ days: 1 }) as DateTime;
     }
