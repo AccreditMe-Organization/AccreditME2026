@@ -37,7 +37,10 @@ const ORG_B = { ...ORG_A, id: 'org-b', name: 'Org Beta', slug: 'beta' };
 
 describe('TenantService', () => {
   let service: TenantService;
-  let prisma: { organization: { findUnique: jest.Mock; update: jest.Mock } };
+  let prisma: {
+    organization: { findUnique: jest.Mock; update: jest.Mock };
+    orgUnit: { findFirst: jest.Mock; create: jest.Mock };
+  };
   let auditLog: { log: jest.Mock };
 
   beforeEach(async () => {
@@ -47,6 +50,10 @@ describe('TenantService', () => {
       organization: {
         findUnique: jest.fn(),
         update: jest.fn(),
+      },
+      orgUnit: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(undefined),
       },
     };
 
