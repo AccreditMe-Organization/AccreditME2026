@@ -211,7 +211,7 @@ describe('WorkingCalendarService', () => {
   // ── Tenant isolation ─────────────────────────────────────────────────────────
 
   describe('tenant isolation', () => {
-    it('never returns Org A calendar when queried with Org B id', async () => {
+    it('should NOT return records belonging to a different tenant', async () => {
       const resultA = await service.getOrCreate(ORG_A);
       const resultB = await service.getOrCreate(ORG_B);
       expect(resultA.organizationId).toBe(ORG_A);
@@ -220,7 +220,7 @@ describe('WorkingCalendarService', () => {
       expect(resultB.timezone).toBe('Europe/London');
     });
 
-    it('calculateDeadline uses Org B calendar (Mon–Fri) not Org A (Sun–Thu)', async () => {
+    it('should NOT return records belonging to a different tenant', async () => {
       // Friday 10:00 London — for Org B this IS a working day
       const start = DateTime.fromObject(
         { year: 2026, month: 7, day: 17, hour: 10, minute: 0 },

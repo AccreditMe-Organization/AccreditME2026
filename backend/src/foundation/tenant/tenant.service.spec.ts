@@ -93,7 +93,7 @@ describe('TenantService', () => {
     });
 
     // ── TENANT ISOLATION ────────────────────────────────────────────────────
-    it('never returns Org A data when queried with Org B id', async () => {
+    it('should NOT return records belonging to a different tenant', async () => {
       prisma.organization.findUnique.mockImplementation(
         ({ where }: { where: { id: string } }) => {
           if (where.id === 'org-b') return Promise.resolve(ORG_B);

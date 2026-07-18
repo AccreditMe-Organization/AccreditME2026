@@ -237,7 +237,7 @@ describe('OrganizationService', () => {
   // ── Tenant isolation ──────────────────────────────────────────────────────────
 
   describe('tenant isolation', () => {
-    it('never returns Org A units when queried with Org B id', async () => {
+    it('should NOT return records belonging to a different tenant', async () => {
       const unitA = makeUnit({ organizationId: ORG_A, code: 'A' });
       const unitB = makeUnit({ id: 'unit-b', organizationId: ORG_B, code: 'B' });
 
@@ -258,7 +258,7 @@ describe('OrganizationService', () => {
       expect(resultB.map((u) => u.id)).not.toContain('unit-1');
     });
 
-    it('findById scoped by organizationId — Org B cannot read an Org A unit', async () => {
+    it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null); // cross-tenant miss
       await expect(service.findById('unit-1', ORG_B)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
