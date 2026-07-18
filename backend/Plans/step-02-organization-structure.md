@@ -749,29 +749,29 @@ with the real AI call wired in after the AI integration pattern is confirmed.
 Track each item as it is completed. Update this file or maintain in Linear.
 
 ```
-[ ] Health check passed (see Section HEALTH CHECK above — 🟢 HEALTHY)
-[ ] Linear ticket ACC-6 created via /new-ticket
-[ ] Feature branch created: git checkout -b feature/ACC-6-organization-structure
-[ ] schema.prisma updated — OrgUnit model added
-[ ] nameAr confirmed as optional (String?)
-[ ] isCodeLocked Boolean @default(false) added to model
-[ ] Migration run: npx prisma migrate dev --name add-org-unit
-[ ] OrgUnit table verified in Prisma Studio
-[ ] Commit 1 done: chore(prisma): add OrgUnit model [ACC-6]
-[ ] Org unit interfaces + DTOs written and confirmed (files 2-5)
-[ ] Commit 2 done: feat(organization): add org unit interfaces and DTOs [ACC-6]
-[ ] Working calendar interfaces + DTOs written and confirmed (files 6-11)
-[ ] Commit 3 done: feat(working-calendar): add working calendar interfaces and DTOs [ACC-6]
-[ ] WorkingCalendarService written with all SLA rules
-[ ] WorkingCalendarService spec covers: working hours, weekend skip, holiday skip, isolation
-[ ] npx tsc --noEmit → zero errors
-[ ] npx jest → all tests pass including isolation
-[ ] Commit 4 done: feat(working-calendar): add WorkingCalendarService [ACC-6]
-[ ] OrganizationService written with hierarchy support
-[ ] OrganizationService spec covers: tree, create, deactivate, isolation
-[ ] npx tsc --noEmit → zero errors
-[ ] npx jest → all tests pass
-[ ] Commit 5 done: feat(organization): add OrganizationService [ACC-6]
+[x] Health check passed (see Section HEALTH CHECK above — 🟢 HEALTHY)
+[x] Linear ticket ACC-6 created via /new-ticket
+[x] Feature branch created: feature/ACC-6-organization-structure
+[x] schema.prisma updated — OrgUnit model added
+[x] nameAr confirmed as optional (String?)
+[x] isCodeLocked Boolean @default(false) added to model
+[x] Migration run: npx prisma migrate dev --name add-org-unit
+[x] OrgUnit table verified in Prisma Studio
+[x] Commit 1 done: chore(prisma): add OrgUnit model [ACC-6]
+[x] Org unit interfaces + DTOs written and confirmed (files 1-4)
+[x] Commit 2 done: feat(organization): add org unit interfaces and DTOs [ACC-6]
+[x] Working calendar interfaces + DTOs written and confirmed (files 5-10)
+[x] Commit 3 done: feat(working-calendar): add working calendar interfaces and DTOs [ACC-6]
+[x] WorkingCalendarService written with all SLA rules
+[x] WorkingCalendarService spec covers: working hours, weekend skip, holiday skip, isolation
+[x] npx tsc --noEmit → zero errors
+[x] npx jest → all tests pass including isolation
+[x] Commit 4 done: feat(working-calendar): add WorkingCalendarService [ACC-6]
+[x] OrganizationService written with hierarchy support
+[x] OrganizationService spec covers: tree, create, deactivate, isolation
+[x] npx tsc --noEmit → zero errors
+[x] npx jest → all tests pass
+[x] Commit 5 done: feat(organization): add OrganizationService [ACC-6]
 [ ] OrganizationController written (zero business logic)
 [ ] WorkingCalendarController written (zero business logic)
 [ ] Controller specs override guards, verify routing only
