@@ -8,4 +8,11 @@ export const routes: Routes = [
         (m) => m.ORGANIZATION_ROUTES,
       ),
   },
+  {
+    path: 'working-calendar',
+    loadChildren: () =>
+      import('./foundation/working-calendar/working-calendar.routes').then(
+        (m) => m.WORKING_CALENDAR_ROUTES,
+      ),
+  },
 ];
