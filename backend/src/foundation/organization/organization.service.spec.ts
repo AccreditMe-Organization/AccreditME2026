@@ -12,7 +12,7 @@ const ORG_B = 'org-b-id';
 const BASE_UNIT = {
   id: 'unit-1',
   organizationId: ORG_A,
-  parentId: null,
+  parentId: null as string | null,
   nameEn: 'Intensive Care Unit',
   nameAr: null,
   code: 'ICU',

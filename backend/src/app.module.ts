@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantModule } from './foundation/tenant/tenant.module';
+import { OrganizationModule } from './foundation/organization/organization.module';
+import { WorkingCalendarModule } from './foundation/working-calendar/working-calendar.module';
 
 @Module({
   imports: [
@@ -14,6 +16,8 @@ import { TenantModule } from './foundation/tenant/tenant.module';
     ]),
     PrismaModule,
     TenantModule,
+    OrganizationModule,
+    WorkingCalendarModule,
   ],
 })
 export class AppModule {}
