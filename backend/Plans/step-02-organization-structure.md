@@ -772,32 +772,32 @@ Track each item as it is completed. Update this file or maintain in Linear.
 [x] npx tsc --noEmit → zero errors
 [x] npx jest → all tests pass
 [x] Commit 5 done: feat(organization): add OrganizationService [ACC-6]
-[ ] OrganizationController written (zero business logic)
-[ ] WorkingCalendarController written (zero business logic)
-[ ] Controller specs override guards, verify routing only
-[ ] Commit 6 done: feat(organization): add controllers [ACC-6]
-[ ] OrganizationModule and WorkingCalendarModule created
-[ ] AppModule updated
-[ ] Commit 7 done: chore(organization): register modules [ACC-6]
-[ ] TenantService bootstrap updated to seed root OrgUnit
-[ ] Commit 8 done: fix(tenant): seed root OrgUnit in bootstrap [ACC-6]
-[ ] Angular org unit service + tree component + form component created
-[ ] Commit 9 done: feat(organization): add Angular org unit components [ACC-6]
-[ ] Angular working calendar service + config + holiday components created
-[ ] AI suggest holidays button present in calendar-config component
-[ ] Commit 10 done: feat(working-calendar): add Angular working calendar components [ACC-6]
-[ ] en.json updated with all keys from Section 4
-[ ] ar.json updated with all Arabic translations
-[ ] Commit 11 done: chore(i18n): add translation keys [ACC-6]
-[ ] Final check: npx tsc --noEmit (backend + frontend) → zero errors
-[ ] Final check: npx jest --passWithNoTests → all tests pass
-[ ] Final check: tenant isolation tests all passing
-[ ] /ready-to-pr run — PR opened to dev with [ACC-6] in title
-[ ] CI green on GitHub Actions
-[ ] PR merged to dev (squash merge)
-[ ] feature/ACC-6-organization-structure branch deleted from GitHub
-[ ] ACC-6 marked Done in Linear
-[ ] Step 3 (Lookup system) can begin
+[x] OrganizationController written (zero business logic)
+[x] WorkingCalendarController written (zero business logic)
+[x] Controller specs override guards, verify routing only
+[x] Commit 6 done: feat(organization): add controllers [ACC-6]
+[x] OrganizationModule and WorkingCalendarModule created
+[x] AppModule updated
+[x] Commit 7 done: chore(organization): register modules [ACC-6]
+[x] TenantService bootstrap updated to seed root OrgUnit
+[x] Commit 8 done: fix(tenant): seed root OrgUnit in bootstrap [ACC-6]
+[x] Angular org unit service + tree component + form component created
+[x] Commit 9 done: feat(organization): add Angular org unit components [ACC-6]
+[x] Angular working calendar service + config + holiday components created
+[x] AI suggest holidays button present in calendar-config component
+[x] Commit 10 done: feat(working-calendar): add Angular working calendar components [ACC-6]
+[x] en.json updated with all keys from Section 4
+[x] ar.json updated with all Arabic translations
+[x] Commit 11 done: chore(i18n): add translation keys [ACC-6]
+[x] Final check: npx tsc --noEmit (backend + frontend) → zero errors
+[x] Final check: npx jest --passWithNoTests → all tests pass
+[x] Final check: tenant isolation tests all passing
+[x] /ready-to-pr run — PR opened to dev with [ACC-6] in title
+[x] CI green on GitHub Actions
+[x] PR merged to dev (squash merge)
+[x] feature/ACC-6-organization-structure branch deleted from GitHub
+[x] ACC-6 marked Done in Linear
+[x] Step 3 (Lookup system) can begin
 ```
 
 ---
