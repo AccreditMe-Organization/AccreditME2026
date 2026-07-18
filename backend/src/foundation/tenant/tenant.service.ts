@@ -134,6 +134,24 @@ export class TenantService {
       throw new ConflictException('Tenant has already been bootstrapped');
     }
 
+    // Prisma called directly — importing OrganizationService would be circular
+    // (OrganizationModule → TenantModule → OrganizationService).
+    const rootUnitExists = await this.prisma.orgUnit.findFirst({
+      where: { organizationId: id, parentId: null },
+    });
+    if (!rootUnitExists) {
+      const code =
+        org.name
+          .toUpperCase()
+          .replace(/[^A-Z0-9\s-]/g, '')
+          .trim()
+          .replace(/\s+/g, '-')
+          .slice(0, 10) || 'ROOT';
+      await this.prisma.orgUnit.create({
+        data: { organizationId: id, nameEn: org.name, code, sortOrder: 0 },
+      });
+    }
+
     // TODO(Step 4 — Lookup): seed system lookup values for this tenant
     // TODO(Step 5 — Roles): create default roles (Admin, Quality Manager, Staff)
     // TODO(Step 6 — Workflow): create default workflow templates per object type
