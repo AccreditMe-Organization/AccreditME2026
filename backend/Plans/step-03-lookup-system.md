@@ -1024,50 +1024,50 @@ The live AI call is wired when the AI integration pattern is validated in a late
 ## 10. PROGRESS TRACKER
 
 ```
-[ ] Health check passed (see Section HEALTH CHECK above — 🟢 HEALTHY)
-[ ] Linear ticket ACC-7 created via /new-ticket
-[ ] Feature branch created: feature/ACC-7-lookup-system
-[ ] schema.prisma updated — LookupCategory extended with organizationId, isSystem, isExtensible
-[ ] Organization model updated with lookupCategories relation
-[ ] Migration run: npx prisma migrate dev --name extend-lookup-category-tenant-support
-[ ] Schema verified in Prisma Studio — LookupCategory has new columns
-[ ] Commit 1 done: chore(prisma): extend LookupCategory with tenant-scoping fields [ACC-7]
-[ ] Lookup interfaces written (ILookupCategory, ILookupValue)
-[ ] All 7 DTO files written with class-validator decorators
-[ ] Commit 2 done: feat(lookup): add lookup interfaces and DTOs [ACC-7]
-[ ] lookup.seed.ts written with all 12 categories + values + Arabic labels
-[ ] document_type attributeSchema included
-[ ] Commit 3 done: feat(lookup): add system lookup seed data [ACC-7]
-[ ] LookupService written — all methods implemented
-[ ] Two-layer value resolution algorithm implemented in getValues()
-[ ] seedSystemData() is idempotent (uses upsert)
-[ ] LookupService spec covers: seed, getValues merge, hide, override, tenant isolation
-[ ] npx tsc --noEmit → zero errors
-[ ] npx jest --passWithNoTests → all tests pass
-[ ] Commit 4 done: feat(lookup): add LookupService with two-layer value resolution [ACC-7]
-[ ] LookupController written — all 12 endpoints, zero business logic
-[ ] LookupController spec written — guards mocked, routing verified
-[ ] Commit 5 done: feat(lookup): add LookupController [ACC-7]
-[ ] LookupModule created and exported LookupService
-[ ] AppModule updated with LookupModule import
-[ ] npx tsc --noEmit → zero errors
-[ ] npx jest --passWithNoTests → all tests pass
-[ ] Commit 6 done: chore(lookup): register LookupModule in AppModule [ACC-7]
-[ ] TenantService bootstrap TODO replaced with real seedSystemData() call
-[ ] Circular dependency resolved (LookupSeedService pattern or PrismaService direct)
-[ ] Commit 7 done: fix(tenant): wire lookup seed into bootstrap [ACC-7]
-[ ] Angular LookupService written
-[ ] lookup-category-list component written (PrimeNG Table)
-[ ] lookup-value-list component written (system badges, hide/override actions)
-[ ] lookup-value-form component written (static fields + dynamic attribute fields)
-[ ] lookup.routes.ts written
-[ ] Commit 8 done: feat(lookup): add Angular lookup components [ACC-7]
-[ ] en.json updated with all lookup keys
-[ ] ar.json updated with all Arabic translations
-[ ] Commit 9 done: feat(i18n): add lookup translation keys [ACC-7]
-[ ] Final check: npx tsc --noEmit (backend + frontend) → zero errors
-[ ] Final check: npx jest --passWithNoTests → all tests pass
-[ ] Final check: tenant isolation test for LookupService passing
+[x] Health check passed (see Section HEALTH CHECK above — 🟢 HEALTHY)
+[x] Linear ticket ACC-7 created via /new-ticket
+[x] Feature branch created: feature/ACC-7-lookup-system
+[x] schema.prisma updated — LookupCategory extended with organizationId, isSystem, isExtensible
+[x] Organization model updated with lookupCategories relation
+[x] Migration run: npx prisma migrate dev --name extend-lookup-category-tenant-support
+[x] Schema verified in Prisma Studio — LookupCategory has new columns
+[x] Commit 1 done: chore(prisma): extend LookupCategory with tenant-scoping fields [ACC-7]
+[x] Lookup interfaces written (ILookupCategory, ILookupValue)
+[x] All 7 DTO files written with class-validator decorators
+[x] Commit 2 done: feat(lookup): add lookup interfaces and DTOs [ACC-7]
+[x] lookup.seed.ts written with all 12 categories + values + Arabic labels
+[x] document_type attributeSchema included
+[x] Commit 3 done: feat(lookup): add system lookup seed data [ACC-7]
+[x] LookupService written — all methods implemented
+[x] Two-layer value resolution algorithm implemented in getValues()
+[x] seedSystemData() is idempotent (uses upsert)
+[x] LookupService spec covers: seed, getValues merge, hide, override, tenant isolation
+[x] npx tsc --noEmit → zero errors
+[x] npx jest --passWithNoTests → all tests pass
+[x] Commit 4 done: feat(lookup): add LookupService with two-layer value resolution [ACC-7]
+[x] LookupController written — all 12 endpoints, zero business logic
+[x] LookupController spec written — guards mocked, routing verified
+[x] Commit 5 done: feat(lookup): add LookupController [ACC-7]
+[x] LookupModule created and exported LookupService
+[x] AppModule updated with LookupModule import
+[x] npx tsc --noEmit → zero errors
+[x] npx jest --passWithNoTests → all tests pass
+[x] Commit 6 done: chore(lookup): register LookupModule in AppModule [ACC-7]
+[x] TenantService bootstrap TODO replaced with real seedSystemData() call
+[x] Circular dependency resolved (forwardRef() on both TenantModule ↔ LookupModule)
+[x] Commit 7 done: fix(tenant): wire LookupService.seedSystemData into bootstrap [ACC-7]
+[x] Angular LookupService written
+[x] lookup-category-list component written (PrimeNG Table)
+[x] lookup-value-list component written (system badges, hide/override actions)
+[x] lookup-value-form component written (static fields + dynamic attribute fields)
+[x] lookup.routes.ts written
+[x] Commit 8 done: feat(lookup): add Angular lookup components and translation keys [ACC-7]
+[x] en.json updated with all lookup keys
+[x] ar.json updated with all Arabic translations
+[x] Commit 9 done: included in Commit 8
+[x] Final check: npx tsc --noEmit (backend + frontend) → zero errors
+[x] Final check: npx jest --passWithNoTests → all tests pass (105 tests, 8 suites)
+[x] Final check: tenant isolation test for LookupService passing
 [ ] /ready-to-pr run — PR opened to dev with [ACC-7] in title
 [ ] CI green on GitHub Actions
 [ ] PR merged to dev (squash merge)
