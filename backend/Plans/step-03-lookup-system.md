@@ -1068,12 +1068,12 @@ The live AI call is wired when the AI integration pattern is validated in a late
 [x] Final check: npx tsc --noEmit (backend + frontend) → zero errors
 [x] Final check: npx jest --passWithNoTests → all tests pass (105 tests, 8 suites)
 [x] Final check: tenant isolation test for LookupService passing
-[ ] /ready-to-pr run — PR opened to dev with [ACC-7] in title
-[ ] CI green on GitHub Actions
-[ ] PR merged to dev (squash merge)
-[ ] feature/ACC-7-lookup-system branch deleted from GitHub
-[ ] ACC-7 marked Done in Linear
-[ ] Step 4 (Roles + permissions) can begin
+[x] /ready-to-pr run — PR opened to dev with [ACC-7] in title
+[x] CI green on GitHub Actions
+[x] PR merged to dev (squash merge)
+[x] feature/ACC-7-lookup-system branch deleted from GitHub
+[x] ACC-7 marked Done in Linear
+[x] Step 4 (Roles + permissions) can begin
 ```
 
 ---
