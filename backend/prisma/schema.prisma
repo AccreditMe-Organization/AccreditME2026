@@ -151,7 +151,8 @@ model Organization {
 
   users            User[]
   roles            Role[]
-  lookupValues     LookupValue[]
+  lookupValues      LookupValue[]
+  lookupCategories  LookupCategory[]
   workflowTemplates WorkflowTemplate[]
   workingCalendar  WorkingCalendar?
   orgUnits         OrgUnit[]
@@ -265,15 +266,24 @@ model RolePermission {
 // ---------------------------------------------------------------------------
 
 model LookupCategory {
-  id              String        @id @default(cuid())
-  key             String        @unique
+  id              String         @id @default(cuid())
+  organizationId  String?
+  key             String
   labelEn         String
   labelAr         String
+  isSystem        Boolean        @default(false)
+  isExtensible    Boolean        @default(true)
   attributeSchema Json?
-  isActive        Boolean       @default(true)
-  sortOrder       Int           @default(0)
+  isActive        Boolean        @default(true)
+  sortOrder       Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
+  organization    Organization?  @relation(fields: [organizationId], references: [id])
   values          LookupValue[]
+
+  @@unique([key, organizationId])
+  @@index([organizationId])
 }
 
 model LookupValue {
