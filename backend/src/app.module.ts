@@ -5,6 +5,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { TenantModule } from './foundation/tenant/tenant.module';
 import { OrganizationModule } from './foundation/organization/organization.module';
 import { WorkingCalendarModule } from './foundation/working-calendar/working-calendar.module';
+import { LookupModule } from './foundation/lookup/lookup.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WorkingCalendarModule } from './foundation/working-calendar/working-cal
     TenantModule,
     OrganizationModule,
     WorkingCalendarModule,
+    LookupModule,
   ],
 })
 export class AppModule {}
