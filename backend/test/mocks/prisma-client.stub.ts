@@ -4,3 +4,9 @@ export class PrismaClient {
     return this;
   }
 }
+
+export const Prisma = {
+  DbNull:    'DbNull'    as const,
+  JsonNull:  'JsonNull'  as const,
+  AnyNull:   'AnyNull'   as const,
+};
