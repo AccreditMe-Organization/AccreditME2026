@@ -3,6 +3,7 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { TenantService } from './tenant.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { LookupService } from '../lookup/lookup.service';
 
 // Valid 64-char hex string → 32 bytes, satisfies constructor guard
 const MOCK_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -42,6 +43,7 @@ describe('TenantService', () => {
     orgUnit: { findFirst: jest.Mock; create: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
+  let lookupService: { seedSystemData: jest.Mock };
 
   beforeEach(async () => {
     process.env['ENCRYPTION_KEY'] = MOCK_ENCRYPTION_KEY;
@@ -57,13 +59,15 @@ describe('TenantService', () => {
       },
     };
 
-    auditLog = { log: jest.fn().mockResolvedValue(undefined) };
+    auditLog     = { log: jest.fn().mockResolvedValue(undefined) };
+    lookupService = { seedSystemData: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
-        { provide: PrismaService, useValue: prisma },
+        { provide: PrismaService,  useValue: prisma },
         { provide: AuditLogService, useValue: auditLog },
+        { provide: LookupService,  useValue: lookupService },
       ],
     }).compile();
 
@@ -156,6 +160,7 @@ describe('TenantService', () => {
 
       await service.bootstrap('org-a', 'user-1');
 
+      expect(lookupService.seedSystemData).toHaveBeenCalledTimes(1);
       expect(prisma.organization.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'org-a' },

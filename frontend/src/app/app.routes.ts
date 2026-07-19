@@ -15,4 +15,11 @@ export const routes: Routes = [
         (m) => m.WORKING_CALENDAR_ROUTES,
       ),
   },
+  {
+    path: 'lookups',
+    loadChildren: () =>
+      import('./foundation/lookup/lookup.routes').then(
+        (m) => m.LOOKUP_ROUTES,
+      ),
+  },
 ];
