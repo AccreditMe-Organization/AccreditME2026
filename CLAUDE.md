@@ -184,6 +184,10 @@ Phase 2 — Functional Modules
             documents and audits depend on this)
   Step 17: Module 2 — Quality documentation management
            (documents now link as evidence to measurable elements)
+  Step 17b: Document distribution + Staff portal + Acknowledgement records
+            (staff members receive and acknowledge published documents —
+             staff user type is separate from full users covered in Step 9;
+             acknowledgement tracking and compliance reports included here)
   Step 18: Module 3 — Quality improvement
            (incidents and gaps reference standards and documents)
   Step 19: Module 4 — Audit management
@@ -650,15 +654,54 @@ report-scheduler    Scheduled automated report generation and email delivery
 - Cannot be changed after first non-admin user logs in
 - Wildcard SSL via Let's Encrypt (automatic on Railway)
 
+### User Types — Key Distinction
+```
+Full users     — Active system users: quality staff, managers, auditors,
+                 coordinators. Full platform access based on assigned roles.
+                 Counted against the plan's full-user seat limit.
+
+Staff members  — Document portal only: receive and acknowledge published
+                 documents. No system access, no role assignment, no workflow
+                 participation. Separate seat pool from full users.
+```
+
 ### Subscription Plans (Stripe)
 ```
-Starter:        25 users, 10GB storage, basic AI features
-Professional:   100 users, 100GB storage, full AI features
-Enterprise:     Unlimited users, 1TB storage, dedicated instance option
+Starter:
+  10 full users, 100 staff members
+  10 GB storage
+  Modules: Standards, Documents, Quality Improvement
+  Basic AI features (Anthropic Claude, shared quota)
+  14-day free trial — no credit card required
+
+Professional:
+  50 full users, 500 staff members
+  100 GB storage
+  All modules: Standards, Documents, Quality Improvement, Audit, KPI
+  Full AI features (Anthropic Claude, higher quota)
+  Full Arabic RTL support
+  14-day free trial — no credit card required
+
+Enterprise:
+  Unlimited full users, unlimited staff members
+  1 TB storage
+  All modules
+  Full AI features + custom AI provider (Azure OpenAI or own OpenAI key)
+  Dedicated cloud instance (Tier 2) or on-premises (Tier 3) option
+  Custom annual contract — no Stripe self-service
 ```
+
+### Add-ons (available on all plans, billed via Stripe)
+```
+Extra full users:     per additional seat
+Extra staff members:  per 100-member block
+Extra storage:        per 10 GB block
+```
+
 - Overage warnings at 80% and 95% of limits
 - Hard limits at 100% — uploads blocked, no data corruption
 - Stripe generates and emails invoice PDF automatically
+- Enterprise custom contracts invoiced outside Stripe
 
 ### Offboarding
 ```
