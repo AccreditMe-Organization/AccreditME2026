@@ -75,7 +75,8 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
       { key: 'manual',    labelEn: 'Manual',    labelAr: 'دليل',         sortOrder: 50, attributes: { numberingPrefix: 'MAN', requiresFlowchart: false, defaultReviewCycleMonths: 36, requiresCommitteeApproval: true,  defaultRetentionYears: 10 } },
       { key: 'guideline', labelEn: 'Guideline', labelAr: 'إرشادات',      sortOrder: 60, attributes: { numberingPrefix: 'GDL', requiresFlowchart: false, defaultReviewCycleMonths: 24, requiresCommitteeApproval: false, defaultRetentionYears: 5  } },
       { key: 'checklist', labelEn: 'Checklist', labelAr: 'قائمة مراجعة', sortOrder: 70, attributes: { numberingPrefix: 'CHL', requiresFlowchart: false, defaultReviewCycleMonths: 12, requiresCommitteeApproval: false, defaultRetentionYears: 5  } },
-      { key: 'platform',  labelEn: 'Platform',  labelAr: 'إطار عمل',     sortOrder: 80, attributes: { numberingPrefix: 'PLT', requiresFlowchart: false, defaultReviewCycleMonths: 24, requiresCommitteeApproval: true,  defaultRetentionYears: 10 } },
+      { key: 'platform',        labelEn: 'Platform',        labelAr: 'إطار عمل',        sortOrder: 80, attributes: { numberingPrefix: 'PLT', requiresFlowchart: false, defaultReviewCycleMonths: 24, requiresCommitteeApproval: true,  defaultRetentionYears: 10 } },
+      { key: 'job_description', labelEn: 'Job Description', labelAr: 'الوصف الوظيفي', sortOrder: 90, attributes: { numberingPrefix: 'JD',  requiresFlowchart: false, defaultReviewCycleMonths: 24, requiresCommitteeApproval: false, defaultRetentionYears: 10 } },
     ],
   },
 
