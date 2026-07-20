@@ -1020,62 +1020,103 @@ mechanism; no AI suggestion flow applies here.
 ## 10. PROGRESS TRACKER
 
 ```
-[ ] Health check passed (see Section HEALTH CHECK above)
-[ ] Linear ticket ACC-8 created via /new-ticket
-[ ] Feature branch created: feature/ACC-8-roles-permissions
-[ ] schema.prisma updated — Role extended with key, nameEn, nameAr, isActive
-[ ] UserRole updated with createdAt
-[ ] Migration run: npx prisma migrate dev --name extend-role-bilingual-names-and-key
-[ ] Schema verified in Prisma Studio — Role has new columns
-[ ] Commit 1 done: chore(prisma): extend Role with bilingual names and stable key [ACC-8]
-[ ] Role/Permission interfaces written (IRole, IPermission)
-[ ] All 5 DTO files written with class-validator decorators
-[ ] Commit 2 done: feat(roles): add role interfaces and DTOs [ACC-8]
-[ ] permission.seed.ts written — derives ALL_PERMISSIONS from permissions.ts constants
-[ ] role.seed.ts written with all 7 system roles + Arabic labels + permission mappings
-[ ] Commit 3 done: feat(roles): add permission catalog and system role seed data [ACC-8]
-[ ] RoleService written — all methods implemented
-[ ] Admin lockout protection implemented (deactivateRole + removeRoleFromUser)
-[ ] getUserPermissions() implemented — active-role filtering, deduplication
-[ ] RoleService spec covers: seed idempotency, CRUD, permission replace, lockout, isolation
-[ ] npx tsc --noEmit → zero errors
-[ ] npx jest --passWithNoTests → all tests pass
-[ ] Commit 4 done: feat(roles): add RoleService with permission resolution [ACC-8]
-[ ] RoleController written — all 11 endpoints, zero business logic
-[ ] RoleController spec written — guards mocked, routing verified, /roles/permissions
+[x] Health check passed (see Section HEALTH CHECK above)
+[x] Linear ticket ACC-8 created via /new-ticket
+[x] Feature branch created: feature/ACC-8-roles-permissions
+[x] schema.prisma updated — Role extended with key, nameEn, nameAr, isActive
+[x] UserRole updated with createdAt
+[x] Migration run: npx prisma migrate dev --name extend-role-bilingual-names-and-key
+    (ran via migrate diff + migrate deploy — migrate dev refused in this
+    non-interactive shell; see Section 2 migration note)
+[x] Schema verified in Prisma Studio — Role has new columns
+[x] Commit 1 done: chore(prisma): extend Role with bilingual names and stable key [ACC-8]
+[x] Role/Permission interfaces written (IRole, IPermission)
+[x] All 5 DTO files written with class-validator decorators
+[x] Commit 2 done: feat(roles): add role interfaces and DTOs [ACC-8]
+[x] permission.seed.ts written — derives ALL_PERMISSIONS from permissions.ts constants
+[x] role.seed.ts written with all 7 system roles + Arabic labels + permission mappings
+    (BASE_USER, not STAFF — product owner decision 2026-07-20)
+[x] Commit 3 done: feat(roles): add permission catalog and system role seed data [ACC-8]
+[x] RoleService written — all methods implemented
+[x] Admin lockout protection implemented (deactivateRole + removeRoleFromUser)
+[x] getUserPermissions() implemented — active-role filtering, deduplication
+[x] RoleService spec covers: seed idempotency, CRUD, permission replace, lockout, isolation
+[x] npx tsc --noEmit → zero errors
+[x] npx jest --passWithNoTests → all tests pass
+[x] Commit 4 done: feat(roles): add RoleService with permission resolution [ACC-8]
+[x] RoleController written — all 11 endpoints, zero business logic
+[x] RoleController spec written — guards mocked, routing verified, /roles/permissions
     ordered before /roles/:id
-[ ] Commit 5 done: feat(roles): add RoleController [ACC-8]
-[ ] RolesModule created as @Global(), exports RoleService + PERMISSION_RESOLVER
-[ ] AppModule updated with RolesModule import
-[ ] npx tsc --noEmit → zero errors
-[ ] npx jest --passWithNoTests → all tests pass
-[ ] Commit 6 done: chore(roles): register global RolesModule in AppModule [ACC-8]
-[ ] permission-resolver.interface.ts written
-[ ] TenantGuard updated — injects PERMISSION_RESOLVER, populates request.userPermissions
-[ ] PermissionGuard bypass removed — Step 1 stub comment removed
-[ ] TenantService bootstrap TODO replaced with roleService.seedSystemRoles(id) call
-[ ] TenantModule updated with forwardRef(() => RolesModule)
-[ ] npx tsc --noEmit → zero errors
-[ ] Full test suite (not --passWithNoTests) run and green after guard activation
-[ ] Manually verified: existing endpoint (e.g. GET /lookups/categories) returns 200 for
-    an authorized token and 403 for one lacking the permission
-[ ] Commit 7 done: feat(auth): activate PermissionGuard via TenantGuard [ACC-8]
-[ ] All controller specs still pass after guard activation (guards mocked — no change needed)
-[ ] Note: real end-to-end permission testing deferred to Step 9
-[ ] Angular RoleService written
-[ ] role-list component written (PrimeNG Table, system/custom badges)
-[ ] role-form component written (nameEn/nameAr/description)
-[ ] role-permission-matrix component written (grouped checkbox grid, full-replace save)
-[ ] user-role-assignment component written (stopgap, not yet linked from navigation)
-[ ] roles.routes.ts written
-[ ] Commit 8 done: feat(roles): add Angular role management UI [ACC-8]
-[ ] en.json updated with all roles keys
-[ ] ar.json updated with all Arabic translations
-[ ] Commit 9 done: feat(i18n): add roles translation keys [ACC-8]
-[ ] Final check: npx tsc --noEmit (backend + frontend) → zero errors
-[ ] Final check: npx jest --passWithNoTests → all tests pass
-[ ] Final check: tenant isolation tests for RoleService passing
-[ ] Final check: admin lockout protection tests passing
+[x] Commit 5 done: feat(roles): add RoleController [ACC-8]
+[x] RolesModule created as @Global(), exports RoleService + PERMISSION_RESOLVER
+[x] AppModule updated with RolesModule import
+[x] npx tsc --noEmit → zero errors
+[x] npx jest --passWithNoTests → all tests pass
+[x] Commit 6 done: chore(roles): register global RolesModule in AppModule [ACC-8]
+[x] permission-resolver.interface.ts written
+[x] TenantGuard updated — injects PERMISSION_RESOLVER, populates request.userPermissions
+[x] PermissionGuard bypass removed — Step 1 stub comment removed
+[x] TenantService bootstrap TODO replaced with roleService.seedSystemRoles(id) call
+[x] TenantModule updated with forwardRef(() => RolesModule)
+[x] npx tsc --noEmit → zero errors
+[x] Full test suite (not --passWithNoTests) run and green after guard activation
+[x] Manually verified: existing endpoint (e.g. GET /lookups/categories) returns 200 for
+    an authorized token, 403 for one lacking the permission, 401 for no token —
+    verified live against a running server + real Postgres data, not just mocked specs
+[x] Commit 7 done: feat(auth): activate PermissionGuard via TenantGuard [ACC-8]
+[x] All controller specs still pass after guard activation (guards mocked — no change needed)
+[x] Note: real end-to-end permission testing deferred to Step 9
+[x] SECURITY FIX (post-review, pre-PR): RoleService.getUserPermissions() originally
+    queried by userId only — violated CLAUDE.md's "every query scoped by organizationId"
+    rule. A user with roles in another org (should never happen today, but nothing
+    enforced it) would have had those cross-tenant permissions resolved by TenantGuard
+    on every request. Fixed: PermissionResolver.getUserPermissions() and
+    RoleService.getUserPermissions() both now take (userId, organizationId); the Prisma
+    query scopes via role: { isActive: true, organizationId }; TenantGuard passes
+    payload.organizationId through. Added a dedicated regression test
+    ("should NOT resolve permissions from a role belonging to a different tenant").
+    Folded into the amended Commit 7 (262ac5a) since unpushed at the time.
+[x] Angular RoleService written
+[x] role-list component written (PrimeNG Table, system/custom badges)
+    (adapted from the plan's routed 'new'/':id/edit' sketch to a p-dialog-based
+    create/edit form, matching the established convention in lookup-value-list
+    and org-unit-tree rather than introducing a third UI pattern)
+[x] role-form component written (nameEn/nameAr/description)
+[x] role-permission-matrix component written (grouped checkbox grid, full-replace save)
+[x] user-role-assignment component written (stopgap, not yet linked from navigation)
+[x] roles.routes.ts written (only '' and ':id/permissions' — 'new'/':id/edit' dropped
+    per the dialog adaptation above)
+[x] Commit 8 done: feat(roles): add Angular role management UI [ACC-8]
+[x] PLATFORM_ADMIN visibility gap fixed (post-review, pre-PR): Business Rules called
+    for hiding PLATFORM_ADMIN from the tenant-facing role picker, but the first cut of
+    role-list, user-role-assignment, and the permission-matrix guard didn't actually
+    filter it anywhere. Fixed: role-list.component.ts filters it out of the displayed
+    table (visibleRoles computed signal), user-role-assignment.component.ts filters it
+    out of assignableRoles(), and role-permission-matrix.component.ts redirects away
+    if a PLATFORM_ADMIN id is loaded directly by URL.
+[x] Confirmation dialogs added to destructive actions (post-review, pre-PR): deactivating
+    a role or removing a user's role assignment fired immediately with no prompt —
+    risky given deactivating a heavily-assigned role instantly revokes permissions for
+    every user on it. Added window.confirm() to role-list's onDeactivate() and
+    user-role-assignment's onRemove(), each with a
+    "// TODO: replace with PrimeNG ConfirmationService dialog" marker. The same marker
+    was applied to the two pre-existing deferred call sites (org-unit-tree's
+    onDeactivate(), lookup-value-list's onDelete()) so all four read as one future
+    migration. Committed separately as fix(ui) (847dd69).
+[x] en.json updated with all roles keys
+[x] ar.json updated with all Arabic translations
+[x] Commit 9 done: feat(i18n): add roles translation keys [ACC-8]
+[x] Data-error fix (post-review, pre-PR): lookup-category-list.component.ts's
+    onRowSelect() was typed to accept a plain { data: LookupCategoryDto }, but
+    PrimeNG's real TableRowSelectEvent<T>.data is T | T[] | undefined — a genuine
+    type-safety gap invisible to npx tsc --noEmit (template bindings are only
+    type-checked by the Angular Language Service, not bare tsc). Fixed to use the
+    real TableRowSelectEvent<LookupCategoryDto> type with an explicit array/undefined
+    guard. Unrelated to Step 4 but caught and fixed in passing during this review.
+[x] Final check: npx tsc --noEmit (backend + frontend) → zero errors
+[x] Final check: npx jest --passWithNoTests → all tests pass (140/140)
+[x] Final check: tenant isolation tests for RoleService passing
+[x] Final check: admin lockout protection tests passing
 [ ] /ready-to-pr run — PR opened to dev with [ACC-8] in title
 [ ] CI green on GitHub Actions
 [ ] PR merged to dev (squash merge)
