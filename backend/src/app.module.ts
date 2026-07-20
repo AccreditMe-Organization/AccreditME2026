@@ -6,6 +6,7 @@ import { TenantModule } from './foundation/tenant/tenant.module';
 import { OrganizationModule } from './foundation/organization/organization.module';
 import { WorkingCalendarModule } from './foundation/working-calendar/working-calendar.module';
 import { LookupModule } from './foundation/lookup/lookup.module';
+import { RolesModule } from './foundation/roles/roles.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { LookupModule } from './foundation/lookup/lookup.module';
     OrganizationModule,
     WorkingCalendarModule,
     LookupModule,
+    RolesModule,
   ],
 })
 export class AppModule {}
