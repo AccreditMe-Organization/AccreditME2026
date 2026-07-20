@@ -13,15 +13,24 @@
 // tokenVersion check (activated in Step 9 — Users module):
 //   Increment User.tokenVersion on role change or forced logout.
 //   This guard will then reject tokens carrying a stale tokenVersion.
+//
+// Permission resolution (Step 4 — Roles):
+//   After JWT verification, resolves the user's permission set via the
+//   PERMISSION_RESOLVER token and attaches it to the request for PermissionGuard.
 
 import {
   CanActivate,
   ExecutionContext,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
+import {
+  PERMISSION_RESOLVER,
+  PermissionResolver,
+} from '../services/permission-resolver.interface';
 
 interface JwtPayload {
   sub: string;
@@ -33,6 +42,7 @@ interface JwtPayload {
 interface AuthenticatedRequest extends Request {
   tenantId: string;
   userId: string;
+  userPermissions?: string[];
 }
 
 function verifyJwt(token: string, secret: string): JwtPayload {
@@ -64,7 +74,12 @@ function verifyJwt(token: string, secret: string): JwtPayload {
 
 @Injectable()
 export class TenantGuard implements CanActivate {
-  canActivate(ctx: ExecutionContext): boolean {
+  constructor(
+    @Inject(PERMISSION_RESOLVER)
+    private readonly permissionResolver: PermissionResolver,
+  ) {}
+
+  async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const request = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
     const authHeader = request.headers['authorization'];
 
@@ -93,6 +108,10 @@ export class TenantGuard implements CanActivate {
 
     request.tenantId = payload.organizationId;
     request.userId = payload.sub;
+    request.userPermissions = await this.permissionResolver.getUserPermissions(
+      payload.sub,
+      payload.organizationId,
+    );
     return true;
   }
 }

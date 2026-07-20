@@ -359,9 +359,9 @@ export class RoleService {
 
   // ── Permission resolution — consumed by TenantGuard via PERMISSION_RESOLVER ──
 
-  async getUserPermissions(userId: string): Promise<string[]> {
+  async getUserPermissions(userId: string, organizationId: string): Promise<string[]> {
     const userRoles = await this.prisma.userRole.findMany({
-      where: { userId, role: { isActive: true } },
+      where: { userId, role: { isActive: true, organizationId } },
       include: {
         role: {
           include: {

@@ -372,19 +372,21 @@ describe('RoleService', () => {
         },
       ]);
 
-      const result = await service.getUserPermissions('user-1');
+      const result = await service.getUserPermissions('user-1', ORG_A);
 
       expect(result.sort()).toEqual(['audits:view', 'documents:view', 'tasks:view'].sort());
     });
 
-    it('only queries active roles — deactivated roles contribute nothing', async () => {
+    it('only queries active roles scoped to the tenant — deactivated or cross-tenant roles contribute nothing', async () => {
       mockPrisma.userRole.findMany.mockResolvedValue([]);
 
-      await service.getUserPermissions('user-1');
+      await service.getUserPermissions('user-1', ORG_A);
 
       expect(mockPrisma.userRole.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ role: { isActive: true } }),
+          where: expect.objectContaining({
+            role: { isActive: true, organizationId: ORG_A },
+          }),
         }),
       );
     });
@@ -459,6 +461,22 @@ describe('RoleService', () => {
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.userRole.create).not.toHaveBeenCalled();
+    });
+
+    it('getUserPermissions should NOT resolve permissions from a role belonging to a different tenant', async () => {
+      mockPrisma.userRole.findMany.mockResolvedValue([]);
+
+      await service.getUserPermissions('user-1', ORG_A);
+
+      // Regression guard for the missing-organizationId bug: the query must
+      // scope the role relation by the caller's tenant, not just by userId.
+      expect(mockPrisma.userRole.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            role: expect.objectContaining({ organizationId: ORG_A }),
+          }),
+        }),
+      );
     });
   });
 });
