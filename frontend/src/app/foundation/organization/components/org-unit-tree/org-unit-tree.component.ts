@@ -115,8 +115,6 @@ export class OrgUnitTreeComponent implements OnInit {
 
   onDeactivate(unit: OrgUnitDto): void {
     // TODO: replace with PrimeNG ConfirmationService dialog
-    // for proper RTL support and translation
-    // Tracked for follow-up in this commit
     this.orgUnitService.deactivate(unit.id).subscribe({
       next: () => this.loadTree(),
       error: (err) => this.error.set(err?.error?.message ?? 'Deactivation failed'),

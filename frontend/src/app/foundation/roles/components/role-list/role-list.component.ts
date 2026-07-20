@@ -192,7 +192,16 @@ export class RoleListComponent implements OnInit {
     }
   }
 
+  displayLabel(role: RoleDto): string {
+    return role.nameAr || role.nameEn;
+  }
+
   onDeactivate(role: RoleDto): void {
+    const label = this.displayLabel(role);
+    if (!window.confirm(`Deactivate role "${label}"? This will immediately revoke permissions for all users assigned to this role.`)) {
+      return;
+    }
+    // TODO: replace with PrimeNG ConfirmationService dialog
     this.roleService.deactivateRole(role.id).subscribe({
       next: () => this.loadRoles(),
       error: (err: { error?: { message?: string } }) =>

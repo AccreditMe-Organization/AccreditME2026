@@ -95,6 +95,10 @@ export class UserRoleAssignmentComponent implements OnChanges {
   }
 
   onRemove(role: RoleDto): void {
+    if (!window.confirm('Remove this role assignment?')) {
+      return;
+    }
+    // TODO: replace with PrimeNG ConfirmationService dialog
     this.roleService.removeRoleFromUser(this.userId, role.id).subscribe({
       next: () => this.load(),
       error: (err: { error?: { message?: string } }) =>
