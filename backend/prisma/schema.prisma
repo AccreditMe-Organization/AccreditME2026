@@ -210,9 +210,12 @@ model User {
 model Role {
   id             String       @id @default(cuid())
   organizationId String
-  name           String
+  key            String?
+  nameEn         String
+  nameAr         String
   description    String?
   isSystem       Boolean      @default(false)
+  isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -220,7 +223,8 @@ model Role {
   userRoles      UserRole[]
   rolePermissions RolePermission[]
 
-  @@unique([organizationId, name])
+  @@unique([organizationId, key])
+  @@unique([organizationId, nameEn])
   @@index([organizationId])
 }
 
@@ -237,9 +241,10 @@ model Permission {
 }
 
 model UserRole {
-  id     String @id @default(cuid())
-  userId String
-  roleId String
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
 
   user   User   @relation(fields: [userId], references: [id])
   role   Role   @relation(fields: [roleId], references: [id])
