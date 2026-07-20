@@ -124,5 +124,31 @@
     "aiSuggesting": "AI is generating suggestions...",
     "aiSuggestionsTitle": "AI-Suggested Holidays",
     "aiSuggestionsHint": "Review each suggestion. Accept the ones that apply to your organization."
+  },
+  "roles": {
+    "title": "Roles & Permissions",
+    "addRole": "New Role",
+    "editRole": "Edit Role",
+    "nameEn": "Name (English)",
+    "nameAr": "Name (Arabic)",
+    "description": "Description",
+    "roleType": "Type",
+    "isActive": "Active",
+    "systemBadge": "System",
+    "customBadge": "Custom",
+    "deactivateRole": "Deactivate Role",
+    "activateRole": "Activate Role",
+    "managePermissions": "Manage Permissions",
+    "permissionMatrix": "Permission Matrix",
+    "permissionMatrixHint": "Check every action this role should be allowed to perform.",
+    "adminRoleWarning": "Removing permissions from this role affects every user currently assigned to it.",
+    "systemRoleKeyLocked": "This role's identifier cannot be changed. All other fields, including its permissions, may be edited for your organization.",
+    "assignedUsers": "Assigned Users",
+    "assignRole": "Assign Role",
+    "removeRole": "Remove Role",
+    "noRoles": "No roles found.",
+    "noPermissions": "No permissions assigned.",
+    "permissionCount": "{{count}} permissions",
+    "errorLoad": "Failed to load roles."
   }
 }

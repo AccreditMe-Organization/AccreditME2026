@@ -124,5 +124,31 @@
     "aiSuggesting": "يقوم الذكاء الاصطناعي بإنشاء الاقتراحات...",
     "aiSuggestionsTitle": "العطل المقترحة بالذكاء الاصطناعي",
     "aiSuggestionsHint": "راجع كل اقتراح. اقبل ما ينطبق على منظمتك."
+  },
+  "roles": {
+    "title": "الأدوار والصلاحيات",
+    "addRole": "دور جديد",
+    "editRole": "تعديل الدور",
+    "nameEn": "الاسم (إنجليزي)",
+    "nameAr": "الاسم (عربي)",
+    "description": "الوصف",
+    "roleType": "النوع",
+    "isActive": "نشط",
+    "systemBadge": "نظامي",
+    "customBadge": "مخصص",
+    "deactivateRole": "إلغاء تفعيل الدور",
+    "activateRole": "تفعيل الدور",
+    "managePermissions": "إدارة الصلاحيات",
+    "permissionMatrix": "مصفوفة الصلاحيات",
+    "permissionMatrixHint": "حدد كل إجراء يُسمح لهذا الدور بتنفيذه.",
+    "adminRoleWarning": "إزالة الصلاحيات من هذا الدور تؤثر على كل مستخدم مسند إليه حاليًا.",
+    "systemRoleKeyLocked": "لا يمكن تغيير معرّف هذا الدور. جميع الحقول الأخرى، بما في ذلك صلاحياته، قابلة للتعديل لمؤسستك.",
+    "assignedUsers": "المستخدمون المسندون",
+    "assignRole": "إسناد دور",
+    "removeRole": "إزالة الدور",
+    "noRoles": "لا توجد أدوار.",
+    "noPermissions": "لا توجد صلاحيات مسندة.",
+    "permissionCount": "{{count}} صلاحية",
+    "errorLoad": "فشل تحميل الأدوار."
   }
 }
