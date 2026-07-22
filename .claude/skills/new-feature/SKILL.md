@@ -13,6 +13,15 @@ One concern per commit. One layer per step.
 
 ---
 
+## Step 0 — Check for Plan File
+
+Search: `ls backend/Plans/ | grep {module-name}`
+
+If found — read it for context and business rules.
+If not found — proceed normally.
+
+---
+
 ## Step 1 — Confirm Linear Ticket Exists
 
 Before touching any code:

@@ -26,6 +26,20 @@ Do NOT use this skill for:
 
 ## Pre-Flight — Run Before Anything Else
 
+### 0. Read the plan file first
+
+Before doing anything else, search for the plan:
+
+```bash
+ls backend/Plans/ | grep {module-name}
+```
+
+If found — read it completely. It overrides all generic assumptions in this
+skill. Check the progress tracker — items marked `[x]` are already done, skip
+those phases entirely.
+
+If not found — proceed with CLAUDE.md as reference.
+
 ### 1. Confirm the Linear ticket
 
 Ask the user: what is the Linear ticket ID for this module?
@@ -461,6 +475,18 @@ NEXT STEP
   Run /pr-checklist to open the Pull Request to dev.
   After merge — next module in build sequence: {next module name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+---
+
+## Final Step — Update Progress Tracker
+
+Mark every completed item `[x]` in the plan file.
+Commit on the feature branch:
+
+```bash
+git add backend/Plans/
+git commit -m "chore(docs): update Step {N} progress tracker [ACC-XX]"
 ```
 
 ---

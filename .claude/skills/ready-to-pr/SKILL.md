@@ -134,6 +134,19 @@ If any item fails — fix it, commit the fix, then continue.
 
 ---
 
+## Step 5b — Update Progress Tracker
+
+If a plan file exists for this step: `backend/Plans/step-{NN}-{module-name}.md`
+
+Mark all completed items as `[x]` and commit:
+
+```bash
+git add backend/Plans/
+git commit -m "chore(docs): complete progress tracker before PR [ACC-XX]"
+```
+
+---
+
 ## Step 6 — Push the Branch
 
 ```bash
