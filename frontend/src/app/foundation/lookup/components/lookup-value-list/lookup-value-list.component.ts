@@ -313,7 +313,6 @@ export class LookupValueListComponent implements OnInit {
 
   onDelete(val: LookupValueDto): void {
     // TODO: replace with PrimeNG ConfirmationService dialog
-    // for proper RTL support and translation
     this.lookupService.removeValue(val.id).subscribe({
       next: () => this.loadValues(),
       error: (err: { error?: { message?: string } }) =>

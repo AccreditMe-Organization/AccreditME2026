@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
-import { TableModule } from 'primeng/table';
+import { TableModule, TableRowSelectEvent } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { LookupService, LookupCategoryDto } from '../../services/lookup.service';
@@ -98,8 +98,10 @@ export class LookupCategoryListComponent implements OnInit {
     return cat.labelAr || cat.labelEn;
   }
 
-  onRowSelect(event: { data: LookupCategoryDto }): void {
-    void this.router.navigate([event.data.key, 'values'], { relativeTo: this.route });
+  onRowSelect(event: TableRowSelectEvent<LookupCategoryDto>): void {
+    const data = event.data;
+    if (!data || Array.isArray(data)) return;
+    void this.router.navigate([data.key, 'values'], { relativeTo: this.route });
   }
 
   private loadCategories(): void {

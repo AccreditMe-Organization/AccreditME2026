@@ -6,6 +6,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { LookupService } from '../lookup/lookup.service';
+import { RoleService } from '../roles/role.service';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -24,6 +25,8 @@ export class TenantService {
     private readonly auditLog: AuditLogService,
     @Inject(forwardRef(() => LookupService))
     private readonly lookupService: LookupService,
+    @Inject(forwardRef(() => RoleService))
+    private readonly roleService: RoleService,
   ) {
     this.encryptionKey = Buffer.from(
       process.env['ENCRYPTION_KEY'] ?? '',
@@ -158,7 +161,7 @@ export class TenantService {
     }
 
     await this.lookupService.seedSystemData();
-    // TODO(Step 5 — Roles): create default roles (Admin, Quality Manager, Staff)
+    await this.roleService.seedSystemRoles(id);
     // TODO(Step 6 — Workflow): create default workflow templates per object type
     // TODO(Step 7 — Notifications): register default notification rules
 

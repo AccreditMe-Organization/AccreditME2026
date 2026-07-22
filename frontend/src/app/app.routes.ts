@@ -22,4 +22,11 @@ export const routes: Routes = [
         (m) => m.LOOKUP_ROUTES,
       ),
   },
+  {
+    path: 'roles',
+    loadChildren: () =>
+      import('./foundation/roles/roles.routes').then(
+        (m) => m.ROLES_ROUTES,
+      ),
+  },
 ];

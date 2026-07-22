@@ -4,6 +4,7 @@ import { TenantService } from './tenant.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { LookupService } from '../lookup/lookup.service';
+import { RoleService } from '../roles/role.service';
 
 // Valid 64-char hex string → 32 bytes, satisfies constructor guard
 const MOCK_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -44,6 +45,7 @@ describe('TenantService', () => {
   };
   let auditLog: { log: jest.Mock };
   let lookupService: { seedSystemData: jest.Mock };
+  let roleService: { seedSystemRoles: jest.Mock };
 
   beforeEach(async () => {
     process.env['ENCRYPTION_KEY'] = MOCK_ENCRYPTION_KEY;
@@ -61,6 +63,7 @@ describe('TenantService', () => {
 
     auditLog     = { log: jest.fn().mockResolvedValue(undefined) };
     lookupService = { seedSystemData: jest.fn().mockResolvedValue(undefined) };
+    roleService  = { seedSystemRoles: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -68,6 +71,7 @@ describe('TenantService', () => {
         { provide: PrismaService,  useValue: prisma },
         { provide: AuditLogService, useValue: auditLog },
         { provide: LookupService,  useValue: lookupService },
+        { provide: RoleService,    useValue: roleService },
       ],
     }).compile();
 
@@ -161,6 +165,7 @@ describe('TenantService', () => {
       await service.bootstrap('org-a', 'user-1');
 
       expect(lookupService.seedSystemData).toHaveBeenCalledTimes(1);
+      expect(roleService.seedSystemRoles).toHaveBeenCalledWith('org-a');
       expect(prisma.organization.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'org-a' },
