@@ -10,6 +10,11 @@ export interface AiCompletionOptions {
   maxTokens?: number;
   temperature?: number;
   systemPrompt?: string;
+  // Identifies which AI touchpoint made the call (e.g. "lookup.suggestValues"),
+  // recorded on AiInteractionLog for the "Every AI interaction logged" rule.
+  feature?: string;
+  // Actor who triggered the call — also recorded on AiInteractionLog.
+  actorId?: string;
 }
 
 export interface AiCompletionResult {
@@ -22,6 +27,7 @@ export interface AiCompletionResult {
 export interface AiProvider {
   complete(
     prompt: string,
+    organizationId: string,
     options?: AiCompletionOptions,
   ): Promise<AiCompletionResult>;
 }

@@ -7,14 +7,15 @@ import {
 } from '@nestjs/common';
 import { LookupService } from '../lookup/lookup.service';
 import { RoleService } from '../roles/role.service';
-import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import {
+  decryptTenantConfig,
+  encryptTenantConfig,
+  getEncryptionKey,
+} from '../../common/utils/tenant-config-crypto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { ITenant, ITenantConfig } from './interfaces/tenant.interface';
-
-const CIPHER = 'aes-256-gcm';
-const IV_BYTES = 12;
 
 @Injectable()
 export class TenantService {
@@ -28,17 +29,7 @@ export class TenantService {
     @Inject(forwardRef(() => RoleService))
     private readonly roleService: RoleService,
   ) {
-    this.encryptionKey = Buffer.from(
-      process.env['ENCRYPTION_KEY'] ?? '',
-      'hex',
-    );
-
-    if (this.encryptionKey.length !== 32) {
-      throw new Error(
-        'ENCRYPTION_KEY must be a 32-byte hex string (64 hex chars). ' +
-          'Generate with: openssl rand -hex 32',
-      );
-    }
+    this.encryptionKey = getEncryptionKey();
   }
 
   async findById(id: string): Promise<ITenant> {
@@ -180,29 +171,10 @@ export class TenantService {
   }
 
   encryptConfig(data: Record<string, unknown>): string {
-    const iv = randomBytes(IV_BYTES);
-    const cipher = createCipheriv(CIPHER, this.encryptionKey, iv);
-    const text = JSON.stringify(data);
-    const encrypted = Buffer.concat([
-      cipher.update(text, 'utf8'),
-      cipher.final(),
-    ]);
-    const tag = cipher.getAuthTag();
-    return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+    return encryptTenantConfig(data, this.encryptionKey);
   }
 
   private decryptConfig(encrypted: string): string {
-    const parts = encrypted.split(':');
-    if (parts.length !== 3) throw new Error('Invalid encrypted config format');
-    const [ivHex, tagHex, ciphertextHex] = parts as [string, string, string];
-    const iv = Buffer.from(ivHex, 'hex');
-    const tag = Buffer.from(tagHex, 'hex');
-    const ciphertext = Buffer.from(ciphertextHex, 'hex');
-    const decipher = createDecipheriv(CIPHER, this.encryptionKey, iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final(),
-    ]).toString('utf8');
+    return decryptTenantConfig(encrypted, this.encryptionKey);
   }
 }
