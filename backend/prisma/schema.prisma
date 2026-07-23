@@ -161,6 +161,7 @@ model Organization {
   committees       Committee[]
   meetings         Meeting[]
   auditLogs        AuditLog[]
+  aiInteractionLogs AiInteractionLog[]
 
   @@index([slug])
   @@index([status])
@@ -196,6 +197,7 @@ model User {
   committeeMembers CommitteeMember[]
   meetings         Meeting[]    @relation("MeetingOrganizer")
   auditLogs        AuditLog[]
+  aiInteractionLogs AiInteractionLog[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -641,4 +643,30 @@ model AuditLog {
   @@index([objectType, objectId])
   @@index([createdAt])
   @@index([action])
+}
+
+// ---------------------------------------------------------------------------
+// AI Interaction Log — every AI provider call, per CLAUDE.md AI Integration Points
+// ("Every AI interaction logged: prompt, model used, response, actor, timestamp")
+// ---------------------------------------------------------------------------
+
+model AiInteractionLog {
+  id              String   @id @default(cuid())
+  organizationId  String
+  actorId         String?
+  model           String
+  feature         String
+  promptSummary   String
+  responseSummary String?
+  durationMs      Int
+  success         Boolean
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  actor           User?        @relation(fields: [actorId], references: [id])
+
+  @@index([organizationId])
+  @@index([actorId])
+  @@index([feature])
+  @@index([createdAt])
 }

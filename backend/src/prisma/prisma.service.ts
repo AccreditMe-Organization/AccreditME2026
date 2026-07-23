@@ -65,6 +65,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get meeting() { return this._client.meeting; }
   get agendaItem() { return this._client.agendaItem; }
   get auditLog() { return this._client.auditLog; }
+  get aiInteractionLog() { return this._client.aiInteractionLog; }
 
   $transaction: ExtendedPrismaClient['$transaction'] =
     this._client.$transaction.bind(this._client);
