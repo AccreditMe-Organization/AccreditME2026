@@ -48,7 +48,7 @@ Tier 3 — On-premises / private cloud (future)
 - Auth: Better Auth (self-hostable, runs inside NestJS app)
 - Job queues: BullMQ with Redis
 - Real-time: NestJS WebSocket gateway (Socket.io)
-- State machine: XState (workflow engine)
+- Workflow engine: Custom WorkflowService, database-driven (not XState — see Architecture Rules → Workflow Engine)
 - Email: Resend
 - Payments: Stripe
 - Error tracking: Sentry
@@ -101,7 +101,7 @@ accreditme/
 │   │   │   ├── organization/         # Org units + hierarchy
 │   │   │   ├── lookup/               # Lookup system
 │   │   │   ├── roles/                # Roles + permissions
-│   │   │   ├── workflow/             # Workflow engine (XState)
+│   │   │   ├── workflow/             # Workflow engine (custom, database-driven)
 │   │   │   ├── notifications/        # Notification service
 │   │   │   ├── tasks/                # Task management
 │   │   │   ├── users/                # User management
@@ -201,6 +201,8 @@ Phase 3 — Enhancements
   Step 23: Power BI embed for enterprise tenants
   Step 24: Organization structure change management workflow
   Step 25: draw.io enhancements
+  Step 26: draw.io visual workflow canvas builder
+  Step 27: Visual integration builder (webhook flows, field mapping)
 ```
 
 ---
@@ -278,13 +280,95 @@ AI keys encrypted at rest. AI always assistive — output always reviewed by hum
 Every AI interaction logged: prompt, model used, response, actor, timestamp.
 
 ### Workflow Engine
-- Single WorkflowService handles ALL state transitions across ALL modules
-- No module manages its own state — always delegates to WorkflowService
-- XState powers the state machine logic
-- WorkflowTemplates are tenant-configurable (stages, assignees, SLAs)
-- System ships default workflows for every object type
-- Every transition recorded in audit trail
-- WorkflowService emits events consumed by NotificationService and TaskService
+
+#### Architecture Decision
+Custom WorkflowService reading from database dynamically.
+XState is NOT used — tenant-configurable templates cannot
+be defined at compile time, eliminating XState's main benefits.
+All audit trail, tracking, and monitoring comes from the
+database design, not from a state machine library.
+
+#### Core Concepts
+- WorkflowTemplate: tenant-configurable stage/transition definitions
+- WorkflowStage: a named state in the lifecycle with SLA and assignee rules
+- WorkflowTransition: named action moving object between stages (button label)
+- WorkflowInstance: a running instance tied to a specific object (document/incident/audit)
+- WorkflowInstanceStage: record of every stage entry with timing and outcome
+- WorkflowApproval: individual approval decisions within a stage
+- WorkflowTransitionAction: actions that fire on transition (internal + webhook)
+- WorkflowActionLog: execution record for every action fired
+
+#### Object Types with Workflows
+DOCUMENT, INCIDENT, AUDIT, CORRECTIVE_ACTION, MEETING, COMMITTEE
+
+#### Stage Approval Modes
+SINGLE: one approver
+SEQUENTIAL: multiple approvers one after another — one rejection stops chain
+PARALLEL: multiple approvers simultaneously — configurable threshold (ALL/MAJORITY/ANY)
+COMMITTEE: formal vote with quorum requirement
+
+#### Assignee Resolution Strategies
+SPECIFIC_USER, ROLE, ORG_UNIT_HEAD, SELF, COMMITTEE, ROUND_ROBIN
+
+#### Transition Conditions (who can trigger)
+SPECIFIC_USER, ROLE_BASED, ANY_AUTHENTICATED, SYSTEM_AUTOMATIC
+
+#### Internal Actions (fire on every transition)
+- CREATE_TASK: assign task to stage assignee with SLA due date
+- SEND_NOTIFICATION: notify relevant parties
+- GENERATE_PDF: snapshot of object at this stage
+- LOCK_DOCUMENT: prevent editing during review
+- LOG_AUDIT: always fires, cannot be disabled
+
+#### External Actions (webhook-based)
+- Tenant admin configures webhook URL per transition
+- AccreditMe POSTs structured JSON payload to external system
+- Retry logic via BullMQ (3 retries, configurable timeout)
+- Every webhook call logged in WorkflowActionLog
+- Supports custom headers for authentication
+
+#### Validator Conditions (must be true before transition)
+- Required fields filled
+- Minimum attachments present
+- All previous stage tasks completed
+- Minimum approvals reached
+
+#### SLA Rules
+- SLA defined per stage in working days
+- Uses WorkingCalendarService for calculation
+- GCC weekends, public holidays excluded
+- BullMQ job checks for SLA breaches every 15 minutes
+- Escalation chain configurable per stage
+
+#### Default System Workflows (seeded on bootstrap)
+1. Document lifecycle: Draft → Under Review → Approved → Published → Obsolete
+2. Incident: Reported → Under Investigation → Root Cause Analysis →
+   Corrective Action Plan → Plan Approved → Implementing →
+   Pending Verification → Closed
+3. Audit: Planning → Fieldwork → Draft Report → Report Review →
+   Final Report → Closed
+4. Corrective Action: Open → Assigned → Implementation → Verification → Closed
+5. Meeting: Scheduled → In Progress → Minutes Draft → Minutes Approved → Closed
+6. Committee: Formation → Active → Dissolved
+
+#### Tenant Configuration UI (Step 5)
+Structured form-based workflow builder (not visual canvas).
+Tenant admin can: add/edit stages, define transitions, set assignees,
+configure SLAs, set approval modes, add webhook actions.
+Visual canvas (draw.io) deferred to Phase 3.
+
+#### Visual Canvas — Phase 3
+draw.io embed as premium workflow builder feature.
+Runs as stateless Docker container — no extra infrastructure.
+Canvas reads from and writes to WorkflowTemplate database records.
+Built in Phase 3 when paying customers justify the engineering investment.
+
+#### Webhook Integration
+Tenant admin configures webhook URLs per transition in the workflow builder.
+AccreditMe fires webhooks via BullMQ background jobs.
+Use cases: notify HIS on document publish, update SharePoint on approval,
+trigger training system on new procedure, send audit results to ministry portal.
+Full visual integration builder (n8n-style) deferred to Phase 3.
 
 ### Task System
 - Tasks are ALWAYS generated by workflow transitions — never created ad hoc
