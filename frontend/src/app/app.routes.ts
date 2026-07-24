@@ -2,6 +2,13 @@ import { Routes } from '@angular/router';
 
 export const routes: Routes = [
   {
+    path: 'dev/login',
+    loadComponent: () =>
+      import('./dev/demo-login/demo-login.component').then(
+        (m) => m.DemoLoginComponent,
+      ),
+  },
+  {
     path: 'organization',
     loadChildren: () =>
       import('./foundation/organization/organization.routes').then(
