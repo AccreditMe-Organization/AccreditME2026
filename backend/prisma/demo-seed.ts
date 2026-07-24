@@ -4,24 +4,35 @@
 // ready-to-use JWT for testing the Angular UIs built in Steps 2–5 against
 // http://localhost:4200/dev/login.
 //
+// Uses the Prisma client directly — no NestJS DI, no LookupService/RoleService
+// instances — because bootstrapping the real AppModule via NestFactory pulls in
+// PrismaService's `.js`-suffixed generated-client import, which only resolves
+// correctly under Nest CLI's own toolchain, not plain ts-node (this repo's
+// tsconfig.json uses classic "moduleResolution": "node"). Importing the
+// generated client here with no extension sidesteps that entirely.
+//
+// The seeding logic below mirrors LookupService.seedSystemData() and
+// RoleService.seedSystemRoles() exactly (same upsert shape, same compound
+// unique keys) — kept in sync by hand since this script can't call the real
+// services directly.
+//
 // Run: npm run seed:demo
 
 import 'dotenv/config';
 import { createHmac } from 'crypto';
-import { NestFactory } from '@nestjs/core';
-import { ConflictException } from '@nestjs/common';
-import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/prisma/prisma.service';
-import { LookupService } from '../src/foundation/lookup/lookup.service';
-import { RoleService } from '../src/foundation/roles/role.service';
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Prisma, PrismaClient } from '../generated/prisma/client';
+import { SYSTEM_LOOKUP_SEED } from '../src/foundation/lookup/lookup.seed';
+import { SYSTEM_ROLE_SEED } from '../src/foundation/roles/role.seed';
+import { ALL_PERMISSIONS } from '../src/foundation/roles/permission.seed';
 
 const DEMO_ORG_SLUG = 'demo';
 const DEMO_ORG_NAME = 'Demo Hospital';
 const DEMO_USER_EMAIL = 'admin@demo.accreditme.com';
 const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
-// Manual HS256 construction — matches TenantGuard's verifyJwt() exactly
-// (same approach already validated against it earlier this session).
+// Manual HS256 construction — matches TenantGuard's verifyJwt() exactly.
 // No jsonwebtoken dependency needed.
 function signDemoJwt(payload: Record<string, unknown>, secret: string): string {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -34,22 +45,115 @@ function signDemoJwt(payload: Record<string, unknown>, secret: string): string {
   return `${headerB64}.${payloadB64}.${signature}`;
 }
 
+// ── Reimplements LookupService.seedSystemData() with raw Prisma calls ───────
+async function seedSystemLookups(prisma: PrismaClient): Promise<void> {
+  for (const category of SYSTEM_LOOKUP_SEED) {
+    const existing = await prisma.lookupCategory.findFirst({
+      where: { key: category.key, organizationId: null },
+    });
+
+    const categoryData = {
+      labelEn: category.labelEn,
+      labelAr: category.labelAr,
+      isSystem: true,
+      isExtensible: category.isExtensible,
+      attributeSchema: category.attributeSchema
+        ? (category.attributeSchema as Prisma.InputJsonValue)
+        : Prisma.DbNull,
+      sortOrder: category.sortOrder,
+    };
+
+    const seededCategory = existing
+      ? await prisma.lookupCategory.update({ where: { id: existing.id }, data: categoryData })
+      : await prisma.lookupCategory.create({
+          data: { key: category.key, organizationId: null, isActive: true, ...categoryData },
+        });
+
+    for (const value of category.values) {
+      const existingValue = await prisma.lookupValue.findFirst({
+        where: { categoryId: seededCategory.id, key: value.key, organizationId: null },
+      });
+
+      const valueData = {
+        labelEn: value.labelEn,
+        labelAr: value.labelAr,
+        attributes: value.attributes ? (value.attributes as Prisma.InputJsonValue) : Prisma.DbNull,
+        sortOrder: value.sortOrder,
+      };
+
+      if (existingValue) {
+        await prisma.lookupValue.update({ where: { id: existingValue.id }, data: valueData });
+      } else {
+        await prisma.lookupValue.create({
+          data: {
+            categoryId: seededCategory.id,
+            organizationId: null,
+            key: value.key,
+            layer: 'SYSTEM',
+            isActive: true,
+            isHidden: false,
+            ...valueData,
+          },
+        });
+      }
+    }
+  }
+}
+
+// ── Reimplements RoleService.seedPermissions() + seedSystemRoles() ──────────
+async function seedSystemRoles(prisma: PrismaClient, organizationId: string): Promise<void> {
+  for (const p of ALL_PERMISSIONS) {
+    await prisma.permission.upsert({
+      where: { module_action: { module: p.module, action: p.action } },
+      update: { description: p.description },
+      create: { module: p.module, action: p.action, description: p.description },
+    });
+  }
+
+  const allPermissions = await prisma.permission.findMany();
+  const permissionIdByKey = new Map(allPermissions.map((p) => [`${p.module}:${p.action}`, p.id]));
+
+  for (const seedRole of SYSTEM_ROLE_SEED) {
+    const role = await prisma.role.upsert({
+      where: { organizationId_key: { organizationId, key: seedRole.key } },
+      update: {
+        nameEn: seedRole.nameEn,
+        nameAr: seedRole.nameAr,
+        description: seedRole.description,
+        isSystem: true,
+      },
+      create: {
+        organizationId,
+        key: seedRole.key,
+        nameEn: seedRole.nameEn,
+        nameAr: seedRole.nameAr,
+        description: seedRole.description,
+        isSystem: true,
+      },
+    });
+
+    const permissionIds = seedRole.permissions
+      .map((key) => permissionIdByKey.get(key))
+      .filter((id): id is string => Boolean(id));
+
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+    if (permissionIds.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: permissionIds.map((permissionId) => ({ roleId: role.id, permissionId })),
+      });
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const jwtSecret = process.env['JWT_SECRET'];
   if (!jwtSecret) {
     throw new Error('JWT_SECRET is not set — check backend/.env');
   }
 
-  // Bootstraps the real AppModule so we reuse the actual LookupService/RoleService
-  // (with their real PrismaService, including the AuditLog-append-only $extends()
-  // wrapper) instead of duplicating their DI wiring here.
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn'],
-  });
-
-  const prisma = app.get(PrismaService);
-  const lookupService = app.get(LookupService);
-  const roleService = app.get(RoleService);
+  const pool = new Pool({ connectionString: process.env['DATABASE_URL'] });
+  const adapter = new PrismaPg(pool);
+  const prisma = new PrismaClient({ adapter });
 
   try {
     // ── Organization ─────────────────────────────────────────────────────────
@@ -69,8 +173,8 @@ async function main(): Promise<void> {
     }
 
     // ── Bootstrap steps — idempotent, mirror TenantService.bootstrap() ───────
-    await lookupService.seedSystemData();
-    await roleService.seedSystemRoles(org.id);
+    await seedSystemLookups(prisma);
+    await seedSystemRoles(prisma, org.id);
 
     let rootUnit = await prisma.orgUnit.findUnique({
       where: { organizationId_code: { organizationId: org.id, code: 'DEMO' } },
@@ -121,16 +225,14 @@ async function main(): Promise<void> {
       throw new Error('TENANT_ADMIN role not found after seedSystemRoles() — this should never happen');
     }
 
-    try {
-      // Self-assigned actorId — this is a dev bootstrap script; no other actor exists yet.
-      await roleService.assignRoleToUser(user.id, { roleId: tenantAdminRole.id }, org.id, user.id);
+    const existingAssignment = await prisma.userRole.findFirst({
+      where: { userId: user.id, roleId: tenantAdminRole.id },
+    });
+    if (!existingAssignment) {
+      await prisma.userRole.create({ data: { userId: user.id, roleId: tenantAdminRole.id } });
       console.log('Assigned TENANT_ADMIN role to demo user');
-    } catch (err) {
-      if (err instanceof ConflictException) {
-        console.log('Demo user already holds TENANT_ADMIN — skipping assignment');
-      } else {
-        throw err;
-      }
+    } else {
+      console.log('Demo user already holds TENANT_ADMIN — skipping assignment');
     }
 
     // ── JWT ──────────────────────────────────────────────────────────────────
@@ -149,7 +251,7 @@ async function main(): Promise<void> {
     console.log(token);
     console.log('Paste this into http://localhost:4200/dev/login\n');
   } finally {
-    await app.close();
+    await prisma.$disconnect();
   }
 }
 
