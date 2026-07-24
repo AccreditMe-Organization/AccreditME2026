@@ -1,6 +1,11 @@
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
-const WORKFLOW_APPROVAL_DECISIONS = ['APPROVED', 'REJECTED'] as const;
+const WORKFLOW_APPROVAL_DECISIONS = [
+  'APPROVED',
+  'APPROVED_WITH_COMMENTS',
+  'RETURNED',
+  'ABSTAINED',
+] as const;
 
 export class SubmitApprovalDto {
   @IsIn(WORKFLOW_APPROVAL_DECISIONS)

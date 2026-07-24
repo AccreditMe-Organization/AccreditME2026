@@ -66,7 +66,9 @@ enum WorkflowStatus {
 }
 
 enum WorkflowObjectType {
+  DOCUMENT_REQUEST
   DOCUMENT
+  CHANGE_REQUEST
   INCIDENT
   AUDIT
   CORRECTIVE_ACTION
@@ -115,7 +117,9 @@ enum WorkflowActionType {
 enum WorkflowApprovalDecision {
   PENDING
   APPROVED
-  REJECTED
+  APPROVED_WITH_COMMENTS
+  RETURNED
+  ABSTAINED
 }
 
 enum WorkflowActionLogStatus {

@@ -1,7 +1,9 @@
 import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 const WORKFLOW_OBJECT_TYPES = [
+  'DOCUMENT_REQUEST',
   'DOCUMENT',
+  'CHANGE_REQUEST',
   'INCIDENT',
   'AUDIT',
   'CORRECTIVE_ACTION',
