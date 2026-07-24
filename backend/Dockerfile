@@ -14,8 +14,8 @@ FROM node:22-alpine AS production
 
 WORKDIR /app
 
-# Install LibreOffice for DOCX→PDF conversion
-RUN apk add --no-cache libreoffice
+# LibreOffice removed — add back in Step 17 (PDF generation)
+# ClamAV removed — add back when file upload scanning is implemented
 
 COPY package*.json ./
 RUN npm ci --omit=dev
@@ -29,4 +29,4 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
