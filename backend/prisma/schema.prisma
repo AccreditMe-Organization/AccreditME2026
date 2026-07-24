@@ -65,6 +65,72 @@ enum WorkflowStatus {
   CANCELLED
 }
 
+enum WorkflowObjectType {
+  DOCUMENT
+  INCIDENT
+  AUDIT
+  CORRECTIVE_ACTION
+  MEETING
+  COMMITTEE
+}
+
+enum WorkflowApprovalMode {
+  SINGLE
+  SEQUENTIAL
+  PARALLEL
+  COMMITTEE
+}
+
+enum WorkflowParallelThreshold {
+  ALL
+  MAJORITY
+  ANY
+}
+
+enum WorkflowAssigneeStrategy {
+  SPECIFIC_USER
+  ROLE
+  ORG_UNIT_HEAD
+  SELF
+  COMMITTEE
+  ROUND_ROBIN
+}
+
+enum WorkflowTriggerCondition {
+  SPECIFIC_USER
+  ROLE_BASED
+  ANY_AUTHENTICATED
+  SYSTEM_AUTOMATIC
+}
+
+enum WorkflowActionType {
+  CREATE_TASK
+  SEND_NOTIFICATION
+  GENERATE_PDF
+  LOCK_DOCUMENT
+  LOG_AUDIT
+  WEBHOOK
+}
+
+enum WorkflowApprovalDecision {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WorkflowActionLogStatus {
+  SUCCESS
+  FAILED
+  RETRYING
+}
+
+enum WorkflowInstanceStageOutcome {
+  PENDING
+  APPROVED
+  REJECTED
+  SKIPPED
+}
+
 enum TaskStatus {
   PENDING
   IN_PROGRESS
@@ -154,6 +220,8 @@ model Organization {
   lookupValues      LookupValue[]
   lookupCategories  LookupCategory[]
   workflowTemplates WorkflowTemplate[]
+  workflowInstances  WorkflowInstance[]
+  workflowActionLogs WorkflowActionLog[]
   workingCalendar  WorkingCalendar?
   orgUnits         OrgUnit[]
   tasks            Task[]
@@ -191,6 +259,7 @@ model User {
 
   organization     Organization @relation(fields: [organizationId], references: [id])
   userRoles        UserRole[]
+  workflowApprovals WorkflowApproval[]
   tasksAssigned    Task[]       @relation("TaskAssignee")
   tasksCreated     Task[]       @relation("TaskCreator")
   notifications    Notification[]
@@ -387,8 +456,9 @@ model OrgUnit {
 model WorkflowTemplate {
   id             String              @id @default(cuid())
   organizationId String
-  name           String
-  objectType     String
+  nameEn         String
+  nameAr         String
+  objectType     WorkflowObjectType
   isDefault      Boolean             @default(false)
   isActive       Boolean             @default(true)
   createdAt      DateTime            @default(now())
@@ -403,34 +473,50 @@ model WorkflowTemplate {
 }
 
 model WorkflowStage {
-  id                 String             @id @default(cuid())
+  id                 String                     @id @default(cuid())
   workflowTemplateId String
-  name               String
+  nameEn             String
+  nameAr             String
   description        String?
   order              Int
   slaWorkingHours    Int?
   requiredPermission String?
-  isInitial          Boolean            @default(false)
-  isFinal            Boolean            @default(false)
+  isInitial          Boolean                    @default(false)
+  isFinal            Boolean                    @default(false)
 
-  workflowTemplate   WorkflowTemplate   @relation(fields: [workflowTemplateId], references: [id])
-  transitionsFrom    WorkflowTransition[] @relation("TransitionFrom")
-  transitionsTo      WorkflowTransition[] @relation("TransitionTo")
+  approvalMode       WorkflowApprovalMode       @default(SINGLE)
+  parallelThreshold  WorkflowParallelThreshold?
+  committeeId        String?
+
+  assigneeStrategy   WorkflowAssigneeStrategy   @default(ROLE)
+  assigneeUserId     String?
+  assigneeRoleId     String?
+
+  escalationConfig   Json?
+
+  workflowTemplate   WorkflowTemplate           @relation(fields: [workflowTemplateId], references: [id])
+  transitionsFrom    WorkflowTransition[]       @relation("TransitionFrom")
+  transitionsTo      WorkflowTransition[]       @relation("TransitionTo")
   instanceStages     WorkflowInstanceStage[]
 
   @@index([workflowTemplateId])
 }
 
 model WorkflowTransition {
-  id              String        @id @default(cuid())
-  fromStageId     String
-  toStageId       String
-  label           String
+  id                 String                     @id @default(cuid())
+  fromStageId        String
+  toStageId          String
+  labelEn            String
+  labelAr            String
   requiredPermission String?
-  conditionJson   Json?
+  triggerCondition   WorkflowTriggerCondition   @default(ROLE_BASED)
+  triggerUserId      String?
+  triggerRoleId      String?
+  validatorConfig    Json?
 
-  fromStage       WorkflowStage @relation("TransitionFrom", fields: [fromStageId], references: [id])
-  toStage         WorkflowStage @relation("TransitionTo", fields: [toStageId], references: [id])
+  fromStage          WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
+  toStage            WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])
+  actions            WorkflowTransitionAction[]
 
   @@index([fromStageId])
   @@index([toStageId])
@@ -438,37 +524,100 @@ model WorkflowTransition {
 
 model WorkflowInstance {
   id                 String                  @id @default(cuid())
+  organizationId     String
   workflowTemplateId String
-  objectType         String
+  objectType         WorkflowObjectType
   objectId           String
   status             WorkflowStatus          @default(PENDING)
   currentStageId     String?
   createdAt          DateTime                @default(now())
   updatedAt          DateTime                @updatedAt
 
+  organization       Organization            @relation(fields: [organizationId], references: [id])
   workflowTemplate   WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
   stages             WorkflowInstanceStage[]
   tasks              Task[]
+  actionLogs         WorkflowActionLog[]
 
+  @@index([organizationId])
   @@index([workflowTemplateId])
   @@index([objectType, objectId])
   @@index([status])
 }
 
 model WorkflowInstanceStage {
-  id                 String           @id @default(cuid())
+  id                 String                        @id @default(cuid())
   workflowInstanceId String
   stageId            String
-  enteredAt          DateTime         @default(now())
+  enteredAt          DateTime                      @default(now())
   exitedAt           DateTime?
+  slaDueAt           DateTime?
+  slaBreached        Boolean                       @default(false)
+  outcome            WorkflowInstanceStageOutcome  @default(PENDING)
   actorId            String?
   comment            String?
 
-  workflowInstance   WorkflowInstance @relation(fields: [workflowInstanceId], references: [id])
-  stage              WorkflowStage    @relation(fields: [stageId], references: [id])
+  workflowInstance   WorkflowInstance              @relation(fields: [workflowInstanceId], references: [id])
+  stage              WorkflowStage                 @relation(fields: [stageId], references: [id])
+  approvals          WorkflowApproval[]
 
   @@index([workflowInstanceId])
   @@index([stageId])
+  @@index([slaDueAt])
+}
+
+model WorkflowApproval {
+  id                      String                    @id @default(cuid())
+  workflowInstanceStageId String
+  approverId              String
+  decision                WorkflowApprovalDecision  @default(PENDING)
+  comment                 String?
+  decidedAt               DateTime?
+  createdAt               DateTime                  @default(now())
+
+  workflowInstanceStage   WorkflowInstanceStage     @relation(fields: [workflowInstanceStageId], references: [id])
+  approver                User                      @relation(fields: [approverId], references: [id])
+
+  @@unique([workflowInstanceStageId, approverId])
+  @@index([workflowInstanceStageId])
+  @@index([approverId])
+}
+
+model WorkflowTransitionAction {
+  id                   String              @id @default(cuid())
+  workflowTransitionId String
+  actionType           WorkflowActionType
+  order                Int                 @default(0)
+  isEnabled            Boolean             @default(true)
+  configJson           Json?
+
+  workflowTransition   WorkflowTransition  @relation(fields: [workflowTransitionId], references: [id])
+  actionLogs           WorkflowActionLog[]
+
+  @@index([workflowTransitionId])
+}
+
+model WorkflowActionLog {
+  id                         String                    @id @default(cuid())
+  organizationId             String
+  workflowTransitionActionId String
+  workflowInstanceId         String
+  actionType                 WorkflowActionType
+  status                     WorkflowActionLogStatus   @default(SUCCESS)
+  attemptCount               Int                       @default(1)
+  responseSummary            String?
+  errorMessage               String?
+  executedAt                 DateTime                  @default(now())
+
+  organization               Organization              @relation(fields: [organizationId], references: [id])
+  workflowTransitionAction   WorkflowTransitionAction  @relation(fields: [workflowTransitionActionId], references: [id])
+  workflowInstance           WorkflowInstance          @relation(fields: [workflowInstanceId], references: [id])
+
+  @@index([organizationId])
+  @@index([workflowTransitionActionId])
+  @@index([workflowInstanceId])
+  @@index([status])
+  @@index([executedAt])
 }
 
 // ---------------------------------------------------------------------------
