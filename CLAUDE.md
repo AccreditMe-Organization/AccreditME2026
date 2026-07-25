@@ -207,6 +207,53 @@ Phase 3 — Enhancements
 
 ---
 
+## Module Design Specifications
+Detailed business rules, workflows, and data models
+for each functional module are documented in:
+backend/Plans/module-designs.md
+
+Read this file before implementing any functional module
+(Steps 16-20). It contains:
+- Workflow stages and transitions per module
+- Business rules validated against international standards
+  (ISO 9001, ISO 19011, JCI, CBAHI, FDA 21 CFR)
+- AI integration points per module
+- Cross-module relationships and data flow
+- Data model requirements per module
+
+## Cross-Module Rules (from module-designs.md)
+
+### Tasks
+Every task MUST have sourceType and sourceId.
+No standalone tasks. See TaskSourceType enum in Step 8.
+Task source types: MEETING, DOCUMENT, AUDIT, CAPA,
+INCIDENT, CORRECTIVE_ACTION, STANDARD, KPI,
+GAP, QUALITY_IMPROVEMENT_PLAN
+
+### WorkflowObjectType Additions Schedule
+Already in schema (Step 6):
+  DOCUMENT_REQUEST, DOCUMENT, CHANGE_REQUEST,
+  INCIDENT, AUDIT, CORRECTIVE_ACTION, MEETING, COMMITTEE
+
+Add before Step 16 (Standards Management):
+  ACCREDITATION_ROUND
+
+Add before Step 18 (Quality Improvement):
+  GAP
+
+### Document Types Added
+terms_of_reference added to lookup seed in Step 3
+(already committed to dev)
+
+### Gap vs CAPA Distinction
+Gap: strategic shortfall — what is wrong
+CAPA: specific action — what to do about it
+Never merge these concepts in the data model.
+One Gap generates one or more CAPAs.
+Gap is not closed until all its CAPAs are verified.
+
+---
+
 ## Architecture Rules
 
 ### Multi-Tenancy — Non-Negotiable
