@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { LookupService } from '../lookup/lookup.service';
 import { RoleService } from '../roles/role.service';
+import { WorkflowTemplateService } from '../workflow/workflow-template.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import {
@@ -28,6 +29,8 @@ export class TenantService {
     private readonly lookupService: LookupService,
     @Inject(forwardRef(() => RoleService))
     private readonly roleService: RoleService,
+    @Inject(forwardRef(() => WorkflowTemplateService))
+    private readonly workflowTemplateService: WorkflowTemplateService,
   ) {
     this.encryptionKey = getEncryptionKey();
   }
@@ -153,7 +156,7 @@ export class TenantService {
 
     await this.lookupService.seedSystemData();
     await this.roleService.seedSystemRoles(id);
-    // TODO(Step 6 — Workflow): create default workflow templates per object type
+    await this.workflowTemplateService.seedDefaultWorkflows(id);
     // TODO(Step 7 — Notifications): register default notification rules
 
     await this.prisma.organization.update({
