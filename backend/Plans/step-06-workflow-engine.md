@@ -1510,9 +1510,16 @@ missing local Redis must degrade the webhook queue, not the whole API.
       `TenantService.bootstrap()`
 - [ ] `triggerTransition()` enforces both `requiredPermission` and `triggerCondition`
 - [ ] `triggerTransition()` enforces `validatorConfig` before allowing the transition
-- [ ] All four approval modes (SINGLE, SEQUENTIAL, PARALLEL, COMMITTEE) correctly
-      gate transitions via `submitApproval()`
-- [ ] All six assignee strategies resolve correctly in `resolveAssignee()`
+- [ ] Approval modes tested:
+      SINGLE and PARALLEL+ALL: fully tested in WorkflowService spec
+      SEQUENTIAL: implemented (treated as PARALLEL+ALL),
+                  dedicated tests deferred — no seed data uses it
+      COMMITTEE: implemented with quorum+majority logic,
+                 dedicated tests deferred to Step 10 (Committee module)
+- [ ] Assignee strategies tested:
+      SELF, ROLE, ORG_UNIT_HEAD: tested
+      SPECIFIC_USER, COMMITTEE, ROUND_ROBIN: implemented,
+      dedicated tests deferred — no seed data uses them
 - [ ] SLA due dates computed via `WorkingCalendarService.calculateDeadline()` —
       no module calculates its own dates (per CLAUDE.md's non-negotiable rule)
 - [ ] Every enabled `WorkflowTransitionAction` fires on transition and writes a
