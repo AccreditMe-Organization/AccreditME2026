@@ -26,6 +26,10 @@ export interface SeedTransition {
   triggerRoleKey?: string; // resolved to Role.id at seed time
   requiredPermission?: string;
   validatorConfig?: Record<string, unknown>;
+  // Only meaningful when the fromStage's approvalMode is PARALLEL/SEQUENTIAL/
+  // COMMITTEE — marks which outgoing transition submitApproval() fires once
+  // the stage's threshold is satisfied. Defaults to false (schema default).
+  isApprovalPath?: boolean;
   actions: SeedAction[];
 }
 
@@ -114,11 +118,11 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     ],
     transitions: [
       { fromStageKey: 'drafting', toStageKey: 'owners_review', labelEn: 'Submit for Review', labelAr: 'إرسال للمراجعة', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:submit', validatorConfig: { requiredFields: ['title', 'content'] }, actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'owners_review', toStageKey: 'stakeholders_review', labelEn: 'Owners Approved', labelAr: 'موافقة المُلاك', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:review', actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'owners_review', toStageKey: 'stakeholders_review', labelEn: 'Owners Approved', labelAr: 'موافقة المُلاك', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:review', isApprovalPath: true, actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'owners_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:review', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'stakeholders_review', toStageKey: 'final_approval', labelEn: 'Stakeholders Approved', labelAr: 'موافقة أصحاب المصلحة', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:review', actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'stakeholders_review', toStageKey: 'final_approval', labelEn: 'Stakeholders Approved', labelAr: 'موافقة أصحاب المصلحة', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:review', isApprovalPath: true, actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'stakeholders_review', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:review', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'final_approval', toStageKey: 'publish_approval', labelEn: 'All Approved', labelAr: 'اعتماد جميع الأطراف', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:approve', actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
+      { fromStageKey: 'final_approval', toStageKey: 'publish_approval', labelEn: 'All Approved', labelAr: 'اعتماد جميع الأطراف', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:approve', isApprovalPath: true, actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'final_approval', toStageKey: 'drafting', labelEn: 'Return for Revision', labelAr: 'إعادة للتعديل', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'publish_approval', toStageKey: 'published', labelEn: 'Publish', labelAr: 'نشر', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:publish', actions: [{ actionType: 'GENERATE_PDF', order: 10 }, { actionType: 'SEND_NOTIFICATION', order: 20 }, { actionType: 'LOG_AUDIT', order: 30 }] },
       { fromStageKey: 'publish_approval', toStageKey: 'drafting', labelEn: 'Reject Publication', labelAr: 'رفض النشر', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:publish', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
@@ -234,7 +238,8 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
       { fromStageKey: 'agenda_ready', toStageKey: 'minutes_draft', labelEn: 'Record Minutes', labelAr: 'تسجيل المحضر', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:manage', actions: [{ actionType: 'LOG_AUDIT', order: 10 }] },
       { fromStageKey: 'agenda_ready', toStageKey: 'cancelled', labelEn: 'Cancel Meeting', labelAr: 'إلغاء الاجتماع', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'minutes_draft', toStageKey: 'minutes_review', labelEn: 'Distribute Minutes', labelAr: 'توزيع المحضر', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'minutes_review', toStageKey: 'minutes_approved', labelEn: 'Approve Minutes', labelAr: 'اعتماد المحضر', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:approve_minutes', actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_review', toStageKey: 'minutes_approved', labelEn: 'Approve Minutes', labelAr: 'اعتماد المحضر', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:approve_minutes', isApprovalPath: true, actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'minutes_review', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:manage', isApprovalPath: false, actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'minutes_draft', toStageKey: 'minutes_draft', labelEn: 'Return for Correction', labelAr: 'إعادة للتصحيح', triggerCondition: 'ROLE_BASED', requiredPermission: 'meetings:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },

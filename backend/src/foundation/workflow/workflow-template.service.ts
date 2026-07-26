@@ -127,6 +127,7 @@ export class WorkflowTemplateService {
           triggerCondition: seedTransition.triggerCondition,
           triggerRoleId: resolveRoleId(seedTransition.triggerRoleKey) ?? null,
           validatorConfig: this.toJson(seedTransition.validatorConfig),
+          isApprovalPath: seedTransition.isApprovalPath ?? false,
         };
 
         const transition = existingTransition
@@ -493,6 +494,7 @@ export class WorkflowTemplateService {
         ...(dto.triggerUserId !== undefined && { triggerUserId: dto.triggerUserId }),
         ...(dto.triggerRoleId !== undefined && { triggerRoleId: dto.triggerRoleId }),
         ...(dto.validatorConfig !== undefined && { validatorConfig: this.toJson(dto.validatorConfig) }),
+        ...(dto.isApprovalPath !== undefined && { isApprovalPath: dto.isApprovalPath }),
       },
     });
 
@@ -510,6 +512,7 @@ export class WorkflowTemplateService {
         triggerUserId: transition.triggerUserId,
         triggerRoleId: transition.triggerRoleId,
         validatorConfig: transition.validatorConfig,
+        isApprovalPath: transition.isApprovalPath,
       },
       after: {
         labelEn: updated.labelEn,
@@ -519,6 +522,7 @@ export class WorkflowTemplateService {
         triggerUserId: updated.triggerUserId,
         triggerRoleId: updated.triggerRoleId,
         validatorConfig: updated.validatorConfig,
+        isApprovalPath: updated.isApprovalPath,
       },
     });
 

@@ -517,6 +517,7 @@ model WorkflowTransition {
   triggerUserId      String?
   triggerRoleId      String?
   validatorConfig    Json?
+  isApprovalPath     Boolean                    @default(false)
 
   fromStage          WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
   toStage            WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])
