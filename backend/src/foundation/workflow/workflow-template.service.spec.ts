@@ -342,14 +342,37 @@ describe('WorkflowTemplateService', () => {
   describe('getTemplateById', () => {
     it('returns the template with its stages populated, ordered by order', async () => {
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
-      mockPrisma.workflowStage.findMany.mockResolvedValue([BASE_STAGE]);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { ...BASE_STAGE, transitionsFrom: [] },
+      ]);
 
       const result = await service.getTemplateById('template-1', ORG_A);
 
       expect(result.id).toBe('template-1');
       expect(result.stages).toHaveLength(1);
+      expect(result.stages?.[0]?.transitions).toEqual([]);
       expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { order: 'asc' } }),
+      );
+    });
+
+    it("includes each stage's outgoing transitions with their actions", async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        {
+          ...BASE_STAGE,
+          transitionsFrom: [{ ...BASE_TRANSITION, actions: [BASE_ACTION] }],
+        },
+      ]);
+
+      const result = await service.getTemplateById('template-1', ORG_A);
+
+      expect(result.stages?.[0]?.transitions).toHaveLength(1);
+      expect(result.stages?.[0]?.transitions?.[0]?.actions).toHaveLength(1);
+      expect(mockPrisma.workflowStage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: { transitionsFrom: { include: { actions: { orderBy: { order: 'asc' } } } } },
+        }),
       );
     });
 
@@ -806,6 +829,48 @@ describe('WorkflowTemplateService', () => {
 
       expect(mockPrisma.workflowTransitionAction.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ isEnabled: true }) }),
+      );
+    });
+  });
+
+  // ── updateTransitionAction ───────────────────────────────────────────────────
+
+  describe('updateTransitionAction', () => {
+    it('updates only the provided fields', async () => {
+      mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(BASE_ACTION);
+      mockPrisma.workflowTransitionAction.update.mockResolvedValue(
+        makeAction({ isEnabled: false }),
+      );
+
+      await service.updateTransitionAction('action-1', { isEnabled: false } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransitionAction.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { isEnabled: false } }),
+      );
+    });
+
+    it('throws NotFoundException for a cross-tenant action', async () => {
+      mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateTransitionAction('action-1', { isEnabled: false } as never, ORG_B, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('writes a before/after UPDATE audit log entry', async () => {
+      mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(BASE_ACTION);
+      mockPrisma.workflowTransitionAction.update.mockResolvedValue(
+        makeAction({ isEnabled: false }),
+      );
+
+      await service.updateTransitionAction('action-1', { isEnabled: false } as never, ORG_A, ACTOR);
+
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE',
+          before: expect.objectContaining({ isEnabled: true }),
+          after: expect.objectContaining({ isEnabled: false }),
+        }),
       );
     });
   });

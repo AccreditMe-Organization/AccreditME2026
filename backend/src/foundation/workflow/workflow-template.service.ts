@@ -18,6 +18,7 @@ import { UpdateWorkflowStageDto } from './dto/update-workflow-stage.dto';
 import { CreateWorkflowTransitionDto } from './dto/create-workflow-transition.dto';
 import { UpdateWorkflowTransitionDto } from './dto/update-workflow-transition.dto';
 import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transition-action.dto';
+import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 
 @Injectable()
@@ -190,9 +191,22 @@ export class WorkflowTemplateService {
     const stages = await this.prisma.workflowStage.findMany({
       where: { workflowTemplateId: id },
       orderBy: { order: 'asc' },
+      include: {
+        transitionsFrom: {
+          include: { actions: { orderBy: { order: 'asc' } } },
+        },
+      },
     });
 
-    return { ...this.mapTemplate(template), stages: stages.map((s) => this.mapStage(s)) };
+    return {
+      ...this.mapTemplate(template),
+      stages: stages.map((s) =>
+        this.mapStage(
+          s,
+          s.transitionsFrom.map((t) => this.mapTransition(t, t.actions.map((a) => this.mapTransitionAction(a)))),
+        ),
+      ),
+    };
   }
 
   async createTemplate(
@@ -583,6 +597,40 @@ export class WorkflowTemplateService {
     return this.mapTransitionAction(action);
   }
 
+  async updateTransitionAction(
+    id: string,
+    dto: UpdateWorkflowTransitionActionDto,
+    organizationId: string,
+    actorId: string,
+  ): Promise<IWorkflowTransitionAction> {
+    const action = await this.prisma.workflowTransitionAction.findFirst({
+      where: { id, workflowTransition: { fromStage: { workflowTemplate: { organizationId } } } },
+    });
+    if (!action) throw new NotFoundException('Workflow transition action not found');
+
+    const updated = await this.prisma.workflowTransitionAction.update({
+      where: { id },
+      data: {
+        ...(dto.actionType !== undefined && { actionType: dto.actionType }),
+        ...(dto.order !== undefined && { order: dto.order }),
+        ...(dto.isEnabled !== undefined && { isEnabled: dto.isEnabled }),
+        ...(dto.configJson !== undefined && { configJson: this.toJson(dto.configJson) }),
+      },
+    });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'WorkflowTransitionAction',
+      objectId: id,
+      before: { actionType: action.actionType, order: action.order, isEnabled: action.isEnabled },
+      after: { actionType: updated.actionType, order: updated.order, isEnabled: updated.isEnabled },
+    });
+
+    return this.mapTransitionAction(updated);
+  }
+
   async removeTransitionAction(id: string, organizationId: string, actorId: string): Promise<void> {
     const action = await this.prisma.workflowTransitionAction.findFirst({
       where: { id, workflowTransition: { fromStage: { workflowTemplate: { organizationId } } } },
@@ -627,7 +675,7 @@ export class WorkflowTemplateService {
     };
   }
 
-  private mapStage(stage: PrismaWorkflowStage): IWorkflowStage {
+  private mapStage(stage: PrismaWorkflowStage, transitions?: IWorkflowTransition[]): IWorkflowStage {
     return {
       id: stage.id,
       workflowTemplateId: stage.workflowTemplateId,
@@ -646,10 +694,14 @@ export class WorkflowTemplateService {
       assigneeUserId: stage.assigneeUserId,
       assigneeRoleId: stage.assigneeRoleId,
       escalationConfig: stage.escalationConfig as Record<string, unknown> | null,
+      ...(transitions !== undefined && { transitions }),
     };
   }
 
-  private mapTransition(transition: PrismaWorkflowTransition): IWorkflowTransition {
+  private mapTransition(
+    transition: PrismaWorkflowTransition,
+    actions?: IWorkflowTransitionAction[],
+  ): IWorkflowTransition {
     return {
       id: transition.id,
       fromStageId: transition.fromStageId,
@@ -661,6 +713,8 @@ export class WorkflowTemplateService {
       triggerUserId: transition.triggerUserId,
       triggerRoleId: transition.triggerRoleId,
       validatorConfig: transition.validatorConfig as Record<string, unknown> | null,
+      isApprovalPath: transition.isApprovalPath,
+      ...(actions !== undefined && { actions }),
     };
   }
 

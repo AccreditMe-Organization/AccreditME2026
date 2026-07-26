@@ -1,3 +1,5 @@
+import { IWorkflowTransition } from './workflow-transition.interface';
+
 export interface IWorkflowStage {
   id: string;
   workflowTemplateId: string;
@@ -16,4 +18,5 @@ export interface IWorkflowStage {
   assigneeUserId: string | null;
   assigneeRoleId: string | null;
   escalationConfig: Record<string, unknown> | null;
+  transitions?: IWorkflowTransition[];
 }

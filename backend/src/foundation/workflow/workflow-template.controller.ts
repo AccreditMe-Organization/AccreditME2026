@@ -24,6 +24,7 @@ import { UpdateWorkflowStageDto } from './dto/update-workflow-stage.dto';
 import { CreateWorkflowTransitionDto } from './dto/create-workflow-transition.dto';
 import { UpdateWorkflowTransitionDto } from './dto/update-workflow-transition.dto';
 import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transition-action.dto';
+import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { IWorkflowTemplate } from './interfaces/workflow-template.interface';
 import { IWorkflowStage } from './interfaces/workflow-stage.interface';
 import { IWorkflowTransition, IWorkflowTransitionAction } from './interfaces/workflow-transition.interface';
@@ -98,6 +99,17 @@ export class WorkflowTemplateController {
     @CurrentUser() actorId: string,
   ): Promise<IWorkflowTransitionAction> {
     return this.workflowTemplateService.addTransitionAction(transitionId, dto, tenantId, actorId);
+  }
+
+  @Patch('transitions/actions/:id')
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  updateTransitionAction(
+    @Param('id') id: string,
+    @Body() dto: UpdateWorkflowTransitionActionDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<IWorkflowTransitionAction> {
+    return this.workflowTemplateService.updateTransitionAction(id, dto, tenantId, actorId);
   }
 
   @Delete('transitions/actions/:id')

@@ -9,6 +9,7 @@ export interface IWorkflowTransition {
   triggerUserId: string | null;
   triggerRoleId: string | null;
   validatorConfig: Record<string, unknown> | null;
+  isApprovalPath: boolean;
   actions?: IWorkflowTransitionAction[];
 }
 

@@ -55,6 +55,7 @@ const MOCK_TRANSITION: IWorkflowTransition = {
   triggerUserId: null,
   triggerRoleId: null,
   validatorConfig: null,
+  isApprovalPath: false,
 };
 
 const MOCK_ACTION: IWorkflowTransitionAction = {
@@ -84,6 +85,7 @@ describe('WorkflowTemplateController', () => {
     updateTransition: jest.Mock;
     removeTransition: jest.Mock;
     addTransitionAction: jest.Mock;
+    updateTransitionAction: jest.Mock;
     removeTransitionAction: jest.Mock;
   };
 
@@ -102,6 +104,7 @@ describe('WorkflowTemplateController', () => {
       updateTransition: jest.fn().mockResolvedValue(MOCK_TRANSITION),
       removeTransition: jest.fn().mockResolvedValue(undefined),
       addTransitionAction: jest.fn().mockResolvedValue(MOCK_ACTION),
+      updateTransitionAction: jest.fn().mockResolvedValue(MOCK_ACTION),
       removeTransitionAction: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -167,6 +170,15 @@ describe('WorkflowTemplateController', () => {
       const dto = { actionType: 'CREATE_TASK', order: 10 } as never;
       const result = await controller.addTransitionAction('transition-1', dto, TENANT_ID, ACTOR_ID);
       expect(service.addTransitionAction).toHaveBeenCalledWith('transition-1', dto, TENANT_ID, ACTOR_ID);
+      expect(result).toEqual(MOCK_ACTION);
+    });
+  });
+
+  describe('updateTransitionAction', () => {
+    it('delegates to workflowTemplateService.updateTransitionAction', async () => {
+      const dto = { isEnabled: false } as never;
+      const result = await controller.updateTransitionAction('action-1', dto, TENANT_ID, ACTOR_ID);
+      expect(service.updateTransitionAction).toHaveBeenCalledWith('action-1', dto, TENANT_ID, ACTOR_ID);
       expect(result).toEqual(MOCK_ACTION);
     });
   });
