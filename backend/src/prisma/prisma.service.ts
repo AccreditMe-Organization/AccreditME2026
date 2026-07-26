@@ -58,6 +58,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get workflowTransition() { return this._client.workflowTransition; }
   get workflowInstance() { return this._client.workflowInstance; }
   get workflowInstanceStage() { return this._client.workflowInstanceStage; }
+  get workflowApproval() { return this._client.workflowApproval; }
+  get workflowTransitionAction() { return this._client.workflowTransitionAction; }
+  get workflowActionLog() { return this._client.workflowActionLog; }
   get task() { return this._client.task; }
   get notification() { return this._client.notification; }
   get committee() { return this._client.committee; }
