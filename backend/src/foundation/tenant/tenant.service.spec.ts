@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { LookupService } from '../lookup/lookup.service';
 import { RoleService } from '../roles/role.service';
+import { WorkflowTemplateService } from '../workflow/workflow-template.service';
 
 // Valid 64-char hex string → 32 bytes, satisfies constructor guard
 const MOCK_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -46,6 +47,7 @@ describe('TenantService', () => {
   let auditLog: { log: jest.Mock };
   let lookupService: { seedSystemData: jest.Mock };
   let roleService: { seedSystemRoles: jest.Mock };
+  let workflowTemplateService: { seedDefaultWorkflows: jest.Mock };
 
   beforeEach(async () => {
     process.env['ENCRYPTION_KEY'] = MOCK_ENCRYPTION_KEY;
@@ -64,6 +66,7 @@ describe('TenantService', () => {
     auditLog     = { log: jest.fn().mockResolvedValue(undefined) };
     lookupService = { seedSystemData: jest.fn().mockResolvedValue(undefined) };
     roleService  = { seedSystemRoles: jest.fn().mockResolvedValue(undefined) };
+    workflowTemplateService = { seedDefaultWorkflows: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -72,6 +75,7 @@ describe('TenantService', () => {
         { provide: AuditLogService, useValue: auditLog },
         { provide: LookupService,  useValue: lookupService },
         { provide: RoleService,    useValue: roleService },
+        { provide: WorkflowTemplateService, useValue: workflowTemplateService },
       ],
     }).compile();
 

@@ -36,4 +36,11 @@ export const routes: Routes = [
         (m) => m.ROLES_ROUTES,
       ),
   },
+  {
+    path: 'workflows',
+    loadChildren: () =>
+      import('./foundation/workflow/workflow.routes').then(
+        (m) => m.WORKFLOW_ROUTES,
+      ),
+  },
 ];

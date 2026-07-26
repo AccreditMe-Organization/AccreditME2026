@@ -77,6 +77,7 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
       { key: 'checklist', labelEn: 'Checklist', labelAr: 'قائمة مراجعة', sortOrder: 70, attributes: { numberingPrefix: 'CHL', requiresFlowchart: false, defaultReviewCycleMonths: 12, requiresCommitteeApproval: false, defaultRetentionYears: 5  } },
       { key: 'platform',        labelEn: 'Platform',        labelAr: 'إطار عمل',        sortOrder: 80, attributes: { numberingPrefix: 'PLT', requiresFlowchart: false, defaultReviewCycleMonths: 24, requiresCommitteeApproval: true,  defaultRetentionYears: 10 } },
       { key: 'job_description', labelEn: 'Job Description', labelAr: 'الوصف الوظيفي', sortOrder: 90, attributes: { numberingPrefix: 'JD',  requiresFlowchart: false, defaultReviewCycleMonths: 24, requiresCommitteeApproval: false, defaultRetentionYears: 10 } },
+      { key: 'terms_of_reference', labelEn: 'Terms of Reference', labelAr: 'النظام الداخلي', sortOrder: 100, attributes: { numberingPrefix: 'TOR', requiresFlowchart: false, defaultReviewCycleMonths: 12, requiresCommitteeApproval: true, defaultRetentionYears: 10 } },
     ],
   },
 

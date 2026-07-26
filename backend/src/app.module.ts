@@ -7,6 +7,8 @@ import { OrganizationModule } from './foundation/organization/organization.modul
 import { WorkingCalendarModule } from './foundation/working-calendar/working-calendar.module';
 import { LookupModule } from './foundation/lookup/lookup.module';
 import { RolesModule } from './foundation/roles/roles.module';
+import { QueueModule } from './common/queue/queue.module';
+import { WorkflowModule } from './foundation/workflow/workflow.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { RolesModule } from './foundation/roles/roles.module';
     WorkingCalendarModule,
     LookupModule,
     RolesModule,
+    QueueModule,
+    WorkflowModule,
   ],
 })
 export class AppModule {}
