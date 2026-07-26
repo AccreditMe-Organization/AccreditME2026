@@ -19,6 +19,7 @@ import { BullModule } from '@nestjs/bullmq';
         backoff: { type: 'exponential', delay: 5000 },
       },
     }),
+    BullModule.registerQueue({ name: 'sla-monitor' }),
   ],
   exports: [BullModule],
 })

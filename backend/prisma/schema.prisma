@@ -558,6 +558,7 @@ model WorkflowInstanceStage {
   exitedAt           DateTime?
   slaDueAt           DateTime?
   slaBreached        Boolean                       @default(false)
+  escalatedRuleIndexes Int[]                        @default([])
   outcome            WorkflowInstanceStageOutcome  @default(PENDING)
   actorId            String?
   comment            String?
