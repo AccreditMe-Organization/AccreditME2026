@@ -8,6 +8,7 @@ import { WorkingCalendarModule } from './foundation/working-calendar/working-cal
 import { LookupModule } from './foundation/lookup/lookup.module';
 import { RolesModule } from './foundation/roles/roles.module';
 import { QueueModule } from './common/queue/queue.module';
+import { WorkflowModule } from './foundation/workflow/workflow.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { QueueModule } from './common/queue/queue.module';
     LookupModule,
     RolesModule,
     QueueModule,
+    WorkflowModule,
   ],
 })
 export class AppModule {}
