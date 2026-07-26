@@ -1,0 +1,209 @@
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { environment } from '../../../../environments/environment';
+
+export interface WorkflowTemplateDto {
+  id: string;
+  organizationId: string;
+  nameEn: string;
+  nameAr: string;
+  objectType: string;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  stages?: WorkflowStageDto[];
+}
+
+export interface WorkflowStageDto {
+  id: string;
+  workflowTemplateId: string;
+  nameEn: string;
+  nameAr: string;
+  description: string | null;
+  order: number;
+  slaWorkingHours: number | null;
+  requiredPermission: string | null;
+  isInitial: boolean;
+  isFinal: boolean;
+  approvalMode: string;
+  parallelThreshold: string | null;
+  committeeId: string | null;
+  assigneeStrategy: string;
+  assigneeUserId: string | null;
+  assigneeRoleId: string | null;
+  escalationConfig: Record<string, unknown> | null;
+  transitions?: WorkflowTransitionDto[];
+}
+
+export interface WorkflowTransitionDto {
+  id: string;
+  fromStageId: string;
+  toStageId: string;
+  labelEn: string;
+  labelAr: string;
+  requiredPermission: string | null;
+  triggerCondition: string;
+  triggerUserId: string | null;
+  triggerRoleId: string | null;
+  validatorConfig: Record<string, unknown> | null;
+  isApprovalPath: boolean;
+  actions?: WorkflowTransitionActionDto[];
+}
+
+export interface WorkflowTransitionActionDto {
+  id: string;
+  workflowTransitionId: string;
+  actionType: string;
+  order: number;
+  isEnabled: boolean;
+  configJson: Record<string, unknown> | null;
+}
+
+export interface CreateWorkflowTemplateDto {
+  nameEn: string;
+  nameAr: string;
+  objectType: string;
+  isDefault?: boolean;
+}
+
+export interface UpdateWorkflowTemplateDto {
+  nameEn?: string;
+  nameAr?: string;
+  objectType?: string;
+  isDefault?: boolean;
+}
+
+export interface CreateWorkflowStageDto {
+  nameEn: string;
+  nameAr: string;
+  description?: string;
+  order: number;
+  slaWorkingHours?: number;
+  requiredPermission?: string;
+  isInitial?: boolean;
+  isFinal?: boolean;
+  approvalMode: string;
+  parallelThreshold?: string;
+  committeeId?: string;
+  assigneeStrategy: string;
+  assigneeUserId?: string;
+  assigneeRoleId?: string;
+  escalationConfig?: Record<string, unknown>[];
+}
+
+export type UpdateWorkflowStageDto = Partial<CreateWorkflowStageDto>;
+
+export interface CreateWorkflowTransitionDto {
+  fromStageId: string;
+  toStageId: string;
+  labelEn: string;
+  labelAr: string;
+  requiredPermission?: string;
+  triggerCondition: string;
+  triggerUserId?: string;
+  triggerRoleId?: string;
+  validatorConfig?: Record<string, unknown>;
+}
+
+export interface UpdateWorkflowTransitionDto {
+  labelEn?: string;
+  labelAr?: string;
+  requiredPermission?: string;
+  triggerCondition?: string;
+  triggerUserId?: string;
+  triggerRoleId?: string;
+  validatorConfig?: Record<string, unknown>;
+  isApprovalPath?: boolean;
+}
+
+export interface CreateWorkflowTransitionActionDto {
+  actionType: string;
+  order: number;
+  isEnabled?: boolean;
+  configJson?: Record<string, unknown>;
+}
+
+@Injectable({ providedIn: 'root' })
+export class WorkflowTemplateService {
+  private readonly http = inject(HttpClient);
+  private readonly base = `${environment.apiUrl}/workflow-templates`;
+
+  // ── Templates ────────────────────────────────────────────────────────────────
+
+  listTemplates(): Observable<WorkflowTemplateDto[]> {
+    return this.http.get<WorkflowTemplateDto[]>(this.base);
+  }
+
+  getTemplate(id: string): Observable<WorkflowTemplateDto> {
+    return this.http.get<WorkflowTemplateDto>(`${this.base}/${id}`);
+  }
+
+  createTemplate(dto: CreateWorkflowTemplateDto): Observable<WorkflowTemplateDto> {
+    return this.http.post<WorkflowTemplateDto>(this.base, dto);
+  }
+
+  updateTemplate(id: string, dto: UpdateWorkflowTemplateDto): Observable<WorkflowTemplateDto> {
+    return this.http.patch<WorkflowTemplateDto>(`${this.base}/${id}`, dto);
+  }
+
+  setDefault(id: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/set-default`, {});
+  }
+
+  deactivateTemplate(id: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/deactivate`, {});
+  }
+
+  // ── Stages ───────────────────────────────────────────────────────────────────
+
+  addStage(templateId: string, dto: CreateWorkflowStageDto): Observable<WorkflowStageDto> {
+    return this.http.post<WorkflowStageDto>(`${this.base}/${templateId}/stages`, dto);
+  }
+
+  updateStage(stageId: string, dto: UpdateWorkflowStageDto): Observable<WorkflowStageDto> {
+    return this.http.patch<WorkflowStageDto>(`${this.base}/stages/${stageId}`, dto);
+  }
+
+  removeStage(stageId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/stages/${stageId}`);
+  }
+
+  // ── Transitions ──────────────────────────────────────────────────────────────
+
+  addTransition(dto: CreateWorkflowTransitionDto): Observable<WorkflowTransitionDto> {
+    return this.http.post<WorkflowTransitionDto>(`${this.base}/transitions`, dto);
+  }
+
+  updateTransition(id: string, dto: UpdateWorkflowTransitionDto): Observable<WorkflowTransitionDto> {
+    return this.http.patch<WorkflowTransitionDto>(`${this.base}/transitions/${id}`, dto);
+  }
+
+  removeTransition(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/transitions/${id}`);
+  }
+
+  // ── Transition Actions ───────────────────────────────────────────────────────
+
+  addTransitionAction(
+    transitionId: string,
+    dto: CreateWorkflowTransitionActionDto,
+  ): Observable<WorkflowTransitionActionDto> {
+    return this.http.post<WorkflowTransitionActionDto>(
+      `${this.base}/transitions/${transitionId}/actions`,
+      dto,
+    );
+  }
+
+  updateTransitionAction(
+    id: string,
+    dto: Partial<CreateWorkflowTransitionActionDto>,
+  ): Observable<WorkflowTransitionActionDto> {
+    return this.http.patch<WorkflowTransitionActionDto>(`${this.base}/transitions/actions/${id}`, dto);
+  }
+
+  removeTransitionAction(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/transitions/actions/${id}`);
+  }
+}
