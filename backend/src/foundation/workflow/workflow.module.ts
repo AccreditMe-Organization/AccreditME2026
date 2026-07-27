@@ -3,6 +3,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { QueueModule } from '../../common/queue/queue.module';
 import { WorkingCalendarModule } from '../working-calendar/working-calendar.module';
 import { TenantModule } from '../tenant/tenant.module';
+import { NotificationModule } from '../notification/notification.module';
 import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
@@ -14,7 +15,20 @@ import { SlaMonitorProcessor } from './sla-monitor.processor';
 // WorkflowTemplateService/WorkflowService injected via a guard; future
 // functional modules import WorkflowModule directly and inject normally.
 @Module({
-  imports: [PrismaModule, QueueModule, WorkingCalendarModule, forwardRef(() => TenantModule)],
+  imports: [
+    PrismaModule,
+    QueueModule,
+    WorkingCalendarModule,
+    forwardRef(() => TenantModule),
+    // No forwardRef needed on this edge — NotificationModule is @Global(),
+    // so Nest resolves its exported providers without a normal import cycle.
+    // Imported explicitly anyway for clarity/testability (see Step 7 plan,
+    // Commit 7 note). This DOES close a new transitive cycle
+    // (TenantModule → WorkflowModule → NotificationModule → TenantModule),
+    // verified safe via a real start:dev boot, not just tsc/jest — same class
+    // of bug as the working-calendar.module.ts fix from Step 6.
+    NotificationModule,
+  ],
   controllers: [WorkflowTemplateController, WorkflowController],
   providers: [WorkflowTemplateService, WorkflowService, WorkflowActionProcessor, SlaMonitorProcessor],
   exports: [WorkflowTemplateService, WorkflowService],

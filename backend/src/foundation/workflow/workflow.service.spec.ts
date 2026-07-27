@@ -6,6 +6,7 @@ import { WorkflowService } from './workflow.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
+import { NotificationService } from '../notification/notification.service';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -148,11 +149,11 @@ const mockPrisma = {
   committee: { findUnique: jest.fn() },
   committeeMember: { findMany: jest.fn() },
   task: { create: jest.fn() },
-  notification: { create: jest.fn() },
 };
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
+const mockNotificationService = { create: jest.fn() };
 const mockQueue = { add: jest.fn() };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -172,6 +173,7 @@ describe('WorkflowService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
+        { provide: NotificationService, useValue: mockNotificationService },
         { provide: getQueueToken('workflow-actions'), useValue: mockQueue },
       ],
     }).compile();
@@ -226,8 +228,9 @@ describe('WorkflowService', () => {
 
       await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
 
-      expect(mockPrisma.notification.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ userId: ACTOR }) }),
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: ACTOR }),
+        ORG_A,
       );
     });
 

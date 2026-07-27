@@ -10,6 +10,7 @@ import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
+import { NotificationService } from '../notification/notification.service';
 import {
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowInstanceStage as PrismaWorkflowInstanceStage,
@@ -44,6 +45,7 @@ export class WorkflowService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly workingCalendar: WorkingCalendarService,
+    private readonly notificationService: NotificationService,
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
   ) {}
 
@@ -578,17 +580,19 @@ export class WorkflowService {
     if (!toStage) return 'Skipped — target stage not found';
 
     const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
+    // TODO(event-bus): migrate to event emitter if/when NotificationService
+    // moves to a pub/sub model (see Step 7 plan Section 8/12).
     for (const userId of assigneeIds) {
-      await this.prisma.notification.create({
-        data: {
-          organizationId,
+      await this.notificationService.create(
+        {
           userId,
           titleEn: transition.labelEn,
           bodyEn: `${instance.objectType} moved to ${toStage.nameEn}`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
-      });
+        organizationId,
+      );
     }
     return `Notified ${assigneeIds.length} user(s)`;
   }
@@ -599,17 +603,19 @@ export class WorkflowService {
     organizationId: string,
   ): Promise<void> {
     const assigneeIds = await this.resolveAssignee(initialStage, instance, organizationId);
+    // TODO(event-bus): migrate to event emitter if/when NotificationService
+    // moves to a pub/sub model (see Step 7 plan Section 8/12).
     for (const userId of assigneeIds) {
-      await this.prisma.notification.create({
-        data: {
-          organizationId,
+      await this.notificationService.create(
+        {
           userId,
           titleEn: 'New workflow assignment',
           bodyEn: `You have been assigned to ${initialStage.nameEn}`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
-      });
+        organizationId,
+      );
     }
   }
 
