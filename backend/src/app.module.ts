@@ -9,6 +9,7 @@ import { LookupModule } from './foundation/lookup/lookup.module';
 import { RolesModule } from './foundation/roles/roles.module';
 import { QueueModule } from './common/queue/queue.module';
 import { WorkflowModule } from './foundation/workflow/workflow.module';
+import { NotificationModule } from './foundation/notification/notification.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { WorkflowModule } from './foundation/workflow/workflow.module';
     RolesModule,
     QueueModule,
     WorkflowModule,
+    NotificationModule,
   ],
 })
 export class AppModule {}
