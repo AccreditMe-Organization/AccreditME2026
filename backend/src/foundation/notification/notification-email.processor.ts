@@ -32,12 +32,22 @@ export class NotificationEmailProcessor extends WorkerHost {
     const subject = useArabic ? (notification.titleAr ?? notification.titleEn) : notification.titleEn;
     const body = useArabic ? (notification.bodyAr ?? notification.bodyEn) : notification.bodyEn;
 
-    await this.resend.emails.send({
+    const result = await this.resend.emails.send({
       from: process.env['RESEND_FROM_EMAIL'] || 'noreply@accreditme.com',
       to: notification.user.email,
       subject,
       html: `<p>${body}</p>`,
     });
+
+    if (result.error) {
+      // Resend does not throw on an API-level error — it resolves with
+      // { data: null, error }. Re-throwing here is what makes BullMQ's own
+      // retry (attempts + backoff, configured in QueueModule) actually fire;
+      // without this, a failed send would be silently treated as complete.
+      throw new Error(
+        `Resend delivery failed: ${result.error.message ?? JSON.stringify(result.error)}`,
+      );
+    }
 
     // Only stamped on confirmed success — a null sentAt on an EMAIL/BOTH row
     // after its job should have completed is the failure indicator (see plan
