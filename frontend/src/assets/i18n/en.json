@@ -223,5 +223,13 @@
     "noTransitions": "No transitions defined for this stage.",
     "noActions": "No actions configured for this transition.",
     "errorLoad": "Failed to load workflow data."
+  },
+  "notification": {
+    "title": "Notifications",
+    "markAllRead": "Mark All as Read",
+    "noNotifications": "No notifications yet.",
+    "unreadCount": "{{count}} unread",
+    "justNow": "Just now",
+    "errorLoad": "Failed to load notifications."
   }
 }

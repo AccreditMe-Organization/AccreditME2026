@@ -5,6 +5,7 @@ import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
+import { NotificationService } from '../notification/notification.service';
 
 interface EscalationRule {
   afterHours: number;
@@ -25,6 +26,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly workingCalendar: WorkingCalendarService,
+    private readonly notificationService: NotificationService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -101,18 +103,17 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       userIds.push(...userRoles.map((ur) => ur.userId));
     }
 
-    // NotificationService doesn't exist yet (Step 7) — create the Notification
-    // row directly, same stubbing approach WorkflowService already uses for
-    // its own SEND_NOTIFICATION action.
+    // TODO(event-bus): migrate to event emitter if/when NotificationService
+    // moves to a pub/sub model (see Step 7 plan Section 8/12).
     for (const userId of new Set(userIds)) {
-      await this.prisma.notification.create({
-        data: {
-          organizationId,
+      await this.notificationService.create(
+        {
           userId,
           titleEn: 'SLA breach escalation',
           bodyEn: `A workflow stage has breached its SLA and requires attention (escalation rule ${ruleIndex}).`,
         },
-      });
+        organizationId,
+      );
     }
 
     await this.auditLog.log({

@@ -154,6 +154,7 @@ enum TaskPriority {
 enum NotificationChannel {
   IN_APP
   EMAIL
+  BOTH
   SMS
 }
 
@@ -688,6 +689,7 @@ model Notification {
   @@index([userId])
   @@index([status])
   @@index([createdAt])
+  @@index([userId, status])
 }
 
 // ---------------------------------------------------------------------------

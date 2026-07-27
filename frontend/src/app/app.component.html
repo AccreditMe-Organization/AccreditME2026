@@ -333,4 +333,12 @@
 <!-- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * -->
 
 
+<!-- TODO(ACC-11): move to shared layout shell once frontend/src/app/layout/
+     (topbar/sidebar) exists — Step 9 (Users) is the next foundation step and
+     the natural place to build it. Temporary root-level placement for now,
+     per Step 7 plan Section 12 (Pending Discussions, Resolution #4). -->
+<div class="fixed top-4 end-4 z-50">
+  <app-notification-bell />
+</div>
+
 <router-outlet />

@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { NotificationBellComponent } from './foundation/notification/components/notification-bell/notification-bell.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, NotificationBellComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
