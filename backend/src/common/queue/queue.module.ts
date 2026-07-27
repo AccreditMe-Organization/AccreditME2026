@@ -20,6 +20,13 @@ import { BullModule } from '@nestjs/bullmq';
       },
     }),
     BullModule.registerQueue({ name: 'sla-monitor' }),
+    BullModule.registerQueue({
+      name: 'email-delivery',
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      },
+    }),
   ],
   exports: [BullModule],
 })
