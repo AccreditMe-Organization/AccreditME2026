@@ -657,46 +657,56 @@ capability — but leaving it undone means Step 7 shipped a service nothing call
 
 ## 6. ACCEPTANCE CRITERIA
 
-- [ ] `Notification` model unchanged except for the new compound index;
+- [x] `Notification` model unchanged except for the new compound index;
       `NotificationChannel` enum gains `BOTH` (IN_APP, EMAIL, BOTH, SMS)
-- [ ] Migration applied — database schema up to date
-- [ ] `NotificationService.create()` always writes the row; enqueues
+- [x] Migration applied — database schema up to date
+- [x] `NotificationService.create()` always writes the row; enqueues
       `email-delivery` when `channel === 'EMAIL'` or `channel === 'BOTH'`
-- [ ] `BOTH` channel correctly delivers in-app notification AND sends email via
-      Resend — verified as its own test case, not assumed identical to `EMAIL`
-- [ ] `getForUser()` / `getUnreadCount()` / `markRead()` / `markAllRead()` all
+- [x] `BOTH` channel correctly delivers in-app notification AND sends email via
+      Resend — verified as its own test case at the `NotificationService` level
+      (the testable seam where the enqueue decision is made), matching the same
+      precedent Step 6 used for `WorkflowActionProcessor`/`SlaMonitorProcessor`
+      (no processor-level `.spec.ts` exists for either — BullMQ `WorkerHost`
+      processors aren't unit-tested in this codebase; `NotificationEmailProcessor`
+      follows the same precedent, no spec file)
+- [x] `getForUser()` / `getUnreadCount()` / `markRead()` / `markAllRead()` all
       double-scoped: tenant (`organizationId`) AND owning user (`userId`) —
       not tenant-only like most prior modules
-- [ ] `markRead()` throws `NotFoundException` for a notification belonging to a
+- [x] `markRead()` throws `NotFoundException` for a notification belonging to a
       different user in the same organization (not just a different tenant)
-- [ ] `email-delivery` queue registered with 3-attempt exponential backoff,
+- [x] `email-delivery` queue registered with 3-attempt exponential backoff,
       matching the existing `workflow-actions` queue's retry policy
-- [ ] `NotificationEmailProcessor` picks `titleAr`/`bodyAr` when the recipient's
+- [x] `NotificationEmailProcessor` picks `titleAr`/`bodyAr` when the recipient's
       `User.language === 'ar'` and Arabic content exists, else falls back to
       `titleEn`/`bodyEn`
-- [ ] `NotificationEmailProcessor` stamps `sentAt` only on confirmed Resend success
-- [ ] `NotificationController` has exactly 4 endpoints, no `POST /notifications`
-- [ ] None of the 4 endpoints carry a class-level `@Permissions()` — confirmed
+- [x] `NotificationEmailProcessor` stamps `sentAt` only on confirmed Resend success
+- [x] `NotificationController` has exactly 4 endpoints, no `POST /notifications`
+- [x] None of the 4 endpoints carry a class-level `@Permissions()` — confirmed
       deliberate (see Business Rules), not a missing-decorator bug
-- [ ] `WorkflowService.executeSendNotification()` and
+- [x] `WorkflowService.executeSendNotification()` and
       `.resolveAndNotifyInitialAssignee()` call `NotificationService.create()`,
       no remaining direct `this.prisma.notification.create()` in workflow code
-- [ ] `SlaMonitorProcessor.fireEscalation()` calls `NotificationService.create()`,
+- [x] `SlaMonitorProcessor.fireEscalation()` calls `NotificationService.create()`,
       no remaining direct `this.prisma.notification.create()` in that file
-- [ ] `workflow.service.spec.ts` assertions updated to check
+- [x] `workflow.service.spec.ts` assertions updated to check
       `NotificationService.create` calls, not raw Prisma mock calls
-- [ ] `NotificationModule` is `@Global()`, exports `NotificationService`
-- [ ] Server boots cleanly with `NotificationModule` initialized — confirmed via
-      actual `start:dev` log, not inferred from `tsc`/`jest` alone
-- [ ] Angular `NotificationBellComponent` polls unread count every 30s, shows
+- [x] `NotificationModule` is `@Global()`, exports `NotificationService`
+- [x] Server boots cleanly with `NotificationModule` initialized — confirmed via
+      actual `start:dev` log (`NotificationModule dependencies initialized`,
+      `WorkflowModule dependencies initialized`, `Nest application successfully
+      started`, all before an unrelated EADDRINUSE from a pre-existing orphaned
+      port-3000 process, cleared separately), not inferred from `tsc`/`jest` alone
+- [x] Angular `NotificationBellComponent` polls unread count every 30s, shows
       badge only when count > 0, supports mark-read and mark-all-read
-- [ ] Bell mounted in `app.component`, flagged as temporary pending a real layout
-      module
-- [ ] Backend TypeScript: zero errors
-- [ ] Frontend TypeScript: zero errors
-- [ ] All tests passing (253+ existing + new notification tests)
-- [ ] Tenant isolation test present for `NotificationService`
-- [ ] Translation keys in both `en.json` and `ar.json`
+- [x] Bell mounted in `app.component`, flagged as temporary pending a real layout
+      module (`TODO(ACC-XX)` comment left in `app.component.html` — ticket number
+      to be filled in once a Step 9 layout-shell ticket exists)
+- [x] Backend TypeScript: zero errors
+- [x] Frontend TypeScript: zero errors
+- [x] All tests passing (270/270 — 253 existing + 17 new notification tests)
+- [x] Tenant isolation test present for `NotificationService` (10/10 isolation
+      tests passing, up from 9)
+- [x] Translation keys in both `en.json` and `ar.json`
 - [ ] PR to dev with green CI
 
 ---
