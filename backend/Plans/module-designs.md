@@ -1477,3 +1477,36 @@ To add before Step 18 (Quality Improvement):
 - Incident workflow (confirm or revise) — next discussion
 
 ---
+
+## Pricing and Licensing Strategy
+
+### Module Dependency Rules
+```
+CAPA requires: Audit Management OR Incident Management OR Gap Management
+Gap Management requires: Standards Management OR Audit Management OR KPI Management
+Standards Management (full) requires: Document Management OR Audit OR Incident
+Standards Management (read-only): available in all plans
+```
+
+### AI Credit System
+Universal add-on available on all plans.
+Credit costs per feature managed by Platform Admin in AiFeatureCost table.
+Organization tracks: monthlyCredits, creditsUsed, creditsRemaining, resetDate
+Monthly BullMQ job resets credits on billing cycle.
+AiInteractionLog records creditCost per call for audit and billing.
+
+### Plan Data Models (built in Step 12)
+Plan, PlanModule, AiCreditPack, AiFeatureCost
+All managed by Platform Admin — never hardcoded.
+
+### Per-Tenant Override
+Platform Admin can override any tenant:
+```
+Custom plan assignment
+Custom AI credit allocation
+Module access beyond their plan
+Trial period with Enterprise features
+Negotiated pricing recorded as custom Plan record
+```
+
+---

@@ -886,6 +886,145 @@ Tier 3 (on-premises):
 
 ---
 
+## Pricing and Module Strategy
+
+### Module Clusters
+Three types of modules:
+
+```
+ANCHORS (strong standalone value):
+  Document Management, KPI Management,
+  Committee Management, Meeting Management
+
+PAIRS (always sold together):
+  Audit + CAPA (inseparable)
+  Incident + CAPA (inseparable)
+  Gap + at least one source module
+
+CONNECTORS (never standalone):
+  CAPA — requires Audit or Incident or Gap
+  Gap Management — requires Standards or Audit or KPI
+  Standards Management — requires at least one evidence module
+```
+
+Module dependency rules enforced by platform:
+```
+RULE 1: CAPA requires Audit OR Incident OR Gap
+RULE 2: Gap requires Standards OR Audit OR KPI
+RULE 3: Standards requires Documents OR Audit OR Incident
+RULE 4: System warns if Audit enabled without CAPA
+RULE 5: System warns if Incident enabled without CAPA
+```
+
+### Plans (managed in DB by Platform Admin — not hardcoded)
+Three base plans:
+```
+STARTER: entry level, Document Control focus
+PROFESSIONAL: quality operations, module selection
+ENTERPRISE: full platform, unlimited, custom contract
+```
+
+Standards Management is READ_ONLY in Starter,
+FULL in Professional and Enterprise.
+
+### AI — Universal Credit-Based Add-on
+AI is available on ALL plans as a credit-based add-on.
+Not tied to any specific plan tier.
+Platform Admin configures:
+- Credits included per plan per month
+- Credit pack options and prices
+- Credit cost per AI feature (AiFeatureCost table)
+
+AI credit costs per feature (platform admin adjustable):
+```
+LIGHT (1-5 credits):
+  task_title_suggestion: 1
+  task_description_drafting: 2
+  meeting_agenda_generation: 3
+  standard_interpretation: 3
+  severity_suggestion: 2
+  similar_incident_detection: 3
+
+MEDIUM (5-20 credits):
+  rca_assistance: 5
+  capa_suggestion: 5
+  morning_briefing: 5
+  minutes_drafting: 8
+  committee_health_report: 10
+  evidence_suggestion_per_element: 2
+  tor_drafting: 10
+
+HEAVY (20+ credits):
+  gap_analysis_report: 20
+  readiness_score: 30
+  overdue_pattern_analysis: 15
+  decision_pattern_analysis: 15
+  standard_comparison: 20
+  mock_survey_per_standard: 50
+```
+
+### Plan Configuration Data Model
+Plans are stored in DB — never hardcoded:
+```
+Plan: id, name, nameEn, nameAr, monthlyPrice,
+      annualPrice, maxFullUsers, maxStaff,
+      maxStorageGb, aiCreditsPerMonth,
+      isActive, isPublic, sortOrder
+
+PlanModule: planId, moduleKey, accessLevel
+            (FULL/READ_ONLY/NONE)
+
+AiCreditPack: name, credits, price, isActive,
+              availableTo[], sortOrder
+
+AiFeatureCost: featureKey (unique), creditCost,
+               description
+```
+
+### Organization AI Settings (in Organization.settings JSON)
+```json
+{
+  "modules": { "documents": true, "audits": true, ... },
+  "ai": {
+    "enabled": true,
+    "monthlyCredits": 500,
+    "creditsUsed": 127,
+    "creditsRemaining": 373,
+    "resetDate": "2026-08-01",
+    "overageEnabled": true
+  }
+}
+```
+
+### Platform Admin Controls (Step 12)
+Platform admin manages without code deployment:
+- Plan configuration (price, limits, modules, AI credits)
+- AI credit packs (name, credits, price)
+- AI feature costs (creditCost per featureKey)
+- Per-tenant overrides (custom plan, trial access, credit boost)
+- Tenant usage monitoring
+
+### AI Runtime Flow
+Every AI call:
+```
+1. Load AiFeatureCost for featureKey from DB
+2. Check organization.settings.ai.creditsRemaining >= cost
+3. If insufficient → return FeatureQuotaExceededException
+4. Execute AI call via AIProvider
+5. Deduct credits from organization settings
+6. Log to AiInteractionLog with creditCost field
+7. If creditsRemaining = 0 → notify tenant admin
+```
+
+Monthly BullMQ job:
+```
+Reset creditsUsed to 0 for all organizations
+Set creditsRemaining = Plan.aiCreditsPerMonth
+Set resetDate = first day of next month
+```
+
+---
+
 ## Reporting and Analytics
 
 ```
