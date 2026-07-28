@@ -248,5 +248,45 @@
     "systemBadge": "Default",
     "customBadge": "Custom",
     "errorLoad": "Failed to load positions."
+  },
+  "task": {
+    "title": "Title",
+    "myTasks": "My Tasks",
+    "allTasks": "All Tasks",
+    "newTask": "New Task",
+    "description": "Description",
+    "source": "Source",
+    "sourceType": "Source Type",
+    "sourceId": "Source ID",
+    "dueDate": "Due Date",
+    "complete": "Complete",
+    "reassign": "Reassign",
+    "reassignReason": "Reassignment Reason",
+    "addEvidence": "Add Evidence",
+    "assigneePickerUnavailable": "Assignee selection will be available once User Management is set up. This task will be created as unassigned and a Tenant Admin will be notified to assign it.",
+    "noTasks": "No tasks found.",
+    "errorLoad": "Failed to load tasks.",
+    "priority": {
+      "title": "Priority",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical"
+    },
+    "status": {
+      "title": "Status",
+      "pending": "Pending",
+      "in_progress": "In Progress",
+      "overdue": "Overdue",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "unassigned": "Unassigned"
+    },
+    "evidenceType": {
+      "text": "Text",
+      "attachment": "Attachment",
+      "link": "Link",
+      "internal_reference": "Internal Reference"
+    }
   }
 }
