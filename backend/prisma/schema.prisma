@@ -229,6 +229,7 @@ model Organization {
   workflowActionLogs WorkflowActionLog[]
   workingCalendar  WorkingCalendar?
   orgUnits         OrgUnit[]
+  orgPositions     OrgPosition[]
   tasks            Task[]
   notifications    Notification[]
   committees       Committee[]
@@ -258,6 +259,8 @@ model User {
   tosVersion       String?
   lastLoginAt      DateTime?
   lastLoginIp      String?
+  positionId       String?
+  primaryOrgUnitId String?
 
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
@@ -272,11 +275,15 @@ model User {
   meetings         Meeting[]    @relation("MeetingOrganizer")
   auditLogs        AuditLog[]
   aiInteractionLogs AiInteractionLog[]
+  position         OrgPosition? @relation(fields: [positionId], references: [id])
+  primaryOrgUnit   OrgUnit?     @relation(fields: [primaryOrgUnitId], references: [id])
 
   @@unique([organizationId, email])
   @@index([organizationId])
   @@index([email])
   @@index([status])
+  @@index([positionId])
+  @@index([primaryOrgUnitId])
 }
 
 // ---------------------------------------------------------------------------
@@ -448,10 +455,32 @@ model OrgUnit {
   organization   Organization @relation(fields: [organizationId], references: [id])
   parent         OrgUnit?     @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
   children       OrgUnit[]    @relation("OrgUnitHierarchy")
+  positions      OrgPosition[]
+  users          User[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([parentId])
+}
+
+model OrgPosition {
+  id             String       @id @default(cuid())
+  organizationId String
+  orgUnitId      String?
+  nameEn         String
+  nameAr         String?
+  grade          Int
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  orgUnit        OrgUnit?     @relation(fields: [orgUnitId], references: [id])
+  users          User[]
+
+  @@index([organizationId])
+  @@index([orgUnitId])
+  @@unique([organizationId, orgUnitId, nameEn])
 }
 
 // ---------------------------------------------------------------------------
