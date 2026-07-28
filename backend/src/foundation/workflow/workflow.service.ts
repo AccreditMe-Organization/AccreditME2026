@@ -18,6 +18,7 @@ import {
   WorkflowTransition as PrismaWorkflowTransition,
   WorkflowApproval as PrismaWorkflowApproval,
   WorkflowObjectType,
+  TaskSourceType,
 } from '../../../generated/prisma/client';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
@@ -549,6 +550,24 @@ export class WorkflowService {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) return 'Skipped — target stage not found';
 
+    // WorkflowObjectType (8 values, includes DOCUMENT_REQUEST/CHANGE_REQUEST/
+    // COMMITTEE) and TaskSourceType (CLAUDE.md's closed 10-value list) don't
+    // fully overlap — discovered when this method was migrated to the
+    // redesigned Task schema. COMMITTEE has no valid TaskSourceType mapping;
+    // its seeded formation→terms_review transition DOES fire CREATE_TASK
+    // (confirmed in workflow.seed.ts), so this is a real gap, not
+    // hypothetical — flagged for Step 10 (Committees) to resolve properly,
+    // likely by adding COMMITTEE to TaskSourceType when that module is built.
+    const sourceType = this.mapObjectTypeToTaskSourceType(instance.objectType);
+    if (!sourceType) {
+      return `Skipped — no TaskSourceType mapping for ${instance.objectType} (see Step 10)`;
+    }
+
+    // TEMPORARY — raw-Prisma patch to keep this compiling against the
+    // redesigned Task schema (Commit 1). Still only ever assigns the first
+    // resolved assignee, same known bug as before. Commit 6 replaces this
+    // entire method body with a real call to TaskService.create(), which
+    // fixes the bug by passing the FULL assigneeIds array.
     const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
     const primaryAssignee = assigneeIds[0];
     if (!primaryAssignee) return 'Skipped — no assignee resolved';
@@ -559,16 +578,45 @@ export class WorkflowService {
       data: {
         organizationId,
         title: `${transition.labelEn} — ${instance.objectType}`,
-        objectType: instance.objectType,
-        objectId: instance.objectId,
+        sourceType,
+        sourceId: instance.objectId,
+        sourceStageId: toStage.id,
         workflowInstanceId: instance.id,
-        assigneeId: primaryAssignee,
         createdById: actorId,
         dueAt,
+        assignees: {
+          create: { userId: primaryAssignee, assignedById: actorId },
+        },
       },
     });
 
     return `Task created for ${primaryAssignee}`;
+  }
+
+  // WorkflowObjectType → TaskSourceType. DOCUMENT_REQUEST/CHANGE_REQUEST map
+  // to DOCUMENT (both are document-lifecycle processes). COMMITTEE has no
+  // valid mapping under the current TaskSourceType list — returns null,
+  // meaning callers must skip task creation gracefully rather than write an
+  // invalid enum value to the database.
+  private mapObjectTypeToTaskSourceType(objectType: WorkflowObjectType): TaskSourceType | null {
+    switch (objectType) {
+      case 'DOCUMENT':
+      case 'DOCUMENT_REQUEST':
+      case 'CHANGE_REQUEST':
+        return 'DOCUMENT';
+      case 'INCIDENT':
+        return 'INCIDENT';
+      case 'AUDIT':
+        return 'AUDIT';
+      case 'CORRECTIVE_ACTION':
+        return 'CORRECTIVE_ACTION';
+      case 'MEETING':
+        return 'MEETING';
+      case 'COMMITTEE':
+        return null;
+      default:
+        return null;
+    }
   }
 
   private async executeSendNotification(
