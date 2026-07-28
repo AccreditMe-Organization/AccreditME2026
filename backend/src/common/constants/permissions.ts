@@ -33,8 +33,10 @@ export const WORKFLOWS_PERMISSIONS = {
 
 export const TASKS_PERMISSIONS = {
   VIEW:     'tasks:view',
+  CREATE:   'tasks:create',
+  REASSIGN: 'tasks:reassign',
+  COMPLETE: 'tasks:complete',
   MANAGE:   'tasks:manage',
-  DELEGATE: 'tasks:delegate',
 } as const;
 
 export const COMMITTEES_PERMISSIONS = {
