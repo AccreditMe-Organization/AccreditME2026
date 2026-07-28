@@ -11,6 +11,7 @@ import { QueueModule } from './common/queue/queue.module';
 import { WorkflowModule } from './foundation/workflow/workflow.module';
 import { NotificationModule } from './foundation/notification/notification.module';
 import { OrgPositionModule } from './foundation/org-position/org-position.module';
+import { TaskModule } from './foundation/task/task.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { OrgPositionModule } from './foundation/org-position/org-position.module
     WorkflowModule,
     NotificationModule,
     OrgPositionModule,
+    TaskModule,
   ],
 })
 export class AppModule {}
