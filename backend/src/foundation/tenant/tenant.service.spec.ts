@@ -6,6 +6,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { LookupService } from '../lookup/lookup.service';
 import { RoleService } from '../roles/role.service';
 import { WorkflowTemplateService } from '../workflow/workflow-template.service';
+import { OrgPositionService } from '../org-position/org-position.service';
 
 // Valid 64-char hex string → 32 bytes, satisfies constructor guard
 const MOCK_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -48,6 +49,7 @@ describe('TenantService', () => {
   let lookupService: { seedSystemData: jest.Mock };
   let roleService: { seedSystemRoles: jest.Mock };
   let workflowTemplateService: { seedDefaultWorkflows: jest.Mock };
+  let orgPositionService: { seedDefaultPositions: jest.Mock };
 
   beforeEach(async () => {
     process.env['ENCRYPTION_KEY'] = MOCK_ENCRYPTION_KEY;
@@ -67,6 +69,7 @@ describe('TenantService', () => {
     lookupService = { seedSystemData: jest.fn().mockResolvedValue(undefined) };
     roleService  = { seedSystemRoles: jest.fn().mockResolvedValue(undefined) };
     workflowTemplateService = { seedDefaultWorkflows: jest.fn().mockResolvedValue(undefined) };
+    orgPositionService = { seedDefaultPositions: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -76,6 +79,7 @@ describe('TenantService', () => {
         { provide: LookupService,  useValue: lookupService },
         { provide: RoleService,    useValue: roleService },
         { provide: WorkflowTemplateService, useValue: workflowTemplateService },
+        { provide: OrgPositionService, useValue: orgPositionService },
       ],
     }).compile();
 
@@ -168,6 +172,7 @@ describe('TenantService', () => {
 
       await service.bootstrap('org-a', 'user-1');
 
+      expect(orgPositionService.seedDefaultPositions).toHaveBeenCalledWith('org-a');
       expect(lookupService.seedSystemData).toHaveBeenCalledTimes(1);
       expect(roleService.seedSystemRoles).toHaveBeenCalledWith('org-a');
       expect(prisma.organization.update).toHaveBeenCalledWith(

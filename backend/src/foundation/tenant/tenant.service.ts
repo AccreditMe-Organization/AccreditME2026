@@ -8,6 +8,7 @@ import {
 import { LookupService } from '../lookup/lookup.service';
 import { RoleService } from '../roles/role.service';
 import { WorkflowTemplateService } from '../workflow/workflow-template.service';
+import { OrgPositionService } from '../org-position/org-position.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import {
@@ -31,6 +32,8 @@ export class TenantService {
     private readonly roleService: RoleService,
     @Inject(forwardRef(() => WorkflowTemplateService))
     private readonly workflowTemplateService: WorkflowTemplateService,
+    @Inject(forwardRef(() => OrgPositionService))
+    private readonly orgPositionService: OrgPositionService,
   ) {
     this.encryptionKey = getEncryptionKey();
   }
@@ -154,10 +157,11 @@ export class TenantService {
       });
     }
 
+    await this.orgPositionService.seedDefaultPositions(id);
     await this.lookupService.seedSystemData();
     await this.roleService.seedSystemRoles(id);
     await this.workflowTemplateService.seedDefaultWorkflows(id);
-    // TODO(Step 7 — Notifications): register default notification rules
+    // TODO(Step 8 — Tasks): register default task SLA settings
 
     await this.prisma.organization.update({
       where: { id },
