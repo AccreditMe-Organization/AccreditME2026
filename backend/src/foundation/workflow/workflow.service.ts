@@ -11,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
+import { TaskService } from '../task/task.service';
 import {
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowInstanceStage as PrismaWorkflowInstanceStage,
@@ -18,6 +19,7 @@ import {
   WorkflowTransition as PrismaWorkflowTransition,
   WorkflowApproval as PrismaWorkflowApproval,
   WorkflowObjectType,
+  TaskSourceType,
 } from '../../../generated/prisma/client';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
@@ -46,6 +48,7 @@ export class WorkflowService {
     private readonly auditLog: AuditLogService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
+    private readonly taskService: TaskService,
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
   ) {}
 
@@ -549,26 +552,67 @@ export class WorkflowService {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) return 'Skipped — target stage not found';
 
+    // WorkflowObjectType (8 values, includes DOCUMENT_REQUEST/CHANGE_REQUEST/
+    // COMMITTEE) and TaskSourceType (CLAUDE.md's closed 10-value list) don't
+    // fully overlap — discovered when this method was first migrated to the
+    // redesigned Task schema. COMMITTEE has no valid TaskSourceType mapping;
+    // its seeded formation→terms_review transition DOES fire CREATE_TASK
+    // (confirmed in workflow.seed.ts), so this is a real gap, not
+    // hypothetical — flagged for Step 10 (Committees) to resolve properly,
+    // likely by adding COMMITTEE to TaskSourceType when that module is built.
+    const sourceType = this.mapObjectTypeToTaskSourceType(instance.objectType);
+    if (!sourceType) {
+      return `Skipped — no TaskSourceType mapping for ${instance.objectType} (see Step 10)`;
+    }
+
+    // Full resolved assigneeIds array passed through — fixes the original
+    // bug where only assigneeIds[0] was ever used, silently dropping every
+    // other assignee for PARALLEL/COMMITTEE stages.
     const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
-    const primaryAssignee = assigneeIds[0];
-    if (!primaryAssignee) return 'Skipped — no assignee resolved';
 
-    const dueAt = await this.computeSlaDueAt(toStage, organizationId);
-
-    await this.prisma.task.create({
-      data: {
-        organizationId,
+    const task = await this.taskService.create(
+      {
         title: `${transition.labelEn} — ${instance.objectType}`,
-        objectType: instance.objectType,
-        objectId: instance.objectId,
+        sourceType,
+        sourceId: instance.objectId,
+        sourceStageId: toStage.id,
         workflowInstanceId: instance.id,
-        assigneeId: primaryAssignee,
-        createdById: actorId,
-        dueAt,
+        assigneeUserIds: assigneeIds,
+        priority: 'MEDIUM', // TODO(future step): derive from source object urgency, not a fixed default
       },
-    });
+      organizationId,
+      actorId,
+    );
 
-    return `Task created for ${primaryAssignee}`;
+    return assigneeIds.length > 0
+      ? `Task created for ${assigneeIds.length} assignee(s)`
+      : `Task created as ${task.status} — no eligible assignee`;
+  }
+
+  // WorkflowObjectType → TaskSourceType. DOCUMENT_REQUEST/CHANGE_REQUEST map
+  // to DOCUMENT (both are document-lifecycle processes). COMMITTEE has no
+  // valid mapping under the current TaskSourceType list — returns null,
+  // meaning callers must skip task creation gracefully rather than write an
+  // invalid enum value to the database.
+  private mapObjectTypeToTaskSourceType(objectType: WorkflowObjectType): TaskSourceType | null {
+    switch (objectType) {
+      case 'DOCUMENT':
+      case 'DOCUMENT_REQUEST':
+      case 'CHANGE_REQUEST':
+        return 'DOCUMENT';
+      case 'INCIDENT':
+        return 'INCIDENT';
+      case 'AUDIT':
+        return 'AUDIT';
+      case 'CORRECTIVE_ACTION':
+        return 'CORRECTIVE_ACTION';
+      case 'MEETING':
+        return 'MEETING';
+      case 'COMMITTEE':
+        return null;
+      default:
+        return null;
+    }
   }
 
   private async executeSendNotification(
@@ -652,7 +696,22 @@ export class WorkflowService {
   // used for CREATE_TASK/SEND_NOTIFICATION targeting. Always returns an array
   // (empty if nothing could be resolved); callers needing a single assignee
   // take the first element.
+  // Public shape unchanged — resolves the raw strategy result, then applies
+  // out-of-office routing (Absence and Departure Management, Pattern 1)
+  // before returning. Affects every caller uniformly (CREATE_TASK,
+  // SEND_NOTIFICATION, initial-assignee notification) since out-of-office
+  // substitution should apply to assignee resolution generally, not just
+  // to tasks.
   private async resolveAssignee(
+    stage: PrismaWorkflowStage,
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<string[]> {
+    const rawUserIds = await this.resolveAssigneeRaw(stage, instance, organizationId);
+    return this.applyOutOfOfficeRouting(rawUserIds, organizationId);
+  }
+
+  private async resolveAssigneeRaw(
     stage: PrismaWorkflowStage,
     instance: PrismaWorkflowInstance,
     organizationId: string,
@@ -703,6 +762,86 @@ export class WorkflowService {
 
       default:
         return [];
+    }
+  }
+
+  // Absence and Departure Management, Pattern 1 (Acting Assignment):
+  //   IF user.outOfOfficeFrom <= now <= outOfOfficeTo AND actingUserId set:
+  //     → substitute actingUser, notify both, audit log the substitution
+  //   ELSE (out of office, no acting user set):
+  //     → keep the user assigned, notify Tenant Admin to reassign
+  private async applyOutOfOfficeRouting(userIds: string[], organizationId: string): Promise<string[]> {
+    if (userIds.length === 0) return userIds;
+
+    const now = new Date();
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds }, organizationId },
+    });
+
+    const resolved = new Set<string>();
+    for (const user of users) {
+      const isOutOfOffice =
+        user.outOfOfficeFrom && user.outOfOfficeTo && user.outOfOfficeFrom <= now && now <= user.outOfOfficeTo;
+
+      if (!isOutOfOffice) {
+        resolved.add(user.id);
+        continue;
+      }
+
+      if (user.actingUserId) {
+        resolved.add(user.actingUserId);
+
+        await this.notificationService.create(
+          {
+            userId: user.id,
+            titleEn: 'Assignment routed to your acting user',
+            bodyEn: `An assignment was routed to your acting user while you are on leave.`,
+          },
+          organizationId,
+        );
+        await this.notificationService.create(
+          {
+            userId: user.actingUserId,
+            titleEn: 'Assignment routed to you (acting)',
+            bodyEn: `You have been assigned as the acting user for a colleague on leave.`,
+          },
+          organizationId,
+        );
+        await this.auditLog.log({
+          action: 'DELEGATE',
+          objectType: 'User',
+          objectId: user.id,
+          tenantId: organizationId,
+          metadata: { assignedToActingUserId: user.actingUserId, reason: 'out-of-office' },
+        });
+      } else {
+        // Out of office with no acting user set — assign normally per the
+        // documented fallback, but flag the gap to the Tenant Admin.
+        resolved.add(user.id);
+        await this.notifyTenantAdminsOfCoverageGap(organizationId, user.id);
+      }
+    }
+
+    return Array.from(resolved);
+  }
+
+  private async notifyTenantAdminsOfCoverageGap(organizationId: string, absentUserId: string): Promise<void> {
+    const adminRole = await this.prisma.role.findFirst({ where: { organizationId, key: 'TENANT_ADMIN' } });
+    if (!adminRole) return;
+
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+    });
+
+    for (const userRole of userRoles) {
+      await this.notificationService.create(
+        {
+          userId: userRole.userId,
+          titleEn: 'Coverage gap — user on leave with no acting user',
+          bodyEn: `A user on leave (id: ${absentUserId}) has no acting user set and was assigned anyway. Consider reassigning.`,
+        },
+        organizationId,
+      );
     }
   }
 

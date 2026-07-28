@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
+import { OrgPositionService } from '../org-position/org-position.service';
 
 interface EscalationRule {
   afterHours: number;
@@ -27,6 +28,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     private readonly auditLog: AuditLogService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
+    private readonly orgPositionService: OrgPositionService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -85,6 +87,85 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         },
       });
     }
+
+    await this.sweepOverdueTasks(now);
+  }
+
+  // Task Management (Step 8) extension — reuses this existing 15-minute
+  // repeatable job rather than registering a new queue, per CLAUDE.md's
+  // Background Jobs list having exactly one SLA-sweep entry, not one per
+  // entity type (see Step 8 plan, Section 3/Commit 7).
+  private async sweepOverdueTasks(now: Date): Promise<void> {
+    const overdueTasks = await this.prisma.task.findMany({
+      where: {
+        dueAt: { lt: now },
+        status: { notIn: ['COMPLETED', 'CANCELLED', 'OVERDUE', 'UNASSIGNED'] },
+      },
+      include: { assignees: { where: { removedAt: null } } },
+    });
+
+    for (const task of overdueTasks) {
+      await this.prisma.task.update({
+        where: { id: task.id },
+        data: { status: 'OVERDUE', slaBreachedAt: now },
+      });
+
+      if (!task.escalationUserId || !task.escalationAfterHours || task.escalatedAt || !task.dueAt) {
+        continue;
+      }
+
+      const hoursSinceDue = DateTime.fromJSDate(now).diff(DateTime.fromJSDate(task.dueAt), 'hours').hours;
+      if (hoursSinceDue < task.escalationAfterHours) continue;
+
+      if (!(await this.isWithinWorkingHours(task.organizationId))) continue;
+
+      await this.fireTaskEscalation(task.organizationId, task.id, task.escalationUserId, task.assignees.map((a) => a.userId));
+    }
+  }
+
+  private async fireTaskEscalation(
+    organizationId: string,
+    taskId: string,
+    escalationUserId: string,
+    assigneeIds: string[],
+  ): Promise<void> {
+    try {
+      await this.orgPositionService.validateEscalationTarget(assigneeIds, escalationUserId, organizationId);
+    } catch (err) {
+      // Never silently escalate to an invalid target — log and skip.
+      await this.auditLog.log({
+        tenantId: organizationId,
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: taskId,
+        metadata: {
+          escalationSkipped: true,
+          reason: err instanceof Error ? err.message : 'Invalid escalation target',
+        },
+      });
+      return;
+    }
+
+    await this.notificationService.create(
+      {
+        userId: escalationUserId,
+        titleEn: 'Task SLA breach escalation',
+        bodyEn: `A task has breached its SLA and has been escalated to you.`,
+        objectType: 'Task',
+        objectId: taskId,
+      },
+      organizationId,
+    );
+
+    await this.prisma.task.update({ where: { id: taskId }, data: { escalatedAt: new Date() } });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: taskId,
+      metadata: { escalatedTo: escalationUserId },
+    });
   }
 
   private async fireEscalation(

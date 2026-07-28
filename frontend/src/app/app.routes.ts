@@ -43,4 +43,16 @@ export const routes: Routes = [
         (m) => m.WORKFLOW_ROUTES,
       ),
   },
+  {
+    path: 'org-positions',
+    loadChildren: () =>
+      import('./foundation/org-position/org-position.routes').then(
+        (m) => m.ORG_POSITION_ROUTES,
+      ),
+  },
+  {
+    path: 'tasks',
+    loadChildren: () =>
+      import('./foundation/tasks/tasks.routes').then((m) => m.TASKS_ROUTES),
+  },
 ];

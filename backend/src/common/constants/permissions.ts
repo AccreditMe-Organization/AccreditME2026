@@ -33,8 +33,10 @@ export const WORKFLOWS_PERMISSIONS = {
 
 export const TASKS_PERMISSIONS = {
   VIEW:     'tasks:view',
+  CREATE:   'tasks:create',
+  REASSIGN: 'tasks:reassign',
+  COMPLETE: 'tasks:complete',
   MANAGE:   'tasks:manage',
-  DELEGATE: 'tasks:delegate',
 } as const;
 
 export const COMMITTEES_PERMISSIONS = {
@@ -100,6 +102,11 @@ export const REPORTS_PERMISSIONS = {
 export const PLATFORM_PERMISSIONS = {
   ADMIN:       'platform:admin',
   IMPERSONATE: 'platform:impersonate',
+} as const;
+
+export const POSITIONS_PERMISSIONS = {
+  VIEW:   'positions:view',
+  MANAGE: 'positions:manage',
 } as const;
 
 export const KPI_PERMISSIONS = {

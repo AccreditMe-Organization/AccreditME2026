@@ -231,5 +231,62 @@
     "unreadCount": "{{count}} غير مقروءة",
     "justNow": "الآن",
     "errorLoad": "فشل تحميل الإشعارات."
+  },
+  "orgPosition": {
+    "title": "المسميات الوظيفية",
+    "addPosition": "إضافة مسمى وظيفي",
+    "editPosition": "تعديل المسمى الوظيفي",
+    "nameEn": "اسم المسمى (بالإنجليزية)",
+    "nameAr": "اسم المسمى (بالعربية)",
+    "grade": "الدرجة",
+    "gradeHint": "1 = الأدنى، 10 = الأعلى أقدمية",
+    "orgUnit": "الوحدة التنظيمية",
+    "orgWide": "على مستوى المنظمة (كل الوحدات)",
+    "isActive": "نشط",
+    "deactivate": "إلغاء التفعيل",
+    "noPositions": "لا توجد مسميات وظيفية بعد.",
+    "systemBadge": "افتراضي",
+    "customBadge": "مخصص",
+    "errorLoad": "فشل تحميل المسميات الوظيفية."
+  },
+  "task": {
+    "title": "العنوان",
+    "myTasks": "مهامي",
+    "allTasks": "كل المهام",
+    "newTask": "مهمة جديدة",
+    "description": "الوصف",
+    "source": "المصدر",
+    "sourceType": "نوع المصدر",
+    "sourceId": "معرف المصدر",
+    "dueDate": "تاريخ الاستحقاق",
+    "complete": "إنجاز",
+    "reassign": "إعادة تعيين",
+    "reassignReason": "سبب إعادة التعيين",
+    "addEvidence": "إضافة دليل",
+    "assigneePickerUnavailable": "سيتوفر اختيار المكلفين بالمهمة بعد إعداد إدارة المستخدمين. سيتم إنشاء هذه المهمة دون تعيين، وسيتم إشعار مسؤول المنظمة لتعيينها.",
+    "noTasks": "لا توجد مهام.",
+    "errorLoad": "فشل تحميل المهام.",
+    "priority": {
+      "title": "الأولوية",
+      "low": "منخفضة",
+      "medium": "متوسطة",
+      "high": "عالية",
+      "critical": "حرجة"
+    },
+    "status": {
+      "title": "الحالة",
+      "pending": "قيد الانتظار",
+      "in_progress": "قيد التنفيذ",
+      "overdue": "متأخرة",
+      "completed": "مكتملة",
+      "cancelled": "ملغاة",
+      "unassigned": "غير معينة"
+    },
+    "evidenceType": {
+      "text": "نص",
+      "attachment": "مرفق",
+      "link": "رابط",
+      "internal_reference": "مرجع داخلي"
+    }
   }
 }

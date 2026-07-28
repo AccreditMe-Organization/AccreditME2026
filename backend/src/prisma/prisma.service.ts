@@ -51,6 +51,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get lookupCategory() { return this._client.lookupCategory; }
   get lookupValue() { return this._client.lookupValue; }
   get orgUnit() { return this._client.orgUnit; }
+  get orgPosition() { return this._client.orgPosition; }
   get workingCalendar() { return this._client.workingCalendar; }
   get publicHoliday() { return this._client.publicHoliday; }
   get workflowTemplate() { return this._client.workflowTemplate; }
@@ -62,6 +63,8 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get workflowTransitionAction() { return this._client.workflowTransitionAction; }
   get workflowActionLog() { return this._client.workflowActionLog; }
   get task() { return this._client.task; }
+  get taskAssignee() { return this._client.taskAssignee; }
+  get taskEvidence() { return this._client.taskEvidence; }
   get notification() { return this._client.notification; }
   get committee() { return this._client.committee; }
   get committeeMember() { return this._client.committeeMember; }

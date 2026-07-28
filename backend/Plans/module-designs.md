@@ -593,6 +593,69 @@ Coverage gap detection (BullMQ daily job):
 
 ---
 
+## Org Position Module (Part of Step 8)
+
+### Purpose
+Defines organizational hierarchy of positions/grades.
+Used for escalation validation, delegation authority,
+and absence coverage rules across ALL modules.
+This is NOT the same as OrgUnit.type which describes
+the department structure — OrgPosition describes a
+user's seniority within their unit.
+
+### Design
+Org-wide positions (orgUnitId = null):
+  Apply across all departments
+  e.g. Director, Deputy Director
+  Seeded by default on bootstrap
+
+Org-unit-specific positions (orgUnitId set):
+  Apply within a specific department only
+  e.g. "ICU Unit Manager"
+  Created by tenant admin as needed
+
+Grade system:
+  grade: Int (1=lowest, 10=highest)
+  Tenant admin defines grade for each position
+  Default positions ship with pre-set grades
+
+### Escalation Validation
+Requires BOTH conditions to pass:
+  1. target.position.grade >= max(assignee grades)
+  2. target.primaryOrgUnitId in same or parent org unit
+
+Edge cases:
+  Assignee has no position: grade treated as 0 (any target valid)
+  Target has no position: grade treated as 0 (fails if assignee has position)
+  Target has no primaryOrgUnitId: fails org unit check
+
+### Default Positions (seeded on bootstrap)
+10 org-wide positions (orgUnitId = null):
+Director(10), Deputy Director(9), Department Head(8),
+Section Manager(7), Senior Specialist(6), Specialist(5),
+Senior Technician(4), Technician(3), Coordinator(2), Staff(1)
+
+### Cross-Module Usage
+Step 8  Tasks:       validateEscalationTarget()
+Step 9  Users:       User.positionId assignment in profile
+Step 10 Committees:  chair authority validation
+Step 11 Meetings:    meeting chair authority
+Step 17 Documents:   approval authority chain
+Step 18 CAPA:        ownership and escalation
+Step 19 Audits:      audit team authority
+
+### Permission Mapping
+positions:view    — read org positions
+positions:manage  — create/edit/deactivate positions
+
+### AI Integration
+POSITION_COVERAGE_GAP (BullMQ daily job):
+  AI detects org units with no users assigned to
+  senior positions (grade >= 7)
+  Output: alert to Tenant Admin with specific gaps
+
+---
+
 ## Meeting Module (Step 11)
 
 ### Scope Boundary
