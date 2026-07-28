@@ -726,6 +726,7 @@ model Task {
   completedById        String?
   escalationUserId     String?
   escalationAfterHours Int?
+  escalatedAt          DateTime?
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
 

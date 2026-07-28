@@ -18,6 +18,7 @@ export interface ITask {
   completedById: string | null;
   escalationUserId: string | null;
   escalationAfterHours: number | null;
+  escalatedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
