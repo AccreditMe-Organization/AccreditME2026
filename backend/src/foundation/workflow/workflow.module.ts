@@ -5,6 +5,7 @@ import { WorkingCalendarModule } from '../working-calendar/working-calendar.modu
 import { TenantModule } from '../tenant/tenant.module';
 import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
+import { OrgPositionModule } from '../org-position/org-position.module';
 import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
@@ -35,6 +36,11 @@ import { SlaMonitorProcessor } from './sla-monitor.processor';
     // (TaskModule already forwardRef()s TenantModule, Commit 5). forwardRef()
     // here too, verified via a real start:dev boot.
     forwardRef(() => TaskModule),
+    // Needed for SlaMonitorProcessor's OrgPositionService injection (Task
+    // escalation validation). Same transitive-cycle shape as TaskModule's
+    // edge above: TenantModule → WorkflowModule → OrgPositionModule →
+    // TenantModule (OrgPositionModule already forwardRef()s TenantModule).
+    forwardRef(() => OrgPositionModule),
   ],
   controllers: [WorkflowTemplateController, WorkflowController],
   providers: [WorkflowTemplateService, WorkflowService, WorkflowActionProcessor, SlaMonitorProcessor],
