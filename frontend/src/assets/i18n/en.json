@@ -231,5 +231,22 @@
     "unreadCount": "{{count}} unread",
     "justNow": "Just now",
     "errorLoad": "Failed to load notifications."
+  },
+  "orgPosition": {
+    "title": "Org Positions",
+    "addPosition": "Add Position",
+    "editPosition": "Edit Position",
+    "nameEn": "Position Name (English)",
+    "nameAr": "Position Name (Arabic)",
+    "grade": "Grade",
+    "gradeHint": "1 = lowest, 10 = highest seniority",
+    "orgUnit": "Org Unit",
+    "orgWide": "Org-Wide (All Units)",
+    "isActive": "Active",
+    "deactivate": "Deactivate",
+    "noPositions": "No positions defined yet.",
+    "systemBadge": "Default",
+    "customBadge": "Custom",
+    "errorLoad": "Failed to load positions."
   }
 }
