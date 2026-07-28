@@ -51,6 +51,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get lookupCategory() { return this._client.lookupCategory; }
   get lookupValue() { return this._client.lookupValue; }
   get orgUnit() { return this._client.orgUnit; }
+  get orgPosition() { return this._client.orgPosition; }
   get workingCalendar() { return this._client.workingCalendar; }
   get publicHoliday() { return this._client.publicHoliday; }
   get workflowTemplate() { return this._client.workflowTemplate; }
