@@ -43,4 +43,11 @@ export const routes: Routes = [
         (m) => m.WORKFLOW_ROUTES,
       ),
   },
+  {
+    path: 'org-positions',
+    loadChildren: () =>
+      import('./foundation/org-position/org-position.routes').then(
+        (m) => m.ORG_POSITION_ROUTES,
+      ),
+  },
 ];
