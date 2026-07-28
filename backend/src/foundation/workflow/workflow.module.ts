@@ -4,6 +4,7 @@ import { QueueModule } from '../../common/queue/queue.module';
 import { WorkingCalendarModule } from '../working-calendar/working-calendar.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { NotificationModule } from '../notification/notification.module';
+import { TaskModule } from '../task/task.module';
 import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
@@ -28,6 +29,12 @@ import { SlaMonitorProcessor } from './sla-monitor.processor';
     // verified safe via a real start:dev boot, not just tsc/jest — same class
     // of bug as the working-calendar.module.ts fix from Step 6.
     NotificationModule,
+    // TaskModule is NOT @Global() (unlike NotificationModule) — this edge is
+    // load-bearing for DI, not just explicitness. Closes another transitive
+    // cycle: TenantModule → WorkflowModule → TaskModule → TenantModule
+    // (TaskModule already forwardRef()s TenantModule, Commit 5). forwardRef()
+    // here too, verified via a real start:dev boot.
+    forwardRef(() => TaskModule),
   ],
   controllers: [WorkflowTemplateController, WorkflowController],
   providers: [WorkflowTemplateService, WorkflowService, WorkflowActionProcessor, SlaMonitorProcessor],

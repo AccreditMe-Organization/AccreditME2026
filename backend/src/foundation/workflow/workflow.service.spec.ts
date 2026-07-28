@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
+import { TaskService } from '../task/task.service';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -148,12 +149,14 @@ const mockPrisma = {
   userRole: { findFirst: jest.fn(), findMany: jest.fn() },
   committee: { findUnique: jest.fn() },
   committeeMember: { findMany: jest.fn() },
-  task: { create: jest.fn() },
+  user: { findMany: jest.fn() },
+  role: { findFirst: jest.fn() },
 };
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
+const mockTaskService = { create: jest.fn() };
 const mockQueue = { add: jest.fn() };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -166,6 +169,14 @@ describe('WorkflowService', () => {
     mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue(BASE_INSTANCE_STAGE);
+    // Default: no user is out-of-office — applyOutOfOfficeRouting() passes
+    // resolveAssignee()'s raw result through unchanged for existing tests.
+    mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+      Promise.resolve(
+        where.id.in.map((id) => ({ id, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null })),
+      ),
+    );
+    mockTaskService.create.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -174,6 +185,7 @@ describe('WorkflowService', () => {
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: TaskService, useValue: mockTaskService },
         { provide: getQueueToken('workflow-actions'), useValue: mockQueue },
       ],
     }).compile();
@@ -407,6 +419,83 @@ describe('WorkflowService', () => {
 
       expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ actionType: 'CREATE_TASK', status: 'SUCCESS' }) }),
+      );
+    });
+
+    // Regression test for the bug fixed in Step 8 (ACC-11): executeCreateTask()
+    // used to only ever pass assigneeIds[0] to the task-creation call, silently
+    // dropping every other resolved assignee for multi-approver (ROLE-resolved
+    // to multiple holders, PARALLEL/COMMITTEE) stages.
+    it('passes the FULL resolved assigneeIds array to TaskService.create(), not just the first', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockStagesById({
+        'stage-single': SINGLE_STAGE,
+        'stage-target': { ...PARALLEL_STAGE, id: 'stage-target' },
+      });
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+      // PARALLEL_STAGE resolves via ROLE with approvalMode PARALLEL — every
+      // holder is returned, not just the first (that's exactly the bug).
+      mockPrisma.userRole.findMany.mockResolvedValue([
+        { userId: 'holder-1' },
+        { userId: 'holder-2' },
+        { userId: 'holder-3' },
+      ]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['holder-1', 'holder-2', 'holder-3'] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
+    it('routes an out-of-office assignee to their acting user before task creation', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockStagesById({
+        'stage-single': SINGLE_STAGE,
+        'stage-target': { ...TARGET_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-x' },
+      });
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
+
+      const now = new Date();
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        {
+          id: 'holder-1',
+          outOfOfficeFrom: new Date(now.getTime() - 86400000),
+          outOfOfficeTo: new Date(now.getTime() + 86400000),
+          actingUserId: 'acting-user-1',
+        },
+      ]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['acting-user-1'] }),
+        ORG_A,
+        ACTOR,
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'holder-1' }),
+        ORG_A,
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'acting-user-1' }),
+        ORG_A,
+      );
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'DELEGATE', objectType: 'User', objectId: 'holder-1' }),
       );
     });
   });

@@ -60,6 +60,7 @@ export class TaskService {
         sourceType: dto.sourceType,
         sourceId: dto.sourceId,
         sourceStageId: dto.sourceStageId ?? null,
+        workflowInstanceId: dto.workflowInstanceId ?? null,
         meetingId: dto.meetingId ?? null,
         createdById: actorId,
         priority: dto.priority ?? 'MEDIUM',

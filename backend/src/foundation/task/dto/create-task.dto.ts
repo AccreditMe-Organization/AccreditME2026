@@ -51,6 +51,12 @@ export class CreateTaskDto {
   @IsOptional()
   sourceStageId?: string;
 
+  // Links a workflow-generated task back to the WorkflowInstance that
+  // created it — never set by manual (tasks:create) task creation.
+  @IsString()
+  @IsOptional()
+  workflowInstanceId?: string;
+
   @IsString()
   @IsOptional()
   meetingId?: string;
