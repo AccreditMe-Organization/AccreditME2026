@@ -67,6 +67,24 @@ Note: PENDING is system-set only, never submitted by user
 - Major revision: content changes
 - Minor revision: formatting/minor corrections
 
+### Document Access Control Levels
+Three levels (tenant admin configures per document):
+  ORG_WIDE: visible to all org members (default)
+  DEPARTMENT: visible only to specified org units
+  CONFIDENTIAL: visible only to specified roles
+
+Access enforced at:
+  Document listing API (filter by access level)
+  Document view API (403 if no access)
+  Staff portal (only distributed documents visible)
+
+### Staff Acknowledgement (Step 17b)
+Staff = portal-only users (OTP access, no system login)
+Distribution list defined at publish time per org unit
+AcknowledgementRecord per staff member per document version
+Permanent access to all distributed documents
+Re-acknowledgement required on new version publish
+
 ---
 
 ## CAPA Module (Step 18)
@@ -286,62 +304,292 @@ Consider adding AUDITOR as a system role in Step 4 data.
 ## Task Management Module (Step 8)
 
 ### Core Principle
-Tasks are cross-module. Every module generates tasks.
-A task is always linked to its source record.
-This is the single most important architectural
-constraint for Step 8.
+Tasks are cross-module. Every task MUST have sourceType 
+and sourceId — no standalone tasks allowed.
+Tasks are always linked to a quality event.
 
 ### Task Source Types
-MEETING          - action items from meeting minutes
-DOCUMENT         - review tasks, acknowledgement tasks
-AUDIT            - evidence preparation, CAP submission
-CAPA             - implementation tasks, retraining tasks
-INCIDENT         - investigation tasks, report tasks
-CORRECTIVE_ACTION- implementation tasks, verification tasks
-STANDARD         - gap assessment tasks, evidence mapping
-KPI              - data submission tasks, investigation tasks
+MEETING, DOCUMENT, AUDIT, CAPA, INCIDENT,
+CORRECTIVE_ACTION, STANDARD, KPI,
+GAP, QUALITY_IMPROVEMENT_PLAN
 
-### Required Task Model Fields
-- organizationId    (tenant isolation — always)
-- title, description
-- assignedToId      (User)
-- assignedById      (User who created it)
-- dueDate
-- priority          (CRITICAL, HIGH, MEDIUM, LOW)
-- status            (PENDING, IN_PROGRESS, COMPLETED,
-                     OVERDUE, CANCELLED)
-- sourceType        (TaskSourceType enum — see above)
-- sourceId          (ID of the source record)
-- sourceStageId     (which workflow stage created the task)
-- meetingId         (optional — for cross-meeting tracking)
-- completedAt, completedById
-- evidence          (proof of completion — text or attachment)
+### Multi-Assignee Design
+Tasks support multiple assignees via TaskAssignee junction.
+Completion rule: ANY one assignee completes → task marked 
+COMPLETED and removed from all other assignees' task lists.
+Record of who completed it kept in TaskAssignee.
 
-### Key Capabilities Required
-1. My Tasks view — all tasks across all modules for a user
-2. Module task lists — tasks filtered by sourceType + sourceId
-3. Cross-meeting action tracking —
-   tasks from previous meetings auto-load in next meeting agenda
-4. Management dashboard — overdue tasks by module
-5. SLA monitoring — BullMQ job escalates overdue tasks
-6. Evidence recording — completion requires evidence field
+### SLA Configuration
+Task SLAs are TENANT-CONFIGURABLE — not hardcoded.
+Stored in Organization.settings JSON:
+{
+  "taskSla": {
+    "CRITICAL": 4,
+    "HIGH": 16,
+    "MEDIUM": 40,
+    "LOW": 80
+  }
+}
+Platform defaults shown above — tenant admin can override.
+When task created without explicit due date:
+  Read organization.settings.taskSla for priority
+  Call WorkingCalendarService.calculateDeadline(now, hours)
+  Set task.dueDate
 
-### Task Creation
-Tasks are created in two ways:
-1. Automatically by workflow engine on stage transition
-   (CREATE_TASK action type fires)
-2. Manually by any user with tasks:create permission
+NOTE: ALL SLAs in AccreditMe are tenant-configurable.
+  Workflow stage SLAs: configurable per stage (slaWorkingHours) ✅
+  Task priority SLAs: Organization.settings.taskSla ← this module
+  CAPA closure targets: tenant settings ← Step 18
+  Document review cycles: document_type lookup attributes ✅
+
+### Escalation Rules (org structure aware)
+Creator optionally sets escalationUserId and 
+escalationAfterHours when creating a task.
+
+Validation on escalation target:
+  escalationUserId must be BOTH:
+  1. In same org unit OR a parent org unit of assignee(s)
+  2. Have role with higher or equal permission level 
+     than the assignee(s)
+     
+This prevents escalating to peers or subordinates.
+
+### Evidence of Completion
+Tasks support multiple evidence items via TaskEvidence model.
+Evidence types:
+  TEXT               ← free text description
+  ATTACHMENT         ← file uploaded to S3
+  LINK               ← external URL with optional title
+  INTERNAL_REFERENCE ← reference to AccreditMe business object
+
+INTERNAL_REFERENCE refType values:
+  DOCUMENT, AUDIT, INCIDENT, CAPA, MEETING,
+  STANDARD, CORRECTIVE_ACTION, GAP
+
+refDisplay field caches display name at creation time
+for performance (e.g. "POL-ICU-2024 v2.0")
+
+Back-references: referenced objects can show which tasks 
+reference them — computed on demand via query, no extra schema.
+
+### Task Permission Model
+tasks:create — who can create tasks (tenant admin assigns to roles)
+tasks:reassign — who can reassign tasks
+tasks:complete — who can mark tasks complete
+tasks:manage — full task management
+
+### No Subtasks
+Deferred to Phase 3. Multi-assignee covers most use cases.
+
+### Data Models
+
+Task:
+  id, organizationId
+  title, description
+  sourceType (TaskSourceType enum)
+  sourceId
+  sourceStageId (optional — workflow stage that created it)
+  meetingId (optional — cross-meeting tracking)
+  priority: CRITICAL | HIGH | MEDIUM | LOW
+  status: PENDING | IN_PROGRESS | COMPLETED | OVERDUE | CANCELLED
+  dueDate (calculated from priority SLA or manually set)
+  dueDateOverridden: Boolean (was it manually set?)
+  createdById
+  completedAt, completedById
+  escalationUserId (optional)
+  escalationAfterHours (optional)
+  createdAt, updatedAt
+
+TaskAssignee (junction — multi-assignee support):
+  id, taskId, userId
+  assignedAt, assignedById
+  removedAt (when task completed by someone else)
+
+TaskEvidence:
+  id, organizationId, taskId
+  type: TEXT | ATTACHMENT | LINK | INTERNAL_REFERENCE
+  content (for TEXT)
+  s3Key, fileName, fileSize, mimeType (for ATTACHMENT)
+  url, linkTitle (for LINK)
+  refType: TaskEvidenceRefType? (for INTERNAL_REFERENCE)
+  refId: String? (ID of referenced record)
+  refDisplay: String? (cached display name)
+  uploadedById, uploadedAt
 
 ### Cross-Meeting Task Chain
-When new meeting is in AGENDA_READY stage:
-  System queries: Tasks WHERE sourceType = MEETING
-                        AND meetingId IN (previous meetings
-                            of same committee/group)
-                        AND status != COMPLETED
-  These open tasks appear as first agenda section
-  Secretary records status update in MINUTES_DRAFT
-  On MINUTES_APPROVED: completed tasks closed,
-  incomplete tasks carried forward to next meeting
+Tasks created on meeting MINUTES_APPROVED:
+  sourceType: MEETING, sourceId: meeting instance id
+  meetingId: this meeting id
+
+Next meeting AGENDA_READY auto-loads:
+  All tasks WHERE sourceType = MEETING
+  AND status != COMPLETED
+  AND meetingId IN (previous meetings of same group)
+
+Secretary records in MINUTES_DRAFT:
+  COMPLETED (with evidence)
+  IN_PROGRESS (% complete, new deadline)
+  CARRIED_FORWARD (with reason)
+  CANCELLED (with reason)
+
+### AI Integration Points — Task Module
+
+1. SMART_TASK_CREATION (when workflow fires CREATE_TASK)
+   AI enriches auto-generated tasks with:
+   - Better descriptive title from context
+   - Realistic due date based on assignee workload
+     and historical completion times
+   - Priority suggestion based on source urgency
+   Context: tenant-scoped tasks and source objects only
+   Status: stub in Step 8, activate in Step 17+
+
+2. WORKLOAD_BALANCING (during task assignment)
+   AI warns if assignee is overloaded:
+   "Ahmad has 12 open tasks with 3 overdue.
+    Consider reassigning to Sara (4 open tasks)"
+   Suggests alternatives based on current workload
+   Context: tenant-scoped tasks and users only
+
+3. EVIDENCE_SUGGESTION (when completing a task)
+   AI suggests relevant internal references:
+   Based on task source object, suggests documents,
+   meetings, CAPAs, audits that could serve as evidence
+   Context: tenant-scoped records only
+   Status: stub in Step 8
+
+4. OVERDUE_PATTERN_ANALYSIS (BullMQ weekly job)
+   AI analyzes overdue task patterns:
+   - Which assignees consistently miss deadlines
+   - Which task types are always overdue
+   - Which source modules generate most overdue tasks
+   - Which org units are consistently behind
+   Output: weekly pattern report to Quality Manager
+   Status: defer to Phase 3 (needs data history)
+
+5. TASK_DESCRIPTION_DRAFTING (manual task creation)
+   User provides brief description
+   AI expands to clear actionable task with context
+   Status: defer to Phase 3
+
+All AI context strictly tenant-scoped (organizationId filter)
+
+---
+
+## Notification Module (Step 7)
+
+### Scope
+Full design in: backend/Plans/step-07-notification-service.md
+
+### Key Decisions
+- Single Notification row per recipient per event
+- channel field: IN_APP | EMAIL | BOTH | SMS (future)
+- NotificationModule is @Global()
+- Direct NotificationService.create() calls from other modules
+  (no event emitter bus — deferred to Phase 3)
+- Bell component polls every 30s for unread count
+- Real-time WebSocket notifications deferred to Phase 3
+- Resend for email delivery with BullMQ retry (3 attempts)
+- Email errors throw so BullMQ retries correctly
+
+### AI Integration
+- Morning briefing: deferred (Step 20+ dependency)
+- Personalized notification text: deferred to Phase 3
+
+---
+
+## Absence and Departure Management (Cross-Cutting)
+
+### Three Patterns
+
+Pattern 1 — Acting Assignment (planned absence):
+  User sets out-of-office before going on leave
+  Designates an acting user to cover assignments
+  WorkflowService checks out-of-office when resolving assignee:
+    IF user.outOfOfficeFrom <= now <= outOfOfficeTo
+    AND user.actingUserId is set:
+      → assign to actingUser instead
+      → notify both absent user and acting user
+      → audit log: "Assigned to [Acting] — [User] is on leave"
+    ELSE:
+      → assign normally but flag as user on leave
+      → notify Tenant Admin to reassign
+
+Pattern 2 — Manual Reassignment (admin action):
+  Available to: Tenant Admin, Quality Manager, task creator
+  Reassignable objects:
+    Tasks: new assignee(s) selected
+    Workflow stages: new assigneeUserId
+    CAPAs: ownership transferred
+    Committee seats: replacement member nominated
+  Full audit trail on every reassignment:
+    "Reassigned from [User A] to [User B]
+     by [Admin] on [date] — Reason: [text]"
+
+Pattern 3 — Role-Based Fallback (vacancy):
+  SLA monitor detects: workflow stage with no eligible assignee
+  (role-based assignment but role has no active members)
+  Actions:
+    1. Flag stage as UNASSIGNED (isUnassigned: true)
+    2. Notify Tenant Admin immediately
+    3. Pause stage SLA until reassigned
+    4. Tenant Admin sees Unassigned Stages dashboard widget
+
+### User Departure Flow (Critical)
+When user.isActive set to false (left company):
+  1. Increment tokenVersion (all JWTs immediately revoked)
+  2. Find all open assignments:
+     Tasks, Workflow stages, CAPAs, Committee memberships
+  3. If actingUserId was set:
+     → Transfer all assignments to acting user automatically
+  4. If no acting user:
+     → Flag all assignments as UNASSIGNED
+     → Notify Tenant Admin with complete list
+     → Tenant Admin must bulk-reassign before work continues
+  5. Audit trail: "User deactivated — X assignments transferred/flagged"
+
+### Data Model Additions
+
+User model (Step 9):
+  outOfOfficeFrom  DateTime?
+  outOfOfficeTo    DateTime?
+  actingUserId     String?   ← who covers during absence
+
+WorkflowInstanceStage additions (Step 6 enhancement):
+  isUnassigned     Boolean @default(false)
+  unassignedAt     DateTime?
+
+Task model (Step 8):
+  Reassignment via TaskAssignee junction:
+    Add new assignee row, remove old assignee row
+    Both changes logged in audit trail
+
+### Build Sequence
+Step 8 (Tasks — current):
+  Task reassignment action (Pattern 2 for tasks)
+  Out-of-office check when creating/assigning tasks
+  UNASSIGNED task status when no eligible assignee
+
+Step 9 (Users):
+  outOfOfficeFrom/outOfOfficeTo/actingUserId fields
+  Out-of-office settings UI
+  Acting user assignment UI
+  User departure bulk-reassignment flow
+
+Step 6 enhancement (during Step 9):
+  WorkflowService out-of-office routing
+  Role vacancy detection in SLA monitor
+  isUnassigned flag on WorkflowInstanceStage
+
+Step 10 (Committees):
+  Committee seat replacement when member departs
+
+### AI Integration — Absence Management
+Coverage gap detection (BullMQ daily job):
+  AI identifies: users going on leave with no acting user set
+  and open critical assignments
+  Output: alert to Tenant Admin with coverage gaps
+  "Ahmad goes on leave in 3 days with 5 critical
+   assignments and no acting user designated"
 
 ---
 
@@ -771,7 +1019,22 @@ Requires: ACCREDITATION_ROUND added to WorkflowObjectType enum
    Compares requirements between two standards
    Useful for dual-accreditation organizations
 
+7. STANDARD_INTERPRETATION (on demand)
+   Plain-language explanation of each measurable element
+   Translates technical standard language to practical guidance
+   Example: "What does JCI ACC.1.3 ME2 actually require
+            us to do in plain terms?"
+   Output: plain language explanation + practical checklist
+   Context: standard text only (no tenant data needed)
+
 All AI context strictly tenant-scoped (organizationId filter)
+
+### Permission Mapping
+standards:view         — read standards, view evidence mappings
+standards:manage       — create/edit accreditation rounds,
+                         manage chapter assignments
+standards:link_evidence — link AccreditMe records as evidence
+                          to measurable elements
 
 ### Schema Notes
 Add to WorkflowObjectType enum:
