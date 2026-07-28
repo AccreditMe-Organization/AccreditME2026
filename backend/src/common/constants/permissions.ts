@@ -102,6 +102,11 @@ export const PLATFORM_PERMISSIONS = {
   IMPERSONATE: 'platform:impersonate',
 } as const;
 
+export const POSITIONS_PERMISSIONS = {
+  VIEW:   'positions:view',
+  MANAGE: 'positions:manage',
+} as const;
+
 export const KPI_PERMISSIONS = {
   VIEW_OWN:        'kpi:view_own',
   VIEW_DEPARTMENT: 'kpi:view_department',
