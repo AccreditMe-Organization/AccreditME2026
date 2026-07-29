@@ -31,4 +31,11 @@ export class UpdateTenantDto {
   @IsIn(['ANTHROPIC', 'AZURE_OPENAI', 'OPENAI', 'OLLAMA'])
   @IsOptional()
   aiProvider?: 'ANTHROPIC' | 'AZURE_OPENAI' | 'OPENAI' | 'OLLAMA';
+
+  // S3 key — uploaded separately via the existing signed-upload flow, this
+  // field only ever receives the resulting key, never a raw file (ACC-13).
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  logo?: string;
 }

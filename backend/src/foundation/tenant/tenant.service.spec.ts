@@ -31,6 +31,10 @@ const ORG_A = {
   authConfig: null,
   storageConfig: null,
   aiConfig: null,
+  emailConfig: null,
+  logo: null,
+  isPlatformOrg: false,
+  planId: null,
   stripeCustomerId: null,
   stripeSubscriptionId: null,
   createdAt: new Date('2026-01-01'),
@@ -232,6 +236,59 @@ describe('TenantService', () => {
 
       const config = await service.getTenantConfig('org-a');
       expect(config.aiConfig).toEqual(payload);
+    });
+  });
+
+  // ── getEmailConfig / updateEmailConfig ───────────────────────────────────
+
+  describe('getEmailConfig', () => {
+    it('returns null provider/config when none is set', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      const config = await service.getEmailConfig('org-a');
+      expect(config).toEqual({ emailProvider: null, config: null });
+    });
+
+    it('decrypts a stored email config', async () => {
+      const payload = { emailProvider: 'smtp' as const, config: { host: 'smtp.example.com' } };
+      const encrypted = service.encryptConfig(payload);
+      prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, emailConfig: encrypted });
+
+      const config = await service.getEmailConfig('org-a');
+      expect(config).toEqual(payload);
+    });
+  });
+
+  describe('updateEmailConfig', () => {
+    it('encrypts and persists the email config, then logs an audit entry', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.organization.update.mockResolvedValue({ ...ORG_A });
+
+      await service.updateEmailConfig(
+        'org-a',
+        { emailProvider: 'resend', config: { apiKey: 'abc' } },
+        'user-1',
+      );
+
+      expect(prisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org-a' },
+        data: { emailConfig: expect.any(String) },
+      });
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE',
+          objectType: 'Organization',
+          objectId: 'org-a',
+          actorId: 'user-1',
+          tenantId: 'org-a',
+        }),
+      );
+    });
+
+    it('throws NotFoundException when tenant does not exist', async () => {
+      prisma.organization.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateEmailConfig('missing', { emailProvider: 'resend', config: {} }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

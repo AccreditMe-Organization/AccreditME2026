@@ -17,7 +17,8 @@ import {
   getEncryptionKey,
 } from '../../common/utils/tenant-config-crypto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
-import { ITenant, ITenantConfig } from './interfaces/tenant.interface';
+import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
+import { ITenant, ITenantConfig, IEmailConfig } from './interfaces/tenant.interface';
 
 @Injectable()
 export class TenantService {
@@ -58,6 +59,7 @@ export class TenantService {
       maxStorageGb: org.maxStorageGb,
       isBootstrapped: org.isBootstrapped,
       bootstrappedAt: org.bootstrappedAt,
+      logo: org.logo,
       createdAt: org.createdAt,
       updatedAt: org.updatedAt,
     };
@@ -101,6 +103,7 @@ export class TenantService {
       maxStorageGb: updated.maxStorageGb,
       isBootstrapped: updated.isBootstrapped,
       bootstrappedAt: updated.bootstrappedAt,
+      logo: updated.logo,
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     };
@@ -130,6 +133,50 @@ export class TenantService {
           ) as Record<string, unknown>)
         : null,
     };
+  }
+
+  // UI only for now (ACC-13) — see UpdateEmailConfigDto's own header comment.
+  // Same encrypted-JSON pattern as authConfig/storageConfig/aiConfig.
+  async getEmailConfig(id: string): Promise<IEmailConfig> {
+    const org = await this.prisma.organization.findUnique({ where: { id } });
+    if (!org) throw new NotFoundException('Tenant not found');
+
+    if (!org.emailConfig) {
+      return { emailProvider: null, config: null };
+    }
+
+    const parsed = JSON.parse(this.decryptConfig(org.emailConfig)) as {
+      emailProvider: IEmailConfig['emailProvider'];
+      config: Record<string, unknown>;
+    };
+    return { emailProvider: parsed.emailProvider, config: parsed.config };
+  }
+
+  async updateEmailConfig(
+    id: string,
+    dto: UpdateEmailConfigDto,
+    actorId: string,
+  ): Promise<void> {
+    await this.findById(id);
+
+    const encrypted = this.encryptConfig({
+      emailProvider: dto.emailProvider,
+      config: dto.config,
+    });
+
+    await this.prisma.organization.update({
+      where: { id },
+      data: { emailConfig: encrypted },
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: id,
+      actorId,
+      tenantId: id,
+      metadata: { event: 'email_config_updated', emailProvider: dto.emailProvider },
+    });
   }
 
   async bootstrap(id: string, actorId: string): Promise<void> {

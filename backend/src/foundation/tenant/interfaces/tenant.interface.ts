@@ -15,6 +15,7 @@ export interface ITenant {
   maxStorageGb: number;
   isBootstrapped: boolean;
   bootstrappedAt: Date | null;
+  logo: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -26,4 +27,9 @@ export interface ITenantConfig {
   authConfig: Record<string, unknown> | null;
   storageConfig: Record<string, unknown> | null;
   aiConfig: Record<string, unknown> | null;
+}
+
+export interface IEmailConfig {
+  emailProvider: 'resend' | 'smtp' | 'office365' | 'sendgrid' | 'ses' | null;
+  config: Record<string, unknown> | null;
 }

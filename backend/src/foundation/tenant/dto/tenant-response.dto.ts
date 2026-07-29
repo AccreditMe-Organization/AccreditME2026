@@ -17,6 +17,7 @@ export class TenantResponseDto implements ITenant {
   maxStorageGb!: number;
   isBootstrapped!: boolean;
   bootstrappedAt!: Date | null;
+  logo!: string | null;
   createdAt!: Date;
   updatedAt!: Date;
 }
