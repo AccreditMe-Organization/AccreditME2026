@@ -1,6 +1,6 @@
 import { Component, Input, Output, EventEmitter, OnInit, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
@@ -33,6 +33,7 @@ const ACTION_TYPES = [
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    FormsModule,
     TranslatePipe,
     TableModule,
     ButtonModule,
