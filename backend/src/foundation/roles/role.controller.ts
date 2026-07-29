@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -20,13 +19,9 @@ import { RoleService } from './role.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
-import { AssignRoleDto } from './dto/assign-role.dto';
 import { IRole } from './interfaces/role.interface';
 import { IPermission } from './interfaces/permission.interface';
 
-// No class-level route prefix — this controller serves both /roles and the
-// temporary /users/:userId/roles* routes (see plan Commit 5 note: the latter
-// live here only until Step 9's Users module exists to own them).
 @Controller()
 @UseGuards(TenantGuard, PermissionGuard)
 export class RoleController {
@@ -109,41 +104,5 @@ export class RoleController {
     @CurrentUser() actorId: string,
   ): Promise<void> {
     return this.roleService.reactivateRole(id, tenantId, actorId);
-  }
-
-  // ── User ↔ Role assignment ─────────────────────────────────────────────────
-  // Temporary home on RoleController — see note at the top of this file.
-
-  @Get('users/:userId/roles')
-  @Permissions(ROLES_PERMISSIONS.VIEW)
-  getUserRoles(
-    @Param('userId') userId: string,
-    @CurrentTenant() tenantId: string,
-  ): Promise<IRole[]> {
-    return this.roleService.getUserRoles(userId, tenantId);
-  }
-
-  @Post('users/:userId/roles')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @Permissions(ROLES_PERMISSIONS.MANAGE)
-  assignRoleToUser(
-    @Param('userId') userId: string,
-    @Body() dto: AssignRoleDto,
-    @CurrentTenant() tenantId: string,
-    @CurrentUser() actorId: string,
-  ): Promise<void> {
-    return this.roleService.assignRoleToUser(userId, dto, tenantId, actorId);
-  }
-
-  @Delete('users/:userId/roles/:roleId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @Permissions(ROLES_PERMISSIONS.MANAGE)
-  removeRoleFromUser(
-    @Param('userId') userId: string,
-    @Param('roleId') roleId: string,
-    @CurrentTenant() tenantId: string,
-    @CurrentUser() actorId: string,
-  ): Promise<void> {
-    return this.roleService.removeRoleFromUser(userId, roleId, tenantId, actorId);
   }
 }
