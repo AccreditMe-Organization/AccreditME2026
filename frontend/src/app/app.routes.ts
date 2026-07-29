@@ -13,6 +13,15 @@ export const routes: Routes = [
     component: AppShellComponent,
     canActivate: [authGuard],
     children: [
+      // Static TENANT_ADMIN-oriented fallback, deliberately not role-aware —
+      // only reached when an already-authenticated user hits the bare root
+      // directly (e.g. a bookmark, or clicking a logo/home link), which
+      // LoginComponent's own post-login redirect never goes through. Making
+      // this properly role-aware would need an async guard (NavigationAccessService's
+      // permissions/tenant data isn't available synchronously at route-recognition
+      // time, before AppShellComponent has mounted) — not worth it for an edge
+      // case this rare. A platform admin hitting this path lands on
+      // /organization and can navigate to Platform from the sidebar.
       { path: '', redirectTo: 'organization', pathMatch: 'full' },
       {
         path: 'organization',
