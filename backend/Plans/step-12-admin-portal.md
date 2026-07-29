@@ -920,35 +920,35 @@ regression here would silently break every foundation module's UI at once.
 
 ## 6. ACCEPTANCE CRITERIA
 
-- [ ] Navigation sidebar with module-based routing
-- [ ] App shell layout (header + sidebar + content area)
-- [ ] Breadcrumb navigation
-- [ ] Super Admin Portal: tenant list and management
-- [ ] Super Admin Portal: create tenant (creates Organization row + runs bootstrap + invites first admin)
-- [ ] Super Admin Portal: view tenant usage and activity
-- [ ] Super Admin Portal: enable/disable modules per tenant
-- [ ] Super Admin Portal: AI credit allocation per tenant
-- [ ] Super Admin Portal: impersonate tenant admin, with a visible end-impersonation path
-- [ ] Super Admin Portal: platform settings (minimal — announcement banner)
-- [ ] PlatformGuard rejects a self-assigned PLATFORM_ADMIN role from a non-platform org — verified by an explicit test, not just guard logic existing
-- [ ] Tenant Admin Settings: organization profile (name, logo, country)
-- [ ] Tenant Admin Settings: working calendar, lookups, roles, org structure, org positions, workflow templates, users — all linked from the settings hub
-- [ ] Tenant Admin Settings: email provider settings (UI only — persists to Organization.emailConfig, no live provider switch)
-- [ ] Tenant Admin Settings: AI settings (credits display, overageEnabled toggle)
-- [ ] Plan CRUD (Platform Admin)
-- [ ] PlanModule configuration
-- [ ] AiFeatureCost configuration
-- [ ] AiCreditPack configuration
-- [ ] Organization module enable/disable via Organization.settings.modules
-- [ ] ModuleGuard + @RequiresModule() decorator built and unit-tested (nothing to apply it to yet — see Section 1)
-- [ ] Frontend navigation hides unlicensed modules (mechanism proven even with zero real licensed modules yet)
-- [ ] Every existing foundation route still reachable and functional after the app-shell restructure
-- [ ] Backend TypeScript: zero errors
-- [ ] All tests passing including tenant isolation
-- [ ] Frontend TypeScript: zero errors
-- [ ] Translation keys added in en.json and ar.json
-- [ ] Tenant isolation: Super Admin sees all tenants (by design, gated by PlatformGuard, not tenant scoping); Tenant Admin sees only their own
-- [ ] PR merged to dev with green CI
+- [x] Navigation sidebar with module-based routing
+- [x] App shell layout (header + sidebar + content area)
+- [x] Breadcrumb navigation
+- [x] Super Admin Portal: tenant list and management
+- [x] Super Admin Portal: create tenant (creates Organization row + runs bootstrap + invites first admin)
+- [x] Super Admin Portal: view tenant usage and activity
+- [x] Super Admin Portal: enable/disable modules per tenant
+- [x] Super Admin Portal: AI credit allocation per tenant
+- [x] Super Admin Portal: impersonate tenant admin, with a visible end-impersonation path
+- [x] Super Admin Portal: platform settings (minimal — announcement banner)
+- [x] PlatformGuard rejects a self-assigned PLATFORM_ADMIN role from a non-platform org — verified by an explicit test, not just guard logic existing
+- [x] Tenant Admin Settings: organization profile (name, logo, country) — logo field is a plain S3-key text input; no file-upload UI/endpoint exists anywhere yet, flagged rather than faked (see Commit 12 notes)
+- [x] Tenant Admin Settings: working calendar, lookups, roles, org structure, org positions, workflow templates, users — all linked from the settings hub
+- [x] Tenant Admin Settings: email provider settings (UI only — persists to Organization.emailConfig, no live provider switch)
+- [x] Tenant Admin Settings: AI settings (credits display, overageEnabled toggle) — required a small new tenant-scoped endpoint (`PATCH /tenant/ai-settings`) not in the original Commit 6 file list
+- [x] Plan CRUD (Platform Admin)
+- [x] PlanModule configuration
+- [x] AiFeatureCost configuration
+- [x] AiCreditPack configuration
+- [x] Organization module enable/disable via Organization.settings.modules
+- [x] ModuleGuard + @RequiresModule() decorator built and unit-tested (nothing to apply it to yet — see Section 1)
+- [x] Frontend navigation hides unlicensed modules (mechanism proven even with zero real licensed modules yet)
+- [ ] Every existing foundation route still reachable and functional after the app-shell restructure — verified via `tsc --noEmit` + `ng build` (clean both times) only; NOT manually click-tested in a real browser. Flagging honestly rather than claiming full UI verification.
+- [x] Backend TypeScript: zero errors
+- [x] All tests passing including tenant isolation (514 backend tests passing)
+- [x] Frontend TypeScript: zero errors
+- [x] Translation keys added in en.json and ar.json
+- [x] Tenant isolation: Super Admin sees all tenants (by design, gated by PlatformGuard, not tenant scoping); Tenant Admin sees only their own
+- [ ] PR merged to dev with green CI — not opened yet, next step after this build
 
 ---
 
