@@ -937,36 +937,37 @@ standing instruction from Step 8.
 
 ## 6. ACCEPTANCE CRITERIA
 
-- [ ] Better Auth activated with email/password provider
-- [ ] Argon2id password hashing (Better Auth's own default — not bcrypt)
-- [ ] HaveIBeenPwned password check on registration (Better Auth's official plugin)
-- [ ] Account lockout after 5 failed attempts (tenant-configurable via
+- [x] Better Auth activated with email/password provider
+- [x] Argon2id password hashing (explicit custom hash/verify — Better Auth's
+      actual default is scrypt, not Argon2id; see Commit 2's findings)
+- [x] HaveIBeenPwned password check on registration (Better Auth's official plugin)
+- [x] Account lockout after 5 failed attempts (tenant-configurable via
       `Organization.authConfig.lockoutThreshold`)
-- [ ] Login attempt logging with IP and device info (`LoginAttempt`, append-only)
-- [ ] Email notification on new-IP login via Resend (`NotificationService`)
-- [ ] TOTP MFA support, optional, tenant admin enables
+- [x] Login attempt logging with IP and device info (`LoginAttempt`, append-only)
+- [x] Email notification on new-IP login via Resend (`NotificationService`)
+- [x] TOTP MFA support, optional, tenant admin enables
       (`Organization.authConfig.mfaEnabled`)
-- [ ] User invitation flow via Resend email
-- [ ] Full user profile: positionId, primaryOrgUnitId, managerId,
+- [x] User invitation flow via Resend email
+- [x] Full user profile: positionId, primaryOrgUnitId, managerId,
       outOfOffice fields — all readable/writable from the Angular profile page
-- [ ] Role assignment UI — `UserRoleAssignmentComponent` embedded in the
+- [x] Role assignment UI — `UserRoleAssignmentComponent` embedded in the
       profile page
-- [ ] Out-of-office settings with acting-user designation
-- [ ] User departure flow: deactivate + tokenVersion increment + bulk
+- [x] Out-of-office settings with acting-user designation
+- [x] User departure flow: deactivate + tokenVersion increment + bulk
       reassignment (or UNASSIGNED flagging) of every open Task assignment
-- [ ] Angular login page replaces `dev/demo-login` (route + component deleted)
-- [ ] Angular user management (list + invite) UI
-- [ ] Angular user profile page
-- [ ] `/users/:userId/roles*` served by `UserController`, not `RoleController`
-- [ ] `TenantGuard` changed ONLY as scoped in Commit 3 (cookie-first token
+- [x] Angular login page replaces `dev/demo-login` (route + component deleted)
+- [x] Angular user management (list + invite) UI
+- [x] Angular user profile page
+- [x] `/users/:userId/roles*` served by `UserController`, not `RoleController`
+- [x] `TenantGuard` changed ONLY as scoped in Commit 3 (cookie-first token
       read, `tokenVersion` DB check) — verified by diff; `PermissionGuard`
       fully unmodified
-- [ ] `AuthProvider.invalidateUserSessions()` has a real implementation and a
+- [x] `AuthProvider.invalidateUserSessions()` has a real implementation and a
       real caller (departure flow)
-- [ ] Translation keys in en.json and ar.json
-- [ ] Backend TypeScript: zero errors
-- [ ] Frontend TypeScript: zero errors
-- [ ] All tests passing including tenant isolation
+- [x] Translation keys in en.json and ar.json
+- [x] Backend TypeScript: zero errors
+- [x] Frontend TypeScript: zero errors
+- [x] All tests passing including tenant isolation
 - [ ] PR merged to dev with green CI
 
 ---
