@@ -248,7 +248,7 @@ for each functional module are documented in:
 backend/Plans/module-designs.md
 
 Read this file before implementing any functional module
-(Steps 16-20). It contains:
+(Steps ACC-17 through ACC-23 (Document, Standards, Incident, CAPA, Gap, Audit, KPI)). It contains:
 - Workflow stages and transitions per module
 - Business rules validated against international standards
   (ISO 9001, ISO 19011, JCI, CBAHI, FDA 21 CFR)
@@ -260,24 +260,24 @@ Read this file before implementing any functional module
 
 ### Tasks
 Every task MUST have sourceType and sourceId.
-No standalone tasks. See TaskSourceType enum in Step 8.
+No standalone tasks. See TaskSourceType enum (ACC-11 — Task Management).
 Task source types: MEETING, DOCUMENT, AUDIT, CAPA,
 INCIDENT, CORRECTIVE_ACTION, STANDARD, KPI,
 GAP, QUALITY_IMPROVEMENT_PLAN
 
 ### WorkflowObjectType Additions Schedule
-Already in schema (Step 6):
+Already in schema (ACC-9 — Workflow Engine):
   DOCUMENT_REQUEST, DOCUMENT, CHANGE_REQUEST,
   INCIDENT, AUDIT, CORRECTIVE_ACTION, MEETING, COMMITTEE
 
 Add before Step 16 (Standards Management):
   ACCREDITATION_ROUND
 
-Add before Step 18 (Quality Improvement):
+Add before ACC-21 (Step 18c — Gap Management):
   GAP
 
 ### Document Types Added
-terms_of_reference added to lookup seed in Step 3
+terms_of_reference added to lookup seed (ACC-6 — Organization structure + Working calendar)
 (already committed to dev)
 
 ### Gap vs CAPA Distinction
@@ -399,7 +399,7 @@ From: noreply@accreditme.com
 
 Build sequence:
 ```
-Step 7 (done):        Resend hardcoded in NotificationEmailProcessor
+ACC-10 (Step 7b, done): Resend hardcoded in NotificationEmailProcessor
 Step 12 (Super Admin): email provider settings UI per tenant
 Between Step 12-14:    refactor NotificationEmailProcessor to resolve
                        IEmailProvider per tenant from Organization.emailConfig
@@ -487,7 +487,7 @@ INCIDENT (5 stages, 2 paths), AUDIT (10 stages ISO-19011),
 CORRECTIVE_ACTION (10 stages CAPA), MEETING (6 stages),
 COMMITTEE (6 stages)
 
-#### Tenant Configuration UI (Step 5)
+#### Tenant Configuration UI (ACC-9 — Workflow Engine)
 Structured form-based workflow builder (not visual canvas).
 Tenant admin can: add/edit stages, define transitions, set assignees,
 configure SLAs, set approval modes, add webhook actions.
@@ -525,7 +525,7 @@ Three patterns:
   Pattern 2: Manual reassignment (admin action)
   Pattern 3: Role-based fallback (vacancy)
 
-User model additions (Step 9):
+User model additions (ACC-12 — User Management):
   outOfOfficeFrom, outOfOfficeTo, actingUserId
 
 WorkflowService checks out-of-office when resolving
@@ -1082,7 +1082,7 @@ AiFeatureCost: featureKey (unique), creditCost,
 }
 ```
 
-### Platform Admin Controls (Step 12)
+### Platform Admin Controls (ACC-13 — Super Admin Portal)
 Platform admin manages without code deployment:
 - Plan configuration (price, limits, modules, AI credits)
 - AI credit packs (name, credits, price)
@@ -1114,15 +1114,15 @@ Set resetDate = first day of next month
 ## Reporting and Analytics
 
 ```
-Phase 1 — Built-in dashboards
+Reporting Tier 1 — Built-in dashboards
   Pre-built KPI dashboards per module using PrimeNG Charts
   Compliance scores, document lifecycle, audit findings, incident patterns
 
-Phase 1 — Export engine
+Reporting Tier 1 — Export engine
   Every table exportable to formatted XLSX via SheetJS
   Scheduled exports: daily/weekly/monthly via email
 
-Phase 2 — Custom report builder
+Reporting Tier 2 — Custom report builder
   Drag-and-drop report builder
   Save, schedule, and share custom reports
   Power BI embed for enterprise tenants
@@ -1240,7 +1240,7 @@ Status pills use semantic colors distinct from brand colors.
 
 ---
 
-## Step 1 Outcomes — Available After ACC-5 Merges
+## Foundation Outcomes — Available After ACC-12 Merges
 
 These are wired and ready for all subsequent steps to import:
 
@@ -1254,8 +1254,8 @@ These are wired and ready for all subsequent steps to import:
 - `@CurrentTenant()` — use this decorator (never `request.body.organizationId`) to get the tenant ID in controllers
 - `@CurrentUser()` — use this decorator to get the actor ID for audit logs
 - `@Permissions()` + permission constants in `common/constants/permissions.ts` — use on every endpoint
-- `PermissionGuard` is **stubbed until Step 5** — all authenticated requests pass through; do not mistake this for real access control
-- `bootstrap()` in `TenantService` has TODO stubs for Steps 4–7 — fill each in as the corresponding module is built
+- `PermissionGuard` is **stubbed until ACC-8 (Roles + Permissions)** — all authenticated requests pass through; do not mistake this for real access control
+- All foundation stubs resolved — ACC-5 through ACC-12 complete ✅
 
 ---
 
@@ -1328,7 +1328,7 @@ ORGANIZATIONAL — defined by quality dept or department managers
              measurement frequencies as configurable values)
 
 ### Build Position
-  Phase 2, Step 20 — after all four functional modules are complete
+  ACC-23 — after all quality modules complete (before Phase 2 Monetization)
   Reason: depends on data from documents, incidents, audits,
   and standards modules for auto-calculated measurements
 
