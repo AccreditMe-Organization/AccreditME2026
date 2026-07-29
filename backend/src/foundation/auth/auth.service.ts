@@ -74,8 +74,14 @@ export class AuthService {
   // Public only for use by other Commit-3-adjacent flows that need the same
   // namespacing rule (e.g. Commit 4's invite flow will construct AuthUser
   // rows the same way). See Section 8's "Why AuthUser.email Is Namespaced."
+  //
+  // Uses RFC 5321 plus-addressing rather than a colon-delimited prefix so the
+  // result is still a syntactically valid email address — Better Auth's own
+  // routes (signUpEmail, signInEmail, requestPasswordReset) validate the body
+  // with zod's z.email() and reject a colon in the local part.
   static namespacedEmail(organizationId: string, email: string): string {
-    return `${organizationId}:${email.toLowerCase()}`;
+    const [localPart, domain] = email.toLowerCase().split('@');
+    return `${localPart}+${organizationId}@${domain}`;
   }
 
   private async resolveOrganizationId(slug: string): Promise<string> {

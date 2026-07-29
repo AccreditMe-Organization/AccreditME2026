@@ -447,7 +447,7 @@ describe('AuthService', () => {
       await service.forgotPassword({ organizationSlug: 'acme', email: 'a@example.com' });
 
       expect(mockAuthApi.requestPasswordReset).toHaveBeenCalledWith({
-        body: { email: `${ORG_A}:a@example.com` },
+        body: { email: `a+${ORG_A}@example.com` },
       });
     });
 
