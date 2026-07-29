@@ -12,6 +12,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
+import { ConfirmationService } from 'primeng/api';
 import {
   WorkflowTemplateService,
   WorkflowTransitionActionDto,
@@ -192,6 +193,7 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly fb = inject(FormBuilder);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly actionTypes = ACTION_TYPES;
   readonly showFormDialog = signal(false);
@@ -250,14 +252,18 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
   }
 
   onRemove(action: WorkflowTransitionActionDto): void {
-    // TODO: replace with PrimeNG ConfirmationService dialog
-    if (!window.confirm(`Remove this ${action.actionType} action?`)) {
-      return;
-    }
-    this.workflowTemplateService.removeTransitionAction(action.id).subscribe({
-      next: () => this.changed.emit(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Remove failed'),
+    this.confirmationService.confirm({
+      message: `Remove this ${action.actionType} action?`,
+      header: 'Confirm',
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => {
+        this.workflowTemplateService.removeTransitionAction(action.id).subscribe({
+          next: () => this.changed.emit(),
+          error: (err: { error?: { message?: string } }) =>
+            this.error.set(err?.error?.message ?? 'Remove failed'),
+        });
+      },
     });
   }
 

@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
+import { ConfirmationService } from 'primeng/api';
 import {
   WorkflowTemplateService,
   WorkflowTemplateDto,
@@ -177,6 +178,7 @@ import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor
 export class WorkflowStageListComponent implements OnInit {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly route = inject(ActivatedRoute);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly loading = signal(false);
   readonly reordering = signal(false);
@@ -221,14 +223,18 @@ export class WorkflowStageListComponent implements OnInit {
   }
 
   onRemove(stage: WorkflowStageDto): void {
-    // TODO: replace with PrimeNG ConfirmationService dialog
-    if (!window.confirm(`Remove stage "${stage.nameEn}"?`)) {
-      return;
-    }
-    this.workflowTemplateService.removeStage(stage.id).subscribe({
-      next: () => this.loadTemplate(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Remove failed'),
+    this.confirmationService.confirm({
+      message: `Remove stage "${stage.nameEn}"?`,
+      header: 'Confirm',
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => {
+        this.workflowTemplateService.removeStage(stage.id).subscribe({
+          next: () => this.loadTemplate(),
+          error: (err: { error?: { message?: string } }) =>
+            this.error.set(err?.error?.message ?? 'Remove failed'),
+        });
+      },
     });
   }
 

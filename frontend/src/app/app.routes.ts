@@ -61,4 +61,10 @@ export const routes: Routes = [
     loadChildren: () =>
       import('./foundation/tasks/tasks.routes').then((m) => m.TASKS_ROUTES),
   },
+  {
+    path: 'users',
+    canActivate: [authGuard],
+    loadChildren: () =>
+      import('./foundation/user/user.routes').then((m) => m.USER_ROUTES),
+  },
 ];

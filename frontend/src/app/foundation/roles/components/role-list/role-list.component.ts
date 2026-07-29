@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
+import { ConfirmationService } from 'primeng/api';
 import { RoleService, RoleDto } from '../../services/role.service';
 import { RoleFormComponent } from '../role-form/role-form.component';
 
@@ -146,6 +147,7 @@ export class RoleListComponent implements OnInit {
   private readonly roleService = inject(RoleService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly loading = signal(false);
   readonly roles = signal<RoleDto[]>([]);
@@ -198,14 +200,18 @@ export class RoleListComponent implements OnInit {
 
   onDeactivate(role: RoleDto): void {
     const label = this.displayLabel(role);
-    if (!window.confirm(`Deactivate role "${label}"? This will immediately revoke permissions for all users assigned to this role.`)) {
-      return;
-    }
-    // TODO: replace with PrimeNG ConfirmationService dialog
-    this.roleService.deactivateRole(role.id).subscribe({
-      next: () => this.loadRoles(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Deactivate failed'),
+    this.confirmationService.confirm({
+      message: `Deactivate role "${label}"? This will immediately revoke permissions for all users assigned to this role.`,
+      header: 'Confirm',
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => {
+        this.roleService.deactivateRole(role.id).subscribe({
+          next: () => this.loadRoles(),
+          error: (err: { error?: { message?: string } }) =>
+            this.error.set(err?.error?.message ?? 'Deactivate failed'),
+        });
+      },
     });
   }
 
