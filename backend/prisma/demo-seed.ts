@@ -1,8 +1,10 @@
 // ⚠️ DEVELOPMENT ONLY — do not run against a production database.
 //
-// Creates (or reuses, idempotently) a demo tenant + admin user with a real,
-// working Better Auth credential (Step 9) and prints login credentials for
-// the real Angular login page at http://localhost:4200/login. Before Step 9
+// Creates (or reuses, idempotently) a demo tenant + admin user, plus the
+// designated AccreditMe platform org + a PLATFORM_ADMIN user (ACC-13), each
+// with a real, working Better Auth credential (Step 9), and prints login
+// credentials for the real Angular login page at http://localhost:4200/login.
+// Before Step 9
 // this script printed a hand-signed JWT for the now-removed /dev/login page —
 // that flow no longer exists; this script creates everything directly
 // (no invitation flow) since it's a developer tool, not a proof of the real
@@ -45,6 +47,16 @@ const DEMO_ADMIN_EMAIL =
 // Hardcoded, dev-only — never used in production. Real users always set
 // their own password via the invitation/accept-invitation flow (Step 9).
 const DEMO_ADMIN_PASSWORD = 'Demo@123456';
+
+// ACC-13 — the one Organization row PlatformGuard expects to find with
+// isPlatformOrg: true. Reuses the same PLATFORM_ADMIN_EMAIL env var already
+// documented in .env.example/CLAUDE.md (previously unused by any code path).
+const PLATFORM_ORG_SLUG = 'platform';
+const PLATFORM_ORG_NAME = 'AccreditMe Platform';
+const PLATFORM_ADMIN_EMAIL =
+  process.env['PLATFORM_ADMIN_EMAIL'] ?? 'admin@accreditme.com';
+// Hardcoded, dev-only — same rationale as DEMO_ADMIN_PASSWORD above.
+const PLATFORM_ADMIN_PASSWORD = 'Platform@123456';
 
 // Mirrors AuthService.namespacedEmail() (backend/src/foundation/auth/auth.service.ts)
 // exactly — Better Auth's AuthUser.email is a tenant-namespaced synthetic
@@ -346,6 +358,155 @@ async function main(): Promise<void> {
     console.log('Email:    ' + user.email);
     console.log('Password: Demo@123456');
     console.log('==============================\n');
+
+    // ── Platform organization + platform admin (ACC-13) ───────────────────────
+    // Mirrors the demo tenant block above exactly (org → roles → root org unit
+    // → user → Better Auth credential → role assignment), but creates the
+    // designated platform Organization (isPlatformOrg: true) and assigns
+    // PLATFORM_ADMIN instead of TENANT_ADMIN — lets the Super Admin Portal be
+    // exercised through the real /login page instead of hand-editing
+    // Organization.isPlatformOrg + UserRole in Prisma Studio.
+    let platformOrg = await prisma.organization.findUnique({
+      where: { slug: PLATFORM_ORG_SLUG },
+    });
+    if (!platformOrg) {
+      platformOrg = await prisma.organization.create({
+        data: {
+          name: PLATFORM_ORG_NAME,
+          slug: PLATFORM_ORG_SLUG,
+          country: 'KW',
+          isPlatformOrg: true,
+          isBootstrapped: false,
+        },
+      });
+      console.log(
+        `Created organization: ${platformOrg.name} (${platformOrg.id})`,
+      );
+    } else if (!platformOrg.isPlatformOrg) {
+      platformOrg = await prisma.organization.update({
+        where: { id: platformOrg.id },
+        data: { isPlatformOrg: true },
+      });
+      console.log(
+        `Reusing existing organization: ${platformOrg.name} (${platformOrg.id}) — set isPlatformOrg: true`,
+      );
+    } else {
+      console.log(
+        `Reusing existing organization: ${platformOrg.name} (${platformOrg.id})`,
+      );
+    }
+
+    // Lookups are global (organizationId: null) — already seeded above via
+    // the demo org block, no need to repeat. Roles are org-scoped though.
+    await seedSystemRoles(prisma, platformOrg.id);
+
+    let platformRootUnit = await prisma.orgUnit.findUnique({
+      where: {
+        organizationId_code: {
+          organizationId: platformOrg.id,
+          code: 'PLATFORM',
+        },
+      },
+    });
+    if (!platformRootUnit) {
+      platformRootUnit = await prisma.orgUnit.create({
+        data: {
+          organizationId: platformOrg.id,
+          nameEn: PLATFORM_ORG_NAME,
+          nameAr: 'منصة أكريدت مي',
+          code: 'PLATFORM',
+          sortOrder: 0,
+        },
+      });
+      console.log(`Created root org unit: ${platformRootUnit.code}`);
+    } else {
+      console.log(`Reusing existing root org unit: ${platformRootUnit.code}`);
+    }
+
+    platformOrg = await prisma.organization.update({
+      where: { id: platformOrg.id },
+      data: {
+        isBootstrapped: true,
+        bootstrappedAt: platformOrg.bootstrappedAt ?? new Date(),
+      },
+    });
+
+    let platformAdmin = await prisma.user.findUnique({
+      where: {
+        organizationId_email: {
+          organizationId: platformOrg.id,
+          email: PLATFORM_ADMIN_EMAIL,
+        },
+      },
+    });
+    if (!platformAdmin) {
+      platformAdmin = await prisma.user.create({
+        data: {
+          organizationId: platformOrg.id,
+          email: PLATFORM_ADMIN_EMAIL,
+          name: 'Platform Admin',
+          status: 'ACTIVE',
+        },
+      });
+      console.log(
+        `Created platform admin user: ${platformAdmin.email} (${platformAdmin.id})`,
+      );
+    } else {
+      console.log(
+        `Reusing existing platform admin user: ${platformAdmin.email} (${platformAdmin.id})`,
+      );
+    }
+
+    if (!platformAdmin.authUserId) {
+      const auth = createDemoAuthInstance(prisma);
+      const signUpResult = await auth.api.signUpEmail({
+        body: {
+          email: namespacedEmail(platformOrg.id, platformAdmin.email),
+          password: PLATFORM_ADMIN_PASSWORD,
+          name: platformAdmin.name,
+        },
+      });
+
+      platformAdmin = await prisma.user.update({
+        where: { id: platformAdmin.id },
+        data: { authUserId: signUpResult.user.id },
+      });
+      console.log('Created Better Auth credential for platform admin user');
+    } else {
+      console.log(
+        'Platform admin user already has a Better Auth credential — skipping',
+      );
+    }
+
+    const platformAdminRole = await prisma.role.findFirst({
+      where: { organizationId: platformOrg.id, key: 'PLATFORM_ADMIN' },
+    });
+    if (!platformAdminRole) {
+      throw new Error(
+        'PLATFORM_ADMIN role not found after seedSystemRoles() — this should never happen',
+      );
+    }
+
+    const existingPlatformAssignment = await prisma.userRole.findFirst({
+      where: { userId: platformAdmin.id, roleId: platformAdminRole.id },
+    });
+    if (!existingPlatformAssignment) {
+      await prisma.userRole.create({
+        data: { userId: platformAdmin.id, roleId: platformAdminRole.id },
+      });
+      console.log('Assigned PLATFORM_ADMIN role to platform admin user');
+    } else {
+      console.log(
+        'Platform admin user already holds PLATFORM_ADMIN — skipping assignment',
+      );
+    }
+
+    console.log('\n=== PLATFORM ADMIN LOGIN CREDENTIALS ===');
+    console.log('URL:      http://localhost:4200/login');
+    console.log(`Org slug: ${PLATFORM_ORG_SLUG}`);
+    console.log('Email:    ' + platformAdmin.email);
+    console.log('Password: ' + PLATFORM_ADMIN_PASSWORD);
+    console.log('==========================================\n');
   } finally {
     await prisma.$disconnect();
   }
