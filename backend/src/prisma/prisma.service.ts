@@ -79,6 +79,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get authTwoFactor() { return this._client.authTwoFactor; }
   get loginAttempt() { return this._client.loginAttempt; }
   get refreshToken() { return this._client.refreshToken; }
+  get plan() { return this._client.plan; }
+  get planModule() { return this._client.planModule; }
+  get aiCreditPack() { return this._client.aiCreditPack; }
+  get aiFeatureCost() { return this._client.aiFeatureCost; }
 
   $transaction: ExtendedPrismaClient['$transaction'] =
     this._client.$transaction.bind(this._client);
