@@ -312,4 +312,32 @@ describe('TenantService', () => {
       ).rejects.toThrow(NotFoundException);
     });
   });
+
+  describe('updateAiOverageSetting', () => {
+    it('merges overageEnabled into settings.ai without touching monthlyCredits/creditsUsed', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        ...ORG_A,
+        settings: { ai: { monthlyCredits: 500, creditsUsed: 100 } },
+      });
+
+      await service.updateAiOverageSetting('org-a', { overageEnabled: true }, 'user-1');
+
+      expect(prisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org-a' },
+        data: {
+          settings: { ai: { monthlyCredits: 500, creditsUsed: 100, overageEnabled: true } },
+        },
+      });
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'UPDATE', objectType: 'Organization', tenantId: 'org-a' }),
+      );
+    });
+
+    it('throws NotFoundException when tenant does not exist', async () => {
+      prisma.organization.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateAiOverageSetting('missing', { overageEnabled: true }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
 });

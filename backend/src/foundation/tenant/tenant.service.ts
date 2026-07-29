@@ -18,6 +18,7 @@ import {
 } from '../../common/utils/tenant-config-crypto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
+import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
 import { ITenant, ITenantConfig, IEmailConfig } from './interfaces/tenant.interface';
 
 @Injectable()
@@ -207,6 +208,32 @@ export class TenantService {
       actorId,
       tenantId: id,
       metadata: { event: 'email_config_updated', emailProvider: dto.emailProvider },
+    });
+  }
+
+  // Deliberately narrow (ACC-13) — a tenant admin may only toggle this one
+  // field within their own org's settings.ai; monthlyCredits/creditsUsed/
+  // creditsRemaining are exclusively set by a Platform Admin via
+  // PlatformTenantService.allocateAiCredits(), never from this endpoint.
+  async updateAiOverageSetting(id: string, dto: UpdateAiOverageDto, actorId: string): Promise<void> {
+    const org = await this.prisma.organization.findUnique({ where: { id } });
+    if (!org) throw new NotFoundException('Tenant not found');
+
+    const settings = (org.settings as { ai?: Record<string, unknown> } | null) ?? {};
+    const ai = { ...(settings.ai ?? {}), overageEnabled: dto.overageEnabled };
+
+    await this.prisma.organization.update({
+      where: { id },
+      data: { settings: { ...settings, ai } },
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: id,
+      actorId,
+      tenantId: id,
+      metadata: { event: 'ai_overage_setting_updated', overageEnabled: dto.overageEnabled },
     });
   }
 

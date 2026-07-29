@@ -81,6 +81,14 @@ export const routes: Routes = [
         loadChildren: () =>
           import('./platform/platform.routes').then((m) => m.PLATFORM_ROUTES),
       },
+      {
+        path: 'admin-settings',
+        data: { breadcrumb: 'nav.adminSettings' },
+        loadChildren: () =>
+          import('./foundation/admin-settings/admin-settings.routes').then(
+            (m) => m.ADMIN_SETTINGS_ROUTES,
+          ),
+      },
     ],
   },
   {
