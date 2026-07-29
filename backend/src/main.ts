@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
@@ -16,8 +17,16 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  // Populates req.cookies — required for TenantGuard to read the
+  // access_token httpOnly cookie (Step 9, Section 12 Discussion 4).
+  app.use(cookieParser());
+
+  // FRONTEND_URL replaces the old CORS_ORIGIN/localhost fallback — an exact,
+  // required origin. httpOnly cookies require credentials: true, and browsers
+  // reject a wildcard origin whenever credentials: true is set, so a silently
+  // wrong/missing origin must fail loudly rather than fall back to a guess.
   app.enableCors({
-    origin: process.env['CORS_ORIGIN'] ?? 'http://localhost:4200',
+    origin: process.env['FRONTEND_URL'],
     credentials: true,
   });
 

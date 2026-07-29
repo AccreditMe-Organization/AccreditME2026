@@ -40,8 +40,12 @@ import { twoFactor } from 'better-auth/plugins/two-factor';
 import { haveIBeenPwned } from 'better-auth/plugins/haveibeenpwned';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationService } from '../../foundation/notification/notification.service';
 
-export function createBetterAuthInstance(prisma: PrismaService) {
+export function createBetterAuthInstance(
+  prisma: PrismaService,
+  notificationService: NotificationService,
+) {
   return betterAuth({
     // PrismaService exposes exactly the per-model getters (authUser,
     // authSession, authAccount, authVerification) the adapter looks up by
@@ -56,6 +60,29 @@ export function createBetterAuthInstance(prisma: PrismaService) {
         hash: (password: string) => argon2.hash(password, { type: argon2.argon2id }),
         verify: ({ hash, password }: { hash: string; password: string }) =>
           argon2.verify(hash, password),
+      },
+      // Required — Better Auth's /request-password-reset throws
+      // RESET_PASSWORD_DISABLED without this callback configured. data.user
+      // here is Better Auth's own AuthUser row (namespaced email); resolve
+      // the real AccreditMe User via the authUserId link before notifying,
+      // since Notification.userId references User.id, not AuthUser.id.
+      sendResetPassword: async (data: { user: { id: string }; url: string }) => {
+        const appUser = await prisma.user.findFirst({
+          where: { authUserId: data.user.id },
+        });
+        if (!appUser) return;
+
+        await notificationService.create(
+          {
+            userId: appUser.id,
+            titleEn: 'Reset your AccreditMe password',
+            titleAr: 'إعادة تعيين كلمة مرور AccreditMe',
+            bodyEn: `Click the link below to reset your password. This link expires in 1 hour.\n\n${data.url}`,
+            bodyAr: `انقر على الرابط أدناه لإعادة تعيين كلمة المرور الخاصة بك. تنتهي صلاحية هذا الرابط خلال ساعة واحدة.\n\n${data.url}`,
+            channel: 'EMAIL',
+          },
+          appUser.organizationId,
+        );
       },
     },
 
