@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
+import { TaskService } from '../task/task.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
@@ -33,6 +34,7 @@ export class UserService {
     private readonly auditLog: AuditLogService,
     private readonly notificationService: NotificationService,
     private readonly roleService: RoleService,
+    private readonly taskService: TaskService,
     @Inject(AUTH_PROVIDER) private readonly authProvider: AuthProvider,
   ) {}
 
@@ -196,9 +198,11 @@ export class UserService {
     return user;
   }
 
-  // Commit 4 stub — deactivates the user and revokes sessions. The full
-  // departure flow (bulk task reassignment / UNASSIGNED flagging) is added
-  // in Commit 6, which modifies this method's body.
+  // Full departure flow (Absence and Departure Management, "User Departure
+  // Flow (Critical)"). Order is not reorderable — tokenVersion increments
+  // BEFORE bulk reassignment starts, so the departing user's existing
+  // sessions are already dead the instant this begins, not after it
+  // finishes (see step-09 plan Section 8).
   async deactivate(
     id: string,
     organizationId: string,
@@ -209,6 +213,15 @@ export class UserService {
     await this.prisma.user.update({ where: { id }, data: { status: 'INACTIVE' } });
     await this.authProvider.invalidateUserSessions(id);
 
+    const { reassignedCount, unassignedCount } = await this.taskService.reassignAllForUser(
+      id,
+      existing.actingUserId,
+      organizationId,
+      actorId,
+    );
+
+    await this.notifyTenantAdminsOfDeparture(organizationId, existing, reassignedCount, unassignedCount);
+
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
@@ -216,12 +229,43 @@ export class UserService {
       objectType: 'User',
       objectId: id,
       before: existing as unknown as Record<string, unknown>,
-      metadata: { event: 'deactivated' },
+      metadata: { event: 'deactivated', reassignedCount, unassignedCount },
     });
 
-    // TODO(Commit 6): bulk-reassign every open Task this user is an active
-    // assignee on (to actingUserId if set, else UNASSIGNED) and return real counts.
-    return { reassignedCount: 0, unassignedCount: 0 };
+    return { reassignedCount, unassignedCount };
+  }
+
+  private async notifyTenantAdminsOfDeparture(
+    organizationId: string,
+    departedUser: IUser,
+    reassignedCount: number,
+    unassignedCount: number,
+  ): Promise<void> {
+    const adminRole = await this.prisma.role.findFirst({
+      where: { organizationId, key: 'TENANT_ADMIN' },
+    });
+    if (!adminRole) return;
+
+    const admins = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+    });
+
+    const summary =
+      unassignedCount > 0
+        ? `${reassignedCount} task(s) reassigned, ${unassignedCount} task(s) flagged as UNASSIGNED and need manual reassignment.`
+        : `${reassignedCount} task(s) reassigned.`;
+
+    for (const admin of admins) {
+      await this.notificationService.create(
+        {
+          userId: admin.userId,
+          titleEn: `${departedUser.name} has been deactivated`,
+          bodyEn: `${departedUser.name}'s account was deactivated. ${summary}`,
+          channel: 'IN_APP',
+        },
+        organizationId,
+      );
+    }
   }
 
   // ── Migrated from RoleController (Step 9) — same URL paths, same behavior,

@@ -48,6 +48,9 @@ const mockPrisma = {
   },
   taskAssignee: {
     updateMany: jest.fn(),
+    findMany: jest.fn(),
+    update: jest.fn(),
+    create: jest.fn(),
   },
   taskEvidence: {
     create: jest.fn(),
@@ -297,6 +300,104 @@ describe('TaskService', () => {
       await expect(
         service.reassign('task-1', { newAssigneeUserIds: [USER_B], reason: 'x' }, ORG_B, ACTOR),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('reassignAllForUser', () => {
+    const ASSIGNMENT_SOLO = {
+      id: 'ta-1',
+      taskId: 'task-1',
+      userId: USER_A,
+      removedAt: null,
+      task: {
+        id: 'task-1',
+        status: 'PENDING',
+        assignees: [{ id: 'ta-1', userId: USER_A, removedAt: null }],
+      },
+    };
+
+    it('reassigns every active task to the acting user when one is given', async () => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
+
+      const result = await service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR);
+
+      expect(mockPrisma.taskAssignee.update).toHaveBeenCalledWith({
+        where: { id: 'ta-1' },
+        data: { removedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.taskAssignee.create).toHaveBeenCalledWith({
+        data: { taskId: 'task-1', userId: USER_B, assignedById: ACTOR },
+      });
+      expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0 });
+    });
+
+    it('flags a task UNASSIGNED when no acting user is given and no other assignee remains', async () => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+
+      const result = await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { status: 'UNASSIGNED' },
+      });
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1 });
+    });
+
+    it('does NOT flag UNASSIGNED when another active assignee remains on the task (multi-assignee)', async () => {
+      const multiAssignment = {
+        ...ASSIGNMENT_SOLO,
+        task: {
+          id: 'task-1',
+          status: 'PENDING',
+          assignees: [
+            { id: 'ta-1', userId: USER_A, removedAt: null },
+            { id: 'ta-2', userId: USER_B, removedAt: null },
+          ],
+        },
+      };
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([multiAssignment]);
+
+      const result = await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
+
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0 });
+    });
+
+    it('falls back to UNASSIGNED when the requested acting user is not active in this tenant', async () => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+      mockPrisma.user.findMany.mockResolvedValue([]); // acting user not found/inactive
+
+      const result = await service.reassignAllForUser(USER_A, 'inactive-user', ORG_A, ACTOR);
+
+      expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1 });
+    });
+
+    it('logs an audit entry per reassigned task', async () => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue([ASSIGNMENT_SOLO]);
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
+
+      await service.reassignAllForUser(USER_A, USER_B, ORG_A, ACTOR);
+
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'DELEGATE',
+          objectType: 'Task',
+          objectId: 'task-1',
+          metadata: expect.objectContaining({ event: 'departure_reassignment', fromUserId: USER_A }),
+        }),
+      );
+    });
+
+    it('should NOT reassign tasks belonging to a different tenant', async () => {
+      mockPrisma.taskAssignee.findMany.mockImplementation(({ where }) =>
+        Promise.resolve(where.task.organizationId === ORG_A ? [ASSIGNMENT_SOLO] : []),
+      );
+
+      const result = await service.reassignAllForUser(USER_A, null, ORG_B, ACTOR);
+
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0 });
     });
   });
 

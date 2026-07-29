@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
+import { TaskService } from '../task/task.service';
 import { AuthProvider } from '../../providers/auth/auth.provider';
 
 const ORG_A = 'org-a';
@@ -20,6 +21,7 @@ describe('UserService', () => {
     removeRoleFromUser: jest.Mock;
   };
   let mockAuthProvider: { invalidateUserSessions: jest.Mock; validateToken: jest.Mock };
+  let mockTaskService: { reassignAllForUser: jest.Mock };
 
   beforeEach(() => {
     mockPrisma = {
@@ -31,6 +33,8 @@ describe('UserService', () => {
         count: jest.fn(),
       },
       organization: { findUnique: jest.fn() },
+      role: { findFirst: jest.fn().mockResolvedValue(null) },
+      userRole: { findMany: jest.fn().mockResolvedValue([]) },
     };
     mockAuditLog = { log: jest.fn() };
     mockNotification = { create: jest.fn().mockResolvedValue({}) };
@@ -43,12 +47,16 @@ describe('UserService', () => {
       invalidateUserSessions: jest.fn().mockResolvedValue(undefined),
       validateToken: jest.fn(),
     };
+    mockTaskService = {
+      reassignAllForUser: jest.fn().mockResolvedValue({ reassignedCount: 0, unassignedCount: 0 }),
+    };
 
     service = new UserService(
       mockPrisma as unknown as PrismaService,
       mockAuditLog as unknown as AuditLogService,
       mockNotification as unknown as NotificationService,
       mockRoleService as unknown as RoleService,
+      mockTaskService as unknown as TaskService,
       mockAuthProvider as unknown as AuthProvider,
     );
   });
@@ -271,6 +279,73 @@ describe('UserService', () => {
     it('throws NotFoundException for a user in a different tenant', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null);
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('bulk-reassigns open tasks to the actingUser and returns the real counts', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        name: 'Departing User',
+        status: 'ACTIVE',
+        actingUserId: 'acting-1',
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+      mockTaskService.reassignAllForUser.mockResolvedValue({ reassignedCount: 3, unassignedCount: 1 });
+
+      const result = await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockTaskService.reassignAllForUser).toHaveBeenCalledWith(
+        'user-1',
+        'acting-1',
+        ORG_A,
+        'admin-1',
+      );
+      expect(result).toEqual({ reassignedCount: 3, unassignedCount: 1 });
+    });
+
+    it('notifies active Tenant Admins with a summary when the TENANT_ADMIN role exists', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        name: 'Departing User',
+        status: 'ACTIVE',
+        actingUserId: null,
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+      mockTaskService.reassignAllForUser.mockResolvedValue({ reassignedCount: 0, unassignedCount: 2 });
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-user-1' }]);
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-user-1', channel: 'IN_APP' }),
+        ORG_A,
+      );
+    });
+
+    it('increments tokenVersion (via invalidateUserSessions) before the bulk reassignment runs', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        name: 'Departing User',
+        status: 'ACTIVE',
+        actingUserId: null,
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+
+      const callOrder: string[] = [];
+      mockAuthProvider.invalidateUserSessions.mockImplementation(async () => {
+        callOrder.push('invalidateUserSessions');
+      });
+      mockTaskService.reassignAllForUser.mockImplementation(async () => {
+        callOrder.push('reassignAllForUser');
+        return { reassignedCount: 0, unassignedCount: 0 };
+      });
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(callOrder).toEqual(['invalidateUserSessions', 'reassignAllForUser']);
     });
   });
 
