@@ -155,55 +155,90 @@ accreditme/
 
 ---
 
-## Build Order — Non-Negotiable
+## Build Sequence (Revised)
 
-Build in this exact sequence. Every layer depends on the one above it.
-Never start a functional module before the foundation is complete and tested.
+### Foundation (Complete)
+ACC-5  Step 5:  Tenant provisioning ✅
+ACC-6  Step 6:  Organization structure + Working calendar ✅
+ACC-7  Step 7:  Lookup system ✅
+ACC-8  Step 8:  Roles + Permissions ✅
+ACC-9  Step 9:  Workflow engine ✅
+ACC-10 Step 7b: Notification service ✅
+ACC-11 Step 8b: Task management + OrgPosition ✅
+ACC-12 Step 9b: User management + Better Auth ✅
 
-```
-Phase 1 — Foundation
-  Step 1:  Tenant provisioning + pluggable provider configuration
-  Step 2:  Organization structure (units, sub-units, hierarchy)
-  Step 3:  Working calendar (working days, hours, holidays, timezone)
-  Step 4:  Lookup system (system defaults + tenant extensions)
-  Step 5:  Roles + permissions + access control
-  Step 6:  Workflow engine (templates, stages, transitions)
-  Step 7:  Notification service (event-driven, multi-channel)
-  Step 8:  Task management (workflow-generated, SLA-tracked)
-  Step 9:  User management (invite, assign, delegate)
-  Step 10: Committee management (composition, quorum, roles)
-  Step 11: Meeting management (agenda, minutes, decisions, action items)
-  Step 12: Super admin portal
-  Step 13: Billing + subscription (Stripe)
-  Step 14: Tenant onboarding wizard
-  Step 15: Tenant offboarding + data export
+### Admin + Navigation (Next)
+ACC-13 Step 12: Super Admin Portal + Tenant Admin 
+                + Navigation shell
+                (Stripe/billing deferred to Phase 2)
 
-Phase 2 — Functional Modules
-  Step 16: Module 1 — Standards management
-           (build hierarchy + measurable elements first —
-            documents and audits depend on this)
-  Step 17: Module 2 — Quality documentation management
-           (documents now link as evidence to measurable elements)
-  Step 17b: Document distribution + Staff portal + Acknowledgement records
-            (staff members receive and acknowledge published documents —
-             staff user type is separate from full users covered in Step 9;
-             acknowledgement tracking and compliance reports included here)
-  Step 18: Module 3 — Quality improvement
-           (incidents and gaps reference standards and documents)
-  Step 19: Module 4 — Audit management
-           (checklists generated from standards, reference documents,
-            findings may trigger quality improvement — depends on all above)
-  Step 20: KPI and performance indicators module
+### Governance Modules
+ACC-14 Step 10: Committee Management
+               (depends on: navigation shell)
+ACC-15 Step 11: Meeting Management
+               (depends on: committees)
 
-Phase 3 — Enhancements
-  Step 21: Public API + webhooks + developer portal
-  Step 22: Custom report builder
-  Step 23: Power BI embed for enterprise tenants
-  Step 24: Organization structure change management workflow
-  Step 25: draw.io enhancements
-  Step 26: draw.io visual workflow canvas builder
-  Step 27: Visual integration builder (webhook flows, field mapping)
-```
+### Onboarding
+ACC-16 Step 14: Tenant Onboarding wizard
+               (depends on: navigation + admin portal)
+
+### Quality Modules (order enforced by dependencies)
+ACC-17 Step 17: Document Management
+               (depends on: committees for approval mode)
+ACC-18 Step 16: Standards Management
+               (benefits from: documents for evidence linking)
+ACC-19 Step 18a: Incident Management
+               (standalone — no hard dependencies)
+ACC-20 Step 18b: CAPA Management
+               (triggered by: incidents, audits)
+ACC-21 Step 18c: Gap Management
+               (triggered by: standards, audits, KPIs)
+ACC-22 Step 19: Audit Management
+               (depends on: CAPA for findings follow-up)
+ACC-23 Step 20: KPI Management
+               (benefits from: gap for below-target triggers)
+
+### Offboarding
+ACC-24 Step 15: Tenant Offboarding
+               (tenant deactivation without Stripe)
+
+### Phase 2 — Monetization (after demo and validation)
+ACC-25 Step 13: Stripe + Billing
+               - Stripe products and webhooks
+               - Plan management with payment processing
+               - Self-service tenant registration
+               - Invoice generation
+               - Module licensing enforcement
+
+### Phase 3 — Advanced Features
+  Visual workflow canvas (draw.io)
+  Enterprise auth: Azure AD, LDAP, SAML
+  Power BI embed
+  Public API + webhooks
+  Multi-language AI (Arabic NLP)
+  Mobile app
+
+### Key Dependency Rules (do not violate)
+  Meeting needs Committee (ACC-15 after ACC-14)
+  Document needs Committee (ACC-17 after ACC-14)
+  CAPA needs Incident OR Audit source (ACC-20 after ACC-19)
+  Gap needs Standards OR Audit OR KPI (ACC-21 after ACC-18)
+  Audit needs CAPA for findings (ACC-22 after ACC-20)
+  KPI benefits from Gap (ACC-23 after ACC-21)
+  All functional modules benefit from navigation (ACC-13 first)
+
+### Demo Strategy
+  Target demo point: After ACC-17 (Document Management)
+  At that point AccreditMe has:
+    - Proper navigation shell
+    - Controlled document management with approval workflows
+    - Committee governance
+    - Meeting management with minutes
+    - Incident reporting
+    - Corrective actions
+    - User management with MFA
+    - Role-based access control
+  This is a compelling demo for GCC healthcare and government
 
 ---
 
