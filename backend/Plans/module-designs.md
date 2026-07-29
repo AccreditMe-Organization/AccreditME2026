@@ -495,6 +495,18 @@ Full design in: backend/Plans/step-07-notification-service.md
 - Morning briefing: deferred (Step 20+ dependency)
 - Personalized notification text: deferred to Phase 3
 
+### Email Provider (Planned — Step 12)
+Current: Resend hardcoded in NotificationEmailProcessor
+Planned: IEmailProvider abstraction per tenant
+Options: Resend (cloud), SMTP (on-premises/Exchange),
+         Office365 (Microsoft 365), SendGrid, AWS SES
+Config stored encrypted in Organization.emailConfig
+Platform default: AccreditMe Resend account
+
+For on-premises Microsoft Exchange:
+  On-premises Exchange: SMTP relay port 587 (simplest)
+  Exchange Online: Microsoft Graph API with OAuth2
+
 ---
 
 ## Absence and Departure Management (Cross-Cutting)

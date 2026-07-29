@@ -326,6 +326,57 @@ Same interface pattern. AI model and API endpoint configurable per tenant.
 AI keys encrypted at rest. AI always assistive — output always reviewed by human.
 Every AI interaction logged: prompt, model used, response, actor, timestamp.
 
+### Email Provider (IEmailProvider)
+Current implementation: Resend (hardcoded in NotificationEmailProcessor)
+Planned abstraction: IEmailProvider interface (same pattern as AIProvider)
+
+```typescript
+interface IEmailProvider {
+  send(options: {
+    to: string | string[]
+    subject: string
+    html: string
+    from?: string
+    fromName?: string
+  }): Promise<void>
+}
+```
+
+Planned implementations:
+```
+ResendEmailProvider     (current, cloud default)
+SmtpEmailProvider       (on-premises/Exchange via SMTP relay)
+Office365EmailProvider  (Microsoft 365 via Graph API + OAuth2)
+SendGridEmailProvider   (alternative cloud)
+SesEmailProvider        (AWS SES)
+```
+
+Per-tenant config in Organization.emailConfig (encrypted JSON):
+```json
+{
+  "emailProvider": "smtp"|"office365"|"resend"|"sendgrid"|"ses",
+  "emailConfig": { "...encrypted provider config...": true }
+}
+```
+
+Platform default: ResendEmailProvider with AccreditMe platform key.
+From: noreply@accreditme.com
+
+Build sequence:
+```
+Step 7 (done):        Resend hardcoded in NotificationEmailProcessor
+Step 12 (Super Admin): email provider settings UI per tenant
+Between Step 12-14:    refactor NotificationEmailProcessor to resolve
+                       IEmailProvider per tenant from Organization.emailConfig
+```
+
+Microsoft Exchange note:
+```
+On-premises Exchange: SmtpEmailProvider via SMTP relay (port 587)
+Exchange Online (Office 365): Office365EmailProvider
+  (requires Azure AD app registration by customer IT team)
+```
+
 ### Workflow Engine
 
 #### Architecture Decision
