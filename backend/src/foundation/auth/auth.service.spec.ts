@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
+import { LoginAttemptService } from './login-attempt.service';
 
 // Explicit factory — a bare jest.mock(path) auto-mock still requires Jest to
 // load the real module first to infer its shape, which pulls in
@@ -52,6 +53,7 @@ describe('AuthService', () => {
   let mockPrisma: any;
   let mockAuditLog: { log: jest.Mock };
   let mockNotification: { create: jest.Mock };
+  let mockLoginAttemptService: { record: jest.Mock; isLocked: jest.Mock; isNewIp: jest.Mock };
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = 'test-jwt-secret';
@@ -70,11 +72,17 @@ describe('AuthService', () => {
     };
     mockAuditLog = { log: jest.fn() };
     mockNotification = { create: jest.fn() };
+    mockLoginAttemptService = {
+      record: jest.fn().mockResolvedValue(undefined),
+      isLocked: jest.fn().mockResolvedValue(false),
+      isNewIp: jest.fn().mockReturnValue(false),
+    };
 
     service = new AuthService(
       mockPrisma as unknown as PrismaService,
       mockAuditLog as unknown as AuditLogService,
       mockNotification as unknown as NotificationService,
+      mockLoginAttemptService as unknown as LoginAttemptService,
     );
   });
 
@@ -191,6 +199,94 @@ describe('AuthService', () => {
       expect(mockPrisma.refreshToken.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ organizationId: ORG_B }) }),
       );
+    });
+
+    it('rejects a locked account before calling Better Auth at all', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
+      mockLoginAttemptService.isLocked.mockResolvedValue(true);
+
+      await expect(
+        service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'pw' }, fakeExpressReq(), fakeExpressRes()),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockAuthApi.signInEmail).not.toHaveBeenCalled();
+      expect(mockLoginAttemptService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, failureReason: 'locked' }),
+      );
+    });
+
+    it('records a failed attempt when Better Auth rejects the credentials', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
+      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+
+      await expect(
+        service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'wrong' }, fakeExpressReq(), fakeExpressRes()),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockLoginAttemptService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, failureReason: 'invalid_password' }),
+      );
+    });
+
+    it('records a successful attempt on successful login', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
+      mockAuthApi.signInEmail.mockResolvedValue(fakeResponse({ user: { id: 'authuser-1' } }));
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        status: 'ACTIVE',
+        tokenVersion: 1,
+        lastLoginIp: '9.9.9.9',
+      });
+
+      await service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'pw' }, fakeExpressReq(), fakeExpressRes());
+
+      expect(mockLoginAttemptService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+      );
+    });
+
+    it('sends a new-IP email notification when isNewIp returns true', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
+      mockAuthApi.signInEmail.mockResolvedValue(fakeResponse({ user: { id: 'authuser-1' } }));
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        status: 'ACTIVE',
+        tokenVersion: 1,
+        lastLoginIp: '9.9.9.9',
+      });
+      mockLoginAttemptService.isNewIp.mockReturnValue(true);
+
+      await service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'pw' }, fakeExpressReq(), fakeExpressRes());
+
+      expect(mockNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1', channel: 'EMAIL' }),
+        ORG_A,
+      );
+    });
+
+    it('does NOT send a new-IP email notification when isNewIp returns false', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
+      mockAuthApi.signInEmail.mockResolvedValue(fakeResponse({ user: { id: 'authuser-1' } }));
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        status: 'ACTIVE',
+        tokenVersion: 1,
+        lastLoginIp: '127.0.0.1',
+      });
+      mockLoginAttemptService.isNewIp.mockReturnValue(false);
+
+      await service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'pw' }, fakeExpressReq(), fakeExpressRes());
+
+      expect(mockNotification.create).not.toHaveBeenCalled();
     });
   });
 

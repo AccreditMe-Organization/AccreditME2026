@@ -9,11 +9,9 @@
 // validates (commit 3's TenantGuard update) — completely unchanged from
 // Better Auth's perspective.
 //
-// NOTE(Commit 5): loginAttemptService.isLocked()/record()/isNewIp() calls
-// are intentionally NOT wired yet — LoginAttemptService does not exist until
-// Commit 5. The plan's Section 8 "Login Sequence" describes the FINAL
-// behavior after Commit 5 lands; this commit builds every other part of that
-// sequence and leaves clearly marked TODO(Commit 5) call sites.
+// Login attempt logging, account lockout, and new-IP notification (Commit 5)
+// are wired in below via LoginAttemptService — see Section 8's "Login
+// Sequence" for the full narrative this method follows exactly.
 
 import {
   BadRequestException,
@@ -29,6 +27,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { createBetterAuthInstance } from '../../providers/auth/better-auth.config';
+import { LoginAttemptService } from './login-attempt.service';
 import { LoginDto } from './dto/login.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
@@ -67,6 +66,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly notificationService: NotificationService,
+    private readonly loginAttemptService: LoginAttemptService,
   ) {
     this.auth = createBetterAuthInstance(this.prisma, this.notificationService);
   }
@@ -148,7 +148,10 @@ export class AuthService {
 
   // Shared tail for both the no-MFA login path and the post-verifyMfa path —
   // resolves the real AccreditMe User behind a Better Auth AuthUser id, mints
-  // the JWT, issues + sets both cookies, and records the login.
+  // the JWT, issues + sets both cookies, and records the login. Captures
+  // lastLoginIp BEFORE overwriting it so isNewIp() has something to compare
+  // against — see LoginAttemptService.isNewIp()'s own comment for why this
+  // doesn't need a separate LoginAttempt query.
   private async completeLogin(
     appUserId: string,
     req: ExpressRequest,
@@ -159,6 +162,8 @@ export class AuthService {
     if (user.status !== 'ACTIVE') {
       throw new UnauthorizedException('This account is not active');
     }
+
+    const wasNewIp = this.loginAttemptService.isNewIp(user.lastLoginIp, req.ip);
 
     const accessToken = this.mintAccessToken(user);
     const refreshToken = await this.issueRefreshToken(user.id, user.organizationId, req);
@@ -178,6 +183,20 @@ export class AuthService {
       ipAddress: req.ip,
     });
 
+    if (wasNewIp) {
+      await this.notificationService.create(
+        {
+          userId: user.id,
+          titleEn: 'New sign-in to your AccreditMe account',
+          titleAr: 'تسجيل دخول جديد إلى حسابك في AccreditMe',
+          bodyEn: `We noticed a sign-in from a new IP address (${req.ip ?? 'unknown'}). If this wasn't you, reset your password immediately.`,
+          bodyAr: `لاحظنا تسجيل دخول من عنوان IP جديد (${req.ip ?? 'غير معروف'}). إذا لم يكن هذا أنت، فأعد تعيين كلمة المرور فورًا.`,
+          channel: 'EMAIL',
+        },
+        user.organizationId,
+      );
+    }
+
     return { id: user.id, email: user.email, name: user.name };
   }
 
@@ -189,8 +208,17 @@ export class AuthService {
     const organizationId = await this.resolveOrganizationId(dto.organizationSlug);
     const namespacedEmail = AuthService.namespacedEmail(organizationId, dto.email);
 
-    // TODO(Commit 5): loginAttemptService.isLocked(organizationId, dto.email)
-    // check goes here, BEFORE calling Better Auth at all.
+    if (await this.loginAttemptService.isLocked(organizationId, dto.email)) {
+      await this.loginAttemptService.record({
+        organizationId,
+        email: dto.email,
+        success: false,
+        failureReason: 'locked',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      throw new UnauthorizedException('Account temporarily locked due to repeated failed attempts');
+    }
 
     let result: Response;
     try {
@@ -199,7 +227,14 @@ export class AuthService {
         asResponse: true,
       })) as unknown as Response;
     } catch {
-      // TODO(Commit 5): loginAttemptService.record({ success: false, failureReason: 'invalid_password', ... })
+      await this.loginAttemptService.record({
+        organizationId,
+        email: dto.email,
+        success: false,
+        failureReason: 'invalid_password',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -222,8 +257,14 @@ export class AuthService {
     const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
     if (!appUser) throw new UnauthorizedException('Invalid credentials');
 
-    // TODO(Commit 5): loginAttemptService.record({ success: true, ... }) and
-    // isNewIp() check -> NotificationService email if this is a new IP.
+    await this.loginAttemptService.record({
+      organizationId,
+      email: dto.email,
+      success: true,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
     const user = await this.completeLogin(appUser.id, req, res);
     return { success: true, user };
   }
