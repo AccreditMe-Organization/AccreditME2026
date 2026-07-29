@@ -9,7 +9,7 @@
 
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap } from 'rxjs';
+import { Observable, catchError, map, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 export interface PublicUser {
@@ -22,6 +22,12 @@ export interface LoginResult {
   success?: true;
   user?: PublicUser;
   mfaRequired?: true;
+}
+
+export interface MfaSetupResult {
+  qrCodeDataUrl: string;
+  secret: string;
+  backupCodes: string[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -66,11 +72,48 @@ export class AuthService {
     return this.http.post<void>(`${this.baseUrl}/reset-password`, { token, password });
   }
 
+  // Distinct from verifyMfa() above (the login-time 2FA challenge) — these
+  // four manage MFA enrollment for the already-logged-in user. Endpoint
+  // paths match AuthController exactly: 'mfa/verify' was already taken by
+  // the login flow, so enrollment-verify lives at 'mfa/setup/verify'.
+  setupMfa(password: string): Observable<MfaSetupResult> {
+    return this.http.post<MfaSetupResult>(`${this.baseUrl}/mfa/setup`, { password });
+  }
+
+  verifyAndEnableMfa(code: string): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/mfa/setup/verify`, { code });
+  }
+
+  disableMfa(password: string): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/mfa/disable`, { password });
+  }
+
+  getMfaStatus(): Observable<{ enabled: boolean }> {
+    return this.http.get<{ enabled: boolean }>(`${this.baseUrl}/mfa/status`);
+  }
+
   // Called by the auth interceptor on a 401 response — the source of truth
   // for "session expired" is the backend rejecting a request, not a local
   // token check (there is no local token to check).
   clearSession(): void {
     this._currentUser.set(null);
+  }
+
+  // Called once via APP_INITIALIZER on app startup — currentUser is
+  // in-memory only, so a page refresh or direct URL navigation loses it even
+  // though the httpOnly access_token cookie is still valid. /auth/me reads
+  // that cookie server-side and restores the signal. A 401 (missing/expired/
+  // stale-tokenVersion cookie) is the expected "not logged in" case, not an
+  // error to surface.
+  restoreSession(): Observable<void> {
+    return this.http.get<PublicUser>(`${this.baseUrl}/me`).pipe(
+      tap((user) => this._currentUser.set(user)),
+      catchError(() => {
+        this._currentUser.set(null);
+        return of(null);
+      }),
+      map(() => void 0),
+    );
   }
 
   private applyLoginResult(result: LoginResult): void {

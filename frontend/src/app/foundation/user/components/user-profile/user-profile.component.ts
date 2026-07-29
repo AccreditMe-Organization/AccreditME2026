@@ -1,16 +1,20 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
+import { PasswordModule } from 'primeng/password';
+import { TagModule } from 'primeng/tag';
+import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { UserRoleAssignmentComponent } from '../../../roles/components/user-role-assignment/user-role-assignment.component';
+import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
@@ -32,6 +36,8 @@ import { UserRoleAssignmentComponent } from '../../../roles/components/user-role
     DatePickerModule,
     ButtonModule,
     MessageModule,
+    PasswordModule,
+    TagModule,
     UserRoleAssignmentComponent,
   ],
   template: `
@@ -147,6 +153,104 @@ import { UserRoleAssignmentComponent } from '../../../roles/components/user-role
           </div>
         </form>
 
+        @if (isOwnProfile()) {
+          <hr />
+
+          <h3 class="text-lg font-semibold">{{ 'user.mfa.title' | translate }}</h3>
+
+          @if (mfaError()) {
+            <p-message severity="error" [text]="mfaError()!" />
+          }
+          @if (mfaSuccessMessage()) {
+            <p-message severity="success" [text]="mfaSuccessMessage()!" />
+          }
+
+          @if (mfaEnabled() === false && !mfaSetupResult()) {
+            <div class="flex flex-col gap-3">
+              <p class="text-sm text-surface-500">{{ 'user.mfa.notEnabled' | translate }}</p>
+              <form [formGroup]="mfaSetupForm" (ngSubmit)="onSetupMfa()" class="flex flex-col gap-3 max-w-xs">
+                <div class="flex flex-col gap-1">
+                  <label for="mfaSetupPassword" class="text-sm font-medium">
+                    {{ 'user.mfa.password' | translate }}
+                  </label>
+                  <p-password
+                    inputId="mfaSetupPassword"
+                    formControlName="password"
+                    [feedback]="false"
+                    [toggleMask]="true"
+                    styleClass="w-full"
+                  />
+                </div>
+                <div>
+                  <p-button
+                    [label]="'user.mfa.enable' | translate"
+                    type="submit"
+                    [loading]="settingUpMfa()"
+                    [disabled]="mfaSetupForm.invalid"
+                  />
+                </div>
+              </form>
+            </div>
+          }
+
+          @if (mfaSetupResult(); as setup) {
+            <div class="flex flex-col gap-3">
+              <p class="text-sm">{{ 'user.mfa.scanQrCode' | translate }}</p>
+              <img [src]="setup.qrCodeDataUrl" alt="TOTP QR code" class="w-40 h-40" />
+              <p class="text-sm">
+                {{ 'user.mfa.manualEntryKey' | translate }}
+                <code class="font-mono">{{ setup.secret }}</code>
+              </p>
+
+              <form [formGroup]="mfaVerifyForm" (ngSubmit)="onVerifyMfa()" class="flex flex-col gap-3 max-w-xs">
+                <div class="flex flex-col gap-1">
+                  <label for="mfaVerifyCode" class="text-sm font-medium">
+                    {{ 'user.mfa.verificationCode' | translate }}
+                  </label>
+                  <input pInputText id="mfaVerifyCode" formControlName="code" maxlength="6" />
+                </div>
+                <div>
+                  <p-button
+                    [label]="'user.mfa.verifyAndActivate' | translate"
+                    type="submit"
+                    [loading]="verifyingMfa()"
+                    [disabled]="mfaVerifyForm.invalid"
+                  />
+                </div>
+              </form>
+            </div>
+          }
+
+          @if (mfaEnabled() === true) {
+            <div class="flex flex-col gap-3">
+              <p-tag severity="success" [value]="'user.mfa.enabled' | translate" />
+              <form [formGroup]="mfaDisableForm" (ngSubmit)="onDisableMfaClick()" class="flex flex-col gap-3 max-w-xs">
+                <div class="flex flex-col gap-1">
+                  <label for="mfaDisablePassword" class="text-sm font-medium">
+                    {{ 'user.mfa.password' | translate }}
+                  </label>
+                  <p-password
+                    inputId="mfaDisablePassword"
+                    formControlName="password"
+                    [feedback]="false"
+                    [toggleMask]="true"
+                    styleClass="w-full"
+                  />
+                </div>
+                <div>
+                  <p-button
+                    [label]="'user.mfa.disable' | translate"
+                    severity="danger"
+                    type="submit"
+                    [loading]="disablingMfa()"
+                    [disabled]="mfaDisableForm.invalid"
+                  />
+                </div>
+              </form>
+            </div>
+          }
+        }
+
         <hr />
 
         <app-user-role-assignment [userId]="u.id" />
@@ -159,6 +263,9 @@ export class UserProfileComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly orgUnitService = inject(OrgUnitService);
+  private readonly authService = inject(AuthService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly translateService = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
 
   readonly userId = this.route.snapshot.paramMap.get('id')!;
@@ -171,6 +278,25 @@ export class UserProfileComponent implements OnInit {
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly otherUsers = signal<{ id: string; name: string }[]>([]);
+
+  // MFA management only ever acts on the logged-in user (AuthController's
+  // mfa/* endpoints resolve the actor from the JWT via @CurrentUser(), not
+  // from this page's :id route param) — so the section only renders when
+  // viewing your own profile, never when an admin views someone else's.
+  readonly isOwnProfile = computed(() => this.user()?.id === this.authService.currentUser()?.id);
+  readonly mfaEnabled = signal<boolean | null>(null);
+  readonly mfaSetupResult = signal<MfaSetupResult | null>(null);
+  readonly mfaError = signal<string | null>(null);
+  readonly mfaSuccessMessage = signal<string | null>(null);
+  readonly settingUpMfa = signal(false);
+  readonly verifyingMfa = signal(false);
+  readonly disablingMfa = signal(false);
+
+  readonly mfaSetupForm = this.fb.group({ password: ['', [Validators.required]] });
+  readonly mfaVerifyForm = this.fb.group({
+    code: ['', [Validators.required, Validators.minLength(6), Validators.maxLength(6)]],
+  });
+  readonly mfaDisableForm = this.fb.group({ password: ['', [Validators.required]] });
 
   readonly profileForm = this.fb.group({
     name: [''],
@@ -214,6 +340,9 @@ export class UserProfileComponent implements OnInit {
           outOfOfficeTo: u.outOfOfficeTo ? new Date(u.outOfOfficeTo) : null,
           actingUserId: u.actingUserId,
         });
+        if (this.isOwnProfile()) {
+          this.loadMfaStatus();
+        }
       },
       error: () => this.error.set('user.errorLoad'),
     });
@@ -269,5 +398,85 @@ export class UserProfileComponent implements OnInit {
           this.error.set(err?.error?.message ?? 'user.errorSave');
         },
       });
+  }
+
+  private loadMfaStatus(): void {
+    this.authService.getMfaStatus().subscribe({
+      next: (status) => this.mfaEnabled.set(status.enabled),
+      error: () => this.mfaEnabled.set(false),
+    });
+  }
+
+  onSetupMfa(): void {
+    if (this.mfaSetupForm.invalid) return;
+    this.settingUpMfa.set(true);
+    this.mfaError.set(null);
+    this.mfaSuccessMessage.set(null);
+
+    const { password } = this.mfaSetupForm.getRawValue();
+    this.authService.setupMfa(password!).subscribe({
+      next: (result) => {
+        this.settingUpMfa.set(false);
+        this.mfaSetupResult.set(result);
+        this.mfaSetupForm.reset();
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.settingUpMfa.set(false);
+        this.mfaError.set(err?.error?.message ?? 'user.mfa.errorSetup');
+      },
+    });
+  }
+
+  onVerifyMfa(): void {
+    if (this.mfaVerifyForm.invalid) return;
+    this.verifyingMfa.set(true);
+    this.mfaError.set(null);
+
+    const { code } = this.mfaVerifyForm.getRawValue();
+    this.authService.verifyAndEnableMfa(code!).subscribe({
+      next: () => {
+        this.verifyingMfa.set(false);
+        this.mfaSetupResult.set(null);
+        this.mfaVerifyForm.reset();
+        this.mfaEnabled.set(true);
+        this.mfaSuccessMessage.set('user.mfa.enabledSuccess');
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.verifyingMfa.set(false);
+        this.mfaError.set(err?.error?.message ?? 'user.mfa.errorVerify');
+      },
+    });
+  }
+
+  onDisableMfaClick(): void {
+    if (this.mfaDisableForm.invalid) return;
+    const { password } = this.mfaDisableForm.getRawValue();
+
+    this.confirmationService.confirm({
+      message: this.translateService.instant('user.mfa.disableConfirmMessage'),
+      header: this.translateService.instant('common.confirm'),
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => this.disableMfa(password!),
+    });
+  }
+
+  private disableMfa(password: string): void {
+    this.disablingMfa.set(true);
+    this.mfaError.set(null);
+    this.mfaSuccessMessage.set(null);
+
+    this.authService.disableMfa(password).subscribe({
+      next: () => {
+        this.disablingMfa.set(false);
+        this.mfaEnabled.set(false);
+        this.mfaDisableForm.reset();
+        this.mfaSuccessMessage.set('user.mfa.disabledSuccess');
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.disablingMfa.set(false);
+        this.mfaError.set(err?.error?.message ?? 'user.mfa.errorDisable');
+      },
+    });
   }
 }

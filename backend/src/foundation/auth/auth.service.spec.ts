@@ -15,6 +15,8 @@ const mockAuthApi = {
   signUpEmail: jest.fn(),
   requestPasswordReset: jest.fn(),
   resetPassword: jest.fn(),
+  enableTwoFactor: jest.fn(),
+  disableTwoFactor: jest.fn(),
 };
 
 jest.mock('../../providers/auth/better-auth.config', () => ({
@@ -468,6 +470,177 @@ describe('AuthService', () => {
       expect(mockAuthApi.resetPassword).toHaveBeenCalledWith({
         body: { newPassword: 'newpassword123', token: 'tok' },
       });
+    });
+  });
+
+  const appUserFixture = {
+    id: 'user-1',
+    organizationId: ORG_A,
+    email: 'a@example.com',
+    name: 'A User',
+    authUserId: 'authuser-1',
+  };
+
+  describe('setupMfa', () => {
+    it('re-authenticates, enables two-factor, and returns a QR code data URL + secret + backup codes', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess123; Path=/; HttpOnly']),
+      );
+      mockAuthApi.enableTwoFactor.mockResolvedValue({
+        totpURI: 'otpauth://totp/AccreditMe:a%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=AccreditMe',
+        backupCodes: ['code1', 'code2'],
+      });
+
+      const result = await service.setupMfa('user-1', ORG_A, { password: 'pw' });
+
+      expect(result.secret).toBe('JBSWY3DPEHPK3PXP');
+      expect(result.backupCodes).toEqual(['code1', 'code2']);
+      expect(result.qrCodeDataUrl.startsWith('data:image/png;base64,')).toBe(true);
+      expect(mockAuthApi.enableTwoFactor).toHaveBeenCalledWith({
+        body: { password: 'pw' },
+        headers: new Headers({ cookie: 'authSession.token=sess123' }),
+      });
+    });
+
+    it('throws UnauthorizedException when the password is wrong', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+
+      await expect(service.setupMfa('user-1', ORG_A, { password: 'wrong' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('throws UnauthorizedException when the user is not found', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.setupMfa('user-1', ORG_A, { password: 'pw' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('throws BadRequestException when Better Auth rejects enableTwoFactor', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess123; Path=/']),
+      );
+      mockAuthApi.enableTwoFactor.mockRejectedValue(new Error('boom'));
+
+      await expect(service.setupMfa('user-1', ORG_A, { password: 'pw' })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('verifySetupMfa', () => {
+    async function runSetupMfa() {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess123; Path=/']),
+      );
+      mockAuthApi.enableTwoFactor.mockResolvedValue({
+        totpURI: 'otpauth://totp/AccreditMe:a%40example.com?secret=JBSWY3DPEHPK3PXP',
+        backupCodes: ['code1'],
+      });
+      await service.setupMfa('user-1', ORG_A, { password: 'pw' });
+    }
+
+    it('verifies the code using the session bridged from setupMfa and logs the event', async () => {
+      await runSetupMfa();
+      mockAuthApi.verifyTOTP.mockResolvedValue({});
+
+      await service.verifySetupMfa('user-1', ORG_A, { code: '123456' });
+
+      expect(mockAuthApi.verifyTOTP).toHaveBeenCalledWith({
+        body: { code: '123456' },
+        headers: new Headers({ cookie: 'authSession.token=sess123' }),
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { event: 'mfa_enabled' } }),
+      );
+    });
+
+    it('throws BadRequestException when no setup session is pending', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+
+      await expect(service.verifySetupMfa('user-1', ORG_A, { code: '123456' })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('throws UnauthorizedException on an invalid code', async () => {
+      await runSetupMfa();
+      mockAuthApi.verifyTOTP.mockRejectedValue(new Error('invalid'));
+
+      await expect(service.verifySetupMfa('user-1', ORG_A, { code: '000000' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+  });
+
+  describe('disableMfa', () => {
+    it('re-authenticates and calls Better Auth disableTwoFactor, then logs the event', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess456; Path=/']),
+      );
+      mockAuthApi.disableTwoFactor.mockResolvedValue({ status: true });
+
+      await service.disableMfa('user-1', ORG_A, { password: 'pw' });
+
+      expect(mockAuthApi.disableTwoFactor).toHaveBeenCalledWith({
+        body: { password: 'pw' },
+        headers: new Headers({ cookie: 'authSession.token=sess456' }),
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { event: 'mfa_disabled' } }),
+      );
+    });
+
+    it('throws UnauthorizedException when the password is wrong', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+
+      await expect(service.disableMfa('user-1', ORG_A, { password: 'wrong' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mockAuthApi.disableTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when Better Auth rejects disableTwoFactor', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ user: { id: 'authuser-1' } }, ['authSession.token=sess456; Path=/']),
+      );
+      mockAuthApi.disableTwoFactor.mockRejectedValue(new Error('boom'));
+
+      await expect(service.disableMfa('user-1', ORG_A, { password: 'pw' })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('getMfaStatus', () => {
+    it('returns enabled: true when the linked AuthUser has twoFactorEnabled set', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockPrisma.authUser.findUnique.mockResolvedValue({ id: 'authuser-1', twoFactorEnabled: true });
+
+      await expect(service.getMfaStatus('user-1', ORG_A)).resolves.toEqual({ enabled: true });
+    });
+
+    it('returns enabled: false when the user has no linked AuthUser', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...appUserFixture, authUserId: null });
+
+      await expect(service.getMfaStatus('user-1', ORG_A)).resolves.toEqual({ enabled: false });
+      expect(mockPrisma.authUser.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns enabled: false when the user is not found', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.getMfaStatus('user-1', ORG_A)).resolves.toEqual({ enabled: false });
     });
   });
 });

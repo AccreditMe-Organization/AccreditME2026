@@ -23,6 +23,7 @@ import {
 // Express's same-named types used for the controller's req/res.
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { createHash, createHmac, randomBytes } from 'crypto';
+import * as QRCode from 'qrcode';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
@@ -33,6 +34,9 @@ import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SetupMfaDto } from './dto/setup-mfa.dto';
+import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
+import { DisableMfaDto } from './dto/disable-mfa.dto';
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // matches CLAUDE.md's "JWT expiry: 15 minutes"
 const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // matches "Refresh token expiry: 7 days"
@@ -41,6 +45,19 @@ export interface PublicUser {
   id: string;
   email: string;
   name: string;
+}
+
+export interface MfaSetupResult {
+  qrCodeDataUrl: string;
+  secret: string;
+  backupCodes: string[];
+}
+
+// Reduces a Fetch API Response's Set-Cookie headers down to the "name=value"
+// pairs a subsequent request's Cookie header needs — discards attributes
+// (Path, HttpOnly, Max-Age, ...) that only matter to a browser.
+function buildCookieHeader(setCookieHeaders: string[]): string {
+  return setCookieHeaders.map((raw) => raw.split(';')[0]).join('; ');
 }
 
 function signAccessToken(
@@ -58,9 +75,25 @@ function signAccessToken(
   return `${headerB64}.${payloadB64}.${signature}`;
 }
 
+const MFA_SETUP_SESSION_TTL_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
   private readonly auth: ReturnType<typeof createBetterAuthInstance>;
+
+  // Bridges setupMfa() -> verifySetupMfa() without ever exposing Better
+  // Auth's own session cookie to the browser (see this class's header
+  // comment — Better Auth "NEVER becomes the app's session mechanism").
+  // verifyTOTP requires a live Better Auth session for a non-sign-in caller
+  // (confirmed by reading verify-two-factor.mjs's verifyTwoFactor()), so the
+  // session established in setupMfa() for enableTwoFactor is held here just
+  // long enough for the user to enter the 6-digit code, then discarded.
+  //
+  // Single-instance assumption: this is process-local. If AuthService ever
+  // runs behind multiple horizontally-scaled instances without sticky
+  // sessions, this needs to move to Redis (already available via BullMQ)
+  // instead of an in-memory Map.
+  private readonly pendingMfaSetupSessions = new Map<string, { cookie: string; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -421,5 +454,140 @@ export class AuthService {
     await this.auth.api.resetPassword({
       body: { newPassword: dto.password, token: dto.token },
     });
+  }
+
+  // Re-verifies the password via signInEmail to obtain a fresh Better Auth
+  // session (enableTwoFactor requires one — see this class's
+  // pendingMfaSetupSessions field comment), then calls enableTwoFactor with
+  // that session to generate + store a new TOTP secret. MFA is NOT active
+  // yet after this call — twoFactor.verified stays false, and
+  // AuthUser.twoFactorEnabled stays false, until verifySetupMfa() succeeds.
+  async setupMfa(userId: string, organizationId: string, dto: SetupMfaDto): Promise<MfaSetupResult> {
+    const appUser = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
+    if (!appUser) throw new UnauthorizedException('Invalid credentials');
+
+    const namespacedEmail = AuthService.namespacedEmail(organizationId, appUser.email);
+
+    let signInResult: Response;
+    try {
+      signInResult = (await this.auth.api.signInEmail({
+        body: { email: namespacedEmail, password: dto.password },
+        asResponse: true,
+      })) as unknown as Response;
+    } catch {
+      throw new UnauthorizedException('Invalid password');
+    }
+
+    const signInBody = (await signInResult.json()) as { user?: { id: string } };
+    if (!signInBody.user?.id) throw new UnauthorizedException('Invalid password');
+
+    const sessionCookie = buildCookieHeader(signInResult.headers.getSetCookie());
+
+    let enableResult: { totpURI: string; backupCodes: string[] };
+    try {
+      enableResult = (await this.auth.api.enableTwoFactor({
+        body: { password: dto.password },
+        headers: new Headers({ cookie: sessionCookie }),
+      })) as { totpURI: string; backupCodes: string[] };
+    } catch {
+      throw new BadRequestException('Failed to enable two-factor authentication');
+    }
+
+    const secret = new URL(enableResult.totpURI).searchParams.get('secret');
+    if (!secret) throw new Error('Better Auth did not return a TOTP secret in the totpURI');
+
+    const qrCodeDataUrl = await QRCode.toDataURL(enableResult.totpURI);
+
+    this.pendingMfaSetupSessions.set(appUser.id, {
+      cookie: sessionCookie,
+      expiresAt: Date.now() + MFA_SETUP_SESSION_TTL_MS,
+    });
+
+    return { qrCodeDataUrl, secret, backupCodes: enableResult.backupCodes };
+  }
+
+  // Confirms the code generated from the secret shown by setupMfa(), using
+  // the Better Auth session bridged through pendingMfaSetupSessions. Success
+  // flips AuthUser.twoFactorEnabled to true (handled entirely inside Better
+  // Auth's verifyTOTP — see totp/index.mjs).
+  async verifySetupMfa(userId: string, organizationId: string, dto: VerifySetupMfaDto): Promise<void> {
+    const appUser = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
+    if (!appUser) throw new UnauthorizedException('Invalid credentials');
+
+    const pending = this.pendingMfaSetupSessions.get(appUser.id);
+    if (!pending || pending.expiresAt < Date.now()) {
+      this.pendingMfaSetupSessions.delete(appUser.id);
+      throw new BadRequestException('MFA setup session expired — restart setup');
+    }
+
+    try {
+      await this.auth.api.verifyTOTP({
+        body: { code: dto.code },
+        headers: new Headers({ cookie: pending.cookie }),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired code');
+    }
+
+    this.pendingMfaSetupSessions.delete(appUser.id);
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId: appUser.id,
+      action: 'UPDATE',
+      objectType: 'User',
+      objectId: appUser.id,
+      metadata: { event: 'mfa_enabled' },
+    });
+  }
+
+  // Same re-auth pattern as setupMfa() — disableTwoFactor also requires a
+  // live Better Auth session and the caller's password.
+  async disableMfa(userId: string, organizationId: string, dto: DisableMfaDto): Promise<void> {
+    const appUser = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
+    if (!appUser) throw new UnauthorizedException('Invalid credentials');
+
+    const namespacedEmail = AuthService.namespacedEmail(organizationId, appUser.email);
+
+    let signInResult: Response;
+    try {
+      signInResult = (await this.auth.api.signInEmail({
+        body: { email: namespacedEmail, password: dto.password },
+        asResponse: true,
+      })) as unknown as Response;
+    } catch {
+      throw new UnauthorizedException('Invalid password');
+    }
+
+    const signInBody = (await signInResult.json()) as { user?: { id: string } };
+    if (!signInBody.user?.id) throw new UnauthorizedException('Invalid password');
+
+    const sessionCookie = buildCookieHeader(signInResult.headers.getSetCookie());
+
+    try {
+      await this.auth.api.disableTwoFactor({
+        body: { password: dto.password },
+        headers: new Headers({ cookie: sessionCookie }),
+      });
+    } catch {
+      throw new BadRequestException('Failed to disable two-factor authentication');
+    }
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId: appUser.id,
+      action: 'UPDATE',
+      objectType: 'User',
+      objectId: appUser.id,
+      metadata: { event: 'mfa_disabled' },
+    });
+  }
+
+  async getMfaStatus(userId: string, organizationId: string): Promise<{ enabled: boolean }> {
+    const appUser = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
+    if (!appUser?.authUserId) return { enabled: false };
+
+    const authUser = await this.prisma.authUser.findUnique({ where: { id: appUser.authUserId } });
+    return { enabled: authUser?.twoFactorEnabled ?? false };
   }
 }

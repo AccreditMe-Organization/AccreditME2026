@@ -4,6 +4,11 @@ import { authGuard } from './core/guards/auth.guard';
 export const routes: Routes = [
   {
     path: '',
+    canActivate: [authGuard],
+    children: [{ path: '', redirectTo: 'organization', pathMatch: 'full' }],
+  },
+  {
+    path: '',
     loadChildren: () =>
       import('./foundation/auth/auth.routes').then((m) => m.AUTH_ROUTES),
   },

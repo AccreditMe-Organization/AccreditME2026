@@ -119,7 +119,7 @@ export class LoginComponent {
           this.mfaRequired.set(true);
           return;
         }
-        void this.router.navigate(['/']);
+        void this.router.navigate(['/organization']);
       },
       error: () => {
         this.submitting.set(false);
@@ -140,7 +140,7 @@ export class LoginComponent {
     this.authService.verifyMfa(code!).subscribe({
       next: () => {
         this.submitting.set(false);
-        void this.router.navigate(['/']);
+        void this.router.navigate(['/organization']);
       },
       error: () => {
         this.submitting.set(false);
