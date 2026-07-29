@@ -217,6 +217,14 @@ enum AuditAction {
   ARCHIVE
   RESTORE
   DELEGATE
+  IMPERSONATE_START
+  IMPERSONATE_END
+}
+
+enum PlanModuleAccess {
+  FULL
+  READ_ONLY
+  NONE
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +252,7 @@ model Organization {
   authConfig       String?
   storageConfig    String?
   aiConfig         String?
+  emailConfig      String?          // ADD (ACC-13) — same encrypted-JSON pattern, UI only for now (see CLAUDE.md's Email Provider section)
 
   // Bootstrap lifecycle — prevents double-provisioning of system defaults
   isBootstrapped   Boolean          @default(false)
@@ -253,6 +262,12 @@ model Organization {
   // { taskSla: { CRITICAL, HIGH, MEDIUM, LOW } } (hours). Falls back to
   // code-level platform defaults when absent.
   settings         Json?
+
+  // ACC-13 additions
+  logo             String?          // S3 key — resolved to a signed URL at read time, never a direct path
+  isPlatformOrg    Boolean          @default(false)   // exactly one Organization row is ever true — see PlatformGuard
+  planId           String?          // FK to the new DB-driven Plan catalog — nullable: pre-ACC-13 tenants have none yet
+  planCatalog      Plan?            @relation(fields: [planId], references: [id])
 
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -279,6 +294,74 @@ model Organization {
 
   @@index([slug])
   @@index([status])
+  @@index([isPlatformOrg])
+  @@index([planId])
+}
+
+// ---------------------------------------------------------------------------
+// Plan Catalog (ACC-13) — global, tenant-independent. None of these four
+// models carry an organizationId by design (CLAUDE.md: "Plans are stored in
+// DB — never hardcoded", managed entirely by Platform Admin via PlatformGuard).
+// ---------------------------------------------------------------------------
+
+model Plan {
+  id                String   @id @default(cuid())
+  name              String
+  nameEn            String
+  nameAr            String
+  monthlyPrice      Decimal  @db.Decimal(10, 2)
+  annualPrice       Decimal  @db.Decimal(10, 2)
+  maxFullUsers      Int?                            // null = unlimited (Enterprise)
+  maxStaff          Int?                            // null = unlimited
+  maxStorageGb      Int
+  aiCreditsPerMonth Int
+  isActive          Boolean  @default(true)
+  isPublic          Boolean  @default(true)          // false = custom/negotiated, hidden from self-service pricing
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  planModules       PlanModule[]
+  organizations     Organization[]
+
+  @@index([isActive])
+  @@index([isPublic])
+}
+
+model PlanModule {
+  id          String           @id @default(cuid())
+  planId      String
+  moduleKey   String                                 // free text by convention (e.g. "documents", "audit") — never a Prisma enum
+  accessLevel PlanModuleAccess @default(NONE)
+
+  plan        Plan             @relation(fields: [planId], references: [id])
+
+  @@unique([planId, moduleKey])
+  @@index([planId])
+}
+
+model AiCreditPack {
+  id        String   @id @default(cuid())
+  name      String
+  nameAr    String?
+  credits   Int
+  price     Decimal  @db.Decimal(10, 2)
+  isActive  Boolean  @default(true)
+  availableTo String[]                                // Plan.id[] this pack can be purchased under; empty = all plans
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+model AiFeatureCost {
+  id          String   @id @default(cuid())
+  featureKey  String   @unique
+  creditCost  Int
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // ---------------------------------------------------------------------------
