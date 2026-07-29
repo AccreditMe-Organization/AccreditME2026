@@ -18,6 +18,13 @@ export interface PublicUser {
   name: string;
 }
 
+// /auth/me's own response shape — impersonatedBy (ACC-13) only ever
+// non-null when a platform admin is currently impersonating this session
+// (see AuthController.getMe()/TenantGuard's impersonatedBy passthrough).
+export interface MeResponse extends PublicUser {
+  impersonatedBy: { id: string; email: string; name: string } | null;
+}
+
 export interface LoginResult {
   success?: true;
   user?: PublicUser;
@@ -38,6 +45,9 @@ export class AuthService {
   private readonly _currentUser = signal<PublicUser | null>(null);
   readonly currentUser = this._currentUser.asReadonly();
 
+  private readonly _impersonatedBy = signal<MeResponse['impersonatedBy']>(null);
+  readonly impersonatedBy = this._impersonatedBy.asReadonly();
+
   isAuthenticated(): boolean {
     return this._currentUser() !== null;
   }
@@ -57,7 +67,10 @@ export class AuthService {
   logout(): Observable<{ success: true }> {
     return this.http
       .post<{ success: true }>(`${this.baseUrl}/logout`, {})
-      .pipe(tap(() => this._currentUser.set(null)));
+      .pipe(tap(() => {
+        this._currentUser.set(null);
+        this._impersonatedBy.set(null);
+      }));
   }
 
   acceptInvitation(token: string, password: string): Observable<void> {
@@ -97,6 +110,7 @@ export class AuthService {
   // token check (there is no local token to check).
   clearSession(): void {
     this._currentUser.set(null);
+    this._impersonatedBy.set(null);
   }
 
   // Called once via APP_INITIALIZER on app startup — currentUser is
@@ -106,10 +120,14 @@ export class AuthService {
   // stale-tokenVersion cookie) is the expected "not logged in" case, not an
   // error to surface.
   restoreSession(): Observable<void> {
-    return this.http.get<PublicUser>(`${this.baseUrl}/me`).pipe(
-      tap((user) => this._currentUser.set(user)),
+    return this.http.get<MeResponse>(`${this.baseUrl}/me`).pipe(
+      tap((response) => {
+        this._currentUser.set({ id: response.id, email: response.email, name: response.name });
+        this._impersonatedBy.set(response.impersonatedBy);
+      }),
       catchError(() => {
         this._currentUser.set(null);
+        this._impersonatedBy.set(null);
         return of(null);
       }),
       map(() => void 0),

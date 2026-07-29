@@ -593,4 +593,15 @@ export class AuthService {
     const authUser = await this.prisma.authUser.findUnique({ where: { id: appUser.authUserId } });
     return { enabled: authUser?.twoFactorEnabled ?? false };
   }
+
+  // ACC-13 — deliberately cross-tenant, no organizationId filter. Used only
+  // by AuthController.getMe() to resolve the display info of the platform
+  // admin currently impersonating the caller (a different org than the
+  // caller's own) — UserService.getById() can't be used here since it's
+  // tenant-scoped by design.
+  async getPublicUserById(userId: string): Promise<PublicUser | null> {
+    const user = await this.prisma.user.findFirst({ where: { id: userId } });
+    if (!user) return null;
+    return { id: user.id, email: user.email, name: user.name };
+  }
 }

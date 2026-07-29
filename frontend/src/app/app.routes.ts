@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
+import { platformAdminGuard } from './core/guards/platform-admin.guard';
 import { AppShellComponent } from './layout/app-shell/app-shell.component';
 
 // Every route below the shell inherits its parent's canActivate — a child
@@ -72,6 +73,13 @@ export const routes: Routes = [
         data: { breadcrumb: 'nav.users' },
         loadChildren: () =>
           import('./foundation/user/user.routes').then((m) => m.USER_ROUTES),
+      },
+      {
+        path: 'platform',
+        data: { breadcrumb: 'nav.platform' },
+        canActivate: [platformAdminGuard],
+        loadChildren: () =>
+          import('./platform/platform.routes').then((m) => m.PLATFORM_ROUTES),
       },
     ],
   },
