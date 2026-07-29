@@ -72,7 +72,7 @@ export class UserController {
   }
 
   @Post(':id/deactivate')
-  @Permissions(USERS_PERMISSIONS.MANAGE)
+  @Permissions(USERS_PERMISSIONS.DEACTIVATE)
   deactivate(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,

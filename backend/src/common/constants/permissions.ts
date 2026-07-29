@@ -11,9 +11,13 @@ export const ORG_PERMISSIONS = {
 } as const;
 
 export const USERS_PERMISSIONS = {
-  VIEW:   'users:view',
-  MANAGE: 'users:manage',
-  INVITE: 'users:invite',
+  VIEW:       'users:view',
+  MANAGE:     'users:manage',
+  INVITE:     'users:invite',
+  // Separate from MANAGE — CLAUDE.md's "Forced logout on role change or
+  // account suspension" is a distinct, higher-stakes action than editing a
+  // profile field (Step 9, Commit 7).
+  DEACTIVATE: 'users:deactivate',
 } as const;
 
 export const ROLES_PERMISSIONS = {
