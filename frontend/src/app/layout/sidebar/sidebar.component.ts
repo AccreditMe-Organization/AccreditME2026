@@ -40,36 +40,15 @@ const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
       [class.w-[72px]]="collapsed()"
     >
       <div class="flex flex-col gap-1 py-4 overflow-y-auto">
-        @for (item of visibleFoundationItems(); track item.route) {
-          <a
-            [routerLink]="item.route"
-            routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
-            [routerLinkActiveOptions]="{ exact: false }"
-            class="flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
-          >
-            <i [class]="item.icon"></i>
-            @if (!collapsed()) {
-              <span>{{ item.labelKey | translate }}</span>
-            }
-          </a>
-        }
-
-        @if (visibleAdminSettingsLink()) {
-          <div class="my-2 border-t border-white/10"></div>
-          <a
-            routerLink="/admin-settings"
-            routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
-            class="flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
-          >
-            <i class="pi pi-cog"></i>
-            @if (!collapsed()) {
-              <span>{{ 'nav.adminSettings' | translate }}</span>
-            }
-          </a>
-        }
-
+        <!-- Platform admins get the Super Admin Portal only — showing the
+             tenant-scoped nav below alongside it would mix "administer other
+             tenants" with "manage the platform org's own HR/roles/workflows",
+             which isn't a real workflow this product supports (see
+             step-12-admin-portal.md's own framing of the platform org as an
+             implementation detail of PlatformGuard, not a tenant AccreditMe
+             itself operates day-to-day). Regular tenant admins are unaffected
+             — this branch never applies to them. -->
         @if (navigationAccessService.isPlatformAdmin()) {
-          <div class="my-2 border-t border-white/10"></div>
           <a
             routerLink="/platform"
             routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
@@ -80,6 +59,34 @@ const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
               <span>{{ 'nav.platform' | translate }}</span>
             }
           </a>
+        } @else {
+          @for (item of visibleFoundationItems(); track item.route) {
+            <a
+              [routerLink]="item.route"
+              routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
+              [routerLinkActiveOptions]="{ exact: false }"
+              class="flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
+            >
+              <i [class]="item.icon"></i>
+              @if (!collapsed()) {
+                <span>{{ item.labelKey | translate }}</span>
+              }
+            </a>
+          }
+
+          @if (visibleAdminSettingsLink()) {
+            <div class="my-2 border-t border-white/10"></div>
+            <a
+              routerLink="/admin-settings"
+              routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
+              class="flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
+            >
+              <i class="pi pi-cog"></i>
+              @if (!collapsed()) {
+                <span>{{ 'nav.adminSettings' | translate }}</span>
+              }
+            </a>
+          }
         }
       </div>
     </nav>
