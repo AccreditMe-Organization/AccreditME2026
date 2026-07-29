@@ -80,12 +80,31 @@ export class RoleService {
 
   // ── Roles ────────────────────────────────────────────────────────────────────
 
+  // PLATFORM_ADMIN is filtered out for every non-platform org (ACC-13,
+  // step-12-admin-portal.md Section 12, Pending Discussion #1) — it's seeded
+  // into every tenant's own Role table (SYSTEM_ROLE_SEED), but only ever
+  // meaningful for the one designated platform org (PlatformGuard checks
+  // Organization.isPlatformOrg, not just role possession). Filtering it here
+  // stops it from even appearing as a selectable option in an ordinary
+  // tenant's role-assignment UI — PlatformGuard already closes the actual
+  // security gap; this just removes the confusing dead option.
   async getRoles(organizationId: string): Promise<IRole[]> {
-    const roles = await this.prisma.role.findMany({
-      where: { organizationId },
-      orderBy: [{ isSystem: 'desc' }, { nameEn: 'asc' }],
-    });
-    return roles.map((r) => this.mapRole(r));
+    const [roles, org] = await Promise.all([
+      this.prisma.role.findMany({
+        where: { organizationId },
+        orderBy: [{ isSystem: 'desc' }, { nameEn: 'asc' }],
+      }),
+      this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { isPlatformOrg: true },
+      }),
+    ]);
+
+    const visibleRoles = org?.isPlatformOrg
+      ? roles
+      : roles.filter((r) => r.key !== 'PLATFORM_ADMIN');
+
+    return visibleRoles.map((r) => this.mapRole(r));
   }
 
   async getRoleById(id: string, organizationId: string): Promise<IRole> {
