@@ -90,6 +90,7 @@ export class TenantService {
     isBootstrapped: boolean;
     bootstrappedAt: Date | null;
     logo: string | null;
+    isPlatformOrg: boolean;
     settings: unknown;
     createdAt: Date;
     updatedAt: Date;
@@ -124,6 +125,7 @@ export class TenantService {
       isBootstrapped: org.isBootstrapped,
       bootstrappedAt: org.bootstrappedAt,
       logo: org.logo,
+      isPlatformOrg: org.isPlatformOrg,
       modules: settings.modules ?? {},
       ai: {
         enabled: settings.ai?.enabled ?? false,

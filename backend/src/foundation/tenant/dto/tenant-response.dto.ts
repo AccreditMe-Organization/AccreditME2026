@@ -18,6 +18,7 @@ export class TenantResponseDto implements ITenant {
   isBootstrapped!: boolean;
   bootstrappedAt!: Date | null;
   logo!: string | null;
+  isPlatformOrg!: boolean;
   modules!: Record<string, boolean>;
   ai!: {
     enabled: boolean;
