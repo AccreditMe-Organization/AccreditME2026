@@ -107,6 +107,27 @@ describe('TenantService', () => {
       expect(result).not.toHaveProperty('stripeCustomerId');
     });
 
+    it('defaults modules/ai when settings is absent', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      const result = await service.findById('org-a');
+      expect(result.modules).toEqual({});
+      expect(result.ai).toEqual({
+        enabled: false, monthlyCredits: 0, creditsUsed: 0, creditsRemaining: 0,
+        resetDate: null, overageEnabled: false,
+      });
+    });
+
+    it('derives modules/ai from settings when present', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        ...ORG_A,
+        settings: { modules: { documents: true }, ai: { enabled: true, monthlyCredits: 500 } },
+      });
+      const result = await service.findById('org-a');
+      expect(result.modules).toEqual({ documents: true });
+      expect(result.ai.enabled).toBe(true);
+      expect(result.ai.monthlyCredits).toBe(500);
+    });
+
     it('throws NotFoundException when tenant does not exist', async () => {
       prisma.organization.findUnique.mockResolvedValue(null);
       await expect(service.findById('missing')).rejects.toThrow(NotFoundException);

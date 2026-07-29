@@ -42,27 +42,7 @@ export class TenantService {
   async findById(id: string): Promise<ITenant> {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
-    return {
-      id: org.id,
-      name: org.name,
-      slug: org.slug,
-      country: org.country,
-      timezone: org.timezone,
-      language: org.language,
-      authProvider: org.authProvider,
-      storageProvider: org.storageProvider,
-      aiProvider: org.aiProvider,
-      plan: org.plan,
-      status: org.status,
-      trialEndsAt: org.trialEndsAt,
-      maxUsers: org.maxUsers,
-      maxStorageGb: org.maxStorageGb,
-      isBootstrapped: org.isBootstrapped,
-      bootstrappedAt: org.bootstrappedAt,
-      logo: org.logo,
-      createdAt: org.createdAt,
-      updatedAt: org.updatedAt,
-    };
+    return this.mapToITenant(org);
   }
 
   async update(
@@ -86,26 +66,75 @@ export class TenantService {
       after: dto as Record<string, unknown>,
     });
 
+    return this.mapToITenant(updated);
+  }
+
+  // Shared by findById/update — modules/ai (ACC-13) are the frontend
+  // navigation's one-stop source for "what am I licensed to see," derived
+  // from Organization.settings rather than a dedicated endpoint.
+  private mapToITenant(org: {
+    id: string;
+    name: string;
+    slug: string;
+    country: string;
+    timezone: string;
+    language: string;
+    authProvider: ITenant['authProvider'];
+    storageProvider: ITenant['storageProvider'];
+    aiProvider: ITenant['aiProvider'];
+    plan: ITenant['plan'];
+    status: ITenant['status'];
+    trialEndsAt: Date | null;
+    maxUsers: number;
+    maxStorageGb: number;
+    isBootstrapped: boolean;
+    bootstrappedAt: Date | null;
+    logo: string | null;
+    settings: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }): ITenant {
+    const settings = (org.settings as {
+      modules?: Record<string, boolean>;
+      ai?: {
+        enabled?: boolean;
+        monthlyCredits?: number;
+        creditsUsed?: number;
+        creditsRemaining?: number;
+        resetDate?: string;
+        overageEnabled?: boolean;
+      };
+    } | null) ?? {};
+
     return {
-      id: updated.id,
-      name: updated.name,
-      slug: updated.slug,
-      country: updated.country,
-      timezone: updated.timezone,
-      language: updated.language,
-      authProvider: updated.authProvider,
-      storageProvider: updated.storageProvider,
-      aiProvider: updated.aiProvider,
-      plan: updated.plan,
-      status: updated.status,
-      trialEndsAt: updated.trialEndsAt,
-      maxUsers: updated.maxUsers,
-      maxStorageGb: updated.maxStorageGb,
-      isBootstrapped: updated.isBootstrapped,
-      bootstrappedAt: updated.bootstrappedAt,
-      logo: updated.logo,
-      createdAt: updated.createdAt,
-      updatedAt: updated.updatedAt,
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      country: org.country,
+      timezone: org.timezone,
+      language: org.language,
+      authProvider: org.authProvider,
+      storageProvider: org.storageProvider,
+      aiProvider: org.aiProvider,
+      plan: org.plan,
+      status: org.status,
+      trialEndsAt: org.trialEndsAt,
+      maxUsers: org.maxUsers,
+      maxStorageGb: org.maxStorageGb,
+      isBootstrapped: org.isBootstrapped,
+      bootstrappedAt: org.bootstrappedAt,
+      logo: org.logo,
+      modules: settings.modules ?? {},
+      ai: {
+        enabled: settings.ai?.enabled ?? false,
+        monthlyCredits: settings.ai?.monthlyCredits ?? 0,
+        creditsUsed: settings.ai?.creditsUsed ?? 0,
+        creditsRemaining: settings.ai?.creditsRemaining ?? 0,
+        resetDate: settings.ai?.resetDate ?? null,
+        overageEnabled: settings.ai?.overageEnabled ?? false,
+      },
+      createdAt: org.createdAt,
+      updatedAt: org.updatedAt,
     };
   }
 
