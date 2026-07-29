@@ -288,5 +288,50 @@
       "link": "رابط",
       "internal_reference": "مرجع داخلي"
     }
+  },
+  "auth": {
+    "login": "تسجيل الدخول",
+    "organization": "المنظمة",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "mfaCode": "رمز التحقق",
+    "forgotPassword": "هل نسيت كلمة المرور؟",
+    "forgotPasswordSent": "إذا كان هذا البريد الإلكتروني موجودًا في نظامنا، فتحقق من بريدك الوارد للحصول على رابط إعادة تعيين كلمة المرور.",
+    "acceptInvitation": "قبول الدعوة",
+    "acceptInvitationSuccess": "تم تعيين كلمة المرور الخاصة بك. جارٍ تحويلك إلى صفحة تسجيل الدخول...",
+    "errorInvalidCredentials": "المنظمة أو البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+    "errorMfaRequired": "رمز التحقق غير صحيح أو منتهي الصلاحية.",
+    "errorInvalidInvitation": "رابط الدعوة هذا غير صالح أو منتهي الصلاحية."
+  },
+  "user": {
+    "title": "المستخدمون",
+    "invite": "دعوة مستخدم",
+    "inviteEmail": "عنوان البريد الإلكتروني",
+    "name": "الاسم",
+    "email": "البريد الإلكتروني",
+    "language": "اللغة",
+    "position": "المسمى الوظيفي",
+    "primaryOrgUnit": "الوحدة التنظيمية الرئيسية",
+    "manager": "المدير المباشر",
+    "lastLogin": "آخر تسجيل دخول",
+    "outOfOffice": "خارج المكتب",
+    "outOfOfficeFrom": "من",
+    "outOfOfficeTo": "إلى",
+    "actingUser": "المستخدم البديل",
+    "deactivate": "إلغاء التفعيل",
+    "deactivateConfirm": "إلغاء تفعيل {{name}}؟ سيتم إبطال جلساته فورًا وإعادة تعيين مهامه المفتوحة إلى المستخدم البديل أو تعليمها لإعادة التعيين يدويًا.",
+    "deactivateSummary": "تمت إعادة تعيين {{reassignedCount}} مهمة، وتم تعليم {{unassignedCount}} مهمة كغير معينة.",
+    "profileSaved": "تم حفظ التغييرات.",
+    "noUsers": "لا يوجد مستخدمون.",
+    "errorLoad": "فشل تحميل المستخدم.",
+    "errorSave": "فشل حفظ التغييرات.",
+    "errorInvite": "فشل إرسال الدعوة.",
+    "status": {
+      "title": "الحالة",
+      "active": "نشط",
+      "inactive": "غير نشط",
+      "invited": "مدعو",
+      "suspended": "موقوف"
+    }
   }
 }

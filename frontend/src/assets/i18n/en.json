@@ -288,5 +288,50 @@
       "link": "Link",
       "internal_reference": "Internal Reference"
     }
+  },
+  "auth": {
+    "login": "Log In",
+    "organization": "Organization",
+    "email": "Email",
+    "password": "Password",
+    "mfaCode": "Verification Code",
+    "forgotPassword": "Forgot password?",
+    "forgotPasswordSent": "If this email exists in our system, check your inbox for a password reset link.",
+    "acceptInvitation": "Accept Invitation",
+    "acceptInvitationSuccess": "Your password has been set. Redirecting you to log in...",
+    "errorInvalidCredentials": "Invalid organization, email, or password.",
+    "errorMfaRequired": "Invalid or expired verification code.",
+    "errorInvalidInvitation": "This invitation link is invalid or has expired."
+  },
+  "user": {
+    "title": "Users",
+    "invite": "Invite User",
+    "inviteEmail": "Email Address",
+    "name": "Name",
+    "email": "Email",
+    "language": "Language",
+    "position": "Position",
+    "primaryOrgUnit": "Primary Org Unit",
+    "manager": "Manager",
+    "lastLogin": "Last Login",
+    "outOfOffice": "Out of Office",
+    "outOfOfficeFrom": "From",
+    "outOfOfficeTo": "To",
+    "actingUser": "Acting User",
+    "deactivate": "Deactivate",
+    "deactivateConfirm": "Deactivate {{name}}? Their sessions will be revoked immediately and their open tasks will be reassigned to their acting user or flagged for manual reassignment.",
+    "deactivateSummary": "{{reassignedCount}} task(s) reassigned, {{unassignedCount}} task(s) flagged as unassigned.",
+    "profileSaved": "Changes saved.",
+    "noUsers": "No users found.",
+    "errorLoad": "Failed to load user.",
+    "errorSave": "Failed to save changes.",
+    "errorInvite": "Failed to send invitation.",
+    "status": {
+      "title": "Status",
+      "active": "Active",
+      "inactive": "Inactive",
+      "invited": "Invited",
+      "suspended": "Suspended"
+    }
   }
 }
