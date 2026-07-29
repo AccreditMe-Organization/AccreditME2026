@@ -341,4 +341,10 @@
   <app-notification-bell />
 </div>
 
+<!-- App-wide confirmation dialog (Step 9) — every component that needs to
+     confirm a destructive action injects ConfirmationService and calls
+     .confirm({...}); this single <p-confirmDialog> renders whichever
+     confirmation is currently active, anywhere in the app. -->
+<p-confirmDialog />
+
 <router-outlet />

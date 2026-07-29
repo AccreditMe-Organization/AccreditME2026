@@ -8,13 +8,11 @@ import { IPermission } from './interfaces/permission.interface';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
-import { AssignRoleDto } from './dto/assign-role.dto';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const TENANT_ID = 'tenant-test';
 const USER_ID = 'user-test';
-const TARGET_USER_ID = 'target-user-test';
 const ROLE_ID = 'role-test';
 
 const MOCK_ROLE: IRole = {
@@ -51,9 +49,6 @@ describe('RoleController', () => {
     deactivateRole: jest.Mock;
     reactivateRole: jest.Mock;
     listAllPermissions: jest.Mock;
-    getUserRoles: jest.Mock;
-    assignRoleToUser: jest.Mock;
-    removeRoleFromUser: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -66,9 +61,6 @@ describe('RoleController', () => {
       deactivateRole: jest.fn().mockResolvedValue(undefined),
       reactivateRole: jest.fn().mockResolvedValue(undefined),
       listAllPermissions: jest.fn().mockResolvedValue([MOCK_PERMISSION]),
-      getUserRoles: jest.fn().mockResolvedValue([MOCK_ROLE]),
-      assignRoleToUser: jest.fn().mockResolvedValue(undefined),
-      removeRoleFromUser: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -164,45 +156,6 @@ describe('RoleController', () => {
     it('delegates to roleService.reactivateRole with id, tenantId, actorId', async () => {
       await controller.reactivateRole(ROLE_ID, TENANT_ID, USER_ID);
       expect(service.reactivateRole).toHaveBeenCalledWith(ROLE_ID, TENANT_ID, USER_ID);
-    });
-  });
-
-  // ── getUserRoles ──────────────────────────────────────────────────────────
-
-  describe('getUserRoles', () => {
-    it('delegates to roleService.getUserRoles with userId and tenantId', async () => {
-      const result = await controller.getUserRoles(TARGET_USER_ID, TENANT_ID);
-      expect(service.getUserRoles).toHaveBeenCalledWith(TARGET_USER_ID, TENANT_ID);
-      expect(result).toHaveLength(1);
-    });
-  });
-
-  // ── assignRoleToUser ──────────────────────────────────────────────────────
-
-  describe('assignRoleToUser', () => {
-    it('delegates to roleService.assignRoleToUser with userId, dto, tenantId, actorId', async () => {
-      const dto: AssignRoleDto = { roleId: ROLE_ID };
-      await controller.assignRoleToUser(TARGET_USER_ID, dto, TENANT_ID, USER_ID);
-      expect(service.assignRoleToUser).toHaveBeenCalledWith(
-        TARGET_USER_ID,
-        dto,
-        TENANT_ID,
-        USER_ID,
-      );
-    });
-  });
-
-  // ── removeRoleFromUser ────────────────────────────────────────────────────
-
-  describe('removeRoleFromUser', () => {
-    it('delegates to roleService.removeRoleFromUser with userId, roleId, tenantId, actorId', async () => {
-      await controller.removeRoleFromUser(TARGET_USER_ID, ROLE_ID, TENANT_ID, USER_ID);
-      expect(service.removeRoleFromUser).toHaveBeenCalledWith(
-        TARGET_USER_ID,
-        ROLE_ID,
-        TENANT_ID,
-        USER_ID,
-      );
     });
   });
 });

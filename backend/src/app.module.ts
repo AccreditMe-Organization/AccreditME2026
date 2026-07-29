@@ -12,6 +12,8 @@ import { WorkflowModule } from './foundation/workflow/workflow.module';
 import { NotificationModule } from './foundation/notification/notification.module';
 import { OrgPositionModule } from './foundation/org-position/org-position.module';
 import { TaskModule } from './foundation/task/task.module';
+import { AuthModule } from './foundation/auth/auth.module';
+import { UserModule } from './foundation/user/user.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { TaskModule } from './foundation/task/task.module';
     NotificationModule,
     OrgPositionModule,
     TaskModule,
+    AuthModule,
+    UserModule,
   ],
 })
 export class AppModule {}

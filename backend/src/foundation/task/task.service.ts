@@ -254,6 +254,83 @@ export class TaskService {
     return task;
   }
 
+  // Bulk version of reassign() — used by the user departure flow (Step 9,
+  // UserService.deactivate()), the only assignable-work model that exists
+  // today (see step-09 plan Section 1's Non-Goals — Committee/CAPA
+  // reassignment on departure arrive with those modules in Steps 10/18).
+  // Every task the departing user is still an active assignee on either
+  // gets reassigned to toUserId (their actingUser, if one was set) or, if
+  // toUserId is null/ineligible AND no other active assignee remains on that
+  // task, gets flagged UNASSIGNED — same status Step 8 already uses for
+  // role-vacancy fallback. Every change logged individually, same as reassign().
+  async reassignAllForUser(
+    fromUserId: string,
+    toUserId: string | null,
+    organizationId: string,
+    actorId: string,
+  ): Promise<{ reassignedCount: number; unassignedCount: number }> {
+    const activeAssignments = await this.prisma.taskAssignee.findMany({
+      where: { userId: fromUserId, removedAt: null, task: { organizationId } },
+      include: { task: { include: { assignees: true } } },
+    });
+
+    const eligibleToUserIds = toUserId ? await this.filterActiveUsers([toUserId], organizationId) : [];
+    const validToUserId = eligibleToUserIds[0] ?? null;
+
+    let reassignedCount = 0;
+    let unassignedCount = 0;
+
+    for (const assignment of activeAssignments) {
+      const task = assignment.task;
+      const now = new Date();
+
+      await this.prisma.taskAssignee.update({
+        where: { id: assignment.id },
+        data: { removedAt: now },
+      });
+
+      const remainingActiveOthers = task.assignees.filter(
+        (a) => a.id !== assignment.id && a.removedAt === null,
+      );
+
+      if (validToUserId) {
+        await this.prisma.taskAssignee.create({
+          data: { taskId: task.id, userId: validToUserId, assignedById: actorId },
+        });
+        if (task.status === 'UNASSIGNED') {
+          await this.prisma.task.update({ where: { id: task.id }, data: { status: 'PENDING' } });
+        }
+        reassignedCount += 1;
+      } else if (remainingActiveOthers.length === 0) {
+        await this.prisma.task.update({ where: { id: task.id }, data: { status: 'UNASSIGNED' } });
+        unassignedCount += 1;
+      }
+
+      await this.auditLog.log({
+        action: 'DELEGATE',
+        objectType: 'Task',
+        objectId: task.id,
+        actorId,
+        tenantId: organizationId,
+        metadata: { event: 'departure_reassignment', fromUserId, toUserId: validToUserId },
+      });
+    }
+
+    if (validToUserId && reassignedCount > 0) {
+      await this.notificationService.create(
+        {
+          userId: validToUserId,
+          titleEn: 'Tasks reassigned to you',
+          bodyEn: `${reassignedCount} task(s) have been reassigned to you following a colleague's departure.`,
+          channel: 'IN_APP',
+        },
+        organizationId,
+      );
+    }
+
+    return { reassignedCount, unassignedCount };
+  }
+
   async addEvidence(
     taskId: string,
     dto: AddTaskEvidenceDto,

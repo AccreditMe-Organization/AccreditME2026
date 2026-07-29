@@ -5,6 +5,7 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
+import { ConfirmationService } from 'primeng/api';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
 
 @Component({
@@ -99,6 +100,7 @@ export class WorkflowTemplateListComponent implements OnInit {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly loading = signal(false);
   readonly templates = signal<WorkflowTemplateDto[]>([]);
@@ -123,14 +125,18 @@ export class WorkflowTemplateListComponent implements OnInit {
 
   onDeactivate(template: WorkflowTemplateDto, event: Event): void {
     event.stopPropagation();
-    // TODO: replace with PrimeNG ConfirmationService dialog
-    if (!window.confirm(`Deactivate template "${template.nameEn}"?`)) {
-      return;
-    }
-    this.workflowTemplateService.deactivateTemplate(template.id).subscribe({
-      next: () => this.loadTemplates(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Deactivate failed'),
+    this.confirmationService.confirm({
+      message: `Deactivate template "${template.nameEn}"?`,
+      header: 'Confirm',
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => {
+        this.workflowTemplateService.deactivateTemplate(template.id).subscribe({
+          next: () => this.loadTemplates(),
+          error: (err: { error?: { message?: string } }) =>
+            this.error.set(err?.error?.message ?? 'Deactivate failed'),
+        });
+      },
     });
   }
 

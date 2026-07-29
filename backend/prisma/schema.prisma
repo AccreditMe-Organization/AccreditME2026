@@ -274,6 +274,8 @@ model Organization {
   meetings         Meeting[]
   auditLogs        AuditLog[]
   aiInteractionLogs AiInteractionLog[]
+  loginAttempts    LoginAttempt[]
+  refreshTokens    RefreshToken[]
 
   @@index([slug])
   @@index([status])
@@ -303,6 +305,12 @@ model User {
   outOfOfficeTo    DateTime?
   actingUserId     String?
 
+  // Step 9 additions — see backend/Plans/step-09-user-management.md Section 2
+  authUserId          String?   @unique   // link to Better Auth's own identity row (AuthUser)
+  managerId           String?
+  invitationToken     String?   @unique
+  invitationExpiresAt DateTime?
+
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
 
@@ -322,6 +330,10 @@ model User {
   primaryOrgUnit   OrgUnit?     @relation(fields: [primaryOrgUnitId], references: [id])
   actingUser       User?        @relation("UserActingUser", fields: [actingUserId], references: [id])
   actingForUsers   User[]       @relation("UserActingUser")
+  authUser         AuthUser?    @relation(fields: [authUserId], references: [id])
+  manager          User?        @relation("UserManager", fields: [managerId], references: [id])
+  directReports    User[]       @relation("UserManager")
+  refreshTokens    RefreshToken[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -330,6 +342,8 @@ model User {
   @@index([status])
   @@index([positionId])
   @@index([primaryOrgUnitId])
+  @@index([managerId])
+  @@index([invitationToken])
 }
 
 // ---------------------------------------------------------------------------
@@ -950,4 +964,143 @@ model AiInteractionLog {
   @@index([actorId])
   @@index([feature])
   @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Better Auth's own identity space (Step 9) — separate from AccreditMe's
+// business User model. Linked 1:1 via User.authUserId. Field shapes verified
+// directly against the installed better-auth@1.6.22 package's own
+// @better-auth/core getAuthTables() output and the twoFactor plugin's own
+// schema.ts (backend/Plans/step-09-user-management.md Section 2) — not
+// hand-typed from memory. Model names are remapped in better-auth.config.ts
+// (Commit 2) via each table's `modelName` option (user -> authUser, etc.)
+// so Better Auth's Prisma adapter writes to these exact tables.
+//
+// AuthUser.email is a tenant-namespaced synthetic value
+// ("{organizationId}:{email}"), never shown to a human — the real email
+// lives only on User.email. See step-09 plan Section 8 for why.
+// ---------------------------------------------------------------------------
+
+model AuthUser {
+  id               String    @id @default(cuid())
+  name             String              // required by Better Auth's base schema — mirrors User.name at creation, unused by AccreditMe otherwise
+  email            String    @unique   // "{organizationId}:{email}" — see above
+  emailVerified    Boolean   @default(false)
+  image            String?             // unused — part of Better Auth's base user schema
+  twoFactorEnabled Boolean   @default(false)   // added by the twoFactor plugin's schema merge
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  appUser          User?
+  sessions         AuthSession[]
+  accounts         AuthAccount[]
+  twoFactor        AuthTwoFactor?
+}
+
+model AuthSession {
+  id         String   @id @default(cuid())
+  expiresAt  DateTime
+  token      String   @unique
+  ipAddress  String?
+  userAgent  String?
+  userId     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuthAccount {
+  id                    String    @id @default(cuid())
+  accountId             String              // == AuthUser.email for the credential provider
+  providerId            String              // "credential" — only provider enabled this step
+  userId                String
+  password              String?             // Argon2id hash for the credential provider (Commit 2)
+  // OAuth-only fields below — unused while only the credential provider is
+  // enabled, but part of Better Auth's base "account" schema unconditionally;
+  // omitting them would break the adapter's generic read/write path.
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  AuthUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuthVerification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model AuthTwoFactor {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  secret                  String             // encrypted at rest by the twoFactor plugin itself (XChaCha20-Poly1305, keyed from Better Auth's own `secret` config) — no custom encryption needed, see Section 12 Discussion 6
+  backupCodes             String             // also encrypted by the plugin (storeBackupCodes: "encrypted")
+  verified                Boolean  @default(true)
+  failedVerificationCount Int      @default(0)
+  lockedUntil             DateTime?
+
+  user                    AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Login attempt logging (Step 9) — append-only, same shape as AuditLog.
+// Powers account lockout (computed on read, no stored counter), new-IP-login
+// detection, and the IP/device audit trail itself.
+// ---------------------------------------------------------------------------
+
+model LoginAttempt {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String             // as typed — may not resolve to a real user
+  success        Boolean
+  failureReason  String?            // "invalid_password" | "locked" | "no_such_user" | "mfa_failed"
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, email, createdAt])
+  @@index([ipAddress])
+}
+
+// ---------------------------------------------------------------------------
+// Refresh tokens (Step 9) — backs the httpOnly-cookie session model (see
+// step-09 plan Section 12, Discussion 4). Never deleted, only revokedAt-stamped
+// — same append-only-in-spirit pattern as AuditLog/LoginAttempt, giving a full
+// device/session history per user.
+// ---------------------------------------------------------------------------
+
+model RefreshToken {
+  id             String    @id @default(cuid())
+  userId         String
+  organizationId String
+  tokenHash      String    @unique   // SHA-256 hash of the raw token — never store it plain
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  revokedAt      DateTime?
+  deviceInfo     String?             // browser/device string, for security audit
+  ipAddress      String?
+
+  user           User         @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([userId])
+  @@index([organizationId])
 }

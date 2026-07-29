@@ -1,23 +1,30 @@
-// Reads the dev-only demo JWT (if present) and attaches it as a Bearer token
-// to every outgoing request. Functional interceptor style (Angular 21+).
-// No-op when no token is set — does not interfere with unauthenticated requests
-// (e.g. before /dev/login has been used).
+// Real auth interceptor (Step 9) — replaces the dev-only Bearer-token
+// attachment entirely. No token is attached manually anymore: the httpOnly
+// access_token/refresh_token cookies are sent/received by the browser
+// automatically once withCredentials is set, which this interceptor does
+// for every request. On any 401 response, clears the local currentUser
+// state and redirects to /login — this, not a synchronous local check, is
+// the real source of truth for "session expired" (see AuthService).
 
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { DemoAuthService } from '../../dev/demo-auth.service';
+import { Router } from '@angular/router';
+import { catchError, throwError } from 'rxjs';
+import { AuthService } from '../services/auth.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  const demoAuthService = inject(DemoAuthService);
-  const token = demoAuthService.getToken();
+  const authService = inject(AuthService);
+  const router = inject(Router);
 
-  if (!token) {
-    return next(req);
-  }
+  const withCredentialsReq = req.clone({ withCredentials: true });
 
-  const authorizedReq = req.clone({
-    setHeaders: { Authorization: `Bearer ${token}` },
-  });
-
-  return next(authorizedReq);
+  return next(withCredentialsReq).pipe(
+    catchError((error: unknown) => {
+      if (error instanceof HttpErrorResponse && error.status === 401) {
+        authService.clearSession();
+        void router.navigate(['/login']);
+      }
+      return throwError(() => error);
+    }),
+  );
 };

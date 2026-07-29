@@ -6,6 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { SelectModule } from 'primeng/select';
 import { DialogModule } from 'primeng/dialog';
 import { TooltipModule } from 'primeng/tooltip';
+import { ConfirmationService } from 'primeng/api';
 import { FormsModule } from '@angular/forms';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
@@ -140,6 +141,7 @@ export class PositionListComponent implements OnInit {
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly translate = inject(TranslateService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly loading = signal(false);
   readonly positions = signal<IOrgPositionDto[]>([]);
@@ -184,14 +186,18 @@ export class PositionListComponent implements OnInit {
   }
 
   onDeactivate(position: IOrgPositionDto): void {
-    // TODO: replace with PrimeNG ConfirmationService dialog
-    if (!window.confirm(`Deactivate position "${position.nameEn}"?`)) {
-      return;
-    }
-    this.orgPositionService.deactivate(position.id).subscribe({
-      next: () => this.loadPositions(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Deactivate failed'),
+    this.confirmationService.confirm({
+      message: `Deactivate position "${position.nameEn}"?`,
+      header: 'Confirm',
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => {
+        this.orgPositionService.deactivate(position.id).subscribe({
+          next: () => this.loadPositions(),
+          error: (err: { error?: { message?: string } }) =>
+            this.error.set(err?.error?.message ?? 'Deactivate failed'),
+        });
+      },
     });
   }
 

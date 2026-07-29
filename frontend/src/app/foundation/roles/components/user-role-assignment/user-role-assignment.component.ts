@@ -7,6 +7,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
+import { ConfirmationService } from 'primeng/api';
 import { FormsModule } from '@angular/forms';
 import { RoleService, RoleDto } from '../../services/role.service';
 
@@ -62,6 +63,7 @@ export class UserRoleAssignmentComponent implements OnChanges {
   @Input({ required: true }) userId!: string;
 
   private readonly roleService = inject(RoleService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -95,14 +97,18 @@ export class UserRoleAssignmentComponent implements OnChanges {
   }
 
   onRemove(role: RoleDto): void {
-    if (!window.confirm('Remove this role assignment?')) {
-      return;
-    }
-    // TODO: replace with PrimeNG ConfirmationService dialog
-    this.roleService.removeRoleFromUser(this.userId, role.id).subscribe({
-      next: () => this.load(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Remove failed'),
+    this.confirmationService.confirm({
+      message: 'Remove this role assignment?',
+      header: 'Confirm',
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => {
+        this.roleService.removeRoleFromUser(this.userId, role.id).subscribe({
+          next: () => this.load(),
+          error: (err: { error?: { message?: string } }) =>
+            this.error.set(err?.error?.message ?? 'Remove failed'),
+        });
+      },
     });
   }
 
