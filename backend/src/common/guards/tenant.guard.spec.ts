@@ -58,6 +58,31 @@ describe('TenantGuard', () => {
     });
   });
 
+  it('attaches impersonatedBy to the request when present in the JWT payload', async () => {
+    const impersonationToken = signJwt({
+      sub: 'user-a',
+      organizationId: 'org-a',
+      tokenVersion: 3,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      impersonatedBy: 'platform-admin-1',
+    });
+    const ctx = buildContext({ cookies: { access_token: impersonationToken } });
+
+    await guard.canActivate(ctx);
+
+    const request = ctx.switchToHttp().getRequest() as unknown as { impersonatedBy?: string };
+    expect(request.impersonatedBy).toBe('platform-admin-1');
+  });
+
+  it('does not set impersonatedBy on a normal (non-impersonated) session', async () => {
+    const ctx = buildContext({ cookies: { access_token: validToken } });
+
+    await guard.canActivate(ctx);
+
+    const request = ctx.switchToHttp().getRequest() as unknown as { impersonatedBy?: string };
+    expect(request.impersonatedBy).toBeUndefined();
+  });
+
   it('falls back to the Authorization header when no cookie is present', async () => {
     const ctx = buildContext({ authHeader: `Bearer ${validToken}` });
     await expect(guard.canActivate(ctx)).resolves.toBe(true);

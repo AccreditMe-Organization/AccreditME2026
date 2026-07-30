@@ -43,6 +43,19 @@ export class RoleController {
     return this.roleService.listAllPermissions();
   }
 
+  // No @Permissions() — every authenticated user can read their own
+  // permission set (PermissionGuard no-ops when no metadata is present).
+  // The frontend navigation shell's one-stop source for "what can I do"
+  // (ACC-13) — reuses RoleService.getUserPermissions(), built earlier but
+  // never exposed via a controller until now.
+  @Get('roles/my-permissions')
+  getMyPermissions(
+    @CurrentUser() userId: string,
+    @CurrentTenant() tenantId: string,
+  ): Promise<string[]> {
+    return this.roleService.getUserPermissions(userId, tenantId);
+  }
+
   @Get('roles/:id')
   @Permissions(ROLES_PERMISSIONS.VIEW)
   getRoleById(

@@ -35,6 +35,9 @@ describe('TenantController', () => {
     update: jest.Mock;
     getTenantConfig: jest.Mock;
     bootstrap: jest.Mock;
+    getEmailConfig: jest.Mock;
+    updateEmailConfig: jest.Mock;
+    updateAiOverageSetting: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -50,6 +53,9 @@ describe('TenantController', () => {
         aiConfig: null,
       }),
       bootstrap: jest.fn().mockResolvedValue(undefined),
+      getEmailConfig: jest.fn().mockResolvedValue({ emailProvider: null, config: null }),
+      updateEmailConfig: jest.fn().mockResolvedValue(undefined),
+      updateAiOverageSetting: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -99,6 +105,37 @@ describe('TenantController', () => {
       await controller.bootstrap(MOCK_TENANT_ID, MOCK_USER_ID);
       expect(service.bootstrap).toHaveBeenCalledWith(
         MOCK_TENANT_ID,
+        MOCK_USER_ID,
+      );
+    });
+  });
+
+  describe('getEmailConfig', () => {
+    it('calls getEmailConfig with tenantId', async () => {
+      await controller.getEmailConfig(MOCK_TENANT_ID);
+      expect(service.getEmailConfig).toHaveBeenCalledWith(MOCK_TENANT_ID);
+    });
+  });
+
+  describe('updateEmailConfig', () => {
+    it('calls updateEmailConfig with tenantId, dto, and userId', async () => {
+      const dto = { emailProvider: 'resend' as const, config: { apiKey: 'abc' } };
+      await controller.updateEmailConfig(dto, MOCK_TENANT_ID, MOCK_USER_ID);
+      expect(service.updateEmailConfig).toHaveBeenCalledWith(
+        MOCK_TENANT_ID,
+        dto,
+        MOCK_USER_ID,
+      );
+    });
+  });
+
+  describe('updateAiOverageSetting', () => {
+    it('calls updateAiOverageSetting with tenantId, dto, and userId', async () => {
+      const dto = { overageEnabled: true };
+      await controller.updateAiOverageSetting(dto, MOCK_TENANT_ID, MOCK_USER_ID);
+      expect(service.updateAiOverageSetting).toHaveBeenCalledWith(
+        MOCK_TENANT_ID,
+        dto,
         MOCK_USER_ID,
       );
     });

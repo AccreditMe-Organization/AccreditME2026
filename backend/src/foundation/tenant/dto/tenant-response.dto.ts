@@ -17,6 +17,17 @@ export class TenantResponseDto implements ITenant {
   maxStorageGb!: number;
   isBootstrapped!: boolean;
   bootstrappedAt!: Date | null;
+  logo!: string | null;
+  isPlatformOrg!: boolean;
+  modules!: Record<string, boolean>;
+  ai!: {
+    enabled: boolean;
+    monthlyCredits: number;
+    creditsUsed: number;
+    creditsRemaining: number;
+    resetDate: string | null;
+    overageEnabled: boolean;
+  };
   createdAt!: Date;
   updatedAt!: Date;
 }

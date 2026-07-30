@@ -16,7 +16,9 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { TenantService } from './tenant.service';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
-import { ITenant, ITenantConfig } from './interfaces/tenant.interface';
+import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
+import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
+import { ITenant, ITenantConfig, IEmailConfig } from './interfaces/tenant.interface';
 
 @Controller('tenant')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -43,6 +45,32 @@ export class TenantController {
   @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
   getConfig(@CurrentTenant() tenantId: string): Promise<ITenantConfig> {
     return this.tenantService.getTenantConfig(tenantId);
+  }
+
+  @Get('email-config')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  getEmailConfig(@CurrentTenant() tenantId: string): Promise<IEmailConfig> {
+    return this.tenantService.getEmailConfig(tenantId);
+  }
+
+  @Patch('email-config')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateEmailConfig(
+    @Body() dto: UpdateEmailConfigDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<void> {
+    return this.tenantService.updateEmailConfig(tenantId, dto, userId);
+  }
+
+  @Patch('ai-settings')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateAiOverageSetting(
+    @Body() dto: UpdateAiOverageDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<void> {
+    return this.tenantService.updateAiOverageSetting(tenantId, dto, userId);
   }
 
   @Post('bootstrap')

@@ -14,6 +14,8 @@ import { OrgPositionModule } from './foundation/org-position/org-position.module
 import { TaskModule } from './foundation/task/task.module';
 import { AuthModule } from './foundation/auth/auth.module';
 import { UserModule } from './foundation/user/user.module';
+import { PlanModule } from './platform/plan/plan.module';
+import { PlatformModule } from './platform/tenant/platform.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { UserModule } from './foundation/user/user.module';
     TaskModule,
     AuthModule,
     UserModule,
+    PlanModule,
+    PlatformModule,
   ],
 })
 export class AppModule {}

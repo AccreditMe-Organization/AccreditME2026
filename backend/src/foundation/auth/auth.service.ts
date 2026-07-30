@@ -38,7 +38,7 @@ import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
 
-const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // matches CLAUDE.md's "JWT expiry: 15 minutes"
+export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // matches CLAUDE.md's "JWT expiry: 15 minutes"
 const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // matches "Refresh token expiry: 7 days"
 
 export interface PublicUser {
@@ -60,8 +60,11 @@ function buildCookieHeader(setCookieHeaders: string[]): string {
   return setCookieHeaders.map((raw) => raw.split(';')[0]).join('; ');
 }
 
-function signAccessToken(
-  payload: { sub: string; organizationId: string; tokenVersion: number },
+// Exported for PlatformTenantService's impersonation flow (ACC-13), which
+// mints the same JWT shape with an added impersonatedBy claim rather than
+// duplicating HS256 signing logic.
+export function signAccessToken(
+  payload: { sub: string; organizationId: string; tokenVersion: number; impersonatedBy?: string },
   secret: string,
 ): string {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -589,5 +592,16 @@ export class AuthService {
 
     const authUser = await this.prisma.authUser.findUnique({ where: { id: appUser.authUserId } });
     return { enabled: authUser?.twoFactorEnabled ?? false };
+  }
+
+  // ACC-13 — deliberately cross-tenant, no organizationId filter. Used only
+  // by AuthController.getMe() to resolve the display info of the platform
+  // admin currently impersonating the caller (a different org than the
+  // caller's own) — UserService.getById() can't be used here since it's
+  // tenant-scoped by design.
+  async getPublicUserById(userId: string): Promise<PublicUser | null> {
+    const user = await this.prisma.user.findFirst({ where: { id: userId } });
+    if (!user) return null;
+    return { id: user.id, email: user.email, name: user.name };
   }
 }

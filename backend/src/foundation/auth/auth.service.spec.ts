@@ -643,4 +643,20 @@ describe('AuthService', () => {
       await expect(service.getMfaStatus('user-1', ORG_A)).resolves.toEqual({ enabled: false });
     });
   });
+
+  describe('getPublicUserById', () => {
+    it('returns the mapped public shape without any organizationId filter', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+
+      const result = await service.getPublicUserById('user-1');
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({ where: { id: 'user-1' } });
+      expect(result).toEqual({ id: appUserFixture.id, email: appUserFixture.email, name: appUserFixture.name });
+    });
+
+    it('returns null when the user does not exist', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      await expect(service.getPublicUserById('missing')).resolves.toBeNull();
+    });
+  });
 });

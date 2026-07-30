@@ -31,6 +31,10 @@ const ORG_A = {
   authConfig: null,
   storageConfig: null,
   aiConfig: null,
+  emailConfig: null,
+  logo: null,
+  isPlatformOrg: false,
+  planId: null,
   stripeCustomerId: null,
   stripeSubscriptionId: null,
   createdAt: new Date('2026-01-01'),
@@ -101,6 +105,27 @@ describe('TenantService', () => {
       expect(result.name).toBe('Org Alpha');
       expect(result).not.toHaveProperty('authConfig');
       expect(result).not.toHaveProperty('stripeCustomerId');
+    });
+
+    it('defaults modules/ai when settings is absent', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      const result = await service.findById('org-a');
+      expect(result.modules).toEqual({});
+      expect(result.ai).toEqual({
+        enabled: false, monthlyCredits: 0, creditsUsed: 0, creditsRemaining: 0,
+        resetDate: null, overageEnabled: false,
+      });
+    });
+
+    it('derives modules/ai from settings when present', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        ...ORG_A,
+        settings: { modules: { documents: true }, ai: { enabled: true, monthlyCredits: 500 } },
+      });
+      const result = await service.findById('org-a');
+      expect(result.modules).toEqual({ documents: true });
+      expect(result.ai.enabled).toBe(true);
+      expect(result.ai.monthlyCredits).toBe(500);
     });
 
     it('throws NotFoundException when tenant does not exist', async () => {
@@ -232,6 +257,87 @@ describe('TenantService', () => {
 
       const config = await service.getTenantConfig('org-a');
       expect(config.aiConfig).toEqual(payload);
+    });
+  });
+
+  // ── getEmailConfig / updateEmailConfig ───────────────────────────────────
+
+  describe('getEmailConfig', () => {
+    it('returns null provider/config when none is set', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      const config = await service.getEmailConfig('org-a');
+      expect(config).toEqual({ emailProvider: null, config: null });
+    });
+
+    it('decrypts a stored email config', async () => {
+      const payload = { emailProvider: 'smtp' as const, config: { host: 'smtp.example.com' } };
+      const encrypted = service.encryptConfig(payload);
+      prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, emailConfig: encrypted });
+
+      const config = await service.getEmailConfig('org-a');
+      expect(config).toEqual(payload);
+    });
+  });
+
+  describe('updateEmailConfig', () => {
+    it('encrypts and persists the email config, then logs an audit entry', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.organization.update.mockResolvedValue({ ...ORG_A });
+
+      await service.updateEmailConfig(
+        'org-a',
+        { emailProvider: 'resend', config: { apiKey: 'abc' } },
+        'user-1',
+      );
+
+      expect(prisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org-a' },
+        data: { emailConfig: expect.any(String) },
+      });
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE',
+          objectType: 'Organization',
+          objectId: 'org-a',
+          actorId: 'user-1',
+          tenantId: 'org-a',
+        }),
+      );
+    });
+
+    it('throws NotFoundException when tenant does not exist', async () => {
+      prisma.organization.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateEmailConfig('missing', { emailProvider: 'resend', config: {} }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('updateAiOverageSetting', () => {
+    it('merges overageEnabled into settings.ai without touching monthlyCredits/creditsUsed', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        ...ORG_A,
+        settings: { ai: { monthlyCredits: 500, creditsUsed: 100 } },
+      });
+
+      await service.updateAiOverageSetting('org-a', { overageEnabled: true }, 'user-1');
+
+      expect(prisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org-a' },
+        data: {
+          settings: { ai: { monthlyCredits: 500, creditsUsed: 100, overageEnabled: true } },
+        },
+      });
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'UPDATE', objectType: 'Organization', tenantId: 'org-a' }),
+      );
+    });
+
+    it('throws NotFoundException when tenant does not exist', async () => {
+      prisma.organization.findUnique.mockResolvedValue(null);
+      await expect(
+        service.updateAiOverageSetting('missing', { overageEnabled: true }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

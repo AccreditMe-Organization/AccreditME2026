@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
+import { ImpersonatedBy } from '../../common/decorators/impersonated-by.decorator';
 import { UserService } from '../user/user.service';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -35,9 +36,16 @@ export class AuthController {
   // cookie is missing, expired, or its tokenVersion is stale.
   @Get('me')
   @UseGuards(TenantGuard)
-  async getMe(@CurrentUser() userId: string, @CurrentTenant() organizationId: string) {
+  async getMe(
+    @CurrentUser() userId: string,
+    @CurrentTenant() organizationId: string,
+    @ImpersonatedBy() impersonatedByUserId: string | undefined,
+  ) {
     const user = await this.userService.getById(userId, organizationId);
-    return { id: user.id, email: user.email, name: user.name };
+    const impersonatedBy = impersonatedByUserId
+      ? await this.authService.getPublicUserById(impersonatedByUserId)
+      : null;
+    return { id: user.id, email: user.email, name: user.name, impersonatedBy };
   }
 
   @Post('login')

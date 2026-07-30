@@ -1,7 +1,7 @@
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { interval, startWith, switchMap } from 'rxjs';
+import { catchError, interval, of, startWith, switchMap } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { BadgeModule } from 'primeng/badge';
@@ -85,10 +85,27 @@ export class NotificationBellComponent implements OnInit {
 
   ngOnInit(): void {
     interval(POLL_INTERVAL_MS)
-      .pipe(startWith(0), switchMap(() => this.notificationService.getUnreadCount()), takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: ({ count }) => this.unreadCount.set(count),
-        error: () => this.error.set('notification.errorLoad'),
+      .pipe(
+        startWith(0),
+        switchMap(() =>
+          // Without this, a single failed tick (e.g. a 401 from a session
+          // that hadn't settled yet) propagates through switchMap and
+          // terminates the whole outer subscription — polling would then
+          // stay dead for the rest of the component's lifetime instead of
+          // retrying on the next interval.
+          this.notificationService.getUnreadCount().pipe(
+            catchError(() => of({ count: null })),
+          ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(({ count }) => {
+        if (count === null) {
+          this.error.set('notification.errorLoad');
+          return;
+        }
+        this.error.set(null);
+        this.unreadCount.set(count);
       });
   }
 

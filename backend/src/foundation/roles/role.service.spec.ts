@@ -71,6 +71,9 @@ const mockPrisma = {
   user: {
     findFirst: jest.fn(),
   },
+  organization: {
+    findUnique: jest.fn(),
+  },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -83,6 +86,7 @@ describe('RoleService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.rolePermission.findMany.mockResolvedValue([]);
+    mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -167,6 +171,30 @@ describe('RoleService', () => {
       expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { organizationId: ORG_A } }),
       );
+    });
+
+    it('filters out PLATFORM_ADMIN for a non-platform organization', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
+      mockPrisma.role.findMany.mockResolvedValue([
+        makeRole({ key: 'PLATFORM_ADMIN', nameEn: 'Platform Administrator' }),
+        makeRole({ key: 'TENANT_ADMIN', nameEn: 'Organization Administrator' }),
+      ]);
+
+      const result = await service.getRoles(ORG_A);
+
+      expect(result.map((r) => r.key)).toEqual(['TENANT_ADMIN']);
+    });
+
+    it('includes PLATFORM_ADMIN for the designated platform organization', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
+      mockPrisma.role.findMany.mockResolvedValue([
+        makeRole({ key: 'PLATFORM_ADMIN', nameEn: 'Platform Administrator' }),
+        makeRole({ key: 'TENANT_ADMIN', nameEn: 'Organization Administrator' }),
+      ]);
+
+      const result = await service.getRoles(ORG_A);
+
+      expect(result.map((r) => r.key).sort()).toEqual(['PLATFORM_ADMIN', 'TENANT_ADMIN']);
     });
   });
 

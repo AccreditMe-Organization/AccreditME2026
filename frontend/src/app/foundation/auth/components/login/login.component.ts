@@ -7,6 +7,7 @@ import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { AuthService } from '../../../../core/services/auth.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-login',
@@ -87,6 +88,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 export class LoginComponent {
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
+  private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly router = inject(Router);
 
   readonly submitting = signal(false);
@@ -119,7 +121,7 @@ export class LoginComponent {
           this.mfaRequired.set(true);
           return;
         }
-        void this.router.navigate(['/organization']);
+        this.redirectAfterLogin();
       },
       error: () => {
         this.submitting.set(false);
@@ -140,12 +142,25 @@ export class LoginComponent {
     this.authService.verifyMfa(code!).subscribe({
       next: () => {
         this.submitting.set(false);
-        void this.router.navigate(['/organization']);
+        this.redirectAfterLogin();
       },
       error: () => {
         this.submitting.set(false);
         this.error.set('auth.errorMfaRequired');
       },
+    });
+  }
+
+  // Same isPlatformAdmin() check platformAdminGuard uses server-adjacent —
+  // loaded here (rather than trusting a stale/default signal) since this is
+  // the very first point in the session where it's known which org the user
+  // just authenticated into. AppShellComponent's own ngOnInit calls
+  // loadAccess() again on mount; a second cheap GET is an acceptable
+  // trade-off against duplicating the role-check logic in a second place.
+  private redirectAfterLogin(): void {
+    this.navigationAccessService.loadAccess().subscribe(() => {
+      const destination = this.navigationAccessService.isPlatformAdmin() ? '/platform' : '/organization';
+      void this.router.navigate([destination]);
     });
   }
 }

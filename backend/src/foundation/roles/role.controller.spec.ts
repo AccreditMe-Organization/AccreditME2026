@@ -49,6 +49,7 @@ describe('RoleController', () => {
     deactivateRole: jest.Mock;
     reactivateRole: jest.Mock;
     listAllPermissions: jest.Mock;
+    getUserPermissions: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -61,6 +62,7 @@ describe('RoleController', () => {
       deactivateRole: jest.fn().mockResolvedValue(undefined),
       reactivateRole: jest.fn().mockResolvedValue(undefined),
       listAllPermissions: jest.fn().mockResolvedValue([MOCK_PERMISSION]),
+      getUserPermissions: jest.fn().mockResolvedValue(['documents:view']),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -95,6 +97,16 @@ describe('RoleController', () => {
       const result = await controller.listAllPermissions();
       expect(service.listAllPermissions).toHaveBeenCalled();
       expect(result).toEqual([MOCK_PERMISSION]);
+    });
+  });
+
+  // ── getMyPermissions ──────────────────────────────────────────────────────
+
+  describe('getMyPermissions', () => {
+    it('delegates to roleService.getUserPermissions with the caller\'s own userId and tenantId', async () => {
+      const result = await controller.getMyPermissions(USER_ID, TENANT_ID);
+      expect(service.getUserPermissions).toHaveBeenCalledWith(USER_ID, TENANT_ID);
+      expect(result).toEqual(['documents:view']);
     });
   });
 

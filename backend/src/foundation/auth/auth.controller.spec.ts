@@ -26,6 +26,7 @@ describe('AuthController', () => {
     verifySetupMfa: jest.Mock;
     disableMfa: jest.Mock;
     getMfaStatus: jest.Mock;
+    getPublicUserById: jest.Mock;
   };
   let userService: { getById: jest.Mock };
 
@@ -45,6 +46,7 @@ describe('AuthController', () => {
       verifySetupMfa: jest.fn().mockResolvedValue(undefined),
       disableMfa: jest.fn().mockResolvedValue(undefined),
       getMfaStatus: jest.fn().mockResolvedValue({ enabled: false }),
+      getPublicUserById: jest.fn().mockResolvedValue(null),
     };
     userService = {
       getById: jest.fn().mockResolvedValue({ id: 'user-1', email: 'a@example.com', name: 'A User' }),
@@ -64,10 +66,20 @@ describe('AuthController', () => {
     controller = module.get<AuthController>(AuthController);
   });
 
-  it('getMe returns the current user via UserService.getById', async () => {
-    const result = await controller.getMe('user-1', 'org-1');
+  it('getMe returns the current user via UserService.getById, with impersonatedBy: null on a normal session', async () => {
+    const result = await controller.getMe('user-1', 'org-1', undefined);
     expect(userService.getById).toHaveBeenCalledWith('user-1', 'org-1');
-    expect(result).toEqual({ id: 'user-1', email: 'a@example.com', name: 'A User' });
+    expect(service.getPublicUserById).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: 'user-1', email: 'a@example.com', name: 'A User', impersonatedBy: null });
+  });
+
+  it('getMe resolves impersonatedBy via AuthService.getPublicUserById when the session is impersonated', async () => {
+    service.getPublicUserById.mockResolvedValue({ id: 'platform-admin-1', email: 'admin@accreditme.com', name: 'Platform Admin' });
+
+    const result = await controller.getMe('user-1', 'org-1', 'platform-admin-1');
+
+    expect(service.getPublicUserById).toHaveBeenCalledWith('platform-admin-1');
+    expect(result.impersonatedBy).toEqual({ id: 'platform-admin-1', email: 'admin@accreditme.com', name: 'Platform Admin' });
   });
 
   it('login delegates to AuthService.login', async () => {

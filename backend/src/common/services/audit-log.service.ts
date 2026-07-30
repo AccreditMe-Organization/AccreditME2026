@@ -16,7 +16,9 @@ type AuditActionValue =
   | 'PUBLISH'
   | 'ARCHIVE'
   | 'RESTORE'
-  | 'DELEGATE';
+  | 'DELEGATE'
+  | 'IMPERSONATE_START'
+  | 'IMPERSONATE_END';
 
 export interface AuditLogEntry {
   action: AuditActionValue;

@@ -3,7 +3,9 @@
 // JWT contract (must match Better Auth configuration):
 //   Algorithm : HS256 (HMAC-SHA256)
 //   Secret    : JWT_SECRET env var
-//   Claims    : { sub: userId, organizationId, tokenVersion, exp }
+//   Claims    : { sub: userId, organizationId, tokenVersion, exp,
+//                 impersonatedBy? } — the last one only ever present on a
+//                 platform admin's impersonation session (ACC-13).
 //
 // Token source (Step 9 — Users, Section 12 Discussion 4): reads the
 // access_token httpOnly cookie first, falling back to the Authorization
@@ -46,12 +48,16 @@ interface JwtPayload {
   organizationId: string;
   tokenVersion: number;
   exp: number;
+  // ACC-13 — present only on a platform admin's impersonation session (see
+  // PlatformTenantService.startImpersonation()). Absent on every normal login.
+  impersonatedBy?: string;
 }
 
 interface AuthenticatedRequest extends Request {
   tenantId: string;
   userId: string;
   userPermissions?: string[];
+  impersonatedBy?: string;
   // .cookies comes from @types/cookie-parser's Express.Request augmentation
   // (cookie-parser is mounted in main.ts) — no redeclaration needed here.
 }
@@ -138,6 +144,10 @@ export class TenantGuard implements CanActivate {
       payload.sub,
       payload.organizationId,
     );
+    // ACC-13 — passthrough only, no behavior change to this guard otherwise.
+    if (payload.impersonatedBy) {
+      request.impersonatedBy = payload.impersonatedBy;
+    }
     return true;
   }
 }
