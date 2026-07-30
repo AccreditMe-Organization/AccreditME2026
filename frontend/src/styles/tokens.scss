@@ -29,4 +29,24 @@
   --am-severity-high:     #DD6B20;
   --am-severity-medium:   #D69E2E;
   --am-severity-low:      #38A169;
+
+  // Account — tenant/organization lifecycle status (ACC-15). Deliberately
+  // its own token set, not folded into --am-status-* above: that scale is
+  // document-lifecycle-shaped (draft/review/approved/rejected/published/
+  // archived), a different domain from account state. Colors match the
+  // PrimeNG severities tenant-list.component.ts already used before this
+  // ticket (info/success/warn/danger/secondary) for visual continuity.
+  --am-account-trial:       #2E6FA3;
+  --am-account-active:      #38A169;
+  --am-account-suspended:   #D69E2E;
+  --am-account-cancelled:   #E53E3E;
+  --am-account-offboarding: #718096;
+
+  // Banner — fixed, always-the-same informational banners (e.g. the
+  // impersonation banner). Distinct from --am-severity-* on purpose: a
+  // banner like this isn't rating anything, so borrowing a severity token
+  // for it is a category error (ACC-15 finding — see
+  // step-15-design-foundation.md). Same color topbar.component.ts already
+  // used, now under its own correct name instead of --am-severity-medium.
+  --am-banner-info: #D69E2E;
 }
