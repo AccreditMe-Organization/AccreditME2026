@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
+import { CardComponent } from '../../../../shared/components/card/card.component';
 
 interface SettingsCard {
   labelKey: string;
@@ -32,19 +33,20 @@ const NEW_SETTINGS_CARDS: SettingsCard[] = [
 @Component({
   selector: 'app-settings-hub',
   standalone: true,
-  imports: [RouterLink, TranslatePipe],
+  imports: [RouterLink, TranslatePipe, CardComponent],
   template: `
     <div class="flex flex-col gap-6">
       <h2 class="text-xl font-semibold">{{ 'adminSettings.title' | translate }}</h2>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         @for (card of newCards; track card.route) {
-          <a
-            [routerLink]="card.route"
-            class="flex items-center gap-3 p-4 rounded-md bg-[var(--am-card)] border border-[var(--am-border)] hover:border-[var(--am-blue-primary)] transition-colors"
-          >
-            <i [class]="card.icon" class="text-xl text-[var(--am-blue-primary)]"></i>
-            <span class="text-sm font-medium">{{ card.labelKey | translate }}</span>
+          <a [routerLink]="card.route" class="block">
+            <app-card [linkable]="true">
+              <div class="flex items-center gap-3">
+                <i [class]="card.icon" class="text-xl text-[var(--am-blue-primary)]"></i>
+                <span class="text-sm font-medium">{{ card.labelKey | translate }}</span>
+              </div>
+            </app-card>
           </a>
         }
       </div>
@@ -53,12 +55,13 @@ const NEW_SETTINGS_CARDS: SettingsCard[] = [
 
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         @for (card of existingCards; track card.route) {
-          <a
-            [routerLink]="card.route"
-            class="flex items-center gap-3 p-4 rounded-md bg-[var(--am-card)] border border-[var(--am-border)] hover:border-[var(--am-blue-primary)] transition-colors"
-          >
-            <i [class]="card.icon" class="text-xl text-[var(--am-text-secondary)]"></i>
-            <span class="text-sm font-medium">{{ card.labelKey | translate }}</span>
+          <a [routerLink]="card.route" class="block">
+            <app-card [linkable]="true">
+              <div class="flex items-center gap-3">
+                <i [class]="card.icon" class="text-xl text-[var(--am-text-secondary)]"></i>
+                <span class="text-sm font-medium">{{ card.labelKey | translate }}</span>
+              </div>
+            </app-card>
           </a>
         }
       </div>
