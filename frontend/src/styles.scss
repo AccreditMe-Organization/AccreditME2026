@@ -2,8 +2,20 @@
 // Module-specific styles belong in their component SCSS files.
 @use 'styles/tokens';
 
-// PrimeNG theme
-@import 'primeicons/primeicons.css';
+// Tailwind CSS v4 — @use, not @import, in an SCSS entry point (ACC-15).
+// Every Tailwind utility class used throughout this app (flex, gap-4, p-4,
+// etc.) was inert before this line existed — declared in package.json but
+// never actually wired into the build. See step-15-design-foundation.md.
+@use 'tailwindcss';
+
+// primeicons.css moved to angular.json's styles[] array (ACC-15) — no
+// longer @import-ed here. Once .postcssrc.json exists, Karma's
+// webpack+postcss-loader pipeline (used only by `ng test`, not `ng build`,
+// which is esbuild-based) fails resolving primeicons' own relative font
+// url()s when that vendor CSS is pulled in through the SCSS/PostCSS
+// pipeline. Declaring it as its own plain-CSS entry in angular.json's
+// styles[] sidesteps the whole pipeline for this file — it's already
+// valid final CSS, nothing to process.
 
 // Layout constants
 $topbar-height: 64px;
