@@ -27,7 +27,7 @@ import {
         </label>
         <input id="key" pInputText formControlName="key" />
         @if (!value) {
-          <small class="text-surface-400">{{ 'lookup.fieldKeyHint' | translate }}</small>
+          <small class="text-[var(--am-text-secondary)]">{{ 'lookup.fieldKeyHint' | translate }}</small>
         }
       </div>
 
@@ -62,7 +62,7 @@ import {
       }
 
       @if (categoryLoading()) {
-        <p class="text-sm text-surface-400">{{ 'common.loading' | translate }}</p>
+        <p class="text-sm text-[var(--am-text-secondary)]">{{ 'common.loading' | translate }}</p>
       }
 
       @if (attributeFields().length > 0) {

@@ -38,7 +38,7 @@ interface CascadeOption {
   ],
   template: `
     <div class="mb-4">
-      <a [routerLink]="['../..']" class="text-sm text-surface-500">
+      <a [routerLink]="['../..']" class="text-sm text-[var(--am-text-secondary)]">
         ← {{ 'organization.title' | translate }}
       </a>
     </div>
@@ -90,7 +90,7 @@ interface CascadeOption {
           class="font-mono"
           (input)="onCodeManualEdit()"
         />
-        <small class="text-surface-400">{{ 'organization.codeHint' | translate }}</small>
+        <small class="text-[var(--am-text-secondary)]">{{ 'organization.codeHint' | translate }}</small>
       </div>
 
       <div class="flex flex-col gap-1">

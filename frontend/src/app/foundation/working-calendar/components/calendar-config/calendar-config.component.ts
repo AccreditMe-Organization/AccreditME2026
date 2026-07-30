@@ -105,7 +105,7 @@ interface SuggestionState extends AiHolidaySuggestion {
         <h3 class="font-medium">{{ 'workingCalendar.workingHours' | translate }}</h3>
         <div class="flex gap-4 items-center flex-wrap">
           <div class="flex flex-col gap-1">
-            <label class="text-sm text-surface-500">From</label>
+            <label class="text-sm text-[var(--am-text-secondary)]">From</label>
             <p-datepicker
               [(ngModel)]="startTime"
               [timeOnly]="true"
@@ -114,7 +114,7 @@ interface SuggestionState extends AiHolidaySuggestion {
             />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-sm text-surface-500">To</label>
+            <label class="text-sm text-[var(--am-text-secondary)]">To</label>
             <p-datepicker
               [(ngModel)]="endTime"
               [timeOnly]="true"
@@ -160,7 +160,7 @@ interface SuggestionState extends AiHolidaySuggestion {
         <h3 class="font-medium">{{ 'workingCalendar.suggestHolidays' | translate }}</h3>
         <div class="flex gap-3 items-end flex-wrap">
           <div class="flex flex-col gap-1">
-            <label class="text-sm text-surface-500">Country code (e.g. SA, AE, GB)</label>
+            <label class="text-sm text-[var(--am-text-secondary)]">Country code (e.g. SA, AE, GB)</label>
             <input
               [(ngModel)]="aiCountry"
               class="border rounded px-3 py-2 text-sm"
@@ -169,7 +169,7 @@ interface SuggestionState extends AiHolidaySuggestion {
             />
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-sm text-surface-500">Year</label>
+            <label class="text-sm text-[var(--am-text-secondary)]">Year</label>
             <input
               type="number"
               [(ngModel)]="aiYear"
@@ -191,7 +191,7 @@ interface SuggestionState extends AiHolidaySuggestion {
 
         @if (aiSuggestions().length) {
           <div class="flex flex-col gap-3 mt-2">
-            <p class="text-sm text-surface-500">{{ 'workingCalendar.aiSuggestionsHint' | translate }}</p>
+            <p class="text-sm text-[var(--am-text-secondary)]">{{ 'workingCalendar.aiSuggestionsHint' | translate }}</p>
             @for (s of aiSuggestions(); track s.date; let i = $index) {
               <label class="flex items-center gap-3 cursor-pointer p-3 border rounded">
                 <input
@@ -201,7 +201,7 @@ interface SuggestionState extends AiHolidaySuggestion {
                 />
                 <span class="flex flex-col gap-1">
                   <span class="font-medium">{{ s.nameEn }}{{ s.nameAr ? ' (' + s.nameAr + ')' : '' }}</span>
-                  <span class="text-sm text-surface-500">{{ s.date }}{{ s.isRecurring ? ' · Recurring' : '' }}</span>
+                  <span class="text-sm text-[var(--am-text-secondary)]">{{ s.date }}{{ s.isRecurring ? ' · Recurring' : '' }}</span>
                 </span>
               </label>
             }

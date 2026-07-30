@@ -38,7 +38,7 @@ import { RoleService, RoleDto } from '../../services/role.service';
           </li>
         }
         @if (assignedRoles().length === 0 && !loading()) {
-          <li class="text-sm text-surface-400">{{ 'roles.noRoles' | translate }}</li>
+          <li class="text-sm text-[var(--am-text-secondary)]">{{ 'roles.noRoles' | translate }}</li>
         }
       </ul>
 

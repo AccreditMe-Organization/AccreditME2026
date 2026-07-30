@@ -35,7 +35,7 @@ import { InviteUserComponent } from '../invite-user/invite-user.component';
         <p class="text-red-500">{{ error() }}</p>
       }
       @if (infoMessage()) {
-        <p class="text-sm text-surface-600">{{ infoMessage() }}</p>
+        <p class="text-sm text-[var(--am-text-primary)]">{{ infoMessage() }}</p>
       }
 
       <p-table [value]="users()" [loading]="loading() || deactivating()" scrollable scrollHeight="flex" styleClass="w-full">
@@ -80,7 +80,7 @@ import { InviteUserComponent } from '../invite-user/invite-user.component';
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="7" class="text-center py-8 text-surface-400">{{ 'user.noUsers' | translate }}</td>
+            <td colspan="7" class="text-center py-8 text-[var(--am-text-secondary)]">{{ 'user.noUsers' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>

@@ -90,7 +90,7 @@ import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/o
 
       <ng-template pTemplate="emptymessage">
         <tr>
-          <td colspan="5" class="text-center py-8 text-surface-400">
+          <td colspan="5" class="text-center py-8 text-[var(--am-text-secondary)]">
             {{ 'organization.noUnits' | translate }}
           </td>
         </tr>
