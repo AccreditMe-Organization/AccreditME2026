@@ -43,7 +43,7 @@ import { PlanService, IAiFeatureCost } from '../../services/plan.service';
         </ng-template>
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="3" class="text-center py-4 text-surface-400">{{ 'platform.noAiFeatureCosts' | translate }}</td>
+            <td colspan="3" class="text-center py-4 text-[var(--am-text-secondary)]">{{ 'platform.noAiFeatureCosts' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>

@@ -7,14 +7,25 @@ import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { MessageModule } from 'primeng/message';
-import { TagModule } from 'primeng/tag';
+import { StatusBadgeComponent } from '../../../shared/components/status-badge/status-badge.component';
+import { CardComponent } from '../../../shared/components/card/card.component';
 import { PlatformTenantService, IPlatformTenantDetail } from '../../services/platform-tenant.service';
 import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
 
 @Component({
   selector: 'app-tenant-detail',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, DatePipe, ButtonModule, CheckboxModule, InputNumberModule, MessageModule, TagModule],
+  imports: [
+    ReactiveFormsModule,
+    TranslatePipe,
+    DatePipe,
+    ButtonModule,
+    CheckboxModule,
+    InputNumberModule,
+    MessageModule,
+    StatusBadgeComponent,
+    CardComponent,
+  ],
   template: `
     <div class="flex flex-col gap-6 max-w-3xl">
       @if (error()) {
@@ -30,23 +41,23 @@ import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
             <h2 class="text-xl font-semibold">{{ t.name }}</h2>
             <p class="text-sm text-[var(--am-text-secondary)]">{{ t.slug }} · {{ t.planName ?? '—' }}</p>
           </div>
-          <p-tag [value]="t.status" />
+          <app-status-badge variant="account" [value]="t.status" />
         </div>
 
         <div class="grid grid-cols-2 gap-4">
-          <div class="p-4 rounded-md bg-[var(--am-card)] border border-[var(--am-border)]">
+          <app-card>
             <p class="text-sm text-[var(--am-text-secondary)]">{{ 'platform.userCount' | translate }}</p>
             <p class="text-2xl font-semibold">{{ t.userCount }}</p>
-          </div>
-          <div class="p-4 rounded-md bg-[var(--am-card)] border border-[var(--am-border)]">
+          </app-card>
+          <app-card>
             <p class="text-sm text-[var(--am-text-secondary)]">{{ 'platform.createdAt' | translate }}</p>
             <p class="text-2xl font-semibold">{{ t.createdAt | date: 'mediumDate' }}</p>
-          </div>
+          </app-card>
         </div>
 
         <hr />
 
-        <h3 class="text-lg font-semibold">{{ 'platform.modules' | translate }}</h3>
+        <h3 class="text-lg font-medium">{{ 'platform.modules' | translate }}</h3>
         <form [formGroup]="modulesForm" (ngSubmit)="onSubmitModules()" class="flex flex-col gap-3">
           <div class="grid grid-cols-3 gap-2">
             @for (key of moduleKeys; track key) {
@@ -63,7 +74,7 @@ import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
 
         <hr />
 
-        <h3 class="text-lg font-semibold">{{ 'platform.aiCredits' | translate }}</h3>
+        <h3 class="text-lg font-medium">{{ 'platform.aiCredits' | translate }}</h3>
         <form [formGroup]="aiForm" (ngSubmit)="onSubmitAiCredits()" class="flex flex-col gap-3 max-w-xs">
           <div class="flex flex-col gap-1">
             <label for="monthlyCredits" class="text-sm font-medium">{{ 'platform.monthlyCredits' | translate }}</label>
@@ -84,7 +95,7 @@ import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
 
         <hr />
 
-        <h3 class="text-lg font-semibold">{{ 'platform.impersonate' | translate }}</h3>
+        <h3 class="text-lg font-medium">{{ 'platform.impersonate' | translate }}</h3>
         @if (t.tenantAdmins.length === 0) {
           <p class="text-sm text-[var(--am-text-secondary)]">{{ 'platform.noTenantAdmins' | translate }}</p>
         }

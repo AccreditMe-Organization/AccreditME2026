@@ -3,23 +3,15 @@ import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
+import { StatusBadgeComponent } from '../../../shared/components/status-badge/status-badge.component';
 import { PlatformTenantService, IPlatformTenantSummary } from '../../services/platform-tenant.service';
-
-const STATUS_SEVERITY: Record<IPlatformTenantSummary['status'], 'success' | 'warn' | 'danger' | 'secondary' | 'info'> = {
-  TRIAL: 'info',
-  ACTIVE: 'success',
-  SUSPENDED: 'warn',
-  CANCELLED: 'danger',
-  OFFBOARDING: 'secondary',
-};
 
 @Component({
   selector: 'app-tenant-list',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, TableModule, ButtonModule, TagModule, MessageModule],
+  imports: [RouterLink, TranslatePipe, TableModule, ButtonModule, MessageModule, StatusBadgeComponent],
   template: `
     <div class="flex flex-col gap-4">
       <div class="flex items-center justify-between">
@@ -53,7 +45,7 @@ const STATUS_SEVERITY: Record<IPlatformTenantSummary['status'], 'success' | 'war
               </a>
             </td>
             <td>{{ tenant.slug }}</td>
-            <td><p-tag [value]="tenant.status" [severity]="statusSeverity(tenant.status)" /></td>
+            <td><app-status-badge variant="account" [value]="tenant.status" /></td>
             <td>{{ tenant.planName ?? '—' }}</td>
             <td>
               <div class="flex gap-1 justify-end">
@@ -80,7 +72,7 @@ const STATUS_SEVERITY: Record<IPlatformTenantSummary['status'], 'success' | 'war
         </ng-template>
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="5" class="text-center py-4 text-surface-400">
+            <td colspan="5" class="text-center py-4 text-[var(--am-text-secondary)]">
               {{ 'platform.noTenants' | translate }}
             </td>
           </tr>
@@ -101,10 +93,6 @@ export class TenantListComponent implements OnInit {
 
   ngOnInit(): void {
     this.load();
-  }
-
-  statusSeverity(status: IPlatformTenantSummary['status']) {
-    return STATUS_SEVERITY[status];
   }
 
   private load(): void {
