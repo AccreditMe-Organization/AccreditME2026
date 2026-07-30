@@ -157,6 +157,14 @@ accreditme/
 
 ## Build Sequence (Revised)
 
+Ticket numbers below are only shown for steps that already have a real
+Linear ticket. Everything after Design Foundation is name-and-order
+only — do not hardcode future ACC-# numbers here. Numbers get assigned
+at /new-ticket time, not planned in advance: ACC-14 was originally
+expected to be Committee Management but was consumed mid-project by an
+unplanned fix ticket, and ACC-15 ended up as Design Foundation instead
+of Meeting Management — hardcoding future numbers doesn't hold up.
+
 ### Foundation (Complete)
 ACC-5  Step 5:  Tenant provisioning ✅
 ACC-6  Step 6:  Organization structure + Working calendar ✅
@@ -167,48 +175,79 @@ ACC-10 Step 7b: Notification service ✅
 ACC-11 Step 8b: Task management + OrgPosition ✅
 ACC-12 Step 9b: User management + Better Auth ✅
 
-### Admin + Navigation (Next)
-ACC-13 Step 12: Super Admin Portal + Tenant Admin 
-                + Navigation shell
+### Admin + Navigation (Complete)
+ACC-13/14 Step 12: Navigation shell + Super Admin Portal + Tenant Admin
+                Settings ✅ (merged to dev via PR #11, commit ff75e00)
+                ACC-14 covers fixes found while browser-testing ACC-13
+                (PrimeNG theme provider, demo-seed platform admin,
+                login redirect, breadcrumb, sidebar nav separation) —
+                folded into ACC-13's own PR/branch rather than merged
+                separately; both tickets closed Done.
                 (Stripe/billing deferred to Phase 2)
 
+### Design Foundation (Next)
+ACC-15: Spacing/typography/component design foundation
+                Branch: feature/ACC-15-design-foundation (ticket
+                created, status Todo). Spacing/sizing scale, typography
+                scale, consistent table/card/badge patterns using the
+                existing --am-* CSS variables (status/severity colors
+                defined in tokens.scss but currently unused), applied
+                across the navigation shell, Super Admin Portal, and
+                Tenant Admin Settings screens that already exist.
+                Explicitly NOT full visual/brand polish (illustrations,
+                distinctive layout personality) — that stays a separate
+                future ticket, still positioned right before the demo
+                milestone, after Document Management.
+
 ### Governance Modules
-ACC-14 Step 10: Committee Management
+Committee Management
                (depends on: navigation shell)
-ACC-15 Step 11: Meeting Management
+Meeting Management
                (depends on: committees)
 
 ### Onboarding
-ACC-16 Step 14: Tenant Onboarding wizard
+Tenant Onboarding wizard
                (depends on: navigation + admin portal)
 
 ### Quality Modules (order enforced by dependencies)
-ACC-17 Step 17: Document Management
+Document Management
                (depends on: committees for approval mode)
-ACC-18 Step 16: Standards Management
+Standards Management
                (benefits from: documents for evidence linking)
-ACC-19 Step 18a: Incident Management
+Incident Management
                (standalone — no hard dependencies)
-ACC-20 Step 18b: CAPA Management
+CAPA Management
                (triggered by: incidents, audits)
-ACC-21 Step 18c: Gap Management
+Gap Management
                (triggered by: standards, audits, KPIs)
-ACC-22 Step 19: Audit Management
+Audit Management
                (depends on: CAPA for findings follow-up)
-ACC-23 Step 20: KPI Management
+KPI Management
                (benefits from: gap for below-target triggers)
 
 ### Offboarding
-ACC-24 Step 15: Tenant Offboarding
+Tenant Offboarding
                (tenant deactivation without Stripe)
 
 ### Phase 2 — Monetization (after demo and validation)
-ACC-25 Step 13: Stripe + Billing
+Stripe + Billing
                - Stripe products and webhooks
                - Plan management with payment processing
                - Self-service tenant registration
                - Invoice generation
                - Module licensing enforcement
+
+Platform Health Monitoring
+               - Error rates, job queues, API latency, DB connections
+               - The one item remaining from what was originally a
+                 broader Super Admin "Platform Operations" scope;
+                 tenant suspend/reactivate/extend-trial and the
+                 platform-wide announcement banner shipped in ACC-13
+                 instead of waiting for this phase (see Super Admin
+                 Portal section)
+               - Same phase/priority tier as Stripe + Billing above,
+                 not a far-future item — always meant to ship right
+                 after Stripe, not alongside Phase 3's wishlist items
 
 ### Phase 3 — Advanced Features
   Visual workflow canvas (draw.io)
@@ -219,16 +258,16 @@ ACC-25 Step 13: Stripe + Billing
   Mobile app
 
 ### Key Dependency Rules (do not violate)
-  Meeting needs Committee (ACC-15 after ACC-14)
-  Document needs Committee (ACC-17 after ACC-14)
-  CAPA needs Incident OR Audit source (ACC-20 after ACC-19)
-  Gap needs Standards OR Audit OR KPI (ACC-21 after ACC-18)
-  Audit needs CAPA for findings (ACC-22 after ACC-20)
-  KPI benefits from Gap (ACC-23 after ACC-21)
-  All functional modules benefit from navigation (ACC-13 first)
+  Meeting needs Committee
+  Document needs Committee
+  CAPA needs Incident OR Audit source
+  Gap needs Standards OR Audit OR KPI
+  Audit needs CAPA for findings
+  KPI benefits from Gap
+  All functional modules benefit from navigation (ACC-13/14, shipped first)
 
 ### Demo Strategy
-  Target demo point: After ACC-17 (Document Management)
+  Target demo point: After Document Management
   At that point AccreditMe has:
     - Proper navigation shell
     - Controlled document management with approval workflows
@@ -248,7 +287,9 @@ for each functional module are documented in:
 backend/Plans/module-designs.md
 
 Read this file before implementing any functional module
-(Steps ACC-17 through ACC-23 (Document, Standards, Incident, CAPA, Gap, Audit, KPI)). It contains:
+(Document, Standards, Incident, CAPA, Gap, Audit, KPI — see Build
+Sequence above for order; ticket numbers are assigned at /new-ticket
+time, not hardcoded here). It contains:
 - Workflow stages and transitions per module
 - Business rules validated against international standards
   (ISO 9001, ISO 19011, JCI, CBAHI, FDA 21 CFR)
@@ -273,7 +314,7 @@ Already in schema (ACC-9 — Workflow Engine):
 Add before Step 16 (Standards Management):
   ACCREDITATION_ROUND
 
-Add before ACC-21 (Step 18c — Gap Management):
+Add before Step 18c (Gap Management):
   GAP
 
 ### Document Types Added
@@ -1138,11 +1179,96 @@ Accessible only to AccreditMe platform administrators.
 ```
 Tenant management:  List all tenants, usage, plan, last activity
                     Suspend / reactivate / extend trial
+                    ✅ shipped in ACC-13 — moved in from the original
+                    "defer to billing phase" plan since none of it
+                    depends on Stripe (just Organization status/date
+                    fields), so it was kept rather than stripped back
+                    out once already built
 Impersonation:      Log in as tenant admin — every action logged
-Platform health:    Error rates, job queues, API latency, DB connections
+                    ✅ shipped in ACC-13
 Announcements:      Platform-wide banner messages
+                    ✅ shipped in ACC-13 — same reasoning as tenant
+                    management above, moved in from deferral
+Platform health:    Error rates, job queues, API latency, DB connections
+                    Still deferred — see Phase 2 — Monetization
+                    ("Platform Health Monitoring", ships alongside
+                    Stripe + Billing). The only item left from what
+                    was originally a broader Super Admin "Platform
+                    Operations" scope; the other two items above
+                    shipped instead of waiting for this phase.
 Billing overview:   Revenue, churn, trial conversions, plan distribution
+                    Deferred to Phase 2 — Monetization (Stripe-dependent)
 ```
+
+### Demo Seed (Development Only)
+`npm run seed:demo` (backend) creates a platform Organization
+(`isPlatformOrg: true`) and a `PLATFORM_ADMIN` user, properly
+role-assigned via the same seeding pattern used for the demo tenant
+admin, alongside the existing demo tenant — credentials printed to
+console next to the existing demo admin credentials. Lets the Super
+Admin Portal be exercised through the real `/login` page instead of
+hand-editing `Organization.isPlatformOrg` and role assignments in
+Prisma Studio.
+
+## Key Architecture Decisions (ACC-13/14)
+
+- **Platform admin access is never role/permission alone.**
+  `PLATFORM_ADMIN` is still seeded into every tenant's own Role table
+  (harmless, inert — `SYSTEM_ROLE_SEED` runs identically for every
+  organization). Real gating is `PlatformGuard`: requires BOTH
+  `Organization.isPlatformOrg = true` (settable only via direct DB
+  access — no API path exists to set it) AND the `platform:admin`
+  permission. Neither alone is sufficient. This closes a real
+  cross-tenant privilege-escalation gap found during ACC-13 planning: a
+  tenant admin who self-assigns `PLATFORM_ADMIN` in their own org would
+  otherwise pass a naive permission-only check, since that role's
+  permission set is identical regardless of which org it's assigned in.
+- `PLATFORM_ADMIN` is filtered out of the assignable-roles list shown
+  to non-platform-org tenants — defense in depth alongside
+  `PlatformGuard`, not a replacement for it.
+- Platform admin navigation is fully separated from tenant navigation
+  in the sidebar — tenant-scoped nav items (Organization Structure,
+  Working Calendar, Lookups, Roles, Workflows, Tasks, Users, Admin
+  Settings) are hidden entirely when `isPlatformAdmin()` is true,
+  showing only Super Admin. Platform admins are operators of the
+  product, not users of it — nothing in this product has them managing
+  their own org's HR/roles/workflows day to day.
+- **PrimeNG v21 theming is provider-based** (`providePrimeNG()` + a
+  theme preset registered in `app.config.ts`'s providers array), NOT a
+  CSS import in `angular.json` — the old
+  `primeng/resources/themes/*.css` import pattern from pre-v18 PrimeNG
+  no longer applies. This was a gap since the original Angular scaffold
+  (confirmed byte-identical on `dev` before ACC-13 touched anything),
+  fixed as part of this work. Brand colors (`--am-blue-primary` etc.)
+  layer on top via the preset's own token config
+  (`AccreditMePreset` in `frontend/src/app/core/theme/accreditme-preset.ts`),
+  not via loose `:root` CSS variables alone — PrimeNG components never
+  read plain CSS custom properties directly, only PrimeNG's own
+  generated `--p-*` tokens.
+- `BreadcrumbComponent` must build from
+  `router.routerState.snapshot.root` (the fully-resolved
+  `ActivatedRouteSnapshot` tree, computed before any component
+  activates) and read each route's own `routeConfig.data` — never the
+  resolved/inherited `snapshot.data`. A naive implementation walking
+  the live `ActivatedRoute.children` tree will crash on nested
+  lazy-loaded routes (that tree is populated incrementally, outlet by
+  outlet, DURING component activation — not guaranteed complete the
+  instant a template child like the breadcrumb constructs), and
+  reading the inherited `snapshot.data` will duplicate every route's
+  last segment (Angular merges an ancestor's `data` into a descendant
+  that doesn't declare its own). Also: the breadcrumb's `router.events`
+  subscription must use per-navigation error handling (`switchMap` +
+  a `catchError` scoped to just that one build), not a single
+  long-lived `.subscribe(nextFn)` — a thrown exception there
+  unsubscribes permanently, killing the breadcrumb for the rest of the
+  session after the first failure.
+- **Future note**: when a Home/dashboard landing page is eventually
+  built, the breadcrumb will NOT automatically show "Home > X" —
+  routes are flat, not nested under a Home parent route, and
+  `buildBreadcrumb` only walks actual route nesting. Don't restructure
+  routing to make Home a real parent just to get this; instead
+  hardcode a first "Home" entry in `BreadcrumbComponent` pointing at
+  `/`.
 
 ---
 
@@ -1328,7 +1454,7 @@ ORGANIZATIONAL — defined by quality dept or department managers
              measurement frequencies as configurable values)
 
 ### Build Position
-  ACC-23 — after all quality modules complete (before Phase 2 Monetization)
+  After all quality modules complete (before Phase 2 Monetization)
   Reason: depends on data from documents, incidents, audits,
   and standards modules for auto-calculated measurements
 
