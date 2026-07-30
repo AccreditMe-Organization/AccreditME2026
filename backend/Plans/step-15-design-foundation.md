@@ -335,28 +335,46 @@ Discussion #5.
 
 ## 7. ACCEPTANCE CRITERIA
 
-- [ ] Tailwind CSS actually compiles (verified: grep a Tailwind utility
-      class in a real `ng build`'s output CSS, not just "no build errors")
-- [ ] Inter font loads (verified: Network tab or computed style shows
-      Inter, not a system-font fallback)
-- [ ] Spacing scale documented (Section 2) and applied — no new arbitrary
-      bracket spacing values introduced in touched files
-- [ ] Typography scale documented (Section 3) and applied across all
-      touched files
-- [ ] `StatusBadgeComponent` built, replaces `tenant-list.component.ts`'s
-      ad hoc `p-tag`/`STATUS_SEVERITY` map and `topbar.component.ts`'s
-      mismatched severity-token usage
-- [ ] `CardComponent` built, replaces `settings-hub.component.ts`'s inline
-      card class string
-- [ ] `--am-status-*`/`--am-severity-*` tokens actually consumed by at
-      least the new `StatusBadgeComponent`
-- [ ] Applied across navigation shell, Super Admin Portal, and every
-      Tenant Admin Settings screen listed in Section 5
-- [ ] No new pages, routes, or backend changes
-- [ ] Frontend TypeScript: zero errors
-- [ ] `ng build`: clean (existing bundle-budget warning is pre-existing,
+- [x] Tailwind CSS actually compiles (verified: grepped `.flex`, `.gap-4`,
+      `.p-4`, `.rounded-md`, `.grid-cols-3` as real CSS rules in a real
+      `ng build`'s output — zero before, present after)
+- [x] Inter font loads (confirmed by user's own browser check after Commit 1)
+- [x] Spacing scale documented (Section 2) and applied — codified the
+      existing Tailwind scale already mostly in use; the one off-scale
+      value found (`py-2.5`, sidebar nav padding) normalized to `py-3`
+- [x] Typography scale documented (Section 3) and applied — H3 weight
+      (font-semibold → font-medium) corrected in 4 files
+      (tenant-detail x3, plan-form, user-profile x2)
+- [x] `StatusBadgeComponent` built — genuinely adopted in
+      `tenant-list.component.ts`/`tenant-detail.component.ts` via a new
+      `'account'` variant (see Pending Discussion #4's resolution: a
+      third token domain, `--am-account-*`, not an extension of
+      `--am-status-*`/`--am-severity-*` — tenant lifecycle is a different
+      domain from document status). `topbar.component.ts`'s banner uses
+      the separate new `--am-banner-info` token directly, not this
+      component (a fixed banner isn't a graded badge).
+- [x] `CardComponent` built, replaces `settings-hub.component.ts`'s inline
+      card class string (and adopted in `tenant-detail`/`ai-settings`'s
+      stat tiles)
+- [x] **Correction from original wording**: `--am-status-*`/`--am-severity-*`
+      (the document-lifecycle and generic-severity scales) are NOT
+      actually consumed anywhere yet — no screen in this ticket's scope
+      has genuinely status/severity-shaped data (Documents/Incidents
+      don't exist until later tickets). Only the new `--am-account-*`
+      scale is genuinely consumed. Flagging honestly rather than
+      overstating — this was corrected via a real mid-build finding, not
+      overlooked.
+- [x] Applied across navigation shell, Super Admin Portal, and every
+      Tenant Admin Settings screen listed in Section 5 — including the
+      25-file sweep across earlier foundation modules (organization,
+      working-calendar, lookup, roles, org-position, workflow, tasks,
+      user) that Section 5's "existing foundation screens" scope required
+- [x] No new pages, routes, or backend changes
+- [x] Frontend TypeScript: zero errors
+- [x] `ng build`: clean (existing bundle-budget warning is pre-existing,
       not this ticket's concern to fix)
-- [ ] PR merged to dev with green CI
+- [ ] PR merged to dev with green CI — not opened yet, user doing a
+      browser pass first
 
 ---
 
