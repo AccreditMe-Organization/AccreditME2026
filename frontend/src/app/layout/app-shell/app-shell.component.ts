@@ -4,15 +4,19 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { BreadcrumbComponent } from '../breadcrumb/breadcrumb.component';
-import { NotificationBellComponent } from '../../foundation/notification/components/notification-bell/notification-bell.component';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 
 // The app shell every guarded route renders inside (ACC-13) — replaces the
 // route-per-page, layout-less arrangement every prior foundation step's own
-// plan deferred (see app.routes.ts's history). Notification bell + confirm
-// dialog move here from app.component.html, which now only holds
-// <router-outlet> for the pre-auth routes (login, accept-invitation, etc.)
-// that render outside this shell entirely.
+// plan deferred (see app.routes.ts's history). The notification bell moved
+// from a standalone `fixed top-4 end-4` overlay here into TopbarComponent's
+// own flex layout (ACC-18) — that wrapper was inert until ACC-15 made
+// Tailwind actually compile, at which point it started colliding with the
+// topbar's own right-aligned username/logout button (both independently
+// pinned to the same viewport corner). The bell's own p-popover panel
+// positions itself relative to its trigger element regardless of where
+// that element sits in normal document flow, so moving it out of a fixed
+// wrapper doesn't affect how its dropdown behaves.
 @Component({
   selector: 'app-shell',
   standalone: true,
@@ -22,7 +26,6 @@ import { NavigationAccessService } from '../../core/services/navigation-access.s
     TopbarComponent,
     SidebarComponent,
     BreadcrumbComponent,
-    NotificationBellComponent,
   ],
   template: `
     <div class="h-screen flex flex-col">
@@ -38,9 +41,6 @@ import { NavigationAccessService } from '../../core/services/navigation-access.s
       </div>
     </div>
 
-    <div class="fixed top-4 end-4 z-50">
-      <app-notification-bell />
-    </div>
     <p-confirmDialog />
   `,
 })

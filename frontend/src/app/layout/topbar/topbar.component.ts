@@ -4,11 +4,12 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { AuthService } from '../../core/services/auth.service';
 import { PlatformTenantService } from '../../platform/services/platform-tenant.service';
+import { NotificationBellComponent } from '../../foundation/notification/components/notification-bell/notification-bell.component';
 
 @Component({
   selector: 'app-topbar',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule],
+  imports: [TranslatePipe, ButtonModule, NotificationBellComponent],
   template: `
     @if (authService.impersonatedBy(); as impersonator) {
       <div class="h-9 flex items-center justify-center gap-3 px-4 bg-[var(--am-banner-info)] text-white text-sm">
@@ -32,6 +33,7 @@ import { PlatformTenantService } from '../../platform/services/platform-tenant.s
       </div>
 
       <div class="flex items-center gap-4">
+        <app-notification-bell />
         @if (authService.currentUser(); as user) {
           <span class="text-sm text-[var(--am-text-secondary)]">{{ user.name }}</span>
         }
