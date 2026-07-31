@@ -344,7 +344,9 @@ export class LookupValueListComponent implements OnInit {
   }
 
   goBack(): void {
-    void this.router.navigate(['..'], { relativeTo: this.route });
+    // Absolute path, not relativeTo — see ACC-16 (NG04002 on relative '..'
+    // navigation across this route's lazy-loaded boundary).
+    void this.router.navigate(['/lookups']);
   }
 
   private loadCategory(): void {

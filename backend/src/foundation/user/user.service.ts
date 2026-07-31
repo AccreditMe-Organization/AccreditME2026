@@ -21,6 +21,12 @@ import { IRole } from '../roles/interfaces/role.interface';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// Mirrors RoleService's own TENANT_ADMIN_KEY guard (role.service.ts) — see
+// ACC-16, "last-admin lockout protection". RoleService already blocks
+// removing/deactivating a tenant's last TENANT_ADMIN via the role-management
+// UI; this closes the same gap on the user-departure flow.
+const TENANT_ADMIN_KEY = 'TENANT_ADMIN';
+
 export interface ListUsersFilters {
   status?: string;
   orgUnitId?: string;
@@ -210,6 +216,28 @@ export class UserService {
   ): Promise<{ reassignedCount: number; unassignedCount: number }> {
     const existing = await this.getById(id, organizationId);
 
+    // Queried BEFORE the status flip below — both the lockout check and the
+    // departure notification (further down) need the ACTIVE-admin set as it
+    // stood while the departing user was still active. Querying after the
+    // flip (the previous bug — ACC-16) would silently exclude the departing
+    // user from their own admin count and, in the last-admin case, notify
+    // no one at all.
+    const adminRole = await this.prisma.role.findFirst({
+      where: { organizationId, key: TENANT_ADMIN_KEY },
+    });
+    const activeAdmins = adminRole
+      ? await this.prisma.userRole.findMany({
+          where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+        })
+      : [];
+
+    const departingUserIsActiveAdmin = activeAdmins.some((a) => a.userId === id);
+    if (departingUserIsActiveAdmin && activeAdmins.length <= 1) {
+      throw new ConflictException(
+        "This user is the organization's last active administrator and cannot be deactivated",
+      );
+    }
+
     await this.prisma.user.update({ where: { id }, data: { status: 'INACTIVE' } });
     await this.authProvider.invalidateUserSessions(id);
 
@@ -220,7 +248,14 @@ export class UserService {
       actorId,
     );
 
-    await this.notifyTenantAdminsOfDeparture(organizationId, existing, reassignedCount, unassignedCount);
+    const otherAdmins = activeAdmins.filter((a) => a.userId !== id);
+    await this.notifyTenantAdminsOfDeparture(
+      otherAdmins,
+      organizationId,
+      existing,
+      reassignedCount,
+      unassignedCount,
+    );
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -236,20 +271,12 @@ export class UserService {
   }
 
   private async notifyTenantAdminsOfDeparture(
+    admins: { userId: string }[],
     organizationId: string,
     departedUser: IUser,
     reassignedCount: number,
     unassignedCount: number,
   ): Promise<void> {
-    const adminRole = await this.prisma.role.findFirst({
-      where: { organizationId, key: 'TENANT_ADMIN' },
-    });
-    if (!adminRole) return;
-
-    const admins = await this.prisma.userRole.findMany({
-      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
-    });
-
     const summary =
       unassignedCount > 0
         ? `${reassignedCount} task(s) reassigned, ${unassignedCount} task(s) flagged as UNASSIGNED and need manual reassignment.`

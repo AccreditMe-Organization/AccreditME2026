@@ -42,14 +42,6 @@
     "platform": "Super Admin",
     "adminSettings": "Admin Settings"
   },
-  "auth": {
-    "login": "Sign In",
-    "logout": "Sign Out",
-    "email": "Email",
-    "password": "Password",
-    "forgotPassword": "Forgot password?",
-    "loginFailed": "Invalid credentials"
-  },
   "organization": {
     "title": "Organization Structure",
     "addUnit": "Add Unit",
@@ -297,6 +289,7 @@
   },
   "auth": {
     "login": "Log In",
+    "logout": "Sign Out",
     "organization": "Organization",
     "email": "Email",
     "password": "Password",
@@ -305,6 +298,7 @@
     "forgotPasswordSent": "If this email exists in our system, check your inbox for a password reset link.",
     "acceptInvitation": "Accept Invitation",
     "acceptInvitationSuccess": "Your password has been set. Redirecting you to log in...",
+    "loginFailed": "Invalid credentials",
     "errorInvalidCredentials": "Invalid organization, email, or password.",
     "errorMfaRequired": "Invalid or expired verification code.",
     "errorInvalidInvitation": "This invitation link is invalid or has expired."

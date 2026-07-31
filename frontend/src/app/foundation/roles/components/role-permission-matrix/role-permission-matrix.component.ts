@@ -162,7 +162,9 @@ export class RolePermissionMatrixComponent implements OnInit {
   }
 
   goBack(): void {
-    void this.router.navigate(['..', '..'], { relativeTo: this.route });
+    // Absolute path, not relativeTo — relative '..' navigation across this
+    // route's lazy-loaded boundary triggered NG04002 (see ACC-16).
+    void this.router.navigate(['/roles']);
   }
 
   private keyOf(perm: PermissionDto): string {
@@ -177,7 +179,7 @@ export class RolePermissionMatrixComponent implements OnInit {
         // PLATFORM_ADMIN is seeded for Step 12's impersonation flow but must
         // never be editable from the tenant-facing UI — see plan Business Rules.
         if (role.key === 'PLATFORM_ADMIN') {
-          void this.router.navigate(['../'], { relativeTo: this.route });
+          void this.router.navigate(['/roles']);
           return;
         }
         this.role.set(role);
