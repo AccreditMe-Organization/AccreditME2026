@@ -324,6 +324,49 @@ describe('UserService', () => {
       );
     });
 
+    it('blocks deactivating the organization\'s last active TENANT_ADMIN', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        name: 'Last Admin',
+        status: 'ACTIVE',
+        actingUserId: null,
+      });
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
+      // Departing user ('user-1') is the only ACTIVE holder of the admin role.
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+
+      await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+
+    it('allows deactivating a TENANT_ADMIN when another active admin remains, and does not self-notify', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        name: 'Departing Admin',
+        status: 'ACTIVE',
+        actingUserId: null,
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }, { userId: 'admin-2' }]);
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { status: 'INACTIVE' },
+      });
+      expect(mockNotification.create).toHaveBeenCalledTimes(1);
+      expect(mockNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-2' }),
+        ORG_A,
+      );
+    });
+
     it('increments tokenVersion (via invalidateUserSessions) before the bulk reassignment runs', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
