@@ -1,8 +1,28 @@
 // NavigationAccessService — the sidebar's one-stop source for "what can I
-// see" (ACC-13). Loaded once by AppShellComponent.ngOnInit() (not
-// APP_INITIALIZER — that only runs once per app boot and would miss a fresh
-// login without a full page reload; the shell only ever renders once
-// authGuard has already passed, which is exactly when this should load).
+// see" (ACC-13). loadAccess() has TWO call sites, each fixing a different
+// gap — neither is redundant with the other:
+//
+// 1. app.config.ts's initializeSession() (ACC-21) — chained after
+//    AuthService.restoreSession() resolves, gated on isAuthenticated(),
+//    inside the same provideAppInitializer that blocks the router's initial
+//    navigation. This closes a real bug: platformAdminGuard reads
+//    isPlatformAdmin() synchronously, and on a hard reload of a deep
+//    /platform/* URL the guard could evaluate before this service's HTTP
+//    calls resolved, incorrectly bouncing a genuine platform admin to
+//    /organization. Blocking the initializer on this means no guard ever
+//    runs before permission data is loaded.
+// 2. AppShellComponent.ngOnInit() (ACC-13, unchanged by ACC-21) — still
+//    required because provideAppInitializer only runs once per full page
+//    load. A same-tab logout -> login cycle (no reload) destroys and
+//    recreates AppShellComponent (both it and the auth routes share
+//    path: '' in app.routes.ts, selected by authGuard's isAuthenticated()
+//    check) without ever re-running app initializers, so ngOnInit() is the
+//    only thing that refreshes permissions for a freshly-logged-in user in
+//    the same tab.
+//
+// Net effect: on a hard reload, loadAccess() fires twice (initializer, then
+// ngOnInit() again moments later) — an accepted, harmless tradeoff (both
+// calls just idempotently re-set the same signals), not an oversight.
 
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
