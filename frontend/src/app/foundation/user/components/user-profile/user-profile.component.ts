@@ -15,6 +15,7 @@ import { OrgPositionService, IOrgPositionDto } from '../../../org-position/servi
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { UserRoleAssignmentComponent } from '../../../roles/components/user-role-assignment/user-role-assignment.component';
 import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
+import { LanguageService } from '../../../../core/services/language.service';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
@@ -264,6 +265,7 @@ export class UserProfileComponent implements OnInit {
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly authService = inject(AuthService);
+  private readonly languageService = inject(LanguageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translateService = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
@@ -367,6 +369,12 @@ export class UserProfileComponent implements OnInit {
           this.savingProfile.set(false);
           this.user.set(u);
           this.savedMessage.set('user.profileSaved');
+          // Live switch (ACC-19, no refresh) — only when editing your own
+          // profile. An admin editing someone else's language preference
+          // must never change what the admin themselves currently sees.
+          if (this.isOwnProfile() && u.language) {
+            this.languageService.use(u.language).subscribe();
+          }
         },
         error: (err: { error?: { message?: string } }) => {
           this.savingProfile.set(false);
