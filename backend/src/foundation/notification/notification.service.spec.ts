@@ -77,6 +77,23 @@ describe('NotificationService', () => {
       );
     });
 
+    // ACC-17 — the actual root-cause fix. dto.userId is now re-validated
+    // against organizationId before the write; a caller passing a real
+    // user id that belongs to a DIFFERENT org must be rejected, not
+    // silently create a Notification row spanning two tenants.
+    it('throws NotFoundException when userId does not belong to organizationId', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create({ userId: USER_B, titleEn: 'Title', bodyEn: 'Body' }, ORG_A),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: USER_B, organizationId: ORG_A },
+      });
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+    });
+
     it('does NOT enqueue an email job when channel is IN_APP (default)', async () => {
       mockPrisma.notification.create.mockResolvedValue({ ...BASE_NOTIFICATION, channel: 'IN_APP' });
 
