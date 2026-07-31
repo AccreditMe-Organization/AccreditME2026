@@ -45,7 +45,7 @@ import { PublicHolidayFormComponent } from '../public-holiday-form/public-holida
     </div>
 
     @if (error()) {
-      <p class="text-red-500 mb-4">{{ error() }}</p>
+      <p class="text-red-500 mb-4">{{ error() | translate }}</p>
     }
 
     <p-table

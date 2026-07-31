@@ -24,7 +24,7 @@ import { PlatformTenantService, IPlatformTenantSummary } from '../../services/pl
       </div>
 
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
 
       <p-table [value]="tenants()" [loading]="loading()" styleClass="w-full" scrollable scrollHeight="flex">

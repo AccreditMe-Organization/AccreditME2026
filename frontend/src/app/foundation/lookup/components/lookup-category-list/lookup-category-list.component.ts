@@ -5,6 +5,7 @@ import { TableModule, TableRowSelectEvent } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { LookupService, LookupCategoryDto } from '../../services/lookup.service';
+import { LanguageService } from '../../../../core/services/language.service';
 
 @Component({
   selector: 'app-lookup-category-list',
@@ -17,7 +18,7 @@ import { LookupService, LookupCategoryDto } from '../../services/lookup.service'
       </div>
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-red-500">{{ error() | translate }}</p>
       }
 
       <p-table
@@ -86,6 +87,7 @@ export class LookupCategoryListComponent implements OnInit {
   private readonly lookupService = inject(LookupService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly languageService = inject(LanguageService);
 
   readonly loading = signal(false);
   readonly categories = signal<LookupCategoryDto[]>([]);
@@ -96,10 +98,7 @@ export class LookupCategoryListComponent implements OnInit {
   }
 
   displayLabel(cat: LookupCategoryDto): string {
-    // TODO: wire to TranslateService.currentLang to respect
-    // user language preference (currently always prefers Arabic
-    // when available)
-    return cat.labelAr || cat.labelEn;
+    return this.languageService.isArabic() ? (cat.labelAr || cat.labelEn) : cat.labelEn;
   }
 
   onRowSelect(event: TableRowSelectEvent<LookupCategoryDto>): void {

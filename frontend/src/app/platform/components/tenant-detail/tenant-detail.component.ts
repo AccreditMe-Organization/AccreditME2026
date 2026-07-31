@@ -29,10 +29,10 @@ import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
   template: `
     <div class="flex flex-col gap-6 max-w-3xl">
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
       @if (savedMessage()) {
-        <p-message severity="success" [text]="savedMessage()!" />
+        <p-message severity="success" [text]="savedMessage()! | translate" />
       }
 
       @if (tenant(); as t) {

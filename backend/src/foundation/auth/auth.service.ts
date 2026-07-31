@@ -198,7 +198,7 @@ export class AuthService {
     appUserId: string,
     req: ExpressRequest,
     res: ExpressResponse,
-  ): Promise<PublicUser> {
+  ): Promise<PublicUser & { language: string }> {
     const user = await this.prisma.user.findFirst({ where: { id: appUserId } });
     if (!user) throw new UnauthorizedException('Invalid organization or credentials');
     if (user.status !== 'ACTIVE') {
@@ -239,14 +239,18 @@ export class AuthService {
       );
     }
 
-    return { id: user.id, email: user.email, name: user.name };
+    // ACC-19 — resolved and returned alongside the login response (not just
+    // GET /auth/me) so a saved preference applies immediately on a fresh
+    // login, not only after a subsequent page-refresh restoreSession().
+    const language = await this.resolveLanguage(user.language, user.organizationId);
+    return { id: user.id, email: user.email, name: user.name, language };
   }
 
   async login(
     dto: LoginDto,
     req: ExpressRequest,
     res: ExpressResponse,
-  ): Promise<{ success: true; user: PublicUser } | { mfaRequired: true }> {
+  ): Promise<{ success: true; user: PublicUser; language: string } | { mfaRequired: true }> {
     const organizationId = await this.resolveOrganizationId(dto.organizationSlug);
     const namespacedEmail = AuthService.namespacedEmail(organizationId, dto.email);
 
@@ -307,15 +311,15 @@ export class AuthService {
       userAgent: req.headers['user-agent'],
     });
 
-    const user = await this.completeLogin(appUser.id, req, res);
-    return { success: true, user };
+    const { language, ...user } = await this.completeLogin(appUser.id, req, res);
+    return { success: true, user, language };
   }
 
   async verifyMfa(
     dto: VerifyMfaDto,
     req: ExpressRequest,
     res: ExpressResponse,
-  ): Promise<{ success: true; user: PublicUser }> {
+  ): Promise<{ success: true; user: PublicUser; language: string }> {
     let result: Response;
     try {
       result = (await this.auth.api.verifyTOTP({
@@ -335,8 +339,8 @@ export class AuthService {
     const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
     if (!appUser) throw new UnauthorizedException('Invalid or expired code');
 
-    const user = await this.completeLogin(appUser.id, req, res);
-    return { success: true, user };
+    const { language, ...user } = await this.completeLogin(appUser.id, req, res);
+    return { success: true, user, language };
   }
 
   async refresh(req: ExpressRequest, res: ExpressResponse): Promise<{ success: true }> {
@@ -592,6 +596,19 @@ export class AuthService {
 
     const authUser = await this.prisma.authUser.findUnique({ where: { id: appUser.authUserId } });
     return { enabled: authUser?.twoFactorEnabled ?? false };
+  }
+
+  // ACC-19 — used by AuthController.getMe() to resolve the effective
+  // language for session bootstrap: the user's own saved preference if
+  // set, otherwise the tenant's configured default (Organization.language,
+  // CLAUDE.md's "defaulted from tenant config"), otherwise 'en'.
+  async resolveLanguage(userLanguage: string | null, organizationId: string): Promise<string> {
+    if (userLanguage) return userLanguage;
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { language: true },
+    });
+    return org?.language ?? 'en';
   }
 
   // ACC-13 — deliberately cross-tenant, no organizationId filter. Used only

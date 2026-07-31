@@ -19,7 +19,7 @@ import { PlanService, IPlan } from '../../services/plan.service';
       </div>
 
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
 
       <p-table [value]="plans()" [loading]="loading()" styleClass="w-full">

@@ -32,7 +32,7 @@ import { InviteUserComponent } from '../invite-user/invite-user.component';
       </div>
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-red-500">{{ error() | translate }}</p>
       }
       @if (infoMessage()) {
         <p class="text-sm text-[var(--am-text-primary)]">{{ infoMessage() }}</p>

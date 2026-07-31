@@ -36,7 +36,7 @@ interface CascadeOption {
   ],
   template: `
     @if (loadError()) {
-      <p class="text-red-500 mb-4">{{ loadError() }}</p>
+      <p class="text-red-500 mb-4">{{ loadError() | translate }}</p>
     }
 
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -110,7 +110,7 @@ interface CascadeOption {
       </div>
 
       @if (saveError()) {
-        <p class="text-red-500">{{ saveError() }}</p>
+        <p class="text-red-500">{{ saveError() | translate }}</p>
       }
 
       <div class="flex gap-3 justify-end">

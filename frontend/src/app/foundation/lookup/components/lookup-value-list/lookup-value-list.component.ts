@@ -10,6 +10,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { LookupService, LookupCategoryDto, LookupValueDto } from '../../services/lookup.service';
 import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form.component';
+import { LanguageService } from '../../../../core/services/language.service';
 
 @Component({
   selector: 'app-lookup-value-list',
@@ -57,7 +58,7 @@ import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form
       </div>
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-red-500">{{ error() | translate }}</p>
       }
 
       <p-table
@@ -198,7 +199,7 @@ import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form
             <input pInputText dir="rtl" [(ngModel)]="overrideForm.labelAr" />
           </div>
           @if (overrideError()) {
-            <p class="text-red-500 text-sm">{{ overrideError() }}</p>
+            <p class="text-red-500 text-sm">{{ overrideError() | translate }}</p>
           }
           <div class="flex gap-3 justify-end">
             <p-button
@@ -225,6 +226,7 @@ export class LookupValueListComponent implements OnInit {
   private readonly lookupService = inject(LookupService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly languageService = inject(LanguageService);
 
   categoryKey = '';
 
@@ -249,17 +251,13 @@ export class LookupValueListComponent implements OnInit {
   }
 
   displayLabel(cat: LookupCategoryDto): string {
-    // TODO: wire to TranslateService.currentLang to respect
-    // user language preference (currently always prefers Arabic
-    // when available)
-    return cat.labelAr || cat.labelEn;
+    return this.languageService.isArabic() ? (cat.labelAr || cat.labelEn) : cat.labelEn;
   }
 
   effectiveLabel(val: LookupValueDto): string {
-    // TODO: wire to TranslateService.currentLang to respect
-    // user language preference (currently always prefers Arabic
-    // when available)
-    return val.labelOverrideEn || val.labelEn;
+    return this.languageService.isArabic()
+      ? (val.labelOverrideAr || val.labelAr || val.labelOverrideEn || val.labelEn)
+      : (val.labelOverrideEn || val.labelEn);
   }
 
   statusLabel(val: LookupValueDto): string {

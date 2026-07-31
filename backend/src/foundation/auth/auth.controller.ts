@@ -45,7 +45,8 @@ export class AuthController {
     const impersonatedBy = impersonatedByUserId
       ? await this.authService.getPublicUserById(impersonatedByUserId)
       : null;
-    return { id: user.id, email: user.email, name: user.name, impersonatedBy };
+    const language = await this.authService.resolveLanguage(user.language, organizationId);
+    return { id: user.id, email: user.email, name: user.name, language, impersonatedBy };
   }
 
   @Post('login')

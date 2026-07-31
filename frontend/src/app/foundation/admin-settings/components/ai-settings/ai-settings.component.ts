@@ -19,10 +19,10 @@ import { TenantService, ITenant } from '../../../tenant/services/tenant.service'
       <h2 class="text-xl font-semibold">{{ 'adminSettings.aiSettings' | translate }}</h2>
 
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
       @if (savedMessage()) {
-        <p-message severity="success" [text]="savedMessage()!" />
+        <p-message severity="success" [text]="savedMessage()! | translate" />
       }
 
       @if (tenant(); as t) {

@@ -60,7 +60,7 @@ const ACTION_TYPES = [
       </div>
 
       @if (error()) {
-        <p class="text-red-500 text-sm">{{ error() }}</p>
+        <p class="text-red-500 text-sm">{{ error() | translate }}</p>
       }
 
       <p-table [value]="actions" styleClass="w-full">
@@ -163,7 +163,7 @@ const ACTION_TYPES = [
           }
 
           @if (saveError()) {
-            <p class="text-red-500 text-sm">{{ saveError() }}</p>
+            <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
           }
 
           <div class="flex gap-3 justify-end">

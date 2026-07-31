@@ -115,6 +115,7 @@ describe('AuthService', () => {
       expect(result).toEqual({
         success: true,
         user: { id: 'user-1', email: 'a@example.com', name: 'A User' },
+        language: 'en',
       });
       expect(res.cookie).toHaveBeenCalledWith('access_token', expect.any(String), expect.any(Object));
       expect(res.cookie).toHaveBeenCalledWith('refresh_token', expect.any(String), expect.any(Object));
@@ -657,6 +658,30 @@ describe('AuthService', () => {
     it('returns null when the user does not exist', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null);
       await expect(service.getPublicUserById('missing')).resolves.toBeNull();
+    });
+  });
+
+  describe('resolveLanguage', () => {
+    it("returns the user's own language without querying the organization", async () => {
+      const result = await service.resolveLanguage('ar', ORG_A);
+      expect(result).toBe('ar');
+      expect(mockPrisma.organization.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the organization's language when the user has none set", async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ language: 'ar' });
+      const result = await service.resolveLanguage(null, ORG_A);
+      expect(result).toBe('ar');
+      expect(mockPrisma.organization.findUnique).toHaveBeenCalledWith({
+        where: { id: ORG_A },
+        select: { language: true },
+      });
+    });
+
+    it("falls back to 'en' when neither the user nor the organization has a language set", async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue(null);
+      const result = await service.resolveLanguage(null, ORG_A);
+      expect(result).toBe('en');
     });
   });
 });

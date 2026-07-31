@@ -47,7 +47,7 @@ import { RoleService, RoleDto, CreateRoleDto, UpdateRoleDto } from '../../servic
       </div>
 
       @if (saveError()) {
-        <p class="text-red-500 text-sm">{{ saveError() }}</p>
+        <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
       }
 
       <div class="flex gap-3 justify-end">

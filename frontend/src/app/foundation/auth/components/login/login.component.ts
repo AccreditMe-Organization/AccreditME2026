@@ -27,7 +27,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
         <h1 class="text-xl font-semibold text-center">{{ 'auth.login' | translate }}</h1>
 
         @if (error()) {
-          <p-message severity="error" [text]="error()!" />
+          <p-message severity="error" [text]="error()! | translate" />
         }
 
         @if (!mfaRequired()) {
