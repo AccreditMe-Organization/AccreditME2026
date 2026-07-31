@@ -57,7 +57,7 @@ import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form
       </div>
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-red-500">{{ error() | translate }}</p>
       }
 
       <p-table
@@ -198,7 +198,7 @@ import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form
             <input pInputText dir="rtl" [(ngModel)]="overrideForm.labelAr" />
           </div>
           @if (overrideError()) {
-            <p class="text-red-500 text-sm">{{ overrideError() }}</p>
+            <p class="text-red-500 text-sm">{{ overrideError() | translate }}</p>
           }
           <div class="flex gap-3 justify-end">
             <p-button

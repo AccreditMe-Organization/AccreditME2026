@@ -53,7 +53,7 @@ import { PositionFormComponent } from '../position-form/position-form.component'
       </div>
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-red-500">{{ error() | translate }}</p>
       }
 
       <p-table

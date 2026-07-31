@@ -61,7 +61,7 @@ const TRIGGER_CONDITIONS = [
       </div>
 
       @if (error()) {
-        <p class="text-red-500 text-sm">{{ error() }}</p>
+        <p class="text-red-500 text-sm">{{ error() | translate }}</p>
       }
 
       <p-table [value]="transitions" styleClass="w-full">
@@ -201,7 +201,7 @@ const TRIGGER_CONDITIONS = [
           </div>
 
           @if (saveError()) {
-            <p class="text-red-500 text-sm">{{ saveError() }}</p>
+            <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
           }
 
           <div class="flex gap-3 justify-end">
@@ -273,7 +273,7 @@ const TRIGGER_CONDITIONS = [
           </div>
 
           @if (saveError()) {
-            <p class="text-red-500 text-sm">{{ saveError() }}</p>
+            <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
           }
 
           <div class="flex gap-3 justify-end">

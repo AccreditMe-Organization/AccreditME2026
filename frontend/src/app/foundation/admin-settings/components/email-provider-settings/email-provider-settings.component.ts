@@ -30,10 +30,10 @@ const PROVIDER_OPTIONS = [
       <p class="text-sm text-[var(--am-text-secondary)]">{{ 'adminSettings.emailProviderNote' | translate }}</p>
 
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
       @if (savedMessage()) {
-        <p-message severity="success" [text]="savedMessage()!" />
+        <p-message severity="success" [text]="savedMessage()! | translate" />
       }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">

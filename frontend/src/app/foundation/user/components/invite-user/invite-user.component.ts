@@ -23,7 +23,7 @@ import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-u
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
 
       <div class="flex flex-col gap-1">

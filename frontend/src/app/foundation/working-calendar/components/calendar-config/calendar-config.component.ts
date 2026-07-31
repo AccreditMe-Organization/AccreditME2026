@@ -62,7 +62,7 @@ interface SuggestionState extends AiHolidaySuggestion {
     <h2 class="text-xl font-semibold mb-6">{{ 'workingCalendar.title' | translate }}</h2>
 
     @if (loadError()) {
-      <p class="text-red-500 mb-4">{{ loadError() }}</p>
+      <p class="text-red-500 mb-4">{{ loadError() | translate }}</p>
     }
 
     <div class="flex flex-col gap-6" style="max-width: 680px">
@@ -143,7 +143,7 @@ interface SuggestionState extends AiHolidaySuggestion {
 
       <!-- Save -->
       @if (saveError()) {
-        <p class="text-red-500">{{ saveError() }}</p>
+        <p class="text-red-500">{{ saveError() | translate }}</p>
       }
       <div class="flex justify-end">
         <p-button
@@ -217,7 +217,7 @@ interface SuggestionState extends AiHolidaySuggestion {
         }
 
         @if (aiError()) {
-          <p class="text-red-500 text-sm">{{ aiError() }}</p>
+          <p class="text-red-500 text-sm">{{ aiError() | translate }}</p>
         }
       </section>
 

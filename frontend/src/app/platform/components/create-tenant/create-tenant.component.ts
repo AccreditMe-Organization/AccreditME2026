@@ -18,7 +18,7 @@ import { PlanService, IPlan } from '../../services/plan.service';
       <h2 class="text-xl font-semibold">{{ 'platform.createTenant' | translate }}</h2>
 
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">

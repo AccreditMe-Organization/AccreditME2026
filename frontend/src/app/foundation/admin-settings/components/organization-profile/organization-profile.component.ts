@@ -15,10 +15,10 @@ import { TenantService } from '../../../tenant/services/tenant.service';
       <h2 class="text-xl font-semibold">{{ 'adminSettings.organizationProfile' | translate }}</h2>
 
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
       @if (savedMessage()) {
-        <p-message severity="success" [text]="savedMessage()!" />
+        <p-message severity="success" [text]="savedMessage()! | translate" />
       }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">

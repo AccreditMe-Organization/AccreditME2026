@@ -27,10 +27,10 @@ const ACCESS_LEVEL_OPTIONS = [
       </h2>
 
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
       @if (savedMessage()) {
-        <p-message severity="success" [text]="savedMessage()!" />
+        <p-message severity="success" [text]="savedMessage()! | translate" />
       }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">

@@ -32,7 +32,7 @@ import { OrgUnitFormComponent } from '../org-unit-form/org-unit-form.component';
     </div>
 
     @if (error()) {
-      <p class="text-red-500 mb-4">{{ error() }}</p>
+      <p class="text-red-500 mb-4">{{ error() | translate }}</p>
     }
 
     <p-treeTable

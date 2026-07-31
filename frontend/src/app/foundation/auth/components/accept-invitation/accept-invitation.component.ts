@@ -17,7 +17,7 @@ import { AuthService } from '../../../../core/services/auth.service';
         <h1 class="text-xl font-semibold text-center">{{ 'auth.acceptInvitation' | translate }}</h1>
 
         @if (error()) {
-          <p-message severity="error" [text]="error()!" />
+          <p-message severity="error" [text]="error()! | translate" />
         }
         @if (success()) {
           <p-message severity="success" [text]="'auth.acceptInvitationSuccess' | translate" />

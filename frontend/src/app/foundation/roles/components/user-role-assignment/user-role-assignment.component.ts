@@ -20,7 +20,7 @@ import { RoleService, RoleDto } from '../../services/role.service';
       <h3 class="font-semibold text-sm">{{ 'roles.assignedUsers' | translate }}</h3>
 
       @if (error()) {
-        <p class="text-red-500 text-sm">{{ error() }}</p>
+        <p class="text-red-500 text-sm">{{ error() | translate }}</p>
       }
 
       <ul class="flex flex-col gap-2">

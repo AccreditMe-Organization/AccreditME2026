@@ -17,7 +17,7 @@ import { LookupService, LookupCategoryDto } from '../../services/lookup.service'
       </div>
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-red-500">{{ error() | translate }}</p>
       }
 
       <p-table

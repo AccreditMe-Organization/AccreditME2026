@@ -48,7 +48,7 @@ const POLL_INTERVAL_MS = 30000;
         @if (loading()) {
           <p class="text-sm text-surface-400">{{ 'common.loading' | translate }}</p>
         } @else if (error()) {
-          <p class="text-sm text-red-500">{{ error() }}</p>
+          <p class="text-sm text-red-500">{{ error() | translate }}</p>
         } @else if (recent().length === 0) {
           <p class="text-sm text-surface-400 py-4 text-center">
             {{ 'notification.noNotifications' | translate }}

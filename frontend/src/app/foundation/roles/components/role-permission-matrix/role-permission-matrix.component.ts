@@ -43,7 +43,7 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
       }
 
       @if (error()) {
-        <p class="text-red-500">{{ error() }}</p>
+        <p class="text-red-500">{{ error() | translate }}</p>
       }
 
       @if (loading()) {
@@ -76,7 +76,7 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
       }
 
       @if (saveError()) {
-        <p class="text-red-500 text-sm">{{ saveError() }}</p>
+        <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
       }
 
       <div class="flex gap-3 justify-end">

@@ -44,10 +44,10 @@ import { LanguageService } from '../../../../core/services/language.service';
   template: `
     <div class="flex flex-col gap-6 p-6 max-w-2xl">
       @if (error()) {
-        <p-message severity="error" [text]="error()!" />
+        <p-message severity="error" [text]="error()! | translate" />
       }
       @if (savedMessage()) {
-        <p-message severity="success" [text]="savedMessage()!" />
+        <p-message severity="success" [text]="savedMessage()! | translate" />
       }
 
       @if (user(); as u) {
@@ -160,10 +160,10 @@ import { LanguageService } from '../../../../core/services/language.service';
           <h3 class="text-lg font-medium">{{ 'user.mfa.title' | translate }}</h3>
 
           @if (mfaError()) {
-            <p-message severity="error" [text]="mfaError()!" />
+            <p-message severity="error" [text]="mfaError()! | translate" />
           }
           @if (mfaSuccessMessage()) {
-            <p-message severity="success" [text]="mfaSuccessMessage()!" />
+            <p-message severity="success" [text]="mfaSuccessMessage()! | translate" />
           }
 
           @if (mfaEnabled() === false && !mfaSetupResult()) {
