@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { PlatformGuard } from '../../common/guards/platform.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { LOOKUPS_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
@@ -46,8 +47,15 @@ export class LookupController {
     return this.lookupService.getCategoryByKey(key, tenantId);
   }
 
+  // SYSTEM LookupCategory rows (organizationId: null) are shared across
+  // every tenant on the platform — mutating one here is not a tenant-scoped
+  // write the way every other endpoint in this controller is (contrast
+  // LookupValue's tenant-override upsert pattern, which IS safe under
+  // lookups:manage). PlatformGuard, not @Permissions(), gates these two —
+  // see ACC-17. Deliberately no @Permissions() here: PermissionGuard passes
+  // trivially with none set, so PlatformGuard is the real (and only) check.
   @Patch('categories/:key')
-  @Permissions(LOOKUPS_PERMISSIONS.MANAGE)
+  @UseGuards(PlatformGuard)
   updateCategory(
     @Param('key') key: string,
     @Body() dto: UpdateLookupCategoryDto,
@@ -59,7 +67,7 @@ export class LookupController {
 
   @Post('categories/:key/deactivate')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Permissions(LOOKUPS_PERMISSIONS.MANAGE)
+  @UseGuards(PlatformGuard)
   deactivateCategory(
     @Param('key') key: string,
     @CurrentTenant() tenantId: string,

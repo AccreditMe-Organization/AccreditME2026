@@ -3,6 +3,7 @@ import { LookupController } from './lookup.controller';
 import { LookupService } from './lookup.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { PlatformGuard } from '../../common/guards/platform.guard';
 import { ILookupCategory } from './interfaces/lookup-category.interface';
 import { ILookupValue } from './interfaces/lookup-value.interface';
 import { CreateLookupValueDto } from './dto/create-lookup-value.dto';
@@ -92,6 +93,8 @@ describe('LookupController', () => {
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PlatformGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
