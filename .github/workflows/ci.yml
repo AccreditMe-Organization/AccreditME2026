@@ -63,6 +63,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: backend
+      - name: Generate Prisma Client
+        # Required before tsc/jest -- code imports from generated/prisma/client,
+        # which is gitignored and only exists after this runs. Not a DB
+        # operation (schema.prisma -> generated code only), so it doesn't
+        # need the postgres service container below.
+        run: npx prisma generate
+        working-directory: backend
       - name: TypeScript check
         run: npx tsc --noEmit
         working-directory: backend
@@ -116,6 +123,9 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - name: Install dependencies
         run: npm ci
+        working-directory: backend
+      - name: Generate Prisma Client
+        run: npx prisma generate
         working-directory: backend
       - name: Run tenant isolation tests
         # No DATABASE_URL here — every isolation test mocks PrismaService
