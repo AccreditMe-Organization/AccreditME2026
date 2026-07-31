@@ -185,21 +185,64 @@ ACC-13/14 Step 12: Navigation shell + Super Admin Portal + Tenant Admin
                 separately; both tickets closed Done.
                 (Stripe/billing deferred to Phase 2)
 
-### Design Foundation (Next)
-ACC-15: Spacing/typography/component design foundation
-                Branch: feature/ACC-15-design-foundation (ticket
-                created, status Todo). Spacing/sizing scale, typography
-                scale, consistent table/card/badge patterns using the
-                existing --am-* CSS variables (status/severity colors
-                defined in tokens.scss but currently unused), applied
-                across the navigation shell, Super Admin Portal, and
-                Tenant Admin Settings screens that already exist.
+### Design Foundation (Complete)
+ACC-15: Spacing/typography/component design foundation ✅ (merged to dev)
+                Spacing/sizing scale, typography scale, consistent
+                table/card/badge patterns using the existing --am-*
+                CSS variables (status/severity colors defined in
+                tokens.scss but currently unused), applied across the
+                navigation shell, Super Admin Portal, and Tenant Admin
+                Settings screens that already exist.
                 Explicitly NOT full visual/brand polish (illustrations,
                 distinctive layout personality) — that stays a separate
                 future ticket, still positioned right before the demo
                 milestone, after Document Management.
 
-### Governance Modules
+### Post-Design-Foundation Fixes (Complete)
+ACC-16: Post-ACC-15 fixes ✅ (merged to dev)
+                Translation key dedup, NG04002 navigation crash fix,
+                Org Positions permission-seed gap (+ existing-tenant
+                backfill), settings-hub permission filtering,
+                last-admin lockout protection.
+ACC-17: Tenant isolation fixes ✅ (merged to dev)
+                PlatformGuard-only SYSTEM lookup category mutation,
+                NotificationService.create() userId/organizationId
+                validation, 3 corrected mislabeled tests.
+ACC-18: Post-ACC-15 UI gaps ✅ (merged to dev)
+                Navbar/notification-bell overlap, Add Unit modal
+                conversion, Lookups page discoverability chevron,
+                topbar profile-menu (My Profile/Logout).
+
+### i18n / RTL Foundation (Complete)
+ACC-19: Language switching and RTL layout support ✅ (merged to dev)
+                language field on GET /auth/me, app-bootstrap language
+                resolution, live profile-page language switch, central
+                LanguageService (owns all translate.use()/dir/lang
+                writes), 3 orphaned TODOs closed, empirical automated
+                + manual RTL verification.
+                Full RTL visual audit (auditing all ~15+ existing
+                screens for RTL correctness — icon mirroring,
+                breadcrumb arrow direction, table column order, form
+                alignment) remains explicitly deferred, positioned at
+                the same point as the full visual/brand polish ticket
+                — right before the demo milestone, after Document
+                Management. ACC-19 only built and verified the
+                underlying mechanism on a representative sample (nav
+                shell, one form, one table), not a full audit.
+
+### Infrastructure Fixes (Complete)
+ACC-20: Enabled real CI ✅ (merged to dev)
+                backend/frontend/tenant-isolation jobs had been
+                commented out since scaffold, 19 days post-
+                initialization, never re-enabled. Also fixed lockfile
+                drift (missing Linux-platform optional dependencies)
+                and a missing prisma generate step in CI.
+ACC-21: Fixed platformAdminGuard hard-reload race condition ✅
+                (merged to dev)
+                NavigationAccessService.loadAccess() added to the app
+                initializer, chained after restoreSession().
+
+### Governance Modules (Next)
 Committee Management
                (depends on: navigation shell)
 Meeting Management
@@ -1269,6 +1312,82 @@ Prisma Studio.
   routing to make Home a real parent just to get this; instead
   hardcode a first "Home" entry in `BreadcrumbComponent` pointing at
   `/`.
+
+## Key Architecture Decisions (ACC-16 through ACC-21)
+
+- **Tenant Admin remains a Role** (not a separate entity type),
+  consistent with Platform Admin's own pattern — but a Tenant Admin
+  DOES count against the tenant's licensed seat limit
+  (`Plan.maxFullUsers`), same as any other user. Explicit business
+  decision, not a technical default.
+- **Last-admin lockout protection** (ACC-16): `RoleService` already
+  guarded both `removeRoleFromUser()` and `deactivateRole()` against
+  removing a tenant's last `TENANT_ADMIN`; `UserService`'s departure
+  flow (`deactivate()`) did NOT have the equivalent guard until
+  ACC-16 — now fixed, using the same pattern, with the
+  `notifyTenantAdminsOfDeparture()` query reordered to run BEFORE the
+  status flip (previously would have silently notified no one in the
+  exact last-admin scenario it was fixing).
+- **`LookupCategory` (SYSTEM/shared rows, `organizationId: null`)
+  mutation requires `PlatformGuard`**, not tenant-level
+  `lookups:manage` — closes a cross-tenant integrity gap (ACC-17).
+  `LookupValue`'s existing tenant-scoped override pattern is
+  unaffected and remains the correct, safe mechanism for tenant-level
+  customization.
+- **`NotificationService.create()` validates `dto.userId` belongs to
+  the `organizationId` passed in**, before writing — closes an
+  unscoped-write gap most directly reachable via workflow
+  `SEND_NOTIFICATION` actions (ACC-17). Defense-in-depth also added
+  in `workflow-template.service.ts` for `assigneeUserId` at write-time.
+  `committeeId` validation intentionally deferred (no
+  Committee/CommitteeMember table exists yet) — MUST be revisited
+  when Committee Management ships, since that's what makes this path
+  live rather than dormant.
+- **`LanguageService`** (`frontend/src/app/core/services/language.service.ts`,
+  ACC-19) is the single owning mechanism for `translate.use()` calls
+  and `document.documentElement` `dir`/`lang` writes — no other
+  component should touch these directly. Language resolution order:
+  `user.language` → `organization.language` → `'en'`. Applied at
+  app-bootstrap (blocking initializer, same pattern as session
+  restore) and live-switches on profile save (`TranslatePipe`-bound
+  template text updates automatically; imperative consumers must
+  read `LanguageService`'s `isArabic()`/`isRtl()` signals instead of
+  deriving their own).
+- **App initializer pattern** (`app.config.ts`) now chains THREE
+  sequential concerns before initial navigation: session restore →
+  language resolution → platform/tenant permission loading
+  (`NavigationAccessService.loadAccess()`, ACC-21). Any future
+  concern that must be resolved before a route guard can evaluate
+  correctly belongs in this same chain, not a per-guard workaround.
+- **`NavigationAccessService.loadAccess()` is deliberately called
+  from BOTH the app initializer (fixes hard-reload guard timing,
+  ACC-21) AND `AppShellComponent.ngOnInit()`** (required for
+  same-tab logout→login without a full page reload — the initializer
+  only runs once per page load). The resulting double-call on hard
+  reload is an accepted, harmless tradeoff, not an oversight — do not
+  "simplify" this to one call site without re-introducing one of the
+  two bugs this dual pattern fixes.
+- **CI** (`.github/workflows/ci.yml`) had backend/frontend/tenant-isolation
+  jobs commented out since scaffold (19+ days, forgotten not
+  deliberate) — now real and enabled (ACC-20). Backend job includes
+  `prisma generate` (required — `generated/` is gitignored) and
+  `prisma migrate deploy` against an ephemeral CI Postgres container
+  (not `migrate status` against an assumed pre-existing DB). Lockfiles
+  must be regenerated on Linux (WSL or equivalent) going forward if
+  new dependencies are added, to avoid Windows-only lockfiles missing
+  Linux-platform optional dependency entries.
+
+## Open / Deferred Items
+
+- **Resend email domain (`accreditme.com`) is not verified** in the
+  Resend dashboard — invitation/notification emails will not actually
+  deliver until this is configured. Infrastructure task, not a code
+  fix, needs doing before any real customer relies on email-based
+  flows.
+- **Full RTL visual audit** — deferred, see the i18n / RTL Foundation
+  note in Build Sequence above. Positioned right before the demo
+  milestone, after Document Management, alongside the full
+  visual/brand polish ticket.
 
 ---
 
