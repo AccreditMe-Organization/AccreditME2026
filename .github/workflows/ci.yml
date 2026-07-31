@@ -9,9 +9,6 @@ on:
 jobs:
   # ─────────────────────────────────────────────
   # Stage 1 — Repository structure validation
-  # This job runs now while the project is being scaffolded.
-  # It will be replaced by real backend/frontend jobs once
-  # the NestJS and Angular projects are initialized.
   # ─────────────────────────────────────────────
   validate-repo:
     name: Validate Repository
@@ -35,78 +32,94 @@ jobs:
           echo "✅ Secret file check passed"
 
   # ─────────────────────────────────────────────
-  # Stage 2 — Backend (uncomment when backend/ exists)
+  # Stage 2 — Backend
   # ─────────────────────────────────────────────
-  # backend:
-  #   name: Backend — Lint, Type Check, Test
-  #   runs-on: ubuntu-latest
-  #   needs: validate-repo
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
-  #         cache: 'npm'
-  #         cache-dependency-path: backend/package-lock.json
-  #     - name: Install dependencies
-  #       run: npm ci
-  #       working-directory: backend
-  #     - name: TypeScript check
-  #       run: npx tsc --noEmit
-  #       working-directory: backend
-  #     - name: Run unit tests
-  #       run: npx jest --passWithNoTests
-  #       working-directory: backend
-  #     - name: Check migration status
-  #       run: npx prisma migrate status
-  #       working-directory: backend
-  #       env:
-  #         DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  backend:
+    name: Backend — Type Check, Test, Migrations
+    runs-on: ubuntu-latest
+    needs: validate-repo
+    services:
+      postgres:
+        # Matches accreditme-production's Supabase Postgres engine (17.6.1)
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+      - name: TypeScript check
+        run: npx tsc --noEmit
+        working-directory: backend
+      - name: Run unit tests
+        run: npx jest --passWithNoTests
+        working-directory: backend
+      - name: Apply migrations to ephemeral database
+        run: npx prisma migrate deploy
+        working-directory: backend
+        env:
+          # Ephemeral per-run container — no secret needed, nothing to leak.
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test
 
   # ─────────────────────────────────────────────
-  # Stage 3 — Frontend (uncomment when frontend/ exists)
+  # Stage 3 — Frontend
   # ─────────────────────────────────────────────
-  # frontend:
-  #   name: Frontend — Lint, Type Check, Build
-  #   runs-on: ubuntu-latest
-  #   needs: validate-repo
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
-  #         cache: 'npm'
-  #         cache-dependency-path: frontend/package-lock.json
-  #     - name: Install dependencies
-  #       run: npm ci
-  #       working-directory: frontend
-  #     - name: TypeScript check
-  #       run: npx tsc --noEmit
-  #       working-directory: frontend
-  #     - name: Build Angular app
-  #       run: npm run build
-  #       working-directory: frontend
+  frontend:
+    name: Frontend — Lint, Type Check, Build
+    runs-on: ubuntu-latest
+    needs: validate-repo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: TypeScript check
+        run: npx tsc --noEmit
+        working-directory: frontend
+      - name: Build Angular app
+        run: npm run build
+        working-directory: frontend
 
   # ─────────────────────────────────────────────
   # Stage 4 — Tenant isolation tests
-  # (uncomment when backend tests exist)
   # ─────────────────────────────────────────────
-  # tenant-isolation:
-  #   name: Tenant Isolation Tests
-  #   runs-on: ubuntu-latest
-  #   needs: backend
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
-  #         cache: 'npm'
-  #         cache-dependency-path: backend/package-lock.json
-  #     - name: Install dependencies
-  #       run: npm ci
-  #       working-directory: backend
-  #     - name: Run tenant isolation tests
-  #       run: npx jest --testNamePattern="should NOT return records belonging to a different tenant" --passWithNoTests
-  #       working-directory: backend
-  #       env:
-  #         DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  tenant-isolation:
+    name: Tenant Isolation Tests
+    runs-on: ubuntu-latest
+    needs: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+      - name: Run tenant isolation tests
+        # No DATABASE_URL here — every isolation test mocks PrismaService
+        # directly (Test.createTestingModule's useValue), so no real
+        # database connection is ever made by this step.
+        run: npx jest --testNamePattern="should NOT return records belonging to a different tenant" --passWithNoTests
+        working-directory: backend
