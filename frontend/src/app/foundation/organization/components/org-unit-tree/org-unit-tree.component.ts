@@ -1,24 +1,33 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { TreeNode } from 'primeng/api';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TreeTableModule } from 'primeng/treetable';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
+import { DialogModule } from 'primeng/dialog';
 import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/org-unit.service';
+import { OrgUnitFormComponent } from '../org-unit-form/org-unit-form.component';
 
 @Component({
   selector: 'app-org-unit-tree',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, TreeTableModule, ButtonModule, TagModule, TooltipModule],
+  imports: [
+    TranslatePipe,
+    TreeTableModule,
+    ButtonModule,
+    TagModule,
+    TooltipModule,
+    DialogModule,
+    OrgUnitFormComponent,
+  ],
   template: `
     <div class="flex justify-between items-center mb-4">
       <h2 class="text-xl font-semibold">{{ 'organization.title' | translate }}</h2>
       <p-button
         icon="pi pi-plus"
         [label]="'organization.addUnit' | translate"
-        [routerLink]="['new']"
+        (onClick)="onAdd()"
       />
     </div>
 
@@ -63,15 +72,14 @@ import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/o
                 icon="pi pi-plus"
                 [text]="true"
                 size="small"
-                [routerLink]="['new']"
-                [queryParams]="{ parentId: rowData.id }"
+                (onClick)="onAddChild(rowData)"
                 [pTooltip]="'organization.addChildUnit' | translate"
               />
               <p-button
                 icon="pi pi-pencil"
                 [text]="true"
                 size="small"
-                [routerLink]="[rowData.id, 'edit']"
+                (onClick)="onEdit(rowData)"
                 [pTooltip]="'common.edit' | translate"
               />
               <p-button
@@ -96,6 +104,22 @@ import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/o
         </tr>
       </ng-template>
     </p-treeTable>
+
+    <p-dialog
+      [(visible)]="formVisible"
+      [header]="(editingUnit() ? 'organization.editUnit' : 'organization.addUnit') | translate"
+      [modal]="true"
+      styleClass="w-full max-w-lg"
+    >
+      @if (formVisible()) {
+        <app-org-unit-form
+          [unit]="editingUnit()"
+          [parentId]="newUnitParentId()"
+          (saved)="onFormSaved()"
+          (cancelled)="formVisible.set(false)"
+        />
+      }
+    </p-dialog>
   `,
 })
 export class OrgUnitTreeComponent implements OnInit {
@@ -105,12 +129,39 @@ export class OrgUnitTreeComponent implements OnInit {
   readonly treeNodes = signal<TreeNode<OrgUnitDto>[]>([]);
   readonly error = signal<string | null>(null);
 
+  readonly formVisible = signal(false);
+  readonly editingUnit = signal<OrgUnitDto | null>(null);
+  readonly newUnitParentId = signal<string | null>(null);
+
   ngOnInit(): void {
     this.loadTree();
   }
 
   displayName(unit: OrgUnitDto): string {
     return orgUnitDisplayName(unit);
+  }
+
+  onAdd(): void {
+    this.editingUnit.set(null);
+    this.newUnitParentId.set(null);
+    this.formVisible.set(true);
+  }
+
+  onAddChild(parent: OrgUnitDto): void {
+    this.editingUnit.set(null);
+    this.newUnitParentId.set(parent.id);
+    this.formVisible.set(true);
+  }
+
+  onEdit(unit: OrgUnitDto): void {
+    this.editingUnit.set(unit);
+    this.newUnitParentId.set(null);
+    this.formVisible.set(true);
+  }
+
+  onFormSaved(): void {
+    this.formVisible.set(false);
+    this.loadTree();
   }
 
   onDeactivate(unit: OrgUnitDto): void {

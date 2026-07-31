@@ -1,5 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Component, OnInit, inject, input, output, signal, computed } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -26,7 +25,6 @@ interface CascadeOption {
   selector: 'app-org-unit-form',
   standalone: true,
   imports: [
-    RouterLink,
     ReactiveFormsModule,
     TranslatePipe,
     ButtonModule,
@@ -37,21 +35,11 @@ interface CascadeOption {
     TooltipModule,
   ],
   template: `
-    <div class="mb-4">
-      <a [routerLink]="['../..']" class="text-sm text-[var(--am-text-secondary)]">
-        ← {{ 'organization.title' | translate }}
-      </a>
-    </div>
-
-    <h2 class="text-xl font-semibold mb-6">
-      {{ (editId() ? 'organization.editUnit' : 'organization.addUnit') | translate }}
-    </h2>
-
     @if (loadError()) {
       <p class="text-red-500 mb-4">{{ loadError() }}</p>
     }
 
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4" style="max-width: 640px">
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
 
       <div class="flex flex-col gap-1">
         <label for="nameEn" class="font-medium text-sm">
@@ -130,7 +118,8 @@ interface CascadeOption {
           [label]="'common.cancel' | translate"
           severity="secondary"
           [text]="true"
-          [routerLink]="['../..']"
+          (onClick)="cancelled.emit()"
+          [disabled]="saving()"
         />
         <p-button
           type="submit"
@@ -144,12 +133,20 @@ interface CascadeOption {
   `,
 })
 export class OrgUnitFormComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly fb = inject(FormBuilder);
   private readonly orgUnitService = inject(OrgUnitService);
 
-  readonly editId = signal<string | null>(null);
+  // null = add mode, set = edit mode — same convention as PositionFormComponent's
+  // [position] input.
+  readonly unit = input<OrgUnitDto | null>(null);
+  // Only relevant in add mode — pre-fills parentId when adding a child unit
+  // from a specific row (replaces the old ?parentId= query param, which no
+  // longer exists now that this isn't a routed page).
+  readonly parentId = input<string | null>(null);
+
+  readonly saved = output<void>();
+  readonly cancelled = output<void>();
+
   readonly codeLocked = signal(false);
   readonly codeManuallyEdited = signal(false);
   readonly saving = signal(false);
@@ -160,7 +157,7 @@ export class OrgUnitFormComponent implements OnInit {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   readonly cascadeOptions = computed<any[]>(() =>
-    this.buildCascadeOptions(this.flatUnits(), this.editId(), null),
+    this.buildCascadeOptions(this.flatUnits(), this.unit()?.id ?? null, null),
   );
 
   readonly form = this.fb.group({
@@ -173,38 +170,29 @@ export class OrgUnitFormComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    this.editId.set(id);
-
     this.orgUnitService.getFlat().subscribe({
       next: (units) => this.flatUnits.set(units),
       error: () => this.loadError.set('Failed to load organization units'),
     });
 
-    if (id) {
-      this.orgUnitService.getTree().subscribe({
-        next: (units) => {
-          const unit = this.findUnit(units, id);
-          if (!unit) { this.loadError.set('Unit not found'); return; }
+    const unit = this.unit();
+    if (unit) {
+      if (unit.isCodeLocked) {
+        this.codeLocked.set(true);
+        this.form.get('code')?.disable();
+      }
+      this.codeManuallyEdited.set(true);
 
-          if (unit.isCodeLocked) {
-            this.codeLocked.set(true);
-            this.form.get('code')?.disable();
-          }
-
-          this.codeManuallyEdited.set(true);
-
-          this.form.patchValue({
-            nameEn: unit.nameEn,
-            nameAr: unit.nameAr ?? '',
-            code: unit.code,
-            parentId: unit.parentId,
-            description: unit.description ?? '',
-            sortOrder: unit.sortOrder,
-          });
-        },
-        error: () => this.loadError.set('Failed to load unit'),
+      this.form.patchValue({
+        nameEn: unit.nameEn,
+        nameAr: unit.nameAr ?? '',
+        code: unit.code,
+        parentId: unit.parentId,
+        description: unit.description ?? '',
+        sortOrder: unit.sortOrder,
       });
+    } else if (this.parentId()) {
+      this.form.patchValue({ parentId: this.parentId() });
     }
   }
 
@@ -228,7 +216,7 @@ export class OrgUnitFormComponent implements OnInit {
     this.saving.set(true);
     this.saveError.set(null);
 
-    const id = this.editId();
+    const id = this.unit()?.id ?? null;
     const value = this.form.getRawValue();
 
     const payload = {
@@ -245,25 +233,15 @@ export class OrgUnitFormComponent implements OnInit {
       : this.orgUnitService.create(payload as CreateOrgUnitDto);
 
     request$.subscribe({
-      // Absolute path, not relativeTo — see ACC-16 (NG04002 on relative '..'
-      // navigation across this route's lazy-loaded boundary).
-      next: () => this.router.navigate(['/organization']),
+      next: () => {
+        this.saving.set(false);
+        this.saved.emit();
+      },
       error: (err) => {
         this.saveError.set(err?.error?.message ?? 'Save failed');
         this.saving.set(false);
       },
     });
-  }
-
-  private findUnit(units: OrgUnitDto[], id: string): OrgUnitDto | null {
-    for (const unit of units) {
-      if (unit.id === id) return unit;
-      if (unit.children?.length) {
-        const found = this.findUnit(unit.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
   }
 
   private buildCascadeOptions(

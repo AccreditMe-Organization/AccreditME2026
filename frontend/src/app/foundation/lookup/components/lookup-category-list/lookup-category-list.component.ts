@@ -31,11 +31,12 @@ import { LookupService, LookupCategoryDto } from '../../services/lookup.service'
       >
         <ng-template pTemplate="header">
           <tr>
-            <th style="width: 35%">{{ 'lookup.columnLabel' | translate }}</th>
+            <th style="width: 30%">{{ 'lookup.columnLabel' | translate }}</th>
             <th style="width: 25%">{{ 'lookup.columnKey' | translate }}</th>
             <th style="width: 15%">{{ 'lookup.columnSystem' | translate }}</th>
             <th style="width: 15%">{{ 'lookup.columnExtensible' | translate }}</th>
             <th style="width: 10%">{{ 'lookup.columnStatus' | translate }}</th>
+            <th style="width: 5%"></th>
           </tr>
         </ng-template>
 
@@ -64,12 +65,15 @@ import { LookupService, LookupCategoryDto } from '../../services/lookup.service'
                 [severity]="row.isActive ? 'success' : 'secondary'"
               />
             </td>
+            <td class="text-end">
+              <i class="pi pi-chevron-right text-[var(--am-text-secondary)]"></i>
+            </td>
           </tr>
         </ng-template>
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="5" class="text-center py-8 text-[var(--am-text-secondary)]">
+            <td colspan="6" class="text-center py-8 text-[var(--am-text-secondary)]">
               {{ 'lookup.noCategories' | translate }}
             </td>
           </tr>
