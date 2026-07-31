@@ -6,12 +6,33 @@ import { provideTranslateService } from '@ngx-translate/core';
 import { provideTranslateHttpLoader } from '@ngx-translate/http-loader';
 import { providePrimeNG } from 'primeng/config';
 import { ConfirmationService } from 'primeng/api';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, of, switchMap } from 'rxjs';
 
 import { authInterceptor } from './core/interceptors/auth.interceptor';
 import { AuthService } from './core/services/auth.service';
+import { NavigationAccessService } from './core/services/navigation-access.service';
 import { AccreditMePreset } from './core/theme/accreditme-preset';
 import { routes } from './app.routes';
+
+// Exported (not inlined into provideAppInitializer below) so it can be unit
+// tested directly via TestBed.runInInjectionContext — proving the ORDERING
+// guarantee (loadAccess() is not even attempted until restoreSession() has
+// resolved, and the returned promise does not settle until both requests
+// complete) is the whole point of ACC-21; a steady-state test of the guard
+// alone can't exercise that (see navigation-access.service.ts's own comment
+// for why loadAccess() has two call sites, not one).
+export function initializeSession(): Promise<void> {
+  const authService = inject(AuthService);
+  const navigationAccessService = inject(NavigationAccessService);
+
+  return firstValueFrom(
+    authService.restoreSession().pipe(
+      switchMap(() =>
+        authService.isAuthenticated() ? navigationAccessService.loadAccess() : of(undefined),
+      ),
+    ),
+  );
+}
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -40,10 +61,16 @@ export const appConfig: ApplicationConfig = {
     // window.confirm() TODO by injecting this directly rather than each
     // providing its own instance (Step 9, Section 12 Discussion 5).
     ConfirmationService,
-    // Restores currentUser from the access_token cookie before the router's
-    // initial navigation runs (provideRouter defaults to initialNavigation:
-    // 'enabledBlocking', which waits on app initializers) — otherwise
-    // authGuard would always see a null signal on refresh/direct navigation.
-    provideAppInitializer(() => firstValueFrom(inject(AuthService).restoreSession())),
+    // Restores currentUser AND loads platform-admin/tenant permission data
+    // before the router's initial navigation runs (provideRouter defaults to
+    // initialNavigation: 'enabledBlocking', which waits on app initializers)
+    // — otherwise authGuard would always see a null signal on refresh/direct
+    // navigation (ACC-12), and platformAdminGuard could race
+    // NavigationAccessService's async permission load on a hard reload of a
+    // deep /platform/* URL, incorrectly bouncing a real platform admin to
+    // /organization (ACC-21). See initializeSession() above and
+    // navigation-access.service.ts's header comment for why loadAccess()
+    // still ALSO has a second call site in AppShellComponent.ngOnInit().
+    provideAppInitializer(initializeSession),
   ]
 };
