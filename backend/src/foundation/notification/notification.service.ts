@@ -26,7 +26,20 @@ export class NotificationService {
     @InjectQueue('email-delivery') private readonly emailDeliveryQueue: Queue,
   ) {}
 
+  // dto.userId is re-validated against organizationId here — the layer
+  // boundary, not just the one call site that currently passes it
+  // unscoped (workflow.service.ts's SEND_NOTIFICATION action, resolving a
+  // SPECIFIC_USER-strategy stage's assigneeUserId with no tenant check of
+  // its own — see ACC-17). Every current and future caller is protected by
+  // fixing it here, not by re-auditing each caller individually.
   async create(dto: CreateNotificationDto, organizationId: string): Promise<INotification> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: dto.userId, organizationId },
+    });
+    if (!user) {
+      throw new NotFoundException('Notification target user not found in this tenant');
+    }
+
     const notification = await this.prisma.notification.create({
       data: {
         organizationId,

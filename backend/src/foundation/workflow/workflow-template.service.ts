@@ -324,6 +324,10 @@ export class WorkflowTemplateService {
     });
     if (!template) throw new NotFoundException('Workflow template not found');
 
+    if (dto.assigneeUserId) {
+      await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
+    }
+
     const stage = await this.prisma.workflowStage.create({
       data: {
         workflowTemplateId: templateId,
@@ -337,6 +341,10 @@ export class WorkflowTemplateService {
         isFinal: dto.isFinal ?? false,
         approvalMode: dto.approvalMode,
         parallelThreshold: dto.parallelThreshold ?? null,
+        // TODO(Committee Management): not org-validated like assigneeUserId
+        // just below — no Committee/CommitteeMember data exists anywhere
+        // yet, so there's nothing to validate against today. Must add the
+        // same re-scoping check here once that module ships (see ACC-17).
         committeeId: dto.committeeId ?? null,
         assigneeStrategy: dto.assigneeStrategy,
         assigneeUserId: dto.assigneeUserId ?? null,
@@ -368,6 +376,10 @@ export class WorkflowTemplateService {
     });
     if (!stage) throw new NotFoundException('Workflow stage not found');
 
+    if (dto.assigneeUserId) {
+      await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
+    }
+
     const updated = await this.prisma.workflowStage.update({
       where: { id },
       data: {
@@ -381,6 +393,8 @@ export class WorkflowTemplateService {
         ...(dto.isFinal !== undefined && { isFinal: dto.isFinal }),
         ...(dto.approvalMode !== undefined && { approvalMode: dto.approvalMode }),
         ...(dto.parallelThreshold !== undefined && { parallelThreshold: dto.parallelThreshold }),
+        // TODO(Committee Management): see the same TODO in addStage above —
+        // not org-validated yet, nothing real to validate against today.
         ...(dto.committeeId !== undefined && { committeeId: dto.committeeId }),
         ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
         ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
@@ -657,6 +671,22 @@ export class WorkflowTemplateService {
   // used by LookupService for attributeSchema/attributes.
   private toJson(value: unknown): Prisma.InputJsonValue | undefined {
     return value === undefined || value === null ? undefined : (value as Prisma.InputJsonValue);
+  }
+
+  // Re-validates a client-supplied assigneeUserId belongs to this org before
+  // it's written onto a WorkflowStage — mirrors the re-scoping the ROLE case
+  // already gets for free downstream (assigneeRoleId's eventual userRole
+  // lookup is joined against user:{organizationId}); SPECIFIC_USER had no
+  // equivalent check at write time (see ACC-17). dto.committeeId has the
+  // same gap but is NOT validated here — no Committee/CommitteeMember data
+  // exists anywhere yet (Committee Management hasn't shipped), so there's
+  // nothing real to validate against. Must be revisited when that module
+  // ships, at the latest.
+  private async validateAssigneeUserId(userId: string, organizationId: string): Promise<void> {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
+    if (!user) {
+      throw new NotFoundException('Assignee user not found in this tenant');
+    }
   }
 
   // ── Internal mappers ─────────────────────────────────────────────────────────

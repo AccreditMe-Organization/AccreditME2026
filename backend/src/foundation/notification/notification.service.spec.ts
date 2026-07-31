@@ -36,6 +36,9 @@ const mockPrisma = {
     updateMany: jest.fn(),
     count: jest.fn(),
   },
+  user: {
+    findFirst: jest.fn(),
+  },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -46,6 +49,10 @@ describe('NotificationService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default: userId belongs to the org create() is called with — matches
+    // every existing test's fixtures (USER_A/ORG_A). A test can override
+    // this per-case to exercise the cross-tenant rejection path.
+    mockPrisma.user.findFirst.mockResolvedValue({ id: USER_A, organizationId: ORG_A });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
