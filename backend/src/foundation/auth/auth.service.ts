@@ -594,6 +594,19 @@ export class AuthService {
     return { enabled: authUser?.twoFactorEnabled ?? false };
   }
 
+  // ACC-19 — used by AuthController.getMe() to resolve the effective
+  // language for session bootstrap: the user's own saved preference if
+  // set, otherwise the tenant's configured default (Organization.language,
+  // CLAUDE.md's "defaulted from tenant config"), otherwise 'en'.
+  async resolveLanguage(userLanguage: string | null, organizationId: string): Promise<string> {
+    if (userLanguage) return userLanguage;
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { language: true },
+    });
+    return org?.language ?? 'en';
+  }
+
   // ACC-13 — deliberately cross-tenant, no organizationId filter. Used only
   // by AuthController.getMe() to resolve the display info of the platform
   // admin currently impersonating the caller (a different org than the
