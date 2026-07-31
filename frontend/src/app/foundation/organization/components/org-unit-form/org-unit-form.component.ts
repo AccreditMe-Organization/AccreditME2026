@@ -245,7 +245,9 @@ export class OrgUnitFormComponent implements OnInit {
       : this.orgUnitService.create(payload as CreateOrgUnitDto);
 
     request$.subscribe({
-      next: () => this.router.navigate(['../..'], { relativeTo: this.route }),
+      // Absolute path, not relativeTo — see ACC-16 (NG04002 on relative '..'
+      // navigation across this route's lazy-loaded boundary).
+      next: () => this.router.navigate(['/organization']),
       error: (err) => {
         this.saveError.set(err?.error?.message ?? 'Save failed');
         this.saving.set(false);
