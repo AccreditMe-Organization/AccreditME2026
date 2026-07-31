@@ -305,6 +305,7 @@
   },
   "user": {
     "title": "Users",
+    "myProfile": "My Profile",
     "invite": "Invite User",
     "inviteEmail": "Email Address",
     "name": "Name",
