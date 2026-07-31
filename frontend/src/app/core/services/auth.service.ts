@@ -9,8 +9,9 @@
 
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, map, of, tap } from 'rxjs';
+import { Observable, catchError, map, of, switchMap, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { LanguageService } from './language.service';
 
 export interface PublicUser {
   id: string;
@@ -21,13 +22,19 @@ export interface PublicUser {
 // /auth/me's own response shape — impersonatedBy (ACC-13) only ever
 // non-null when a platform admin is currently impersonating this session
 // (see AuthController.getMe()/TenantGuard's impersonatedBy passthrough).
+// language (ACC-19) is always resolved server-side (user -> org -> 'en'),
+// never null.
 export interface MeResponse extends PublicUser {
+  language: string;
   impersonatedBy: { id: string; email: string; name: string } | null;
 }
 
+// language (ACC-19) is only present on the success branch — mirrors the
+// backend's login()/verifyMfa() return shape exactly.
 export interface LoginResult {
   success?: true;
   user?: PublicUser;
+  language?: string;
   mfaRequired?: true;
 }
 
@@ -40,6 +47,7 @@ export interface MfaSetupResult {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
+  private readonly languageService = inject(LanguageService);
   private readonly baseUrl = `${environment.apiUrl}/auth`;
 
   private readonly _currentUser = signal<PublicUser | null>(null);
@@ -55,13 +63,13 @@ export class AuthService {
   login(organizationSlug: string, email: string, password: string): Observable<LoginResult> {
     return this.http
       .post<LoginResult>(`${this.baseUrl}/login`, { organizationSlug, email, password })
-      .pipe(tap((result) => this.applyLoginResult(result)));
+      .pipe(switchMap((result) => this.applyLoginResult(result)));
   }
 
   verifyMfa(code: string): Observable<LoginResult> {
     return this.http
       .post<LoginResult>(`${this.baseUrl}/mfa/verify`, { code })
-      .pipe(tap((result) => this.applyLoginResult(result)));
+      .pipe(switchMap((result) => this.applyLoginResult(result)));
   }
 
   logout(): Observable<{ success: true }> {
@@ -119,8 +127,15 @@ export class AuthService {
   // that cookie server-side and restores the signal. A 401 (missing/expired/
   // stale-tokenVersion cookie) is the expected "not logged in" case, not an
   // error to surface.
+  // language is applied via LanguageService BEFORE the currentUser signal
+  // is set (ACC-19) — the whole chain runs inside provideAppInitializer,
+  // which already blocks Angular's initial navigation, so this avoids any
+  // flash of the wrong language without a second blocking mechanism.
   restoreSession(): Observable<void> {
     return this.http.get<MeResponse>(`${this.baseUrl}/me`).pipe(
+      switchMap((response) =>
+        this.languageService.use(response.language).pipe(map(() => response)),
+      ),
       tap((response) => {
         this._currentUser.set({ id: response.id, email: response.email, name: response.name });
         this._impersonatedBy.set(response.impersonatedBy);
@@ -134,9 +149,15 @@ export class AuthService {
     );
   }
 
-  private applyLoginResult(result: LoginResult): void {
-    if (result.success && result.user) {
-      this._currentUser.set(result.user);
-    }
+  // Applies a fresh login's resolved language immediately (ACC-19) — without
+  // this, a user with a saved Arabic preference would see English until
+  // their next page refresh (the only other time restoreSession() runs).
+  private applyLoginResult(result: LoginResult): Observable<LoginResult> {
+    if (!result.success || !result.user) return of(result);
+    const user = result.user;
+    return this.languageService.use(result.language ?? 'en').pipe(
+      tap(() => this._currentUser.set(user)),
+      map(() => result),
+    );
   }
 }

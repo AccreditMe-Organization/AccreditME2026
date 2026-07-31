@@ -115,6 +115,7 @@ describe('AuthService', () => {
       expect(result).toEqual({
         success: true,
         user: { id: 'user-1', email: 'a@example.com', name: 'A User' },
+        language: 'en',
       });
       expect(res.cookie).toHaveBeenCalledWith('access_token', expect.any(String), expect.any(Object));
       expect(res.cookie).toHaveBeenCalledWith('refresh_token', expect.any(String), expect.any(Object));
