@@ -534,26 +534,15 @@ describe('LookupService', () => {
   // ── Tenant isolation ──────────────────────────────────────────────────────────
 
   describe('tenant isolation', () => {
-    it('should NOT return records belonging to a different tenant', async () => {
-      const catA = makeCategory({ id: 'cat-a', key: 'document_type' });
-      const catB = makeCategory({ id: 'cat-b', key: 'incident_type' });
-
-      mockPrisma.lookupCategory.findMany.mockImplementation(
-        ({ where }: { where: { organizationId: string | null } }) => {
-          if (where.organizationId === null) return Promise.resolve([catA]);
-          return Promise.resolve([catB]);
-        },
-      );
-
-      const resultA = await service.getCategories(ORG_A);
-      const resultB = await service.getCategories(ORG_B);
-
-      expect(resultA).toHaveLength(1);
-      expect(resultB).toHaveLength(1);
-      expect(resultA[0]!.id).toBe('cat-a');
-      expect(resultB[0]!.id).toBe('cat-a');
-    });
-
+    // A test previously lived here asserting getCategories() "should NOT
+    // return records belonging to a different tenant" — but getCategories()
+    // deliberately ignores its organizationId argument (categories are
+    // shared SYSTEM data, ORG_A and ORG_B always see the same rows), so the
+    // test's own assertions (resultA[0].id === resultB[0].id) proved the
+    // opposite of what its name claimed. Removed as redundant with
+    // getCategories' own describe block above ('returns only system
+    // categories (organizationId: null)'), which asserts the real behavior
+    // correctly (see ACC-17).
     it('should NOT return records belonging to a different tenant', async () => {
       const sysVal = makeValue({ key: 'policy', organizationId: null });
       const tenantAVal = makeValue({ id: 'val-a', organizationId: ORG_A, key: 'local_form', layer: 'TENANT' });

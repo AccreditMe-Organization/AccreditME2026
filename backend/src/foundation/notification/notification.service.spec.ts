@@ -36,6 +36,9 @@ const mockPrisma = {
     updateMany: jest.fn(),
     count: jest.fn(),
   },
+  user: {
+    findFirst: jest.fn(),
+  },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -46,6 +49,10 @@ describe('NotificationService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default: userId belongs to the org create() is called with — matches
+    // every existing test's fixtures (USER_A/ORG_A). A test can override
+    // this per-case to exercise the cross-tenant rejection path.
+    mockPrisma.user.findFirst.mockResolvedValue({ id: USER_A, organizationId: ORG_A });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -68,6 +75,23 @@ describe('NotificationService', () => {
       expect(mockPrisma.notification.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ organizationId: ORG_A }) }),
       );
+    });
+
+    // ACC-17 — the actual root-cause fix. dto.userId is now re-validated
+    // against organizationId before the write; a caller passing a real
+    // user id that belongs to a DIFFERENT org must be rejected, not
+    // silently create a Notification row spanning two tenants.
+    it('throws NotFoundException when userId does not belong to organizationId', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create({ userId: USER_B, titleEn: 'Title', bodyEn: 'Body' }, ORG_A),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: USER_B, organizationId: ORG_A },
+      });
+      expect(mockPrisma.notification.create).not.toHaveBeenCalled();
     });
 
     it('does NOT enqueue an email job when channel is IN_APP (default)', async () => {

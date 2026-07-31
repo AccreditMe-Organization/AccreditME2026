@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { LookupController } from './lookup.controller';
 import { LookupService } from './lookup.service';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { PlatformGuard } from '../../common/guards/platform.guard';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 import { ILookupCategory } from './interfaces/lookup-category.interface';
 import { ILookupValue } from './interfaces/lookup-value.interface';
 import { CreateLookupValueDto } from './dto/create-lookup-value.dto';
@@ -93,6 +96,8 @@ describe('LookupController', () => {
       .useValue({ canActivate: () => true })
       .overrideGuard(PermissionGuard)
       .useValue({ canActivate: () => true })
+      .overrideGuard(PlatformGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     controller = module.get(LookupController);
@@ -130,6 +135,30 @@ describe('LookupController', () => {
       expect(service.updateCategory).toHaveBeenCalledWith(CAT_KEY, TENANT_ID, dto, USER_ID);
       expect(result.key).toBe(CAT_KEY);
     });
+
+    // Regression guard for ACC-17 — mutating a SYSTEM category (shared
+    // across every tenant) must require PlatformGuard, not the tenant
+    // permission lookups:manage. Controller unit tests call the method
+    // directly (bypassing the guard pipeline entirely, same as every other
+    // test in this file), so this can't exercise an actual rejected
+    // request — it instead asserts the metadata NestJS's guard pipeline
+    // reads is correctly wired, which is exactly what would silently break
+    // if someone re-added @Permissions(LOOKUPS_PERMISSIONS.MANAGE) here or
+    // removed @UseGuards(PlatformGuard). PlatformGuard's own behavior
+    // (what a request with only lookups:manage — no platform:admin —
+    // actually gets rejected for) is already covered by
+    // platform.guard.spec.ts.
+    it('requires PlatformGuard, and no tenant-level @Permissions, on the route', () => {
+      const guards = Reflect.getMetadata(GUARDS_METADATA, LookupController.prototype.updateCategory) as
+        | unknown[]
+        | undefined;
+      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, LookupController.prototype.updateCategory) as
+        | string[]
+        | undefined;
+
+      expect(guards).toContain(PlatformGuard);
+      expect(permissions).toBeUndefined();
+    });
   });
 
   // ── deactivateCategory ────────────────────────────────────────────────────
@@ -138,6 +167,20 @@ describe('LookupController', () => {
     it('delegates to lookupService.deactivateCategory with key, tenantId, actorId', async () => {
       await controller.deactivateCategory(CAT_KEY, TENANT_ID, USER_ID);
       expect(service.deactivateCategory).toHaveBeenCalledWith(CAT_KEY, TENANT_ID, USER_ID);
+    });
+
+    // See updateCategory's equivalent test above for why this is a metadata
+    // check rather than an actual rejected-request test (ACC-17).
+    it('requires PlatformGuard, and no tenant-level @Permissions, on the route', () => {
+      const guards = Reflect.getMetadata(GUARDS_METADATA, LookupController.prototype.deactivateCategory) as
+        | unknown[]
+        | undefined;
+      const permissions = Reflect.getMetadata(PERMISSIONS_KEY, LookupController.prototype.deactivateCategory) as
+        | string[]
+        | undefined;
+
+      expect(guards).toContain(PlatformGuard);
+      expect(permissions).toBeUndefined();
     });
   });
 

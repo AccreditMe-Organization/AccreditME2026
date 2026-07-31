@@ -86,12 +86,27 @@ describe('UserService', () => {
   });
 
   describe('getById', () => {
-    it('throws NotFoundException for a user in a different tenant', async () => {
+    it('throws NotFoundException for a nonexistent user id', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null);
       await expect(service.getById('u1', ORG_A)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
         where: { id: 'u1', organizationId: ORG_A },
       });
+    });
+
+    it('should NOT return a user belonging to a different tenant', async () => {
+      // findFirst is org-scoped in the where clause — a real user that
+      // exists, but under ORG_B, correctly resolves to no match when
+      // queried under ORG_A.
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(
+          [{ id: 'u1', organizationId: ORG_B }].find(
+            (u) => u.id === where.id && u.organizationId === where.organizationId,
+          ) ?? null,
+        ),
+      );
+
+      await expect(service.getById('u1', ORG_A)).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -276,9 +291,27 @@ describe('UserService', () => {
       expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0 });
     });
 
-    it('throws NotFoundException for a user in a different tenant', async () => {
+    it('throws NotFoundException for a nonexistent user id', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null);
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should NOT deactivate a user belonging to a different tenant', async () => {
+      // A real user exists with this id, but under ORG_B — getById's own
+      // org-scoped findFirst correctly finds nothing when called under
+      // ORG_A, so deactivate() never reaches the status-flip/session-
+      // invalidation/reassignment steps at all.
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(
+          [{ id: 'user-1', organizationId: ORG_B, status: 'ACTIVE' }].find(
+            (u) => u.id === where.id && u.organizationId === where.organizationId,
+          ) ?? null,
+        ),
+      );
+
+      await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
     });
 
     it('bulk-reassigns open tasks to the actingUser and returns the real counts', async () => {

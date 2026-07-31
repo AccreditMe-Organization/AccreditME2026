@@ -110,6 +110,9 @@ const mockPrisma = {
   role: {
     findMany: jest.fn(),
   },
+  user: {
+    findFirst: jest.fn(),
+  },
   $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
@@ -122,6 +125,10 @@ describe('WorkflowTemplateService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Default: any assigneeUserId a test sets belongs to ORG_A, matching
+    // this file's usual "happy path" org. Tests exercising the cross-tenant
+    // rejection override this per-case.
+    mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -579,6 +586,36 @@ describe('WorkflowTemplateService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    // ACC-17 — assigneeUserId re-validated against the caller's org before
+    // being written onto the stage, mirroring the re-scoping the ROLE case
+    // already gets. A client-supplied user id belonging to a DIFFERENT org
+    // must be rejected, not written unscoped.
+    it('throws NotFoundException when assigneeUserId does not belong to this org', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.addStage(
+          'template-1',
+          {
+            nameEn: 'Drafting',
+            nameAr: 'مسودة',
+            order: 10,
+            approvalMode: 'SINGLE',
+            assigneeStrategy: 'SPECIFIC_USER',
+            assigneeUserId: 'foreign-user',
+          } as never,
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-user', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
     it('defaults isInitial and isFinal to false when omitted', async () => {
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
       mockPrisma.workflowStage.create.mockResolvedValue(BASE_STAGE);
@@ -608,6 +645,20 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowStage.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { nameEn: 'Renamed' } }),
       );
+    });
+
+    it('throws NotFoundException when assigneeUserId does not belong to this org', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateStage('stage-1', { assigneeUserId: 'foreign-user' } as never, ORG_A, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-user', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
     });
 
     it("throws NotFoundException when the stage's parent template belongs to a different org", async () => {
