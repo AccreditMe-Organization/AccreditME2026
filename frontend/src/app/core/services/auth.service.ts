@@ -7,7 +7,7 @@
 // email, name), populated from each auth response's own `user` object,
 // never a credential and never sufficient on its own to grant access.
 
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, Injector, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, switchMap, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
@@ -47,8 +47,23 @@ export interface MfaSetupResult {
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
-  private readonly languageService = inject(LanguageService);
   private readonly baseUrl = `${environment.apiUrl}/auth`;
+
+  // Resolved lazily via Injector, NOT injected as a constructor-time field
+  // (ACC-19) — AuthService is the first thing provideAppInitializer
+  // constructs, and eagerly injecting LanguageService here creates a real
+  // circular dependency: LanguageService's effect() reads
+  // TranslateService.currentLang(), which can trigger the translation
+  // HTTP loader, which goes through authInterceptor, which itself injects
+  // AuthService — still mid-construction at that point. Deferring
+  // resolution to inside the methods below (after AuthService has already
+  // finished constructing) breaks the cycle; confirmed via a real browser
+  // run surfacing Angular's NG0200 circular-dependency error with the
+  // eager version, not by static analysis.
+  private readonly injector = inject(Injector);
+  private get languageService(): LanguageService {
+    return this.injector.get(LanguageService);
+  }
 
   private readonly _currentUser = signal<PublicUser | null>(null);
   readonly currentUser = this._currentUser.asReadonly();
