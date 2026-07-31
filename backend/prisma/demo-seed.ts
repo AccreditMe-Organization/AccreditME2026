@@ -39,6 +39,7 @@ import { Prisma, PrismaClient } from '../generated/prisma/client';
 import { SYSTEM_LOOKUP_SEED } from '../src/foundation/lookup/lookup.seed';
 import { SYSTEM_ROLE_SEED } from '../src/foundation/roles/role.seed';
 import { ALL_PERMISSIONS } from '../src/foundation/roles/permission.seed';
+import { DEFAULT_POSITIONS } from '../src/foundation/org-position/org-position.seed';
 
 const DEMO_ORG_SLUG = 'demo';
 const DEMO_ORG_NAME = 'Demo Hospital';
@@ -233,6 +234,29 @@ async function seedSystemRoles(
   }
 }
 
+// ── Reimplements OrgPositionService.seedDefaultPositions() ──────────────────
+async function seedDefaultPositions(
+  prisma: PrismaClient,
+  organizationId: string,
+): Promise<void> {
+  for (const position of DEFAULT_POSITIONS) {
+    const existing = await prisma.orgPosition.findFirst({
+      where: { organizationId, orgUnitId: null, nameEn: position.nameEn },
+    });
+    if (existing) continue;
+
+    await prisma.orgPosition.create({
+      data: {
+        organizationId,
+        orgUnitId: null,
+        nameEn: position.nameEn,
+        nameAr: position.nameAr,
+        grade: position.grade,
+      },
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const pool = new Pool({ connectionString: process.env['DATABASE_URL'] });
   const adapter = new PrismaPg(pool);
@@ -258,6 +282,10 @@ async function main(): Promise<void> {
     }
 
     // ── Bootstrap steps — idempotent, mirror TenantService.bootstrap() ───────
+    // Order matches tenant.service.ts's bootstrap(): positions, then
+    // lookups, then roles (workflows not mirrored here — out of scope, this
+    // script doesn't need default workflow templates for anything it seeds).
+    await seedDefaultPositions(prisma, org.id);
     await seedSystemLookups(prisma);
     await seedSystemRoles(prisma, org.id);
 
