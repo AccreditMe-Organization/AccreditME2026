@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
+import { CardComponent } from '../../../../shared/components/card/card.component';
 import { TenantService, ITenant } from '../../../tenant/services/tenant.service';
 
 // Read-only credit display — a Platform Admin sets the allocation via the
@@ -12,7 +13,7 @@ import { TenantService, ITenant } from '../../../tenant/services/tenant.service'
 @Component({
   selector: 'app-ai-settings',
   standalone: true,
-  imports: [FormsModule, TranslatePipe, CheckboxModule, MessageModule],
+  imports: [FormsModule, TranslatePipe, CheckboxModule, MessageModule, CardComponent],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
       <h2 class="text-xl font-semibold">{{ 'adminSettings.aiSettings' | translate }}</h2>
@@ -26,14 +27,14 @@ import { TenantService, ITenant } from '../../../tenant/services/tenant.service'
 
       @if (tenant(); as t) {
         <div class="grid grid-cols-2 gap-4">
-          <div class="p-4 rounded-md bg-[var(--am-card)] border border-[var(--am-border)]">
+          <app-card>
             <p class="text-sm text-[var(--am-text-secondary)]">{{ 'platform.monthlyCredits' | translate }}</p>
             <p class="text-2xl font-semibold">{{ t.ai.monthlyCredits }}</p>
-          </div>
-          <div class="p-4 rounded-md bg-[var(--am-card)] border border-[var(--am-border)]">
+          </app-card>
+          <app-card>
             <p class="text-sm text-[var(--am-text-secondary)]">{{ 'platform.creditsRemaining' | translate }}</p>
             <p class="text-2xl font-semibold">{{ t.ai.creditsRemaining }}</p>
-          </div>
+          </app-card>
         </div>
         <p class="text-sm text-[var(--am-text-secondary)]">
           {{ 'platform.creditsUsed' | translate }}: {{ t.ai.creditsUsed }}

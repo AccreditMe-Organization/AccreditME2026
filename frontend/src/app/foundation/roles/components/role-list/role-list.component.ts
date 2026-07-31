@@ -119,7 +119,7 @@ import { RoleFormComponent } from '../role-form/role-form.component';
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="6" class="text-center py-8 text-surface-400">
+            <td colspan="6" class="text-center py-8 text-[var(--am-text-secondary)]">
               {{ 'roles.noRoles' | translate }}
             </td>
           </tr>

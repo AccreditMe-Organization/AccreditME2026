@@ -118,7 +118,7 @@ const TRIGGER_CONDITIONS = [
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="5" class="text-center py-4 text-surface-400">
+            <td colspan="5" class="text-center py-4 text-[var(--am-text-secondary)]">
               {{ 'workflow.noTransitions' | translate }}
             </td>
           </tr>
@@ -230,7 +230,7 @@ const TRIGGER_CONDITIONS = [
         [modal]="true"
         [style]="{ width: '560px' }"
       >
-        <p class="text-sm text-surface-500 mb-2">
+        <p class="text-sm text-[var(--am-text-secondary)] mb-2">
           {{ 'workflow.transitionEndpointsLocked' | translate }}
         </p>
         <form [formGroup]="editForm" (ngSubmit)="onSubmitEdit()" class="flex flex-col gap-4">

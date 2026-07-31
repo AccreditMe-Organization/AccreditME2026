@@ -420,6 +420,13 @@
     "announcementMessage": "Announcement Message",
     "announcementSeverity": "Severity"
   },
+  "account": {
+    "trial": "Trial",
+    "active": "Active",
+    "suspended": "Suspended",
+    "cancelled": "Cancelled",
+    "offboarding": "Offboarding"
+  },
   "adminSettings": {
     "title": "Organization Settings",
     "organizationProfile": "Organization Profile",

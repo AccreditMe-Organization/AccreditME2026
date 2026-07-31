@@ -100,7 +100,7 @@ import { PublicHolidayFormComponent } from '../public-holiday-form/public-holida
 
       <ng-template pTemplate="emptymessage">
         <tr>
-          <td colspan="5" class="text-center py-8 text-surface-400">
+          <td colspan="5" class="text-center py-8 text-[var(--am-text-secondary)]">
             {{ 'workingCalendar.noHolidays' | translate }}
           </td>
         </tr>

@@ -149,7 +149,7 @@ import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="8" class="text-center py-8 text-surface-400">
+            <td colspan="8" class="text-center py-8 text-[var(--am-text-secondary)]">
               {{ 'workflow.noStages' | translate }}
             </td>
           </tr>

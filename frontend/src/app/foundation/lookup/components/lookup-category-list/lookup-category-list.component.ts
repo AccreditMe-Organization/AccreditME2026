@@ -69,7 +69,7 @@ import { LookupService, LookupCategoryDto } from '../../services/lookup.service'
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="5" class="text-center py-8 text-surface-400">
+            <td colspan="5" class="text-center py-8 text-[var(--am-text-secondary)]">
               {{ 'lookup.noCategories' | translate }}
             </td>
           </tr>

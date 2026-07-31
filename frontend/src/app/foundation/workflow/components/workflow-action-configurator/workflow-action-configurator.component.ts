@@ -113,7 +113,7 @@ const ACTION_TYPES = [
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="4" class="text-center py-4 text-surface-400">
+            <td colspan="4" class="text-center py-4 text-[var(--am-text-secondary)]">
               {{ 'workflow.noActions' | translate }}
             </td>
           </tr>

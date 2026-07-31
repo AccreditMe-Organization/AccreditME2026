@@ -52,7 +52,7 @@ const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
           <a
             routerLink="/platform"
             routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
-            class="flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
+            class="flex items-center gap-3 px-4 py-3 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
           >
             <i class="pi pi-shield"></i>
             @if (!collapsed()) {
@@ -65,7 +65,7 @@ const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
               [routerLink]="item.route"
               routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
               [routerLinkActiveOptions]="{ exact: false }"
-              class="flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
+              class="flex items-center gap-3 px-4 py-3 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
             >
               <i [class]="item.icon"></i>
               @if (!collapsed()) {
@@ -79,7 +79,7 @@ const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
             <a
               routerLink="/admin-settings"
               routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
-              class="flex items-center gap-3 px-4 py-2.5 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
+              class="flex items-center gap-3 px-4 py-3 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
             >
               <i class="pi pi-cog"></i>
               @if (!collapsed()) {

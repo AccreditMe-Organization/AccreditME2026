@@ -78,7 +78,7 @@ const STATUS_OPTIONS = ['PENDING', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED'] as con
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="6" class="text-center py-8 text-surface-400">{{ 'task.noTasks' | translate }}</td>
+            <td colspan="6" class="text-center py-8 text-[var(--am-text-secondary)]">{{ 'task.noTasks' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>

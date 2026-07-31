@@ -41,7 +41,7 @@ import { PlanService, IAiCreditPack } from '../../services/plan.service';
         </ng-template>
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="3" class="text-center py-4 text-surface-400">{{ 'platform.noAiCreditPacks' | translate }}</td>
+            <td colspan="3" class="text-center py-4 text-[var(--am-text-secondary)]">{{ 'platform.noAiCreditPacks' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>

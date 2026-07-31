@@ -420,6 +420,13 @@
     "announcementMessage": "نص الإعلان",
     "announcementSeverity": "درجة الأهمية"
   },
+  "account": {
+    "trial": "تجريبي",
+    "active": "نشط",
+    "suspended": "موقوف",
+    "cancelled": "ملغى",
+    "offboarding": "قيد الإنهاء"
+  },
   "adminSettings": {
     "title": "إعدادات المؤسسة",
     "organizationProfile": "الملف التعريفي للمؤسسة",

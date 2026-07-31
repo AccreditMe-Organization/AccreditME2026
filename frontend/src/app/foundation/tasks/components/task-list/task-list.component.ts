@@ -53,7 +53,7 @@ import { TaskFormComponent } from '../task-form/task-form.component';
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="4" class="text-center py-8 text-surface-400">{{ 'task.noTasks' | translate }}</td>
+            <td colspan="4" class="text-center py-8 text-[var(--am-text-secondary)]">{{ 'task.noTasks' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>

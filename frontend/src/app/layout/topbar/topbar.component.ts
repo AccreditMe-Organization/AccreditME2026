@@ -11,7 +11,7 @@ import { PlatformTenantService } from '../../platform/services/platform-tenant.s
   imports: [TranslatePipe, ButtonModule],
   template: `
     @if (authService.impersonatedBy(); as impersonator) {
-      <div class="h-9 flex items-center justify-center gap-3 px-4 bg-[var(--am-severity-medium)] text-white text-sm">
+      <div class="h-9 flex items-center justify-center gap-3 px-4 bg-[var(--am-banner-info)] text-white text-sm">
         <span>{{ 'platform.impersonatingBanner' | translate: { admin: impersonator.name } }}</span>
         <button
           type="button"

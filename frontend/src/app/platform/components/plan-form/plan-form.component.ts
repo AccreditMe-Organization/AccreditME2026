@@ -74,7 +74,7 @@ const ACCESS_LEVEL_OPTIONS = [
 
       @if (isEditing()) {
         <hr />
-        <h3 class="text-lg font-semibold">{{ 'platform.planModules' | translate }}</h3>
+        <h3 class="text-lg font-medium">{{ 'platform.planModules' | translate }}</h3>
         <div class="flex flex-col gap-2">
           @for (key of moduleKeys; track key) {
             <div class="flex items-center justify-between gap-3 p-2 rounded-md border border-[var(--am-border)]">

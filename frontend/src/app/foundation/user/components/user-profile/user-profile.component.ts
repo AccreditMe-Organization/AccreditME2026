@@ -119,7 +119,7 @@ import { AuthService, MfaSetupResult } from '../../../../core/services/auth.serv
 
         <hr />
 
-        <h3 class="text-lg font-semibold">{{ 'user.outOfOffice' | translate }}</h3>
+        <h3 class="text-lg font-medium">{{ 'user.outOfOffice' | translate }}</h3>
         <form [formGroup]="oooForm" (ngSubmit)="onSubmitOutOfOffice()" class="flex flex-col gap-4">
           <div class="flex gap-4">
             <div class="flex flex-col gap-1 flex-1">
@@ -156,7 +156,7 @@ import { AuthService, MfaSetupResult } from '../../../../core/services/auth.serv
         @if (isOwnProfile()) {
           <hr />
 
-          <h3 class="text-lg font-semibold">{{ 'user.mfa.title' | translate }}</h3>
+          <h3 class="text-lg font-medium">{{ 'user.mfa.title' | translate }}</h3>
 
           @if (mfaError()) {
             <p-message severity="error" [text]="mfaError()!" />
@@ -167,7 +167,7 @@ import { AuthService, MfaSetupResult } from '../../../../core/services/auth.serv
 
           @if (mfaEnabled() === false && !mfaSetupResult()) {
             <div class="flex flex-col gap-3">
-              <p class="text-sm text-surface-500">{{ 'user.mfa.notEnabled' | translate }}</p>
+              <p class="text-sm text-[var(--am-text-secondary)]">{{ 'user.mfa.notEnabled' | translate }}</p>
               <form [formGroup]="mfaSetupForm" (ngSubmit)="onSetupMfa()" class="flex flex-col gap-3 max-w-xs">
                 <div class="flex flex-col gap-1">
                   <label for="mfaSetupPassword" class="text-sm font-medium">

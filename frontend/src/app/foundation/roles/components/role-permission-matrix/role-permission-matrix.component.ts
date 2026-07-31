@@ -36,7 +36,7 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
         }
       </div>
 
-      <p class="text-sm text-surface-400">{{ 'roles.permissionMatrixHint' | translate }}</p>
+      <p class="text-sm text-[var(--am-text-secondary)]">{{ 'roles.permissionMatrixHint' | translate }}</p>
 
       @if (isHighImpact()) {
         <p-message severity="warn" [text]="'roles.adminRoleWarning' | translate" />
@@ -47,14 +47,14 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
       }
 
       @if (loading()) {
-        <p class="text-sm text-surface-400">{{ 'common.loading' | translate }}</p>
+        <p class="text-sm text-[var(--am-text-secondary)]">{{ 'common.loading' | translate }}</p>
       } @else if (groups().length === 0) {
-        <p class="text-sm text-surface-400">{{ 'roles.noPermissions' | translate }}</p>
+        <p class="text-sm text-[var(--am-text-secondary)]">{{ 'roles.noPermissions' | translate }}</p>
       } @else {
         <div class="flex flex-col gap-5 overflow-y-auto">
           @for (group of groups(); track group.module) {
-            <div class="flex flex-col gap-2 border-b border-surface-200 pb-3">
-              <span class="font-semibold text-sm uppercase tracking-wide text-surface-500">
+            <div class="flex flex-col gap-2 border-b border-[var(--am-border)] pb-3">
+              <span class="font-semibold text-sm uppercase tracking-wide text-[var(--am-text-secondary)]">
                 {{ group.module }}
               </span>
               <div class="flex flex-wrap gap-4">

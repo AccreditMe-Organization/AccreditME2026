@@ -86,7 +86,7 @@ import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/wor
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="6" class="text-center py-8 text-surface-400">
+            <td colspan="6" class="text-center py-8 text-[var(--am-text-secondary)]">
               {{ 'workflow.noTemplates' | translate }}
             </td>
           </tr>

@@ -56,7 +56,7 @@ import { PlanService, IPlan } from '../../services/plan.service';
         </ng-template>
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="6" class="text-center py-4 text-surface-400">{{ 'platform.noPlans' | translate }}</td>
+            <td colspan="6" class="text-center py-4 text-[var(--am-text-secondary)]">{{ 'platform.noPlans' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>

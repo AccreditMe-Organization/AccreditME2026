@@ -33,7 +33,7 @@ import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-u
           <span class="text-red-500">*</span>
         </label>
         <p-inputNumber inputId="grade" formControlName="grade" [min]="1" [max]="10" [showButtons]="true" />
-        <small class="text-surface-400">{{ 'orgPosition.gradeHint' | translate }}</small>
+        <small class="text-[var(--am-text-secondary)]">{{ 'orgPosition.gradeHint' | translate }}</small>
       </div>
 
       <div class="flex flex-col gap-1">
