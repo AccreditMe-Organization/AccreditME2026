@@ -2,11 +2,12 @@ import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, of, startWith, switchMap } from 'rxjs';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { BadgeModule } from 'primeng/badge';
 import { PopoverModule, Popover } from 'primeng/popover';
 import { NotificationService, NotificationDto } from '../../services/notification.service';
+import { LanguageService } from '../../../../core/services/language.service';
 
 const POLL_INTERVAL_MS = 30000;
 
@@ -75,7 +76,7 @@ const POLL_INTERVAL_MS = 30000;
 })
 export class NotificationBellComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
-  private readonly translate = inject(TranslateService);
+  private readonly languageService = inject(LanguageService);
   private readonly destroyRef = inject(DestroyRef);
 
   readonly unreadCount = signal(0);
@@ -110,7 +111,7 @@ export class NotificationBellComponent implements OnInit {
   }
 
   isArabic(): boolean {
-    return this.translate.currentLang() === 'ar';
+    return this.languageService.isArabic();
   }
 
   onToggle(event: Event, panel: Popover): void {
