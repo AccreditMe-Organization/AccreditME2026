@@ -72,6 +72,14 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'committees',
+        data: { breadcrumb: 'nav.committees' },
+        loadChildren: () =>
+          import('./foundation/committees/committees.routes').then(
+            (m) => m.COMMITTEE_ROUTES,
+          ),
+      },
+      {
         path: 'tasks',
         data: { breadcrumb: 'nav.tasks' },
         loadChildren: () =>
