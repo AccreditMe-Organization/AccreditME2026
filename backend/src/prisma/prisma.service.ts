@@ -68,6 +68,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get notification() { return this._client.notification; }
   get committee() { return this._client.committee; }
   get committeeMember() { return this._client.committeeMember; }
+  get committeeMembershipEvent() { return this._client.committeeMembershipEvent; }
   get meeting() { return this._client.meeting; }
   get agendaItem() { return this._client.agendaItem; }
   get auditLog() { return this._client.auditLog; }
