@@ -113,6 +113,9 @@ const mockPrisma = {
   user: {
     findFirst: jest.fn(),
   },
+  committee: {
+    findFirst: jest.fn(),
+  },
   $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
@@ -129,6 +132,8 @@ describe('WorkflowTemplateService', () => {
     // this file's usual "happy path" org. Tests exercising the cross-tenant
     // rejection override this per-case.
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
+    // Same default for committeeId (ACC-22, closing the ACC-17 deferred gap).
+    mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', organizationId: ORG_A });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -631,6 +636,63 @@ describe('WorkflowTemplateService', () => {
         expect.objectContaining({ data: expect.objectContaining({ isInitial: false, isFinal: false }) }),
       );
     });
+
+    // ACC-22 (closing the ACC-17 deferred gap) — committeeId re-validated
+    // against the caller's org before being written onto the stage,
+    // mirroring the assigneeUserId re-scoping test above. A client-supplied
+    // committee id belonging to a DIFFERENT org must be rejected, not
+    // written unscoped.
+    it('throws NotFoundException when committeeId does not belong to this org', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.addStage(
+          'template-1',
+          {
+            nameEn: 'Active',
+            nameAr: 'نشطة',
+            order: 10,
+            approvalMode: 'COMMITTEE',
+            assigneeStrategy: 'COMMITTEE',
+            committeeId: 'foreign-committee',
+          } as never,
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-committee', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
+    it('creates the stage when committeeId belongs to this org', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.create.mockResolvedValue(makeStage({ committeeId: 'committee-a' }));
+
+      await service.addStage(
+        'template-1',
+        {
+          nameEn: 'Active',
+          nameAr: 'نشطة',
+          order: 10,
+          approvalMode: 'COMMITTEE',
+          assigneeStrategy: 'COMMITTEE',
+          committeeId: 'committee-a',
+        } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
+        where: { id: 'committee-a', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ committeeId: 'committee-a' }) }),
+      );
+    });
   });
 
   // ── updateStage ──────────────────────────────────────────────────────────────
@@ -657,6 +719,22 @@ describe('WorkflowTemplateService', () => {
 
       expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
         where: { id: 'foreign-user', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+    });
+
+    // ACC-22 (closing the ACC-17 deferred gap) — same re-validation as
+    // addStage above, exercised here for updateStage.
+    it('throws NotFoundException when committeeId does not belong to this org', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateStage('stage-1', { committeeId: 'foreign-committee' } as never, ORG_A, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-committee', organizationId: ORG_A },
       });
       expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
     });

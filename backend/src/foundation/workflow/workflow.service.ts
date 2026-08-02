@@ -412,8 +412,14 @@ export class WorkflowService {
 
     if (fromStage.approvalMode === 'COMMITTEE') {
       if (!fromStage.committeeId) return approvedCount > 0;
-      const committee = await this.prisma.committee.findUnique({ where: { id: fromStage.committeeId } });
-      if (!committee || approvals.length < committee.quorum) return false;
+      // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — a
+      // committeeId that somehow referenced another tenant's Committee row
+      // must never resolve here, defense-in-depth alongside the write-time
+      // validation in workflow-template.service.ts's addStage/updateStage.
+      const committee = await this.prisma.committee.findFirst({
+        where: { id: fromStage.committeeId, organizationId },
+      });
+      if (!committee || approvals.length < committee.quorumCount) return false;
       return approvedCount > approvals.length / 2;
     }
 
@@ -754,8 +760,12 @@ export class WorkflowService {
 
       case 'COMMITTEE': {
         if (!stage.committeeId) return [];
+        // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) —
+        // organizationId filter on the denormalized column, isActive
+        // instead of leftAt: null (both per the plan's Pending Discussions
+        // #6/#7 resolutions).
         const members = await this.prisma.committeeMember.findMany({
-          where: { committeeId: stage.committeeId, leftAt: null },
+          where: { committeeId: stage.committeeId, organizationId, isActive: true },
         });
         return members.map((m) => m.userId);
       }
@@ -854,8 +864,10 @@ export class WorkflowService {
   ): Promise<string[]> {
     if (stage.assigneeStrategy === 'COMMITTEE') {
       if (!stage.committeeId) return [];
+      // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — same
+      // fix as resolveAssigneeRaw()'s COMMITTEE case above.
       const members = await this.prisma.committeeMember.findMany({
-        where: { committeeId: stage.committeeId, leftAt: null },
+        where: { committeeId: stage.committeeId, organizationId, isActive: true },
       });
       return members.map((m) => m.userId);
     }
