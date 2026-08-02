@@ -849,6 +849,44 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
       expect(result.currentStageId).toBe('stage-committee');
     });
+
+    // resolveApproverPool()'s COMMITTEE branch is a THIRD, distinct call site
+    // from the two above — isApprovalThresholdMet() only reaches it when
+    // approvalMode is NOT 'COMMITTEE' (it returns early for that case), so a
+    // PARALLEL-mode stage whose assigneeStrategy is 'COMMITTEE' is the only
+    // way to actually exercise this branch. Neither of the two tests above
+    // (approvalMode: 'COMMITTEE', which skips this call) nor the
+    // resolveAssigneeRaw() CREATE_TASK test (approvalMode: 'SINGLE', which
+    // never reaches isApprovalThresholdMet at all) touches this code path.
+    it("sizes the PARALLEL approver pool via resolveApproverPool() using a committee's active, org-scoped members", async () => {
+      const parallelCommitteeStage = {
+        ...PARALLEL_STAGE,
+        id: 'stage-parallel-committee',
+        assigneeStrategy: 'COMMITTEE',
+        assigneeRoleId: null,
+        committeeId: 'committee-a',
+      };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+        makeInstance({ currentStageId: 'stage-parallel-committee' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(parallelCommitteeStage);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel-committee', isApprovalPath: true }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-parallel-committee' }),
+      );
+      mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'member-1' }, { userId: 'member-2' }]);
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: { committeeId: 'committee-a', organizationId: ORG_A, isActive: true },
+      });
+      // Pool size 2, threshold ALL, only 1 APPROVED vote so far — not yet met.
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+    });
   });
 
   // ── triggerTransition — validatorConfig ───────────────────────────────────────
