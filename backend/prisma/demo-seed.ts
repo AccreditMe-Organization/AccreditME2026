@@ -1,31 +1,53 @@
 // ⚠️ DEVELOPMENT ONLY — do not run against a production database.
 //
-// Creates (or reuses, idempotently) a demo tenant + admin user, plus the
-// designated AccreditMe platform org + a PLATFORM_ADMIN user (ACC-13), each
+// GENESIS-ONLY (ACC-23): creates ONLY the designated AccreditMe platform
+// Organization (isPlatformOrg: true) and its PLATFORM_ADMIN user (ACC-13),
 // with a real, working Better Auth credential (Step 9), and prints login
 // credentials for the real Angular login page at http://localhost:4200/login.
-// Before Step 9
-// this script printed a hand-signed JWT for the now-removed /dev/login page —
-// that flow no longer exists; this script creates everything directly
-// (no invitation flow) since it's a developer tool, not a proof of the real
-// invite-by-email path.
 //
-// Uses the Prisma client directly — no NestJS DI, no LookupService/RoleService/
-// AuthService instances — because bootstrapping the real AppModule via
-// NestFactory pulls in PrismaService's `.js`-suffixed generated-client import,
-// which only resolves correctly under Nest CLI's own toolchain, not plain
-// ts-node (this repo's tsconfig.json uses classic "moduleResolution": "node").
-// Importing the generated client here with no extension sidesteps that
-// entirely. The same constraint is why this script builds its own minimal
-// Better Auth instance below rather than importing
+// This script used to ALSO hand-roll a demo TENANT (org, lookups, roles,
+// positions, root org unit, user, TENANT_ADMIN assignment) via direct Prisma
+// writes that duplicated TenantService.bootstrap()'s own steps. That demo
+// tenant is now created for real, through the Super Admin Portal's actual
+// "Create Tenant" flow (POST /platform/tenants -> PlatformTenantService.
+// createTenant() -> TenantService.bootstrap()) — log in as the platform
+// admin below and use the portal, rather than running this script twice.
+//
+// Why the duplication was removed (ACC-23): a hand-rolled copy of
+// bootstrap() logic silently falls behind every time bootstrap() gains a new
+// step. This is exactly what happened here — bootstrap() started calling
+// WorkflowTemplateService.seedDefaultWorkflows() when the workflow engine
+// shipped (ACC-9), but this script was never updated to match, so any tenant
+// created only through this script ended up with zero WorkflowTemplate rows,
+// for any object type, silently. Routing demo-tenant creation through the
+// real endpoint instead means there's only ever one implementation of
+// "provision a tenant" to keep in sync — this script can't drift from it
+// again because it no longer reimplements any part of it.
+//
+// The platform org itself is a narrower, permanent exception: it isn't
+// created via the Super Admin Portal (nothing can — creating the *first*
+// platform org is what this script is for), so it still can't call
+// TenantService.bootstrap() and still hand-rolls its own Better Auth
+// signup + PLATFORM_ADMIN role assignment below, same as before.
+//
+// Uses the Prisma client directly — no NestJS DI, no RoleService/AuthService
+// instances — because bootstrapping the real AppModule via NestFactory pulls
+// in PrismaService's `.js`-suffixed generated-client import, which only
+// resolves correctly under Nest CLI's own toolchain, not plain ts-node (this
+// repo's tsconfig.json uses classic "moduleResolution": "node"). Importing
+// the generated client here with no extension sidesteps that entirely. The
+// same constraint is why this script builds its own minimal Better Auth
+// instance below rather than importing
 // providers/auth/better-auth.config.ts's shared factory (that factory takes a
 // NotificationService, which needs a live BullMQ/Redis queue to construct).
 //
-// The seeding logic below mirrors LookupService.seedSystemData(),
-// RoleService.seedSystemRoles(), and AuthService.namespacedEmail() exactly
-// (same upsert shape, same compound unique keys, same namespacing rule) —
-// kept in sync by hand since this script can't call the real services
-// directly.
+// The role-seeding logic below mirrors RoleService.seedPermissions() +
+// seedSystemRoles() and AuthService.namespacedEmail() exactly (same upsert
+// shape, same compound unique keys, same namespacing rule) — kept in sync by
+// hand since this script can't call the real services directly. Still
+// duplicated logic, same as the platform org creation above — an accepted,
+// narrower exception, not the same "silently reimplements a much larger and
+// still-growing bootstrap()" problem this ticket removed.
 //
 // Run: npm run seed:demo
 
@@ -35,19 +57,9 @@ import { betterAuth } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Prisma, PrismaClient } from '../generated/prisma/client';
-import { SYSTEM_LOOKUP_SEED } from '../src/foundation/lookup/lookup.seed';
+import { PrismaClient } from '../generated/prisma/client';
 import { SYSTEM_ROLE_SEED } from '../src/foundation/roles/role.seed';
 import { ALL_PERMISSIONS } from '../src/foundation/roles/permission.seed';
-import { DEFAULT_POSITIONS } from '../src/foundation/org-position/org-position.seed';
-
-const DEMO_ORG_SLUG = 'demo';
-const DEMO_ORG_NAME = 'Demo Hospital';
-const DEMO_ADMIN_EMAIL =
-  process.env['DEMO_ADMIN_EMAIL'] ?? 'admin@demo.accreditme.com';
-// Hardcoded, dev-only — never used in production. Real users always set
-// their own password via the invitation/accept-invitation flow (Step 9).
-const DEMO_ADMIN_PASSWORD = 'Demo@123456';
 
 // ACC-13 — the one Organization row PlatformGuard expects to find with
 // isPlatformOrg: true. Reuses the same PLATFORM_ADMIN_EMAIL env var already
@@ -56,7 +68,8 @@ const PLATFORM_ORG_SLUG = 'platform';
 const PLATFORM_ORG_NAME = 'AccreditMe Platform';
 const PLATFORM_ADMIN_EMAIL =
   process.env['PLATFORM_ADMIN_EMAIL'] ?? 'admin@accreditme.com';
-// Hardcoded, dev-only — same rationale as DEMO_ADMIN_PASSWORD above.
+// Hardcoded, dev-only — never used in production. Real users always set
+// their own password via the invitation/accept-invitation flow (Step 9).
 const PLATFORM_ADMIN_PASSWORD = 'Platform@123456';
 
 // Mirrors AuthService.namespacedEmail() (backend/src/foundation/auth/auth.service.ts)
@@ -71,18 +84,18 @@ function namespacedEmail(organizationId: string, email: string): string {
   return `${localPart}+${organizationId}@${domain}`;
 }
 
-// A second, deliberately minimal Better Auth instance — NOT the shared
+// A deliberately minimal Better Auth instance — NOT the shared
 // providers/auth/better-auth.config.ts factory, which requires a
 // NotificationService (for its sendResetPassword callback) this script has
 // no way to construct without full NestJS bootstrap. This instance is only
 // ever used to call signUpEmail() once, so it omits:
 //   - the haveIBeenPwned plugin: it checks new passwords against the real
 //     api.pwnedpasswords.com API on /sign-up/email, and the hardcoded
-//     Demo@123456 pattern is exactly the kind of password that shows up in
-//     real breach corpora — including this plugin would make seeding fail.
+//     Platform@123456 pattern is exactly the kind of password that shows up
+//     in real breach corpora — including this plugin would make seeding fail.
 //   - the twoFactor plugin: irrelevant for a plain seed account.
 //   - emailAndPassword.sendResetPassword: never invoked by this script.
-function createDemoAuthInstance(prisma: PrismaClient) {
+function createAuthInstance(prisma: PrismaClient) {
   return betterAuth({
     database: prismaAdapter(prisma, { provider: 'postgresql' }),
     secret: process.env['BETTER_AUTH_SECRET'],
@@ -103,78 +116,6 @@ function createDemoAuthInstance(prisma: PrismaClient) {
       database: { generateId: false },
     },
   });
-}
-
-// ── Reimplements LookupService.seedSystemData() with raw Prisma calls ───────
-async function seedSystemLookups(prisma: PrismaClient): Promise<void> {
-  for (const category of SYSTEM_LOOKUP_SEED) {
-    const existing = await prisma.lookupCategory.findFirst({
-      where: { key: category.key, organizationId: null },
-    });
-
-    const categoryData = {
-      labelEn: category.labelEn,
-      labelAr: category.labelAr,
-      isSystem: true,
-      isExtensible: category.isExtensible,
-      attributeSchema: category.attributeSchema
-        ? (category.attributeSchema as Prisma.InputJsonValue)
-        : Prisma.DbNull,
-      sortOrder: category.sortOrder,
-    };
-
-    const seededCategory = existing
-      ? await prisma.lookupCategory.update({
-          where: { id: existing.id },
-          data: categoryData,
-        })
-      : await prisma.lookupCategory.create({
-          data: {
-            key: category.key,
-            organizationId: null,
-            isActive: true,
-            ...categoryData,
-          },
-        });
-
-    for (const value of category.values) {
-      const existingValue = await prisma.lookupValue.findFirst({
-        where: {
-          categoryId: seededCategory.id,
-          key: value.key,
-          organizationId: null,
-        },
-      });
-
-      const valueData = {
-        labelEn: value.labelEn,
-        labelAr: value.labelAr,
-        attributes: value.attributes
-          ? (value.attributes as Prisma.InputJsonValue)
-          : Prisma.DbNull,
-        sortOrder: value.sortOrder,
-      };
-
-      if (existingValue) {
-        await prisma.lookupValue.update({
-          where: { id: existingValue.id },
-          data: valueData,
-        });
-      } else {
-        await prisma.lookupValue.create({
-          data: {
-            categoryId: seededCategory.id,
-            organizationId: null,
-            key: value.key,
-            layer: 'SYSTEM',
-            isActive: true,
-            isHidden: false,
-            ...valueData,
-          },
-        });
-      }
-    }
-  }
 }
 
 // ── Reimplements RoleService.seedPermissions() + seedSystemRoles() ──────────
@@ -234,166 +175,13 @@ async function seedSystemRoles(
   }
 }
 
-// ── Reimplements OrgPositionService.seedDefaultPositions() ──────────────────
-async function seedDefaultPositions(
-  prisma: PrismaClient,
-  organizationId: string,
-): Promise<void> {
-  for (const position of DEFAULT_POSITIONS) {
-    const existing = await prisma.orgPosition.findFirst({
-      where: { organizationId, orgUnitId: null, nameEn: position.nameEn },
-    });
-    if (existing) continue;
-
-    await prisma.orgPosition.create({
-      data: {
-        organizationId,
-        orgUnitId: null,
-        nameEn: position.nameEn,
-        nameAr: position.nameAr,
-        grade: position.grade,
-      },
-    });
-  }
-}
-
 async function main(): Promise<void> {
   const pool = new Pool({ connectionString: process.env['DATABASE_URL'] });
   const adapter = new PrismaPg(pool);
   const prisma = new PrismaClient({ adapter });
 
   try {
-    // ── Organization ─────────────────────────────────────────────────────────
-    let org = await prisma.organization.findUnique({
-      where: { slug: DEMO_ORG_SLUG },
-    });
-    if (!org) {
-      org = await prisma.organization.create({
-        data: {
-          name: DEMO_ORG_NAME,
-          slug: DEMO_ORG_SLUG,
-          country: 'KW',
-          isBootstrapped: false,
-        },
-      });
-      console.log(`Created organization: ${org.name} (${org.id})`);
-    } else {
-      console.log(`Reusing existing organization: ${org.name} (${org.id})`);
-    }
-
-    // ── Bootstrap steps — idempotent, mirror TenantService.bootstrap() ───────
-    // Order matches tenant.service.ts's bootstrap(): positions, then
-    // lookups, then roles (workflows not mirrored here — out of scope, this
-    // script doesn't need default workflow templates for anything it seeds).
-    await seedDefaultPositions(prisma, org.id);
-    await seedSystemLookups(prisma);
-    await seedSystemRoles(prisma, org.id);
-
-    let rootUnit = await prisma.orgUnit.findUnique({
-      where: { organizationId_code: { organizationId: org.id, code: 'DEMO' } },
-    });
-    if (!rootUnit) {
-      rootUnit = await prisma.orgUnit.create({
-        data: {
-          organizationId: org.id,
-          nameEn: DEMO_ORG_NAME,
-          nameAr: 'مستشفى تجريبي',
-          code: 'DEMO',
-          sortOrder: 0,
-        },
-      });
-      console.log(`Created root org unit: ${rootUnit.code}`);
-    } else {
-      console.log(`Reusing existing root org unit: ${rootUnit.code}`);
-    }
-
-    org = await prisma.organization.update({
-      where: { id: org.id },
-      data: {
-        isBootstrapped: true,
-        bootstrappedAt: org.bootstrappedAt ?? new Date(),
-      },
-    });
-
-    // ── Demo user ────────────────────────────────────────────────────────────
-    let user = await prisma.user.findUnique({
-      where: {
-        organizationId_email: {
-          organizationId: org.id,
-          email: DEMO_ADMIN_EMAIL,
-        },
-      },
-    });
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          organizationId: org.id,
-          email: DEMO_ADMIN_EMAIL,
-          name: 'Demo Admin',
-          status: 'ACTIVE',
-        },
-      });
-      console.log(`Created demo user: ${user.email} (${user.id})`);
-    } else {
-      console.log(`Reusing existing demo user: ${user.email} (${user.id})`);
-    }
-
-    // ── Better Auth credential — created directly, no invitation flow ────────
-    if (!user.authUserId) {
-      const auth = createDemoAuthInstance(prisma);
-      const signUpResult = await auth.api.signUpEmail({
-        body: {
-          email: namespacedEmail(org.id, user.email),
-          password: DEMO_ADMIN_PASSWORD,
-          name: user.name,
-        },
-      });
-
-      user = await prisma.user.update({
-        where: { id: user.id },
-        data: { authUserId: signUpResult.user.id },
-      });
-      console.log('Created Better Auth credential for demo user');
-    } else {
-      console.log('Demo user already has a Better Auth credential — skipping');
-    }
-
-    // ── TENANT_ADMIN role assignment ─────────────────────────────────────────
-    const tenantAdminRole = await prisma.role.findFirst({
-      where: { organizationId: org.id, key: 'TENANT_ADMIN' },
-    });
-    if (!tenantAdminRole) {
-      throw new Error(
-        'TENANT_ADMIN role not found after seedSystemRoles() — this should never happen',
-      );
-    }
-
-    const existingAssignment = await prisma.userRole.findFirst({
-      where: { userId: user.id, roleId: tenantAdminRole.id },
-    });
-    if (!existingAssignment) {
-      await prisma.userRole.create({
-        data: { userId: user.id, roleId: tenantAdminRole.id },
-      });
-      console.log('Assigned TENANT_ADMIN role to demo user');
-    } else {
-      console.log('Demo user already holds TENANT_ADMIN — skipping assignment');
-    }
-
-    console.log('\n=== DEMO LOGIN CREDENTIALS ===');
-    console.log('URL:      http://localhost:4200/login');
-    console.log('Org slug: demo');
-    console.log('Email:    ' + user.email);
-    console.log('Password: Demo@123456');
-    console.log('==============================\n');
-
     // ── Platform organization + platform admin (ACC-13) ───────────────────────
-    // Mirrors the demo tenant block above exactly (org → roles → root org unit
-    // → user → Better Auth credential → role assignment), but creates the
-    // designated platform Organization (isPlatformOrg: true) and assigns
-    // PLATFORM_ADMIN instead of TENANT_ADMIN — lets the Super Admin Portal be
-    // exercised through the real /login page instead of hand-editing
-    // Organization.isPlatformOrg + UserRole in Prisma Studio.
     let platformOrg = await prisma.organization.findUnique({
       where: { slug: PLATFORM_ORG_SLUG },
     });
@@ -424,8 +212,6 @@ async function main(): Promise<void> {
       );
     }
 
-    // Lookups are global (organizationId: null) — already seeded above via
-    // the demo org block, no need to repeat. Roles are org-scoped though.
     await seedSystemRoles(prisma, platformOrg.id);
 
     let platformRootUnit = await prisma.orgUnit.findUnique({
@@ -486,7 +272,7 @@ async function main(): Promise<void> {
     }
 
     if (!platformAdmin.authUserId) {
-      const auth = createDemoAuthInstance(prisma);
+      const auth = createAuthInstance(prisma);
       const signUpResult = await auth.api.signUpEmail({
         body: {
           email: namespacedEmail(platformOrg.id, platformAdmin.email),
@@ -534,7 +320,10 @@ async function main(): Promise<void> {
     console.log(`Org slug: ${PLATFORM_ORG_SLUG}`);
     console.log('Email:    ' + platformAdmin.email);
     console.log('Password: ' + PLATFORM_ADMIN_PASSWORD);
-    console.log('==========================================\n');
+    console.log('==========================================');
+    console.log('\nNo demo tenant was created by this script (ACC-23). Log in');
+    console.log('above, go to Super Admin -> Tenants -> Create Tenant, and');
+    console.log('provision the demo tenant through the real bootstrap flow.\n');
   } finally {
     await prisma.$disconnect();
   }
