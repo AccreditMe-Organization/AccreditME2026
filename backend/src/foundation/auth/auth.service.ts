@@ -24,6 +24,7 @@ import {
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import { createHash, createHmac, randomBytes } from 'crypto';
 import * as QRCode from 'qrcode';
+import { isAPIError } from 'better-auth/api';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
@@ -412,9 +413,29 @@ export class AuthService {
 
     const namespacedEmail = AuthService.namespacedEmail(user.organizationId, user.email);
 
-    const signUpResult = await this.auth.api.signUpEmail({
-      body: { email: namespacedEmail, password: dto.password, name: user.name },
-    });
+    let signUpResult: Awaited<ReturnType<typeof this.auth.api.signUpEmail>>;
+    try {
+      signUpResult = await this.auth.api.signUpEmail({
+        body: { email: namespacedEmail, password: dto.password, name: user.name },
+      });
+    } catch (err) {
+      // Unlike login() (Section 8's deliberate anti-enumeration behavior —
+      // always the same generic "Invalid credentials" regardless of the
+      // real reason), there is no equivalent enumeration concern here: the
+      // caller already proved possession of a valid, unexpired invitation
+      // token before reaching this point. A real Better Auth APIError
+      // (e.g. the haveIBeenPwned plugin's PASSWORD_COMPROMISED) carries a
+      // genuinely useful message the user needs to act on, so it's
+      // forwarded — but only for a real APIError, confirmed via Better
+      // Auth's own isAPIError() class-identity check, never a bare
+      // "has a message" duck-type. Anything else (a real internal failure)
+      // re-throws unchanged and must NOT have its message forwarded to the
+      // client.
+      if (isAPIError(err)) {
+        throw new BadRequestException(err.body?.message ?? 'Unable to accept invitation');
+      }
+      throw err;
+    }
 
     await this.prisma.user.update({
       where: { id: user.id },
