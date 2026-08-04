@@ -12,6 +12,12 @@ jest.mock('../../providers/auth/better-auth.config', () => ({
   createBetterAuthInstance: jest.fn(() => ({ api: {} })),
 }));
 
+// Same rationale as above — ACC-25 added AuthService's own top-level import
+// of isAPIError from better-auth/api, which is also ESM-only.
+jest.mock('better-auth/api', () => ({
+  isAPIError: () => false,
+}));
+
 describe('AuthController', () => {
   let controller: AuthController;
   let service: {
