@@ -23,6 +23,25 @@ jest.mock('../../providers/auth/better-auth.config', () => ({
   createBetterAuthInstance: jest.fn(() => ({ api: mockAuthApi })),
 }));
 
+// Same rationale/pattern as above — better-auth/api is also ESM-only and
+// breaks Jest's transform if loaded for real (ACC-25 added
+// AuthService.acceptInvitation()'s import of isAPIError from it). This mock
+// isAPIError recognizes only MockAPIError instances, letting tests prove
+// AuthService's real control flow (recognized -> BadRequestException with
+// the real message; anything else -> rethrown unchanged) without the real
+// better-auth/api module ever loading. isAPIError's own correctness is a
+// better-auth library invariant, verified separately by reading its actual
+// source — not re-tested here.
+class MockAPIError extends Error {
+  constructor(public body: { message?: string; code?: string }) {
+    super(body.message);
+    this.name = 'MockAPIError';
+  }
+}
+jest.mock('better-auth/api', () => ({
+  isAPIError: (err: unknown) => err instanceof MockAPIError,
+}));
+
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
 
@@ -440,6 +459,54 @@ describe('AuthService', () => {
       await expect(
         service.acceptInvitation({ token: 'expired-token', password: 'newpassword123' }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // ACC-25
+    it('translates a genuine Better Auth APIError into a BadRequestException carrying the real message', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
+      mockAuthApi.signUpEmail.mockRejectedValue(
+        new MockAPIError({
+          message: 'The password you entered has been compromised. Please choose a different password.',
+          code: 'PASSWORD_COMPROMISED',
+        }),
+      );
+
+      await expect(
+        service.acceptInvitation({ token: 'valid-token', password: 'password123' }),
+      ).rejects.toThrow(
+        new BadRequestException(
+          'The password you entered has been compromised. Please choose a different password.',
+        ),
+      );
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('does not convert a non-APIError failure — it still propagates unhandled', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
+      const internalFailure = new Error('connection reset');
+      mockAuthApi.signUpEmail.mockRejectedValue(internalFailure);
+
+      await expect(
+        service.acceptInvitation({ token: 'valid-token', password: 'password123' }),
+      ).rejects.toThrow(internalFailure);
+      await expect(
+        service.acceptInvitation({ token: 'valid-token', password: 'password123' }),
+      ).rejects.not.toBeInstanceOf(BadRequestException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
   });
 

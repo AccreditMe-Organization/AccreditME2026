@@ -7,6 +7,12 @@ jest.mock('../../providers/auth/better-auth.config', () => ({
   createBetterAuthInstance: jest.fn(() => ({ api: {} })),
 }));
 
+// Same rationale as above — ACC-25 added AuthService's own top-level import
+// of isAPIError from better-auth/api, which is also ESM-only.
+jest.mock('better-auth/api', () => ({
+  isAPIError: () => false,
+}));
+
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PlatformTenantService } from './platform-tenant.service';
 import { PrismaService } from '../../prisma/prisma.service';

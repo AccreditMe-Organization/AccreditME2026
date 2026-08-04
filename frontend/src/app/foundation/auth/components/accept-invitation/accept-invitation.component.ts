@@ -75,9 +75,16 @@ export class AcceptInvitationComponent {
         this.success.set(true);
         setTimeout(() => void this.router.navigate(['/login']), 2000);
       },
-      error: () => {
+      error: (err: { error?: { message?: string } }) => {
         this.submitting.set(false);
-        this.error.set('auth.errorInvalidInvitation');
+        // Surfaces the backend's real message when it provides one (e.g. a
+        // compromised-password rejection the user actually needs to act
+        // on) — only falls back to the generic token/expiry wording when
+        // the backend didn't send a message at all. See ACC-25: this used
+        // to be a single hardcoded message for every failure, which hid a
+        // real PASSWORD_COMPROMISED error behind a misleading "invalid or
+        // expired invitation" text.
+        this.error.set(err?.error?.message ?? 'auth.errorInvalidInvitation');
       },
     });
   }
