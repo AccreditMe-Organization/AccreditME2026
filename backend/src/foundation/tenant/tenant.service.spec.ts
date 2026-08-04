@@ -200,6 +200,13 @@ describe('TenantService', () => {
       expect(orgPositionService.seedDefaultPositions).toHaveBeenCalledWith('org-a');
       expect(lookupService.seedSystemData).toHaveBeenCalledTimes(1);
       expect(roleService.seedSystemRoles).toHaveBeenCalledWith('org-a');
+      // ACC-23 — this assertion was missing entirely: the mock existed and
+      // bootstrap() genuinely calls seedDefaultWorkflows(), but nothing here
+      // ever checked it, which is exactly the kind of gap that let
+      // demo-seed.ts's hand-rolled tenant creation drift unnoticed for so
+      // long (a test that mocks a dependency but never asserts on it proves
+      // nothing about whether the real call happens).
+      expect(workflowTemplateService.seedDefaultWorkflows).toHaveBeenCalledWith('org-a');
       expect(prisma.organization.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'org-a' },
