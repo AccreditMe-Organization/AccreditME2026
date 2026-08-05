@@ -745,8 +745,8 @@ seed:demo` producing a fully-working demo environment.
       `en.json`/`ar.json` keys added in the same commit
 - [x] Backend TypeScript: zero errors
 - [x] Frontend TypeScript: zero errors
-- [x] All tests passing including tenant isolation (567/567 backend
-      tests, 12 tenant isolation tests, all green)
+- [x] All tests passing including tenant isolation (569/569 backend
+      tests, 12 tenant isolation tests, all green; frontend 27/27 green)
 - [x] Real browser verification (login → create committee → detail
       page → add member → membership history) via a scripted Playwright
       session — confirmed working end-to-end; also caught and fixed a
@@ -755,8 +755,13 @@ seed:demo` producing a fully-working demo environment.
       let-mode>` instead of the `#item` template-reference-variable
       PrimeNG's `SelectButton` actually queries for, silently rendering
       blank buttons
-- [ ] No PR opened or merged without explicit instruction — still true,
-      not yet requested
+- [x] `WorkflowTransitionActionsComponent` added and wired into
+      `CommitteeDetailComponent` — found missing during the browser
+      verification above (a committee that can never leave FORMATION
+      isn't a working module); built generic (WorkflowInstance/stage
+      inputs only, no Committee-specific logic) for reuse across every
+      future workflow-driven module
+- [x] PR opened to dev — explicitly requested
 
 ---
 
