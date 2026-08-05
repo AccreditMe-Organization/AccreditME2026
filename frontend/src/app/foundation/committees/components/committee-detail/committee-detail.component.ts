@@ -18,8 +18,9 @@ import {
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
-import { WorkflowService } from '../../../workflow/services/workflow.service';
+import { WorkflowService, WorkflowInstanceDto } from '../../../workflow/services/workflow.service';
 import { WorkflowTemplateService } from '../../../workflow/services/workflow-template.service';
+import { WorkflowTransitionActionsComponent } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
@@ -38,6 +39,7 @@ import { CommitteeMemberFormComponent } from '../committee-member-form/committee
     CardComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
+    WorkflowTransitionActionsComponent,
   ],
   template: `
     @if (error()) {
@@ -54,6 +56,13 @@ import { CommitteeMemberFormComponent } from '../committee-member-form/committee
               <p class="text-sm text-[var(--am-text-secondary)] mt-1">
                 {{ 'committee.currentStage' | translate }}: {{ currentStageLabel() }}
               </p>
+            }
+            @if (currentInstance(); as instance) {
+              <app-workflow-transition-actions
+                class="block mt-2"
+                [instance]="instance"
+                (transitioned)="onWorkflowTransitioned($event)"
+              />
             }
           </div>
           <div class="flex gap-2">
@@ -217,6 +226,7 @@ export class CommitteeDetailComponent implements OnInit {
   readonly users = signal<IUserDto[]>([]);
   readonly roles = signal<RoleDto[]>([]);
   readonly currentStageLabel = signal<string | null>(null);
+  readonly currentInstance = signal<WorkflowInstanceDto | null>(null);
 
   readonly formVisible = signal(false);
   readonly memberFormVisible = signal(false);
@@ -344,6 +354,14 @@ export class CommitteeDetailComponent implements OnInit {
     });
   }
 
+  // Fired by WorkflowTransitionActionsComponent (ACC-22) after a successful
+  // transition — the trigger response IS the updated instance, so this
+  // refreshes the displayed stage without a manual page reload or a
+  // redundant re-fetch of the instance itself.
+  onWorkflowTransitioned(instance: WorkflowInstanceDto): void {
+    this.setCurrentInstance(instance);
+  }
+
   // Current lifecycle stage is read live from the workflow engine, never a
   // stored field on Committee (ACC-22 Pending Discussion #5). Plain-text
   // display only — WorkflowStage has no persisted, stable key/slug to bind
@@ -353,15 +371,21 @@ export class CommitteeDetailComponent implements OnInit {
     this.workflowService.getInstancesByObject('COMMITTEE', this.committeeId).subscribe({
       next: (instances) => {
         const instance = instances[0];
-        if (!instance?.currentStageId) return;
-        this.workflowTemplateService.getTemplate(instance.workflowTemplateId).subscribe({
-          next: (template) => {
-            const stage = template.stages?.find((s) => s.id === instance.currentStageId);
-            if (stage) {
-              this.currentStageLabel.set(this.languageService.isArabic() ? stage.nameAr : stage.nameEn);
-            }
-          },
-        });
+        if (instance) this.setCurrentInstance(instance);
+      },
+    });
+  }
+
+  private setCurrentInstance(instance: WorkflowInstanceDto): void {
+    this.currentInstance.set(instance);
+    if (!instance.currentStageId) {
+      this.currentStageLabel.set(null);
+      return;
+    }
+    this.workflowTemplateService.getTemplate(instance.workflowTemplateId).subscribe({
+      next: (template) => {
+        const stage = template.stages?.find((s) => s.id === instance.currentStageId);
+        this.currentStageLabel.set(stage ? (this.languageService.isArabic() ? stage.nameAr : stage.nameEn) : null);
       },
     });
   }

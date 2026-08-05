@@ -151,6 +151,7 @@
   },
   "workflow": {
     "title": "قوالب سير العمل",
+    "errorTransition": "تعذر إتمام هذا الإجراء.",
     "objectType": "نوع الكائن",
     "isDefault": "افتراضي",
     "setDefault": "تعيين كافتراضي",
