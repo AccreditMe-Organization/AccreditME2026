@@ -8,6 +8,7 @@ import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { PlatformTenantService } from '../../services/platform-tenant.service';
 import { PlanService, IPlan } from '../../services/plan.service';
+import { extractErrorMessage } from '../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-create-tenant',
@@ -117,9 +118,9 @@ export class CreateTenantComponent implements OnInit {
         // Duplicate slug surfaces here as a 409 ConflictException from the
         // backend — simplest submit-time surface, per step plan Section 12
         // Pending Discussion #4 (no async slug-uniqueness validator).
-        error: (err: { error?: { message?: string } }) => {
+        error: (err: unknown) => {
           this.submitting.set(false);
-          this.error.set(err?.error?.message ?? 'platform.errorCreateTenant');
+          this.error.set(extractErrorMessage(err, 'platform.errorCreateTenant'));
         },
       });
   }

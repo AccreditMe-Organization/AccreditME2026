@@ -11,6 +11,7 @@ import {
   PublicHolidayDto,
 } from '../../services/working-calendar.service';
 import { PublicHolidayFormComponent } from '../public-holiday-form/public-holiday-form.component';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-public-holiday-list',
@@ -163,7 +164,7 @@ export class PublicHolidayListComponent implements OnInit {
     // for proper RTL support and translation
     this.svc.removeHoliday(holiday.id).subscribe({
       next: () => this.loadHolidays(),
-      error: (err) => this.error.set(err?.error?.message ?? 'Delete failed'),
+      error: (err: unknown) => this.error.set(extractErrorMessage(err, 'Delete failed')),
     });
   }
 

@@ -6,6 +6,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { MessageModule } from 'primeng/message';
 import { RoleService, RoleDto, CreateRoleDto, UpdateRoleDto } from '../../services/role.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-role-form',
@@ -120,8 +121,8 @@ export class RoleFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit(role);
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });

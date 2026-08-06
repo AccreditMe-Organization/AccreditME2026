@@ -14,6 +14,7 @@ import {
 } from '../../services/workflow-template.service';
 import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stage-form.component';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-workflow-stage-list',
@@ -231,8 +232,8 @@ export class WorkflowStageListComponent implements OnInit {
       accept: () => {
         this.workflowTemplateService.removeStage(stage.id).subscribe({
           next: () => this.loadTemplate(),
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'Remove failed'),
+          error: (err: unknown) =>
+            this.error.set(extractErrorMessage(err, 'Remove failed')),
         });
       },
     });
@@ -264,14 +265,14 @@ export class WorkflowStageListComponent implements OnInit {
       next: () => {
         this.workflowTemplateService.updateStage(b.id, { order: a.order }).subscribe({
           next: () => this.loadTemplate(),
-          error: (err: { error?: { message?: string } }) => {
-            this.error.set(err?.error?.message ?? 'Reorder failed');
+          error: (err: unknown) => {
+            this.error.set(extractErrorMessage(err, 'Reorder failed'));
             this.loadTemplate(); // reload to restore true server state
           },
         });
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.error.set(err?.error?.message ?? 'Reorder failed');
+      error: (err: unknown) => {
+        this.error.set(extractErrorMessage(err, 'Reorder failed'));
         this.loadTemplate(); // reload to restore true server state
       },
     });

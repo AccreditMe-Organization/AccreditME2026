@@ -11,6 +11,7 @@ import { UserService, IUserDto } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { InviteUserComponent } from '../invite-user/invite-user.component';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-user-list',
@@ -184,9 +185,9 @@ export class UserListComponent implements OnInit {
             );
             this.loadUsers();
           },
-          error: (err: { error?: { message?: string } }) => {
+          error: (err: unknown) => {
             this.deactivating.set(false);
-            this.error.set(err?.error?.message ?? 'Deactivate failed');
+            this.error.set(extractErrorMessage(err, 'Deactivate failed'));
           },
         });
       },

@@ -6,6 +6,7 @@ import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { AuthService } from '../../../../core/services/auth.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-accept-invitation',
@@ -75,7 +76,7 @@ export class AcceptInvitationComponent {
         this.success.set(true);
         setTimeout(() => void this.router.navigate(['/login']), 2000);
       },
-      error: (err: { error?: { message?: string } }) => {
+      error: (err: unknown) => {
         this.submitting.set(false);
         // Surfaces the backend's real message when it provides one (e.g. a
         // compromised-password rejection the user actually needs to act
@@ -84,7 +85,7 @@ export class AcceptInvitationComponent {
         // to be a single hardcoded message for every failure, which hid a
         // real PASSWORD_COMPROMISED error behind a misleading "invalid or
         // expired invitation" text.
-        this.error.set(err?.error?.message ?? 'auth.errorInvalidInvitation');
+        this.error.set(extractErrorMessage(err, 'auth.errorInvalidInvitation'));
       },
     });
   }

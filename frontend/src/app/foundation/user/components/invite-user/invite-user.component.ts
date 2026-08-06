@@ -8,6 +8,7 @@ import { MessageModule } from 'primeng/message';
 import { UserService } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-invite-user',
@@ -144,9 +145,9 @@ export class InviteUserComponent implements OnInit {
           this.saving.set(false);
           this.saved.emit();
         },
-        error: (err: { error?: { message?: string } }) => {
+        error: (err: unknown) => {
           this.saving.set(false);
-          this.error.set(err?.error?.message ?? 'user.errorInvite');
+          this.error.set(extractErrorMessage(err, 'user.errorInvite'));
         },
       });
   }

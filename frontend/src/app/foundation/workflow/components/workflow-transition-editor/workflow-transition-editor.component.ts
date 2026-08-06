@@ -21,6 +21,7 @@ import {
 } from '../../services/workflow-template.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
 import { WorkflowActionConfiguratorComponent } from '../workflow-action-configurator/workflow-action-configurator.component';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 const TRIGGER_CONDITIONS = [
   { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
@@ -438,8 +439,8 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         this.showAddDialog.set(false);
         this.changed.emit();
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });
@@ -476,8 +477,8 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         this.showEditDialog.set(false);
         this.changed.emit();
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });
@@ -492,8 +493,8 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       accept: () => {
         this.workflowTemplateService.removeTransition(transition.id).subscribe({
           next: () => this.changed.emit(),
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'Remove failed'),
+          error: (err: unknown) =>
+            this.error.set(extractErrorMessage(err, 'Remove failed')),
         });
       },
     });

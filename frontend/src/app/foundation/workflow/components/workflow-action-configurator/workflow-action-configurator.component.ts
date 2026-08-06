@@ -18,6 +18,7 @@ import {
   WorkflowTransitionActionDto,
   CreateWorkflowTransitionActionDto,
 } from '../../services/workflow-template.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 const ACTION_TYPES = [
   { label: 'CREATE_TASK', value: 'CREATE_TASK' },
@@ -247,8 +248,8 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
   onToggleEnabled(action: WorkflowTransitionActionDto, isEnabled: boolean): void {
     this.workflowTemplateService.updateTransitionAction(action.id, { isEnabled }).subscribe({
       next: () => this.changed.emit(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Update failed'),
+      error: (err: unknown) =>
+        this.error.set(extractErrorMessage(err, 'Update failed')),
     });
   }
 
@@ -261,8 +262,8 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
       accept: () => {
         this.workflowTemplateService.removeTransitionAction(action.id).subscribe({
           next: () => this.changed.emit(),
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'Remove failed'),
+          error: (err: unknown) =>
+            this.error.set(extractErrorMessage(err, 'Remove failed')),
         });
       },
     });
@@ -305,8 +306,8 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
         this.showFormDialog.set(false);
         this.changed.emit();
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });

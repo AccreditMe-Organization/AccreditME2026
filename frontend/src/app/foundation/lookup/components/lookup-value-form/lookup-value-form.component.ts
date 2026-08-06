@@ -10,6 +10,7 @@ import {
   CreateLookupValueDto,
   UpdateLookupValueDto,
 } from '../../services/lookup.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-lookup-value-form',
@@ -200,8 +201,8 @@ export class LookupValueFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit();
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });

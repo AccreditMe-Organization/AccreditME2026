@@ -9,6 +9,7 @@ import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService } from 'primeng/api';
 import { RoleService, RoleDto } from '../../services/role.service';
 import { RoleFormComponent } from '../role-form/role-form.component';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-role-list',
@@ -208,8 +209,8 @@ export class RoleListComponent implements OnInit {
       accept: () => {
         this.roleService.deactivateRole(role.id).subscribe({
           next: () => this.loadRoles(),
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'Deactivate failed'),
+          error: (err: unknown) =>
+            this.error.set(extractErrorMessage(err, 'Deactivate failed')),
         });
       },
     });
@@ -218,8 +219,8 @@ export class RoleListComponent implements OnInit {
   onActivate(role: RoleDto): void {
     this.roleService.activateRole(role.id).subscribe({
       next: () => this.loadRoles(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Activate failed'),
+      error: (err: unknown) =>
+        this.error.set(extractErrorMessage(err, 'Activate failed')),
     });
   }
 

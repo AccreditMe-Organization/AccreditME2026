@@ -7,6 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-workflow-template-list',
@@ -118,8 +119,8 @@ export class WorkflowTemplateListComponent implements OnInit {
     event.stopPropagation();
     this.workflowTemplateService.setDefault(template.id).subscribe({
       next: () => this.loadTemplates(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Set default failed'),
+      error: (err: unknown) =>
+        this.error.set(extractErrorMessage(err, 'Set default failed')),
     });
   }
 
@@ -133,8 +134,8 @@ export class WorkflowTemplateListComponent implements OnInit {
       accept: () => {
         this.workflowTemplateService.deactivateTemplate(template.id).subscribe({
           next: () => this.loadTemplates(),
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'Deactivate failed'),
+          error: (err: unknown) =>
+            this.error.set(extractErrorMessage(err, 'Deactivate failed')),
         });
       },
     });

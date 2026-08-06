@@ -6,6 +6,7 @@ import { WorkflowService, WorkflowInstanceDto } from '../../services/workflow.se
 import { WorkflowTemplateService, WorkflowTransitionDto } from '../../services/workflow-template.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 // Generic, reusable across every WorkflowObjectType (Committee, and later
 // Document, Incident, CAPA, Gap, Audit, KPI, ...) — contains zero
@@ -93,9 +94,9 @@ export class WorkflowTransitionActionsComponent {
         this.triggeringId.set(null);
         this.transitioned.emit(updated);
       },
-      error: (err: { error?: { message?: string } }) => {
+      error: (err: unknown) => {
         this.triggeringId.set(null);
-        this.error.set(err?.error?.message ?? 'workflow.errorTransition');
+        this.error.set(extractErrorMessage(err, 'workflow.errorTransition'));
       },
     });
   }

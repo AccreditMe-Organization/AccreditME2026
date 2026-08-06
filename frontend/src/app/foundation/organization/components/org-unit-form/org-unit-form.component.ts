@@ -14,6 +14,7 @@ import {
   UpdateOrgUnitDto,
   orgUnitDisplayName,
 } from '../../services/org-unit.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 interface CascadeOption {
   label: string;
@@ -237,8 +238,8 @@ export class OrgUnitFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit();
       },
-      error: (err) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });
