@@ -242,11 +242,61 @@ ACC-21: Fixed platformAdminGuard hard-reload race condition ✅
                 NavigationAccessService.loadAccess() added to the app
                 initializer, chained after restoreSession().
 
-### Governance Modules (Next)
-Committee Management
-               (depends on: navigation shell)
+### Auth Flow and Demo Seed Fixes (Complete)
+ACC-23: demo-seed.ts refactored to genesis-only ✅ (merged to dev)
+                Platform org + admin only — demo tenant now provisioned
+                exclusively via the real Super Admin Portal "Create
+                Tenant" flow, closing the drift bug where the
+                hand-rolled script silently fell behind
+                TenantService.bootstrap().
+ACC-24: Fixed authInterceptor's blanket 401-redirect hijacking
+                navigation ✅ (merged to dev)
+                Was hijacking navigation on any pre-auth route
+                (accept-invitation, forgot-password) — breaking
+                invitation acceptance entirely for every real invited
+                user.
+ACC-25: acceptInvitation() surfaces real backend error messages ✅
+                (merged to dev)
+                Instead of a generic "invalid or expired" message for
+                any failure (e.g. Better Auth's password-compromised
+                check).
+
+### Governance Modules (In Progress)
+ACC-22: Committee Management ✅ (merged to dev)
+                Full CRUD, membership management
+                (CommitteeMembershipEvent audit trail, not workflow
+                transitions), ACC-17's dormant committeeId gap closed
+                across all 3 workflow.service.ts call sites,
+                committees:approve permission fix + demo-tenant
+                backfill, two-distinct-validation-paths pattern for
+                reportingToCommitteeId/reportingToRoleId, and the
+                generic WorkflowTransitionActionsComponent.
 Meeting Management
                (depends on: committees)
+               NOTE: Build a Dashboard/Home page BEFORE Meeting
+               Management, not after — see Open/Deferred Items below.
+               Meeting Management will introduce even more non-admin
+               interaction (attendance, votes) and should inherit a
+               working landing experience from day one rather than
+               repeating the gap Committee Management just exposed.
+
+### Error Handling Consistency (Complete)
+ACC-26: Fixed user-role-assignment 400 error and object rendering ✅
+                (merged to dev)
+                p-select missing optionValue binding caused the 400;
+                array-safe HTTP error-message extraction (new shared
+                http-error.util.ts) swept across 25 files/30 call
+                sites.
+ACC-27: Global HttpExceptionFilter ✅ (merged to dev)
+                CLAUDE.md had documented this filter's existence
+                prematurely; confirmed during ACC-26 it was never
+                actually built. Now real: consistent {statusCode,
+                message, error} shape across the API, explicit
+                allowlist for safe third-party errors (Better Auth's
+                isAPIError(), reused from AuthService which now
+                delegates to this filter instead of its own local
+                check), Sentry wiring deliberately deferred (TODO
+                placeholder only).
 
 ### Onboarding
 Tenant Onboarding wizard
@@ -1377,6 +1427,66 @@ Prisma Studio.
   new dependencies are added, to avoid Windows-only lockfiles missing
   Linux-platform optional dependency entries.
 
+## Key Architecture Decisions (ACC-22 through ACC-27)
+
+- **`WorkflowStage` has no persisted, stable key/slug** (only
+  `nameEn`/`nameAr`/`order`), and stages are tenant-editable — this
+  blocks any semantic (not just positional) UI treatment keyed to a
+  specific stage, across EVERY `WorkflowObjectType`-driven module.
+  Committee Management (ACC-22) resolved this by displaying the
+  current stage as plain text (no colored status badge) rather than
+  guessing at a fix. Revisit when a SECOND workflow-driven module
+  needs stage-aware UI — do not pre-build a fix against only one
+  data point.
+- **`WorkflowTransitionActionsComponent`**
+  (`frontend/src/app/foundation/workflow/components/workflow-transition-actions/`,
+  ACC-22) is the standard, reusable pattern for triggering workflow
+  transitions from any module's detail view — reads available
+  transitions for the current stage, client-side filters by the
+  caller's permissions (UX only — the backend's
+  `WorkflowService.triggerTransition()` re-validates
+  `requiredPermission` server-side regardless), renders each
+  transition's own `labelEn`/`labelAr` (never `| translate` —
+  transition labels are tenant-editable data). Every future
+  workflow-driven module should reuse this component, not rebuild
+  it. **Known limitation**: does not filter on `triggerCondition`
+  (e.g. hiding `SYSTEM_AUTOMATIC` transitions a human shouldn't
+  manually fire) — irrelevant today since every seeded transition is
+  `ROLE_BASED`, but must be addressed before any module seeds a
+  non-role-based transition.
+- **`TenantService.bootstrap()`'s seeding steps run entirely
+  sequentially**, awaited one at a time (positions, lookups ~87
+  entries, roles + permissions, workflows: 54 stages + 68 transitions
+  + 68 transition-actions) — several hundred sequential DB
+  round-trips in a single HTTP request. Confirmed NOT the cause of
+  any correctness issue, but a real, unaddressed
+  performance/scaling risk for real-world tenant creation. Candidate
+  fix (not yet designed): parallelize independent seed steps via
+  `Promise.all()` where no real ordering dependency exists, and/or
+  batch each service's own per-row upserts. Needs its own
+  investigation before implementing — do not parallelize blindly
+  given potential ordering dependencies between steps.
+- **Post-merge CI verification requires a specific workaround**: the
+  `github` MCP server's `pull_request_read`/`get_check_runs` tool is
+  scoped to a PR's head SHA and does NOT pick up the new commit a
+  squash-merge creates (a separate push-triggered workflow run).
+  Confirmed via reading `ci.yml` directly — both `push` and
+  `pull_request` triggers exist, so a genuine second run always
+  fires on merge. Verify post-merge CI via a direct `WebFetch` to
+  `api.github.com/repos/.../commits/{sha}/check-runs` — the
+  PR-scoped tool will not surface it.
+- **Better Auth's `better-auth/api` import (and `better-auth/config`)
+  is ESM-only** and breaks Jest for any spec file that transitively
+  loads a module importing it — not just the file importing it
+  directly. Established mitigation:
+  `jest.mock('better-auth/api', () => ({ isAPIError: () => false }))`
+  (or a real discriminating mock where the test needs true/false
+  branching, e.g. `http-exception.filter.spec.ts`'s `MockAPIError`
+  pattern). This has now recurred 3 times (ACC-25, ACC-27, plus the
+  original `better-auth.config` precedent) — expect it again on any
+  future file that imports from `better-auth/api` or
+  `better-auth/config`.
+
 ## Open / Deferred Items
 
 - **Resend email domain (`accreditme.com`) is not verified** in the
@@ -1388,6 +1498,44 @@ Prisma Studio.
   note in Build Sequence above. Positioned right before the demo
   milestone, after Document Management, alongside the full
   visual/brand polish ticket.
+- **Dashboard/Home page** — no route exists today for a
+  low-permission, non-admin user to land on after login. Confirmed
+  actively broken, not just suboptimal: a user without `orgUnits:*`
+  permission landing on the current default (`/organization`) sees
+  an empty table with a red "Failed to load organization units"
+  error and 403s in the console. Login redirect logic currently only
+  distinguishes `PLATFORM_ADMIN` vs. everyone-else (ACC-18) — never
+  designed for a genuinely low-permission persona, since Tenant
+  Admin was the only non-platform role in play until Committee
+  Management shipped. Needs: role-aware landing logic, a real Home
+  page (My Tasks, My Committees, notifications summary), and a
+  graceful "you don't have access to this yet" pattern reusable
+  anywhere a permission gap shows up (audit whether the
+  `/organization` 403 pattern repeats on other screens once a real
+  low-permission test user exists). Also closes the deferred
+  breadcrumb Home-entry note (see Key Architecture Decisions
+  ACC-13/14's "Future note"). **Sequenced: before Meeting
+  Management, not after** — see the Governance Modules note above.
+- **Backend-vs-frontend coverage audit** — not yet started. Same
+  rigor as ACC-17's tenant-isolation audit, different question: for
+  every backend endpoint/permission across every module built so
+  far, does an actual frontend UI path exist to reach it? This class
+  of gap has been found repeatedly by accident (Org Positions was
+  unreachable pre-ACC-16, workflow transitions had zero UI callers
+  until ACC-22's extension, user-role-assignment had a payload bug
+  found via manual testing) — worth a deliberate, one-time pass
+  rather than continuing to discover these ad hoc. Playwright MCP
+  (newly installed) makes this practical — Claude Code can drive the
+  actual browser as different permission levels rather than relying
+  on static code reading alone.
+- **Permanent, CI-integrated Playwright E2E suite** — separate from
+  the audit above. Turn the user journeys already manually proven by
+  hand this session (tenant creation → invite → accept-invitation →
+  role assignment → committee creation → workflow transition) into
+  committed, re-runnable test files wired into `ci.yml`, following
+  the same precedent ACC-20 set for making CI real. Going forward,
+  new module tickets should include "extend the E2E suite" as an
+  acceptance criterion alongside unit tests.
 
 ---
 
