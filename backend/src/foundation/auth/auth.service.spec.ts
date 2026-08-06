@@ -23,24 +23,20 @@ jest.mock('../../providers/auth/better-auth.config', () => ({
   createBetterAuthInstance: jest.fn(() => ({ api: mockAuthApi })),
 }));
 
-// Same rationale/pattern as above — better-auth/api is also ESM-only and
-// breaks Jest's transform if loaded for real (ACC-25 added
-// AuthService.acceptInvitation()'s import of isAPIError from it). This mock
-// isAPIError recognizes only MockAPIError instances, letting tests prove
-// AuthService's real control flow (recognized -> BadRequestException with
-// the real message; anything else -> rethrown unchanged) without the real
-// better-auth/api module ever loading. isAPIError's own correctness is a
-// better-auth library invariant, verified separately by reading its actual
-// source — not re-tested here.
+// ACC-27 consolidation: AuthService no longer imports better-auth/api or
+// branches on error identity at all — signUpEmail() failures of every shape
+// now propagate unconverted, and the global HttpExceptionFilter owns
+// translation (including the isAPIError() class-identity check this file
+// used to mock for AuthService's own benefit — see
+// http-exception.filter.spec.ts for that coverage now). MockAPIError is kept
+// only as a realistic fixture shape below, no jest.mock('better-auth/api')
+// needed anymore since nothing in this module graph imports it.
 class MockAPIError extends Error {
   constructor(public body: { message?: string; code?: string }) {
     super(body.message);
     this.name = 'MockAPIError';
   }
 }
-jest.mock('better-auth/api', () => ({
-  isAPIError: (err: unknown) => err instanceof MockAPIError,
-}));
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
@@ -461,8 +457,14 @@ describe('AuthService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    // ACC-25
-    it('translates a genuine Better Auth APIError into a BadRequestException carrying the real message', async () => {
+    // ACC-27 consolidation: AuthService itself no longer branches on error
+    // identity at all (that local isAPIError() check moved to the global
+    // HttpExceptionFilter — see http-exception.filter.spec.ts for the
+    // "recognized APIError surfaces its own safe message" coverage that
+    // used to live here). These two tests now prove the same underlying
+    // fact from AuthService's side: every signUpEmail() failure, regardless
+    // of shape, propagates completely unconverted.
+    it('propagates a real Better Auth APIError unconverted — no local translation remains', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
         organizationId: ORG_A,
@@ -471,24 +473,19 @@ describe('AuthService', () => {
         invitationToken: 'valid-token',
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
-      mockAuthApi.signUpEmail.mockRejectedValue(
-        new MockAPIError({
-          message: 'The password you entered has been compromised. Please choose a different password.',
-          code: 'PASSWORD_COMPROMISED',
-        }),
-      );
+      const apiError = new MockAPIError({
+        message: 'The password you entered has been compromised. Please choose a different password.',
+        code: 'PASSWORD_COMPROMISED',
+      });
+      mockAuthApi.signUpEmail.mockRejectedValue(apiError);
 
       await expect(
         service.acceptInvitation({ token: 'valid-token', password: 'password123' }),
-      ).rejects.toThrow(
-        new BadRequestException(
-          'The password you entered has been compromised. Please choose a different password.',
-        ),
-      );
+      ).rejects.toBe(apiError);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
 
-    it('does not convert a non-APIError failure — it still propagates unhandled', async () => {
+    it('propagates a non-APIError failure unconverted too', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
         organizationId: ORG_A,
@@ -502,10 +499,7 @@ describe('AuthService', () => {
 
       await expect(
         service.acceptInvitation({ token: 'valid-token', password: 'password123' }),
-      ).rejects.toThrow(internalFailure);
-      await expect(
-        service.acceptInvitation({ token: 'valid-token', password: 'password123' }),
-      ).rejects.not.toBeInstanceOf(BadRequestException);
+      ).rejects.toBe(internalFailure);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
   });
