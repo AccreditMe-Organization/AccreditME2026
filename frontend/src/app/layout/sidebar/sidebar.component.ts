@@ -10,8 +10,8 @@ interface NavItem {
   requiredPermission: string;
 }
 
-// Only routes that actually exist today (ACC-5–ACC-12) — committees/
-// meetings/documents/etc. are ACC-14+ and will add their own entries once
+// Only routes that actually exist today (ACC-5–ACC-22) — meetings/
+// documents/etc. are still unbuilt and will add their own entries once
 // those modules ship, not stubbed here as dead links.
 const FOUNDATION_NAV_ITEMS: NavItem[] = [
   { labelKey: 'nav.organization', icon: 'pi pi-building', route: '/organization', requiredPermission: 'org:view' },
@@ -20,6 +20,7 @@ const FOUNDATION_NAV_ITEMS: NavItem[] = [
   { labelKey: 'nav.roles', icon: 'pi pi-shield', route: '/roles', requiredPermission: 'roles:view' },
   { labelKey: 'nav.workflows', icon: 'pi pi-sitemap', route: '/workflows', requiredPermission: 'workflows:view' },
   { labelKey: 'nav.orgPositions', icon: 'pi pi-briefcase', route: '/org-positions', requiredPermission: 'positions:view' },
+  { labelKey: 'nav.committees', icon: 'pi pi-flag', route: '/committees', requiredPermission: 'committees:view' },
   { labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks', requiredPermission: 'tasks:view' },
   { labelKey: 'nav.users', icon: 'pi pi-users', route: '/users', requiredPermission: 'users:view' },
 ];

@@ -49,6 +49,15 @@ const PARALLEL_STAGE = {
   assigneeRoleId: 'role-qm',
 };
 
+const COMMITTEE_STAGE = {
+  ...SINGLE_STAGE,
+  id: 'stage-committee',
+  isInitial: false,
+  approvalMode: 'COMMITTEE',
+  assigneeStrategy: 'COMMITTEE',
+  committeeId: 'committee-a',
+};
+
 const TARGET_STAGE = {
   ...SINGLE_STAGE,
   id: 'stage-target',
@@ -147,7 +156,7 @@ const mockPrisma = {
   workflowActionLog: { create: jest.fn() },
   workflowApproval: { upsert: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   userRole: { findFirst: jest.fn(), findMany: jest.fn() },
-  committee: { findUnique: jest.fn() },
+  committee: { findFirst: jest.fn() },
   committeeMember: { findMany: jest.fn() },
   user: { findMany: jest.fn() },
   role: { findFirst: jest.fn() },
@@ -455,6 +464,37 @@ describe('WorkflowService', () => {
       );
     });
 
+    // ACC-22, closing the ACC-17 deferred gap: resolveAssigneeRaw()'s
+    // COMMITTEE case previously read `prisma.committeeMember.findMany({
+    // where: { committeeId, leftAt: null } })` with no organizationId
+    // filter -- first-ever test coverage of this branch, proving both the
+    // happy path and the org-scoping fix (isActive + organizationId).
+    it("resolves the CREATE_TASK assignees to a COMMITTEE stage's active, org-scoped members", async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockStagesById({
+        'stage-single': SINGLE_STAGE,
+        'stage-target': { ...TARGET_STAGE, assigneeStrategy: 'COMMITTEE', committeeId: 'committee-a' },
+      });
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+      mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'member-1' }, { userId: 'member-2' }]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: { committeeId: 'committee-a', organizationId: ORG_A, isActive: true },
+      });
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['member-1', 'member-2'] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
     it('routes an out-of-office assignee to their acting user before task creation', async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
@@ -685,6 +725,167 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowInstance.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ currentStageId: 'stage-target' }) }),
       );
+    });
+  });
+
+  // ── triggerTransition — COMMITTEE approval mode ───────────────────────────────
+  // ACC-22, closing the ACC-17 deferred gap: isApprovalThresholdMet()'s
+  // COMMITTEE branch previously read `prisma.committee.findUnique({ where:
+  // { id } })` with no organizationId filter at all — a cross-tenant
+  // committeeId could have resolved. This describe block is the first-ever
+  // test coverage of the COMMITTEE approval path (there was none before this
+  // ticket), so it proves both the happy path AND the org-scoping fix, not
+  // just a regression check against pre-existing behavior.
+
+  describe('triggerTransition — COMMITTEE approval mode', () => {
+    it("looks up the committee scoped to the caller's organizationId", async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-committee' }));
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee', isApprovalPath: true }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-committee' }),
+      );
+      mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', quorumCount: 2 });
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([
+        makeApproval({ decision: 'APPROVED' }),
+        makeApproval({ decision: 'APPROVED' }),
+      ]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
+        where: { id: 'committee-a', organizationId: ORG_A },
+      });
+    });
+
+    it('advances once quorum is met and more than half of the votes are APPROVED', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-committee' }));
+      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ 'stage-committee': COMMITTEE_STAGE, 'stage-target': TARGET_STAGE }[where.id] ?? null),
+      );
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({
+          id: 'approve-transition',
+          fromStageId: 'stage-committee',
+          toStageId: 'stage-target',
+          isApprovalPath: true,
+        }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-committee' }),
+      );
+      mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', quorumCount: 2 });
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([
+        makeApproval({ decision: 'APPROVED' }),
+        makeApproval({ decision: 'APPROVED' }),
+      ]);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+
+      await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ currentStageId: 'stage-target' }) }),
+      );
+    });
+
+    it('does not advance when the vote count has not reached the quorum', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-committee' }));
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee', isApprovalPath: true }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-committee' }),
+      );
+      mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', quorumCount: 3 });
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+
+      const result = await service.triggerTransition(
+        'instance-1',
+        { transitionId: 'approve-transition' },
+        ORG_A,
+        ACTOR,
+        [],
+      );
+
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      expect(result.currentStageId).toBe('stage-committee');
+    });
+
+    // The actual tenant-isolation proof: a committeeId that belongs to a
+    // DIFFERENT org must never resolve here. prisma.committee.findFirst is
+    // mocked exactly as a real Prisma call would behave when organizationId
+    // doesn't match the row -- it returns null, not the foreign row.
+    it('does NOT treat the threshold as met when the committee belongs to a different tenant', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-committee' }));
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-committee', isApprovalPath: true }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-committee' }),
+      );
+      // Simulates the committee row existing, but for ORG_B -- a scoped
+      // findFirst({ id, organizationId: ORG_A }) correctly finds nothing.
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([
+        makeApproval({ decision: 'APPROVED' }),
+        makeApproval({ decision: 'APPROVED' }),
+      ]);
+
+      const result = await service.triggerTransition(
+        'instance-1',
+        { transitionId: 'approve-transition' },
+        ORG_A,
+        ACTOR,
+        [],
+      );
+
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
+        where: { id: 'committee-a', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      expect(result.currentStageId).toBe('stage-committee');
+    });
+
+    // resolveApproverPool()'s COMMITTEE branch is a THIRD, distinct call site
+    // from the two above — isApprovalThresholdMet() only reaches it when
+    // approvalMode is NOT 'COMMITTEE' (it returns early for that case), so a
+    // PARALLEL-mode stage whose assigneeStrategy is 'COMMITTEE' is the only
+    // way to actually exercise this branch. Neither of the two tests above
+    // (approvalMode: 'COMMITTEE', which skips this call) nor the
+    // resolveAssigneeRaw() CREATE_TASK test (approvalMode: 'SINGLE', which
+    // never reaches isApprovalThresholdMet at all) touches this code path.
+    it("sizes the PARALLEL approver pool via resolveApproverPool() using a committee's active, org-scoped members", async () => {
+      const parallelCommitteeStage = {
+        ...PARALLEL_STAGE,
+        id: 'stage-parallel-committee',
+        assigneeStrategy: 'COMMITTEE',
+        assigneeRoleId: null,
+        committeeId: 'committee-a',
+      };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+        makeInstance({ currentStageId: 'stage-parallel-committee' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(parallelCommitteeStage);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel-committee', isApprovalPath: true }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-parallel-committee' }),
+      );
+      mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'member-1' }, { userId: 'member-2' }]);
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: { committeeId: 'committee-a', organizationId: ORG_A, isActive: true },
+      });
+      // Pool size 2, threshold ALL, only 1 APPROVED vote so far — not yet met.
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
     });
   });
 

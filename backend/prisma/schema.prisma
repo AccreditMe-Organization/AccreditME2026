@@ -406,6 +406,7 @@ model User {
   taskEvidenceUploaded TaskEvidence[]
   notifications    Notification[]
   committeeMembers CommitteeMember[]
+  committeeMembershipEvents CommitteeMembershipEvent[]
   meetings         Meeting[]    @relation("MeetingOrganizer")
   auditLogs        AuditLog[]
   aiInteractionLogs AiInteractionLog[]
@@ -448,6 +449,7 @@ model Role {
   organization   Organization @relation(fields: [organizationId], references: [id])
   userRoles      UserRole[]
   rolePermissions RolePermission[]
+  reportingCommittees Committee[] // back-relation for Committee.reportingToRoleId (ACC-22)
 
   @@unique([organizationId, key])
   @@unique([organizationId, nameEn])
@@ -918,37 +920,92 @@ model Notification {
 // ---------------------------------------------------------------------------
 
 model Committee {
-  id             String            @id @default(cuid())
-  organizationId String
-  name           String
-  typeValueId    String
-  description    String?
-  quorum         Int               @default(0)
-  isActive       Boolean           @default(true)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  id                         String    @id @default(cuid())
+  organizationId             String
+  nameEn                     String
+  nameAr                     String
+  typeValueId                String
+  purpose                    String?
+  quorumCount                Int       @default(0)
+  meetingFrequency           CommitteeMeetingFrequency @default(AS_NEEDED)
+  parentCommitteeId          String?
+  termsOfReferenceDocumentId String?   // nullable, unpopulated until Document Management ships (ACC-22 Pending Discussion #1)
+  reportingToCommitteeId     String?   // mutually exclusive with reportingToRoleId, enforced at service layer
+  reportingToRoleId          String?   // mutually exclusive with reportingToCommitteeId, enforced at service layer
+  formedAt                   DateTime?
+  dissolvedAt                DateTime?
+  isActive                   Boolean   @default(true) // soft-deactivate flag, independent of workflow lifecycle stage
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
-  organization   Organization      @relation(fields: [organizationId], references: [id])
-  members        CommitteeMember[]
-  meetings       Meeting[]
+  organization         Organization      @relation(fields: [organizationId], references: [id])
+  parentCommittee      Committee?        @relation("SubCommittees", fields: [parentCommitteeId], references: [id])
+  subCommittees        Committee[]       @relation("SubCommittees")
+  reportingToCommittee Committee?        @relation("CommitteeReportingTo", fields: [reportingToCommitteeId], references: [id])
+  reportsToMe          Committee[]       @relation("CommitteeReportingTo")
+  reportingToRole      Role?             @relation(fields: [reportingToRoleId], references: [id])
+  members              CommitteeMember[]
+  membershipEvents     CommitteeMembershipEvent[]
+  meetings             Meeting[]
 
   @@index([organizationId])
+  @@index([parentCommitteeId])
+  @@index([reportingToCommitteeId])
+  @@index([reportingToRoleId])
+}
+
+enum CommitteeMeetingFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  BIANNUAL
+  ANNUAL
+  AS_NEEDED
 }
 
 model CommitteeMember {
-  id           String    @id @default(cuid())
-  committeeId  String
-  userId       String
-  roleValueId  String
-  joinedAt     DateTime  @default(now())
-  leftAt       DateTime?
+  id             String    @id @default(cuid())
+  organizationId String    // denormalized from Committee.organizationId, set once at creation, never updated
+  committeeId    String
+  userId         String
+  roleValueId    String
+  joinedAt       DateTime  @default(now())
+  leftAt         DateTime?
+  isActive       Boolean   @default(true) // derived STRICTLY from leftAt at the service layer (isActive = leftAt === null)
 
-  committee    Committee @relation(fields: [committeeId], references: [id])
-  user         User      @relation(fields: [userId], references: [id])
+  committee      Committee @relation(fields: [committeeId], references: [id])
+  user           User      @relation(fields: [userId], references: [id])
 
   @@unique([committeeId, userId])
+  @@index([organizationId])
   @@index([committeeId])
   @@index([userId])
+}
+
+model CommitteeMembershipEvent {
+  id             String    @id @default(cuid())
+  organizationId String    // denormalized from Committee.organizationId, set once at creation
+  committeeId    String
+  userId         String
+  roleValueId    String
+  action         CommitteeMembershipAction
+  effectiveDate  DateTime
+  reason         String?
+  approvedBy     String?   // userId — nullable, not every event needs approval
+  createdAt      DateTime  @default(now())
+
+  committee      Committee @relation(fields: [committeeId], references: [id])
+  user           User      @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([committeeId])
+  @@index([userId])
+}
+
+enum CommitteeMembershipAction {
+  JOINED
+  LEFT
+  ROLE_CHANGED
 }
 
 // ---------------------------------------------------------------------------

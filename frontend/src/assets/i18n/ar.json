@@ -151,6 +151,7 @@
   },
   "workflow": {
     "title": "قوالب سير العمل",
+    "errorTransition": "تعذر إتمام هذا الإجراء.",
     "objectType": "نوع الكائن",
     "isDefault": "افتراضي",
     "setDefault": "تعيين كافتراضي",
@@ -229,6 +230,49 @@
     "unreadCount": "{{count}} غير مقروءة",
     "justNow": "الآن",
     "errorLoad": "فشل تحميل الإشعارات."
+  },
+  "committee": {
+    "title": "اللجان",
+    "addCommittee": "إضافة لجنة",
+    "editCommittee": "تعديل اللجنة",
+    "nameEn": "اسم اللجنة (بالإنجليزية)",
+    "nameAr": "اسم اللجنة (بالعربية)",
+    "type": "نوع اللجنة",
+    "selectType": "اختر نوع اللجنة",
+    "purpose": "الغرض",
+    "quorumCount": "النصاب القانوني",
+    "meetingFrequency": "تكرار الاجتماعات",
+    "parentCommittee": "اللجنة الرئيسية",
+    "noneOption": "بدون",
+    "reportingTo": "ترفع تقاريرها إلى",
+    "reportingToMode": {
+      "none": "بدون",
+      "committee": "لجنة",
+      "role": "دور"
+    },
+    "selectCommittee": "اختر لجنة",
+    "selectRole": "اختر دورًا",
+    "currentStage": "المرحلة الحالية",
+    "noCommittees": "لا توجد لجان معرفة بعد.",
+    "errorLoad": "فشل تحميل اللجان.",
+    "errorAction": "فشل تنفيذ الإجراء.",
+    "members": "الأعضاء",
+    "member": "عضو",
+    "memberRole": "دور العضو",
+    "addMember": "إضافة عضو",
+    "editMemberRole": "تغيير دور العضو",
+    "selectMember": "اختر عضوًا",
+    "selectMemberRole": "اختر دورًا",
+    "joinedAt": "تاريخ الانضمام",
+    "reason": "السبب",
+    "noMembers": "لا يوجد أعضاء بعد.",
+    "membershipHistory": "سجل العضوية",
+    "noMembershipHistory": "لا يوجد سجل عضوية بعد.",
+    "action": {
+      "joined": "انضم",
+      "left": "غادر",
+      "role_changed": "تغيير الدور"
+    }
   },
   "orgPosition": {
     "title": "المسميات الوظيفية",

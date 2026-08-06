@@ -44,8 +44,9 @@ export const TASKS_PERMISSIONS = {
 } as const;
 
 export const COMMITTEES_PERMISSIONS = {
-  VIEW:   'committees:view',
-  MANAGE: 'committees:manage',
+  VIEW:    'committees:view',
+  MANAGE:  'committees:manage',
+  APPROVE: 'committees:approve',
 } as const;
 
 export const NOTIFICATIONS_PERMISSIONS = {

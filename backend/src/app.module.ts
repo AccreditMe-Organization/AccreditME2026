@@ -12,6 +12,7 @@ import { WorkflowModule } from './foundation/workflow/workflow.module';
 import { NotificationModule } from './foundation/notification/notification.module';
 import { OrgPositionModule } from './foundation/org-position/org-position.module';
 import { TaskModule } from './foundation/task/task.module';
+import { CommitteesModule } from './foundation/committees/committees.module';
 import { AuthModule } from './foundation/auth/auth.module';
 import { UserModule } from './foundation/user/user.module';
 import { PlanModule } from './platform/plan/plan.module';
@@ -41,6 +42,7 @@ import { PlatformModule } from './platform/tenant/platform.module';
     NotificationModule,
     OrgPositionModule,
     TaskModule,
+    CommitteesModule,
     AuthModule,
     UserModule,
     PlanModule,

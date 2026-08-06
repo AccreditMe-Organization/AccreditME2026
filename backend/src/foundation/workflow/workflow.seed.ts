@@ -259,13 +259,13 @@ export const SYSTEM_WORKFLOW_SEED: SeedWorkflow[] = [
     ],
     transitions: [
       { fromStageKey: 'formation', toStageKey: 'terms_review', labelEn: 'Submit for Approval', labelAr: 'إرسال للاعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'CREATE_TASK', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'terms_review', toStageKey: 'active', labelEn: 'Approve Committee', labelAr: 'اعتماد اللجنة', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'terms_review', toStageKey: 'active', labelEn: 'Approve Committee', labelAr: 'اعتماد اللجنة', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'terms_review', toStageKey: 'formation', labelEn: 'Revise Terms', labelAr: 'مراجعة النظام الداخلي', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'active', toStageKey: 'suspended', labelEn: 'Suspend Committee', labelAr: 'تعليق اللجنة', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'suspended', toStageKey: 'active', labelEn: 'Reactivate Committee', labelAr: 'إعادة تفعيل اللجنة', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'active', toStageKey: 'dissolution_pending', labelEn: 'Initiate Dissolution', labelAr: 'بدء إجراءات الحل', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
       { fromStageKey: 'suspended', toStageKey: 'dissolution_pending', labelEn: 'Dissolve Committee', labelAr: 'حل اللجنة', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
-      { fromStageKey: 'dissolution_pending', toStageKey: 'dissolved', labelEn: 'Confirm Dissolution', labelAr: 'تأكيد الحل', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
+      { fromStageKey: 'dissolution_pending', toStageKey: 'dissolved', labelEn: 'Confirm Dissolution', labelAr: 'تأكيد الحل', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve', actions: [{ actionType: 'SEND_NOTIFICATION', order: 10 }, { actionType: 'LOG_AUDIT', order: 20 }] },
     ],
   },
 

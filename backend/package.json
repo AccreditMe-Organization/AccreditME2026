@@ -20,7 +20,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:demo": "ts-node -r tsconfig-paths/register prisma/demo-seed.ts",
-    "backfill:positions-permissions": "ts-node -r tsconfig-paths/register prisma/backfill-positions-permissions.ts"
+    "backfill:positions-permissions": "ts-node -r tsconfig-paths/register prisma/backfill-positions-permissions.ts",
+    "backfill:committees-approve-permission": "ts-node -r tsconfig-paths/register prisma/backfill-committees-approve-permission.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

@@ -327,6 +327,9 @@ export class WorkflowTemplateService {
     if (dto.assigneeUserId) {
       await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
     }
+    if (dto.committeeId) {
+      await this.validateCommitteeId(dto.committeeId, organizationId);
+    }
 
     const stage = await this.prisma.workflowStage.create({
       data: {
@@ -341,10 +344,8 @@ export class WorkflowTemplateService {
         isFinal: dto.isFinal ?? false,
         approvalMode: dto.approvalMode,
         parallelThreshold: dto.parallelThreshold ?? null,
-        // TODO(Committee Management): not org-validated like assigneeUserId
-        // just below — no Committee/CommitteeMember data exists anywhere
-        // yet, so there's nothing to validate against today. Must add the
-        // same re-scoping check here once that module ships (see ACC-17).
+        // Org-validated above (ACC-22, closing the ACC-17 deferred gap) —
+        // mirrors validateAssigneeUserId() for assigneeUserId just above.
         committeeId: dto.committeeId ?? null,
         assigneeStrategy: dto.assigneeStrategy,
         assigneeUserId: dto.assigneeUserId ?? null,
@@ -379,6 +380,9 @@ export class WorkflowTemplateService {
     if (dto.assigneeUserId) {
       await this.validateAssigneeUserId(dto.assigneeUserId, organizationId);
     }
+    if (dto.committeeId) {
+      await this.validateCommitteeId(dto.committeeId, organizationId);
+    }
 
     const updated = await this.prisma.workflowStage.update({
       where: { id },
@@ -393,8 +397,8 @@ export class WorkflowTemplateService {
         ...(dto.isFinal !== undefined && { isFinal: dto.isFinal }),
         ...(dto.approvalMode !== undefined && { approvalMode: dto.approvalMode }),
         ...(dto.parallelThreshold !== undefined && { parallelThreshold: dto.parallelThreshold }),
-        // TODO(Committee Management): see the same TODO in addStage above —
-        // not org-validated yet, nothing real to validate against today.
+        // Org-validated above (ACC-22, closing the ACC-17 deferred gap) —
+        // see the same validation in addStage above.
         ...(dto.committeeId !== undefined && { committeeId: dto.committeeId }),
         ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
         ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
@@ -677,15 +681,24 @@ export class WorkflowTemplateService {
   // it's written onto a WorkflowStage — mirrors the re-scoping the ROLE case
   // already gets for free downstream (assigneeRoleId's eventual userRole
   // lookup is joined against user:{organizationId}); SPECIFIC_USER had no
-  // equivalent check at write time (see ACC-17). dto.committeeId has the
-  // same gap but is NOT validated here — no Committee/CommitteeMember data
-  // exists anywhere yet (Committee Management hasn't shipped), so there's
-  // nothing real to validate against. Must be revisited when that module
-  // ships, at the latest.
+  // equivalent check at write time (see ACC-17).
   private async validateAssigneeUserId(userId: string, organizationId: string): Promise<void> {
     const user = await this.prisma.user.findFirst({ where: { id: userId, organizationId } });
     if (!user) {
       throw new NotFoundException('Assignee user not found in this tenant');
+    }
+  }
+
+  // Re-validates a client-supplied committeeId belongs to this org before
+  // it's written onto a WorkflowStage — same pattern as
+  // validateAssigneeUserId() above. Deferred from ACC-17 ("no Committee/
+  // CommitteeMember data exists anywhere yet, so there's nothing real to
+  // validate against — must be revisited when Committee Management ships")
+  // — closed here as part of ACC-22, since Committee is now a real table.
+  private async validateCommitteeId(committeeId: string, organizationId: string): Promise<void> {
+    const committee = await this.prisma.committee.findFirst({ where: { id: committeeId, organizationId } });
+    if (!committee) {
+      throw new NotFoundException('Committee not found in this tenant');
     }
   }
 
