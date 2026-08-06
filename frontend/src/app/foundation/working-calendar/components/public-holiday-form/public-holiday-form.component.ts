@@ -10,6 +10,7 @@ import {
   PublicHolidayDto,
   CreatePublicHolidayDto,
 } from '../../services/working-calendar.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-public-holiday-form',
@@ -142,8 +143,8 @@ export class PublicHolidayFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit();
       },
-      error: (err) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });

@@ -11,6 +11,7 @@ import { FormsModule } from '@angular/forms';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { PositionFormComponent } from '../position-form/position-form.component';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-position-list',
@@ -194,8 +195,8 @@ export class PositionListComponent implements OnInit {
       accept: () => {
         this.orgPositionService.deactivate(position.id).subscribe({
           next: () => this.loadPositions(),
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'Deactivate failed'),
+          error: (err: unknown) =>
+            this.error.set(extractErrorMessage(err, 'Deactivate failed')),
         });
       },
     });

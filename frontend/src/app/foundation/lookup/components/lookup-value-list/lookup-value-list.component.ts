@@ -11,6 +11,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { LookupService, LookupCategoryDto, LookupValueDto } from '../../services/lookup.service';
 import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form.component';
 import { LanguageService } from '../../../../core/services/language.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-lookup-value-list',
@@ -296,16 +297,16 @@ export class LookupValueListComponent implements OnInit {
   onHide(val: LookupValueDto): void {
     this.lookupService.hideSystemValue(val.id).subscribe({
       next: () => this.loadValues(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Hide failed'),
+      error: (err: unknown) =>
+        this.error.set(extractErrorMessage(err, 'Hide failed')),
     });
   }
 
   onUnhide(val: LookupValueDto): void {
     this.lookupService.unhideSystemValue(val.id).subscribe({
       next: () => this.loadValues(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Unhide failed'),
+      error: (err: unknown) =>
+        this.error.set(extractErrorMessage(err, 'Unhide failed')),
     });
   }
 
@@ -313,8 +314,8 @@ export class LookupValueListComponent implements OnInit {
     // TODO: replace with PrimeNG ConfirmationService dialog
     this.lookupService.removeValue(val.id).subscribe({
       next: () => this.loadValues(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Delete failed'),
+      error: (err: unknown) =>
+        this.error.set(extractErrorMessage(err, 'Delete failed')),
     });
   }
 
@@ -334,8 +335,8 @@ export class LookupValueListComponent implements OnInit {
           this.showOverrideDialog.set(false);
           this.loadValues();
         },
-        error: (err: { error?: { message?: string } }) => {
-          this.overrideError.set(err?.error?.message ?? 'Save failed');
+        error: (err: unknown) => {
+          this.overrideError.set(extractErrorMessage(err, 'Save failed'));
           this.overrideSaving.set(false);
         },
       });

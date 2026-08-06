@@ -8,6 +8,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
 import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/org-unit.service';
 import { OrgUnitFormComponent } from '../org-unit-form/org-unit-form.component';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-org-unit-tree',
@@ -168,7 +169,7 @@ export class OrgUnitTreeComponent implements OnInit {
     // TODO: replace with PrimeNG ConfirmationService dialog
     this.orgUnitService.deactivate(unit.id).subscribe({
       next: () => this.loadTree(),
-      error: (err) => this.error.set(err?.error?.message ?? 'Deactivation failed'),
+      error: (err: unknown) => this.error.set(extractErrorMessage(err, 'Deactivation failed')),
     });
   }
 

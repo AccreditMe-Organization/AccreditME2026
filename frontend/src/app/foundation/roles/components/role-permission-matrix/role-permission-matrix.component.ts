@@ -7,6 +7,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { RoleService, RoleDto, PermissionDto } from '../../services/role.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 interface ModuleGroup {
   module: string;
@@ -154,8 +155,8 @@ export class RolePermissionMatrixComponent implements OnInit {
         this.saving.set(false);
         this.goBack();
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });

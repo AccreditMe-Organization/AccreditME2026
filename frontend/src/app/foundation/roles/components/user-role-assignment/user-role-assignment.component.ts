@@ -1,7 +1,3 @@
-// Minimal stopgap until Step 9 (Users module) ships a proper user profile page.
-// Not yet linked from any navigation — Step 9 will embed this component (or its
-// successor) into the user detail page it builds. See plan Section 4, Commit 8.
-
 import { Component, Input, OnChanges, inject, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -10,6 +6,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import { FormsModule } from '@angular/forms';
 import { RoleService, RoleDto } from '../../services/role.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-user-role-assignment',
@@ -46,6 +43,7 @@ import { RoleService, RoleDto } from '../../services/role.service';
         <p-select
           [options]="assignableRoles()"
           optionLabel="nameEn"
+          optionValue="id"
           [(ngModel)]="selectedRoleId"
           [placeholder]="'roles.assignRole' | translate"
           class="grow"
@@ -91,8 +89,7 @@ export class UserRoleAssignmentComponent implements OnChanges {
         this.selectedRoleId = null;
         this.load();
       },
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Assign failed'),
+      error: (err: unknown) => this.error.set(extractErrorMessage(err, 'Assign failed')),
     });
   }
 
@@ -105,8 +102,7 @@ export class UserRoleAssignmentComponent implements OnChanges {
       accept: () => {
         this.roleService.removeRoleFromUser(this.userId, role.id).subscribe({
           next: () => this.load(),
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'Remove failed'),
+          error: (err: unknown) => this.error.set(extractErrorMessage(err, 'Remove failed')),
         });
       },
     });

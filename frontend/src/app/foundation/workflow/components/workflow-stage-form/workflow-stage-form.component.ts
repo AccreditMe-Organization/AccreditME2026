@@ -16,6 +16,7 @@ import {
   UpdateWorkflowStageDto,
 } from '../../services/workflow-template.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 const APPROVAL_MODES = [
   { label: 'SINGLE', value: 'SINGLE' },
@@ -295,8 +296,8 @@ export class WorkflowStageFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit(stage);
       },
-      error: (err: { error?: { message?: string } }) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });

@@ -16,6 +16,7 @@ import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-u
 import { UserRoleAssignmentComponent } from '../../../roles/components/user-role-assignment/user-role-assignment.component';
 import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
@@ -376,9 +377,9 @@ export class UserProfileComponent implements OnInit {
             this.languageService.use(u.language).subscribe();
           }
         },
-        error: (err: { error?: { message?: string } }) => {
+        error: (err: unknown) => {
           this.savingProfile.set(false);
-          this.error.set(err?.error?.message ?? 'user.errorSave');
+          this.error.set(extractErrorMessage(err, 'user.errorSave'));
         },
       });
   }
@@ -401,9 +402,9 @@ export class UserProfileComponent implements OnInit {
           this.user.set(u);
           this.savedMessage.set('user.profileSaved');
         },
-        error: (err: { error?: { message?: string } }) => {
+        error: (err: unknown) => {
           this.savingOoo.set(false);
-          this.error.set(err?.error?.message ?? 'user.errorSave');
+          this.error.set(extractErrorMessage(err, 'user.errorSave'));
         },
       });
   }
@@ -428,9 +429,9 @@ export class UserProfileComponent implements OnInit {
         this.mfaSetupResult.set(result);
         this.mfaSetupForm.reset();
       },
-      error: (err: { error?: { message?: string } }) => {
+      error: (err: unknown) => {
         this.settingUpMfa.set(false);
-        this.mfaError.set(err?.error?.message ?? 'user.mfa.errorSetup');
+        this.mfaError.set(extractErrorMessage(err, 'user.mfa.errorSetup'));
       },
     });
   }
@@ -449,9 +450,9 @@ export class UserProfileComponent implements OnInit {
         this.mfaEnabled.set(true);
         this.mfaSuccessMessage.set('user.mfa.enabledSuccess');
       },
-      error: (err: { error?: { message?: string } }) => {
+      error: (err: unknown) => {
         this.verifyingMfa.set(false);
-        this.mfaError.set(err?.error?.message ?? 'user.mfa.errorVerify');
+        this.mfaError.set(extractErrorMessage(err, 'user.mfa.errorVerify'));
       },
     });
   }
@@ -481,9 +482,9 @@ export class UserProfileComponent implements OnInit {
         this.mfaDisableForm.reset();
         this.mfaSuccessMessage.set('user.mfa.disabledSuccess');
       },
-      error: (err: { error?: { message?: string } }) => {
+      error: (err: unknown) => {
         this.disablingMfa.set(false);
-        this.mfaError.set(err?.error?.message ?? 'user.mfa.errorDisable');
+        this.mfaError.set(extractErrorMessage(err, 'user.mfa.errorDisable'));
       },
     });
   }

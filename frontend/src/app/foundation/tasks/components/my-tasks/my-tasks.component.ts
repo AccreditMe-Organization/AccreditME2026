@@ -7,6 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { FormsModule } from '@angular/forms';
 import { TaskService, ITaskDto } from '../../services/task.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 const STATUS_OPTIONS = ['PENDING', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED'] as const;
 
@@ -132,8 +133,8 @@ export class MyTasksComponent implements OnInit {
   onComplete(task: ITaskDto): void {
     this.taskService.complete(task.id).subscribe({
       next: () => this.loadTasks(),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err?.error?.message ?? 'Complete failed'),
+      error: (err: unknown) =>
+        this.error.set(extractErrorMessage(err, 'Complete failed')),
     });
   }
 

@@ -9,6 +9,7 @@ import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IPlanModule, KNOWN_MODULE_KEYS, PlanModuleAccessLevel } from '../../services/plan.service';
+import { extractErrorMessage } from '../../../shared/utils/http-error.util';
 
 const ACCESS_LEVEL_OPTIONS = [
   { label: 'FULL', value: 'FULL' },
@@ -180,9 +181,9 @@ export class PlanFormComponent implements OnInit {
           void this.router.navigate(['/platform/plans', plan.id]);
         }
       },
-      error: (err: { error?: { message?: string } }) => {
+      error: (err: unknown) => {
         this.saving.set(false);
-        this.error.set(err?.error?.message ?? 'platform.errorAction');
+        this.error.set(extractErrorMessage(err, 'platform.errorAction'));
       },
     });
   }

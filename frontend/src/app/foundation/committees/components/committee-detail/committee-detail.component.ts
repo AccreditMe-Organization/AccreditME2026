@@ -22,6 +22,7 @@ import { WorkflowService, WorkflowInstanceDto } from '../../../workflow/services
 import { WorkflowTemplateService } from '../../../workflow/services/workflow-template.service';
 import { WorkflowTransitionActionsComponent } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { LanguageService } from '../../../../core/services/language.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
 
@@ -320,8 +321,8 @@ export class CommitteeDetailComponent implements OnInit {
             this.loadMembers();
             this.loadMembershipEvents();
           },
-          error: (err: { error?: { message?: string } }) =>
-            this.error.set(err?.error?.message ?? 'committee.errorAction'),
+          error: (err: unknown) =>
+            this.error.set(extractErrorMessage(err, 'committee.errorAction')),
         });
       },
     });

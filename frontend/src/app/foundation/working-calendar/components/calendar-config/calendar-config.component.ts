@@ -11,6 +11,7 @@ import {
   WorkingCalendarDto,
   AiHolidaySuggestion,
 } from '../../services/working-calendar.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 const GCC_DAYS = [0, 1, 2, 3, 4];
 const WESTERN_DAYS = [1, 2, 3, 4, 5];
@@ -289,8 +290,8 @@ export class CalendarConfigComponent implements OnInit {
     };
     this.svc.updateCalendar(dto).subscribe({
       next: () => this.saving.set(false),
-      error: (err) => {
-        this.saveError.set(err?.error?.message ?? 'Save failed');
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
       },
     });
