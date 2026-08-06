@@ -19,3 +19,6 @@ frontend/.angular/
 # OS
 .DS_Store
 Thumbs.db
+
+# Playwright MCP session artifacts
+.playwright-mcp/
