@@ -86,7 +86,7 @@ org                 Organization units and hierarchy
 calendar            Working calendar service
 lookup              Lookup system
 roles               Roles and permissions
-workflow            Workflow engine and XState
+workflow            Custom database-driven workflow engine (not XState)
 notifications       Notification service
 tasks               Task management
 users               User management
