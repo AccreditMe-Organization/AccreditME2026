@@ -37,7 +37,8 @@ Before explaining, understand:
   (foundation / functional module / platform / provider / common)
 
 - What is its position in the build sequence?
-  (check CLAUDE.md build order)
+  (read CLAUDE.md's current Build Sequence section directly, live,
+  every time — do not assume a step number from memory)
 
 - What does it depend on?
   (what services does it inject? what Prisma models does it use?)
@@ -57,6 +58,13 @@ Before explaining, understand:
 - Does it use AI?
   (does it call AIProvider?)
 
+- Does this code relate to a foundational/cross-cutting mechanism?
+  (auth, permissions, workflow engine, tasks, notifications, org
+  position, lookups, org structure, multi-tenancy, i18n, frontend
+  patterns, user management) — if so, check `SYSTEM-REFERENCE.md`
+  first. It may already document this exact code's behavior and known
+  limitations in more depth than a fresh read would surface.
+
 ## Step 3 — Produce the Explanation
 
 Structure your explanation in this format:
@@ -74,7 +82,9 @@ PURPOSE
 
 LAYER AND POSITION
   Layer:          {foundation | modules | platform | providers | common}
-  Build step:     Step X of 19
+  Build sequence: {this module's actual position, read live from
+                  CLAUDE.md's current Build Sequence section — never
+                  a hardcoded step number}
   Module folder:  {path}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
