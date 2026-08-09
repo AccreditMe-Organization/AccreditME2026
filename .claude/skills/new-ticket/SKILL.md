@@ -39,7 +39,7 @@ Ask all questions at once — not one at a time.
     platform / infrastructure)
 
 3. What type of work is this?
-   (feature / bug / chore / improvement)
+   (feature / bug / chore / improvement / refactor)
 
 4. What is the priority?
    (urgent / high / medium / low)
@@ -71,6 +71,24 @@ Confirm dev is up to date before proceeding.
 
 ---
 
+## Step 2b — Check SYSTEM-REFERENCE.md for Foundational/Cross-Cutting Proposals
+
+If this ticket proposes a new foundational or cross-cutting mechanism
+(auth, permissions, workflow engine, tasks, notifications, org
+position, lookups, org structure, multi-tenancy, i18n, frontend
+patterns, user management) — read `SYSTEM-REFERENCE.md` first and
+check whether existing machinery already solves part of the problem
+before the ticket is written. This exists because of a direct incident
+(ACC-28) where a new authorization system was drafted without this
+check, when existing assignee-resolution logic already covered most of
+it — see `SYSTEM-REFERENCE.md`'s own Purpose section.
+
+Note in the ticket's Technical Notes section (Step 3 below) that this
+check was done, and what it found — even if the finding was "nothing
+relevant exists yet."
+
+---
+
 ## Step 3 — Create the Linear Ticket
 
 Using the Linear MCP, create the ticket with this structure:
@@ -99,10 +117,6 @@ audit: create audit plan CRUD with scope definition
 ## Module
 
 {module name} — {layer: foundation | functional | platform}
-
-## Build Sequence Position
-
-Step {X} of 19 in the AccreditMe build sequence
 
 ## What Needs to Be Done
 
@@ -155,16 +169,22 @@ Using the ticket ID and description from Step 3:
 ### Branch Name Format
 
 ```
-{type}/ACC-XX-{short-description}
+{prefix}/ACC-XX-{short-description}
 ```
 
-Type mapping:
+**Only two branch prefixes exist in this project — CLAUDE.md's
+Branching Strategy defines exactly `feature/xxx` and `fix/xxx`, nothing
+else.** `chore`/`refactor`/etc. are commit-message *types*
+(see `/commit-message`), not branch prefixes — do not invent a
+`chore/` or any other branch prefix. Ticket-type-to-branch-prefix
+mapping:
 
 ```
-feature    → feat in Linear
-bug        → fix in Linear
-chore      → chore in Linear
-improvement → feat in Linear
+bug         → fix/
+feature     → feature/
+chore       → feature/
+improvement → feature/
+refactor    → feature/
 ```
 
 Examples:
@@ -173,7 +193,7 @@ Examples:
 feature/ACC-42-working-calendar-configuration
 fix/ACC-51-sla-skipping-gcc-weekends
 feature/ACC-18-meetings-module-scaffold
-chore/ACC-03-add-encryption-key-to-env
+feature/ACC-03-add-encryption-key-to-env
 ```
 
 Short description rules:
