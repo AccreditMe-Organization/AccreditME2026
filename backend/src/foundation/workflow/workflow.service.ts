@@ -217,6 +217,19 @@ export class WorkflowService {
     const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
     if (!fromStage) throw new NotFoundException('Current stage not found');
 
+    // ASSIGNEE_POOL (ACC-28) — placed after fromStage resolves, unlike the
+    // three triggerCondition checks above, because resolveAssigneeRaw()
+    // needs the full stage row, not just its id. Reuses the existing
+    // assignee-resolution machinery rather than a new authorization
+    // primitive — see backend/Plans/step-28-resource-scoped-roles.md
+    // Section 2.2.
+    if (transition.triggerCondition === 'ASSIGNEE_POOL') {
+      const pool = await this.resolveAssigneeRaw(fromStage, instance, organizationId);
+      if (!pool.includes(actorId)) {
+        throw new ForbiddenException('You are not in the resolved assignee pool for this stage');
+      }
+    }
+
     const currentInstanceStage = await this.prisma.workflowInstanceStage.findFirst({
       where: { workflowInstanceId: instanceId, stageId: fromStage.id, exitedAt: null },
     });
@@ -764,8 +777,18 @@ export class WorkflowService {
         // organizationId filter on the denormalized column, isActive
         // instead of leftAt: null (both per the plan's Pending Discussions
         // #6/#7 resolutions).
+        // assigneeCommitteeRoleValueId (ACC-28) narrows this to a specific
+        // committee_member_role when set — null preserves the pre-ACC-28
+        // "every active member" behavior.
         const members = await this.prisma.committeeMember.findMany({
-          where: { committeeId: stage.committeeId, organizationId, isActive: true },
+          where: {
+            committeeId: stage.committeeId,
+            organizationId,
+            isActive: true,
+            ...(stage.assigneeCommitteeRoleValueId
+              ? { roleValueId: stage.assigneeCommitteeRoleValueId }
+              : {}),
+          },
         });
         return members.map((m) => m.userId);
       }
@@ -865,9 +888,19 @@ export class WorkflowService {
     if (stage.assigneeStrategy === 'COMMITTEE') {
       if (!stage.committeeId) return [];
       // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — same
-      // fix as resolveAssigneeRaw()'s COMMITTEE case above.
+      // fix as resolveAssigneeRaw()'s COMMITTEE case above. Same
+      // assigneeCommitteeRoleValueId filter too (ACC-28) — a PARALLEL-mode
+      // stage narrowed to e.g. "chairman" must size its threshold against
+      // that same narrowed pool, not the full membership.
       const members = await this.prisma.committeeMember.findMany({
-        where: { committeeId: stage.committeeId, organizationId, isActive: true },
+        where: {
+          committeeId: stage.committeeId,
+          organizationId,
+          isActive: true,
+          ...(stage.assigneeCommitteeRoleValueId
+            ? { roleValueId: stage.assigneeCommitteeRoleValueId }
+            : {}),
+        },
       });
       return members.map((m) => m.userId);
     }
