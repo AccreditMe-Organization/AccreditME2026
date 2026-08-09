@@ -2034,6 +2034,10 @@ code rather than restating the decision log.
   generic and ready for reuse; nothing has reused it yet because
   nothing else needs to yet.
 
+---
+
+## 11. Known Cross-Cutting Gaps
+
 **✅ Complete — built incrementally as each of Sections 1–10 above was
 written, not compiled from memory at the end**, then fully re-verified:
 every "zero frontend callers found" claim in this document was re-run
