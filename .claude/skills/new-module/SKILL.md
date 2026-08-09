@@ -40,6 +40,15 @@ those phases entirely.
 
 If not found — proceed with CLAUDE.md as reference.
 
+Also read `SYSTEM-REFERENCE.md` if this module introduces or touches
+any foundational/cross-cutting mechanism (auth, permissions, workflow
+engine, tasks, notifications, org position, lookups, org structure,
+multi-tenancy, i18n, frontend patterns, user management) — it documents
+what already exists at the implementation level, distinct from
+CLAUDE.md's decisions and module-designs.md's business rules. Checking
+it before designing anything new in this space is what this document
+exists for — see its own Purpose section for why.
+
 ### 1. Confirm the Linear ticket
 
 Ask the user: what is the Linear ticket ID for this module?
@@ -56,33 +65,14 @@ Do not proceed without a confirmed ticket ID.
 
 ### 2. Confirm the module is next in build sequence
 
-Read CLAUDE.md and verify this module is the correct next step.
-The build sequence is non-negotiable — never skip ahead.
-
-```
-Phase 1 — Foundation (build in this order):
-  Step 1:  tenant
-  Step 2:  org
-  Step 3:  calendar
-  Step 4:  lookup
-  Step 5:  roles
-  Step 6:  workflow
-  Step 7:  notifications
-  Step 8:  tasks
-  Step 9:  users
-  Step 10: committees
-  Step 11: meetings
-  Step 12: platform (super admin)
-  Step 13: billing
-  Step 14: onboarding
-  Step 15: offboarding
-
-Phase 2 — Functional Modules:
-  Step 16: standards
-  Step 17: documents
-  Step 18: quality-improvement
-  Step 19: audit
-```
+Read CLAUDE.md's current Build Sequence section directly, live, every
+run — never assume the order from memory or from a previous run. The
+sequence has already been revised multiple times (ticket numbers are
+assigned at `/new-ticket` time, not planned in advance — see CLAUDE.md's
+own note on this), so a hardcoded list here would go stale exactly the
+way this one did. The build sequence itself is non-negotiable — never
+skip ahead — but its current *contents* must always come from a fresh
+read of CLAUDE.md, not this skill file.
 
 If the requested module is not the next step — STOP.
 Tell the user which module should be built first and why.
@@ -472,7 +462,7 @@ COMMITS ({N} total)
   Listed in chronological order from git log
 
 NEXT STEP
-  Run /pr-checklist to open the Pull Request to dev.
+  Run /ready-to-pr to open the Pull Request to dev.
   After merge — next module in build sequence: {next module name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -498,7 +488,7 @@ git commit -m "chore(docs): update Step {N} progress tracker [ACC-XX]"
 - Merge backend and frontend commits together
 - Combine multiple layers into one commit
 - Skip the tenant isolation test
-- Open the PR — that is /pr-checklist's responsibility
+- Open the PR — that is /ready-to-pr's responsibility
 - Start a module that is not next in the build sequence
 - Write business logic in a controller
 - Accept organizationId from request body
