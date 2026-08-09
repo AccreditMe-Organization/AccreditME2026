@@ -103,6 +103,7 @@ enum WorkflowTriggerCondition {
   ROLE_BASED
   ANY_AUTHENTICATED
   SYSTEM_AUTOMATIC
+  ASSIGNEE_POOL
 }
 
 enum WorkflowActionType {
@@ -670,6 +671,12 @@ model WorkflowStage {
   assigneeStrategy   WorkflowAssigneeStrategy   @default(ROLE)
   assigneeUserId     String?
   assigneeRoleId     String?
+  // Only meaningful when assigneeStrategy = COMMITTEE (ACC-28). Narrows
+  // resolveAssigneeRaw()'s COMMITTEE case to members whose roleValueId
+  // matches this lookup value (e.g. "chairman"). Null = every active
+  // member, i.e. the pre-ACC-28 behavior — backward compatible with
+  // every existing seeded stage.
+  assigneeCommitteeRoleValueId String?
 
   escalationConfig   Json?
 
