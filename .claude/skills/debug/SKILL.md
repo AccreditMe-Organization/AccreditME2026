@@ -86,7 +86,7 @@ onSubmit(): void {
 
 1. Confirm the PrimeNG module is imported in the component's imports array
 2. Confirm `standalone: true` on the component
-3. Check PrimeNG version compatibility with Angular 18
+3. Check PrimeNG version compatibility with Angular 21
 
 ---
 
@@ -98,8 +98,16 @@ JWT is missing, expired, or invalid.
 2. Confirm `Authorization: Bearer {token}` header is present
 3. If header missing → check AuthInterceptor is in app.config.ts providers
 4. If header present → JWT may be expired
-5. Check Better Auth refresh token flow is working
-6. Check `tokenVersion` — if role changed, user must re-login
+5. Check AccreditMe's own refresh-token flow is working — this is
+   custom-built (`AuthService.issueRefreshToken()`, the `RefreshToken`
+   Prisma model, hash-based storage with rotation and revocation), not
+   Better Auth's own session mechanism (`AuthSession`) — the two are
+   separate; don't go looking in Better Auth's session code for this
+6. Check `tokenVersion` — if role changed, user must re-login (note:
+   role/permission changes alone do not currently revoke a live
+   session — only account deactivation calls
+   `invalidateUserSessions()` and bumps `tokenVersion`; see
+   SYSTEM-REFERENCE.md Section 1.2/12.2 if this is the actual symptom)
 
 Quick test:
 

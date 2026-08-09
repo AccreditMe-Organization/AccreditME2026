@@ -1,83 +1,25 @@
 ---
 name: pr-checklist
-description: Pull request checklist for AccreditMe. Invoke manually with /pr-checklist before opening any PR to dev or main.
+description: Code-quality reference checklist for AccreditMe. Read by ready-to-pr and pr-reviewer as their canonical check content — not invoked standalone, and has no PR-creation capability of its own.
 disable-model-invocation: true
-allowed-tools: Bash(npx tsc --noEmit) Bash(npx jest *) Bash(git status) Bash(git diff *) Bash(git log --oneline *) Bash(git branch) Bash(git push *) Read Glob Grep
+allowed-tools: Read Glob Grep
 ---
 
-# AccreditMe — Pull Request Checklist
+# AccreditMe — Code Quality Checklist
 
-Run this skill completely before opening any PR.
+This is a reference checklist, not a standalone process. It has no
+branch verification, test running, or PR-creation steps of its own —
+`ready-to-pr` owns and executes those (branch checks, TypeScript,
+tests, pushing, PR creation via GitHub MCP), and `pr-reviewer` owns the
+critical-review framing and output format. Both skills/agents read this
+file for the actual check content below, so the two can't drift apart
+from each other.
+
 Every item must pass. Fix failures before opening the PR.
-A PR with known failures wastes review time and breaks the dev branch for others.
 
 ---
 
-## Step 1 — Branch Verification
-
-```bash
-git branch
-git status
-git log --oneline -10
-```
-
-Verify:
-
-- [ ] You are on a `feature/ACC-XX-*` or `fix/ACC-XX-*` branch
-- [ ] You are NOT on main or dev
-- [ ] No uncommitted changes exist — working tree is clean
-- [ ] All commits follow the format: `{type}({scope}): {description} [ACC-XX]`
-- [ ] Every commit references the correct Linear ticket ID
-- [ ] No commit message contains "and" describing two concerns
-
-If any commit message is wrong — it is already pushed so leave it.
-Note the issue and avoid repeating it next PR.
-
----
-
-## Step 2 — TypeScript Verification
-
-```bash
-cd backend && npx tsc --noEmit
-```
-
-```bash
-cd frontend && npx tsc --noEmit
-```
-
-- [ ] Backend TypeScript errors: zero
-- [ ] Frontend TypeScript errors: zero
-
-If errors exist — fix them before proceeding.
-Do not open a PR with TypeScript errors under any circumstances.
-
----
-
-## Step 3 — Test Verification
-
-```bash
-cd backend && npx jest --passWithNoTests
-```
-
-- [ ] All unit tests pass
-- [ ] Zero test failures
-- [ ] Zero test errors (different from failures — errors mean the test could not run)
-
-Then run tenant isolation tests specifically:
-
-```bash
-cd backend && npx jest --testNamePattern="should NOT return records belonging to a different tenant" --passWithNoTests
-```
-
-- [ ] All tenant isolation tests pass
-- [ ] Count of isolation tests matches count of new findMany/findOne queries added
-
-If any isolation test fails — this is a critical security issue.
-Do NOT open the PR. Fix the tenant scoping immediately.
-
----
-
-## Step 4 — Code Quality Verification
+## Code Quality Verification
 
 Read through every file changed in this PR:
 
@@ -157,9 +99,17 @@ For each changed file, verify:
 - [ ] Empty state shown when no data in tables or lists
 - [ ] Tables use `scrollable scrollHeight="flex"` — no page scroll
 
+### Foundational / cross-cutting mechanism check
+
+- [ ] If this diff introduces or modifies a foundational/cross-cutting
+      mechanism (auth, permissions, workflow engine, tasks,
+      notifications, org position, lookups, org structure,
+      multi-tenancy, i18n, frontend patterns, user management) —
+      `SYSTEM-REFERENCE.md` was updated in the same diff
+
 ---
 
-## Step 5 — AI Integration Verification (If This PR Includes AI Features)
+## AI Integration Verification (If This PR Includes AI Features)
 
 - [ ] AI calls go through tenant's configured `AIProvider` interface
 - [ ] AI API key sourced from tenant config — never from environment directly
@@ -167,103 +117,3 @@ For each changed file, verify:
 - [ ] Every AI interaction logged: actor, model, prompt summary, timestamp
 - [ ] Non-streaming AI calls run as BullMQ background jobs
 - [ ] Streaming AI calls use NestJS SSE or WebSocket correctly
-
----
-
-## Step 6 — Push the Branch
-
-```bash
-git push origin feature/ACC-XX-description
-```
-
-Confirm the push succeeded and the branch appears on GitHub.
-
----
-
-## Step 7 — Generate PR Description
-
-Using the information gathered above, generate the GitHub PR description
-using this exact template:
-
-```markdown
-## Linear Ticket
-
-[ACC-XX](https://linear.app/accreditme/issue/ACC-XX) — {ticket title}
-
-## What Changed
-
-{1-3 sentences describing what this PR adds or fixes}
-
-## Why
-
-{1-2 sentences on the motivation — what problem does this solve}
-
-## How to Test
-
-1. {First step to verify the feature works}
-2. {Second step}
-3. {Edge case to check — especially tenant isolation}
-
-## Database Changes
-
-{List any Prisma migrations included and their effect}
-OR: No database changes in this PR.
-
-## Checklist
-
-- [x] TypeScript errors: zero (backend + frontend)
-- [x] All tests passing including tenant isolation
-- [x] No business logic in controllers
-- [x] Every new Prisma query scoped by organizationId
-- [x] AuditLog called on all mutations
-- [x] Translation keys added in en.json and ar.json
-- [x] No hardcoded secrets or direct S3 URLs
-```
-
----
-
-## Step 8 — Open the PR on GitHub
-
-PR settings:
-
-- Base branch: **dev** — never main
-- Title: `{type}: {description} [ACC-XX]`
-- Description: paste the generated description from Step 7
-- Labels: add the appropriate label (feature / bug / chore / docs)
-- Assignee: assign to yourself
-
-Do not merge the PR yourself until:
-
-- CI pipeline passes (GitHub Actions green)
-- All checklist items in the PR description are checked
-
----
-
-## If CI Fails After Opening the PR
-
-Read the CI failure carefully:
-
-```bash
-# Pull latest and check what is failing
-git pull origin feature/ACC-XX-description
-```
-
-Common CI failures and fixes:
-
-- TypeScript error → fix the type issue, commit, push
-- Test failure → fix the failing test, commit, push
-- Tenant isolation failure → fix the query scoping, commit, push
-- Prisma migration missing → run migrate dev, commit, push
-
-Every fix goes in a new commit — do not amend pushed commits.
-CI will re-run automatically on every push to the PR branch.
-
----
-
-## After the PR Is Merged
-
-- [ ] Delete the feature branch from GitHub (do this from the PR page)
-- [ ] Mark the Linear ticket as Done
-- [ ] Confirm CI pipeline is green on dev branch after merge
-- [ ] If this PR changed any architectural decision — update CLAUDE.md
-- [ ] If this PR changed any development rule — update the relevant skill file

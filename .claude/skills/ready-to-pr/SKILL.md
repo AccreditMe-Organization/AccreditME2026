@@ -117,18 +117,8 @@ Read the diff of all changes on this branch:
 git diff origin/dev..HEAD
 ```
 
-Check for:
-
-- [ ] No `console.log` left in production code
-- [ ] No commented-out code blocks
-- [ ] No `any` type without inline justification comment
-- [ ] No hardcoded colors — design tokens only
-- [ ] No hardcoded secrets or API keys
-- [ ] No direct S3 URLs — signed URLs only
-- [ ] No business logic in controllers
-- [ ] `organizationId` sourced from JWT in every new query
-- [ ] `AuditLogService.log()` called on every create/update/delete
-- [ ] Translation keys present in BOTH en.json and ar.json
+Read and follow @.claude/skills/pr-checklist/SKILL.md completely for
+the full code-quality checklist.
 
 If any item fails — fix it, commit the fix, then continue.
 

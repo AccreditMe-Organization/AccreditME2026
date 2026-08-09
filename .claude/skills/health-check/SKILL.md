@@ -272,6 +272,7 @@ Verify these files exist and are not empty:
 
 ```
 CLAUDE.md
+SYSTEM-REFERENCE.md
 .gitignore
 .env.example
 .mcp.json

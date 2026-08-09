@@ -390,6 +390,26 @@ time, not hardcoded here). It contains:
 - Cross-module relationships and data flow
 - Data model requirements per module
 
+## System Reference
+
+A living, maintained technical inventory of every foundational
+mechanism actually implemented in this codebase is documented in:
+SYSTEM-REFERENCE.md (repo root)
+
+Distinct from this file (decisions and the build log) and from
+module-designs.md (business rules): SYSTEM-REFERENCE.md documents the
+actual implemented shape of foundational, cross-cutting mechanisms —
+model/schema shape, exactly what each service method does and does not
+do, and which other modules currently consume it — verified against
+the code, not the design intent.
+
+**Read this file before planning any new foundational or
+cross-cutting mechanism** — not just functional modules. It exists
+directly because of an incident (ACC-28) where a new authorization
+system was drafted without checking whether existing machinery already
+solved most of the problem. Checking SYSTEM-REFERENCE.md first is how
+that mistake is not repeated.
+
 ## Cross-Module Rules (from module-designs.md)
 
 ### Tasks

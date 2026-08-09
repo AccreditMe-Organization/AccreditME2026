@@ -33,17 +33,20 @@ frontend/src/app/
 │   └── layout.component.ts       # Grid shell: topbar + sidebar + router-outlet
 │
 ├── foundation/                   # Foundation module UIs
+│   ├── admin-settings/           # Tenant admin settings hub
+│   ├── auth/                     # Login, MFA, accept-invitation, password reset
 │   ├── tenant/                   # Tenant settings and provider config
-│   ├── org/                      # Org unit hierarchy, org chart
-│   ├── calendar/                 # Working calendar, holidays, working hours
+│   ├── organization/             # Org unit hierarchy, org chart
+│   ├── working-calendar/         # Working calendar, holidays, working hours
 │   ├── lookup/                   # Lookup category and value management
 │   ├── roles/                    # Role and permission management
-│   ├── workflow-config/          # Workflow template and stage configuration
-│   ├── notifications/            # Notification rules and preferences
+│   ├── org-position/             # Org position (grade/seniority) management
+│   ├── workflow/                 # Workflow template and stage configuration
+│   ├── notification/             # Notification bell and inbox
 │   ├── tasks/                    # My tasks inbox, task detail
-│   ├── users/                    # User management, invite, assign roles
-│   ├── committees/               # Committee management, membership
-│   └── meetings/                 # Meeting lifecycle, agenda, minutes
+│   ├── user/                     # User management, invite, assign roles
+│   └── committees/               # Committee management, membership
+│                                  # (Meeting Management not built yet — no folder)
 │
 ├── modules/                      # Functional module UIs
 │   ├── standards/                # Standards hierarchy, measurable elements
@@ -58,6 +61,13 @@ frontend/src/app/
 │
 └── dashboard/                    # Main dashboard — AI morning briefing + KPIs
 ```
+
+`foundation/` above is verified against the actual
+`frontend/src/app/foundation/` folder listing — re-check with
+`ls frontend/src/app/foundation` if this list is ever in doubt.
+`modules/`, `platform/billing/`, `platform/health/`, and `dashboard/`
+are target layout for functional modules not yet built, not a claim
+they currently exist.
 
 ---
 

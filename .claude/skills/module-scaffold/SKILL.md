@@ -19,13 +19,21 @@ Never deviate from this structure without explicit instruction.
 Every module belongs to exactly one layer:
 
 ```
-foundation/     → tenant, org, calendar, lookup, roles, workflow,
-                  notifications, tasks, users, committees, meetings
+foundation/     → auth, committees, lookup, notification, org-position,
+                  organization, roles, task, tenant, user, workflow,
+                  working-calendar
 modules/        → standards, documents, quality-improvement, audit
+                  (not yet built — target layout for future modules)
 platform/       → super admin portal only
 providers/      → auth, storage, ai implementations
 common/         → guards, decorators, filters, interceptors, pipes
 ```
+
+Verified against the actual `backend/src/foundation/` folder listing —
+re-check with `ls backend/src/foundation` if this list is ever in
+doubt, rather than trusting it from memory. Meeting Management is not
+built yet and has no folder here; do not scaffold against a "meetings"
+path that doesn't exist.
 
 ---
 
