@@ -69,6 +69,7 @@ audit's starting point, not be mistaken for having already done it.
 9. i18n / RTL — ✅ complete
 10. Frontend Design Patterns — ✅ complete
 11. Known Cross-Cutting Gaps — ✅ complete
+12. User Management — ✅ complete
 
 ---
 
@@ -2107,6 +2108,14 @@ Purpose section, written directly in response to the ACC-28 incident.
 - `tasks:manage` is seeded into role permission sets but never checked
   by any `@Permissions()` decorator anywhere in `task.controller.ts`
   (Section 3.6) — currently inert.
+- **User departure does not reassign or flag Committee memberships**
+  (Section 12.3) — `UserService.deactivate()` calls
+  `TaskService.reassignAllForUser()` only. module-designs.md's Absence
+  and Departure Management design explicitly names "Committee seat
+  replacement when member departs" as part of this flow; it isn't
+  built. A departed user's active `CommitteeMember` rows (including a
+  Chairman seat, once ACC-28 ships) are left exactly as they were —
+  no notification, no flag, nothing surfaces it to a Tenant Admin.
 
 ### Tier 3 — Correctly deferred, no action needed now (listed for completeness)
 
@@ -2140,6 +2149,11 @@ Purpose section, written directly in response to the ACC-28 incident.
   Roles, Org Positions, Committees, plus the Lookup override-label
   variant) rather than extracted into a shared component — a real
   duplication candidate, not urgent, no functional bug.
+- `User.status`'s `SUSPENDED` value is fully enforced at the login gate
+  but never assigned anywhere (Section 12.2) — same dormant-value shape
+  as `OrgUnit.isCodeLocked` and the `SMS` notification channel. Worth
+  knowing if a future design assumes tenant admins can suspend (vs.
+  fully deactivate) a user — that capability doesn't exist today.
 
 ### Tier 4 — Trivial doc/cleanup items
 
@@ -2177,3 +2191,238 @@ Purpose section, written directly in response to the ACC-28 incident.
   multiline-aware grep (or by reading the component directly) before
   being written down — a single-line pattern is not sufficient on its
   own to conclude a method is unused.
+
+---
+
+## 12. User Management
+
+`backend/src/foundation/user/user.service.ts` +
+`backend/src/foundation/auth/auth.service.ts`. Two services, two
+tables, deliberately split — 12.1 covers why.
+
+### 12.1 The Two-Table Identity Split
+
+AccreditMe's own business-data table is `User` — tenant-scoped, holds
+everything the rest of the app cares about. Authentication identity
+lives in a **separate set of tables Better Auth owns**, linked 1:1:
+
+```prisma
+model User {                          // "AppUser" — our own table
+  id               String       @id @default(cuid())
+  organizationId   String
+  email            String
+  name             String
+  status           UserStatus   @default(INVITED)   // see 12.2
+  tokenVersion     Int          @default(0)          // Section 1.2
+  language         String?                            // Section 9.2
+  positionId       String?                             // Section 5.1
+  primaryOrgUnitId String?                             // Section 7.1
+  outOfOfficeFrom  DateTime?
+  outOfOfficeTo    DateTime?
+  actingUserId     String?     // self-referential — Absence Pattern 1
+  managerId        String?     // self-referential — org reporting line
+  authUserId       String?     @unique   // FK to AuthUser, below
+  invitationToken     String?  @unique
+  invitationExpiresAt DateTime?
+
+  @@unique([organizationId, email])
+}
+
+model AuthUser {                      // Better Auth's own identity table
+  id               String    @id @default(cuid())
+  email            String    @unique   // "{organizationId}:{email}" — see 12.1.1
+  emailVerified    Boolean   @default(false)
+  twoFactorEnabled Boolean   @default(false)
+  appUser          User?     // back-relation to the FK above
+  sessions         AuthSession[]
+  accounts         AuthAccount[]       // password hash (Argon2id) lives here
+  twoFactor        AuthTwoFactor?
+}
+```
+
+`AuthSession`, `AuthAccount` (holds the Argon2id password hash for the
+`credential` provider — OAuth-only fields present but unused, kept
+because Better Auth's adapter needs the full generic schema
+unconditionally), and `AuthTwoFactor` (TOTP secret + backup codes,
+encrypted by the plugin itself with XChaCha20-Poly1305, not custom
+encryption) all belong to Better Auth's side, not `User`. `User` has no
+password field, no session table, no TOTP secret anywhere on it —
+`authUserId` is the only bridge.
+
+**12.1.1 — the namespacing trick**: `AuthUser.email` is globally unique
+(Better Auth's own constraint, not tenant-aware), but the same person's
+email must be able to exist independently across tenants. Resolved by
+never storing the raw email in `AuthUser.email` — every call constructs
+`"{organizationId}:{email}"` (`AuthService.namespacedEmail()`) before
+touching Better Auth's API. `User.email` (our own table) stores the
+real, unnamespaced address; the namespacing is entirely an
+`AuthUser`-side implementation detail, invisible everywhere else.
+
+### 12.2 `UserStatus` Lifecycle — One Value Is Real But Dormant
+
+```prisma
+enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
+```
+
+- `INVITED` → set by `UserService.invite()`, the initial state.
+- `ACTIVE` → set by `AuthService.acceptInvitation()` once signup
+  completes.
+- `INACTIVE` → set by `UserService.deactivate()`, the departure flow
+  (12.3).
+- **`SUSPENDED` is enforced but never set.** `AuthService.login()`
+  (line 204) and `verifyMfa()` (line 365) both gate on
+  `user.status !== 'ACTIVE'` — a suspended user genuinely could not log
+  in, the check is real. But grepped every write to `User.status`
+  across `backend/src`: only `INVITED`/`ACTIVE`/`INACTIVE` are ever
+  assigned, by the three methods above. **No controller endpoint, no
+  service method, sets `SUSPENDED`.** Structurally identical shape to
+  `OrgUnit.isCodeLocked` (Section 7.3) and `Notification`'s `SMS`
+  channel (Section 4.4) — a real, correctly-enforced value with no
+  current trigger, not a bug, but worth knowing it's not reachable
+  today if a design assumes tenant admins can suspend (vs. fully
+  deactivate) a user.
+
+### 12.3 `UserService` Methods
+
+- **`invite()`** — enforces `Organization.maxUsers` (the seat-limit
+  half of CLAUDE.md's Plan model) by counting `ACTIVE`+`INVITED` users
+  together before allowing a new invite — `ConflictException` at the
+  limit, matching CLAUDE.md's "Hard limits at 100%... no data
+  corruption" pattern. Generates a 24-byte hex `invitationToken`, 7-day
+  TTL (`INVITATION_TTL_MS`). Sends the invitation as an `EMAIL`-channel
+  notification containing the raw accept-invitation URL with the token
+  as a query param — the token itself is the only credential; anyone
+  with the link can accept it (expected, matches the pattern of any
+  email-based invitation flow).
+- **`updateProfile()`** — the self-vs-admin split confirmed directly:
+  `isSelf = actorId === id`, `isAdmin = actorPermissions.includes('users:manage')`,
+  rejects if neither. Admin-only fields (`positionId`,
+  `primaryOrgUnitId`, `managerId`) are **silently excluded from the
+  update payload**, not rejected with an error, when a non-admin edits
+  their own profile — confirmed via the `if (isAdmin) { ... }` block
+  building the `data` object conditionally. A non-admin submitting a
+  `positionId` change in their own profile edit gets a `200` with the
+  field quietly ignored, not a `403` telling them why it didn't apply.
+- **`updateOutOfOffice()`** — same self-vs-admin gate. Validates
+  `actingUserId` (if given) resolves to an `ACTIVE` user in the same
+  tenant before accepting it — this is the write side of Absence
+  Management Pattern 1; `WorkflowService.applyOutOfOfficeRouting()`
+  (Section 2.5.1) is the read side that actually substitutes it during
+  assignee resolution.
+- **`deactivate()`** — the full departure flow, and the ordering is
+  explicitly non-negotiable per its own code comment: `tokenVersion`
+  increments (via `authProvider.invalidateUserSessions()`) **before**
+  `TaskService.reassignAllForUser()` runs, so the departing user's
+  sessions are dead the instant the flow starts, not after it finishes.
+  **Last-admin lockout**: queries the tenant's active `TENANT_ADMIN`
+  holders **before** flipping status (ACC-16's fix — querying after
+  would silently exclude the departing user from their own admin count
+  and, in the exact last-admin scenario the check exists to catch,
+  notify no one). Delegates task reassignment entirely to
+  `TaskService.reassignAllForUser()` (Section 3.2) — this method itself
+  does not touch `Task`/`TaskAssignee` rows directly. **What's
+  confirmed NOT covered by this flow**: Committee memberships and
+  workflow-stage assignments — module-designs.md's Absence and
+  Departure Management design names both as needing reassignment on
+  departure ("Committee seat replacement when member departs"), but
+  `deactivate()` only calls `TaskService`. A departed user's active
+  `CommitteeMember` rows are left exactly as they were.
+- **`getUserRoles()`/`assignRoleToUser()`/`removeRoleFromUser()`** —
+  pure pass-through delegations to `RoleService` (Section 1.4),
+  confirmed by reading them directly: each is a single-line
+  `return this.roleService.X(...)` with no added logic. Exist on
+  `UserController` for URL-path convenience
+  (`/users/:id/roles` reads better than a separate `/roles` sub-resource
+  controller) — code comment states this migration happened in Step 9,
+  same behavior, same underlying `RoleService` ownership.
+
+### 12.4 Invitation Acceptance — `AuthService.acceptInvitation()`
+
+Looks up the user by `invitationToken`, rejects generically ("Invalid
+or expired invitation") if missing or past `invitationExpiresAt` —
+**deliberately generic, code comment states why**: never reveal whether
+a token was ever valid, standard anti-enumeration practice. On success:
+calls Better Auth's `signUpEmail()` with the namespaced email (12.1.1),
+links the resulting `AuthUser.id` as `User.authUserId`, flips
+`status: ACTIVE`, clears the token/expiry. **The ACC-25 fix, confirmed
+directly in the code comment**: unlike `login()` (which always returns
+a generic message to avoid enumeration), this method lets a real Better
+Auth `APIError` throw naturally — the global `HttpExceptionFilter`
+(ACC-27) forwards its actual message app-wide, so a genuinely useful
+error like the `haveIBeenPwned` plugin's password-compromised rejection
+reaches the user instead of a generic "invalid token" message. This is
+the literal ACC-25/ACC-26/ACC-27 chain CLAUDE.md's Build Sequence
+documents, confirmed against the real code rather than restated from
+the log.
+
+### 12.5 Login, Lockout, and MFA — Brief, Cross-Referenced
+
+- **`login()`** resolves the tenant from `organizationSlug`, checks
+  `LoginAttemptService.isLocked()` **before** attempting
+  authentication (locked attempts are themselves recorded as a failed
+  `LoginAttempt` row, `failureReason: 'locked'`), then calls Better
+  Auth's `signInEmail()`. A `twoFactorRedirect` response forwards
+  Better Auth's own pending-2FA cookie to the browser and returns
+  `{ mfaRequired: true }` rather than completing login. Every attempt
+  — locked, invalid password, or success — is recorded in
+  `LoginAttempt`, an append-only-by-convention table (not
+  schema-enforced append-only like `AuditLog`, Section 1) that
+  "powers account lockout (computed on read, no stored counter)" per
+  its own schema comment — lockout state is derived by querying recent
+  rows, not tracked as a running counter anywhere.
+- **`verifyMfa()`** completes the login Better Auth's `signInEmail()`
+  paused for 2FA, gating on the same `status !== 'ACTIVE'` check as
+  `login()` itself (12.2).
+- **MFA setup** (`setupMfa()`/`verifySetupMfa()`/`disableMfa()`) is a
+  three-step flow, not a single call: `setupMfa()` re-verifies the
+  caller's password (via a fresh `signInEmail()` — Better Auth's
+  `enableTwoFactor()` requires a live session) and generates a TOTP
+  secret, but **MFA is not active yet** — `verified` stays `false` on
+  `AuthTwoFactor` and `AuthUser.twoFactorEnabled` stays `false` until
+  `verifySetupMfa()` succeeds with a real code from the user's
+  authenticator app. `disableMfa()` also re-verifies password before
+  turning it off.
+
+Full frontend-consumption detail for the Auth surface (`/auth/me`,
+`/accept-invitation`, `/forgot-password`, `/reset-password`, the four
+MFA routes) was already confirmed wired in Section 1.6 — not repeated
+here.
+
+### 12.6 Permission Model
+
+```
+users:view       — UserController: listUsers, getById
+users:invite     — UserController: invite
+users:manage     — checked INSIDE UserService for updateProfile/
+                   updateOutOfOffice's self-vs-admin gate (12.3) — not
+                   a @Permissions() decorator on those two routes,
+                   which carry none, by design (self-service edits
+                   must work without users:manage)
+users:deactivate — UserController: deactivate. Deliberately separate
+                   from users:manage — code comment ties this directly
+                   to CLAUDE.md's "Forced logout on role change or
+                   account suspension": a distinct, higher-stakes
+                   action from editing a profile field, not folded
+                   into the general management permission.
+```
+
+### 12.7 Frontend Consumption (Static Check)
+
+`frontend/src/app/foundation/user/services/user.service.ts` — 6
+methods, all confirmed with real callers via a multiline-aware search
+from the start (per Section 11's standing rule):
+
+| Method | Endpoint | Caller(s) found |
+|---|---|---|
+| `listUsers()` | `GET /users` | `committee-detail`, `committee-member-form`, `user-profile`, `user-list`, `invite-user` |
+| `getById()` | `GET /users/:id` | `user-profile.component.ts:331` |
+| `invite()` | `POST /users/invite` | `invite-user.component.ts:136` |
+| `updateProfile()` | `PATCH /users/:id/profile` | `user-profile.component.ts:361` |
+| `updateOutOfOffice()` | `PATCH /users/:id/out-of-office` | `user-profile.component.ts:394` |
+| `deactivate()` | `POST /users/:id/deactivate` | `user-list.component.ts:180` |
+
+**No dead endpoints in this system** — every method wired, and
+`listUsers()` is reused across both User Management's own screens and
+Committee Management's member-picker components, the same
+cross-module-picker shape already seen for `OrgUnitService.getFlat()`
+(Section 7.6) and `RoleService.listRoles()` (Section 1.6).
