@@ -71,11 +71,13 @@ and missing error handling on async operations → ERROR.
 
 ## Review Area 6 — Frontend (If Angular Files Changed)
 
-Apply `pr-checklist`'s "Frontend files" section in full. Non-standalone
-components, hardcoded visible strings, and translation keys missing
-from either `en.json` or `ar.json` → ERROR. Everything else in that
-section (Signals usage, design tokens, Tailwind-only layout, RTL
-logical properties, loading/error states) → WARNING.
+Apply `pr-checklist`'s "Frontend files" section in full. **ERROR**:
+non-standalone components, hardcoded visible strings (not using
+`| translate`), translation keys missing from either `en.json` or
+`ar.json`, forms using template-driven instead of Reactive Forms.
+**WARNING**: everything else in that section (Signals usage, design
+tokens, Tailwind-only layout, RTL logical properties, loading/error
+states).
 
 ## Review Area 7 — Tests
 
