@@ -495,6 +495,46 @@ describe('WorkflowService', () => {
       );
     });
 
+    // ACC-28 — assigneeCommitteeRoleValueId narrows the COMMITTEE case to a
+    // specific committee_member_role. Unset (the test above) preserves the
+    // pre-ACC-28 "every active member" behavior; this proves the filter is
+    // actually applied to the Prisma query when set.
+    it("narrows a COMMITTEE stage's CREATE_TASK assignees to a specific committee_member_role when assigneeCommitteeRoleValueId is set", async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockStagesById({
+        'stage-single': SINGLE_STAGE,
+        'stage-target': {
+          ...TARGET_STAGE,
+          assigneeStrategy: 'COMMITTEE',
+          committeeId: 'committee-a',
+          assigneeCommitteeRoleValueId: 'lookup-chairman-id',
+        },
+      });
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+      mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'chairman-user' }]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: {
+          committeeId: 'committee-a',
+          organizationId: ORG_A,
+          isActive: true,
+          roleValueId: 'lookup-chairman-id',
+        },
+      });
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['chairman-user'] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
     it('routes an out-of-office assignee to their acting user before task creation', async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
@@ -587,6 +627,43 @@ describe('WorkflowService', () => {
       await expect(
         service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    // ACC-28 — ASSIGNEE_POOL reuses resolveAssigneeRaw() rather than a new
+    // query pattern; SINGLE_STAGE's assigneeStrategy is SELF, so the pool
+    // resolves to whoever started the instance (the first WorkflowInstanceStage's
+    // actorId — BASE_INSTANCE_STAGE.actorId is ACTOR).
+    it('throws ForbiddenException for ASSIGNEE_POOL when the actor is not in the resolved pool', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ triggerCondition: 'ASSIGNEE_POOL' }),
+      );
+      // SINGLE_STAGE's assigneeStrategy is SELF — resolveAssigneeRaw()
+      // resolves it to whoever started the instance (the first
+      // WorkflowInstanceStage's actorId), via workflowInstanceStage.findFirst.
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue({
+        ...BASE_INSTANCE_STAGE,
+        actorId: 'someone-else',
+      });
+
+      await expect(
+        service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows ASSIGNEE_POOL when the actor is in the resolved pool', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ triggerCondition: 'ASSIGNEE_POOL' }),
+      );
+      // Same mocked call serves both resolveAssigneeRaw()'s SELF-case lookup
+      // (wants actorId: ACTOR — satisfied) and the later currentInstanceStage
+      // fetch (wants an active, non-exited entry — BASE_INSTANCE_STAGE
+      // already has exitedAt: null).
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE); // actorId: ACTOR
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+
+      await expect(
+        service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
+      ).resolves.not.toThrow();
     });
 
     it("throws NotFoundException when the transition is not from the instance's current stage", async () => {
@@ -886,6 +963,47 @@ describe('WorkflowService', () => {
       });
       // Pool size 2, threshold ALL, only 1 APPROVED vote so far — not yet met.
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+    });
+
+    // ACC-28 — identical filter to resolveAssigneeRaw()'s COMMITTEE case
+    // above, applied here so a PARALLEL-mode stage narrowed to e.g.
+    // "chairman" sizes its threshold against that same narrowed pool, not
+    // the full membership.
+    it('applies assigneeCommitteeRoleValueId to the resolveApproverPool() COMMITTEE branch too', async () => {
+      const parallelCommitteeStage = {
+        ...PARALLEL_STAGE,
+        id: 'stage-parallel-committee',
+        assigneeStrategy: 'COMMITTEE',
+        assigneeRoleId: null,
+        committeeId: 'committee-a',
+        assigneeCommitteeRoleValueId: 'lookup-chairman-id',
+      };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+        makeInstance({ currentStageId: 'stage-parallel-committee' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(parallelCommitteeStage);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel-committee', isApprovalPath: true }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-parallel-committee' }),
+      );
+      // Pool of 1 (the chairman only) with 1 APPROVED vote — threshold ALL met.
+      mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'chairman-user' }]);
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: {
+          committeeId: 'committee-a',
+          organizationId: ORG_A,
+          isActive: true,
+          roleValueId: 'lookup-chairman-id',
+        },
+      });
+      // Pool size 1 (narrowed), 1 APPROVED vote — threshold met, advances.
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
     });
   });
 
