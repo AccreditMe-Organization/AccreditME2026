@@ -744,6 +744,8 @@ model WorkflowInstanceStage {
   outcome            WorkflowInstanceStageOutcome  @default(PENDING)
   actorId            String?
   comment            String?
+  isUnassigned       Boolean                       @default(false)
+  unassignedAt       DateTime?
 
   workflowInstance   WorkflowInstance              @relation(fields: [workflowInstanceId], references: [id])
   stage              WorkflowStage                 @relation(fields: [stageId], references: [id])
