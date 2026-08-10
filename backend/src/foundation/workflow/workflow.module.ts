@@ -6,6 +6,7 @@ import { TenantModule } from '../tenant/tenant.module';
 import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
 import { OrgPositionModule } from '../org-position/org-position.module';
+import { RolesModule } from '../roles/roles.module';
 import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
@@ -41,6 +42,13 @@ import { SlaMonitorProcessor } from './sla-monitor.processor';
     // edge above: TenantModule → WorkflowModule → OrgPositionModule →
     // TenantModule (OrgPositionModule already forwardRef()s TenantModule).
     forwardRef(() => OrgPositionModule),
+    // RolesModule is @Global() — RoleService.getUserPermissions() would
+    // already resolve without this (see platform.module.ts's identical
+    // comment) — imported explicitly anyway for clarity/testability, same
+    // precedent as NotificationModule above. ACC-28's unassigned-stage
+    // detection (2.5) needs it to check whether a resolved assignee pool
+    // holds a transition's requiredPermission.
+    RolesModule,
   ],
   controllers: [WorkflowTemplateController, WorkflowController],
   providers: [WorkflowTemplateService, WorkflowService, WorkflowActionProcessor, SlaMonitorProcessor],
