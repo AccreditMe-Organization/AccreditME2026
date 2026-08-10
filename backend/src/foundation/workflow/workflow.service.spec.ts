@@ -8,6 +8,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
+import { RoleService } from '../roles/role.service';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -151,7 +152,7 @@ const mockPrisma = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
-  workflowTransition: { findFirst: jest.fn() },
+  workflowTransition: { findFirst: jest.fn(), findMany: jest.fn() },
   workflowTransitionAction: { findMany: jest.fn() },
   workflowActionLog: { create: jest.fn() },
   workflowApproval: { upsert: jest.fn(), findMany: jest.fn(), count: jest.fn() },
@@ -166,6 +167,7 @@ const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
 const mockTaskService = { create: jest.fn() };
+const mockRoleService = { getUserPermissions: jest.fn() };
 const mockQueue = { add: jest.fn() };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -178,6 +180,10 @@ describe('WorkflowService', () => {
     mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue(BASE_INSTANCE_STAGE);
+    // ACC-28 Section 2.5 — default: no ASSIGNEE_POOL outgoing transitions, so
+    // checkAndFlagUnassignedStage() is a no-op for every pre-existing test.
+    // Tests that specifically exercise 2.5 override this per-case.
+    mockPrisma.workflowTransition.findMany.mockResolvedValue([]);
     // Default: no user is out-of-office — applyOutOfOfficeRouting() passes
     // resolveAssignee()'s raw result through unchanged for existing tests.
     mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
@@ -195,6 +201,7 @@ describe('WorkflowService', () => {
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TaskService, useValue: mockTaskService },
+        { provide: RoleService, useValue: mockRoleService },
         { provide: getQueueToken('workflow-actions'), useValue: mockQueue },
       ],
     }).compile();
@@ -1224,6 +1231,188 @@ describe('WorkflowService', () => {
         service.cancelInstance('instance-belonging-to-org-a', ORG_B, ACTOR, 'x'),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── ACC-28 Section 2.5 — unassigned-stage detection ────────────────────────
+
+  describe('resolveUnassignedBlockingTransitions (ACC-28 Section 2.5)', () => {
+    const ROLE_STAGE = { ...SINGLE_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
+    const ASSIGNEE_POOL_TRANSITION = makeTransition({
+      id: 't-assignee-pool',
+      triggerCondition: 'ASSIGNEE_POOL',
+      requiredPermission: 'committees:approve',
+    });
+
+    it('returns an empty array when there are no outgoing ASSIGNEE_POOL transitions', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([]);
+
+      const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
+
+      expect(result).toEqual([]);
+      expect(mockPrisma.userRole.findMany).not.toHaveBeenCalled();
+    });
+
+    it('flags the transition when the resolved pool is empty, regardless of requiredPermission', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([
+        makeTransition({ ...ASSIGNEE_POOL_TRANSITION, requiredPermission: null }),
+      ]);
+      mockPrisma.userRole.findMany.mockResolvedValue([]); // empty pool
+
+      const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe('t-assignee-pool');
+      // Empty-pool case never needs to check permissions — nobody to check.
+      expect(mockRoleService.getUserPermissions).not.toHaveBeenCalled();
+    });
+
+    it('flags the transition when the pool is non-empty but nobody in it holds requiredPermission', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+      mockRoleService.getUserPermissions.mockResolvedValue(['documents:view']); // lacks committees:approve
+
+      const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe('t-assignee-pool');
+    });
+
+    it('does not flag the transition when at least one pool member holds requiredPermission', async () => {
+      // ROLE + approvalMode SINGLE truncates the resolved pool to its first
+      // member (existing resolveAssigneeRaw() behavior, unrelated to
+      // ACC-28) — PARALLEL is used here so both members actually enter the
+      // pool this check evaluates.
+      const parallelRoleStage = { ...ROLE_STAGE, approvalMode: 'PARALLEL' };
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }, { userId: 'user-2' }]);
+      mockRoleService.getUserPermissions.mockImplementation((userId: string) =>
+        Promise.resolve(userId === 'user-2' ? ['committees:approve'] : ['documents:view']),
+      );
+
+      const result = await service.resolveUnassignedBlockingTransitions(parallelRoleStage as never, BASE_INSTANCE as never, ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    it('does not flag a non-empty pool when the transition has no requiredPermission at all', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([
+        makeTransition({ ...ASSIGNEE_POOL_TRANSITION, requiredPermission: null }),
+      ]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+
+      const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
+
+      expect(result).toEqual([]);
+      expect(mockRoleService.getUserPermissions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('notifyTenantAdminsOfUnassignedStage (ACC-28 Section 2.5)', () => {
+    const STAGE_WITH_COMMITTEE = { ...COMMITTEE_STAGE, nameEn: 'Chairman Review' };
+    const BLOCKING = [makeTransition({ id: 't-blocked', labelEn: 'Approve', triggerCondition: 'ASSIGNEE_POOL' })];
+
+    it('notifies every active TENANT_ADMIN, naming the transition and the committee', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }]);
+      mockPrisma.committee.findFirst.mockResolvedValue({ nameEn: 'Quality Committee' });
+
+      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
+
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
+      const [firstCallArgs] = mockNotificationService.create.mock.calls[0] as [{ bodyEn: string; userId: string }];
+      expect(firstCallArgs.userId).toBe('admin-1');
+      expect(firstCallArgs.bodyEn).toContain('Approve');
+      expect(firstCallArgs.bodyEn).toContain('Quality Committee');
+    });
+
+    it('falls back to objectType/objectId when the stage has no committeeId', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, SINGLE_STAGE as never, BLOCKING as never);
+
+      expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
+      const [callArgs] = mockNotificationService.create.mock.calls[0] as [{ bodyEn: string }];
+      expect(callArgs.bodyEn).toContain(BASE_INSTANCE.objectType);
+      expect(callArgs.bodyEn).toContain(BASE_INSTANCE.objectId);
+    });
+
+    it('does nothing when no TENANT_ADMIN role exists for the tenant', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, SINGLE_STAGE as never, BLOCKING as never);
+
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
+
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+    });
+  });
+
+  describe('startInstance — unassigned-stage detection wiring (ACC-28 Section 2.5)', () => {
+    it('flags the newly-created stage and notifies Tenant Admins when its ASSIGNEE_POOL transition is unreachable', async () => {
+      const roleStage = { ...SINGLE_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
+      const createdStage = { ...BASE_INSTANCE_STAGE, id: 'fresh-instance-stage' };
+
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(roleStage);
+      mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowInstanceStage.create.mockResolvedValue(createdStage);
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([
+        makeTransition({ id: 't-approve', triggerCondition: 'ASSIGNEE_POOL', requiredPermission: null }),
+      ]);
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
+      // userRole.findMany is called 3 times in this flow (initial-assignee
+      // notification's pool resolution, the blocking-transition check's own
+      // pool resolution, and the admin lookup) — keyed by roleId rather than
+      // call order, since call order is an implementation detail this test
+      // shouldn't be coupled to.
+      mockPrisma.userRole.findMany.mockImplementation(({ where }: { where: { roleId: string } }) => {
+        if (where.roleId === 'role-qm') return Promise.resolve([]); // empty assignee pool
+        if (where.roleId === 'admin-role-id') return Promise.resolve([{ userId: 'admin-1' }]);
+        return Promise.resolve([]);
+      });
+
+      await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'fresh-instance-stage' },
+        data: { isUnassigned: true, unassignedAt: expect.any(Date) },
+      });
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-1', titleEn: expect.stringContaining('unreachable') }),
+        ORG_A,
+      );
+    });
+
+    it('does not flag the stage when startInstance has no outgoing ASSIGNEE_POOL transitions (default fixture behavior)', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
+      mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+
+      await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
+
+      // Unrelated to ACC-28: SELF's initial-assignee notification still
+      // fires as it always has — only the isUnassigned flag/notification is
+      // asserted absent here.
+      expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ titleEn: expect.stringContaining('unreachable') }),
+        ORG_A,
+      );
     });
   });
 });
