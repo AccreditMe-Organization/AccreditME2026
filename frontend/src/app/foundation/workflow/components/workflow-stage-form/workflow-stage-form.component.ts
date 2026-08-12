@@ -16,6 +16,8 @@ import {
   UpdateWorkflowStageDto,
 } from '../../services/workflow-template.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
+import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
+import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 const APPROVAL_MODES = [
@@ -172,6 +174,26 @@ const ASSIGNEE_STRATEGIES = [
         </div>
       }
 
+      @if (assigneeStrategy() === 'COMMITTEE') {
+        <div class="flex flex-col gap-1">
+          <label for="assigneeCommitteeRoleValueId" class="font-medium text-sm">
+            {{ 'workflow.assigneeCommitteeRole' | translate }}
+          </label>
+          <p-select
+            inputId="assigneeCommitteeRoleValueId"
+            formControlName="assigneeCommitteeRoleValueId"
+            [options]="committeeRoles()"
+            [optionLabel]="committeeRoleLabelField()"
+            optionValue="id"
+            [showClear]="true"
+            styleClass="w-full"
+          />
+          <small class="text-[var(--am-text-secondary)]">
+            {{ 'workflow.assigneeCommitteeRoleHint' | translate }}
+          </small>
+        </div>
+      }
+
       @if (assigneeStrategy() === 'SPECIFIC_USER') {
         <p-message
           severity="info"
@@ -211,11 +233,18 @@ export class WorkflowStageFormComponent implements OnInit {
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly roleService = inject(RoleService);
+  private readonly lookupService = inject(LookupService);
+  private readonly languageService = inject(LanguageService);
   private readonly fb = inject(FormBuilder);
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
   readonly roles = signal<RoleDto[]>([]);
+  readonly committeeRoles = signal<LookupValueDto[]>([]);
+
+  committeeRoleLabelField(): 'labelAr' | 'labelEn' {
+    return this.languageService.isArabic() ? 'labelAr' : 'labelEn';
+  }
 
   readonly approvalModes = APPROVAL_MODES;
   readonly parallelThresholds = PARALLEL_THRESHOLDS;
@@ -232,6 +261,7 @@ export class WorkflowStageFormComponent implements OnInit {
     parallelThreshold: [null as string | null],
     assigneeStrategy: ['ROLE', [Validators.required]],
     assigneeRoleId: [null as string | null],
+    assigneeCommitteeRoleValueId: [null as string | null],
   });
 
   readonly approvalMode = toSignal(this.form.controls.approvalMode.valueChanges, {
@@ -243,6 +273,9 @@ export class WorkflowStageFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.roleService.listRoles().subscribe({ next: (roles) => this.roles.set(roles) });
+    this.lookupService.getValues('committee_member_role').subscribe({
+      next: (values) => this.committeeRoles.set(values),
+    });
 
     if (this.stage) {
       this.form.patchValue({
@@ -256,6 +289,7 @@ export class WorkflowStageFormComponent implements OnInit {
         parallelThreshold: this.stage.parallelThreshold,
         assigneeStrategy: this.stage.assigneeStrategy,
         assigneeRoleId: this.stage.assigneeRoleId,
+        assigneeCommitteeRoleValueId: this.stage.assigneeCommitteeRoleValueId,
       });
     }
   }
@@ -279,6 +313,15 @@ export class WorkflowStageFormComponent implements OnInit {
         : {}),
       assigneeStrategy: raw.assigneeStrategy!,
       ...(raw.assigneeRoleId ? { assigneeRoleId: raw.assigneeRoleId } : {}),
+      // On update, an explicit null clears a previously-set filter back to
+      // "all active members" — omitting it entirely (like assigneeRoleId
+      // above) would leave a prior value untouched instead. On create
+      // there's nothing to clear, so it's simply omitted when unset.
+      ...(raw.assigneeCommitteeRoleValueId
+        ? { assigneeCommitteeRoleValueId: raw.assigneeCommitteeRoleValueId }
+        : this.stage && this.stage.assigneeCommitteeRoleValueId
+          ? { assigneeCommitteeRoleValueId: null }
+          : {}),
     };
 
     const request$ = this.stage

@@ -33,6 +33,11 @@ export interface WorkflowStageDto {
   assigneeStrategy: string;
   assigneeUserId: string | null;
   assigneeRoleId: string | null;
+  // ACC-28 — narrows the COMMITTEE assigneeStrategy case to members holding
+  // this committee_member_role lookup value (e.g. "chairman"). Only
+  // meaningful when assigneeStrategy === 'COMMITTEE'; null preserves the
+  // pre-ACC-28 "every active member" behavior.
+  assigneeCommitteeRoleValueId: string | null;
   escalationConfig: Record<string, unknown> | null;
   transitions?: WorkflowTransitionDto[];
 }
@@ -90,6 +95,10 @@ export interface CreateWorkflowStageDto {
   assigneeStrategy: string;
   assigneeUserId?: string;
   assigneeRoleId?: string;
+  // string | null (not just string | undefined) — null is a genuine,
+  // meaningful value here: explicitly clearing a previously-set filter back
+  // to "all active committee members," not merely "field not provided."
+  assigneeCommitteeRoleValueId?: string | null;
   escalationConfig?: Record<string, unknown>[];
 }
 
