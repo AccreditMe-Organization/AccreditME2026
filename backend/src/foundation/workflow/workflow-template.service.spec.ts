@@ -40,6 +40,7 @@ const BASE_STAGE = {
   assigneeStrategy: 'SELF',
   assigneeUserId: null as string | null,
   assigneeRoleId: null as string | null,
+  assigneeCommitteeRoleValueId: null as string | null,
   escalationConfig: null as unknown,
 };
 
@@ -116,6 +117,9 @@ const mockPrisma = {
   committee: {
     findFirst: jest.fn(),
   },
+  lookupValue: {
+    findFirst: jest.fn(),
+  },
   $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
@@ -134,6 +138,8 @@ describe('WorkflowTemplateService', () => {
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
     // Same default for committeeId (ACC-22, closing the ACC-17 deferred gap).
     mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', organizationId: ORG_A });
+    // Same default for assigneeCommitteeRoleValueId (ACC-28).
+    mockPrisma.lookupValue.findFirst.mockResolvedValue({ id: 'lookup-chairman-id', organizationId: null });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -693,6 +699,68 @@ describe('WorkflowTemplateService', () => {
         expect.objectContaining({ data: expect.objectContaining({ committeeId: 'committee-a' }) }),
       );
     });
+
+    // ACC-28 — assigneeCommitteeRoleValueId re-validated against a real,
+    // tenant-visible committee_member_role LookupValue before being written
+    // onto the stage, mirroring the committeeId re-scoping tests above.
+    it('throws NotFoundException when assigneeCommitteeRoleValueId does not resolve to a tenant-visible lookup value', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.lookupValue.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.addStage(
+          'template-1',
+          {
+            nameEn: 'Active',
+            nameAr: 'نشطة',
+            order: 10,
+            approvalMode: 'COMMITTEE',
+            assigneeStrategy: 'COMMITTEE',
+            committeeId: 'committee-a',
+            assigneeCommitteeRoleValueId: 'foreign-lookup-value',
+          } as never,
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.lookupValue.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'foreign-lookup-value',
+          category: { key: 'committee_member_role' },
+          OR: [{ organizationId: null }, { organizationId: ORG_A }],
+        },
+      });
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
+    it('creates the stage when assigneeCommitteeRoleValueId resolves to a tenant-visible lookup value', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.create.mockResolvedValue(
+        makeStage({ committeeId: 'committee-a', assigneeCommitteeRoleValueId: 'lookup-chairman-id' }),
+      );
+
+      await service.addStage(
+        'template-1',
+        {
+          nameEn: 'Active',
+          nameAr: 'نشطة',
+          order: 10,
+          approvalMode: 'COMMITTEE',
+          assigneeStrategy: 'COMMITTEE',
+          committeeId: 'committee-a',
+          assigneeCommitteeRoleValueId: 'lookup-chairman-id',
+        } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ assigneeCommitteeRoleValueId: 'lookup-chairman-id' }),
+        }),
+      );
+    });
   });
 
   // ── updateStage ──────────────────────────────────────────────────────────────
@@ -737,6 +805,47 @@ describe('WorkflowTemplateService', () => {
         where: { id: 'foreign-committee', organizationId: ORG_A },
       });
       expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+    });
+
+    // ACC-28 — same re-validation as addStage above, exercised here for
+    // updateStage.
+    it('throws NotFoundException when assigneeCommitteeRoleValueId does not resolve to a tenant-visible lookup value', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockPrisma.lookupValue.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateStage(
+          'stage-1',
+          { assigneeCommitteeRoleValueId: 'foreign-lookup-value' } as never,
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.lookupValue.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'foreign-lookup-value',
+          category: { key: 'committee_member_role' },
+          OR: [{ organizationId: null }, { organizationId: ORG_A }],
+        },
+      });
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+    });
+
+    it('explicitly clears assigneeCommitteeRoleValueId when the dto sets it to null', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(
+        makeStage({ assigneeCommitteeRoleValueId: 'lookup-chairman-id' }),
+      );
+      mockPrisma.workflowStage.update.mockResolvedValue(
+        makeStage({ assigneeCommitteeRoleValueId: null }),
+      );
+
+      await service.updateStage('stage-1', { assigneeCommitteeRoleValueId: null } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.lookupValue.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowStage.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { assigneeCommitteeRoleValueId: null } }),
+      );
     });
 
     it("throws NotFoundException when the stage's parent template belongs to a different org", async () => {
