@@ -418,6 +418,20 @@ describe('CommitteesService', () => {
       ).rejects.toThrow(ConflictException);
       expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
     });
+
+    it('throws NotFoundException when the committee belongs to a different org', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.addMember(
+          'committee-1',
+          { userId: 'user-1', roleValueId: 'chairman' } as never,
+          ORG_B,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('changeMemberRole', () => {
@@ -457,6 +471,21 @@ describe('CommitteesService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
+
+    it('throws NotFoundException when the committee belongs to a different org', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.changeMemberRole(
+          'committee-1',
+          'member-1',
+          { roleValueId: 'secretary' } as never,
+          ORG_B,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('removeMember', () => {
@@ -483,6 +512,15 @@ describe('CommitteesService', () => {
 
       await expect(
         service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the committee belongs to a different org', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.removeMember('committee-1', 'member-1', {} as never, ORG_B, ACTOR),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
