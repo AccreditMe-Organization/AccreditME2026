@@ -330,6 +330,9 @@ export class WorkflowTemplateService {
     if (dto.committeeId) {
       await this.validateCommitteeId(dto.committeeId, organizationId);
     }
+    if (dto.assigneeCommitteeRoleValueId) {
+      await this.validateCommitteeRoleValueId(dto.assigneeCommitteeRoleValueId, organizationId);
+    }
 
     const stage = await this.prisma.workflowStage.create({
       data: {
@@ -350,6 +353,7 @@ export class WorkflowTemplateService {
         assigneeStrategy: dto.assigneeStrategy,
         assigneeUserId: dto.assigneeUserId ?? null,
         assigneeRoleId: dto.assigneeRoleId ?? null,
+        assigneeCommitteeRoleValueId: dto.assigneeCommitteeRoleValueId ?? null,
         escalationConfig: this.toJson(dto.escalationConfig),
       },
     });
@@ -383,6 +387,9 @@ export class WorkflowTemplateService {
     if (dto.committeeId) {
       await this.validateCommitteeId(dto.committeeId, organizationId);
     }
+    if (dto.assigneeCommitteeRoleValueId) {
+      await this.validateCommitteeRoleValueId(dto.assigneeCommitteeRoleValueId, organizationId);
+    }
 
     const updated = await this.prisma.workflowStage.update({
       where: { id },
@@ -403,6 +410,9 @@ export class WorkflowTemplateService {
         ...(dto.assigneeStrategy !== undefined && { assigneeStrategy: dto.assigneeStrategy }),
         ...(dto.assigneeUserId !== undefined && { assigneeUserId: dto.assigneeUserId }),
         ...(dto.assigneeRoleId !== undefined && { assigneeRoleId: dto.assigneeRoleId }),
+        ...(dto.assigneeCommitteeRoleValueId !== undefined && {
+          assigneeCommitteeRoleValueId: dto.assigneeCommitteeRoleValueId,
+        }),
         ...(dto.escalationConfig !== undefined && { escalationConfig: this.toJson(dto.escalationConfig) }),
       },
     });
@@ -702,6 +712,24 @@ export class WorkflowTemplateService {
     }
   }
 
+  // ACC-28 — same pattern as validateAssigneeUserId()/validateCommitteeId()
+  // above. A LookupValue is visible to this tenant if it's the SYSTEM row
+  // (organizationId: null) or a tenant-scoped row (custom value, or an
+  // overrideLabel()-created override with its own id) — same "system OR
+  // tenant" shape LookupService.getValues() itself resolves against.
+  private async validateCommitteeRoleValueId(roleValueId: string, organizationId: string): Promise<void> {
+    const value = await this.prisma.lookupValue.findFirst({
+      where: {
+        id: roleValueId,
+        category: { key: 'committee_member_role' },
+        OR: [{ organizationId: null }, { organizationId }],
+      },
+    });
+    if (!value) {
+      throw new NotFoundException('Committee member role lookup value not found in this tenant');
+    }
+  }
+
   // ── Internal mappers ─────────────────────────────────────────────────────────
 
   private mapTemplate(template: PrismaWorkflowTemplate): IWorkflowTemplate {
@@ -736,6 +764,7 @@ export class WorkflowTemplateService {
       assigneeStrategy: stage.assigneeStrategy,
       assigneeUserId: stage.assigneeUserId,
       assigneeRoleId: stage.assigneeRoleId,
+      assigneeCommitteeRoleValueId: stage.assigneeCommitteeRoleValueId,
       escalationConfig: stage.escalationConfig as Record<string, unknown> | null,
       ...(transitions !== undefined && { transitions }),
     };

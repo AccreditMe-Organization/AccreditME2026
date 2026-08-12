@@ -17,6 +17,7 @@ export interface IWorkflowStage {
   assigneeStrategy: string; // WorkflowAssigneeStrategy
   assigneeUserId: string | null;
   assigneeRoleId: string | null;
+  assigneeCommitteeRoleValueId: string | null;
   escalationConfig: Record<string, unknown> | null;
   transitions?: IWorkflowTransition[];
 }
