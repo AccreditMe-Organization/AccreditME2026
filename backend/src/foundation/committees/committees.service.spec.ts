@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { CommitteesService } from './committees.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -8,13 +8,6 @@ import { WorkflowService } from '../workflow/workflow.service';
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
 const ACTOR = 'actor-id';
-
-// ACC-28 — the flat-permission half of assertCommitteeAuthority()'s OR
-// check. Every pre-existing test in this file passes this so the new
-// authority check doesn't change any of their behavior.
-const WITH_MANAGE = ['committees:manage'];
-const WITHOUT_MANAGE: string[] = [];
-const CHAIRMAN_LOOKUP_VALUE = { id: 'lookup-chairman-id' };
 
 const BASE_COMMITTEE = {
   id: 'committee-1',
@@ -76,9 +69,6 @@ const mockPrisma = {
   user: {
     findFirst: jest.fn(),
   },
-  lookupValue: {
-    findFirst: jest.fn(),
-  },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -94,7 +84,6 @@ describe('CommitteesService', () => {
     mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
     mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-a', organizationId: ORG_A });
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
-    mockPrisma.lookupValue.findFirst.mockResolvedValue(CHAIRMAN_LOOKUP_VALUE);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -304,7 +293,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
       mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
 
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, WITH_MANAGE);
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR);
 
       expect(mockPrisma.committee.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { nameEn: 'Renamed' } }),
@@ -315,7 +304,7 @@ describe('CommitteesService', () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR, WITH_MANAGE),
+        service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -329,7 +318,6 @@ describe('CommitteesService', () => {
           { reportingToRoleId: 'foreign-role' } as never,
           ORG_A,
           ACTOR,
-          WITH_MANAGE,
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committee.update).not.toHaveBeenCalled();
@@ -385,7 +373,6 @@ describe('CommitteesService', () => {
         { userId: 'user-1', roleValueId: 'chairman' } as never,
         ORG_A,
         ACTOR,
-        WITH_MANAGE,
       );
 
       expect(mockPrisma.committeeMember.create).toHaveBeenCalledWith(
@@ -408,7 +395,6 @@ describe('CommitteesService', () => {
           { userId: 'foreign-user', roleValueId: 'chairman' } as never,
           ORG_A,
           ACTOR,
-          WITH_MANAGE,
         ),
       ).rejects.toThrow(NotFoundException);
 
@@ -428,7 +414,6 @@ describe('CommitteesService', () => {
           { userId: 'user-1', roleValueId: 'chairman' } as never,
           ORG_A,
           ACTOR,
-          WITH_MANAGE,
         ),
       ).rejects.toThrow(ConflictException);
       expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
@@ -447,7 +432,6 @@ describe('CommitteesService', () => {
         { roleValueId: 'secretary' } as never,
         ORG_A,
         ACTOR,
-        WITH_MANAGE,
       );
 
       expect(mockPrisma.committeeMember.update).toHaveBeenCalledWith(
@@ -469,7 +453,6 @@ describe('CommitteesService', () => {
           { roleValueId: 'secretary' } as never,
           ORG_A,
           ACTOR,
-          WITH_MANAGE,
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
@@ -484,7 +467,7 @@ describe('CommitteesService', () => {
         makeMember({ leftAt: new Date(), isActive: false }),
       );
 
-      await service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR, WITH_MANAGE);
+      await service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR);
 
       expect(mockPrisma.committeeMember.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ isActive: false }) }),
@@ -499,120 +482,18 @@ describe('CommitteesService', () => {
       mockPrisma.committeeMember.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR, WITH_MANAGE),
+        service.removeMember('committee-1', 'member-1', {} as never, ORG_A, ACTOR),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
   });
 
-  // ── assertCommitteeAuthority (ACC-28) ────────────────────────────────────────
-  // Exercised via updateCommittee — all four call sites (updateCommittee,
-  // addMember, changeMemberRole, removeMember) call the exact same shared
-  // private helper with the exact same signature, so this is not duplicated
-  // per call site.
-
-  describe('assertCommitteeAuthority (via updateCommittee)', () => {
-    it('allows a user with flat committees:manage, without checking Chairman status at all', async () => {
-      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
-      mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
-
-      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, WITH_MANAGE);
-
-      expect(mockPrisma.lookupValue.findFirst).not.toHaveBeenCalled();
-      expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
-    });
-
-    it('allows a user WITHOUT committees:manage who is the active Chairman of this committee', async () => {
-      mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
-      mockPrisma.committee.update.mockResolvedValue(makeCommittee({ nameEn: 'Renamed' }));
-      mockPrisma.lookupValue.findFirst.mockResolvedValue(CHAIRMAN_LOOKUP_VALUE);
-      mockPrisma.committeeMember.findFirst.mockResolvedValue(
-        makeMember({ userId: ACTOR, roleValueId: CHAIRMAN_LOOKUP_VALUE.id }),
-      );
-
-      await service.updateCommittee(
-        'committee-1',
-        { nameEn: 'Renamed' } as never,
-        ORG_A,
-        ACTOR,
-        WITHOUT_MANAGE,
-      );
-
-      expect(mockPrisma.committeeMember.findFirst).toHaveBeenCalledWith({
-        where: {
-          committeeId: 'committee-1',
-          organizationId: ORG_A,
-          userId: ACTOR,
-          isActive: true,
-          roleValueId: CHAIRMAN_LOOKUP_VALUE.id,
-        },
-      });
-      expect(mockPrisma.committee.update).toHaveBeenCalled();
-    });
-
-    it('rejects a user with neither committees:manage nor an active Chairman seat on this committee', async () => {
-      mockPrisma.lookupValue.findFirst.mockResolvedValue(CHAIRMAN_LOOKUP_VALUE);
-      mockPrisma.committeeMember.findFirst.mockResolvedValue(null); // not the chairman
-
-      await expect(
-        service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, WITHOUT_MANAGE),
-      ).rejects.toThrow(ForbiddenException);
-      expect(mockPrisma.committee.update).not.toHaveBeenCalled();
-    });
-
-    it('rejects when no "chairman" lookup value is seeded for this tenant at all', async () => {
-      mockPrisma.lookupValue.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR, WITHOUT_MANAGE),
-      ).rejects.toThrow(ForbiddenException);
-      // Never even attempts the CommitteeMember lookup without a resolved
-      // chairman lookup value id to check against.
-      expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
-    });
-
-    it('resolves the "chairman" LookupValue with organizationId: null explicitly (SYSTEM row, not a tenant override row)', async () => {
-      mockPrisma.lookupValue.findFirst.mockResolvedValue(CHAIRMAN_LOOKUP_VALUE);
-      mockPrisma.committeeMember.findFirst.mockResolvedValue(
-        makeMember({ userId: ACTOR, roleValueId: CHAIRMAN_LOOKUP_VALUE.id }),
-      );
-
-      await service.updateCommittee(
-        'committee-1',
-        { nameEn: 'Renamed' } as never,
-        ORG_A,
-        ACTOR,
-        WITHOUT_MANAGE,
-      );
-
-      expect(mockPrisma.lookupValue.findFirst).toHaveBeenCalledWith({
-        where: {
-          key: 'chairman',
-          organizationId: null,
-          category: { key: 'committee_member_role' },
-        },
-        select: { id: true },
-      });
-    });
-
-    // MANDATORY — tenant isolation. A Chairman seat in one tenant must never
-    // satisfy the authority check for a committee in a different tenant.
-    it('should NOT return records belonging to a different tenant', async () => {
-      mockPrisma.lookupValue.findFirst.mockResolvedValue(CHAIRMAN_LOOKUP_VALUE);
-      // Simulates the real query: a chairman membership exists, but only
-      // scoped to ORG_A — a caller acting as ORG_B never matches it.
-      mockPrisma.committeeMember.findFirst.mockImplementation(
-        ({ where }: { where: { organizationId: string } }) =>
-          Promise.resolve(
-            where.organizationId === ORG_A
-              ? makeMember({ userId: ACTOR, roleValueId: CHAIRMAN_LOOKUP_VALUE.id })
-              : null,
-          ),
-      );
-
-      await expect(
-        service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_B, ACTOR, WITHOUT_MANAGE),
-      ).rejects.toThrow(ForbiddenException);
-    });
-  });
+  // assertCommitteeAuthority() and its tests were removed entirely —
+  // ACC-28 correction, see step-28-resource-scoped-roles.md's
+  // Retrospective Note 2. Permission enforcement for updateCommittee/
+  // addMember/changeMemberRole/removeMember is now handled purely by
+  // PermissionGuard reading each method's @Permissions() decorator — see
+  // committees.permissions.spec.ts, which exercises the real guard against
+  // the real decorator metadata (this file's existing pattern of stubbing
+  // PermissionGuard entirely can't prove enforcement, only delegation).
 });

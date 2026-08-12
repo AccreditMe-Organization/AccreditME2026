@@ -7,7 +7,6 @@ import { ICommittee, ICommitteeMember, ICommitteeMembershipEvent } from './inter
 
 const TENANT_ID = 'tenant-test';
 const USER_ID = 'user-test';
-const USER_PERMISSIONS = ['committees:manage']; // ACC-28
 
 const MOCK_COMMITTEE: ICommittee = {
   id: 'committee-1',
@@ -53,6 +52,12 @@ const MOCK_EVENT: ICommitteeMembershipEvent = {
   createdAt: new Date('2026-01-01'),
 };
 
+// ACC-28 correction (Retrospective Note 2) — updateCommittee/addMember/
+// changeMemberRole/removeMember no longer take a userPermissions
+// parameter; each is gated purely by its own @Permissions() decorator,
+// enforced by PermissionGuard (stubbed here, like every other controller
+// spec in this codebase — see committees.permissions.spec.ts for real
+// enforcement coverage). This file only proves delegation.
 describe('CommitteesController', () => {
   let controller: CommitteesController;
   let service: {
@@ -117,17 +122,11 @@ describe('CommitteesController', () => {
     expect(result).toEqual(MOCK_COMMITTEE);
   });
 
-  it('updateCommittee delegates to the service with tenant, actor, and userPermissions (ACC-28)', async () => {
+  it('updateCommittee delegates to the service with tenant and actor', async () => {
     const dto = { nameEn: 'Renamed' };
-    const result = await controller.updateCommittee(
-      'committee-1',
-      dto as never,
-      TENANT_ID,
-      USER_ID,
-      USER_PERMISSIONS,
-    );
+    const result = await controller.updateCommittee('committee-1', dto as never, TENANT_ID, USER_ID);
 
-    expect(service.updateCommittee).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID, USER_PERMISSIONS);
+    expect(service.updateCommittee).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID);
     expect(result).toEqual(MOCK_COMMITTEE);
   });
 
@@ -145,53 +144,26 @@ describe('CommitteesController', () => {
     expect(result).toEqual([MOCK_EVENT]);
   });
 
-  it('addMember delegates to the service with tenant, actor, and userPermissions (ACC-28)', async () => {
+  it('addMember delegates to the service with tenant and actor', async () => {
     const dto = { userId: 'user-1', roleValueId: 'chairman' };
-    const result = await controller.addMember(
-      'committee-1',
-      dto as never,
-      TENANT_ID,
-      USER_ID,
-      USER_PERMISSIONS,
-    );
+    const result = await controller.addMember('committee-1', dto as never, TENANT_ID, USER_ID);
 
-    expect(service.addMember).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID, USER_PERMISSIONS);
+    expect(service.addMember).toHaveBeenCalledWith('committee-1', dto, TENANT_ID, USER_ID);
     expect(result).toEqual(MOCK_MEMBER);
   });
 
-  it('changeMemberRole delegates to the service with tenant, actor, and userPermissions (ACC-28)', async () => {
+  it('changeMemberRole delegates to the service with tenant and actor', async () => {
     const dto = { roleValueId: 'secretary' };
-    const result = await controller.changeMemberRole(
-      'committee-1',
-      'member-1',
-      dto as never,
-      TENANT_ID,
-      USER_ID,
-      USER_PERMISSIONS,
-    );
+    const result = await controller.changeMemberRole('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID);
 
-    expect(service.changeMemberRole).toHaveBeenCalledWith(
-      'committee-1',
-      'member-1',
-      dto,
-      TENANT_ID,
-      USER_ID,
-      USER_PERMISSIONS,
-    );
+    expect(service.changeMemberRole).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID);
     expect(result).toEqual(MOCK_MEMBER);
   });
 
-  it('removeMember delegates to the service with tenant, actor, and userPermissions (ACC-28)', async () => {
+  it('removeMember delegates to the service with tenant and actor', async () => {
     const dto = {};
-    await controller.removeMember('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID, USER_PERMISSIONS);
+    await controller.removeMember('committee-1', 'member-1', dto as never, TENANT_ID, USER_ID);
 
-    expect(service.removeMember).toHaveBeenCalledWith(
-      'committee-1',
-      'member-1',
-      dto,
-      TENANT_ID,
-      USER_ID,
-      USER_PERMISSIONS,
-    );
+    expect(service.removeMember).toHaveBeenCalledWith('committee-1', 'member-1', dto, TENANT_ID, USER_ID);
   });
 });
