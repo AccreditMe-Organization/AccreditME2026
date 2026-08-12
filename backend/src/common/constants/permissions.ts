@@ -44,9 +44,20 @@ export const TASKS_PERMISSIONS = {
 } as const;
 
 export const COMMITTEES_PERMISSIONS = {
-  VIEW:    'committees:view',
-  MANAGE:  'committees:manage',
-  APPROVE: 'committees:approve',
+  VIEW:               'committees:view',
+  MANAGE:             'committees:manage',
+  APPROVE:            'committees:approve',
+  // ACC-28 correction — replaces the Chairman-specific authority check
+  // (assertCommitteeAuthority(), removed) with per-action permissions, same
+  // model as every other module. A Chairman is often a figurehead who
+  // delegates actual system use to a Secretary; a literal "are you the
+  // Chairman" check would lock out the person actually doing the work —
+  // tenants grant these to whichever role actually performs the action.
+  CREATE:             'committees:create',
+  EDIT_DETAILS:       'committees:edit_details',
+  ADD_MEMBER:         'committees:add_member',
+  REMOVE_MEMBER:      'committees:remove_member',
+  CHANGE_MEMBER_ROLE: 'committees:change_member_role',
 } as const;
 
 export const NOTIFICATIONS_PERMISSIONS = {

@@ -1,8 +1,7 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
-import { COMMITTEES_PERMISSIONS } from '../../common/constants/permissions';
 import { CreateCommitteeDto } from './dto/create-committee.dto';
 import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
@@ -95,9 +94,7 @@ export class CommitteesService {
     dto: UpdateCommitteeDto,
     organizationId: string,
     actorId: string,
-    userPermissions: string[],
   ): Promise<ICommittee> {
-    await this.assertCommitteeAuthority(id, organizationId, actorId, userPermissions);
     const existing = await this.getCommitteeById(id, organizationId);
 
     if (dto.parentCommitteeId) {
@@ -173,9 +170,7 @@ export class CommitteesService {
     dto: AddCommitteeMemberDto,
     organizationId: string,
     actorId: string,
-    userPermissions: string[],
   ): Promise<ICommitteeMember> {
-    await this.assertCommitteeAuthority(committeeId, organizationId, actorId, userPermissions);
     await this.getCommitteeById(committeeId, organizationId);
     await this.validateUserReference(dto.userId, organizationId);
 
@@ -229,9 +224,7 @@ export class CommitteesService {
     dto: ChangeCommitteeMemberRoleDto,
     organizationId: string,
     actorId: string,
-    userPermissions: string[],
   ): Promise<ICommitteeMember> {
-    await this.assertCommitteeAuthority(committeeId, organizationId, actorId, userPermissions);
     await this.getCommitteeById(committeeId, organizationId);
     const existing = await this.getActiveMember(committeeId, memberId, organizationId);
 
@@ -274,9 +267,7 @@ export class CommitteesService {
     dto: RemoveCommitteeMemberDto,
     organizationId: string,
     actorId: string,
-    userPermissions: string[],
   ): Promise<void> {
-    await this.assertCommitteeAuthority(committeeId, organizationId, actorId, userPermissions);
     await this.getCommitteeById(committeeId, organizationId);
     const existing = await this.getActiveMember(committeeId, memberId, organizationId);
 
@@ -314,59 +305,6 @@ export class CommitteesService {
   }
 
   // ── Internal helpers ─────────────────────────────────────────────────────────
-
-  // ACC-28 — narrow, Committee-specific check for the four endpoints that
-  // aren't reachable through the workflow engine (membership changes are
-  // CommitteeMembershipEvent records, not workflow transitions —
-  // module-designs.md). Flat committees:manage keeps working exactly as
-  // before (first line returns immediately); a user who lacks it but is
-  // the active Chairman of THIS specific committee gains access —
-  // strictly additive, nothing narrowed. No @Permissions() decorator on
-  // these routes at the controller — same deliberate exception already
-  // established for WorkflowController.triggerTransition()/submitApproval().
-  private async assertCommitteeAuthority(
-    committeeId: string,
-    organizationId: string,
-    actorId: string,
-    userPermissions: string[],
-  ): Promise<void> {
-    if (userPermissions.includes(COMMITTEES_PERMISSIONS.MANAGE)) return;
-
-    // organizationId: null is required here, not optional — a tenant that
-    // has ever relabeled "Chairman" via LookupService.overrideLabel()
-    // creates a SECOND LookupValue row with the same key but
-    // organizationId SET (the override/upsert target). Without this
-    // filter, findFirst() would have two matching rows with no ordering
-    // guarantee and could nondeterministically resolve the tenant's
-    // override row instead of the SYSTEM row that
-    // CommitteeMember.roleValueId actually references.
-    const chairmanValue = await this.prisma.lookupValue.findFirst({
-      where: {
-        key: 'chairman',
-        organizationId: null,
-        category: { key: 'committee_member_role' },
-      },
-      select: { id: true },
-    });
-
-    const isChair = chairmanValue
-      ? await this.prisma.committeeMember.findFirst({
-          where: {
-            committeeId,
-            organizationId,
-            userId: actorId,
-            isActive: true,
-            roleValueId: chairmanValue.id,
-          },
-        })
-      : null;
-
-    if (!isChair) {
-      throw new ForbiddenException(
-        'Requires committees:manage, or must be the active Chairman of this committee',
-      );
-    }
-  }
 
   private async getActiveMember(
     committeeId: string,
