@@ -96,7 +96,7 @@ const ACTION_TYPES = [
                   icon="pi pi-pencil"
                   [text]="true"
                   size="small"
-                  [pTooltip]="'common.save' | translate"
+                  [pTooltip]="'common.edit' | translate"
                   (onClick)="openEdit(action)"
                 />
                 <p-button
