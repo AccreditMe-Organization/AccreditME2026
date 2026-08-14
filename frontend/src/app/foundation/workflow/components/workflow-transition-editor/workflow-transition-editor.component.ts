@@ -102,7 +102,7 @@ const TRIGGER_CONDITIONS = [
                   icon="pi pi-pencil"
                   [text]="true"
                   size="small"
-                  [pTooltip]="'common.save' | translate"
+                  [pTooltip]="'common.edit' | translate"
                   (onClick)="openEdit(transition)"
                 />
                 <p-button
