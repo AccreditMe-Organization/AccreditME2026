@@ -135,7 +135,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           </tr>
         </ng-template>
 
-        <ng-template pTemplate="rowexpansion" let-stage>
+        <ng-template pTemplate="expandedrow" let-stage>
           <tr>
             <td colspan="8" class="p-3">
               <app-workflow-transition-editor
