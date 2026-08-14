@@ -409,8 +409,27 @@ describe('CommitteesService', () => {
       mockPrisma.committeeMember.findFirst.mockResolvedValue(makeMember());
 
       await expect(
-        service.addMember('committee-1', { userId: 'user-1', roleValueId: 'chairman' } as never, ORG_A, ACTOR),
+        service.addMember(
+          'committee-1',
+          { userId: 'user-1', roleValueId: 'chairman' } as never,
+          ORG_A,
+          ACTOR,
+        ),
       ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the committee belongs to a different org', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.addMember(
+          'committee-1',
+          { userId: 'user-1', roleValueId: 'chairman' } as never,
+          ORG_B,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
     });
   });
@@ -452,6 +471,21 @@ describe('CommitteesService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
+
+    it('throws NotFoundException when the committee belongs to a different org', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.changeMemberRole(
+          'committee-1',
+          'member-1',
+          { roleValueId: 'secretary' } as never,
+          ORG_B,
+          ACTOR,
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('removeMember', () => {
@@ -481,5 +515,23 @@ describe('CommitteesService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
     });
+
+    it('throws NotFoundException when the committee belongs to a different org', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.removeMember('committee-1', 'member-1', {} as never, ORG_B, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
+    });
   });
+
+  // assertCommitteeAuthority() and its tests were removed entirely —
+  // ACC-28 correction, see step-28-resource-scoped-roles.md's
+  // Retrospective Note 2. Permission enforcement for updateCommittee/
+  // addMember/changeMemberRole/removeMember is now handled purely by
+  // PermissionGuard reading each method's @Permissions() decorator — see
+  // committees.permissions.spec.ts, which exercises the real guard against
+  // the real decorator metadata (this file's existing pattern of stubbing
+  // PermissionGuard entirely can't prove enforcement, only delegation).
 });

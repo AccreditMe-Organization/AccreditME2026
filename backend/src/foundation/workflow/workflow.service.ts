@@ -12,6 +12,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
+import { RoleService } from '../roles/role.service';
 import {
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowInstanceStage as PrismaWorkflowInstanceStage,
@@ -49,6 +50,7 @@ export class WorkflowService {
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     private readonly taskService: TaskService,
+    private readonly roleService: RoleService,
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
   ) {}
 
@@ -90,7 +92,7 @@ export class WorkflowService {
 
     const slaDueAt = await this.computeSlaDueAt(initialStage, organizationId);
 
-    await this.prisma.workflowInstanceStage.create({
+    const initialInstanceStage = await this.prisma.workflowInstanceStage.create({
       data: { workflowInstanceId: instance.id, stageId: initialStage.id, slaDueAt, actorId },
     });
 
@@ -98,6 +100,11 @@ export class WorkflowService {
     // transitions, per the seed data design) — so the initial stage's
     // assignee is notified directly here, the one place nothing else would.
     await this.resolveAndNotifyInitialAssignee(initialStage, instance, organizationId);
+
+    // ACC-28 Section 2.5 — flag + notify Tenant Admins if this stage has an
+    // outgoing ASSIGNEE_POOL transition nobody in the resolved pool could
+    // ever fire (e.g. a vacant Chairman seat).
+    await this.checkAndFlagUnassignedStage(initialStage, initialInstanceStage.id, instance, organizationId);
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -216,6 +223,19 @@ export class WorkflowService {
 
     const fromStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.fromStageId } });
     if (!fromStage) throw new NotFoundException('Current stage not found');
+
+    // ASSIGNEE_POOL (ACC-28) — placed after fromStage resolves, unlike the
+    // three triggerCondition checks above, because resolveAssigneeRaw()
+    // needs the full stage row, not just its id. Reuses the existing
+    // assignee-resolution machinery rather than a new authorization
+    // primitive — see backend/Plans/step-28-resource-scoped-roles.md
+    // Section 2.2.
+    if (transition.triggerCondition === 'ASSIGNEE_POOL') {
+      const pool = await this.resolveAssigneeRaw(fromStage, instance, organizationId);
+      if (!pool.includes(actorId)) {
+        throw new ForbiddenException('You are not in the resolved assignee pool for this stage');
+      }
+    }
 
     const currentInstanceStage = await this.prisma.workflowInstanceStage.findFirst({
       where: { workflowInstanceId: instanceId, stageId: fromStage.id, exitedAt: null },
@@ -453,9 +473,13 @@ export class WorkflowService {
 
     const slaDueAt = await this.computeSlaDueAt(toStage, organizationId);
 
-    await this.prisma.workflowInstanceStage.create({
+    const newInstanceStage = await this.prisma.workflowInstanceStage.create({
       data: { workflowInstanceId: instance.id, stageId: toStage.id, slaDueAt, actorId },
     });
+
+    // ACC-28 Section 2.5 — same check as startInstance(), for the stage this
+    // transition just landed on.
+    await this.checkAndFlagUnassignedStage(toStage, newInstanceStage.id, instance, organizationId);
 
     const updatedInstance = await this.prisma.workflowInstance.update({
       where: { id: instance.id },
@@ -764,8 +788,18 @@ export class WorkflowService {
         // organizationId filter on the denormalized column, isActive
         // instead of leftAt: null (both per the plan's Pending Discussions
         // #6/#7 resolutions).
+        // assigneeCommitteeRoleValueId (ACC-28) narrows this to a specific
+        // committee_member_role when set — null preserves the pre-ACC-28
+        // "every active member" behavior.
         const members = await this.prisma.committeeMember.findMany({
-          where: { committeeId: stage.committeeId, organizationId, isActive: true },
+          where: {
+            committeeId: stage.committeeId,
+            organizationId,
+            isActive: true,
+            ...(stage.assigneeCommitteeRoleValueId
+              ? { roleValueId: stage.assigneeCommitteeRoleValueId }
+              : {}),
+          },
         });
         return members.map((m) => m.userId);
       }
@@ -855,6 +889,121 @@ export class WorkflowService {
     }
   }
 
+  // ── ACC-28 Section 2.5: unassigned-stage detection ──────────────────────────
+
+  // Returns every outgoing ASSIGNEE_POOL transition from `stage` that nobody
+  // in the currently-resolved assignee pool could ever fire — either the
+  // pool is empty (unreachable regardless of requiredPermission), or the
+  // pool is non-empty but nobody in it holds the transition's
+  // requiredPermission. Public: called both from checkAndFlagUnassignedStage()
+  // below (entry-time, this file) and from SlaMonitorProcessor's periodic
+  // sweep (drift-after-entry re-check, plan Section 2.5.1) — the resolution
+  // logic must stay identical between both call sites, so it lives in one
+  // place rather than being duplicated.
+  async resolveUnassignedBlockingTransitions(
+    stage: PrismaWorkflowStage,
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<PrismaWorkflowTransition[]> {
+    const outgoingTransitions = await this.prisma.workflowTransition.findMany({
+      where: { fromStageId: stage.id, triggerCondition: 'ASSIGNEE_POOL' },
+    });
+    if (outgoingTransitions.length === 0) return [];
+
+    const pool = await this.resolveAssigneeRaw(stage, instance, organizationId);
+    const blocking: PrismaWorkflowTransition[] = [];
+
+    for (const transition of outgoingTransitions) {
+      // Empty pool blocks every outgoing ASSIGNEE_POOL transition regardless
+      // of requiredPermission — nobody can ever satisfy triggerTransition()'s
+      // pool.includes(actorId) check if the pool has no members at all.
+      if (pool.length === 0) {
+        blocking.push(transition);
+        continue;
+      }
+      if (!transition.requiredPermission) continue;
+
+      let anyQualifies = false;
+      for (const userId of pool) {
+        const permissions = await this.roleService.getUserPermissions(userId, organizationId);
+        if (permissions.includes(transition.requiredPermission)) {
+          anyQualifies = true;
+          break;
+        }
+      }
+      if (!anyQualifies) blocking.push(transition);
+    }
+
+    return blocking;
+  }
+
+  // Reuses notifyTenantAdminsOfCoverageGap()'s exact query shape above
+  // (Role.findFirst TENANT_ADMIN → UserRole.findMany → one
+  // NotificationService.create() per admin) rather than a new mechanism.
+  // Public: also called from SlaMonitorProcessor's sweep on a fresh
+  // false→true transition (plan Section 2.5.1).
+  async notifyTenantAdminsOfUnassignedStage(
+    organizationId: string,
+    instance: PrismaWorkflowInstance,
+    stage: PrismaWorkflowStage,
+    blockingTransitions: PrismaWorkflowTransition[],
+  ): Promise<void> {
+    const adminRole = await this.prisma.role.findFirst({ where: { organizationId, key: 'TENANT_ADMIN' } });
+    if (!adminRole) return;
+
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+    });
+
+    // Committee's own name resolved via a join — an instance/objectId alone
+    // isn't actionable for an admin deciding what to fix.
+    let subjectLabel = `${instance.objectType} ${instance.objectId}`;
+    if (stage.committeeId) {
+      const committee = await this.prisma.committee.findFirst({
+        where: { id: stage.committeeId, organizationId },
+        select: { nameEn: true },
+      });
+      if (committee) subjectLabel = `${committee.nameEn} (${instance.objectType})`;
+    }
+    const transitionLabels = blockingTransitions.map((t) => t.labelEn).join(', ');
+
+    for (const userRole of userRoles) {
+      await this.notificationService.create(
+        {
+          userId: userRole.userId,
+          titleEn: 'Workflow stage unreachable — no eligible assignee',
+          bodyEn: `In "${stage.nameEn}" for ${subjectLabel}, nobody in the resolved assignee pool can trigger: ${transitionLabels}. Assign someone eligible or update the pool to unblock this stage.`,
+          objectType: instance.objectType,
+          objectId: instance.objectId,
+        },
+        organizationId,
+      );
+    }
+  }
+
+  // Entry-time check (plan Section 2.5) — called once, right after a new
+  // WorkflowInstanceStage row is created (startInstance() for the initial
+  // stage, performTransition() for every subsequent one). Freshly-created
+  // rows always start isUnassigned: false (schema default), so this only
+  // ever performs a false→true transition — the sweep-side symmetric
+  // set/clear logic lives in SlaMonitorProcessor, not here.
+  private async checkAndFlagUnassignedStage(
+    stage: PrismaWorkflowStage,
+    instanceStageId: string,
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<void> {
+    const blocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
+    if (blocking.length === 0) return;
+
+    await this.prisma.workflowInstanceStage.update({
+      where: { id: instanceStageId },
+      data: { isUnassigned: true, unassignedAt: new Date() },
+    });
+
+    await this.notifyTenantAdminsOfUnassignedStage(organizationId, instance, stage, blocking);
+  }
+
   // Sizes the eligible-approver pool for PARALLEL/SEQUENTIAL threshold checks
   // — deliberately separate from resolveAssignee() above, which needs the
   // full instance (for SELF) and isn't meaningful for pool-sizing purposes.
@@ -865,9 +1014,19 @@ export class WorkflowService {
     if (stage.assigneeStrategy === 'COMMITTEE') {
       if (!stage.committeeId) return [];
       // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — same
-      // fix as resolveAssigneeRaw()'s COMMITTEE case above.
+      // fix as resolveAssigneeRaw()'s COMMITTEE case above. Same
+      // assigneeCommitteeRoleValueId filter too (ACC-28) — a PARALLEL-mode
+      // stage narrowed to e.g. "chairman" must size its threshold against
+      // that same narrowed pool, not the full membership.
       const members = await this.prisma.committeeMember.findMany({
-        where: { committeeId: stage.committeeId, organizationId, isActive: true },
+        where: {
+          committeeId: stage.committeeId,
+          organizationId,
+          isActive: true,
+          ...(stage.assigneeCommitteeRoleValueId
+            ? { roleValueId: stage.assigneeCommitteeRoleValueId }
+            : {}),
+        },
       });
       return members.map((m) => m.userId);
     }

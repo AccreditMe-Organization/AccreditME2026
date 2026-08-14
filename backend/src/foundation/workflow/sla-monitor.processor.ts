@@ -7,6 +7,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
+import { WorkflowService } from './workflow.service';
 
 interface EscalationRule {
   afterHours: number;
@@ -29,6 +30,11 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     private readonly orgPositionService: OrgPositionService,
+    // Same module (WorkflowModule provides both) — no forwardRef needed.
+    // ACC-28 Section 2.5.1: reuses WorkflowService's own
+    // resolveUnassignedBlockingTransitions()/notifyTenantAdminsOfUnassignedStage()
+    // rather than duplicating that resolution logic here.
+    private readonly workflowService: WorkflowService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -89,6 +95,56 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     }
 
     await this.sweepOverdueTasks(now);
+    await this.sweepUnassignedStages();
+  }
+
+  // ACC-28 Section 2.5.1 — drift-after-entry re-check. The entry-time check
+  // (WorkflowService.checkAndFlagUnassignedStage(), private, fires once when
+  // a stage is entered) can't catch a pool becoming unreachable WHILE an
+  // instance is already sitting in that stage (e.g. a Chairman removed
+  // mid-review). Reuses this existing 15-minute sweep rather than a new
+  // queue — same precedent as sweepOverdueTasks() above.
+  private async sweepUnassignedStages(): Promise<void> {
+    const openStages = await this.prisma.workflowInstanceStage.findMany({
+      where: { exitedAt: null },
+      include: { workflowInstance: true, stage: true },
+    });
+
+    for (const instanceStage of openStages) {
+      const organizationId = instanceStage.workflowInstance.organizationId;
+      const blocking = await this.workflowService.resolveUnassignedBlockingTransitions(
+        instanceStage.stage,
+        instanceStage.workflowInstance,
+        organizationId,
+      );
+
+      // wasUnassigned read from the row as fetched at the top of this sweep
+      // pass, before anything here touches it — the precise condition that
+      // prevents a duplicate notification when this sweep re-evaluates a
+      // stage the entry-time check already flagged and notified about
+      // minutes earlier (in that case wasUnassigned reads back true,
+      // isNowUnassigned is also true, no state change, no re-notify).
+      const wasUnassigned = instanceStage.isUnassigned;
+      const isNowUnassigned = blocking.length > 0;
+      if (wasUnassigned === isNowUnassigned) continue;
+
+      await this.prisma.workflowInstanceStage.update({
+        where: { id: instanceStage.id },
+        data: { isUnassigned: isNowUnassigned, unassignedAt: isNowUnassigned ? new Date() : null },
+      });
+
+      // Only the false→true transition pages an admin — the symmetric
+      // clear-on-recovery case (a new Chairman appointed) updates the row
+      // silently, per plan Section 2.5.1.
+      if (isNowUnassigned) {
+        await this.workflowService.notifyTenantAdminsOfUnassignedStage(
+          organizationId,
+          instanceStage.workflowInstance,
+          instanceStage.stage,
+          blocking,
+        );
+      }
+    }
   }
 
   // Task Management (Step 8) extension — reuses this existing 15-minute

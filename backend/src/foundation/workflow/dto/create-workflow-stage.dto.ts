@@ -80,6 +80,14 @@ export class CreateWorkflowStageDto {
   @IsOptional()
   assigneeRoleId?: string;
 
+  // ACC-28 — narrows assigneeStrategy: COMMITTEE to members holding this
+  // committee_member_role lookup value (e.g. "chairman"). Only meaningful
+  // when assigneeStrategy === COMMITTEE; validated against LookupValue in
+  // WorkflowTemplateService (see validateCommitteeRoleValueId()).
+  @IsString()
+  @IsOptional()
+  assigneeCommitteeRoleValueId?: string;
+
   @IsArray()
   @IsOptional()
   escalationConfig?: Record<string, unknown>[];

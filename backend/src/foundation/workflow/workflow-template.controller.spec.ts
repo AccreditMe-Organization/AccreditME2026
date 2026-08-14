@@ -41,6 +41,7 @@ const MOCK_STAGE: IWorkflowStage = {
   assigneeStrategy: 'SELF',
   assigneeUserId: null,
   assigneeRoleId: null,
+  assigneeCommitteeRoleValueId: null,
   escalationConfig: null,
 };
 

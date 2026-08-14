@@ -28,6 +28,7 @@ const TRIGGER_CONDITIONS = [
   { label: 'ROLE_BASED', value: 'ROLE_BASED' },
   { label: 'ANY_AUTHENTICATED', value: 'ANY_AUTHENTICATED' },
   { label: 'SYSTEM_AUTOMATIC', value: 'SYSTEM_AUTOMATIC' },
+  { label: 'ASSIGNEE_POOL', value: 'ASSIGNEE_POOL' },
 ];
 
 @Component({
@@ -182,6 +183,10 @@ const TRIGGER_CONDITIONS = [
 
           @if (addForm.controls.triggerCondition.value === 'SPECIFIC_USER') {
             <p-message severity="info" [text]="'workflow.userPickerUnavailable' | translate" />
+          }
+
+          @if (addForm.controls.triggerCondition.value === 'ASSIGNEE_POOL') {
+            <p-message severity="info" [text]="'workflow.assigneePoolHelp' | translate" />
           }
 
           <div class="flex flex-col gap-1">

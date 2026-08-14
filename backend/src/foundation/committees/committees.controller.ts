@@ -35,7 +35,7 @@ export class CommitteesController {
   }
 
   @Post()
-  @Permissions(COMMITTEES_PERMISSIONS.MANAGE)
+  @Permissions(COMMITTEES_PERMISSIONS.CREATE)
   createCommittee(
     @Body() dto: CreateCommitteeDto,
     @CurrentTenant() tenantId: string,
@@ -45,7 +45,7 @@ export class CommitteesController {
   }
 
   @Patch(':id')
-  @Permissions(COMMITTEES_PERMISSIONS.MANAGE)
+  @Permissions(COMMITTEES_PERMISSIONS.EDIT_DETAILS)
   updateCommittee(
     @Param('id') id: string,
     @Body() dto: UpdateCommitteeDto,
@@ -74,7 +74,7 @@ export class CommitteesController {
   }
 
   @Post(':id/members')
-  @Permissions(COMMITTEES_PERMISSIONS.MANAGE)
+  @Permissions(COMMITTEES_PERMISSIONS.ADD_MEMBER)
   addMember(
     @Param('id') committeeId: string,
     @Body() dto: AddCommitteeMemberDto,
@@ -85,7 +85,7 @@ export class CommitteesController {
   }
 
   @Patch(':id/members/:memberId')
-  @Permissions(COMMITTEES_PERMISSIONS.MANAGE)
+  @Permissions(COMMITTEES_PERMISSIONS.CHANGE_MEMBER_ROLE)
   changeMemberRole(
     @Param('id') committeeId: string,
     @Param('memberId') memberId: string,
@@ -97,7 +97,7 @@ export class CommitteesController {
   }
 
   @Delete(':id/members/:memberId')
-  @Permissions(COMMITTEES_PERMISSIONS.MANAGE)
+  @Permissions(COMMITTEES_PERMISSIONS.REMOVE_MEMBER)
   removeMember(
     @Param('id') committeeId: string,
     @Param('memberId') memberId: string,

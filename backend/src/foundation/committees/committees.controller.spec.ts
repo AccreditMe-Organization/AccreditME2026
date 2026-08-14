@@ -52,6 +52,12 @@ const MOCK_EVENT: ICommitteeMembershipEvent = {
   createdAt: new Date('2026-01-01'),
 };
 
+// ACC-28 correction (Retrospective Note 2) — updateCommittee/addMember/
+// changeMemberRole/removeMember no longer take a userPermissions
+// parameter; each is gated purely by its own @Permissions() decorator,
+// enforced by PermissionGuard (stubbed here, like every other controller
+// spec in this codebase — see committees.permissions.spec.ts for real
+// enforcement coverage). This file only proves delegation.
 describe('CommitteesController', () => {
   let controller: CommitteesController;
   let service: {

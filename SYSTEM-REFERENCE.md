@@ -318,11 +318,21 @@ assumed): `working-calendar`, `task`, `organization`, `org-position`,
   `WorkflowService` performs its own dynamic check against
   `transition.requiredPermission` (tenant-configured data, not a static
   decorator value) using `userPermissions` threaded in via
-  `@CurrentUserPermissions()`. This is the established precedent ACC-28's
-  revised plan reuses for `CommitteesController`'s four
-  membership-mutation endpoints, which need the same "service performs
-  its own dynamic, resource-aware check" shape `PermissionGuard`
-  structurally cannot express.
+  `@CurrentUserPermissions()`. **Superseded note (ACC-28)**: an earlier
+  revision of ACC-28's plan proposed reusing this exact pattern for
+  `CommitteesController`'s four membership-mutation endpoints via a new
+  `assertCommitteeAuthority()` service check (flat `committees:manage`
+  OR active Chairman of the specific committee). That check was built,
+  then rejected by direct product decision — a Chairman is often a
+  figurehead who delegates actual system use to a Secretary, so a
+  literal "are you the Chairman" check locks out the person doing the
+  work. It was removed entirely and replaced with five new permission
+  strings (`committees:create`/`edit_details`/`add_member`/
+  `remove_member`/`change_member_role`) plus an ordinary
+  `@Permissions()` decorator per method — see Section 1.1's
+  `COMMITTEES_PERMISSIONS` update below. `CommitteesController` is no
+  longer an exception to the class-level-guards-only pattern; this
+  bullet's `WorkflowController` case remains the only real one.
 
 **`PlatformGuard` consumers**: `platform-tenant.controller.ts` (every
 route except `endImpersonation`, which is `TenantGuard`-only),
@@ -400,6 +410,11 @@ model WorkflowStage {
   assigneeStrategy   WorkflowAssigneeStrategy   @default(ROLE)
   assigneeUserId     String?
   assigneeRoleId     String?
+  // ACC-28 — narrows the COMMITTEE assigneeStrategy case to members
+  // holding this committee_member_role LookupValue (e.g. "chairman").
+  // Only read when assigneeStrategy === COMMITTEE; null preserves the
+  // pre-ACC-28 "every active member" behavior. See 2.5/2.6.
+  assigneeCommitteeRoleValueId String?
 
   escalationConfig   Json?
 }
@@ -438,6 +453,14 @@ model WorkflowInstanceStage {
   outcome              WorkflowInstanceStageOutcome  @default(PENDING)
   actorId              String?
   comment              String?
+  // ACC-28 Section 2.5 — set when, at stage-entry time or the periodic
+  // SlaMonitorProcessor sweep, no one in this stage's resolved assignee
+  // pool could ever fire an outgoing ASSIGNEE_POOL transition (empty
+  // pool, or nobody holds the transition's requiredPermission). Cleared
+  // symmetrically by the sweep if the pool becomes qualifying again. See
+  // 2.13.
+  isUnassigned         Boolean                       @default(false)
+  unassignedAt         DateTime?
 }
 
 model WorkflowApproval {
@@ -481,7 +504,8 @@ WorkflowObjectType         DOCUMENT_REQUEST, DOCUMENT, CHANGE_REQUEST, INCIDENT,
 WorkflowApprovalMode        SINGLE, SEQUENTIAL, PARALLEL, COMMITTEE
 WorkflowParallelThreshold   ALL, MAJORITY, ANY
 WorkflowAssigneeStrategy    SPECIFIC_USER, ROLE, ORG_UNIT_HEAD, SELF, COMMITTEE, ROUND_ROBIN
-WorkflowTriggerCondition    SPECIFIC_USER, ROLE_BASED, ANY_AUTHENTICATED, SYSTEM_AUTOMATIC
+WorkflowTriggerCondition    SPECIFIC_USER, ROLE_BASED, ANY_AUTHENTICATED, SYSTEM_AUTOMATIC,
+                            ASSIGNEE_POOL (ACC-28)
 WorkflowActionType          CREATE_TASK, SEND_NOTIFICATION, GENERATE_PDF, LOCK_DOCUMENT,
                             LOG_AUDIT, WEBHOOK
 WorkflowApprovalDecision    PENDING, APPROVED, APPROVED_WITH_COMMENTS, RETURNED, ABSTAINED
@@ -534,6 +558,14 @@ In order, exactly as executed:
      — **tenant-wide**, no resource-instance filter of any kind.
    - `ANY_AUTHENTICATED` → no additional check performed anywhere in
      the method (any authenticated actor who passed steps 1–3 proceeds).
+   - **`ASSIGNEE_POOL` (ACC-28)** — checked separately, immediately
+     after `fromStage` loads in step 5 below (needs the full stage row,
+     not just its id): `resolveAssigneeRaw(fromStage, instance,
+     organizationId).includes(actorId)`, else `ForbiddenException`.
+     Composes with `requiredPermission` as an ordinary AND, same as the
+     other three conditions. The only `triggerCondition` value that
+     actually consults assignee resolution — see the corrected 2.8
+     below.
 5. Load `fromStage`, confirm the active `WorkflowInstanceStage` entry
    exists.
 6. `checkValidatorConfig()` — see 2.10.
@@ -546,11 +578,15 @@ In order, exactly as executed:
    transition immediately, no threshold needed. An `APPROVED` vote
    checks `isApprovalThresholdMet()` (2.7) before advancing.
 
-**No step above checks whether `actorId` is a member of the resolved
-assignee/approver pool for this stage.** Confirmed directly: for a
-`ROLE`-assigned `SINGLE` stage, any tenant-wide holder of the required
-role/permission can fire the transition — whether or not they were the
-user actually assigned the resulting task.
+**Only `ASSIGNEE_POOL` (ACC-28) checks whether `actorId` is a member of
+the resolved assignee/approver pool for this stage — every other
+`triggerCondition` still does not.** For a `ROLE`-assigned `SINGLE`
+stage using `ROLE_BASED`/`ANY_AUTHENTICATED`/`SPECIFIC_USER`/
+`SYSTEM_AUTOMATIC`, any tenant-wide holder of the required role/
+permission can still fire the transition — whether or not they were
+the user actually assigned the resulting task. `ASSIGNEE_POOL` is
+opt-in per transition, not a change to the other four conditions'
+existing behavior.
 
 ### 2.5 `resolveAssigneeRaw()` — All 6 Strategies (`workflow.service.ts:720–776`)
 
@@ -565,7 +601,7 @@ gating (see 2.8).
 | `ROUND_ROBIN` | **Identical code path to `ROLE`** (same `switch` case, `case 'ROLE': case 'ROUND_ROBIN':`). | No round-robin logic exists at all — no assignment-history tracking, no rotation. Falls back to `ROLE`'s "first active holder" behavior. Documented in-code as a known limitation, not an oversight. |
 | `ORG_UNIT_HEAD` | **Throws an `Error`** unconditionally: `"ORG_UNIT_HEAD assignee resolution requires an orgUnitId from the calling module — not yet supported."` | **Not implemented at all.** Any stage configured with this strategy will throw at resolution time, not silently return empty. |
 | `SELF` | Finds the instance's first-ever `WorkflowInstanceStage` (`orderBy: enteredAt asc`) and returns its `actorId` — i.e. whoever started the instance. | Only meaningful for the literal instance-creator; cannot express "self" at any stage other than by reference to who opened the workflow. |
-| `COMMITTEE` | `committeeMember.findMany({ committeeId: stage.committeeId, organizationId, isActive: true })` → **every active member**, org-scoped. | **No `roleValueId` filter** — Chairman, Secretary, Member, Observer, Advisor are all returned indiscriminately. Correctly scoped to *one committee* (not the whole tenant), but not scoped to *a role within that committee*. |
+| `COMMITTEE` | `committeeMember.findMany({ committeeId: stage.committeeId, organizationId, isActive: true, ...(stage.assigneeCommitteeRoleValueId ? { roleValueId: stage.assigneeCommitteeRoleValueId } : {}) })` → every active member, org-scoped, **optionally narrowed to one `committee_member_role` (ACC-28)**. | `assigneeCommitteeRoleValueId` defaults to `null` — every stage seeded before ACC-28 keeps returning every active member indiscriminately (Chairman, Secretary, Member, Observer, Advisor), unchanged. Only stages a tenant admin explicitly configures with a role filter narrow further. |
 
 All results pass through `applyOutOfOfficeRouting()` (2.5.1) before
 being returned by the public `resolveAssignee()` wrapper.
@@ -584,9 +620,11 @@ Deliberately separate from `resolveAssigneeRaw()` (needs a *stage*
 only, not a full instance — not meaningful for `SELF`). Only handles
 two strategies:
 
-- `COMMITTEE` → identical query and identical limitation to
-  `resolveAssigneeRaw()`'s `COMMITTEE` case (no `roleValueId` filter) —
-  literally duplicated, not shared code.
+- `COMMITTEE` → identical query (including the ACC-28
+  `assigneeCommitteeRoleValueId` filter) to `resolveAssigneeRaw()`'s
+  `COMMITTEE` case — literally duplicated, not shared code, so a
+  PARALLEL-mode stage using the role filter sizes its threshold against
+  the same narrowed pool it assigns to.
 - `ROLE` → identical query to `resolveAssigneeRaw()`'s `ROLE` case
   (all active tenant-wide holders), no `SINGLE`-mode truncation (pool
   sizing needs the full set).
@@ -616,21 +654,41 @@ when `approvalMode !== 'COMMITTEE'`.
   pool resolves empty. `ALL` → `approvedCount >= poolSize`. `ANY` →
   `approvedCount >= 1`. `MAJORITY` → `approvedCount > poolSize / 2`.
 
-### 2.8 The Assignee-Resolution / Trigger-Gating Disconnect
+### 2.8 The Assignee-Resolution / Trigger-Gating Disconnect (Partially Closed, ACC-28)
 
-**Assignee-resolution and trigger-gating are two disconnected code
-paths today.** `resolveAssigneeRaw()`/`resolveApproverPool()` are
-called only for `CREATE_TASK`/`SEND_NOTIFICATION` targeting and for
-sizing the approval-threshold denominator — never to check who is
+**Assignee-resolution and trigger-gating were, until ACC-28, two fully
+disconnected code paths.** `resolveAssigneeRaw()`/`resolveApproverPool()`
+were called only for `CREATE_TASK`/`SEND_NOTIFICATION` targeting and
+for sizing the approval-threshold denominator — never to check who was
 *allowed* to trigger a transition or submit an approval.
 `triggerTransition()`'s own gating (`requiredPermission`,
-`triggerCondition`) never calls either resolution method. This is the
-finding that directly produced ACC-28's revised, smaller fix (see that
-plan) — a new `ASSIGNEE_POOL` `triggerCondition` value that has
-`triggerTransition()` check `actorId` against
-`resolveAssigneeRaw()`'s own result, reusing rather than duplicating.
-**As of this document, that fix has not yet been implemented** — this
-section describes the engine as it exists today, gap included.
+`triggerCondition`) never called either resolution method.
+
+**ACC-28 closed this for `triggerTransition()`, opt-in per transition**
+— the new `ASSIGNEE_POOL` `triggerCondition` value (2.4) has
+`triggerTransition()` check `actorId` against `resolveAssigneeRaw()`'s
+own result for the current stage, reusing rather than duplicating the
+resolution logic. This is **not** a change to the other four
+`triggerCondition` values' behavior (`SPECIFIC_USER`/`ROLE_BASED`/
+`ANY_AUTHENTICATED`/`SYSTEM_AUTOMATIC` still never consult assignee
+resolution) — it's a fifth option a tenant admin configures per
+transition, closing the gap only where explicitly turned on.
+
+**A related, narrower gap ACC-28 also closed**: neither
+`WorkflowStage`/`WorkflowTransition` write path
+(`workflow-template.service.ts`'s `addStage`/`updateStage`/
+`addTransition`/`updateTransition`) validates that a transition's
+`requiredPermission` is actually reachable by anyone in its stage's
+resolved assignee pool — a tenant admin can still save an
+unreachable combination, and nothing detects it at save time. What
+ACC-28 added instead is **runtime detection**, not config-time
+validation: `WorkflowInstanceStage.isUnassigned`/`.unassignedAt`,
+checked at stage-entry time and re-checked by `SlaMonitorProcessor`'s
+sweep, flags exactly this condition for `ASSIGNEE_POOL` transitions and
+notifies every `TENANT_ADMIN` — see the new 2.13 below. Scoped to
+`ASSIGNEE_POOL` only; the same underlying risk for `ROLE_BASED`
+(nobody holds the configured role) and `SPECIFIC_USER` (the named user
+was deactivated) is tracked, not fixed, in Section 11.
 
 **A second, adjacent gap found in the same investigation, verified
 directly against both files** (`workflow.controller.ts:56–65`,
@@ -788,6 +846,69 @@ Also notable: `getInstance()` (singular, fetch-by-id) and
 have no UI trigger anywhere — `getInstancesByObject()` (plural) is what
 `committee-detail` actually uses to show workflow history, and no
 "Cancel" button exists anywhere in the built UI yet.
+
+### 2.13 Unassigned-Stage Detection — `isUnassigned`/`unassignedAt` (ACC-28)
+
+Operational-safety mechanism, not a correctness fix — added after a
+direct investigation found no config-time validation and no runtime
+detection existed anywhere for a stage whose resolved assignee pool
+can never actually reach a required transition (2.8's `ASSIGNEE_POOL`
+addition makes this materially more likely: a single vacant Chairman
+seat is a normal, plausible real-world event, not a rare
+misconfiguration).
+
+- **`resolveUnassignedBlockingTransitions(stage, instance,
+  organizationId)`** (public on `WorkflowService`) — for every outgoing
+  `WorkflowTransition` from `stage` where `triggerCondition ===
+  'ASSIGNEE_POOL'`: resolves the pool via `resolveAssigneeRaw()`; if the
+  pool is empty, the transition is blocking **regardless of
+  `requiredPermission`** (nobody can ever satisfy
+  `pool.includes(actorId)`); if the pool is non-empty and
+  `requiredPermission` is set, checks whether *any* resolved person's
+  `RoleService.getUserPermissions()` includes it. Returns every
+  blocking transition found (not just the first).
+- **Entry-time check** — `checkAndFlagUnassignedStage()` (private),
+  called once right after a new `WorkflowInstanceStage` row is created
+  (`startInstance()` for the initial stage, `performTransition()` for
+  every subsequent one). If any blocking transition is found: sets
+  `isUnassigned: true, unassignedAt: now()` on that row and calls
+  `notifyTenantAdminsOfUnassignedStage()`.
+- **`notifyTenantAdminsOfUnassignedStage()`** (public) — mirrors
+  `notifyTenantAdminsOfCoverageGap()`'s own query shape (`Role.findFirst
+  TENANT_ADMIN` → `UserRole.findMany` → one `NotificationService.create()`
+  per admin), not a new mechanism. Names the specific transition
+  (`labelEn`) and instance (`objectType`/`objectId`, plus the
+  Committee's own `nameEn` resolved via a join when `stage.committeeId`
+  is set).
+- **Drift-after-entry re-check** — `SlaMonitorProcessor.sweepUnassignedStages()`
+  (private), added to the existing 15-minute repeatable job alongside
+  `sweepOverdueTasks()`, not a new queue. For every open (`exitedAt:
+  null`) `WorkflowInstanceStage`: re-runs
+  `resolveUnassignedBlockingTransitions()`, compares the freshly
+  computed result against `isUnassigned` **as read at the top of this
+  sweep pass** (`wasUnassigned`), and only writes + notifies on an
+  explicit `wasUnassigned === false && isNowUnassigned === true`
+  transition — skips the write entirely when nothing changed. This is
+  what prevents a duplicate notification when the sweep re-evaluates a
+  stage the entry-time check already flagged minutes earlier, and keeps
+  recovery (e.g. a new Chairman appointed) silent — the row updates,
+  nobody is paged.
+- **Deliberately synchronous** at entry-time, consistent with
+  `resolveAssigneeRaw()` already running inline for `CREATE_TASK`/
+  `SEND_NOTIFICATION` elsewhere in this same file — BullMQ is reserved
+  for genuinely slow/external work (PDF, AI, email, virus scan, and
+  `WEBHOOK` specifically for its unpredictable external latency), not a
+  handful of small Prisma queries against a committee-sized member
+  list. The periodic re-check is already async by construction, living
+  inside the existing `SlaMonitorProcessor` job.
+- **Scoped to `ASSIGNEE_POOL` only** — `ROLE_BASED`/`SPECIFIC_USER`
+  transitions can go unreachable the same way (nobody holds the
+  configured role; the named user was deactivated) with the same lack
+  of detection, deliberately not covered here. See Section 11, Tier 1.
+- **Zero frontend consumers today** (confirmed via grep — no match for
+  `isUnassigned`/`unassignedAt` anywhere in `frontend/src/app`). Nothing
+  in the UI surfaces a flagged stage beyond the `TENANT_ADMIN`
+  notification itself; there is no dashboard/badge reading this field.
 
 ---
 
@@ -2050,12 +2171,15 @@ Purpose section, written directly in response to the ACC-28 incident.
 ### Tier 1 — Urgent, cheap, worth acting on before/alongside finishing this document
 
 - **CI tenant-isolation gate has a real blind spot** (Section 8.4) —
-  `task.service.spec.ts`, `org-position.service.spec.ts`, and the main
-  `workflow.service.spec.ts` all lack a test named exactly `"should NOT
-  return records belonging to a different tenant"`, despite the CI job
-  existing specifically to catch this. `--passWithNoTests` means a
-  module with zero matching tests still passes green — silent, not
-  loud, non-coverage.
+  `task.service.spec.ts` and `org-position.service.spec.ts` lack a test
+  named exactly `"should NOT return records belonging to a different
+  tenant"`, despite the CI job existing specifically to catch this.
+  `--passWithNoTests` means a module with zero matching tests still
+  passes green — silent, not loud, non-coverage. **Partially closed**:
+  `workflow.service.spec.ts` gained one as an incidental side effect of
+  ACC-28's `notifyTenantAdminsOfUnassignedStage()` tests — not a
+  deliberate fix of this Tier 1 item, so `task`/`org-position` remain
+  open.
 - **Role/permission changes do not revoke an existing session**
   (Section 1.2 correction) — only `UserService.deactivate()` calls
   `invalidateUserSessions()`. A user stripped of a role (e.g.
@@ -2086,6 +2210,21 @@ Purpose section, written directly in response to the ACC-28 incident.
   selecting it; currently unexercised by any seed data (which is the
   only reason this is Tier 1-adjacent rather than a live incident), but
   the first tenant to configure it will crash that transition outright.
+- **Unassigned-transition detection (Section 2.13) covers `ASSIGNEE_POOL`
+  only — `ROLE_BASED`/`SPECIFIC_USER` have the same underlying risk,
+  undetected** (ACC-28, deliberately scoped out — see the plan's
+  Pending Discussion #1). `ROLE_BASED` gating (nobody in the tenant
+  holds `triggerRoleId`) and `SPECIFIC_USER` gating (the named
+  `triggerUserId` was deactivated) can each make a transition
+  permanently unreachable the same way an empty `ASSIGNEE_POOL` pool
+  does — with zero notification to anyone. Not folded into ACC-28
+  because each needs a structurally different check (`ROLE_BASED`'s
+  equivalent is "does anyone hold this role," independent of the
+  stage's `assigneeStrategy`/pool entirely — not a generalization of
+  `resolveUnassignedBlockingTransitions()`), a real scope expansion
+  rather than a cheap add-on. Flagged here specifically so a future
+  ticket picking this up doesn't have to re-derive that ACC-28 already
+  considered and consciously excluded it.
 
 ### Tier 2 — Real, confirmed gaps, not urgent, worth bundling into follow-up tickets
 
