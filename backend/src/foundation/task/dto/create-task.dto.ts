@@ -21,6 +21,7 @@ const TASK_SOURCE_TYPES = [
   'KPI',
   'GAP',
   'QUALITY_IMPROVEMENT_PLAN',
+  'COMMITTEE',
 ] as const;
 
 const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;

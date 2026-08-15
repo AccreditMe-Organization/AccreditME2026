@@ -417,7 +417,7 @@ Every task MUST have sourceType and sourceId.
 No standalone tasks. See TaskSourceType enum (ACC-11 — Task Management).
 Task source types: MEETING, DOCUMENT, AUDIT, CAPA,
 INCIDENT, CORRECTIVE_ACTION, STANDARD, KPI,
-GAP, QUALITY_IMPROVEMENT_PLAN
+GAP, QUALITY_IMPROVEMENT_PLAN, COMMITTEE
 
 ### WorkflowObjectType Additions Schedule
 Already in schema (ACC-9 — Workflow Engine):

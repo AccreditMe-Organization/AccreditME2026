@@ -582,17 +582,15 @@ export class WorkflowService {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) return 'Skipped — target stage not found';
 
-    // WorkflowObjectType (8 values, includes DOCUMENT_REQUEST/CHANGE_REQUEST/
-    // COMMITTEE) and TaskSourceType (CLAUDE.md's closed 10-value list) don't
-    // fully overlap — discovered when this method was first migrated to the
-    // redesigned Task schema. COMMITTEE has no valid TaskSourceType mapping;
-    // its seeded formation→terms_review transition DOES fire CREATE_TASK
-    // (confirmed in workflow.seed.ts), so this is a real gap, not
-    // hypothetical — flagged for Step 10 (Committees) to resolve properly,
-    // likely by adding COMMITTEE to TaskSourceType when that module is built.
+    // Every current WorkflowObjectType now has a TaskSourceType mapping
+    // (see mapObjectTypeToTaskSourceType below) — the null-fallback here
+    // only matters for a future WorkflowObjectType addition (e.g.
+    // ACCREDITATION_ROUND, GAP — see CLAUDE.md's Additions Schedule) that
+    // hasn't been wired into the mapping yet, skipped gracefully rather
+    // than writing an invalid enum value to the database.
     const sourceType = this.mapObjectTypeToTaskSourceType(instance.objectType);
     if (!sourceType) {
-      return `Skipped — no TaskSourceType mapping for ${instance.objectType} (see Step 10)`;
+      return `Skipped — no TaskSourceType mapping for ${instance.objectType}`;
     }
 
     // Full resolved assigneeIds array passed through — fixes the original
@@ -620,10 +618,10 @@ export class WorkflowService {
   }
 
   // WorkflowObjectType → TaskSourceType. DOCUMENT_REQUEST/CHANGE_REQUEST map
-  // to DOCUMENT (both are document-lifecycle processes). COMMITTEE has no
-  // valid mapping under the current TaskSourceType list — returns null,
-  // meaning callers must skip task creation gracefully rather than write an
-  // invalid enum value to the database.
+  // to DOCUMENT (both are document-lifecycle processes). The default branch
+  // exists for a future WorkflowObjectType addition landing ahead of its own
+  // TaskSourceType mapping — callers must skip task creation gracefully
+  // rather than write an invalid enum value to the database.
   private mapObjectTypeToTaskSourceType(objectType: WorkflowObjectType): TaskSourceType | null {
     switch (objectType) {
       case 'DOCUMENT':
@@ -639,7 +637,7 @@ export class WorkflowService {
       case 'MEETING':
         return 'MEETING';
       case 'COMMITTEE':
-        return null;
+        return 'COMMITTEE';
       default:
         return null;
     }
