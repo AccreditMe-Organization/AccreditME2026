@@ -1,14 +1,14 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService } from 'primeng/api';
 import { RoleService, RoleDto } from '../../services/role.service';
 import { RoleFormComponent } from '../role-form/role-form.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
@@ -20,8 +20,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     ButtonModule,
     TagModule,
     TooltipModule,
-    DialogModule,
     RoleFormComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -127,24 +127,27 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         </ng-template>
       </p-table>
 
-      <p-dialog
-        [visible]="showFormDialog()"
-        (visibleChange)="showFormDialog.set($event)"
-        [header]="(editingRole() ? 'roles.editRole' : 'roles.addRole') | translate"
-        [modal]="true"
-        [style]="{ width: '520px' }"
-      >
+      <ng-template #formTpl>
         <app-role-form
           [role]="editingRole()"
           (saved)="onSaved($event)"
           (cancelled)="showFormDialog.set(false)"
         />
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [visible]="showFormDialog()"
+        (visibleChange)="showFormDialog.set($event)"
+        [header]="(editingRole() ? 'roles.editRole' : 'roles.addRole') | translate"
+        [content]="formTpl"
+        width="520px"
+      />
 
     </div>
   `,
 })
 export class RoleListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly roleService = inject(RoleService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);

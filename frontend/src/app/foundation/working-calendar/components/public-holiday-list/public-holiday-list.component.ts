@@ -1,16 +1,16 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
-import { DialogModule } from 'primeng/dialog';
 import { SelectModule } from 'primeng/select';
 import {
   WorkingCalendarService,
   PublicHolidayDto,
 } from '../../services/working-calendar.service';
 import { PublicHolidayFormComponent } from '../public-holiday-form/public-holiday-form.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
@@ -22,9 +22,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TableModule,
     ButtonModule,
     TagModule,
-    DialogModule,
     SelectModule,
     PublicHolidayFormComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex justify-between items-center mb-4">
@@ -108,24 +108,27 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </ng-template>
     </p-table>
 
-    <p-dialog
-      [visible]="formVisible()"
-      (visibleChange)="formVisible.set($event)"
-      [header]="selectedHoliday()
-        ? ('workingCalendar.editHoliday' | translate)
-        : ('workingCalendar.addHoliday' | translate)"
-      [modal]="true"
-      [style]="{ width: '480px' }"
-    >
+    <ng-template #formTpl>
       <app-public-holiday-form
         [holiday]="selectedHoliday()"
         (saved)="onSaved()"
         (cancelled)="formVisible.set(false)"
       />
-    </p-dialog>
+    </ng-template>
+    <app-edit-dialog
+      [visible]="formVisible()"
+      (visibleChange)="formVisible.set($event)"
+      [header]="selectedHoliday()
+        ? ('workingCalendar.editHoliday' | translate)
+        : ('workingCalendar.addHoliday' | translate)"
+      [content]="formTpl"
+      width="480px"
+    />
   `,
 })
 export class PublicHolidayListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly svc = inject(WorkingCalendarService);
 
   readonly loading = signal(false);

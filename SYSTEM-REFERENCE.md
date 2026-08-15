@@ -2002,7 +2002,7 @@ with, not a contradiction of.
 
 ## 10. Frontend Design Patterns
 
-`frontend/src/app/shared/components/` (2 components) +
+`frontend/src/app/shared/components/` (3 components) +
 `frontend/src/styles/tokens.scss` + established conventions from
 `backend/Plans/step-15-design-foundation.md` (ACC-15).
 
@@ -2095,27 +2095,87 @@ difference from how color consistency is enforced (10.1's CSS
 variables are structurally hard to bypass; the typography scale is
 not).
 
-### 10.5 The `p-dialog` Add/Edit-Flow Convention
+### 10.5 `EditDialogComponent` — the Required Add/Edit-Flow Pattern (ACC-29)
 
-Recurs across every list-management screen read while building this
-document (Lookup Values, Tasks, Roles, Org Positions, Committees) —
-**a convention, not a shared component**: each `*-list.component.ts`
-owns a `p-dialog` (or several — `lookup-value-list.component.ts` has
-two, one for add/edit, a separate one for the override-label flow,
-Section 6.6) with `[visible]`/`(visibleChange)` bound to a local
-signal, rendering a `*-form.component.ts` inside it that emits
-`(saved)`/`(cancelled)` back to the parent list, which closes the
-dialog and reloads. No generic `AddEditDialogComponent` or similar
-wraps this pattern — every list component reimplements the same shape
-independently. Confirmed present in `lookup-value-list.component.ts`
-(read in full for Section 6), and the same
-`showFormDialog`-signal-plus-form-component shape recurs in
-`task-list`/`task-form`, `role-list`/`role-form`,
-`position-list`/`position-form`, and `committee-list`/`committee-form`
-(all already read in earlier sections' Frontend Consumption checks).
-Worth flagging as a real, if minor, duplication candidate — six-plus
-components each hand-roll the identical open/close/reload wiring — but
-not urgent (see Section 11).
+`frontend/src/app/shared/components/edit-dialog/edit-dialog.component.ts`.
+Extracted from what this document previously described as "a
+convention, not a shared component" — six-plus list components
+(Lookup Values, Roles, Org Positions, Committees, Org Units, Workflow
+Stages) each hand-rolling identical `p-dialog` + local-signal +
+`*-form.component.ts` wiring independently. The duplication turned out
+not to be merely cosmetic: ACC-29 found the hand-rolled convention was
+the direct root cause of a real pre-fill bug on 4 of those screens
+(`workflow-stage-form`, `lookup-value-form`, `public-holiday-form`,
+`role-form`) — the list component rendered the form directly inside
+`p-dialog` with no `@if` wrapping it, so the form's `ngOnInit()`-based
+pre-fill only ever ran once, on first mount, and silently kept
+showing stale data from whichever record was edited *first* on every
+subsequent open. Full empirical writeup (including the throwaway
+Angular TestBed specs that settled the mechanism before any component
+code was written) in `backend/Plans/step-29-shared-edit-dialog.md`.
+
+**Public API**: `visible` (input, required), `header` (input),
+`content` (input, required — a `TemplateRef<unknown>`, not projected
+`<ng-content>`), `width` (input, default `'560px'`), `visibleChange`
+(output). Callers pass their form via a sibling `<ng-template #tpl>`
+captured through `@ViewChild('tpl', { read: TemplateRef, static: true })`
+— matching PrimeNG's own `<ng-template pTemplate="...">` idiom already
+used throughout this codebase (e.g. `p-table`'s row templates), not a
+new convention.
+
+**Why `TemplateRef` + `ngTemplateOutlet`, not `<ng-content>`** — this
+is the load-bearing correctness property and must not be "simplified"
+away: content projection does **not** create a fresh instance of a
+projected component when only a *wrapper's own* `@if` toggles
+(confirmed empirically via a throwaway TestBed spec — the projected
+component's view is instantiated by the *caller's* context, and a
+wrapper's internal `@if` only controls whether the `<ng-content>` slot
+renders, not whether the projected component exists). A shared dialog
+built on `<ng-content>` would have silently reproduced the exact same
+bug at the wrapper level, for every screen that adopted it.
+`ngTemplateOutlet` re-attached inside the wrapper's own `@if(visible())`
+does create a genuinely fresh embedded view (and a fresh component
+instance, with `ngOnInit()` re-firing correctly) every time — also
+confirmed empirically before any production code was written.
+
+**Also built in, not left as a per-screen concern**:
+- A scroll-discoverability affordance (`ResizeObserver`-driven
+  bottom-edge fade + chevron) that appears only when a form's content
+  actually exceeds the dialog's `max-h-[60vh]` scroll area, and stays
+  correctly absent on short forms — free for every consumer, current
+  and future.
+- `overscroll-behavior: contain` on PrimeNG's own
+  `.p-select-list-container`, scoped via `:host ::ng-deep`. Fixes a
+  separate but adjacent bug found during this component's own
+  verification: PrimeNG's connected overlays (`p-select`, etc.) hide
+  themselves on *any* scroll of a scrollable ancestor of their trigger
+  rather than repositioning; with `appendTo` defaulting to `'self'`,
+  an open dropdown's own listbox lives inside this component's scroll
+  area, so scrolling the listbox to its own boundary let the browser's
+  native scroll-chaining bleed into the dialog's ancestor scroll and
+  close the dropdown mid-scroll — matches a known, unresolved upstream
+  issue (`primefaces/primeng#14519`). Live-verified with a genuine
+  mouse-wheel gesture, not a proxy.
+
+**Confirmed consumers (all 8 screens migrated, ACC-29 Phases 2–3)**:
+`workflow-stage-list` (stage edit), `lookup-value-list` (value
+add/edit — its separate override-label dialog, Section 6.6, is
+untouched and correctly stays a plain `p-dialog`: it binds directly to
+the parent list's own `overrideForm` object via `[(ngModel)]`, not a
+`*-form.component.ts` with its own lifecycle, so it was never subject
+to this bug), `public-holiday-list`, `role-list`, `position-list`,
+`committee-list` (add-only), `committee-detail` (both its
+committee-edit and add/edit-member dialogs), `org-unit-tree`.
+`task-list`/`task-form` is **not** a consumer — confirmed create-only,
+no edit-via-dialog flow exists there at all, so it was never subject
+to the bug this component exists to fix and still hand-rolls its own
+single-purpose add dialog.
+
+**Required pattern going forward** — every future module's own
+add/edit dialog (starting with Meeting Management, the next module in
+the build sequence) must use `EditDialogComponent`, not a raw
+`p-dialog` + manual `@if`. A new module reaching for the old pattern
+would be re-deriving a bug this component already closed.
 
 ### 10.6 `WorkflowTransitionActionsComponent` — the Generic Reuse Pattern
 
@@ -2287,11 +2347,6 @@ Purpose section, written directly in response to the ACC-28 incident.
   self-parenting (`parentId === id`), not a deeper multi-level cycle
   through a descendant (Section 7.2) — unexercised today, same shape as
   the rest of this tier.
-- The `p-dialog` add/edit-flow convention (Section 10.5) is hand-rolled
-  independently in at least six list components (Lookup Values, Tasks,
-  Roles, Org Positions, Committees, plus the Lookup override-label
-  variant) rather than extracted into a shared component — a real
-  duplication candidate, not urgent, no functional bug.
 - `User.status`'s `SUSPENDED` value is fully enforced at the login gate
   but never assigned anywhere (Section 12.2) — same dormant-value shape
   as `OrgUnit.isCodeLocked` and the `SMS` notification channel. Worth

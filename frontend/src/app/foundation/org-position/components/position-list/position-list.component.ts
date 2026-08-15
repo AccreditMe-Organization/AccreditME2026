@@ -1,16 +1,16 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { SelectModule } from 'primeng/select';
-import { DialogModule } from 'primeng/dialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import { FormsModule } from '@angular/forms';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { PositionFormComponent } from '../position-form/position-form.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
@@ -22,10 +22,10 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     ButtonModule,
     TagModule,
     SelectModule,
-    DialogModule,
     TooltipModule,
     FormsModule,
     PositionFormComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -122,23 +122,23 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </p-table>
     </div>
 
-    <p-dialog
+    <ng-template #formTpl>
+      <app-position-form
+        [position]="editingPosition()"
+        (saved)="onSaved()"
+        (cancelled)="formVisible.set(false)"
+      />
+    </ng-template>
+    <app-edit-dialog
       [(visible)]="formVisible"
       [header]="(editingPosition() ? 'orgPosition.editPosition' : 'orgPosition.addPosition') | translate"
-      [modal]="true"
-      styleClass="w-full max-w-lg"
-    >
-      @if (formVisible()) {
-        <app-position-form
-          [position]="editingPosition()"
-          (saved)="onSaved()"
-          (cancelled)="formVisible.set(false)"
-        />
-      }
-    </p-dialog>
+      [content]="formTpl"
+    />
   `,
 })
 export class PositionListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly translate = inject(TranslateService);

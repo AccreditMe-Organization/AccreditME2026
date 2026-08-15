@@ -1,13 +1,13 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { TreeNode } from 'primeng/api';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TreeTableModule } from 'primeng/treetable';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { DialogModule } from 'primeng/dialog';
 import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/org-unit.service';
 import { OrgUnitFormComponent } from '../org-unit-form/org-unit-form.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
@@ -19,8 +19,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     ButtonModule,
     TagModule,
     TooltipModule,
-    DialogModule,
     OrgUnitFormComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex justify-between items-center mb-4">
@@ -106,24 +106,24 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </ng-template>
     </p-treeTable>
 
-    <p-dialog
+    <ng-template #formTpl>
+      <app-org-unit-form
+        [unit]="editingUnit()"
+        [parentId]="newUnitParentId()"
+        (saved)="onFormSaved()"
+        (cancelled)="formVisible.set(false)"
+      />
+    </ng-template>
+    <app-edit-dialog
       [(visible)]="formVisible"
       [header]="(editingUnit() ? 'organization.editUnit' : 'organization.addUnit') | translate"
-      [modal]="true"
-      styleClass="w-full max-w-lg"
-    >
-      @if (formVisible()) {
-        <app-org-unit-form
-          [unit]="editingUnit()"
-          [parentId]="newUnitParentId()"
-          (saved)="onFormSaved()"
-          (cancelled)="formVisible.set(false)"
-        />
-      }
-    </p-dialog>
+      [content]="formTpl"
+    />
   `,
 })
 export class OrgUnitTreeComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly orgUnitService = inject(OrgUnitService);
 
   readonly loading = signal(false);
