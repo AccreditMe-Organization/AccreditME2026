@@ -1,9 +1,32 @@
 # Step 29 — Shared Edit Dialog (ACC-29 fix design)
 
-Planning document only. No component code written yet — see the
-mechanism confirmation below, then the plan. Nothing in this doc has
-been implemented; migration scope (§4) is explicitly left as an open
-decision for the user.
+Planning document only when first written. Approved 2026-08-15 with
+two resolutions — see the mechanism confirmation below, then the plan.
+
+## 0. Resolutions (approved 2026-08-15)
+
+1. **API shape**: ship the proven `@ViewChild`-based design in §2 now.
+   The `@ContentChild(TemplateRef)` ergonomic alternative is deferred
+   to its own later, separately-tested follow-up — not bundled into
+   this fix.
+2. **Migration scope**: Option B — all 8 screens, not just the 4
+   confirmed-broken ones. Reasoning: the 4 "working" screens
+   (`position-form`, `committee-form`, `committee-member-form`,
+   `org-unit-form`) are not built on a proven-safe pattern — they are
+   accidentally-correct instances of the *same* fragile
+   `@if`-in-outer-template convention that just broke elsewhere
+   (`org-unit-form` has the identical one-shot pre-fill read, saved
+   only by its parent wrapping it in `@if` correctly — nothing in the
+   form itself guarantees that). Leaving them unmigrated doesn't
+   reduce risk, it defers the same class of accident to whenever
+   someone next touches one of those 4 screens or its parent.
+
+Build order (5 phases, checkpointed): EditDialogComponent + its own
+tests → migrate the 4 confirmed-broken screens (proves the fix closes
+the real bug) → migrate the 4 currently-correct screens (pure
+consistency, regression-checked) → confirm the scroll affordance
+behaves correctly on both long and short forms → update
+`SYSTEM-REFERENCE.md` to point future modules at this component.
 
 ---
 
@@ -161,22 +184,21 @@ Usage at a call site (illustrative — not written yet):
 with `@ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;`
 on the list component (mirrors Experiment 2's proven shape exactly).
 
-**Ergonomic alternative, not yet tested:** capturing the `<ng-template>`
-as projected content and pulling it out via `@ContentChild(TemplateRef)`
-inside `EditDialogComponent`, instead of a caller-side `@ViewChild`.
-This would read more naturally alongside the codebase's existing
-`<ng-template pTemplate="...">` conventions (e.g. `p-table`'s row
-templates) and drop the boilerplate `@ViewChild` line from every call
-site. It rests on the identical mechanism validated in Experiment 2 —
-freshness comes from the outlet's host element being inside the
-wrapper's own `@if`, not from how the `TemplateRef` reference was
-obtained — so it should behave the same, but this specific variant
-was not itself run through a throwaway test. Worth a five-minute
-confirmatory rerun before committing to it over the `@ViewChild` form,
-since it's a different API shape than what was empirically proven
-above and this whole exercise exists because "should behave the same"
+**Ergonomic alternative, deferred (per §0.1):** capturing the
+`<ng-template>` as projected content and pulling it out via
+`@ContentChild(TemplateRef)` inside `EditDialogComponent`, instead of
+a caller-side `@ViewChild`. This would read more naturally alongside
+the codebase's existing `<ng-template pTemplate="...">` conventions
+(e.g. `p-table`'s row templates) and drop the boilerplate `@ViewChild`
+line from every call site. It rests on the identical mechanism
+validated in Experiment 2 — freshness comes from the outlet's host
+element being inside the wrapper's own `@if`, not from how the
+`TemplateRef` reference was obtained — so it should behave the same,
+but this specific variant was not itself run through a throwaway
+test, and this whole exercise exists because "should behave the same"
 was exactly the earlier assumption that turned out wrong for content
-projection.
+projection. Revisit as its own small, separately-tested follow-up —
+not bundled into this fix.
 
 Internal template (sketch, not final):
 
@@ -224,40 +246,34 @@ question like §1 — doesn't need its own throwaway test):
 
 ---
 
-## 4. Migration Scope — Open Decision
+## 4. Migration Scope — Resolved: Option B, All 8 Screens
 
-Two options, both technically straightforward once `EditDialogComponent`
-exists. Flagging the tradeoff rather than picking one:
-
-**Option A — migrate only the 4 confirmed-broken screens**
+**Decision (§0.2): migrate all 8 screens** — the 4 confirmed-broken
 (`workflow-stage-form`, `lookup-value-form`, `public-holiday-form`,
-`role-form`, each via their respective `*-list.component.ts`).
+`role-form`) plus the 4 currently-correct-by-accident
+(`position-form`, `committee-form`, `committee-member-form`,
+`org-unit-form`).
 
-- Smaller, lower-risk diff — touches exactly the code that's actually
-  broken today.
-- Leaves two different dialog patterns coexisting in the codebase
-  going forward (old per-screen `@if`-in-outer-template wiring on
-  `position-form`/`committee-form`/`committee-member-form`/`org-unit-form`,
-  new `EditDialogComponent` on the 4 fixed screens) — a real
-  inconsistency a future reader (or Meeting Management's author) has
-  to understand isn't a mistake.
+Reasoning: the 4 "working" screens were never built on a proven-safe
+pattern. They are accidentally-correct instances of the *same*
+fragile `@if`-in-outer-template convention that just broke on 4 other
+screens — `org-unit-form` in particular has the identical one-shot
+`ngOnInit()`/`@Input()` pre-fill read as the broken screens, saved
+only because its parent (`org-unit-tree.component.ts`) happens to
+wrap it in `@if` correctly. Nothing in the form itself guarantees
+that; a future edit to the parent that drops the `@if` (exactly the
+kind of change `role-list.component.ts` apparently made at some past
+point) reintroduces the bug with no warning. Leaving these 4
+unmigrated doesn't reduce risk today, it defers the same class of
+accident to whenever someone next touches one of these screens or its
+parent — which is precisely how ACC-29 was discovered in the first
+place.
 
-**Option B — migrate all 8 screens** (the 4 broken ones plus the 4
-already-correct ones: `position-form`, `committee-form`,
-`committee-member-form`, `org-unit-form`) for full consistency.
-
-- One dialog pattern everywhere, matching §5's plan to make this the
-  required pattern for all future modules — no "old way / new way"
-  split to explain later.
-- Touches four screens that work correctly today purely for
-  consistency, not because they're broken — real risk of a regression
-  in code that has no current bug, for zero user-facing benefit beyond
-  uniformity. Each of those 4 would need to be re-verified live
-  (not just re-tested) since their current `@if`-in-outer-template
-  wiring would be removed and replaced.
-
-No recommendation baked into this plan — flagging per your instruction
-that this is your call once you've seen the reasoning above.
+Consequence accepted knowingly: this migrates 4 screens that have no
+current user-facing bug, purely for consistency and to remove the
+accidental-safety dependency on parent wiring. Phase 3 (see the
+top-level build order in §0) live-verifies each of these 4
+specifically for regression, not just for the absence of a new bug.
 
 ---
 
