@@ -1,11 +1,10 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService } from 'primeng/api';
 import {
   WorkflowTemplateService,
@@ -14,6 +13,7 @@ import {
 } from '../../services/workflow-template.service';
 import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stage-form.component';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
@@ -25,9 +25,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     ButtonModule,
     TagModule,
     TooltipModule,
-    DialogModule,
     WorkflowStageFormComponent,
     WorkflowTransitionEditorComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -157,13 +157,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         </ng-template>
       </p-table>
 
-      <p-dialog
-        [visible]="showFormDialog()"
-        (visibleChange)="showFormDialog.set($event)"
-        [header]="(editingStage() ? 'workflow.editStage' : 'workflow.addStage') | translate"
-        [modal]="true"
-        [style]="{ width: '560px' }"
-      >
+      <ng-template #formTpl>
         <app-workflow-stage-form
           [stage]="editingStage()"
           [templateId]="templateId()"
@@ -171,12 +165,21 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           (saved)="onStageSaved()"
           (cancelled)="showFormDialog.set(false)"
         />
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [visible]="showFormDialog()"
+        (visibleChange)="showFormDialog.set($event)"
+        [header]="(editingStage() ? 'workflow.editStage' : 'workflow.addStage') | translate"
+        [content]="formTpl"
+        width="560px"
+      />
 
     </div>
   `,
 })
 export class WorkflowStageListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly route = inject(ActivatedRoute);
   private readonly confirmationService = inject(ConfirmationService);

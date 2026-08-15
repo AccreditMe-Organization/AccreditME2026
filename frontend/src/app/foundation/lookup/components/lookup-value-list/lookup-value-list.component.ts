@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -10,6 +10,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { LookupService, LookupCategoryDto, LookupValueDto } from '../../services/lookup.service';
 import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
@@ -26,6 +27,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     DialogModule,
     InputTextModule,
     LookupValueFormComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -163,20 +165,21 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </p-table>
 
       <!-- Add / Edit dialog -->
-      <p-dialog
-        [visible]="showFormDialog()"
-        (visibleChange)="showFormDialog.set($event)"
-        [header]="(editingValue() ? 'lookup.editValue' : 'lookup.addValue') | translate"
-        [modal]="true"
-        [style]="{ width: '520px' }"
-      >
+      <ng-template #formTpl>
         <app-lookup-value-form
           [categoryKey]="categoryKey"
           [value]="editingValue()"
           (saved)="onSaved()"
           (cancelled)="showFormDialog.set(false)"
         />
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [visible]="showFormDialog()"
+        (visibleChange)="showFormDialog.set($event)"
+        [header]="(editingValue() ? 'lookup.editValue' : 'lookup.addValue') | translate"
+        [content]="formTpl"
+        width="520px"
+      />
 
       <!-- Override label dialog -->
       <p-dialog
@@ -224,6 +227,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
   `,
 })
 export class LookupValueListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly lookupService = inject(LookupService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
