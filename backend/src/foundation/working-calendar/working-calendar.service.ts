@@ -6,6 +6,7 @@ import { IWorkingCalendar } from './interfaces/working-calendar.interface';
 import { IPublicHoliday } from './interfaces/public-holiday.interface';
 import { UpdateWorkingCalendarDto } from './dto/update-working-calendar.dto';
 import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
+import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
 
 const GCC_DEFAULT = {
   timezone: 'Asia/Riyadh',
@@ -112,6 +113,45 @@ export class WorkingCalendarService {
     });
 
     return this.holidayToInterface(holiday);
+  }
+
+  async updateHoliday(
+    holidayId: string,
+    organizationId: string,
+    dto: UpdatePublicHolidayDto,
+    actorId: string,
+  ): Promise<IPublicHoliday> {
+    const calendar = await this.prisma.workingCalendar.findUnique({
+      where: { organizationId },
+    });
+    if (!calendar) throw new NotFoundException('Working calendar not found');
+
+    const holiday = await this.prisma.publicHoliday.findFirst({
+      where: { id: holidayId, workingCalendarId: calendar.id },
+    });
+    if (!holiday) throw new NotFoundException('Holiday not found');
+
+    const updated = await this.prisma.publicHoliday.update({
+      where: { id: holidayId },
+      data: {
+        ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
+        ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
+        ...(dto.date !== undefined && { date: new Date(dto.date) }),
+        ...(dto.isRecurring !== undefined && { isRecurring: dto.isRecurring }),
+      },
+    });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'PublicHoliday',
+      objectId: updated.id,
+      before: holiday,
+      after: updated,
+    });
+
+    return this.holidayToInterface(updated);
   }
 
   async removeHoliday(

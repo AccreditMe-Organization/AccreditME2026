@@ -67,6 +67,10 @@ export class WorkingCalendarService {
     return this.http.post<PublicHolidayDto>(`${this.base}/holidays`, dto);
   }
 
+  updateHoliday(id: string, dto: Partial<CreatePublicHolidayDto>): Observable<PublicHolidayDto> {
+    return this.http.patch<PublicHolidayDto>(`${this.base}/holidays/${id}`, dto);
+  }
+
   removeHoliday(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/holidays/${id}`);
   }

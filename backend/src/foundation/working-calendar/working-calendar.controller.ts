@@ -20,6 +20,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { WorkingCalendarService } from './working-calendar.service';
 import { UpdateWorkingCalendarDto } from './dto/update-working-calendar.dto';
 import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
+import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
 import { IWorkingCalendar } from './interfaces/working-calendar.interface';
 import { IPublicHoliday } from './interfaces/public-holiday.interface';
 
@@ -64,6 +65,17 @@ export class WorkingCalendarController {
     @CurrentUser() actorId: string,
   ): Promise<IPublicHoliday> {
     return this.workingCalendarService.addHoliday(tenantId, dto, actorId);
+  }
+
+  @Patch('holidays/:id')
+  @Permissions(ORG_PERMISSIONS.MANAGE)
+  updateHoliday(
+    @Param('id') id: string,
+    @Body() dto: UpdatePublicHolidayDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<IPublicHoliday> {
+    return this.workingCalendarService.updateHoliday(id, tenantId, dto, actorId);
   }
 
   @Delete('holidays/:id')
