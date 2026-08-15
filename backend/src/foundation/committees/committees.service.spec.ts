@@ -432,6 +432,132 @@ describe('CommitteesService', () => {
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
     });
+
+    // Rejoin after departure (ACC-32) — reactivates the existing row in
+    // place (mirroring RoleService.reactivateRole()) instead of hitting
+    // @@unique([committeeId, userId]) via create().
+    describe('rejoin after departure', () => {
+      it('reactivates the existing inactive row instead of creating a new one', async () => {
+        const departedMember = makeMember({ isActive: false, leftAt: new Date('2026-04-02') });
+        mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+        mockPrisma.committeeMember.findFirst.mockResolvedValue(departedMember);
+        mockPrisma.committeeMember.update.mockResolvedValue(
+          makeMember({ isActive: true, leftAt: null, roleValueId: 'secretary' }),
+        );
+
+        const result = await service.addMember(
+          'committee-1',
+          { userId: 'user-1', roleValueId: 'secretary', effectiveDate: '2026-08-15' } as never,
+          ORG_A,
+          ACTOR,
+        );
+
+        expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
+        expect(mockPrisma.committeeMember.update).toHaveBeenCalledWith({
+          where: { id: departedMember.id },
+          data: {
+            roleValueId: 'secretary',
+            isActive: true,
+            leftAt: null,
+            joinedAt: new Date('2026-08-15'),
+          },
+        });
+        expect(result.isActive).toBe(true);
+      });
+
+      it('logs the reactivation as an UPDATE with the departed row as "before"', async () => {
+        const departedMember = makeMember({ isActive: false, leftAt: new Date('2026-04-02') });
+        mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+        mockPrisma.committeeMember.findFirst.mockResolvedValue(departedMember);
+        mockPrisma.committeeMember.update.mockResolvedValue(makeMember({ isActive: true, leftAt: null }));
+
+        await service.addMember(
+          'committee-1',
+          { userId: 'user-1', roleValueId: 'chairman' } as never,
+          ORG_A,
+          ACTOR,
+        );
+
+        expect(mockAuditLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'UPDATE',
+            objectType: 'CommitteeMember',
+            before: departedMember,
+          }),
+        );
+      });
+
+      it('preserves the original LEFT event and appends a new JOINED event — full history readable via listMembershipEvents()', async () => {
+        const priorLeftEvent = {
+          id: 'event-left-1',
+          organizationId: ORG_A,
+          committeeId: 'committee-1',
+          userId: 'user-1',
+          roleValueId: 'chairman',
+          action: 'LEFT',
+          effectiveDate: new Date('2026-04-02'),
+          reason: null,
+          approvedBy: ACTOR,
+          createdAt: new Date('2026-04-02'),
+        };
+        const events: unknown[] = [priorLeftEvent];
+
+        mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
+        mockPrisma.committeeMember.findFirst.mockResolvedValue(
+          makeMember({ isActive: false, leftAt: new Date('2026-04-02') }),
+        );
+        mockPrisma.committeeMember.update.mockResolvedValue(makeMember({ isActive: true, leftAt: null }));
+        mockPrisma.committeeMembershipEvent.create.mockImplementation(
+          ({ data }: { data: Record<string, unknown> }) => {
+            const created = { id: `event-${events.length + 1}`, createdAt: new Date(), ...data };
+            events.push(created);
+            return Promise.resolve(created);
+          },
+        );
+        mockPrisma.committeeMembershipEvent.findMany.mockImplementation(() => Promise.resolve([...events]));
+
+        await service.addMember(
+          'committee-1',
+          { userId: 'user-1', roleValueId: 'chairman', effectiveDate: '2026-08-15' } as never,
+          ORG_A,
+          ACTOR,
+        );
+
+        const history = await service.listMembershipEvents('committee-1', ORG_A);
+
+        expect(history).toHaveLength(2);
+        expect(history[0]).toEqual(priorLeftEvent); // untouched by the reactivation
+        expect(history[1]).toEqual(
+          expect.objectContaining({ action: 'JOINED', effectiveDate: new Date('2026-08-15') }),
+        );
+      });
+
+      // MANDATORY — tenant isolation for the reactivate-or-create branch's
+      // committeeMember.update() write (a genuinely new query this ticket
+      // introduces — the prior code path never called update() from
+      // addMember()).
+      it('should NOT return records belonging to a different tenant', async () => {
+        mockPrisma.committee.findFirst.mockImplementation(
+          ({ where }: { where: { organizationId: string } }) =>
+            Promise.resolve(where.organizationId === ORG_A ? makeCommittee() : null),
+        );
+
+        await expect(
+          service.addMember(
+            'committee-1',
+            { userId: 'user-1', roleValueId: 'chairman' } as never,
+            ORG_B,
+            ACTOR,
+          ),
+        ).rejects.toThrow(NotFoundException);
+
+        // getCommitteeById() rejects before the reactivate-or-create branch
+        // is ever reached for a committee outside the caller's tenant.
+        expect(mockPrisma.committeeMember.findFirst).not.toHaveBeenCalled();
+        expect(mockPrisma.committeeMember.update).not.toHaveBeenCalled();
+        expect(mockPrisma.committeeMember.create).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('changeMemberRole', () => {
