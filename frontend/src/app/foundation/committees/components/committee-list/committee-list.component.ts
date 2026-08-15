@@ -1,19 +1,19 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
-import { DialogModule } from 'primeng/dialog';
 import { CardComponent } from '../../../../shared/components/card/card.component';
 import { CommitteeService, CommitteeDto } from '../../services/committee.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 @Component({
   selector: 'app-committee-list',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, TagModule, DialogModule, CardComponent, CommitteeFormComponent],
+  imports: [TranslatePipe, ButtonModule, TagModule, CardComponent, CommitteeFormComponent, EditDialogComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
       <div class="flex items-center justify-between">
@@ -51,19 +51,19 @@ import { CommitteeFormComponent } from '../committee-form/committee-form.compone
       </div>
     </div>
 
-    <p-dialog
+    <ng-template #formTpl>
+      <app-committee-form (saved)="onSaved()" (cancelled)="formVisible.set(false)" />
+    </ng-template>
+    <app-edit-dialog
       [(visible)]="formVisible"
       [header]="'committee.addCommittee' | translate"
-      [modal]="true"
-      styleClass="w-full max-w-lg"
-    >
-      @if (formVisible()) {
-        <app-committee-form (saved)="onSaved()" (cancelled)="formVisible.set(false)" />
-      }
-    </p-dialog>
+      [content]="formTpl"
+    />
   `,
 })
 export class CommitteeListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly committeeService = inject(CommitteeService);
   private readonly lookupService = inject(LookupService);
   private readonly languageService = inject(LanguageService);

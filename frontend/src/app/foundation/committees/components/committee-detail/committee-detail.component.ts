@@ -1,11 +1,10 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { DatePipe } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
-import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { CardComponent } from '../../../../shared/components/card/card.component';
@@ -25,6 +24,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 @Component({
   selector: 'app-committee-detail',
@@ -35,12 +35,12 @@ import { CommitteeMemberFormComponent } from '../committee-member-form/committee
     ButtonModule,
     TableModule,
     TagModule,
-    DialogModule,
     MessageModule,
     CardComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
     WorkflowTransitionActionsComponent,
+    EditDialogComponent,
   ],
   template: `
     @if (error()) {
@@ -170,39 +170,40 @@ import { CommitteeMemberFormComponent } from '../committee-member-form/committee
       </div>
     }
 
-    <p-dialog
-      [(visible)]="formVisible"
-      [header]="'committee.editCommittee' | translate"
-      [modal]="true"
-      styleClass="w-full max-w-lg"
-    >
-      @if (formVisible() && committee()) {
+    <ng-template #committeeFormTpl>
+      @if (committee(); as c) {
         <app-committee-form
-          [committee]="committee()"
+          [committee]="c"
           (saved)="onCommitteeSaved()"
           (cancelled)="formVisible.set(false)"
         />
       }
-    </p-dialog>
+    </ng-template>
+    <app-edit-dialog
+      [(visible)]="formVisible"
+      [header]="'committee.editCommittee' | translate"
+      [content]="committeeFormTpl"
+    />
 
-    <p-dialog
+    <ng-template #memberFormTpl>
+      <app-committee-member-form
+        [committeeId]="committeeId"
+        [member]="editingMember()"
+        (saved)="onMemberSaved()"
+        (cancelled)="memberFormVisible.set(false)"
+      />
+    </ng-template>
+    <app-edit-dialog
       [(visible)]="memberFormVisible"
       [header]="(editingMember() ? 'committee.editMemberRole' : 'committee.addMember') | translate"
-      [modal]="true"
-      styleClass="w-full max-w-lg"
-    >
-      @if (memberFormVisible()) {
-        <app-committee-member-form
-          [committeeId]="committeeId"
-          [member]="editingMember()"
-          (saved)="onMemberSaved()"
-          (cancelled)="memberFormVisible.set(false)"
-        />
-      }
-    </p-dialog>
+      [content]="memberFormTpl"
+    />
   `,
 })
 export class CommitteeDetailComponent implements OnInit {
+  @ViewChild('committeeFormTpl', { read: TemplateRef, static: true }) committeeFormTpl!: TemplateRef<unknown>;
+  @ViewChild('memberFormTpl', { read: TemplateRef, static: true }) memberFormTpl!: TemplateRef<unknown>;
+
   private readonly route = inject(ActivatedRoute);
   private readonly committeeService = inject(CommitteeService);
   private readonly lookupService = inject(LookupService);
