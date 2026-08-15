@@ -1,4 +1,4 @@
-import { Component, OnInit, effect, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { SelectModule } from 'primeng/select';
@@ -11,6 +11,7 @@ import {
 import { UserService, IUserDto } from '../../../user/services/user.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
   selector: 'app-committee-member-form',
@@ -27,7 +28,7 @@ import { LanguageService } from '../../../../core/services/language.service';
           <p-select
             inputId="userId"
             formControlName="userId"
-            [options]="users()"
+            [options]="pickableUsers()"
             optionLabel="name"
             optionValue="id"
             [filter]="true"
@@ -57,6 +58,10 @@ import { LanguageService } from '../../../../core/services/language.service';
         <input pInputText id="reason" formControlName="reason" />
       </div>
 
+      @if (saveError()) {
+        <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
+      }
+
       <div class="flex justify-end gap-2 pt-2">
         <p-button
           [label]="'common.cancel' | translate"
@@ -79,12 +84,19 @@ export class CommitteeMemberFormComponent implements OnInit {
 
   readonly committeeId = input.required<string>();
   readonly member = input<CommitteeMemberDto | null>(null);
+  readonly activeMembers = input<CommitteeMemberDto[]>([]);
   readonly saved = output<void>();
   readonly cancelled = output<void>();
 
   readonly saving = signal(false);
+  readonly saveError = signal<string | null>(null);
   readonly users = signal<IUserDto[]>([]);
   readonly memberRoles = signal<LookupValueDto[]>([]);
+
+  readonly pickableUsers = computed(() => {
+    const activeUserIds = new Set(this.activeMembers().map((m) => m.userId));
+    return this.users().filter((u) => !activeUserIds.has(u.id));
+  });
 
   readonly form = this.fb.group({
     userId: [null as string | null, [Validators.required]],
@@ -118,6 +130,7 @@ export class CommitteeMemberFormComponent implements OnInit {
       return;
     }
     this.saving.set(true);
+    this.saveError.set(null);
 
     const value = this.form.getRawValue();
     const current = this.member();
@@ -138,7 +151,10 @@ export class CommitteeMemberFormComponent implements OnInit {
         this.saving.set(false);
         this.saved.emit();
       },
-      error: () => this.saving.set(false),
+      error: (err: unknown) => {
+        this.saveError.set(extractErrorMessage(err, 'Save failed'));
+        this.saving.set(false);
+      },
     });
   }
 }

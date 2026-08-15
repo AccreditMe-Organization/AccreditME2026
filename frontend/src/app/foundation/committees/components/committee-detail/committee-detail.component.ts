@@ -189,6 +189,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       <app-committee-member-form
         [committeeId]="committeeId"
         [member]="editingMember()"
+        [activeMembers]="members()"
         (saved)="onMemberSaved()"
         (cancelled)="memberFormVisible.set(false)"
       />
