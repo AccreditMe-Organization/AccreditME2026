@@ -129,14 +129,9 @@ export class PublicHolidayFormComponent implements OnInit {
       isRecurring: value.isRecurring ?? false,
     };
 
-    let request$;
-    if (this.holiday) {
-      // TODO: replace with updateHoliday(id, dto) when backend
-      // adds PATCH /working-calendar/holidays/:id endpoint
-      request$ = this.svc.addHoliday(dto);
-    } else {
-      request$ = this.svc.addHoliday(dto);
-    }
+    const request$ = this.holiday
+      ? this.svc.updateHoliday(this.holiday.id, dto)
+      : this.svc.addHoliday(dto);
 
     request$.subscribe({
       next: () => {
