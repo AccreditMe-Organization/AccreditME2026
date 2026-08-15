@@ -174,24 +174,37 @@ export class CommitteesService {
     await this.getCommitteeById(committeeId, organizationId);
     await this.validateUserReference(dto.userId, organizationId);
 
-    const existingActive = await this.prisma.committeeMember.findFirst({
-      where: { committeeId, userId: dto.userId, isActive: true },
+    // No isActive filter here — a departed member's row must be found too,
+    // so a rejoin reactivates it in place (mirroring RoleService.reactivateRole())
+    // instead of hitting @@unique([committeeId, userId]) on create().
+    const existing = await this.prisma.committeeMember.findFirst({
+      where: { committeeId, userId: dto.userId },
     });
-    if (existingActive) {
+    if (existing?.isActive) {
       throw new ConflictException('This user is already an active member of this committee');
     }
 
     const effectiveDate = dto.effectiveDate ? new Date(dto.effectiveDate) : new Date();
 
-    const member = await this.prisma.committeeMember.create({
-      data: {
-        organizationId,
-        committeeId,
-        userId: dto.userId,
-        roleValueId: dto.roleValueId,
-        isActive: true,
-      },
-    });
+    const member = existing
+      ? await this.prisma.committeeMember.update({
+          where: { id: existing.id },
+          data: {
+            roleValueId: dto.roleValueId,
+            isActive: true,
+            leftAt: null,
+            joinedAt: effectiveDate,
+          },
+        })
+      : await this.prisma.committeeMember.create({
+          data: {
+            organizationId,
+            committeeId,
+            userId: dto.userId,
+            roleValueId: dto.roleValueId,
+            isActive: true,
+          },
+        });
 
     await this.prisma.committeeMembershipEvent.create({
       data: {
@@ -207,11 +220,12 @@ export class CommitteesService {
     });
 
     await this.auditLog.log({
-      action: 'CREATE',
+      action: existing ? 'UPDATE' : 'CREATE',
       objectType: 'CommitteeMember',
       objectId: member.id,
       actorId,
       tenantId: organizationId,
+      ...(existing && { before: existing as unknown as Record<string, unknown> }),
       after: member,
     });
 
