@@ -5,6 +5,7 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { UpdateWorkingCalendarDto } from './dto/update-working-calendar.dto';
 import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
+import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
 import { IWorkingCalendar } from './interfaces/working-calendar.interface';
 import { IPublicHoliday } from './interfaces/public-holiday.interface';
 
@@ -45,6 +46,7 @@ describe('WorkingCalendarController', () => {
     update:        jest.Mock;
     listHolidays:  jest.Mock;
     addHoliday:    jest.Mock;
+    updateHoliday: jest.Mock;
     removeHoliday: jest.Mock;
   };
 
@@ -54,6 +56,7 @@ describe('WorkingCalendarController', () => {
       update:        jest.fn().mockResolvedValue(MOCK_CALENDAR),
       listHolidays:  jest.fn().mockResolvedValue([MOCK_HOLIDAY]),
       addHoliday:    jest.fn().mockResolvedValue(MOCK_HOLIDAY),
+      updateHoliday: jest.fn().mockResolvedValue(MOCK_HOLIDAY),
       removeHoliday: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -115,6 +118,17 @@ describe('WorkingCalendarController', () => {
       const dto = { nameEn: 'National Day', nameAr: 'اليوم الوطني', date: '2026-09-23' } as CreatePublicHolidayDto;
       const result = await controller.addHoliday(dto, TENANT_ID, USER_ID);
       expect(service.addHoliday).toHaveBeenCalledWith(TENANT_ID, dto, USER_ID);
+      expect(result.id).toBe(HOLIDAY_ID);
+    });
+  });
+
+  // ── updateHoliday ─────────────────────────────────────────────────────────
+
+  describe('updateHoliday', () => {
+    it('delegates to workingCalendarService.updateHoliday with id, dto, tenantId, and actorId', async () => {
+      const dto = { nameEn: 'Renamed Day' } as UpdatePublicHolidayDto;
+      const result = await controller.updateHoliday(HOLIDAY_ID, dto, TENANT_ID, USER_ID);
+      expect(service.updateHoliday).toHaveBeenCalledWith(HOLIDAY_ID, TENANT_ID, dto, USER_ID);
       expect(result.id).toBe(HOLIDAY_ID);
     });
   });

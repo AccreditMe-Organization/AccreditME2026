@@ -31,6 +31,26 @@ const CAL_B = {
   updatedAt: new Date(),
 };
 
+const HOLIDAY_A = {
+  id: 'holiday-a',
+  workingCalendarId: 'cal-a',
+  nameEn: 'National Day',
+  nameAr: 'اليوم الوطني',
+  date: new Date('2026-09-23T00:00:00.000Z'),
+  isRecurring: true,
+  createdAt: new Date(),
+};
+
+const HOLIDAY_B = {
+  id: 'holiday-b',
+  workingCalendarId: 'cal-b',
+  nameEn: 'Boxing Day',
+  nameAr: null,
+  date: new Date('2026-12-26T00:00:00.000Z'),
+  isRecurring: true,
+  createdAt: new Date(),
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function riyadhDateTime(
@@ -55,6 +75,7 @@ const mockPrisma = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
     delete: jest.fn(),
   },
 };
@@ -114,6 +135,122 @@ describe('WorkingCalendarService', () => {
         }),
       });
       expect(result.workingDays).toEqual([0, 1, 2, 3, 4]);
+    });
+  });
+
+  // ── Public Holiday CRUD ──────────────────────────────────────────────────────
+
+  describe('addHoliday', () => {
+    it('creates a holiday scoped to the calendar resolved from organizationId', async () => {
+      mockPrisma.publicHoliday.create.mockResolvedValueOnce(HOLIDAY_A);
+
+      const result = await service.addHoliday(
+        ORG_A,
+        { nameEn: 'National Day', nameAr: 'اليوم الوطني', date: '2026-09-23', isRecurring: true },
+        'actor-1',
+      );
+
+      expect(mockPrisma.publicHoliday.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ workingCalendarId: CAL_A.id, nameEn: 'National Day' }),
+      });
+      expect(result.id).toBe(HOLIDAY_A.id);
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: ORG_A, action: 'CREATE', objectType: 'PublicHoliday' }),
+      );
+    });
+
+    it('throws NotFoundException when the organization has no working calendar', async () => {
+      mockPrisma.workingCalendar.findUnique.mockResolvedValueOnce(null);
+      await expect(
+        service.addHoliday(ORG_A, { nameEn: 'Test', date: '2026-01-01' }, 'actor-1'),
+      ).rejects.toThrow('Working calendar not found');
+    });
+  });
+
+  describe('updateHoliday', () => {
+    it('updates only the provided fields on a holiday belonging to the tenant', async () => {
+      mockPrisma.publicHoliday.findFirst.mockResolvedValueOnce(HOLIDAY_A);
+      mockPrisma.publicHoliday.update.mockResolvedValueOnce({
+        ...HOLIDAY_A,
+        nameEn: 'Updated Name',
+      });
+
+      const result = await service.updateHoliday(
+        HOLIDAY_A.id,
+        ORG_A,
+        { nameEn: 'Updated Name' },
+        'actor-1',
+      );
+
+      expect(mockPrisma.publicHoliday.findFirst).toHaveBeenCalledWith({
+        where: { id: HOLIDAY_A.id, workingCalendarId: CAL_A.id },
+      });
+      expect(mockPrisma.publicHoliday.update).toHaveBeenCalledWith({
+        where: { id: HOLIDAY_A.id },
+        data: { nameEn: 'Updated Name' },
+      });
+      expect(result.nameEn).toBe('Updated Name');
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: ORG_A, action: 'UPDATE', objectType: 'PublicHoliday' }),
+      );
+    });
+
+    it('throws NotFoundException when the holiday does not belong to this tenant\'s calendar', async () => {
+      mockPrisma.publicHoliday.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        service.updateHoliday(HOLIDAY_B.id, ORG_A, { nameEn: 'Hijacked' }, 'actor-1'),
+      ).rejects.toThrow('Holiday not found');
+      expect(mockPrisma.publicHoliday.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('removeHoliday', () => {
+    it('deletes a holiday belonging to the tenant', async () => {
+      mockPrisma.publicHoliday.findFirst.mockResolvedValueOnce(HOLIDAY_A);
+
+      await service.removeHoliday(HOLIDAY_A.id, ORG_A, 'actor-1');
+
+      expect(mockPrisma.publicHoliday.delete).toHaveBeenCalledWith({ where: { id: HOLIDAY_A.id } });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: ORG_A, action: 'DELETE', objectType: 'PublicHoliday' }),
+      );
+    });
+
+    it('throws NotFoundException when the holiday does not belong to this tenant\'s calendar', async () => {
+      mockPrisma.publicHoliday.findFirst.mockResolvedValueOnce(null);
+      await expect(service.removeHoliday(HOLIDAY_B.id, ORG_A, 'actor-1')).rejects.toThrow(
+        'Holiday not found',
+      );
+      expect(mockPrisma.publicHoliday.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listHolidays', () => {
+    it('returns all holidays for the organization when no year filter is given', async () => {
+      mockPrisma.publicHoliday.findMany.mockResolvedValueOnce([HOLIDAY_A]);
+      const result = await service.listHolidays(ORG_A);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.id).toBe(HOLIDAY_A.id);
+    });
+
+    it('returns an empty array when the organization has no working calendar', async () => {
+      mockPrisma.workingCalendar.findUnique.mockResolvedValueOnce(null);
+      const result = await service.listHolidays(ORG_A);
+      expect(result).toEqual([]);
+    });
+
+    it('filters a non-recurring holiday out for a non-matching year, keeps a recurring one', async () => {
+      const nonRecurring2025 = {
+        ...HOLIDAY_A,
+        id: 'holiday-2025',
+        isRecurring: false,
+        date: new Date('2025-09-23T00:00:00.000Z'),
+      };
+      mockPrisma.publicHoliday.findMany.mockResolvedValueOnce([nonRecurring2025, HOLIDAY_A]);
+
+      const result = await service.listHolidays(ORG_A, 2026);
+
+      expect(result.map((h) => h.id)).toEqual([HOLIDAY_A.id]);
     });
   });
 
@@ -231,6 +368,58 @@ describe('WorkingCalendarService', () => {
       // Friday is working for Org B → deadline is Friday 12:00
       expect(local.weekday).toBe(5); // Friday in Luxon (1=Mon, 5=Fri)
       expect(local.hour).toBe(12);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // Mock branches on workingCalendarId exactly like a real Postgres
+      // query would — Org A's holiday and Org B's holiday genuinely live
+      // behind different calendar ids, so this proves the service's own
+      // scoping (not the mock) is what keeps them apart.
+      mockPrisma.publicHoliday.findMany.mockImplementation(
+        ({ where }: { where: { workingCalendarId: string } }) => {
+          if (where.workingCalendarId === CAL_A.id) return Promise.resolve([HOLIDAY_A]);
+          if (where.workingCalendarId === CAL_B.id) return Promise.resolve([HOLIDAY_B]);
+          return Promise.resolve([]);
+        },
+      );
+
+      const resultA = await service.listHolidays(ORG_A);
+      const resultB = await service.listHolidays(ORG_B);
+
+      expect(resultA.map((h) => h.id)).toEqual([HOLIDAY_A.id]);
+      expect(resultB.map((h) => h.id)).toEqual([HOLIDAY_B.id]);
+      expect(resultA.some((h) => h.id === HOLIDAY_B.id)).toBe(false);
+      expect(resultB.some((h) => h.id === HOLIDAY_A.id)).toBe(false);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // A holiday that genuinely belongs to Org B's calendar
+      mockPrisma.publicHoliday.findFirst.mockImplementation(
+        ({ where }: { where: { id: string; workingCalendarId: string } }) => {
+          if (where.workingCalendarId === CAL_B.id && where.id === HOLIDAY_B.id) {
+            return Promise.resolve(HOLIDAY_B);
+          }
+          return Promise.resolve(null);
+        },
+      );
+
+      // Org A attempting to update Org B's holiday must be rejected —
+      // the tenant-scoped findFirst (id + workingCalendarId resolved from
+      // ORG_A) never matches HOLIDAY_B's real workingCalendarId (cal-b).
+      await expect(
+        service.updateHoliday(HOLIDAY_B.id, ORG_A, { nameEn: 'Hijacked' }, 'actor-1'),
+      ).rejects.toThrow('Holiday not found');
+      expect(mockPrisma.publicHoliday.update).not.toHaveBeenCalled();
+
+      // Org B updating its own holiday succeeds
+      mockPrisma.publicHoliday.update.mockResolvedValueOnce({ ...HOLIDAY_B, nameEn: 'Renamed' });
+      const result = await service.updateHoliday(
+        HOLIDAY_B.id,
+        ORG_B,
+        { nameEn: 'Renamed' },
+        'actor-1',
+      );
+      expect(result.nameEn).toBe('Renamed');
     });
   });
 });
