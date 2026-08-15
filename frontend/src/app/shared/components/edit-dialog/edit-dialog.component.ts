@@ -55,6 +55,30 @@ import { DialogModule } from 'primeng/dialog';
       }
     </p-dialog>
   `,
+  // PrimeNG's connected overlays (p-select, p-multiselect, ...) hide
+  // themselves on ANY scroll of a scrollable ancestor of their trigger
+  // (ConnectedOverlayScrollHandler binds to every scrollable ancestor,
+  // not just the window) rather than repositioning. With appendTo
+  // defaulting to 'self', the overlay panel renders as a genuine DOM
+  // descendant of this component's own scroll area, so scrolling the
+  // overlay's own listbox to its own top/bottom edge lets the browser's
+  // native scroll-chaining forward the remaining wheel delta to that
+  // ancestor — closing the overlay mid-scroll (confirmed live; see
+  // backend/Plans/step-29-shared-edit-dialog.md). overscroll-behavior:
+  // contain stops that chaining at the listbox's own boundary, so an
+  // internal-list scroll never reaches the ancestor in the first place.
+  // ::ng-deep is required because the listbox is rendered by whichever
+  // caller's form declared the <p-select>, not by this component's own
+  // template — :host still correctly scopes the rule to overlays that
+  // are DOM descendants of THIS dialog, since PrimeNG never moves the
+  // element elsewhere when appendTo is 'self'.
+  styles: [
+    `
+      :host ::ng-deep .p-select-list-container {
+        overscroll-behavior: contain;
+      }
+    `,
+  ],
 })
 export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   readonly visible = input.required<boolean>();
