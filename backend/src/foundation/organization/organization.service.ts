@@ -176,11 +176,11 @@ export class OrganizationService {
       blockers.push(`${activeChildren} active child unit(s) must be deactivated first`);
     }
 
-    // TODO(Step 9 — Users): check for active users assigned to this org unit
-    // const activeUsers = await this.prisma.user.count({
-    //   where: { orgUnitId: id, organizationId, status: { not: 'SUSPENDED' } },
-    // });
-    // if (activeUsers > 0) blockers.push(`${activeUsers} active user(s) are assigned to this unit`);
+    // Users shipped at ACC-12 — this blocker is no longer deferred.
+    const activeUsers = await this.prisma.user.count({
+      where: { primaryOrgUnitId: id, organizationId, status: 'ACTIVE' },
+    });
+    if (activeUsers > 0) blockers.push(`${activeUsers} active user(s) are assigned to this unit`);
 
     // TODO(Step 17 — Documents): check for active documents owned by this org unit
     // const activeDocs = await this.prisma.document.count({
