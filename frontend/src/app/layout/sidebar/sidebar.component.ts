@@ -22,6 +22,7 @@ const FOUNDATION_NAV_ITEMS: NavItem[] = [
   { labelKey: 'nav.orgPositions', icon: 'pi pi-briefcase', route: '/org-positions', requiredPermission: 'positions:view' },
   { labelKey: 'nav.committees', icon: 'pi pi-flag', route: '/committees', requiredPermission: 'committees:view' },
   { labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks', requiredPermission: 'tasks:view' },
+  { labelKey: 'nav.unassignedTasks', icon: 'pi pi-exclamation-triangle', route: '/tasks/unassigned', requiredPermission: 'tasks:manage' },
   { labelKey: 'nav.users', icon: 'pi pi-users', route: '/users', requiredPermission: 'users:view' },
 ];
 

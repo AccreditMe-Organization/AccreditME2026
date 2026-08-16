@@ -28,6 +28,14 @@ export class TaskController {
   }
 
   // Must be declared before ':id' — Nest matches routes in declaration order
+  // and :id would otherwise swallow the literal 'unassigned' segment.
+  @Get('unassigned')
+  @Permissions(TASKS_PERMISSIONS.MANAGE)
+  getUnassigned(@CurrentTenant() tenantId: string): Promise<ITask[]> {
+    return this.taskService.listUnassigned(tenantId);
+  }
+
+  // Must be declared before ':id' — Nest matches routes in declaration order
   // and :id would otherwise swallow the literal 'my-tasks' segment above.
   @Get()
   @Permissions(TASKS_PERMISSIONS.VIEW)

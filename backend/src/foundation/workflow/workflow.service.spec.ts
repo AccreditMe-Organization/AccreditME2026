@@ -80,6 +80,16 @@ const BASE_INSTANCE = {
   updatedAt: new Date(),
 };
 
+// ACC-34 — resolveObjectSubjectLabel() keys off instance.objectId (always
+// populated), not stage.committeeId (a different, frequently-unset field).
+// objectId deliberately differs from any stage's committeeId in these
+// fixtures, so a test can't accidentally pass by keying off the wrong field.
+const COMMITTEE_INSTANCE = {
+  ...BASE_INSTANCE,
+  objectType: 'COMMITTEE',
+  objectId: 'committee-real-id',
+};
+
 const BASE_INSTANCE_STAGE = {
   id: 'instance-stage-1',
   workflowInstanceId: 'instance-1',
@@ -471,6 +481,185 @@ describe('WorkflowService', () => {
       );
     });
 
+    // ACC-34 — executeCreateTask()'s title previously read
+    // `${transition.labelEn} — ${instance.objectType}` (e.g. "Submit for
+    // Approval — COMMITTEE"), with no name resolution at all.
+    describe('CREATE_TASK title — committee-name resolution (ACC-34)', () => {
+      it('resolves the real committee name into the task title for a COMMITTEE-type instance', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(COMMITTEE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(
+          makeInstance({ objectType: 'COMMITTEE', objectId: COMMITTEE_INSTANCE.objectId, currentStageId: 'stage-target' }),
+        );
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([]);
+        mockPrisma.committee.findFirst.mockResolvedValue({ nameEn: 'Quality Committee' });
+
+        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
+          where: { id: COMMITTEE_INSTANCE.objectId, organizationId: ORG_A },
+          select: { nameEn: true },
+        });
+        expect(mockTaskService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — Quality Committee` }),
+          ORG_A,
+          ACTOR,
+        );
+      });
+
+      it('falls back to the generic objectType format for a non-COMMITTEE instance (unchanged behavior)', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([]);
+
+        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
+        expect(mockTaskService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — ${BASE_INSTANCE.objectType}` }),
+          ORG_A,
+          ACTOR,
+        );
+      });
+
+      // MANDATORY — tenant isolation for resolveObjectSubjectLabel()'s new
+      // committee.findFirst() query.
+      it('should NOT return records belonging to a different tenant', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(COMMITTEE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(
+          makeInstance({ objectType: 'COMMITTEE', objectId: COMMITTEE_INSTANCE.objectId, currentStageId: 'stage-target' }),
+        );
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([]);
+        // Mock branches on organizationId exactly like a real Postgres query
+        // would — the committee genuinely only resolves for ORG_A.
+        mockPrisma.committee.findFirst.mockImplementation(
+          ({ where }: { where: { organizationId: string } }) =>
+            Promise.resolve(where.organizationId === ORG_A ? { nameEn: 'Quality Committee' } : null),
+        );
+
+        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockTaskService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — Quality Committee` }),
+          ORG_A,
+          ACTOR,
+        );
+      });
+    });
+
+    // ACC-34 item 3 — fireTransitionActions() now returns unassignedTaskWarnings
+    // (array-shaped, threaded through to IWorkflowInstance) and sets
+    // WorkflowActionLogStatus.SUCCESS_UNASSIGNED instead of SUCCESS when a
+    // CREATE_TASK action resolves zero eligible assignees.
+    describe('unassignedTaskWarnings / SUCCESS_UNASSIGNED (ACC-34 item 3)', () => {
+      const ROLE_TARGET_STAGE = { ...TARGET_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-x' };
+
+      it('logs SUCCESS_UNASSIGNED and returns one warning when CREATE_TASK resolves zero eligible assignees', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': ROLE_TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([]); // nobody holds role-x
+
+        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ actionType: 'CREATE_TASK', status: 'SUCCESS_UNASSIGNED' }),
+          }),
+        );
+        expect(result.unassignedTaskWarnings).toHaveLength(1);
+        expect(result.unassignedTaskWarnings[0]).toContain('no eligible assignee');
+      });
+
+      it('logs SUCCESS and returns no warnings when CREATE_TASK resolves eligible assignees', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': ROLE_TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
+
+        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ actionType: 'CREATE_TASK', status: 'SUCCESS' }),
+          }),
+        );
+        expect(result.unassignedTaskWarnings).toEqual([]);
+      });
+
+      // Proves the array genuinely collects one entry per action rather than
+      // one overwriting another — the concrete risk flagged during planning
+      // (WorkflowTransitionAction rows are tenant-editable; nothing prevents
+      // two CREATE_TASK actions on one transition, even though no seeded
+      // transition does this today).
+      it('collects a distinct warning entry for each of multiple CREATE_TASK actions on one transition', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': ROLE_TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+          { id: 'action-2', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 20, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([]); // nobody holds role-x — both actions unassigned
+
+        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(result.unassignedTaskWarnings).toHaveLength(2);
+        expect(mockTaskService.create).toHaveBeenCalledTimes(2);
+        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledTimes(2);
+      });
+
+      it('leaves every other action type logging SUCCESS, unaffected by the new CREATE_TASK branch', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.role.findFirst.mockResolvedValue(null);
+
+        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ actionType: 'SEND_NOTIFICATION', status: 'SUCCESS' }),
+          }),
+        );
+        expect(result.unassignedTaskWarnings).toEqual([]);
+      });
+    });
+
     // ACC-22, closing the ACC-17 deferred gap: resolveAssigneeRaw()'s
     // COMMITTEE case previously read `prisma.committeeMember.findMany({
     // where: { committeeId, leftAt: null } })` with no organizationId
@@ -709,6 +898,10 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
       expect(result.currentStageId).toBe('stage-parallel');
+      // ACC-34 — threshold-not-met never reaches fireTransitionActions(), so
+      // the default empty array must come through mapInstance() untouched.
+      expect(result.unassignedTaskWarnings).toEqual([]);
+      expect(mockPrisma.workflowTransitionAction.findMany).not.toHaveBeenCalled();
     });
 
     it('advances once the threshold is satisfied', async () => {
@@ -1537,13 +1730,25 @@ describe('WorkflowService', () => {
     const STAGE_WITH_COMMITTEE = { ...COMMITTEE_STAGE, nameEn: 'Chairman Review' };
     const BLOCKING = [makeTransition({ id: 't-blocked', labelEn: 'Approve', triggerCondition: 'ASSIGNEE_POOL' })];
 
+    // ACC-34 — regression test proving resolveObjectSubjectLabel()'s
+    // instance.objectId-keyed resolution is now genuinely reachable.
+    // Previously keyed off stage.committeeId, which no seeded stage ever
+    // sets (confirmed by grepping workflow.seed.ts) — this exact
+    // notification, with a COMMITTEE-typed instance, would NOT have
+    // resolved a real name before this fix even though STAGE_WITH_COMMITTEE
+    // has a committeeId set, because nothing ever passed a stage with
+    // committeeId populated in practice.
     it('notifies every active TENANT_ADMIN, naming the transition and the committee', async () => {
       mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }]);
       mockPrisma.committee.findFirst.mockResolvedValue({ nameEn: 'Quality Committee' });
 
-      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
+      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, COMMITTEE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
 
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
+        where: { id: COMMITTEE_INSTANCE.objectId, organizationId: ORG_A },
+        select: { nameEn: true },
+      });
       expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
       const [firstCallArgs] = mockNotificationService.create.mock.calls[0] as [{ bodyEn: string; userId: string }];
       expect(firstCallArgs.userId).toBe('admin-1');
@@ -1551,11 +1756,14 @@ describe('WorkflowService', () => {
       expect(firstCallArgs.bodyEn).toContain('Quality Committee');
     });
 
-    it('falls back to objectType/objectId when the stage has no committeeId', async () => {
+    it('falls back to objectType/objectId for a non-COMMITTEE instance, even when the stage has a committeeId set', async () => {
       mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
 
-      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, SINGLE_STAGE as never, BLOCKING as never);
+      // STAGE_WITH_COMMITTEE (committeeId set) deliberately paired with a
+      // non-COMMITTEE instance — proves resolution is keyed off
+      // instance.objectType, not merely "does the stage have a committeeId".
+      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
 
       expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
       const [callArgs] = mockNotificationService.create.mock.calls[0] as [{ bodyEn: string }];
@@ -1575,7 +1783,7 @@ describe('WorkflowService', () => {
       mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
 
-      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
+      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, COMMITTEE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
 
       expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),

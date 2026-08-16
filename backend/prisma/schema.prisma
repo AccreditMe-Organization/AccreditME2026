@@ -125,6 +125,7 @@ enum WorkflowApprovalDecision {
 
 enum WorkflowActionLogStatus {
   SUCCESS
+  SUCCESS_UNASSIGNED
   FAILED
   RETRYING
 }

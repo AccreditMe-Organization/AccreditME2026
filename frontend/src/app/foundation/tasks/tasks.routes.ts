@@ -11,4 +11,11 @@ export const TASKS_ROUTES: Routes = [
     loadComponent: () =>
       import('./components/task-list/task-list.component').then((m) => m.TaskListComponent),
   },
+  {
+    path: 'unassigned',
+    loadComponent: () =>
+      import('./components/unassigned-tasks/unassigned-tasks.component').then(
+        (m) => m.UnassignedTasksComponent,
+      ),
+  },
 ];

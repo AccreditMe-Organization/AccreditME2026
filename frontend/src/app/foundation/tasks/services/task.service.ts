@@ -75,6 +75,10 @@ export class TaskService {
     return this.http.get<ITaskDto[]>(this.base, { params });
   }
 
+  getUnassigned(): Observable<ITaskDto[]> {
+    return this.http.get<ITaskDto[]>(`${this.base}/unassigned`);
+  }
+
   getById(id: string): Observable<ITaskDto> {
     return this.http.get<ITaskDto>(`${this.base}/${id}`);
   }
