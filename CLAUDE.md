@@ -1516,6 +1516,75 @@ Prisma Studio.
   future file that imports from `better-auth/api` or
   `better-auth/config`.
 
+## Key Architecture Decisions (ACC-28 through ACC-33)
+
+- **`WorkflowStage.assigneeCommitteeRoleValueId`** (ACC-28) narrows
+  the `COMMITTEE` assignee strategy to a specific
+  `committee_member_role`, when set. The new `WorkflowTriggerCondition`
+  value `ASSIGNEE_POOL` checks `actorId` against
+  `resolveAssigneeRaw()`'s resolved pool before allowing a transition
+  to fire — the first real enforcement connecting workflow
+  assignee-resolution to trigger-gating (previously two fully
+  disconnected mechanisms, per the ACC-17-era finding).
+- **Committee's non-workflow CRUD actions** (create / edit details /
+  add member / remove member / change member role) are gated by 8
+  specific permission strings (`committees:view`/`manage`/`approve`/
+  `create`/`edit_details`/`add_member`/`remove_member`/
+  `change_member_role`), not a dynamic per-instance authority check.
+  A Chairman-specific "is this your committee" check was designed,
+  built, then **deliberately rejected** — a Chairman is often a
+  figurehead who delegates actual system use to a Secretary or
+  similar; checking literal Chairman identity would lock out the
+  person doing the real work. Roles holding `committees:manage` are
+  granted all 8 permission strings directly at seed time (existing
+  tenants backfilled) — there is no runtime "does manage imply this"
+  logic anywhere.
+- **`WorkflowInstanceStage.isUnassigned`/`.unassignedAt`** (ACC-28,
+  extended ACC-33) detects when a stage's next required transition
+  has NO eligible actor — checked at stage-entry time and re-swept
+  every 15 minutes by the existing `SlaMonitorProcessor` job.
+  Originally scoped to `ASSIGNEE_POOL` only (ACC-28); ACC-33 extended
+  it to `ROLE_BASED`/`SPECIFIC_USER` trigger conditions via a
+  structurally separate resolver (not a generalization of the first
+  one, since assignee-resolution and trigger-gating remain genuinely
+  distinct concepts) — results are unioned, both reasons preserved if
+  a stage is blocked for more than one cause simultaneously.
+- **`EditDialogComponent`**
+  (`frontend/src/app/shared/components/edit-dialog/`, ACC-29) is now
+  the required pattern for every create/edit dialog in the app,
+  replacing the old per-screen `p-dialog` + manual `@if` convention.
+  Confirmed via real Angular TestBed experiments (not
+  documentation-read) that content projection (`<ng-content>` + a
+  wrapper's own `@if`) does NOT recreate a projected child component
+  on reopen — only `TemplateRef` + `ngTemplateOutlet` does. All 8
+  existing create/edit screens migrated (4 were confirmed-broken by
+  the content-projection bug, 4 were "accidentally correct" by luck
+  of parent wiring, not by using a safe pattern). Includes a built-in
+  scroll-discoverability affordance (a bottom-edge cue when dialog
+  content exceeds visible height) and a fix for a known upstream
+  PrimeNG overlay bug (primefaces/primeng#14519) where scroll-chaining
+  from an internal dropdown list to the dialog's own scroll container
+  incorrectly hides the open dropdown — fixed via
+  `overscroll-behavior: contain` on the dropdown's own listbox.
+- **`CommitteeMember` reactivation** (ACC-32): rejoining a departed
+  committee member reuses the SAME row (reactivate-in-place, matching
+  `RoleService.reactivateRole()`'s established shape) rather than
+  creating a new row — `CommitteeMember`'s unique constraint on
+  `(committeeId, userId)` has no partial/conditional exemption, and
+  `CommitteeMembershipEvent` (a fully independent, append-only ledger
+  keyed by `committeeId`+`userId`, not `CommitteeMember.id`) already
+  correctly preserves full multi-period history regardless of row
+  reuse. Confirmed: dropping the unique constraint to allow multiple
+  historical rows would be strictly worse, not just unnecessary.
+- **CI's tenant-isolation gate** (the `--testNamePattern` check) had
+  several passing-but-mislabeled tests found across this session
+  (lookup, user, working-calendar, task, org-position) — a test whose
+  logic is genuinely correct but whose NAME doesn't match the gate's
+  exact literal string is invisible to CI even though it passes
+  locally. This is now a known, recurring failure class, not fully
+  eliminated — worth checking for on any future PR touching
+  tenant-scoped queries.
+
 ## Open / Deferred Items
 
 - **Resend email domain (`accreditme.com`) is not verified** in the
@@ -1526,45 +1595,87 @@ Prisma Studio.
 - **Full RTL visual audit** — deferred, see the i18n / RTL Foundation
   note in Build Sequence above. Positioned right before the demo
   milestone, after Document Management, alongside the full
-  visual/brand polish ticket.
-- **Dashboard/Home page** — no route exists today for a
-  low-permission, non-admin user to land on after login. Confirmed
-  actively broken, not just suboptimal: a user without `orgUnits:*`
-  permission landing on the current default (`/organization`) sees
-  an empty table with a red "Failed to load organization units"
-  error and 403s in the console. Login redirect logic currently only
-  distinguishes `PLATFORM_ADMIN` vs. everyone-else (ACC-18) — never
-  designed for a genuinely low-permission persona, since Tenant
-  Admin was the only non-platform role in play until Committee
-  Management shipped. Needs: role-aware landing logic, a real Home
-  page (My Tasks, My Committees, notifications summary), and a
-  graceful "you don't have access to this yet" pattern reusable
-  anywhere a permission gap shows up (audit whether the
-  `/organization` 403 pattern repeats on other screens once a real
-  low-permission test user exists). Also closes the deferred
-  breadcrumb Home-entry note (see Key Architecture Decisions
-  ACC-13/14's "Future note"). **Sequenced: before Meeting
-  Management, not after** — see the Governance Modules note above.
-- **Backend-vs-frontend coverage audit** — not yet started. Same
-  rigor as ACC-17's tenant-isolation audit, different question: for
-  every backend endpoint/permission across every module built so
-  far, does an actual frontend UI path exist to reach it? This class
-  of gap has been found repeatedly by accident (Org Positions was
-  unreachable pre-ACC-16, workflow transitions had zero UI callers
-  until ACC-22's extension, user-role-assignment had a payload bug
-  found via manual testing) — worth a deliberate, one-time pass
-  rather than continuing to discover these ad hoc. Playwright MCP
-  (newly installed) makes this practical — Claude Code can drive the
-  actual browser as different permission levels rather than relying
-  on static code reading alone.
-- **Permanent, CI-integrated Playwright E2E suite** — separate from
-  the audit above. Turn the user journeys already manually proven by
-  hand this session (tenant creation → invite → accept-invitation →
-  role assignment → committee creation → workflow transition) into
-  committed, re-runnable test files wired into `ci.yml`, following
-  the same precedent ACC-20 set for making CI real. Going forward,
-  new module tickets should include "extend the E2E suite" as an
-  acceptance criterion alongside unit tests.
+  visual/brand polish ticket. Distinct from the smaller, near-term
+  Committee-specific RTL pass in the sequence below.
+
+### Sequence to Meeting Management
+
+Supersedes prior standalone entries covering this same ground
+(Dashboard/Home page, backend-vs-frontend coverage audit, permanent
+E2E suite — all folded into the ordered sequence below instead).
+SYSTEM-REFERENCE.md's Tier 1 findings (10 items) are CLOSED via
+ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
+
+1. **NEXT — Committee Management's remaining production-readiness
+   work**:
+   - A live Quality Manager persona test — every test so far used
+     Tenant Admin, which holds every permission and never proves
+     permission-gating actually works for a realistic non-admin user.
+   - A minimal Dashboard/Home slice — so a Quality Manager can
+     discover "my committees / pending my action" without hunting.
+   - An Arabic/RTL pass on Committee's own ~5 screens specifically —
+     NOT the full app-wide RTL audit above, which stays deferred to
+     the pre-demo milestone.
+2. **THEN — a new "Resource-Scoped Business Authority" ticket**
+   (Role-vs-OrgPosition for business-logic assignment, not
+   permissions) — not yet created. Meeting Management's own "chair or
+   organizer" concept was one of the original examples motivating
+   this. First required investigation before any design: does
+   Committee (or any future business object) carry an `orgUnitId` to
+   scope resolution against — without this, org-unit-scoped
+   assignment isn't reachable yet.
+3. **THEN — the unassigned-task-feedback ticket** (about to be
+   created): actor-facing feedback when a transition results in an
+   unassigned task, committee-name resolution in generic task/
+   notification titles, `WorkflowActionLog.status` not distinguishing
+   a real success from a created-but-unassigned outcome, and a new
+   tenant-wide "Unassigned Tasks" view wired to the already-built-but-
+   frontend-orphaned `reassign()` endpoint.
+4. **THEN, once all of the above are done — the backend-vs-frontend
+   coverage audit**, re-scoped smaller than originally planned:
+   SYSTEM-REFERENCE.md's static Frontend Consumption checks across
+   all 12 sections already answered most of "does a UI path exist";
+   remaining value is the LIVE, persona-driven half using Playwright
+   MCP. Followed by the permanent, CI-integrated Playwright E2E
+   suite, informed by the audit's findings.
+5. **ONLY THEN — Meeting Management planning begins.** Its own plan
+   MUST, as a mandatory step:
+   - Check SYSTEM-REFERENCE.md's remaining Tier 2/3 items for real
+     dependencies — not decided blind now (e.g. Task's missing
+     detail/reassignment/evidence-upload UI, `ROUND_ROBIN`'s missing
+     rotation logic, `SEQUENTIAL` approval mode's missing ordering —
+     some may be load-bearing for Meeting, most are not; check
+     per-item against Meeting's actual design).
+   - Design Meeting's Vote Record fields from scratch — the current
+     `Meeting`/`AgendaItem` schema is a dormant scaffold only, and
+     even that scaffold is incomplete relative to Meeting's own
+     module-designs.md spec (structured vote tracking — topic/
+     voteType/votesFor/votesAgainst/abstentions/quorumMet/outcome —
+     doesn't exist; `minutesText` is currently just a free-text
+     blob).
+
+- **`AIProvider` is fully built and working** (real Anthropic
+  integration, per-tenant key resolution, complete audit logging) but
+  has exactly ONE consumer anywhere in the app (a deliberate stub,
+  `LookupService.suggestValues()`) — genuinely idle, production-ready
+  infrastructure, not blocking anything. Committee's `TOR_DRAFTING` AI
+  feature has 3 of 4 inputs already available today, but its OUTPUT
+  is fully blocked — confirmed via module-designs.md's exact wording,
+  the TOR must be a real, typed `Document` row moving through the
+  actual 7-stage Document Lifecycle Workflow (Drafting → Owners
+  Review → Stakeholders Review → Final Approval → Publish Approval →
+  Published), not a placeholder table — so this is blocked on
+  Document Management's core lifecycle existing, not on a smaller
+  first slice (confirmed no such slice is documented anywhere).
+  Committee's other 2 AI features (Health Report, Decision Pattern
+  Analysis) are fully blocked on Meeting Management's decision/
+  attendance data, which doesn't exist in any form yet.
+- **Two small, unrelated findings needing their own tiny tickets
+  eventually**: the frontend's `suggestHolidays()` calls a backend
+  route that doesn't exist (a live 404, not a stub);
+  `AiFeatureCost`/`AiCreditPack` billing machinery is fully built but
+  structurally unreachable since no feature triggers the
+  credit-deduction flow.
 
 ---
 
