@@ -13,6 +13,7 @@ export interface WorkflowInstanceDto {
   currentStageId: string | null;
   createdAt: string;
   updatedAt: string;
+  unassignedTaskWarnings: string[];
 }
 
 export interface WorkflowApprovalDto {

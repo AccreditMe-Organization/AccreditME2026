@@ -40,6 +40,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     @if (error()) {
       <p-message severity="error" [text]="error()! | translate" />
     }
+    @for (w of warnings(); track w) {
+      <p-message severity="warn" [text]="w" />
+    }
     @if (availableTransitions().length > 0) {
       <div class="flex flex-wrap gap-2">
         @for (transition of availableTransitions(); track transition.id) {
@@ -67,6 +70,7 @@ export class WorkflowTransitionActionsComponent {
   readonly transitionsFromCurrentStage = signal<WorkflowTransitionDto[]>([]);
   readonly triggeringId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
+  readonly warnings = signal<string[]>([]);
 
   readonly availableTransitions = computed(() =>
     this.transitionsFromCurrentStage().filter(
@@ -92,6 +96,7 @@ export class WorkflowTransitionActionsComponent {
     this.workflowService.triggerTransition(instanceId, { transitionId: transition.id }).subscribe({
       next: (updated) => {
         this.triggeringId.set(null);
+        this.warnings.set(updated.unassignedTaskWarnings);
         this.transitioned.emit(updated);
       },
       error: (err: unknown) => {

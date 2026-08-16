@@ -26,6 +26,7 @@ const INSTANCE: WorkflowInstanceDto = {
   currentStageId: 'stage-formation',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
+  unassignedTaskWarnings: [],
 };
 
 const TRANSITION = {
@@ -139,5 +140,50 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
     req.flush(updatedInstance);
 
     expect(emitted).toEqual(updatedInstance);
+  });
+
+  it('renders one p-message per unassignedTaskWarnings entry (ACC-34)', () => {
+    setup(true);
+
+    component.onTrigger(TRANSITION);
+    const req = httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/transitions`);
+    req.flush({
+      ...INSTANCE,
+      currentStageId: 'stage-terms-review',
+      unassignedTaskWarnings: ['Task created as UNASSIGNED — no eligible assignee'],
+    });
+    fixture.detectChanges();
+
+    expect(component.warnings()).toEqual(['Task created as UNASSIGNED — no eligible assignee']);
+    const warnings = fixture.debugElement.queryAll(By.css('p-message[severity="warn"]'));
+    expect(warnings.length).toBe(1);
+  });
+
+  it('renders multiple p-message entries when more than one CREATE_TASK action is unassigned (ACC-34)', () => {
+    setup(true);
+
+    component.onTrigger(TRANSITION);
+    const req = httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/transitions`);
+    req.flush({
+      ...INSTANCE,
+      currentStageId: 'stage-terms-review',
+      unassignedTaskWarnings: ['Warning one', 'Warning two'],
+    });
+    fixture.detectChanges();
+
+    const warnings = fixture.debugElement.queryAll(By.css('p-message[severity="warn"]'));
+    expect(warnings.length).toBe(2);
+  });
+
+  it('renders no warning messages when unassignedTaskWarnings is empty (no regression)', () => {
+    setup(true);
+
+    component.onTrigger(TRANSITION);
+    const req = httpMock.expectOne(`${environment.apiUrl}/workflows/instances/instance-1/transitions`);
+    req.flush({ ...INSTANCE, currentStageId: 'stage-terms-review', unassignedTaskWarnings: [] });
+    fixture.detectChanges();
+
+    const warnings = fixture.debugElement.queryAll(By.css('p-message[severity="warn"]'));
+    expect(warnings.length).toBe(0);
   });
 });
