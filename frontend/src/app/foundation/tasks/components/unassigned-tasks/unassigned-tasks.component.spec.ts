@@ -112,6 +112,7 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
 
     component.onSubmitReassign();
 
+    expect(component.reassignForm.invalid).toBe(true);
     httpMock.expectNone(`${environment.apiUrl}/tasks/task-1/reassign`);
   });
 });
