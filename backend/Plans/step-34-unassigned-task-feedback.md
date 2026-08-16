@@ -418,13 +418,13 @@ boundaries as Section 5 — not inferred after the fact.
 
 ### Commit 5 — Frontend actor-feedback rendering
 
-- [ ] `WorkflowInstanceDto` (frontend) gains `unassignedTaskWarnings: string[]`
-- [ ] `WorkflowTransitionActionsComponent` gains a `warnings` signal (`string[]`, default `[]`)
-- [ ] `onTrigger()`'s `next` callback sets `warnings` from `updated.unassignedTaskWarnings`
-- [ ] Template renders `@for (w of warnings(); track w) { <p-message severity="warn" [text]="w" /> }`
-- [ ] Component test: a response with one warning renders one `p-message`
-- [ ] Component test: a response with multiple warnings renders one `p-message` per entry
-- [ ] Component test: a response with `unassignedTaskWarnings: []` renders nothing new (no regression to existing success behavior)
+- [x] `WorkflowInstanceDto` (frontend) gains `unassignedTaskWarnings: string[]`
+- [x] `WorkflowTransitionActionsComponent` gains a `warnings` signal (`string[]`, default `[]`)
+- [x] `onTrigger()`'s `next` callback sets `warnings` from `updated.unassignedTaskWarnings`
+- [x] Template renders `@for (w of warnings(); track w) { <p-message severity="warn" [text]="w" /> }`
+- [x] Component test: a response with one warning renders one `p-message`
+- [x] Component test: a response with multiple warnings renders one `p-message` per entry
+- [x] Component test: a response with `unassignedTaskWarnings: []` renders nothing new (no regression to existing success behavior)
 
 ### Commit 6 — Unassigned Tasks view (frontend)
 
