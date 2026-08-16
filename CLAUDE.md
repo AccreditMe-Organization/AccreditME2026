@@ -1606,16 +1606,16 @@ E2E suite — all folded into the ordered sequence below instead).
 SYSTEM-REFERENCE.md's Tier 1 findings (10 items) are CLOSED via
 ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
 
-1. **NEXT — Committee Management's remaining production-readiness
-   work**:
-   - A live Quality Manager persona test — every test so far used
-     Tenant Admin, which holds every permission and never proves
-     permission-gating actually works for a realistic non-admin user.
-   - A minimal Dashboard/Home slice — so a Quality Manager can
-     discover "my committees / pending my action" without hunting.
-   - An Arabic/RTL pass on Committee's own ~5 screens specifically —
-     NOT the full app-wide RTL audit above, which stays deferred to
-     the pre-demo milestone.
+1. **NEXT — the unassigned-task-feedback ticket** (about to be
+   created): actor-facing feedback when a transition results in an
+   unassigned task, committee-name resolution in generic task/
+   notification titles, `WorkflowActionLog.status` not distinguishing
+   a real success from a created-but-unassigned outcome, and a new
+   tenant-wide "Unassigned Tasks" view wired to the already-built-but-
+   frontend-orphaned `reassign()` endpoint. Sequenced first — this is
+   unfinished Committee Management correctness, not separate new
+   scope, and testing Committee (step 3 below) before closing this
+   known gap doesn't validate a complete flow.
 2. **THEN — a new "Resource-Scoped Business Authority" ticket**
    (Role-vs-OrgPosition for business-logic assignment, not
    permissions) — not yet created. Meeting Management's own "chair or
@@ -1624,13 +1624,25 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
    Committee (or any future business object) carry an `orgUnitId` to
    scope resolution against — without this, org-unit-scoped
    assignment isn't reachable yet.
-3. **THEN — the unassigned-task-feedback ticket** (about to be
-   created): actor-facing feedback when a transition results in an
-   unassigned task, committee-name resolution in generic task/
-   notification titles, `WorkflowActionLog.status` not distinguishing
-   a real success from a created-but-unassigned outcome, and a new
-   tenant-wide "Unassigned Tasks" view wired to the already-built-but-
-   frontend-orphaned `reassign()` endpoint.
+3. **THEN — Committee Management's remaining production-readiness
+   work**:
+   - A live Quality Manager persona test — every test so far used
+     Tenant Admin, which holds every permission and never proves
+     permission-gating actually works for a realistic non-admin user.
+   - A minimal Dashboard/Home slice — so a Quality Manager can
+     discover "my committees / pending my action" without hunting.
+     Must be built as a set of independently permission-gated widgets
+     (checking permission strings held by the current user), never
+     hardcoded against specific named roles — matching the same
+     principle already established for Committee's own CRUD
+     permissions; any tenant-created custom role must get a
+     correctly-adapted dashboard automatically, with no special-
+     casing required. The Unassigned Tasks view (built in step 1
+     above) is a likely future widget candidate here, not necessarily
+     a permanently separate screen.
+   - An Arabic/RTL pass on Committee's own ~5 screens specifically —
+     NOT the full app-wide RTL audit above, which stays deferred to
+     the pre-demo milestone.
 4. **THEN, once all of the above are done — the backend-vs-frontend
    coverage audit**, re-scoped smaller than originally planned:
    SYSTEM-REFERENCE.md's static Frontend Consumption checks across
