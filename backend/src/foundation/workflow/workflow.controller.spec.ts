@@ -20,6 +20,7 @@ const MOCK_INSTANCE: IWorkflowInstance = {
   currentStageId: 'stage-1',
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
+  unassignedTaskWarnings: [],
 };
 
 const MOCK_APPROVAL: IWorkflowApproval = {

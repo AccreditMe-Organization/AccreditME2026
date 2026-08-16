@@ -395,16 +395,16 @@ boundaries as Section 5 — not inferred after the fact.
 
 ### Commit 3 — `fireTransitionActions()` warnings + status wiring
 
-- [ ] `fireTransitionActions()` return type changed from `Promise<void>` to `Promise<string[]>`
-- [ ] `fireTransitionActions()`'s `CREATE_TASK` branch sets `status: 'SUCCESS_UNASSIGNED'` when `assigneeIds.length === 0`, `'SUCCESS'` otherwise
-- [ ] `performTransition()` captures `fireTransitionActions()`'s returned array and threads it into `mapInstance()`
-- [ ] `mapInstance()` gains `unassignedTaskWarnings: string[] = []` parameter, included in the returned object
-- [ ] `IWorkflowInstance` interface gains `unassignedTaskWarnings: string[]`
-- [ ] Test: a `CREATE_TASK` action with zero eligible assignees produces one entry in the returned array and logs `SUCCESS_UNASSIGNED`
-- [ ] Test: a `CREATE_TASK` action with eligible assignees produces `[]` and logs `SUCCESS`
-- [ ] Test: multiple `CREATE_TASK` actions on one transition (simulated) each contribute their own distinct entry — proves the array doesn't drop or overwrite
-- [ ] Test: multi-approver path (threshold not met) returns `unassignedTaskWarnings: []` without calling `fireTransitionActions()`
-- [ ] Test: every other action type (`SEND_NOTIFICATION`, `GENERATE_PDF`, `LOCK_DOCUMENT`, `WEBHOOK`) still logs `status: 'SUCCESS'`/existing behavior, unaffected by the new branch
+- [x] `fireTransitionActions()` return type changed from `Promise<void>` to `Promise<string[]>`
+- [x] `fireTransitionActions()`'s `CREATE_TASK` branch sets `status: 'SUCCESS_UNASSIGNED'` when `assigneeIds.length === 0`, `'SUCCESS'` otherwise
+- [x] `performTransition()` captures `fireTransitionActions()`'s returned array and threads it into `mapInstance()`
+- [x] `mapInstance()` gains `unassignedTaskWarnings: string[] = []` parameter, included in the returned object
+- [x] `IWorkflowInstance` interface gains `unassignedTaskWarnings: string[]`
+- [x] Test: a `CREATE_TASK` action with zero eligible assignees produces one entry in the returned array and logs `SUCCESS_UNASSIGNED`
+- [x] Test: a `CREATE_TASK` action with eligible assignees produces `[]` and logs `SUCCESS`
+- [x] Test: multiple `CREATE_TASK` actions on one transition (simulated) each contribute their own distinct entry — proves the array doesn't drop or overwrite
+- [x] Test: multi-approver path (threshold not met) returns `unassignedTaskWarnings: []` without calling `fireTransitionActions()`
+- [x] Test: every other action type (`SEND_NOTIFICATION`, `GENERATE_PDF`, `LOCK_DOCUMENT`, `WEBHOOK`) still logs `status: 'SUCCESS'`/existing behavior, unaffected by the new branch
 
 ### Commit 4 — `GET /tasks/unassigned` + `tasks:manage`
 

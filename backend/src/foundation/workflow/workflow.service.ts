@@ -503,7 +503,12 @@ export class WorkflowService {
       },
     });
 
-    await this.fireTransitionActions(transition, updatedInstance, organizationId, actorId);
+    const unassignedTaskWarnings = await this.fireTransitionActions(
+      transition,
+      updatedInstance,
+      organizationId,
+      actorId,
+    );
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -515,21 +520,32 @@ export class WorkflowService {
       after: { currentStageId: toStage.id, status: updatedInstance.status },
     });
 
-    return this.mapInstance(updatedInstance);
+    return this.mapInstance(updatedInstance, unassignedTaskWarnings);
   }
 
   // ── Internal: transition actions ─────────────────────────────────────────────
 
+  // Returns one warning message per CREATE_TASK action that resolved zero
+  // eligible assignees — [] when nothing warrants a warning, never null, so
+  // callers never need a null-check. Threaded through performTransition()
+  // into the actor-facing IWorkflowInstance.unassignedTaskWarnings (ACC-34)
+  // — array-shaped deliberately: WorkflowTransitionAction rows are
+  // tenant-editable, and nothing prevents a tenant from configuring more
+  // than one CREATE_TASK action on a single transition (unexercised by any
+  // seeded transition today, confirmed by inspection of workflow.seed.ts,
+  // but not guaranteed to stay that way).
   private async fireTransitionActions(
     transition: PrismaWorkflowTransition,
     instance: PrismaWorkflowInstance,
     organizationId: string,
     actorId: string,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const actions = await this.prisma.workflowTransitionAction.findMany({
       where: { workflowTransitionId: transition.id },
       orderBy: { order: 'asc' },
     });
+
+    const unassignedTaskWarnings: string[] = [];
 
     for (const action of actions) {
       // LOG_AUDIT always fires — isEnabled is ignored for this type, per CLAUDE.md.
@@ -555,10 +571,17 @@ export class WorkflowService {
       }
 
       let responseSummary: string;
+      let status: 'SUCCESS' | 'SUCCESS_UNASSIGNED' = 'SUCCESS';
       switch (action.actionType) {
-        case 'CREATE_TASK':
-          responseSummary = await this.executeCreateTask(transition, instance, organizationId, actorId);
+        case 'CREATE_TASK': {
+          const result = await this.executeCreateTask(transition, instance, organizationId, actorId);
+          responseSummary = result.responseSummary;
+          if (result.isUnassigned) {
+            status = 'SUCCESS_UNASSIGNED';
+            unassignedTaskWarnings.push(result.responseSummary);
+          }
           break;
+        }
         case 'SEND_NOTIFICATION':
           responseSummary = await this.executeSendNotification(transition, instance, organizationId);
           break;
@@ -580,11 +603,13 @@ export class WorkflowService {
           workflowTransitionActionId: action.id,
           workflowInstanceId: instance.id,
           actionType: action.actionType,
-          status: 'SUCCESS',
+          status,
           responseSummary,
         },
       });
     }
+
+    return unassignedTaskWarnings;
   }
 
   // Resolves a human-readable label for "which object does this instance
@@ -609,14 +634,20 @@ export class WorkflowService {
     return instance.objectType;
   }
 
+  // ACC-34 — isUnassigned distinguishes "task genuinely created but with no
+  // eligible assignee" from every other outcome (including the early
+  // "Skipped" returns below, where no Task row was ever created at all) —
+  // callers use it both to pick WorkflowActionLogStatus and to decide
+  // whether this action's responseSummary belongs in the actor-facing
+  // warnings array.
   private async executeCreateTask(
     transition: PrismaWorkflowTransition,
     instance: PrismaWorkflowInstance,
     organizationId: string,
     actorId: string,
-  ): Promise<string> {
+  ): Promise<{ responseSummary: string; isUnassigned: boolean }> {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
-    if (!toStage) return 'Skipped — target stage not found';
+    if (!toStage) return { responseSummary: 'Skipped — target stage not found', isUnassigned: false };
 
     // Every current WorkflowObjectType now has a TaskSourceType mapping
     // (see mapObjectTypeToTaskSourceType below) — the null-fallback here
@@ -626,7 +657,10 @@ export class WorkflowService {
     // than writing an invalid enum value to the database.
     const sourceType = this.mapObjectTypeToTaskSourceType(instance.objectType);
     if (!sourceType) {
-      return `Skipped — no TaskSourceType mapping for ${instance.objectType}`;
+      return {
+        responseSummary: `Skipped — no TaskSourceType mapping for ${instance.objectType}`,
+        isUnassigned: false,
+      };
     }
 
     // Full resolved assigneeIds array passed through — fixes the original
@@ -650,8 +684,8 @@ export class WorkflowService {
     );
 
     return assigneeIds.length > 0
-      ? `Task created for ${assigneeIds.length} assignee(s)`
-      : `Task created as ${task.status} — no eligible assignee`;
+      ? { responseSummary: `Task created for ${assigneeIds.length} assignee(s)`, isUnassigned: false }
+      : { responseSummary: `Task created as ${task.status} — no eligible assignee`, isUnassigned: true };
   }
 
   // WorkflowObjectType → TaskSourceType. DOCUMENT_REQUEST/CHANGE_REQUEST map
@@ -1143,7 +1177,13 @@ export class WorkflowService {
 
   // ── Internal mappers ─────────────────────────────────────────────────────────
 
-  private mapInstance(instance: PrismaWorkflowInstance): IWorkflowInstance {
+  // unassignedTaskWarnings defaults to [] — every call site except
+  // performTransition() (the only one with actions to report on) is
+  // unaffected (ACC-34).
+  private mapInstance(
+    instance: PrismaWorkflowInstance,
+    unassignedTaskWarnings: string[] = [],
+  ): IWorkflowInstance {
     return {
       id: instance.id,
       organizationId: instance.organizationId,
@@ -1154,6 +1194,7 @@ export class WorkflowService {
       currentStageId: instance.currentStageId,
       createdAt: instance.createdAt,
       updatedAt: instance.updatedAt,
+      unassignedTaskWarnings,
     };
   }
 

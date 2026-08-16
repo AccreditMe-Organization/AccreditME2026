@@ -8,6 +8,10 @@ export interface IWorkflowInstance {
   currentStageId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  // ACC-34 — one message per CREATE_TASK action (this trigger only) that
+  // resolved zero eligible assignees. [] on every response except a fresh
+  // triggerTransition() result that actually fired actions.
+  unassignedTaskWarnings: string[];
 }
 
 export interface IWorkflowInstanceStage {
