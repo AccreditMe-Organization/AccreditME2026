@@ -442,18 +442,18 @@ boundaries as Section 5 — not inferred after the fact.
 
 ### Commit 7 — Translations
 
-- [ ] `en.json`: key(s) for the unassigned-task warning message
-- [ ] `en.json`: key for the new nav entry label
-- [ ] `en.json`: keys for the Unassigned Tasks view's own strings (headings, table columns, reassign form labels, empty state)
-- [ ] `ar.json`: matching keys, real Arabic translations (not placeholders)
+- [x] `en.json`/`ar.json`: unassigned-task warning message — N/A on reflection, not a translation key. The warning text is `WorkflowActionLog.responseSummary`, generated server-side as a plain English string (`` `Task created as ${task.status} — no eligible assignee` ``) with no Arabic counterpart today — rendered via raw `[text]`, deliberately not `| translate`, same precedent as transition `labelEn`/`labelAr` (dynamic data, not a fixed app string). Localizing it would require the backend to generate a language-aware message, out of scope for this ticket.
+- [x] `en.json`: key for the new nav entry label
+- [x] `en.json`: keys for the Unassigned Tasks view's own strings (headings, table columns, reassign form labels, empty state)
+- [x] `ar.json`: matching keys, real Arabic translations (not placeholders)
 
 ### Cross-cutting (verify before PR, not tied to one commit)
 
-- [ ] Backend TypeScript: zero errors
-- [ ] Frontend TypeScript: zero errors
-- [ ] Full backend jest suite passing
-- [ ] Tenant isolation gate passing, count matches new Prisma queries added
-- [ ] Frontend `ng test` passing
+- [x] Backend TypeScript: zero errors
+- [x] Frontend TypeScript: zero errors
+- [x] Full backend jest suite passing (674/674)
+- [x] Tenant isolation gate passing, count matches new Prisma queries added (23/23 — 22 pre-existing + 1 new for `listUnassigned()`)
+- [x] Frontend `ng test` passing (48/48)
 - [ ] Live manual pass: trigger a transition resulting in an unassigned task, confirm the warning renders in the UI
 - [ ] Live manual pass: open the Unassigned Tasks view, reassign a task, confirm it disappears from the list and the assignee is notified
 - [ ] SYSTEM-REFERENCE.md updated if this PR's changes touch a section it already documents (Section 3.6's `tasks:manage` "currently inert" note, Section 3.7's `reassign()` "zero frontend callers" note — both closed by this ticket)
