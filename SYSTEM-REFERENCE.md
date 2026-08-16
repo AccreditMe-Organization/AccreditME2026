@@ -1113,41 +1113,43 @@ tasks:create     — TaskController: create
 tasks:complete   — TaskController: complete, addEvidence (both — evidence
                    upload is gated as a completion-adjacent action, not separately)
 tasks:reassign   — TaskController: reassign
-tasks:manage     — seeded into role permission sets (role.seed.ts) but
-                   **not referenced by any `@Permissions()` decorator in
-                   task.controller.ts** — confirmed via grep. A real,
-                   currently-inert permission string: holding
-                   `tasks:manage` today grants no capability beyond
-                   whatever `tasks:view`/`create`/`complete`/`reassign`
-                   a role separately holds.
+tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
+                   `@Permissions()` consumer. Previously seeded into
+                   role permission sets (role.seed.ts) but not checked
+                   anywhere, a currently-inert permission string; no
+                   longer inert as of ACC-34.
 ```
 
 ### 3.7 Frontend Consumption (Static Check)
 
-`frontend/src/app/foundation/tasks/services/task.service.ts` — 7
+`frontend/src/app/foundation/tasks/services/task.service.ts` — 8
 methods, one per `TaskController` endpoint:
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
 | `getMyTasks()` | `GET /tasks/my-tasks` | `my-tasks.component.ts:144` |
 | `getForSource()` | `GET /tasks` | `task-list.component.ts:104` |
+| `getUnassigned()` | `GET /tasks/unassigned` | `unassigned-tasks.component.ts` (ACC-34) |
 | `getById()` | `GET /tasks/:id` | **ZERO frontend callers found** |
 | `create()` | `POST /tasks` | `task-form.component.ts:124` (rendered from `task-list.component.ts`, confirmed referenced there) |
 | `complete()` | `POST /tasks/:id/complete` | `my-tasks.component.ts:134` |
-| `reassign()` | `POST /tasks/:id/reassign` | **ZERO frontend callers found** |
+| `reassign()` | `POST /tasks/:id/reassign` | `unassigned-tasks.component.ts` (ACC-34) — was zero frontend callers, closed by this ticket |
 | `addEvidence()` | `POST /tasks/:id/evidence` | **ZERO frontend callers found** |
 
-**Three real gaps, static-check-confirmed**: there is no task-detail
-view anywhere in the frontend (`getById()` unused) — "My Tasks" and the
-per-source task list both render list rows only, nothing navigates to a
-single task. There is no reassignment UI (`reassign()` unused) —
-Absence Management Pattern 2 has no operator-facing screen for Tasks
-specifically, despite `TaskController` fully supporting it. There is no
+**Two remaining gaps, static-check-confirmed**: there is no task-detail
+view anywhere in the frontend (`getById()` unused) — "My Tasks", the
+per-source task list, and the new Unassigned Tasks view all render list
+rows only, nothing navigates to a single task. There is no
 evidence-upload UI (`addEvidence()` unused) — `complete()` can be
 called with zero evidence ever attached, even though `TaskEvidence`'s
 schema (3.1) is fully built out for it. These are exactly the class of
 finding the separately-queued live-audit exists to catch systematically
 — flagged here as a cheap static signal, not a substitute for it.
+`reassign()` was the third gap in this list until ACC-34's Unassigned
+Tasks view gave it a real caller — Absence Management Pattern 2 now has
+an operator-facing screen for Tasks, at least for the unassigned case
+(a reassignment UI reachable from an assigned task's own detail view
+still doesn't exist, since `getById()` still has zero callers).
 
 ---
 
@@ -1414,8 +1416,7 @@ positions:view    — OrgPositionController: listPositions, getPositionById
 positions:manage  — OrgPositionController: createPosition, updatePosition, deactivatePosition
 ```
 
-Both fully wired, no inert permission string here (unlike `tasks:manage`,
-Section 3.6).
+Both fully wired, no inert permission string here.
 
 ### 5.6 Frontend Consumption (Static Check)
 
@@ -2313,10 +2314,15 @@ Purpose section, written directly in response to the ACC-28 incident.
 - Lookup `updateCategory()`/`deactivateCategory()` — the exact
   endpoints ACC-17 hardened with `PlatformGuard` — have zero UI
   anywhere, not even in the Super Admin Portal (Section 6.6).
-- Task: no detail view, no reassignment UI, no evidence-upload UI
-  (Section 3.7) — three separate gaps, backend fully supports all
-  three (`getById()`, `reassign()`, `addEvidence()` all zero frontend
-  callers).
+- Task: no detail view, no evidence-upload UI (Section 3.7) — two
+  remaining gaps, backend fully supports both (`getById()`,
+  `addEvidence()` still zero frontend callers).
+- **CLOSED (ACC-34)** — Task: no reassignment UI (Section 3.7) —
+  `reassign()` had zero frontend callers despite `TaskController` fully
+  supporting it. Closed by the new Unassigned Tasks view
+  (`GET /tasks/unassigned`, gated by `tasks:manage` — also closing that
+  permission's "currently inert" note below), which calls `reassign()`
+  as-is, unmodified.
 - Task: out-of-office substitution is missing for tasks created
   directly via `POST /tasks` (Section 3.5) — only workflow-engine-driven
   `CREATE_TASK` gets it, because the substitution logic lives upstream
@@ -2326,9 +2332,11 @@ Purpose section, written directly in response to the ACC-28 incident.
   `reactivatePosition()` counterpart (Section 5.2) — unlike `Role`,
   which has both. A mistakenly deactivated position can only be
   re-created, not restored.
-- `tasks:manage` is seeded into role permission sets but never checked
-  by any `@Permissions()` decorator anywhere in `task.controller.ts`
-  (Section 3.6) — currently inert.
+- **CLOSED (ACC-34)** — `tasks:manage` was seeded into role permission
+  sets but never checked by any `@Permissions()` decorator anywhere in
+  `task.controller.ts` (Section 3.6) — currently-inert permission
+  string. Closed: now gates `TaskController.getUnassigned()`, its first
+  real consumer.
 - **User departure does not reassign or flag Committee memberships**
   (Section 12.3) — `UserService.deactivate()` calls
   `TaskService.reassignAllForUser()` only. module-designs.md's Absence
