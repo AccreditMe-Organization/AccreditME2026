@@ -328,6 +328,23 @@ export class WorkflowService {
       );
     }
 
+    const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
+    if (!stage) throw new NotFoundException('Workflow stage not found');
+
+    // Mirrors triggerTransition()'s ASSIGNEE_POOL check (pool.includes(actorId))
+    // — reuses resolveApproverPool(), the same pool-resolution isApprovalThresholdMet()
+    // already trusts for this exact stage, rather than inventing a new
+    // authorization primitive. Only enforced when the pool resolves to
+    // something concrete (COMMITTEE/ROLE strategies, the only two
+    // resolveApproverPool() understands) — an unresolvable strategy on a
+    // multi-approver stage is a pre-existing, separately-tracked config-error
+    // case (see resolveApproverPool()'s own comment), not one this check
+    // newly blocks.
+    const approverPool = await this.resolveApproverPool(stage, organizationId);
+    if (approverPool.length > 0 && !approverPool.includes(actorId)) {
+      throw new ForbiddenException('You are not an eligible approver for this stage');
+    }
+
     const approval = await this.prisma.workflowApproval.upsert({
       where: {
         workflowInstanceStageId_approverId: { workflowInstanceStageId: instanceStageId, approverId: actorId },
@@ -351,10 +368,7 @@ export class WorkflowService {
       after: { decision: approval.decision },
     });
 
-    const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
-    if (stage) {
-      await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto);
-    }
+    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto);
 
     return this.mapApproval(approval);
   }
