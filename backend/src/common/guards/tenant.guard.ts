@@ -127,8 +127,15 @@ export class TenantGuard implements CanActivate {
     }
 
     // tokenVersion check (Step 9) — a mismatch means this token was issued
-    // before a deactivation/password-change/role-change bumped the stored
-    // value; reject rather than trust a stale token until it naturally expires.
+    // before a deactivation bumped the stored value (UserService.deactivate()
+    // is the only caller of AuthProvider.invalidateUserSessions() today);
+    // reject rather than trust a stale token until it naturally expires.
+    // Role/permission changes do NOT bump tokenVersion (role.service.ts has
+    // zero tokenVersion/invalidateUserSessions references) — a user stripped
+    // of a role keeps full access on their existing JWT for up to 15 minutes
+    // (the token's own expiry), not revoked immediately. Corrected here per
+    // SYSTEM-REFERENCE.md Section 1.2 / Section 11 Tier 1 (ACC-33 item 2) —
+    // documentation-only, no behavior change.
     const user = await this.prisma.user.findFirst({
       where: { id: payload.sub, organizationId: payload.organizationId },
       select: { tokenVersion: true },
