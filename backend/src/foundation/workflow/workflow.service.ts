@@ -587,6 +587,28 @@ export class WorkflowService {
     }
   }
 
+  // Resolves a human-readable label for "which object does this instance
+  // represent" — COMMITTEE resolves the real committee name via
+  // instance.objectId (always populated, unlike stage.committeeId which is
+  // a different, frequently-unset field used for COMMITTEE-assigneeStrategy
+  // pool resolution). Other object types fall back to the generic
+  // objectType string until those modules exist to resolve against —
+  // matches the precedent already established for every other partial-
+  // resolution case in this codebase (ACC-34).
+  private async resolveObjectSubjectLabel(
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<string> {
+    if (instance.objectType === 'COMMITTEE') {
+      const committee = await this.prisma.committee.findFirst({
+        where: { id: instance.objectId, organizationId },
+        select: { nameEn: true },
+      });
+      if (committee) return committee.nameEn;
+    }
+    return instance.objectType;
+  }
+
   private async executeCreateTask(
     transition: PrismaWorkflowTransition,
     instance: PrismaWorkflowInstance,
@@ -611,10 +633,11 @@ export class WorkflowService {
     // bug where only assigneeIds[0] was ever used, silently dropping every
     // other assignee for PARALLEL/COMMITTEE stages.
     const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
+    const subjectLabel = await this.resolveObjectSubjectLabel(instance, organizationId);
 
     const task = await this.taskService.create(
       {
-        title: `${transition.labelEn} — ${instance.objectType}`,
+        title: `${transition.labelEn} — ${subjectLabel}`,
         sourceType,
         sourceId: instance.objectId,
         sourceStageId: toStage.id,
@@ -1012,16 +1035,17 @@ export class WorkflowService {
       where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
     });
 
-    // Committee's own name resolved via a join — an instance/objectId alone
-    // isn't actionable for an admin deciding what to fix.
-    let subjectLabel = `${instance.objectType} ${instance.objectId}`;
-    if (stage.committeeId) {
-      const committee = await this.prisma.committee.findFirst({
-        where: { id: stage.committeeId, organizationId },
-        select: { nameEn: true },
-      });
-      if (committee) subjectLabel = `${committee.nameEn} (${instance.objectType})`;
-    }
+    // Committee's own name resolved via resolveObjectSubjectLabel() — an
+    // instance/objectId alone isn't actionable for an admin deciding what
+    // to fix. Previously keyed off stage.committeeId here, which is a
+    // different field (COMMITTEE-assigneeStrategy pool resolution) that no
+    // seeded stage ever sets — confirmed dead in practice, this resolution
+    // never actually fired (ACC-34). instance.objectId is the correct key.
+    const resolvedLabel = await this.resolveObjectSubjectLabel(instance, organizationId);
+    const subjectLabel =
+      resolvedLabel !== instance.objectType
+        ? `${resolvedLabel} (${instance.objectType})`
+        : `${instance.objectType} ${instance.objectId}`;
     const transitionLabels = blockingTransitions.map((t) => t.labelEn).join(', ');
 
     for (const userRole of userRoles) {

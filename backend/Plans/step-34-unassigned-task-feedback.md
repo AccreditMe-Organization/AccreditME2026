@@ -385,13 +385,13 @@ boundaries as Section 5 — not inferred after the fact.
 
 ### Commit 2 — Committee-name resolution
 
-- [ ] `resolveObjectSubjectLabel()` private helper added to `WorkflowService`
-- [ ] `executeCreateTask()` uses the helper instead of the raw `instance.objectType` literal
-- [ ] `notifyTenantAdminsOfUnassignedStage()`'s inline `stage.committeeId`-keyed block replaced with a call to the same helper
-- [ ] Test: `executeCreateTask()` resolves a real committee name for `COMMITTEE`-type instances
-- [ ] Test: `executeCreateTask()` falls back to the generic format for non-`COMMITTEE` object types (unchanged behavior)
-- [ ] Test: `notifyTenantAdminsOfUnassignedStage()`'s committee-name resolution now genuinely fires (regression test proving the previously-dead `stage.committeeId` path is reachable via `instance.objectId`)
-- [ ] Tenant isolation test for the helper's `committee.findFirst()` query
+- [x] `resolveObjectSubjectLabel()` private helper added to `WorkflowService`
+- [x] `executeCreateTask()` uses the helper instead of the raw `instance.objectType` literal
+- [x] `notifyTenantAdminsOfUnassignedStage()`'s inline `stage.committeeId`-keyed block replaced with a call to the same helper
+- [x] Test: `executeCreateTask()` resolves a real committee name for `COMMITTEE`-type instances
+- [x] Test: `executeCreateTask()` falls back to the generic format for non-`COMMITTEE` object types (unchanged behavior)
+- [x] Test: `notifyTenantAdminsOfUnassignedStage()`'s committee-name resolution now genuinely fires (regression test proving the previously-dead `stage.committeeId` path is reachable via `instance.objectId`)
+- [x] Tenant isolation test for the helper's `committee.findFirst()` query
 
 ### Commit 3 — `fireTransitionActions()` warnings + status wiring
 
