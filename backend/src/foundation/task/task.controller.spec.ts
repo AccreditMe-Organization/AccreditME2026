@@ -43,6 +43,7 @@ describe('TaskController', () => {
     complete: jest.Mock;
     reassign: jest.Mock;
     addEvidence: jest.Mock;
+    listUnassigned: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -54,6 +55,7 @@ describe('TaskController', () => {
       complete: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'COMPLETED' }),
       reassign: jest.fn().mockResolvedValue(MOCK_TASK),
       addEvidence: jest.fn().mockResolvedValue({ id: 'evidence-1' }),
+      listUnassigned: jest.fn().mockResolvedValue([{ ...MOCK_TASK, status: 'UNASSIGNED' }]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -120,5 +122,12 @@ describe('TaskController', () => {
 
     expect(service.addEvidence).toHaveBeenCalledWith('task-1', dto, TENANT_ID, USER_ID);
     expect(result).toEqual({ id: 'evidence-1' });
+  });
+
+  it('getUnassigned delegates to the service with the current tenant', async () => {
+    const result = await controller.getUnassigned(TENANT_ID);
+
+    expect(service.listUnassigned).toHaveBeenCalledWith(TENANT_ID);
+    expect(result).toEqual([{ ...MOCK_TASK, status: 'UNASSIGNED' }]);
   });
 });

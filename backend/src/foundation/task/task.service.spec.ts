@@ -418,4 +418,40 @@ describe('TaskService', () => {
       expect(result).toHaveLength(0);
     });
   });
+
+  describe('listUnassigned (ACC-34)', () => {
+    it('returns only status: UNASSIGNED tasks, tenant-wide', async () => {
+      const unassignedTask = { ...BASE_TASK, status: 'UNASSIGNED', assignees: [] };
+      mockPrisma.task.findMany.mockResolvedValue([unassignedTask]);
+
+      const result = await service.listUnassigned(ORG_A);
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { organizationId: ORG_A, status: 'UNASSIGNED' },
+        }),
+      );
+      expect(result).toEqual([unassignedTask]);
+    });
+
+    it('is not scoped to the calling user — no assignees filter applied', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      await service.listUnassigned(ORG_A);
+
+      const call = mockPrisma.task.findMany.mock.calls[0][0];
+      expect(call.where).not.toHaveProperty('assignees');
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      const unassignedTask = { ...BASE_TASK, status: 'UNASSIGNED', assignees: [] };
+      mockPrisma.task.findMany.mockImplementation(({ where }) =>
+        Promise.resolve(where.organizationId === ORG_A ? [unassignedTask] : []),
+      );
+
+      const result = await service.listUnassigned(ORG_B);
+
+      expect(result).toHaveLength(0);
+    });
+  });
 });

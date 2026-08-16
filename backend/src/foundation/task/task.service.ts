@@ -137,6 +137,15 @@ export class TaskService {
     });
   }
 
+  // Tenant-wide — unassigned tasks have no assignees, so getMyTasks()
+  // structurally can never surface them (ACC-34).
+  async listUnassigned(organizationId: string): Promise<ITask[]> {
+    return this.prisma.task.findMany({
+      where: { organizationId, status: 'UNASSIGNED' },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async getById(id: string, organizationId: string): Promise<ITask> {
     const task = await this.prisma.task.findFirst({
       where: { id, organizationId },
