@@ -768,9 +768,12 @@ export class WorkflowService {
         // calling functional module to supply an orgUnitId, and no module
         // calls startInstance()/triggerTransition() yet. Documented
         // limitation, not an oversight — see Step 6 plan, Business Rules.
-        throw new Error(
-          'ORG_UNIT_HEAD assignee resolution requires an orgUnitId from the calling module — not yet supported',
-        );
+        // Degrades gracefully to an empty pool (matching every other case in
+        // this switch, per this method's own "always returns an array" doc
+        // comment above) rather than throwing — an unconditional throw here
+        // would crash the entire transition for a tenant that configures
+        // this strategy, not just leave the stage unassigned.
+        return [];
 
       case 'SELF': {
         const firstStage = await this.prisma.workflowInstanceStage.findFirst({

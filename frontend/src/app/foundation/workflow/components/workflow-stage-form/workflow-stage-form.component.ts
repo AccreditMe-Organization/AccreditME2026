@@ -33,10 +33,15 @@ const PARALLEL_THRESHOLDS = [
   { label: 'ANY', value: 'ANY' },
 ];
 
+// ORG_UNIT_HEAD deliberately excluded — resolveAssigneeRaw() (backend)
+// degrades gracefully to an empty assignee pool for it rather than
+// crashing, but it has no real resolution logic yet (needs an orgUnitId
+// from a calling functional module that doesn't exist yet). Not offered
+// here until it's genuinely implemented, per SYSTEM-REFERENCE.md Section
+// 2.5 / Section 11 Tier 1.
 const ASSIGNEE_STRATEGIES = [
   { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
   { label: 'ROLE', value: 'ROLE' },
-  { label: 'ORG_UNIT_HEAD', value: 'ORG_UNIT_HEAD' },
   { label: 'SELF', value: 'SELF' },
   { label: 'COMMITTEE', value: 'COMMITTEE' },
   { label: 'ROUND_ROBIN', value: 'ROUND_ROBIN' },
