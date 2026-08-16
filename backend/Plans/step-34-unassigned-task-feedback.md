@@ -454,6 +454,6 @@ boundaries as Section 5 — not inferred after the fact.
 - [x] Full backend jest suite passing (674/674)
 - [x] Tenant isolation gate passing, count matches new Prisma queries added (23/23 — 22 pre-existing + 1 new for `listUnassigned()`)
 - [x] Frontend `ng test` passing (48/48)
-- [ ] Live manual pass: trigger a transition resulting in an unassigned task, confirm the warning renders in the UI
-- [ ] Live manual pass: open the Unassigned Tasks view, reassign a task, confirm it disappears from the list and the assignee is notified
+- [x] Live manual pass: trigger a transition resulting in an unassigned task, confirm the warning renders in the UI
+- [x] Live manual pass: open the Unassigned Tasks view, reassign a task, confirm it disappears from the list and the assignee is notified
 - [ ] SYSTEM-REFERENCE.md updated if this PR's changes touch a section it already documents (Section 3.6's `tasks:manage` "currently inert" note, Section 3.7's `reassign()` "zero frontend callers" note — both closed by this ticket)
