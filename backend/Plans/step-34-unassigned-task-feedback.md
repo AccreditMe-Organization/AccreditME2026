@@ -408,13 +408,13 @@ boundaries as Section 5 — not inferred after the fact.
 
 ### Commit 4 — `GET /tasks/unassigned` + `tasks:manage`
 
-- [ ] `TaskService.listUnassigned(organizationId)` added
-- [ ] `TaskController`'s new `GET /tasks/unassigned` route added, gated by `@Permissions(TASKS_PERMISSIONS.MANAGE)`
-- [ ] Response DTO/interface reuses `ITask` (or documents why a new shape is needed)
-- [ ] Test: `listUnassigned()` returns only `status: 'UNASSIGNED'` tasks
-- [ ] Test: `listUnassigned()` returns tasks tenant-wide, not scoped to the calling user's own assignments
-- [ ] MANDATORY tenant isolation test: `listUnassigned()` does not return another tenant's unassigned tasks
-- [ ] Controller test: route delegates to `TaskService.listUnassigned()` with the correct `organizationId`
+- [x] `TaskService.listUnassigned(organizationId)` added
+- [x] `TaskController`'s new `GET /tasks/unassigned` route added, gated by `@Permissions(TASKS_PERMISSIONS.MANAGE)`
+- [x] Response DTO/interface reuses `ITask` (or documents why a new shape is needed)
+- [x] Test: `listUnassigned()` returns only `status: 'UNASSIGNED'` tasks
+- [x] Test: `listUnassigned()` returns tasks tenant-wide, not scoped to the calling user's own assignments
+- [x] MANDATORY tenant isolation test: `listUnassigned()` does not return another tenant's unassigned tasks
+- [x] Controller test: route delegates to `TaskService.listUnassigned()` with the correct `organizationId`
 
 ### Commit 5 — Frontend actor-feedback rendering
 
