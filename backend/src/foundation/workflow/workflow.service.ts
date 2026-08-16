@@ -952,6 +952,48 @@ export class WorkflowService {
     return blocking;
   }
 
+  // Returns every outgoing ROLE_BASED/SPECIFIC_USER transition from `stage`
+  // that has become permanently unreachable — a structurally different check
+  // from resolveUnassignedBlockingTransitions() above, not a generalization
+  // of it (SYSTEM-REFERENCE.md Section 2.13 / Section 11 Tier 1): ROLE_BASED
+  // gating (transition.triggerRoleId) and SPECIFIC_USER gating
+  // (transition.triggerUserId) are properties of the TRANSITION itself,
+  // independent of the stage's assigneeStrategy/pool entirely — a stage can
+  // use any assigneeStrategy at all and still have an outgoing transition
+  // gated this way. ROLE_BASED transitions without a triggerRoleId (gated
+  // only by requiredPermission, the common case in this codebase's seed
+  // data) and SPECIFIC_USER transitions without a triggerUserId are outside
+  // this check's scope — requiredPermission-only reachability (does ANY
+  // active user hold a role granting this permission, across the whole
+  // tenant) is a broader, more expensive question not covered here.
+  async resolveUnreachableTriggerConditionTransitions(
+    stage: PrismaWorkflowStage,
+    organizationId: string,
+  ): Promise<PrismaWorkflowTransition[]> {
+    const outgoingTransitions = await this.prisma.workflowTransition.findMany({
+      where: { fromStageId: stage.id, triggerCondition: { in: ['ROLE_BASED', 'SPECIFIC_USER'] } },
+    });
+    if (outgoingTransitions.length === 0) return [];
+
+    const blocking: PrismaWorkflowTransition[] = [];
+
+    for (const transition of outgoingTransitions) {
+      if (transition.triggerCondition === 'ROLE_BASED' && transition.triggerRoleId) {
+        const holderCount = await this.prisma.userRole.count({
+          where: { roleId: transition.triggerRoleId, user: { organizationId, status: 'ACTIVE' } },
+        });
+        if (holderCount === 0) blocking.push(transition);
+      } else if (transition.triggerCondition === 'SPECIFIC_USER' && transition.triggerUserId) {
+        const user = await this.prisma.user.findFirst({
+          where: { id: transition.triggerUserId, organizationId, status: 'ACTIVE' },
+        });
+        if (!user) blocking.push(transition);
+      }
+    }
+
+    return blocking;
+  }
+
   // Reuses notifyTenantAdminsOfCoverageGap()'s exact query shape above
   // (Role.findFirst TENANT_ADMIN → UserRole.findMany → one
   // NotificationService.create() per admin) rather than a new mechanism.
@@ -987,7 +1029,11 @@ export class WorkflowService {
         {
           userId: userRole.userId,
           titleEn: 'Workflow stage unreachable — no eligible assignee',
-          bodyEn: `In "${stage.nameEn}" for ${subjectLabel}, nobody in the resolved assignee pool can trigger: ${transitionLabels}. Assign someone eligible or update the pool to unblock this stage.`,
+          // Generic enough to cover both resolution paths that feed
+          // `blockingTransitions` (empty/unqualified ASSIGNEE_POOL, or an
+          // unheld triggerRoleId / deactivated triggerUserId) without
+          // claiming a specific cause the message can't actually verify.
+          bodyEn: `In "${stage.nameEn}" for ${subjectLabel}, nobody can currently trigger: ${transitionLabels}. Assign someone eligible or update the transition's trigger configuration to unblock this stage.`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
@@ -1008,7 +1054,9 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<void> {
-    const blocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
+    const poolBlocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
+    const triggerBlocking = await this.resolveUnreachableTriggerConditionTransitions(stage, organizationId);
+    const blocking = [...poolBlocking, ...triggerBlocking];
     if (blocking.length === 0) return;
 
     await this.prisma.workflowInstanceStage.update({
