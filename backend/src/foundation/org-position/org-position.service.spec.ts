@@ -113,7 +113,12 @@ describe('OrgPositionService', () => {
       );
     });
 
-    it('should NOT return positions from another tenant', async () => {
+    // Renamed from "should NOT return positions from another tenant"
+    // (ACC-33 item 1) — the CI tenant-isolation gate filters on the literal
+    // string "should NOT return records belonging to a different tenant";
+    // the near-miss wording meant this otherwise-correct test was silently
+    // excluded from that gate.
+    it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.orgPosition.findMany.mockImplementation(({ where }) =>
         Promise.resolve(
           [BASE_POSITION, { ...BASE_POSITION, id: 'position-2', organizationId: ORG_B }].filter(
@@ -144,7 +149,8 @@ describe('OrgPositionService', () => {
       await expect(service.getPositionById('missing', ORG_A)).rejects.toThrow(NotFoundException);
     });
 
-    it('should NOT return a position belonging to a different tenant', async () => {
+    // Same near-miss title fix as listPositions() above (ACC-33 item 1).
+    it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.orgPosition.findFirst.mockImplementation(({ where }) =>
         Promise.resolve(where.organizationId === ORG_A ? BASE_POSITION : null),
       );

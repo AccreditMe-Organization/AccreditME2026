@@ -44,7 +44,8 @@ export class TaskController {
       | 'STANDARD'
       | 'KPI'
       | 'GAP'
-      | 'QUALITY_IMPROVEMENT_PLAN',
+      | 'QUALITY_IMPROVEMENT_PLAN'
+      | 'COMMITTEE',
     @Query('sourceId') sourceId: string,
   ): Promise<ITask[]> {
     return this.taskService.getForSource(sourceType, sourceId, tenantId);

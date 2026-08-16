@@ -164,6 +164,7 @@ enum TaskSourceType {
   KPI
   GAP
   QUALITY_IMPROVEMENT_PLAN
+  COMMITTEE
 }
 
 enum TaskEvidenceType {

@@ -40,6 +40,9 @@ const mockPrisma = {
     update: jest.fn(),
     count: jest.fn(),
   },
+  user: {
+    count: jest.fn(),
+  },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -168,6 +171,7 @@ describe('OrganizationService', () => {
     it('deactivates a unit that has no active blockers', async () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT);
       mockPrisma.orgUnit.count.mockResolvedValue(0); // no active children
+      mockPrisma.user.count.mockResolvedValue(0); // no active users
       mockPrisma.orgUnit.update.mockResolvedValue({ ...BASE_UNIT, isActive: false });
 
       const result = await service.deactivate('unit-1', ORG_A, 'actor-1');
@@ -175,6 +179,29 @@ describe('OrganizationService', () => {
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'UPDATE', objectType: 'OrgUnit' }),
       );
+    });
+
+    it('throws ConflictException with a structured blocker list when active users are assigned to the unit', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT);
+      mockPrisma.orgUnit.count.mockResolvedValue(0); // no active children
+      mockPrisma.user.count.mockResolvedValue(2); // 2 active users
+
+      try {
+        await service.deactivate('unit-1', ORG_A, 'actor-1');
+        fail('expected ConflictException to be thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConflictException);
+        const body = (err as ConflictException).getResponse() as {
+          message: string;
+          blockers: string[];
+        };
+        expect(body.blockers).toHaveLength(1);
+        expect(body.blockers[0]).toMatch(/2 active user\(s\)/);
+      }
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { primaryOrgUnitId: 'unit-1', organizationId: ORG_A, status: 'ACTIVE' } }),
+      );
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
     });
 
     it('returns idempotently when unit is already inactive', async () => {
@@ -187,6 +214,7 @@ describe('OrganizationService', () => {
     it('throws ConflictException with a structured blocker list when active children exist', async () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT);
       mockPrisma.orgUnit.count.mockResolvedValue(3); // 3 active children
+      mockPrisma.user.count.mockResolvedValue(0); // no active users
 
       try {
         await service.deactivate('unit-1', ORG_A, 'actor-1');

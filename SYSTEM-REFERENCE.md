@@ -2230,47 +2230,59 @@ Purpose section, written directly in response to the ACC-28 incident.
 
 ### Tier 1 — Urgent, cheap, worth acting on before/alongside finishing this document
 
-- **CI tenant-isolation gate has a real blind spot** (Section 8.4) —
+- **CLOSED (ACC-33)** — **CI tenant-isolation gate has a real blind spot** (Section 8.4) —
   `task.service.spec.ts` and `org-position.service.spec.ts` lack a test
   named exactly `"should NOT return records belonging to a different
   tenant"`, despite the CI job existing specifically to catch this.
   `--passWithNoTests` means a module with zero matching tests still
-  passes green — silent, not loud, non-coverage. **Partially closed**:
-  `workflow.service.spec.ts` gained one as an incidental side effect of
-  ACC-28's `notifyTenantAdminsOfUnassignedStage()` tests — not a
-  deliberate fix of this Tier 1 item, so `task`/`org-position` remain
-  open.
-- **Role/permission changes do not revoke an existing session**
+  passes green — silent, not loud, non-coverage. Both files turned out
+  to already have genuinely correct, properly branching-mock isolation
+  tests — just titled one word off (`"...tasks belonging to..."`,
+  `"...positions from..."`) and so silently excluded from the gate.
+  Renamed all 4 to the exact matching string rather than writing new
+  tests, since the existing logic was already sound.
+- **CLOSED (ACC-33)** — **Role/permission changes do not revoke an existing session**
   (Section 1.2 correction) — only `UserService.deactivate()` calls
   `invalidateUserSessions()`. A user stripped of a role (e.g.
   `TENANT_ADMIN`, `committees:approve`) keeps full old access on their
   existing JWT for up to 15 minutes. `tenant.guard.ts`'s own header
   comment claims this is covered; it isn't, confirmed via grep showing
   zero `tokenVersion`/`invalidateUserSessions` references anywhere in
-  `role.service.ts`.
-- **`CREATE_TASK` → `COMMITTEE` `TaskSourceType` mapping gap fires
+  `role.service.ts`. `tenant.guard.ts`'s comment corrected to state the
+  real behavior — documentation only, no behavior change.
+- **CLOSED (ACC-33)** — **`CREATE_TASK` → `COMMITTEE` `TaskSourceType` mapping gap fires
   silently today, not theoretically** (Section 2.9) — the seeded
   `formation → terms_review` transition configures `CREATE_TASK` as its
   only non-audit action; `mapObjectTypeToTaskSourceType()` returns
   `null` for `COMMITTEE`, so task creation is skipped every time that
-  transition fires, with nothing else to compensate.
-- **`OrgUnit.deactivate()`'s Users blocker check is stale, not merely
+  transition fires, with nothing else to compensate. `COMMITTEE` added
+  to `TaskSourceType` (migration), mapping wired, live-verified against
+  the demo tenant. Two more hardcoded source-type lists found stale the
+  same way while fixing this (`CreateTaskDto.TASK_SOURCE_TYPES`,
+  `TaskController.getForSource()`'s query-param union type) — fixed too.
+- **CLOSED (ACC-33)** — **`OrgUnit.deactivate()`'s Users blocker check is stale, not merely
   deferred** (Section 7.2) — its own TODO cites "Step 9 — Users" as the
   blocker; Users shipped at ACC-12. Deactivating a unit with active
-  users assigned to it succeeds today with no warning.
-- **CLAUDE.md's "Prisma middleware injects organizationId
+  users assigned to it succeeds today with no warning. Wired against
+  `User.primaryOrgUnitId` (the TODO's own stale draft used a
+  nonexistent field name), live-verified against the demo tenant.
+- **CLOSED (ACC-33)** — **CLAUDE.md's "Prisma middleware injects organizationId
   automatically" is false** (Section 8.1) — labeled a "Non-Negotiable"
   rule; no such mechanism exists anywhere in `prisma.service.ts`. Every
   tenant-scoping guarantee in this codebase is manual, per-service-method
   developer discipline, backed only by the Tier 1 CI gate above (itself
-  confirmed to have real blind spots).
-- **`ORG_UNIT_HEAD` assignee resolution throws an unconditional
+  confirmed to have real blind spots). CLAUDE.md corrected to describe
+  the real mechanism.
+- **CLOSED (ACC-33)** — **`ORG_UNIT_HEAD` assignee resolution throws an unconditional
   `Error`, not a graceful skip** (Section 2.5) — nothing in the
   frontend's unfiltered strategy dropdown prevents a tenant admin from
   selecting it; currently unexercised by any seed data (which is the
   only reason this is Tier 1-adjacent rather than a live incident), but
   the first tenant to configure it will crash that transition outright.
-- **Unassigned-transition detection (Section 2.13) covers `ASSIGNEE_POOL`
+  `resolveAssigneeRaw()` now resolves to `[]` instead of throwing,
+  matching every other case in the same switch; removed from the
+  frontend's assignee-strategy dropdown until genuinely implemented.
+- **CLOSED (ACC-33)** — **Unassigned-transition detection (Section 2.13) covers `ASSIGNEE_POOL`
   only — `ROLE_BASED`/`SPECIFIC_USER` have the same underlying risk,
   undetected** (ACC-28, deliberately scoped out — see the plan's
   Pending Discussion #1). `ROLE_BASED` gating (nobody in the tenant
@@ -2282,16 +2294,22 @@ Purpose section, written directly in response to the ACC-28 incident.
   equivalent is "does anyone hold this role," independent of the
   stage's `assigneeStrategy`/pool entirely — not a generalization of
   `resolveUnassignedBlockingTransitions()`), a real scope expansion
-  rather than a cheap add-on. Flagged here specifically so a future
-  ticket picking this up doesn't have to re-derive that ACC-28 already
-  considered and consciously excluded it.
+  rather than a cheap add-on. `resolveUnreachableTriggerConditionTransitions()`
+  added as a genuinely separate resolver, combined with the existing
+  one via array concatenation at both call sites (entry-time check,
+  `SlaMonitorProcessor`'s periodic sweep) — verified as a real union
+  (not one masking the other) with a dedicated two-transition test, and
+  live-verified end-to-end against the demo tenant.
 
 ### Tier 2 — Real, confirmed gaps, not urgent, worth bundling into follow-up tickets
 
-- `submitApproval()` has zero authorization check beyond authentication
+- **CLOSED (ACC-33)** — `submitApproval()` has zero authorization check beyond authentication
   (Section 2.8) — confirmed currently unreachable via any UI (Section
   2.12), so a backend-only risk today, not a live one through this
-  app's own screens.
+  app's own screens. Now reuses `resolveApproverPool()` — the same pool
+  `isApprovalThresholdMet()` already trusts for this exact stage —
+  rejecting an actor who isn't in a resolved COMMITTEE/ROLE pool,
+  mirroring `triggerTransition()`'s existing `ASSIGNEE_POOL` pattern.
 - Lookup `updateCategory()`/`deactivateCategory()` — the exact
   endpoints ACC-17 hardened with `PlatformGuard` — have zero UI
   anywhere, not even in the Super Admin Portal (Section 6.6).

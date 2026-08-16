@@ -32,8 +32,9 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     private readonly orgPositionService: OrgPositionService,
     // Same module (WorkflowModule provides both) — no forwardRef needed.
     // ACC-28 Section 2.5.1: reuses WorkflowService's own
-    // resolveUnassignedBlockingTransitions()/notifyTenantAdminsOfUnassignedStage()
-    // rather than duplicating that resolution logic here.
+    // resolveUnassignedBlockingTransitions()/resolveUnreachableTriggerConditionTransitions()/
+    // notifyTenantAdminsOfUnassignedStage() rather than duplicating that
+    // resolution logic here.
     private readonly workflowService: WorkflowService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
@@ -112,11 +113,16 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
 
     for (const instanceStage of openStages) {
       const organizationId = instanceStage.workflowInstance.organizationId;
-      const blocking = await this.workflowService.resolveUnassignedBlockingTransitions(
+      const poolBlocking = await this.workflowService.resolveUnassignedBlockingTransitions(
         instanceStage.stage,
         instanceStage.workflowInstance,
         organizationId,
       );
+      const triggerBlocking = await this.workflowService.resolveUnreachableTriggerConditionTransitions(
+        instanceStage.stage,
+        organizationId,
+      );
+      const blocking = [...poolBlocking, ...triggerBlocking];
 
       // wasUnassigned read from the row as fetched at the top of this sweep
       // pass, before anything here touches it — the precise condition that

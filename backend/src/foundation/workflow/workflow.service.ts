@@ -328,6 +328,23 @@ export class WorkflowService {
       );
     }
 
+    const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
+    if (!stage) throw new NotFoundException('Workflow stage not found');
+
+    // Mirrors triggerTransition()'s ASSIGNEE_POOL check (pool.includes(actorId))
+    // — reuses resolveApproverPool(), the same pool-resolution isApprovalThresholdMet()
+    // already trusts for this exact stage, rather than inventing a new
+    // authorization primitive. Only enforced when the pool resolves to
+    // something concrete (COMMITTEE/ROLE strategies, the only two
+    // resolveApproverPool() understands) — an unresolvable strategy on a
+    // multi-approver stage is a pre-existing, separately-tracked config-error
+    // case (see resolveApproverPool()'s own comment), not one this check
+    // newly blocks.
+    const approverPool = await this.resolveApproverPool(stage, organizationId);
+    if (approverPool.length > 0 && !approverPool.includes(actorId)) {
+      throw new ForbiddenException('You are not an eligible approver for this stage');
+    }
+
     const approval = await this.prisma.workflowApproval.upsert({
       where: {
         workflowInstanceStageId_approverId: { workflowInstanceStageId: instanceStageId, approverId: actorId },
@@ -351,10 +368,7 @@ export class WorkflowService {
       after: { decision: approval.decision },
     });
 
-    const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
-    if (stage) {
-      await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto);
-    }
+    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto);
 
     return this.mapApproval(approval);
   }
@@ -582,17 +596,15 @@ export class WorkflowService {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) return 'Skipped — target stage not found';
 
-    // WorkflowObjectType (8 values, includes DOCUMENT_REQUEST/CHANGE_REQUEST/
-    // COMMITTEE) and TaskSourceType (CLAUDE.md's closed 10-value list) don't
-    // fully overlap — discovered when this method was first migrated to the
-    // redesigned Task schema. COMMITTEE has no valid TaskSourceType mapping;
-    // its seeded formation→terms_review transition DOES fire CREATE_TASK
-    // (confirmed in workflow.seed.ts), so this is a real gap, not
-    // hypothetical — flagged for Step 10 (Committees) to resolve properly,
-    // likely by adding COMMITTEE to TaskSourceType when that module is built.
+    // Every current WorkflowObjectType now has a TaskSourceType mapping
+    // (see mapObjectTypeToTaskSourceType below) — the null-fallback here
+    // only matters for a future WorkflowObjectType addition (e.g.
+    // ACCREDITATION_ROUND, GAP — see CLAUDE.md's Additions Schedule) that
+    // hasn't been wired into the mapping yet, skipped gracefully rather
+    // than writing an invalid enum value to the database.
     const sourceType = this.mapObjectTypeToTaskSourceType(instance.objectType);
     if (!sourceType) {
-      return `Skipped — no TaskSourceType mapping for ${instance.objectType} (see Step 10)`;
+      return `Skipped — no TaskSourceType mapping for ${instance.objectType}`;
     }
 
     // Full resolved assigneeIds array passed through — fixes the original
@@ -620,10 +632,10 @@ export class WorkflowService {
   }
 
   // WorkflowObjectType → TaskSourceType. DOCUMENT_REQUEST/CHANGE_REQUEST map
-  // to DOCUMENT (both are document-lifecycle processes). COMMITTEE has no
-  // valid mapping under the current TaskSourceType list — returns null,
-  // meaning callers must skip task creation gracefully rather than write an
-  // invalid enum value to the database.
+  // to DOCUMENT (both are document-lifecycle processes). The default branch
+  // exists for a future WorkflowObjectType addition landing ahead of its own
+  // TaskSourceType mapping — callers must skip task creation gracefully
+  // rather than write an invalid enum value to the database.
   private mapObjectTypeToTaskSourceType(objectType: WorkflowObjectType): TaskSourceType | null {
     switch (objectType) {
       case 'DOCUMENT':
@@ -639,7 +651,7 @@ export class WorkflowService {
       case 'MEETING':
         return 'MEETING';
       case 'COMMITTEE':
-        return null;
+        return 'COMMITTEE';
       default:
         return null;
     }
@@ -770,9 +782,12 @@ export class WorkflowService {
         // calling functional module to supply an orgUnitId, and no module
         // calls startInstance()/triggerTransition() yet. Documented
         // limitation, not an oversight — see Step 6 plan, Business Rules.
-        throw new Error(
-          'ORG_UNIT_HEAD assignee resolution requires an orgUnitId from the calling module — not yet supported',
-        );
+        // Degrades gracefully to an empty pool (matching every other case in
+        // this switch, per this method's own "always returns an array" doc
+        // comment above) rather than throwing — an unconditional throw here
+        // would crash the entire transition for a tenant that configures
+        // this strategy, not just leave the stage unassigned.
+        return [];
 
       case 'SELF': {
         const firstStage = await this.prisma.workflowInstanceStage.findFirst({
@@ -937,6 +952,48 @@ export class WorkflowService {
     return blocking;
   }
 
+  // Returns every outgoing ROLE_BASED/SPECIFIC_USER transition from `stage`
+  // that has become permanently unreachable — a structurally different check
+  // from resolveUnassignedBlockingTransitions() above, not a generalization
+  // of it (SYSTEM-REFERENCE.md Section 2.13 / Section 11 Tier 1): ROLE_BASED
+  // gating (transition.triggerRoleId) and SPECIFIC_USER gating
+  // (transition.triggerUserId) are properties of the TRANSITION itself,
+  // independent of the stage's assigneeStrategy/pool entirely — a stage can
+  // use any assigneeStrategy at all and still have an outgoing transition
+  // gated this way. ROLE_BASED transitions without a triggerRoleId (gated
+  // only by requiredPermission, the common case in this codebase's seed
+  // data) and SPECIFIC_USER transitions without a triggerUserId are outside
+  // this check's scope — requiredPermission-only reachability (does ANY
+  // active user hold a role granting this permission, across the whole
+  // tenant) is a broader, more expensive question not covered here.
+  async resolveUnreachableTriggerConditionTransitions(
+    stage: PrismaWorkflowStage,
+    organizationId: string,
+  ): Promise<PrismaWorkflowTransition[]> {
+    const outgoingTransitions = await this.prisma.workflowTransition.findMany({
+      where: { fromStageId: stage.id, triggerCondition: { in: ['ROLE_BASED', 'SPECIFIC_USER'] } },
+    });
+    if (outgoingTransitions.length === 0) return [];
+
+    const blocking: PrismaWorkflowTransition[] = [];
+
+    for (const transition of outgoingTransitions) {
+      if (transition.triggerCondition === 'ROLE_BASED' && transition.triggerRoleId) {
+        const holderCount = await this.prisma.userRole.count({
+          where: { roleId: transition.triggerRoleId, user: { organizationId, status: 'ACTIVE' } },
+        });
+        if (holderCount === 0) blocking.push(transition);
+      } else if (transition.triggerCondition === 'SPECIFIC_USER' && transition.triggerUserId) {
+        const user = await this.prisma.user.findFirst({
+          where: { id: transition.triggerUserId, organizationId, status: 'ACTIVE' },
+        });
+        if (!user) blocking.push(transition);
+      }
+    }
+
+    return blocking;
+  }
+
   // Reuses notifyTenantAdminsOfCoverageGap()'s exact query shape above
   // (Role.findFirst TENANT_ADMIN → UserRole.findMany → one
   // NotificationService.create() per admin) rather than a new mechanism.
@@ -972,7 +1029,11 @@ export class WorkflowService {
         {
           userId: userRole.userId,
           titleEn: 'Workflow stage unreachable — no eligible assignee',
-          bodyEn: `In "${stage.nameEn}" for ${subjectLabel}, nobody in the resolved assignee pool can trigger: ${transitionLabels}. Assign someone eligible or update the pool to unblock this stage.`,
+          // Generic enough to cover both resolution paths that feed
+          // `blockingTransitions` (empty/unqualified ASSIGNEE_POOL, or an
+          // unheld triggerRoleId / deactivated triggerUserId) without
+          // claiming a specific cause the message can't actually verify.
+          bodyEn: `In "${stage.nameEn}" for ${subjectLabel}, nobody can currently trigger: ${transitionLabels}. Assign someone eligible or update the transition's trigger configuration to unblock this stage.`,
           objectType: instance.objectType,
           objectId: instance.objectId,
         },
@@ -993,7 +1054,9 @@ export class WorkflowService {
     instance: PrismaWorkflowInstance,
     organizationId: string,
   ): Promise<void> {
-    const blocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
+    const poolBlocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
+    const triggerBlocking = await this.resolveUnreachableTriggerConditionTransitions(stage, organizationId);
+    const blocking = [...poolBlocking, ...triggerBlocking];
     if (blocking.length === 0) return;
 
     await this.prisma.workflowInstanceStage.update({

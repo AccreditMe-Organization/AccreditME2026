@@ -8,11 +8,12 @@ import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { WorkflowService } from './workflow.service';
 
-// Scoped narrowly to ACC-28 Section 2.5.1's new sweepUnassignedStages() —
-// this file did not exist before ACC-28; the pre-existing SLA-breach and
-// Task-overdue sweep logic (process()'s other two branches) already runs in
-// production without a dedicated spec. Covering those is a separate,
-// unrelated gap, not introduced or widened by this change.
+// Originally scoped narrowly to ACC-28 Section 2.5.1's new
+// sweepUnassignedStages() — the pre-existing SLA-breach escalation
+// (fireEscalation) and Task-overdue escalation (fireTaskEscalation) logic
+// ran in production for a long time without a dedicated spec (SYSTEM-
+// REFERENCE.md Section 11, ACC-33 item 8). Now covered below, in their own
+// describe blocks.
 
 const ORG_A = 'org-a-id';
 
@@ -45,9 +46,31 @@ const BLOCKING_TRANSITION = [{ id: 't-1', labelEn: 'Approve', triggerCondition: 
 
 const mockPrisma = {
   workflowInstanceStage: { findMany: jest.fn(), update: jest.fn() },
-  task: { findMany: jest.fn() },
+  task: { findMany: jest.fn(), update: jest.fn() },
   userRole: { findMany: jest.fn() },
 };
+
+// Always-open working-hours calendar — avoids clock-dependent flakiness in
+// tests that don't care about working-hours gating specifically.
+const ALWAYS_OPEN_CALENDAR = {
+  timezone: 'UTC',
+  workingDays: [0, 1, 2, 3, 4, 5, 6],
+  workingHoursStart: '00:00',
+  workingHoursEnd: '23:59',
+};
+
+const makeBreachedInstanceStage = (overrides: Record<string, unknown> = {}) => ({
+  id: 'instance-stage-1',
+  workflowInstanceId: 'instance-1',
+  stageId: 'stage-1',
+  exitedAt: null,
+  slaDueAt: new Date('2026-01-01T00:00:00.000Z'),
+  slaBreached: false,
+  escalatedRuleIndexes: [] as number[],
+  workflowInstance: BASE_INSTANCE,
+  stage: { ...BASE_STAGE, escalationConfig: null as unknown },
+  ...overrides,
+});
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { getOrCreate: jest.fn(), listHolidays: jest.fn() };
@@ -55,6 +78,7 @@ const mockNotificationService = { create: jest.fn() };
 const mockOrgPositionService = { validateEscalationTarget: jest.fn() };
 const mockWorkflowService = {
   resolveUnassignedBlockingTransitions: jest.fn(),
+  resolveUnreachableTriggerConditionTransitions: jest.fn(),
   notifyTenantAdminsOfUnassignedStage: jest.fn(),
 };
 const mockQueue = { add: jest.fn() };
@@ -66,6 +90,12 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     jest.clearAllMocks();
     mockPrisma.task.findMany.mockResolvedValue([]); // no-op sweepOverdueTasks
     mockPrisma.workflowInstanceStage.update.mockResolvedValue({});
+    mockWorkingCalendar.getOrCreate.mockResolvedValue(ALWAYS_OPEN_CALENDAR);
+    mockWorkingCalendar.listHolidays.mockResolvedValue([]);
+    // ACC-33 item 9 — default: no ROLE_BASED/SPECIFIC_USER blocking, so
+    // pre-existing tests exercise only the ASSIGNEE_POOL side unchanged.
+    // Tests specifically exercising this new resolver override per-case.
+    mockWorkflowService.resolveUnreachableTriggerConditionTransitions.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -140,5 +170,278 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
     expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
     expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).not.toHaveBeenCalled();
+  });
+
+  // ACC-33 item 9 — the periodic sweep must combine BOTH resolvers, not just
+  // the pre-existing ASSIGNEE_POOL one, so drift in a ROLE_BASED/
+  // SPECIFIC_USER trigger condition mid-review is caught the same way.
+  it('flags a stage when only the trigger-condition resolver (ROLE_BASED/SPECIFIC_USER) reports blocking, with an otherwise-resolvable pool', async () => {
+    const stage = makeOpenInstanceStage({ isUnassigned: false });
+    const triggerBlockingTransition = [{ id: 't-role-based', labelEn: 'Approve Committee' }];
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]); // pool is fine
+    mockWorkflowService.resolveUnreachableTriggerConditionTransitions.mockResolvedValue(
+      triggerBlockingTransition,
+    );
+
+    await runProcess();
+
+    expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+      where: { id: 'instance-stage-1' },
+      data: { isUnassigned: true, unassignedAt: expect.any(Date) },
+    });
+    expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).toHaveBeenCalledWith(
+      ORG_A,
+      BASE_INSTANCE,
+      BASE_STAGE,
+      triggerBlockingTransition,
+    );
+  });
+
+  // ── SLA breach escalation (ACC-33 item 8) — pre-existing, previously ────────
+  // untested logic (fireEscalation, via process()'s breachedStages branch)
+
+  describe('SLA breach escalation', () => {
+    const runWithBreachedStage = (instanceStage: ReturnType<typeof makeBreachedInstanceStage>) => {
+      mockPrisma.workflowInstanceStage.findMany
+        .mockResolvedValueOnce([instanceStage]) // breachedStages (top of process())
+        .mockResolvedValueOnce([]); // openStages (sweepUnassignedStages) — no-op here
+      return runProcess();
+    };
+
+    it('marks the stage slaBreached with no escalation when the stage has no escalationConfig', async () => {
+      const instanceStage = makeBreachedInstanceStage(); // escalationConfig: null
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'instance-stage-1' },
+        data: { slaBreached: true },
+      });
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('fires escalation to notifyUserId once its afterHours threshold has elapsed, during working hours', async () => {
+      const instanceStage = makeBreachedInstanceStage({
+        slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5h ago
+        stage: {
+          ...BASE_STAGE,
+          escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }],
+        },
+      });
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-escalate-1', titleEn: 'SLA breach escalation' }),
+        ORG_A,
+      );
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: ORG_A,
+          objectType: 'WorkflowInstanceStage',
+          objectId: 'instance-stage-1',
+          metadata: { escalationRuleIndex: 0, notifiedUserCount: 1 },
+        }),
+      );
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'instance-stage-1' },
+        data: { slaBreached: true, escalatedRuleIndexes: [0] },
+      });
+    });
+
+    it('notifies every active holder of notifyRoleId, deduplicated with notifyUserId via the Set', async () => {
+      const instanceStage = makeBreachedInstanceStage({
+        slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        stage: {
+          ...BASE_STAGE,
+          escalationConfig: [{ afterHours: 4, notifyUserId: 'user-a', notifyRoleId: 'role-qm' }],
+        },
+      });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-a' }, { userId: 'user-b' }]);
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(mockPrisma.userRole.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { roleId: 'role-qm', user: { organizationId: ORG_A, status: 'ACTIVE' } },
+        }),
+      );
+      // user-a appears in both notifyUserId and the role holders — the Set
+      // in fireEscalation() must dedupe it to a single notification.
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
+      const notifiedUserIds = mockNotificationService.create.mock.calls.map(
+        ([arg]: [{ userId: string }]) => arg.userId,
+      );
+      expect(new Set(notifiedUserIds)).toEqual(new Set(['user-a', 'user-b']));
+    });
+
+    it('does not escalate when the rule\'s afterHours threshold has not yet elapsed, but still marks slaBreached', async () => {
+      const instanceStage = makeBreachedInstanceStage({
+        slaDueAt: new Date(Date.now() - 1 * 60 * 60 * 1000), // only 1h ago
+        stage: {
+          ...BASE_STAGE,
+          escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }],
+        },
+      });
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'instance-stage-1' },
+        data: { slaBreached: true },
+      });
+    });
+
+    it('does not re-escalate a rule index already present in escalatedRuleIndexes (no duplicate notification)', async () => {
+      const instanceStage = makeBreachedInstanceStage({
+        slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        escalatedRuleIndexes: [0], // already escalated
+        stage: {
+          ...BASE_STAGE,
+          escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }],
+        },
+      });
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('does not escalate outside working hours, but still marks slaBreached', async () => {
+      mockWorkingCalendar.getOrCreate.mockResolvedValue({ ...ALWAYS_OPEN_CALENDAR, workingDays: [] });
+      const instanceStage = makeBreachedInstanceStage({
+        slaDueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        stage: {
+          ...BASE_STAGE,
+          escalationConfig: [{ afterHours: 4, notifyUserId: 'user-escalate-1' }],
+        },
+      });
+
+      await runWithBreachedStage(instanceStage);
+
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'instance-stage-1' },
+        data: { slaBreached: true },
+      });
+    });
+  });
+
+  // ── Task overdue escalation (ACC-33 item 8) — pre-existing, previously ──────
+  // untested logic (fireTaskEscalation, via process()'s sweepOverdueTasks())
+
+  describe('Task overdue escalation', () => {
+    const BASE_OVERDUE_TASK = {
+      id: 'task-1',
+      organizationId: ORG_A,
+      dueAt: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5h overdue
+      escalationUserId: null as string | null,
+      escalationAfterHours: null as number | null,
+      escalatedAt: null as Date | null,
+      assignees: [] as { userId: string }[],
+    };
+
+    const runWithOverdueTask = (task: typeof BASE_OVERDUE_TASK) => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]); // no-op both branches
+      mockPrisma.task.findMany.mockResolvedValueOnce([task]);
+      return runProcess();
+    };
+
+    it('marks an overdue task OVERDUE with no escalation attempt when no escalationUserId is set', async () => {
+      await runWithOverdueTask(BASE_OVERDUE_TASK);
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { status: 'OVERDUE', slaBreachedAt: expect.any(Date) },
+      });
+      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('escalates to a valid escalationUserId once escalationAfterHours has elapsed, during working hours', async () => {
+      const task = {
+        ...BASE_OVERDUE_TASK,
+        escalationUserId: 'escalation-target',
+        escalationAfterHours: 4,
+        assignees: [{ userId: 'assignee-1' }],
+      };
+      mockOrgPositionService.validateEscalationTarget.mockResolvedValue(undefined);
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.validateEscalationTarget).toHaveBeenCalledWith(
+        ['assignee-1'],
+        'escalation-target',
+        ORG_A,
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'escalation-target', titleEn: 'Task SLA breach escalation' }),
+        ORG_A,
+      );
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { escalatedAt: expect.any(Date) },
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: ORG_A,
+          objectType: 'Task',
+          objectId: 'task-1',
+          metadata: { escalatedTo: 'escalation-target' },
+        }),
+      );
+    });
+
+    it('skips escalation gracefully (never notifies an invalid target) when validateEscalationTarget rejects, and logs the skip', async () => {
+      const task = {
+        ...BASE_OVERDUE_TASK,
+        escalationUserId: 'deactivated-user',
+        escalationAfterHours: 4,
+        assignees: [{ userId: 'assignee-1' }],
+      };
+      mockOrgPositionService.validateEscalationTarget.mockRejectedValue(new Error('User is not active'));
+
+      await runWithOverdueTask(task);
+
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: ORG_A,
+          objectType: 'Task',
+          objectId: 'task-1',
+          metadata: expect.objectContaining({ escalationSkipped: true, reason: 'User is not active' }),
+        }),
+      );
+    });
+
+    it('does not escalate when escalationAfterHours has not yet elapsed', async () => {
+      const task = {
+        ...BASE_OVERDUE_TASK,
+        dueAt: new Date(Date.now() - 1 * 60 * 60 * 1000), // only 1h overdue
+        escalationUserId: 'escalation-target',
+        escalationAfterHours: 4,
+      };
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('does not escalate outside working hours', async () => {
+      mockWorkingCalendar.getOrCreate.mockResolvedValue({ ...ALWAYS_OPEN_CALENDAR, workingDays: [] });
+      const task = {
+        ...BASE_OVERDUE_TASK,
+        escalationUserId: 'escalation-target',
+        escalationAfterHours: 4,
+      };
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
   });
 });

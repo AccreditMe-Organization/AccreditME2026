@@ -357,7 +357,15 @@ describe('WorkingCalendarService', () => {
       expect(resultB.timezone).toBe('Europe/London');
     });
 
-    it('should NOT return records belonging to a different tenant', async () => {
+    // Renamed from "should NOT return records belonging to a different
+    // tenant" (ACC-33 item 10) — this exercises calculateDeadline()'s
+    // GCC-weekend logic for ORG_B alone, with no cross-tenant comparison at
+    // all, so it never actually proved isolation despite the title. Left
+    // as-is otherwise (tracked separately since ACC-31); a genuine
+    // cross-tenant test for calculateDeadline() is added below since none
+    // existed anywhere else in this file — every other calculateDeadline()
+    // call in this file exercises ORG_A only.
+    it('calculates a Friday deadline correctly for a Mon–Fri calendar (Org B)', async () => {
       // Friday 10:00 London — for Org B this IS a working day
       const start = DateTime.fromObject(
         { year: 2026, month: 7, day: 17, hour: 10, minute: 0 },
@@ -368,6 +376,25 @@ describe('WorkingCalendarService', () => {
       // Friday is working for Org B → deadline is Friday 12:00
       expect(local.weekday).toBe(5); // Friday in Luxon (1=Mon, 5=Fri)
       expect(local.hour).toBe(12);
+    });
+
+    // MANDATORY — tenant isolation. The SAME UTC start instant + duration
+    // produces genuinely different results per org — proof each org's own
+    // calendar (timezone, working days) drives the calculation
+    // independently, not shared or leaked state (mockPrisma.workingCalendar
+    // .findUnique's own branching-by-organizationId, set up in this file's
+    // beforeEach, is what a real Postgres query would do too).
+    it('should NOT return records belonging to a different tenant', async () => {
+      const start = DateTime.fromObject(
+        { year: 2026, month: 7, day: 17, hour: 10, minute: 0 },
+        { zone: 'utc' },
+      );
+
+      const resultB = await service.calculateDeadline(start, 2, ORG_B); // Mon–Fri — Friday is working
+      const resultA = await service.calculateDeadline(start, 2, ORG_A); // Sun–Thu — Friday is NOT working
+
+      expect(resultB.setZone('Europe/London').weekday).toBe(5); // stays Friday
+      expect(resultA.setZone('Asia/Riyadh').weekday).toBe(7); // rolls forward to Sunday
     });
 
     it('should NOT return records belonging to a different tenant', async () => {

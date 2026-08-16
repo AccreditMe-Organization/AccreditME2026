@@ -417,7 +417,7 @@ Every task MUST have sourceType and sourceId.
 No standalone tasks. See TaskSourceType enum (ACC-11 — Task Management).
 Task source types: MEETING, DOCUMENT, AUDIT, CAPA,
 INCIDENT, CORRECTIVE_ACTION, STANDARD, KPI,
-GAP, QUALITY_IMPROVEMENT_PLAN
+GAP, QUALITY_IMPROVEMENT_PLAN, COMMITTEE
 
 ### WorkflowObjectType Additions Schedule
 Already in schema (ACC-9 — Workflow Engine):
@@ -447,10 +447,19 @@ Gap is not closed until all its CAPAs are verified.
 
 ### Multi-Tenancy — Non-Negotiable
 - Every database table holding tenant data MUST have an organizationId field
-- Prisma middleware intercepts EVERY query and injects organizationId automatically
+- No Prisma middleware auto-injects organizationId — there is no such mechanism in
+  `prisma.service.ts`. Every tenant-scoping guarantee is manual, per-service-method
+  developer discipline: every query scopes by `id` AND `organizationId` together in
+  the same `where` clause (`findFirst({ where: { id, organizationId } })`), never a
+  bare `findUnique({ id })` followed by a separate check. Corrected here per
+  SYSTEM-REFERENCE.md Section 8.1 (ACC-33 item 5) — this was previously documented
+  as an automatic mechanism that does not exist; the real, weaker guarantee below
+  is what actually protects tenant isolation today.
 - NestJS TenantGuard validates JWT tenant matches requested resource on every endpoint
 - NEVER trust organizationId from the request body — always from JWT
 - Automated cross-tenant isolation tests run in CI — deployment blocked if any fail
+  (this CI gate, not a Prisma-level guarantee, is the actual backstop — see
+  SYSTEM-REFERENCE.md Section 8.4 for its own confirmed blind spots)
 - A cross-tenant data leak is a business-ending event — treat it with maximum seriousness
 
 ### NestJS Conventions
