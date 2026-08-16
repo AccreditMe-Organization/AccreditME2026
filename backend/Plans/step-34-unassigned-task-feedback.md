@@ -428,17 +428,17 @@ boundaries as Section 5 — not inferred after the fact.
 
 ### Commit 6 — Unassigned Tasks view (frontend)
 
-- [ ] `UnassignedTasksComponent` created
-- [ ] New route `/tasks/unassigned` added to `tasks.routes.ts`
-- [ ] New sidebar nav entry added, gated by `requiredPermission: 'tasks:manage'`
-- [ ] Frontend `TaskService` gains a method calling `GET /tasks/unassigned`
-- [ ] Table renders title, source type, created date per unassigned task
-- [ ] Inline reassign action per row: multi-user picker + required reason field, calling `POST /tasks/:id/reassign`
-- [ ] Empty state shown when no unassigned tasks exist
-- [ ] Loading state shown during the API call
-- [ ] Error state handled and displayed (no silent failure)
-- [ ] Component test: list renders fetched unassigned tasks
-- [ ] Component test: reassign action calls the service with the correct `ReassignTaskDto` shape and refreshes the list on success
+- [x] `UnassignedTasksComponent` created
+- [x] New route `/tasks/unassigned` added to `tasks.routes.ts`
+- [x] New sidebar nav entry added, gated by `requiredPermission: 'tasks:manage'`
+- [x] Frontend `TaskService` gains a method calling `GET /tasks/unassigned`
+- [x] Table renders title, source type, created date per unassigned task
+- [x] Inline reassign action per row: multi-user picker + required reason field, calling `POST /tasks/:id/reassign`
+- [x] Empty state shown when no unassigned tasks exist
+- [x] Loading state shown during the API call
+- [x] Error state handled and displayed (no silent failure)
+- [x] Component test: list renders fetched unassigned tasks
+- [x] Component test: reassign action calls the service with the correct `ReassignTaskDto` shape and refreshes the list on success
 
 ### Commit 7 — Translations
 
