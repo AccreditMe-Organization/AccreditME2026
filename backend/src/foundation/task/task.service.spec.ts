@@ -199,7 +199,12 @@ describe('TaskService', () => {
       );
     });
 
-    it('should NOT return tasks belonging to a different tenant', async () => {
+    // Renamed from "should NOT return tasks belonging to a different
+    // tenant" (ACC-33 item 1) — the CI tenant-isolation gate filters on the
+    // literal string "should NOT return records belonging to a different
+    // tenant"; the near-miss wording meant this otherwise-correct test was
+    // silently excluded from that gate.
+    it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.task.findMany.mockImplementation(({ where }) =>
         Promise.resolve(where.organizationId === ORG_A ? [BASE_TASK] : []),
       );
@@ -402,7 +407,8 @@ describe('TaskService', () => {
   });
 
   describe('getForSource', () => {
-    it('should NOT return tasks belonging to a different tenant', async () => {
+    // Same near-miss title fix as getMyTasks() above (ACC-33 item 1).
+    it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.task.findMany.mockImplementation(({ where }) =>
         Promise.resolve(where.organizationId === ORG_A ? [BASE_TASK] : []),
       );
