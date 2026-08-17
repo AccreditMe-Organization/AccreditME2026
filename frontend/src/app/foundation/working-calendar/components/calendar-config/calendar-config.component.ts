@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder } from '@angular/forms';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
@@ -53,6 +54,7 @@ interface SuggestionState extends AiHolidaySuggestion {
   imports: [
     ReactiveFormsModule,
     FormsModule,
+    RouterLink,
     TranslatePipe,
     ButtonModule,
     SelectModule,
@@ -60,7 +62,16 @@ interface SuggestionState extends AiHolidaySuggestion {
     DividerModule,
   ],
   template: `
-    <h2 class="text-xl font-semibold mb-6">{{ 'workingCalendar.title' | translate }}</h2>
+    <div class="flex items-center justify-between mb-6" style="max-width: 680px">
+      <h2 class="text-xl font-semibold">{{ 'workingCalendar.title' | translate }}</h2>
+      <p-button
+        [label]="'workingCalendar.holidays' | translate"
+        icon="pi pi-calendar-plus"
+        severity="secondary"
+        [outlined]="true"
+        routerLink="/working-calendar/holidays"
+      />
+    </div>
 
     @if (loadError()) {
       <p class="text-red-500 mb-4">{{ loadError() | translate }}</p>
