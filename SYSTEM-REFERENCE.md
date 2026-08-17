@@ -2224,6 +2224,30 @@ the build sequence) must use `EditDialogComponent`, not a raw
 `p-dialog` + manual `@if`. A new module reaching for the old pattern
 would be re-deriving a bug this component already closed.
 
+**Extended to `app-shell`'s own `<main>` (ACC-38)** — the CSS rule and
+`onWheel()` boundary-guard above were originally scoped only to this
+component's own scroll area, but PrimeNG's `ConnectedOverlayScrollHandler`
+(`DomHandler.getScrollableParents()`) binds close-on-scroll to *every*
+scrollable ancestor of a picker's trigger, not just a dialog's — and
+`AppShellComponent`'s `<main class="flex-1 overflow-auto p-4">` wraps
+every routed page in the app, sharing the identical precondition.
+Confirmed live: `/working-calendar`'s `<main>` is genuinely scrollable
+(853px content vs 788px viewport) with a 14-option `p-select` inside
+it that needs internal scroll. `frontend/src/app/layout/app-shell/app-shell.component.ts`
+now carries the exact same CSS rule and an `onWheel()` mirroring this
+component's own, verbatim — not a redesign. Both layers coexist safely
+when a dialog is opened on top of a page (confirmed via direct DOM
+traversal + a dispatched boundary-condition `WheelEvent`): a bubbling
+event passes through both handlers, both compute the same boundary
+condition, and a redundant `preventDefault()` call is harmless by
+construction. **Not fully proven end-to-end**: Playwright's synthetic
+`mouse.wheel()` could not reproduce genuine browser-level scroll-chaining
+reaching `<main>` either before or after this fix, so it could not
+demonstrate a before/after difference — only a direct `WheelEvent`
+dispatched straight at the list container confirmed the handler is
+wired and computes the correct boundary condition. Real hardware
+mouse/trackpad verification is still open.
+
 ### 10.6 `WorkflowTransitionActionsComponent` — the Generic Reuse Pattern
 
 `frontend/src/app/foundation/workflow/components/workflow-transition-actions/`.
