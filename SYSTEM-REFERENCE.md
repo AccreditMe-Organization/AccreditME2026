@@ -2146,27 +2146,73 @@ confirmed empirically before any production code was written.
   correctly absent on short forms — free for every consumer, current
   and future.
 - `overscroll-behavior: contain` on PrimeNG's own
-  `.p-select-list-container`, scoped via `:host ::ng-deep`. Fixes a
-  separate but adjacent bug found during this component's own
-  verification: PrimeNG's connected overlays (`p-select`, etc.) hide
-  themselves on *any* scroll of a scrollable ancestor of their trigger
-  rather than repositioning; with `appendTo` defaulting to `'self'`,
-  an open dropdown's own listbox lives inside this component's scroll
-  area, so scrolling the listbox to its own boundary let the browser's
-  native scroll-chaining bleed into the dialog's ancestor scroll and
-  close the dropdown mid-scroll — matches a known, unresolved upstream
-  issue (`primefaces/primeng#14519`). Live-verified with a genuine
-  mouse-wheel gesture, not a proxy.
+  `.p-select-list-container` **and `.p-multiselect-list-container`**
+  (ACC-36 widened the original single-selector rule after finding it
+  left every `p-multiSelect`-in-dialog screen unprotected — confirmed
+  directly against PrimeNG's source that the two components render
+  their listbox under genuinely different class names), scoped via
+  `:host ::ng-deep`. Fixes a separate but adjacent bug found during
+  this component's own verification: PrimeNG's connected overlays
+  (`p-select`, `p-multiselect`, etc.) hide themselves on *any* scroll
+  of a scrollable ancestor of their trigger rather than repositioning;
+  with `appendTo` defaulting to `'self'`, an open dropdown's own
+  listbox lives inside this component's scroll area, so scrolling the
+  listbox to its own boundary let the browser's native scroll-chaining
+  bleed into the dialog's ancestor scroll and close the dropdown
+  mid-scroll — matches a known, unresolved upstream issue
+  (`primefaces/primeng#14519`).
+  **The CSS rule alone is not fully sufficient** — ACC-36 live-measured
+  a ~2px scroll leak reaching this component's scroll area on some
+  wheel ticks even while the listbox had plenty of room left (nowhere
+  near its own boundary), enough to fire a genuine native `scroll`
+  event and trigger the close-on-scroll behavior anyway. A `(wheel)`
+  handler on `#scrollArea` (`onWheel()`) closes the remaining gap:
+  once a listbox has genuinely exhausted its own scroll room in the
+  gesture's direction, `preventDefault()` on that specific tick stops
+  the browser from doing anything with the leftover delta at all —
+  every other (non-boundary) tick is left completely untouched.
+  Root cause and fix confirmed via direct inspection of PrimeNG's
+  `Overlay` source (`bindScrollListener()` listens to the native
+  `scroll` event, not `wheel` bubbling — ruling out a `stopPropagation()`
+  approach) and Angular's compiled `(wheel)` binding (not passive by
+  default, so `preventDefault()` is never silently ignored). Live-
+  verified with genuine, repeated mouse-wheel gestures (5 separate
+  fresh gestures, not one — the leak is specifically a first-tick-of-
+  a-gesture phenomenon), not a proxy.
+- **`p-listbox`, not `p-multiselect`, is the REQUIRED pattern for any
+  NEW inline multi-select-inside-a-dialog need** (ACC-36). This is
+  structural immunity, not a style preference or an extra layer of
+  mitigation on top of the two fixes above: confirmed via direct
+  source inspection that `primeng-listbox.mjs` contains zero
+  references to `Overlay`, `ConnectedOverlayScrollHandler`,
+  `appendTo`, or any connected-overlay mechanism anywhere — `p-listbox`
+  renders inline, as an ordinary part of the page's own DOM flow, not
+  as a floating panel that can be told to hide itself on ancestor
+  scroll. There is no scroll-triggered close-on-scroll logic to defeat
+  in the first place, so the entire bug category above is structurally
+  impossible for it, not merely patched. `UnassignedTasksComponent`'s
+  Reassign dialog (originally `p-multiSelect`) was migrated to
+  `p-listbox` (`[multiple]="true" [checkbox]="true"`) for exactly this
+  reason. `p-multiselect`/`p-select` remain supported (the CSS fix
+  above still covers them) for cases where a true collapsed-by-default
+  dropdown is the right UX — `p-listbox` is always-expanded, which is
+  not appropriate everywhere — but a new multi-select *inside a
+  dialog* specifically should default to `p-listbox` unless a
+  collapsed dropdown is a real requirement.
 
-**Confirmed consumers (all 8 screens migrated, ACC-29 Phases 2–3)**:
-`workflow-stage-list` (stage edit), `lookup-value-list` (value
-add/edit — its separate override-label dialog, Section 6.6, is
+**Confirmed consumers (8 screens migrated ACC-29 Phases 2–3, one more
+added ACC-36)**: `workflow-stage-list` (stage edit), `lookup-value-list`
+(value add/edit — its separate override-label dialog, Section 6.6, is
 untouched and correctly stays a plain `p-dialog`: it binds directly to
 the parent list's own `overrideForm` object via `[(ngModel)]`, not a
 `*-form.component.ts` with its own lifecycle, so it was never subject
 to this bug), `public-holiday-list`, `role-list`, `position-list`,
 `committee-list` (add-only), `committee-detail` (both its
-committee-edit and add/edit-member dialogs), `org-unit-tree`.
+committee-edit and add/edit-member dialogs), `org-unit-tree`, and
+`unassigned-tasks` (its Reassign dialog — built ACC-34 as a standalone
+`p-dialog` bypassing this component entirely, migrated ACC-36 after
+that gap was found to be the precondition for the scroll-chaining bug
+above).
 `task-list`/`task-form` is **not** a consumer — confirmed create-only,
 no edit-via-dialog flow exists there at all, so it was never subject
 to the bug this component exists to fix and still hand-rolls its own
