@@ -34,7 +34,7 @@ import { NavigationAccessService } from '../../core/services/navigation-access.s
         <app-sidebar [collapsed]="sidebarCollapsed()" />
         <div class="flex-1 flex flex-col overflow-hidden">
           <app-breadcrumb />
-          <main class="flex-1 overflow-auto p-4">
+          <main class="flex-1 overflow-auto p-4" (wheel)="onWheel($event)">
             <router-outlet />
           </main>
         </div>
@@ -43,6 +43,27 @@ import { NavigationAccessService } from '../../core/services/navigation-access.s
 
     <p-confirmDialog />
   `,
+  // ACC-38 — the same scroll-chaining bug ACC-36 fixed for
+  // EditDialogComponent's own scroll area is not dialog-specific: this
+  // <main> is a scrollable ancestor of every routed page in the app, and
+  // PrimeNG's ConnectedOverlayScrollHandler (confirmed via source:
+  // DomHandler.getScrollableParents()) binds close-on-scroll to ANY
+  // scrollable ancestor of a p-select/p-multiselect's trigger, not just a
+  // dialog's. Same fix, same selectors, applied to a second scroll
+  // container — see EditDialogComponent for the full rationale (both
+  // components' styles/onWheel must be kept in sync if this mechanism
+  // ever changes). A dialog opened on top of a page gets BOTH layers
+  // (its own EditDialogComponent guard, plus this one) — harmless: both
+  // onWheel handlers inspect the same bubbling event and the same
+  // boundary condition, and preventDefault() is idempotent.
+  styles: [
+    `
+      :host ::ng-deep .p-select-list-container,
+      :host ::ng-deep .p-multiselect-list-container {
+        overscroll-behavior: contain;
+      }
+    `,
+  ],
 })
 export class AppShellComponent implements OnInit {
   private readonly navigationAccessService = inject(NavigationAccessService);
@@ -51,5 +72,25 @@ export class AppShellComponent implements OnInit {
 
   ngOnInit(): void {
     this.navigationAccessService.loadAccess().subscribe();
+  }
+
+  // Mirrors EditDialogComponent.onWheel() exactly — only ever calls
+  // preventDefault() once a listbox has genuinely exhausted its own
+  // scroll room in the gesture's direction; every other tick is left
+  // completely untouched.
+  onWheel(event: WheelEvent): void {
+    const target = event.target as HTMLElement | null;
+    const listContainer = target?.closest(
+      '.p-select-list-container, .p-multiselect-list-container',
+    ) as HTMLElement | null;
+    if (!listContainer) return;
+
+    const atTop = listContainer.scrollTop <= 0;
+    const atBottom =
+      listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight;
+
+    if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
+      event.preventDefault();
+    }
   }
 }
