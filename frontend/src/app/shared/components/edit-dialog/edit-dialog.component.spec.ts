@@ -116,6 +116,96 @@ describe('EditDialogComponent', () => {
     });
   });
 
+  describe('scroll-boundary wheel guard (ACC-36)', () => {
+    // overscroll-behavior: contain alone was measured live to still leak a
+    // few px of scroll to this dialog's own scroll area on some wheel
+    // ticks, closing the overlay via PrimeNG's scroll-based auto-hide.
+    // onWheel() is the targeted fix: only ever calls preventDefault() when
+    // the listbox has genuinely exhausted its own scroll room in the
+    // gesture's direction — every other tick must be left untouched.
+    function makeListContainer(
+      cls: string,
+      { scrollTop, clientHeight, scrollHeight }: { scrollTop: number; clientHeight: number; scrollHeight: number },
+    ): HTMLElement {
+      const el = document.createElement('div');
+      el.className = cls;
+      Object.defineProperty(el, 'scrollTop', { value: scrollTop, configurable: true });
+      Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+      Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+      return el;
+    }
+
+    function fireWheel(dialog: EditDialogComponent, target: HTMLElement, deltaY: number): boolean {
+      const event = new WheelEvent('wheel', { deltaY, cancelable: true });
+      Object.defineProperty(event, 'target', { value: target, configurable: true });
+      dialog.onWheel(event);
+      return event.defaultPrevented;
+    }
+
+    let dialog: EditDialogComponent;
+
+    beforeEach(() => {
+      dialog = TestBed.createComponent(EditDialogComponent).componentInstance;
+    });
+
+    it('ignores wheel events whose target is outside any listbox container', () => {
+      const outsider = document.createElement('div');
+      expect(fireWheel(dialog, outsider, 100)).toBe(false);
+    });
+
+    it('does NOT preventDefault mid-list (not yet at either boundary) — every non-boundary tick is untouched', () => {
+      const list = makeListContainer('p-multiselect-list-container', {
+        scrollTop: 120,
+        clientHeight: 200,
+        scrollHeight: 636,
+      });
+      expect(fireWheel(dialog, list, 120)).toBe(false); // scrolling down, not at bottom
+      expect(fireWheel(dialog, list, -120)).toBe(false); // scrolling up, not at top
+    });
+
+    it('preventDefaults scrolling further down once genuinely at the bottom boundary', () => {
+      const list = makeListContainer('p-multiselect-list-container', {
+        scrollTop: 436,
+        clientHeight: 200,
+        scrollHeight: 636,
+      });
+      expect(fireWheel(dialog, list, 120)).toBe(true);
+    });
+
+    it('preventDefaults scrolling further up once genuinely at the top boundary', () => {
+      const list = makeListContainer('p-select-list-container', {
+        scrollTop: 0,
+        clientHeight: 200,
+        scrollHeight: 636,
+      });
+      expect(fireWheel(dialog, list, -120)).toBe(true);
+    });
+
+    it('does NOT preventDefault scrolling down from the top boundary — only the opposite direction is blocked there', () => {
+      const list = makeListContainer('p-multiselect-list-container', {
+        scrollTop: 0,
+        clientHeight: 200,
+        scrollHeight: 636,
+      });
+      expect(fireWheel(dialog, list, 120)).toBe(false);
+    });
+
+    it('covers both p-select and p-multiselect list-container class names', () => {
+      const selectList = makeListContainer('p-select-list-container', {
+        scrollTop: 0,
+        clientHeight: 200,
+        scrollHeight: 400,
+      });
+      const multiList = makeListContainer('p-multiselect-list-container', {
+        scrollTop: 0,
+        clientHeight: 200,
+        scrollHeight: 400,
+      });
+      expect(fireWheel(dialog, selectList, -50)).toBe(true);
+      expect(fireWheel(dialog, multiList, -50)).toBe(true);
+    });
+  });
+
   describe('scroll affordance', () => {
     it('stays absent for a short form that never needs to scroll', () => {
       const fixture = TestBed.createComponent(ScrollAffordanceHostComponent);

@@ -1620,6 +1620,20 @@ Prisma Studio.
   from an internal dropdown list to the dialog's own scroll container
   incorrectly hides the open dropdown — fixed via
   `overscroll-behavior: contain` on the dropdown's own listbox.
+  **Update (ACC-36)**: that CSS rule alone was found insufficient
+  (live-measured a ~2px scroll leak reaching the dialog's ancestor on
+  some wheel ticks, closing the dropdown even nowhere near its own
+  boundary) — closed with a targeted `(wheel)` handler that only ever
+  calls `preventDefault()` once a listbox has genuinely exhausted its
+  own scroll room, leaving every other tick untouched. The CSS rule
+  itself was also widened to cover `p-multiselect`, not just
+  `p-select` (they render their listbox under different class names).
+  **`p-listbox` (not `p-multiselect`) is now the required pattern for
+  any new inline multi-select-inside-a-dialog need** — confirmed via
+  source that `p-listbox` renders inline with no connected-overlay
+  mechanism at all, so it's structurally immune to this entire bug
+  category rather than merely protected against it. Full detail:
+  SYSTEM-REFERENCE.md Section 10.5.
 - **`CommitteeMember` reactivation** (ACC-32): rejoining a departed
   committee member reuses the SAME row (reactivate-in-place, matching
   `RoleService.reactivateRole()`'s established shape) rather than

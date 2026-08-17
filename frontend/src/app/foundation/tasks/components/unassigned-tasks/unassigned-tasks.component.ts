@@ -1,15 +1,15 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
-import { DialogModule } from 'primeng/dialog';
-import { MultiSelectModule } from 'primeng/multiselect';
+import { ListboxModule } from 'primeng/listbox';
 import { InputTextModule } from 'primeng/inputtext';
 import { TaskService, ITaskDto } from '../../services/task.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 // Tenant-wide view of tasks with status: UNASSIGNED — my-tasks/task-list
@@ -27,9 +27,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TableModule,
     TagModule,
     ButtonModule,
-    DialogModule,
-    MultiSelectModule,
+    ListboxModule,
     InputTextModule,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -77,57 +77,61 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </p-table>
     </div>
 
-    <p-dialog
-      [(visible)]="reassignVisible"
+    <ng-template #reassignFormTpl>
+      <form [formGroup]="reassignForm" (ngSubmit)="onSubmitReassign()" class="flex flex-col gap-4">
+        <div class="flex flex-col gap-1">
+          <label for="newAssigneeUserIds" class="text-sm font-medium">
+            {{ 'task.newAssignees' | translate }} <span class="text-red-500">*</span>
+          </label>
+          <p-listbox
+            inputId="newAssigneeUserIds"
+            formControlName="newAssigneeUserIds"
+            [options]="users()"
+            optionLabel="name"
+            optionValue="id"
+            [multiple]="true"
+            [checkbox]="true"
+            [filter]="true"
+            filterBy="name,email"
+            [showToggleAll]="false"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="reason" class="text-sm font-medium">
+            {{ 'task.reassignReason' | translate }} <span class="text-red-500">*</span>
+          </label>
+          <input pInputText id="reason" formControlName="reason" />
+        </div>
+
+        @if (reassignError()) {
+          <p class="text-red-500 text-sm">{{ reassignError() | translate }}</p>
+        }
+
+        <div class="flex justify-end gap-2 pt-2">
+          <p-button
+            [label]="'common.cancel' | translate"
+            severity="secondary"
+            [text]="true"
+            (onClick)="reassignVisible.set(false)"
+            [disabled]="reassigning()"
+          />
+          <p-button [label]="'common.save' | translate" type="submit" [loading]="reassigning()" />
+        </div>
+      </form>
+    </ng-template>
+    <app-edit-dialog
+      [visible]="reassignVisible()"
+      (visibleChange)="reassignVisible.set($event)"
       [header]="'task.reassign' | translate"
-      [modal]="true"
-      styleClass="w-full max-w-lg"
-    >
-      @if (reassignVisible()) {
-        <form [formGroup]="reassignForm" (ngSubmit)="onSubmitReassign()" class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1">
-            <label for="newAssigneeUserIds" class="text-sm font-medium">
-              {{ 'task.newAssignees' | translate }} <span class="text-red-500">*</span>
-            </label>
-            <p-multiSelect
-              inputId="newAssigneeUserIds"
-              formControlName="newAssigneeUserIds"
-              [options]="users()"
-              optionLabel="name"
-              optionValue="id"
-              [filter]="true"
-              filterBy="name,email"
-              [placeholder]="'task.selectAssignees' | translate"
-            />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label for="reason" class="text-sm font-medium">
-              {{ 'task.reassignReason' | translate }} <span class="text-red-500">*</span>
-            </label>
-            <input pInputText id="reason" formControlName="reason" />
-          </div>
-
-          @if (reassignError()) {
-            <p class="text-red-500 text-sm">{{ reassignError() | translate }}</p>
-          }
-
-          <div class="flex justify-end gap-2 pt-2">
-            <p-button
-              [label]="'common.cancel' | translate"
-              severity="secondary"
-              [text]="true"
-              (onClick)="reassignVisible.set(false)"
-              [disabled]="reassigning()"
-            />
-            <p-button [label]="'common.save' | translate" type="submit" [loading]="reassigning()" />
-          </div>
-        </form>
-      }
-    </p-dialog>
+      [content]="reassignFormTpl"
+      width="520px"
+    />
   `,
 })
 export class UnassignedTasksComponent implements OnInit {
+  @ViewChild('reassignFormTpl', { read: TemplateRef, static: true }) reassignFormTpl!: TemplateRef<unknown>;
+
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
   private readonly userService = inject(UserService);
