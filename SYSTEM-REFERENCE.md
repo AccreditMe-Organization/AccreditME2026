@@ -2345,6 +2345,46 @@ Purpose section, written directly in response to the ACC-28 incident.
   built. A departed user's active `CommitteeMember` rows (including a
   Chairman seat, once ACC-28 ships) are left exactly as they were —
   no notification, no flag, nothing surfaces it to a Tenant Admin.
+- **AI provider selection is a confirmed 3-layer gap, not a UI-only
+  gap** — no dedicated section exists for this yet (no Auth/Storage-
+  style "AI Provider" section in 1–10 above), so documented here.
+  Verified directly against the code and the live AI Settings page
+  (`/admin-settings/ai-settings`, logged in as the demo tenant admin):
+  (1) the only UI exposed is credit allocation/usage
+  (`monthlyCredits`/`creditsRemaining`/`creditsUsed`/`overageEnabled`,
+  read from `GET /tenant`'s `ai` field, written via `PATCH
+  /tenant/ai-settings`) — no provider selector, no API key field
+  anywhere in `ai-settings.component.ts`; (2) `Organization.aiProvider`
+  (enum) is technically writable via the existing `PATCH /tenant` →
+  `UpdateTenantDto.aiProvider`, but `Organization.aiConfig` (the
+  actual credential blob `AnthropicAiProvider.resolveApiKey()` reads
+  via `decryptTenantConfig()`) has zero write path in any DTO or
+  controller anywhere in the backend — confirmed via grep; (3) even if
+  both existed, the `AI_PROVIDER` NestJS DI token is bound once,
+  platform-wide, in `tenant.module.ts` — `{ provide: AI_PROVIDER,
+  useClass: AnthropicAiProvider }` — and nothing anywhere reads
+  `org.aiProvider` at runtime to select between implementations; no
+  `AzureOpenAiProvider`/`OpenAiProvider`/`OllamaProvider` class exists
+  to select between in the first place.
+  A real pricing-model design question this surfaced has now been
+  resolved — full resolution in CLAUDE.md's "AI Providers Per Tenant"
+  section and its Open/Deferred Items entry: tenant-facing "bring your
+  own API key" was considered and explicitly rejected. A tenant admin
+  SELECTS a provider, but AccreditMe's own platform-level key (one per
+  provider) is used regardless of selection, for Tier 1/2 only — this
+  keeps the existing AI credit system (`Organization.settings.ai`,
+  `AiCreditPack`, `AiFeatureCost`) fully intact and in AccreditMe's
+  control. Tier 3 is a separate, non-credit-metered annual-license
+  model, so a Tier 3 platform admin configuring a self-hosted model
+  (e.g. Ollama) doesn't conflict with this resolution. Still correctly
+  deferred — build only when a real AI feature or the Tenant
+  Onboarding wizard actually needs it (`AIProvider` has zero real
+  consumers app-wide today) — but the design question itself is now
+  settled, so the eventual build should not default back to a generic
+  bring-your-own-key implementation. The full design also includes a
+  quality-tier selection (Standard/Premium) with a conservative
+  cross-provider pricing rule — see CLAUDE.md's "AI Providers Per
+  Tenant" section for the complete resolution, not duplicated here.
 
 ### Tier 3 — Correctly deferred, no action needed now (listed for completeness)
 

@@ -82,11 +82,11 @@ Tier 3 — On-premises / private cloud (future)
 - Containers: Docker (every service containerized from day one)
 - CI/CD: GitHub Actions
 
-### AI Providers (pluggable per tenant)
+### AI Providers (tenant selects, AccreditMe's own key serves the request — see AI Providers Per Tenant)
 - Default: Anthropic Claude API
-- Enterprise option: Azure OpenAI (customer's own Azure tenant)
+- Enterprise option: Azure OpenAI
 - Direct option: OpenAI API
-- Future on-premises: Ollama with local models
+- Tier 3 (on-premises) only: Ollama with local models
 
 ---
 
@@ -490,7 +490,12 @@ class MinioStorageProvider implements StorageProvider { ... }
 class LocalFilesystemProvider implements StorageProvider { ... }
 ```
 
-Tenant config drives which implementation is injected at runtime.
+Tenant config drives which implementation is injected at runtime — true for
+Auth and Storage. **AI is a deliberate exception**, resolved after
+investigation (full resolution under AI Providers Per Tenant below): tenant
+config selects WHICH provider serves a request, never whose credentials pay
+for it — for Tier 1/2, AccreditMe's own platform-level key is used
+regardless of tenant selection, not a tenant-supplied key.
 Tenant secrets (API keys, connection strings) are ALWAYS encrypted before DB storage.
 Decrypted only at runtime when making provider calls.
 
@@ -516,13 +521,51 @@ Local filesystem provider streams files through NestJS API (no signed URLs).
 ### AI Providers Per Tenant
 ```
 Option 1: Anthropic Claude API (default)
-Option 2: Azure OpenAI (customer's own Azure tenant endpoint)
+Option 2: Azure OpenAI
 Option 3: OpenAI API direct
-Option 4: Ollama with local models (future — on-premises)
+Option 4: Ollama with local models (Tier 3 on-premises only)
 ```
-Same interface pattern. AI model and API endpoint configurable per tenant.
-AI keys encrypted at rest. AI always assistive — output always reviewed by human.
-Every AI interaction logged: prompt, model used, response, actor, timestamp.
+Same interface pattern, with one deliberate exception to the general
+Provider Abstraction rule above. For Tier 1 (Cloud SaaS) and Tier 2
+(Dedicated Cloud Instance): a tenant admin SELECTS their preferred provider
+from the list above, but AccreditMe maintains its OWN platform-level key
+per provider — traffic is always routed through AccreditMe's key,
+regardless of tenant selection. Tenant-facing "bring your own API key" was
+considered and explicitly REJECTED, specifically to keep the AI credit
+system (`Organization.settings.ai`, `AiCreditPack`, `AiFeatureCost` — see
+AI — Universal Credit-Based Add-on below) fully intact and in AccreditMe's
+control: provider selection affects WHICH backend serves a request, never
+who pays for it or how usage is metered.
+
+Model/quality selection works the same way, one level more specific: a
+tenant admin selects a QUALITY TIER (e.g. Standard / Premium), never a
+specific model by name. AccreditMe's own engineering decides which real
+model backs each tier, per provider — this preserves the credit system's
+margin calibration, since a tenant cannot silently inflate AccreditMe's
+real cost by having a cheap-model-calibrated credit price actually execute
+against an expensive model.
+
+Pricing rule: each (feature, tier) combination gets ONE flat credit price,
+calibrated CONSERVATIVELY — set against the most expensive real per-call
+cost among whichever providers are actually offered at that tier. A tenant
+sees a predictable, flat credit cost regardless of which provider they
+picked; AccreditMe's margin is protected against the worst case, not an
+average.
+
+STANDING ENGINEERING RULE for whenever a new provider is added to the
+platform: whoever wires it up MUST select a cost-comparable model for each
+existing tier — never just that vendor's flagship model regardless of
+relative cost. When actually built, this changes `AiFeatureCost`'s data
+shape from `(feature → credit cost)` to `(feature, tier → credit cost)`.
+
+Tier 3 (On-Premises / Private Cloud) sits on a completely separate
+annual-license commercial model, outside the credit system entirely — a
+Tier 3 customer's own platform admin configuring their deployment against a
+self-hosted model (e.g. Ollama) is consistent with this design, not an
+exception to it, since Tier 3 was never intended to be credit-metered.
+AI keys (AccreditMe's own, one per provider) encrypted at rest. AI always
+assistive — output always reviewed by human. Every AI interaction logged:
+prompt, model used, response, actor, timestamp.
 
 ### Email Provider (IEmailProvider)
 Current implementation: Resend (hardcoded in NotificationEmailProcessor)
@@ -1051,7 +1094,9 @@ report-scheduler    Scheduled automated report generation and email delivery
    b. Timezone, preferred language, working calendar
    c. Auth provider selection
    d. Storage provider selection
-   e. AI provider selection + API key
+   e. AI provider selection (no API key entry — AccreditMe's own
+      platform key serves the request regardless of selection,
+      see AI Providers Per Tenant)
 3. System auto-provisions default lookups, workflows, roles, notifications
 4. 14-day free trial — no credit card required
 5. Welcome email sequence (day 1, 7, 13)
@@ -1211,6 +1256,15 @@ HEAVY (20+ credits):
   standard_comparison: 20
   mock_survey_per_standard: 50
 ```
+
+Note: LIGHT/MEDIUM/HEAVY above classifies FEATURES by complexity (how
+many credits a call costs) — unrelated to the Standard/Premium QUALITY
+TIER concept in "AI Providers Per Tenant" above, which classifies which
+MODEL serves a request. A feature's LIGHT/MEDIUM/HEAVY bucket and its
+Standard/Premium tier are independent axes — e.g. a HEAVY feature run at
+Standard quality and a LIGHT feature run at Premium quality are both
+valid, separately-priced combinations once (feature, tier) pricing is
+actually built.
 
 ### Plan Configuration Data Model
 Plans are stored in DB — never hardcoded:
@@ -1666,22 +1720,42 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
      doesn't exist; `minutesText` is currently just a free-text
      blob).
 
-- **`AIProvider` is fully built and working** (real Anthropic
-  integration, per-tenant key resolution, complete audit logging) but
-  has exactly ONE consumer anywhere in the app (a deliberate stub,
-  `LookupService.suggestValues()`) — genuinely idle, production-ready
-  infrastructure, not blocking anything. Committee's `TOR_DRAFTING` AI
-  feature has 3 of 4 inputs already available today, but its OUTPUT
-  is fully blocked — confirmed via module-designs.md's exact wording,
-  the TOR must be a real, typed `Document` row moving through the
-  actual 7-stage Document Lifecycle Workflow (Drafting → Owners
-  Review → Stakeholders Review → Final Approval → Publish Approval →
-  Published), not a placeholder table — so this is blocked on
-  Document Management's core lifecycle existing, not on a smaller
-  first slice (confirmed no such slice is documented anywhere).
-  Committee's other 2 AI features (Health Report, Decision Pattern
-  Analysis) are fully blocked on Meeting Management's decision/
-  attendance data, which doesn't exist in any form yet.
+- **AI provider selection is a confirmed 3-layer gap — no UI, no
+  `aiConfig` write path, hardcoded single-provider DI binding** (full
+  detail: SYSTEM-REFERENCE.md Section 11, Tier 2). `AIProvider` itself
+  is fully built and working (real Anthropic integration, per-tenant
+  key resolution, complete audit logging) but has zero real consumers
+  app-wide (one stub caller, `LookupService.suggestValues()`, doesn't
+  count) — genuinely idle, production-ready infrastructure, not
+  blocking anything on its own. A real pricing-model question this
+  surfaced has now been resolved: tenant-facing "bring your own API
+  key" was considered and explicitly REJECTED in favor of a different
+  design — AccreditMe maintains its OWN platform-level keys for
+  multiple AI providers (Anthropic, Azure OpenAI, OpenAI); a tenant
+  admin SELECTS their preferred provider, but traffic is routed
+  through AccreditMe's own key regardless of selection. This keeps
+  the existing AI credit system (`Organization.settings.ai`,
+  `AiCreditPack`, the full usage-metered revenue model already
+  designed) fully intact and in AccreditMe's control — selection
+  affects WHICH backend serves a request, never who pays for it or
+  how it's metered. This applies to Tier 1 (Cloud SaaS) and Tier 2
+  (Dedicated Cloud Instance) only. Tier 3 (On-Premises/Private Cloud)
+  sits on a completely separate annual-license commercial model,
+  outside the credit system entirely — a Tier 3 customer's own
+  platform admin configuring the deployment against a self-hosted
+  model (e.g. Ollama) is consistent with, not in conflict with, this
+  design, since Tier 3 was never intended to be credit-metered in the
+  first place. STILL correctly deferred: build only when a real AI
+  feature or the Tenant Onboarding wizard actually needs it — but the
+  DESIGN QUESTION itself is now resolved, so whenever this does get
+  built, it should NOT default back to a generic bring-your-own-key
+  implementation. `AiInteractionLog` should capture provider and tier
+  as explicit fields (not inferred from a model-name string) for
+  accurate cost reconciliation, once this is actually built.
+  (Committee's `TOR_DRAFTING`/Health Report/Decision Pattern Analysis
+  AI features remain separately blocked on Document Management's and
+  Meeting Management's own data existing — unrelated to this
+  provider-selection gap, unaffected by this resolution.)
 - **Two small, unrelated findings needing their own tiny tickets
   eventually**: the frontend's `suggestHolidays()` calls a backend
   route that doesn't exist (a live 404, not a stub);

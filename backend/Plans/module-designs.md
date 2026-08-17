@@ -1507,6 +1507,14 @@ Organization tracks: monthlyCredits, creditsUsed, creditsRemaining, resetDate
 Monthly BullMQ job resets credits on billing cycle.
 AiInteractionLog records creditCost per call for audit and billing.
 
+This system is the reason tenant-facing "bring your own AI API key" was
+explicitly rejected (Tier 1/2) — see CLAUDE.md's "AI Providers Per Tenant"
+section. A tenant admin selects which AI provider serves their requests,
+but always through AccreditMe's own platform-level key, so every AI call
+stays inside this credit system regardless of which provider is selected.
+Tier 3 (on-premises, annual license) sits outside this system entirely and
+isn't affected by that decision.
+
 ### Plan Data Models (built in Step 12)
 Plan, PlanModule, AiCreditPack, AiFeatureCost
 All managed by Platform Admin — never hardcoded.
