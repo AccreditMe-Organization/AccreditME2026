@@ -76,7 +76,14 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           optionLabel="name"
           optionValue="id"
           [showClear]="true"
-        />
+        >
+          <ng-template #item let-manager>
+            <div class="flex flex-col">
+              <span>{{ manager.name }}</span>
+              <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(manager.primaryOrgUnitId) }}</span>
+            </div>
+          </ng-template>
+        </p-select>
       </div>
 
       <div class="flex justify-end gap-2 pt-2">
@@ -105,7 +112,7 @@ export class InviteUserComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
-  readonly managers = signal<{ id: string; name: string }[]>([]);
+  readonly managers = signal<{ id: string; name: string; primaryOrgUnitId: string | null }[]>([]);
 
   readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(255)]],
@@ -118,9 +125,17 @@ export class InviteUserComponent implements OnInit {
   ngOnInit(): void {
     this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
-    this.userService.listUsers().subscribe({
-      next: (users) => this.managers.set(users.map((u) => ({ id: u.id, name: u.name }))),
+    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({
+      next: (users) =>
+        this.managers.set(
+          users.map((u) => ({ id: u.id, name: u.name, primaryOrgUnitId: u.primaryOrgUnitId })),
+        ),
     });
+  }
+
+  orgUnitName(orgUnitId: string | null): string {
+    if (!orgUnitId) return '—';
+    return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
   onSubmit(): void {

@@ -76,7 +76,8 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${environment.apiUrl}/tasks/unassigned`).flush([UNASSIGNED_TASK]);
-    httpMock.expectOne(`${environment.apiUrl}/users`).flush([USER_A]);
+    httpMock.expectOne(`${environment.apiUrl}/users?status=ACTIVE`).flush([USER_A]);
+    httpMock.expectOne(`${environment.apiUrl}/organization/units/flat`).flush([]);
     fixture.detectChanges();
   });
 

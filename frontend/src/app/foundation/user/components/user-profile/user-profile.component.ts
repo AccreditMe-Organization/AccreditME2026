@@ -111,7 +111,14 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
               optionLabel="name"
               optionValue="id"
               [showClear]="true"
-            />
+            >
+              <ng-template #item let-otherUser>
+                <div class="flex flex-col">
+                  <span>{{ otherUser.name }}</span>
+                  <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
+                </div>
+              </ng-template>
+            </p-select>
           </div>
 
           <div class="flex justify-end">
@@ -147,7 +154,14 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
               optionLabel="name"
               optionValue="id"
               [showClear]="true"
-            />
+            >
+              <ng-template #item let-otherUser>
+                <div class="flex flex-col">
+                  <span>{{ otherUser.name }}</span>
+                  <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
+                </div>
+              </ng-template>
+            </p-select>
           </div>
 
           <div class="flex justify-end">
@@ -280,7 +294,7 @@ export class UserProfileComponent implements OnInit {
   readonly savingOoo = signal(false);
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
-  readonly otherUsers = signal<{ id: string; name: string }[]>([]);
+  readonly otherUsers = signal<{ id: string; name: string; primaryOrgUnitId: string | null }[]>([]);
 
   // MFA management only ever acts on the logged-in user (AuthController's
   // mfa/* endpoints resolve the actor from the JWT via @CurrentUser(), not
@@ -318,13 +332,20 @@ export class UserProfileComponent implements OnInit {
   ngOnInit(): void {
     this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
-    this.userService.listUsers().subscribe({
+    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({
       next: (users) =>
         this.otherUsers.set(
-          users.filter((u) => u.id !== this.userId).map((u) => ({ id: u.id, name: u.name })),
+          users
+            .filter((u) => u.id !== this.userId)
+            .map((u) => ({ id: u.id, name: u.name, primaryOrgUnitId: u.primaryOrgUnitId })),
         ),
     });
     this.loadUser();
+  }
+
+  orgUnitName(orgUnitId: string | null): string {
+    if (!orgUnitId) return '—';
+    return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
   private loadUser(): void {
