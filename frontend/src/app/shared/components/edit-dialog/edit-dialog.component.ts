@@ -38,6 +38,7 @@ import { DialogModule } from 'primeng/dialog';
             #scrollArea
             class="max-h-[60vh] overflow-y-auto pr-1"
             (scroll)="onScroll()"
+            (wheel)="onWheel($event)"
           >
             <div #contentWrapper>
               <ng-container *ngTemplateOutlet="content()" />
@@ -134,6 +135,36 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
 
   onScroll(): void {
     this.updateScrollAffordance();
+  }
+
+  // ACC-36 — overscroll-behavior: contain (above) is not sufficient alone:
+  // measured live, a ~2px scroll leak still reaches this scroll area on
+  // some wheel ticks even while the listbox has plenty of room left,
+  // enough to fire a genuine native 'scroll' event here and trigger
+  // PrimeNG's ConnectedOverlayScrollHandler close-on-scroll logic. This
+  // is the standard, targeted fix for Chrome's scroll-chaining: once the
+  // listbox has genuinely reached its own boundary in the gesture's
+  // direction, preventDefault() on that specific wheel tick stops the
+  // browser from doing anything with the leftover delta at all — neither
+  // scrolling the (already-maxed) list further nor chaining it up to this
+  // ancestor. Every other tick (mid-list, not yet at a boundary) is left
+  // completely untouched — this only ever fires at the boundary.
+  // Angular's (wheel) binding is not passive by default, so
+  // preventDefault() here is not silently ignored.
+  onWheel(event: WheelEvent): void {
+    const target = event.target as HTMLElement | null;
+    const listContainer = target?.closest(
+      '.p-select-list-container, .p-multiselect-list-container',
+    ) as HTMLElement | null;
+    if (!listContainer) return;
+
+    const atTop = listContainer.scrollTop <= 0;
+    const atBottom =
+      listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight;
+
+    if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
+      event.preventDefault();
+    }
   }
 
   private updateScrollAffordance(): void {
