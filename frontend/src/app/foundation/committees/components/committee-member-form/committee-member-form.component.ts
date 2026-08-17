@@ -9,6 +9,7 @@ import {
   CommitteeMemberDto,
 } from '../../services/committee.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
+import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -34,7 +35,14 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             [filter]="true"
             filterBy="name,email"
             [placeholder]="'committee.selectMember' | translate"
-          />
+          >
+            <ng-template #item let-pickableUser>
+              <div class="flex flex-col">
+                <span>{{ pickableUser.name }}</span>
+                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(pickableUser.primaryOrgUnitId) }}</span>
+              </div>
+            </ng-template>
+          </p-select>
         </div>
       }
 
@@ -79,6 +87,7 @@ export class CommitteeMemberFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
+  private readonly orgUnitService = inject(OrgUnitService);
   private readonly lookupService = inject(LookupService);
   private readonly languageService = inject(LanguageService);
 
@@ -91,6 +100,7 @@ export class CommitteeMemberFormComponent implements OnInit {
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
   readonly users = signal<IUserDto[]>([]);
+  readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly memberRoles = signal<LookupValueDto[]>([]);
 
   readonly pickableUsers = computed(() => {
@@ -118,10 +128,16 @@ export class CommitteeMemberFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.userService.listUsers().subscribe({ next: (users) => this.users.set(users) });
+    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({ next: (users) => this.users.set(users) });
+    this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
     this.lookupService.getValues('committee_member_role').subscribe({
       next: (values) => this.memberRoles.set(values),
     });
+  }
+
+  orgUnitName(orgUnitId: string | null): string {
+    if (!orgUnitId) return '—';
+    return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
   onSubmit(): void {
