@@ -68,13 +68,26 @@ import { DialogModule } from 'primeng/dialog';
   // contain stops that chaining at the listbox's own boundary, so an
   // internal-list scroll never reaches the ancestor in the first place.
   // ::ng-deep is required because the listbox is rendered by whichever
-  // caller's form declared the <p-select>, not by this component's own
-  // template — :host still correctly scopes the rule to overlays that
-  // are DOM descendants of THIS dialog, since PrimeNG never moves the
-  // element elsewhere when appendTo is 'self'.
+  // caller's form declared the <p-select>/<p-multiSelect>, not by this
+  // component's own template — :host still correctly scopes the rule to
+  // overlays that are DOM descendants of THIS dialog, since PrimeNG
+  // never moves the element elsewhere when appendTo is 'self'.
+  //
+  // p-select and p-multiselect render their listbox under genuinely
+  // different class names (confirmed directly against PrimeNG's own
+  // source: primeng-select.mjs uses 'p-select-list-container',
+  // primeng-multiselect.mjs uses 'p-multiselect-list-container' — not a
+  // shared base class either selector could catch alone) — ACC-36 found
+  // the original single-selector rule left every p-multiSelect-in-dialog
+  // screen (e.g. UnassignedTasksComponent's Reassign form) unprotected.
+  // Both listed explicitly rather than relying on a wildcard, so a
+  // future third overlay type (e.g. p-cascadeselect, which shares the
+  // same 'listContainer' class-key convention) is a deliberate addition
+  // here, not a silent gap the way p-multiselect was.
   styles: [
     `
-      :host ::ng-deep .p-select-list-container {
+      :host ::ng-deep .p-select-list-container,
+      :host ::ng-deep .p-multiselect-list-container {
         overscroll-behavior: contain;
       }
     `,
