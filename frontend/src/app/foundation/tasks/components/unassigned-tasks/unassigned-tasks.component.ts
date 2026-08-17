@@ -9,6 +9,7 @@ import { ListboxModule } from 'primeng/listbox';
 import { InputTextModule } from 'primeng/inputtext';
 import { TaskService, ITaskDto } from '../../services/task.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
+import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
@@ -94,7 +95,14 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             [filter]="true"
             filterBy="name,email"
             [showToggleAll]="false"
-          />
+          >
+            <ng-template #item let-user>
+              <div class="flex flex-col">
+                <span>{{ user.name }}</span>
+                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(user.primaryOrgUnitId) }}</span>
+              </div>
+            </ng-template>
+          </p-listbox>
         </div>
 
         <div class="flex flex-col gap-1">
@@ -135,11 +143,13 @@ export class UnassignedTasksComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
   private readonly userService = inject(UserService);
+  private readonly orgUnitService = inject(OrgUnitService);
 
   readonly loading = signal(false);
   readonly tasks = signal<ITaskDto[]>([]);
   readonly error = signal<string | null>(null);
   readonly users = signal<IUserDto[]>([]);
+  readonly orgUnits = signal<OrgUnitDto[]>([]);
 
   readonly reassignVisible = signal(false);
   readonly reassigning = signal(false);
@@ -153,7 +163,13 @@ export class UnassignedTasksComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadTasks();
-    this.userService.listUsers().subscribe({ next: (users) => this.users.set(users) });
+    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({ next: (users) => this.users.set(users) });
+    this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
+  }
+
+  orgUnitName(orgUnitId: string | null): string {
+    if (!orgUnitId) return '—';
+    return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
   loadTasks(): void {
