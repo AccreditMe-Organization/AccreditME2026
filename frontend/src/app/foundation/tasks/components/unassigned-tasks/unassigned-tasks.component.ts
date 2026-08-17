@@ -5,7 +5,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
-import { MultiSelectModule } from 'primeng/multiselect';
+import { ListboxModule } from 'primeng/listbox';
 import { InputTextModule } from 'primeng/inputtext';
 import { TaskService, ITaskDto } from '../../services/task.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
@@ -27,7 +27,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TableModule,
     TagModule,
     ButtonModule,
-    MultiSelectModule,
+    ListboxModule,
     InputTextModule,
     EditDialogComponent,
   ],
@@ -83,15 +83,17 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           <label for="newAssigneeUserIds" class="text-sm font-medium">
             {{ 'task.newAssignees' | translate }} <span class="text-red-500">*</span>
           </label>
-          <p-multiSelect
+          <p-listbox
             inputId="newAssigneeUserIds"
             formControlName="newAssigneeUserIds"
             [options]="users()"
             optionLabel="name"
             optionValue="id"
+            [multiple]="true"
+            [checkbox]="true"
             [filter]="true"
             filterBy="name,email"
-            [placeholder]="'task.selectAssignees' | translate"
+            [showToggleAll]="false"
           />
         </div>
 
