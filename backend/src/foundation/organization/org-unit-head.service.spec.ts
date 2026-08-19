@@ -15,6 +15,7 @@ const BASE_ORG_UNIT = { id: UNIT_1, organizationId: ORG_A, pendingHeadUserId: nu
 
 const mockPrisma = {
   orgUnit: { findFirst: jest.fn(), update: jest.fn() },
+  orgPosition: { findFirst: jest.fn() },
   user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
   orgUnitHeadEvent: { create: jest.fn() },
 };
@@ -298,6 +299,161 @@ describe('OrgUnitHeadService', () => {
       );
 
       await expect(service.cancelHandover(UNIT_1, ORG_B, 'actor-1')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── assignHead ───────────────────────────────────────────────────────────
+
+  describe('assignHead', () => {
+    const HEAD_POSITION = { id: HEAD_POSITION_ID, isUnitHeadPosition: true };
+    const ORDINARY_POSITION = { id: 'pos-ordinary', isUnitHeadPosition: false };
+    const VACANT_TARGET_USER = { id: 'target-user', organizationId: ORG_A, primaryOrgUnitId: UNIT_1, status: 'ACTIVE' };
+
+    it('throws NotFoundException when the org unit does not exist in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.assignHead(UNIT_1, { userId: 'target-user', positionId: HEAD_POSITION_ID }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ConflictException when a handover is already in progress for this unit', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, pendingHeadUserId: 'someone' });
+
+      await expect(
+        service.assignHead(UNIT_1, { userId: 'target-user', positionId: HEAD_POSITION_ID }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('throws BadRequestException when the selected position does not confer Head authority', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(ORDINARY_POSITION);
+
+      await expect(
+        service.assignHead(UNIT_1, { userId: 'target-user', positionId: 'pos-ordinary' }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when the target user does not already belong to this org unit', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+      mockPrisma.user.findFirst.mockResolvedValue({ ...VACANT_TARGET_USER, primaryOrgUnitId: 'unit-2' });
+
+      await expect(
+        service.assignHead(UNIT_1, { userId: 'target-user', positionId: HEAD_POSITION_ID }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects when the unit already has an active Head — the shared, ordinary (non-bypassed) validation catches it', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+      mockPrisma.user.findFirst.mockResolvedValue(VACANT_TARGET_USER);
+      mockUserService.validatePositionAssignment.mockRejectedValue(
+        new ConflictException('This org unit already has an active Head-position holder'),
+      );
+
+      await expect(
+        service.assignHead(UNIT_1, { userId: 'target-user', positionId: HEAD_POSITION_ID }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('assigns a Head to a vacant unit: sets positionId, writes ASSIGNED, calls the ordinary (non-bypassed) validator', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+      mockPrisma.user.findFirst.mockResolvedValue(VACANT_TARGET_USER);
+
+      await service.assignHead(UNIT_1, { userId: 'target-user', positionId: HEAD_POSITION_ID }, ORG_A, 'admin-1');
+
+      // Ordinary validation — no bypass argument at all, unlike declareHandover().
+      expect(mockUserService.validatePositionAssignment).toHaveBeenCalledWith(
+        HEAD_POSITION_ID,
+        UNIT_1,
+        ORG_A,
+        'target-user',
+      );
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'target-user' },
+        data: { positionId: HEAD_POSITION_ID },
+      });
+      expect(mockPrisma.orgUnitHeadEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_A,
+          orgUnitId: UNIT_1,
+          userId: 'target-user',
+          positionId: HEAD_POSITION_ID,
+          action: 'ASSIGNED',
+          approvedBy: 'admin-1',
+        }),
+      });
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? BASE_ORG_UNIT : null),
+      );
+
+      await expect(
+        service.assignHead(UNIT_1, { userId: 'target-user', positionId: HEAD_POSITION_ID }, ORG_B, 'actor-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── vacateHead ───────────────────────────────────────────────────────────
+
+  describe('vacateHead', () => {
+    it('throws NotFoundException when the org unit does not exist in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(service.vacateHead(UNIT_1, ORG_A, 'actor-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ConflictException when a handover is in progress for this unit', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, pendingHeadUserId: 'someone' });
+
+      await expect(service.vacateHead(UNIT_1, ORG_A, 'actor-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('throws ConflictException when the unit has no active Head to vacate', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.vacateHead(UNIT_1, ORG_A, 'actor-1')).rejects.toThrow(ConflictException);
+    });
+
+    // ACC-40 Section 2.3 — "a deliberate divergence from the RoleService
+    // precedent": vacating a Head is NOT blocked the way removing the last
+    // TENANT_ADMIN is. This test is the concrete proof: no handover, one
+    // holder, and the call succeeds rather than throwing a lockout error.
+    it('vacates an active Head with no handover declared — NOT blocked (unlike RoleService TENANT_ADMIN lockout), writes VACATED', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst.mockResolvedValue(OUTGOING_HOLDER);
+
+      await service.vacateHead(UNIT_1, ORG_A, 'admin-1');
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: OUTGOING_HOLDER.id },
+        data: { positionId: null },
+      });
+      expect(mockPrisma.orgUnitHeadEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_A,
+          orgUnitId: UNIT_1,
+          userId: OUTGOING_HOLDER.id,
+          positionId: HEAD_POSITION_ID,
+          action: 'VACATED',
+          approvedBy: 'admin-1',
+        }),
+      });
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? BASE_ORG_UNIT : null),
+      );
+
+      await expect(service.vacateHead(UNIT_1, ORG_B, 'actor-1')).rejects.toThrow(NotFoundException);
     });
   });
 });

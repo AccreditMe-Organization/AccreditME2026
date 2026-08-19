@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
+import { AssignHeadDto } from './dto/assign-head.dto';
 
 // ACC-40 Section 2.3 — Deliberate Handover. A handover is not a change to
 // a separately-stored "who is Head" fact — it is a declared, temporary,
@@ -254,6 +255,116 @@ export class OrgUnitHeadService {
         incomingUserId: pendingHeadUserId,
         outgoingUserId: outgoingHolder?.id ?? null,
       },
+    });
+  }
+
+  // ACC-40 Section 2.3 — direct appointment, no handover: "e.g. filling a
+  // vacancy." positionId is caller-supplied (a vacant unit has no
+  // outgoing holder to copy it from, unlike declareHandover()). Reuses
+  // the ORDINARY (non-bypassed) validatePositionAssignment() — its own
+  // 2.1 single-assignee cap and 2.2 cross-position head-uniqueness check
+  // together already guarantee the unit is vacant of Head authority
+  // before this proceeds; no separate manual vacancy check needed.
+  async assignHead(
+    orgUnitId: string,
+    dto: AssignHeadDto,
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+    if (orgUnit.pendingHeadUserId) {
+      throw new ConflictException('A handover is already in progress for this unit — cannot directly assign a Head');
+    }
+
+    const position = await this.prisma.orgPosition.findFirst({
+      where: { id: dto.positionId, organizationId },
+    });
+    if (!position) throw new NotFoundException('Position not found in this organization');
+    if (!position.isUnitHeadPosition) {
+      throw new BadRequestException('The selected position does not confer Head authority');
+    }
+
+    const targetUser = await this.prisma.user.findFirst({
+      where: { id: dto.userId, organizationId, status: 'ACTIVE' },
+    });
+    if (!targetUser) throw new NotFoundException('User not found or not active in this tenant');
+    if (targetUser.primaryOrgUnitId !== orgUnitId) {
+      throw new BadRequestException('The user must already belong to this org unit');
+    }
+
+    await this.userService.validatePositionAssignment(dto.positionId, orgUnitId, organizationId, targetUser.id);
+
+    await this.prisma.user.update({
+      where: { id: targetUser.id },
+      data: { positionId: dto.positionId },
+    });
+
+    await this.prisma.orgUnitHeadEvent.create({
+      data: {
+        organizationId,
+        orgUnitId,
+        userId: targetUser.id,
+        positionId: dto.positionId,
+        action: 'ASSIGNED',
+        effectiveDate: new Date(),
+        approvedBy: actorId,
+      },
+    });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'OrgUnit',
+      objectId: orgUnitId,
+      metadata: { headAssigned: true, userId: targetUser.id, positionId: dto.positionId },
+    });
+  }
+
+  // ACC-40 Section 2.3 — "a deliberate divergence from the RoleService
+  // precedent": a Unit Head is NOT unconditionally lockout-protected like
+  // the last TENANT_ADMIN — a unit CAN legitimately be headless for a
+  // period. This does not block clearing a Head-position holder with no
+  // handover declared; it writes a VACATED event and lets Section 2.5's
+  // vacancy-detection-and-escalation mechanism (Phase 6) be the actual
+  // safety net, rather than a hard block preventing the removal.
+  async vacateHead(orgUnitId: string, organizationId: string, actorId: string): Promise<void> {
+    const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+    if (orgUnit.pendingHeadUserId) {
+      throw new ConflictException('A handover is in progress for this unit — cancel or complete it first');
+    }
+
+    const currentHolder = await this.prisma.user.findFirst({
+      where: { organizationId, primaryOrgUnitId: orgUnitId, status: 'ACTIVE', position: { isUnitHeadPosition: true } },
+    });
+    if (!currentHolder) {
+      throw new ConflictException('This unit has no active Head to vacate');
+    }
+
+    await this.prisma.user.update({
+      where: { id: currentHolder.id },
+      data: { positionId: null },
+    });
+
+    await this.prisma.orgUnitHeadEvent.create({
+      data: {
+        organizationId,
+        orgUnitId,
+        userId: currentHolder.id,
+        positionId: currentHolder.positionId,
+        action: 'VACATED',
+        effectiveDate: new Date(),
+        approvedBy: actorId,
+      },
+    });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'OrgUnit',
+      objectId: orgUnitId,
+      metadata: { headVacated: true, userId: currentHolder.id },
     });
   }
 
