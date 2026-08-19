@@ -974,7 +974,11 @@ export class WorkflowService {
   // below (entry-time, this file) and from SlaMonitorProcessor's periodic
   // sweep (drift-after-entry re-check, plan Section 2.5.1) — the resolution
   // logic must stay identical between both call sites, so it lives in one
-  // place rather than being duplicated.
+  // place rather than being duplicated. Uses resolveAssignee() (OOO-aware),
+  // not the raw resolveAssigneeRaw() — fixed per ACC-40 Section 2.6.1: an
+  // out-of-office holder with no acting user set is a real, already-flagged
+  // coverage gap (notifyTenantAdminsOfCoverageGap()), but one WITH an acting
+  // user set must not be misreported as an unassigned/blocked stage.
   async resolveUnassignedBlockingTransitions(
     stage: PrismaWorkflowStage,
     instance: PrismaWorkflowInstance,
@@ -985,7 +989,7 @@ export class WorkflowService {
     });
     if (outgoingTransitions.length === 0) return [];
 
-    const pool = await this.resolveAssigneeRaw(stage, instance, organizationId);
+    const pool = await this.resolveAssignee(stage, instance, organizationId);
     const blocking: PrismaWorkflowTransition[] = [];
 
     for (const transition of outgoingTransitions) {

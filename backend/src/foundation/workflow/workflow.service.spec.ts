@@ -1657,6 +1657,12 @@ describe('WorkflowService', () => {
     it('flags the transition when the pool is non-empty but nobody in it holds requiredPermission', async () => {
       mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+      // ACC-40 Section 2.6.1 — this method now routes through
+      // resolveAssignee() (OOO-aware); explicit non-OOO stub makes this
+      // test's dependency on that query visible.
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
       mockRoleService.getUserPermissions.mockResolvedValue(['documents:view']); // lacks committees:approve
 
       const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
@@ -1673,6 +1679,10 @@ describe('WorkflowService', () => {
       const parallelRoleStage = { ...ROLE_STAGE, approvalMode: 'PARALLEL' };
       mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }, { userId: 'user-2' }]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        { id: 'user-2', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
       mockRoleService.getUserPermissions.mockImplementation((userId: string) =>
         Promise.resolve(userId === 'user-2' ? ['committees:approve'] : ['documents:view']),
       );
@@ -1687,11 +1697,39 @@ describe('WorkflowService', () => {
         makeTransition({ ...ASSIGNEE_POOL_TRANSITION, requiredPermission: null }),
       ]);
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
 
       expect(result).toEqual([]);
       expect(mockRoleService.getUserPermissions).not.toHaveBeenCalled();
+    });
+
+    // ACC-40 Section 2.6.1 — the live defect this phase fixes: before, this
+    // exact scenario incorrectly flagged the stage as blocked, because the
+    // raw pool (the out-of-office holder, who lacks the permission) was
+    // checked instead of the substituted acting user (who holds it).
+    it('does not flag the transition when the raw holder is out-of-office but their acting user holds requiredPermission', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
+      const now = new Date();
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        {
+          id: 'holder-1',
+          outOfOfficeFrom: new Date(now.getTime() - 86400000),
+          outOfOfficeTo: new Date(now.getTime() + 86400000),
+          actingUserId: 'acting-1',
+        },
+      ]);
+      mockRoleService.getUserPermissions.mockImplementation((userId: string) =>
+        Promise.resolve(userId === 'acting-1' ? ['committees:approve'] : []),
+      );
+
+      const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
+
+      expect(result).toEqual([]);
     });
   });
 
