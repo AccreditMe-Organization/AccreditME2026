@@ -560,12 +560,16 @@ In order, exactly as executed:
      the method (any authenticated actor who passed steps 1–3 proceeds).
    - **`ASSIGNEE_POOL` (ACC-28)** — checked separately, immediately
      after `fromStage` loads in step 5 below (needs the full stage row,
-     not just its id): `resolveAssigneeRaw(fromStage, instance,
+     not just its id): `resolveAssignee(fromStage, instance,
      organizationId).includes(actorId)`, else `ForbiddenException`.
-     Composes with `requiredPermission` as an ordinary AND, same as the
-     other three conditions. The only `triggerCondition` value that
-     actually consults assignee resolution — see the corrected 2.8
-     below.
+     **Uses the OOO-aware `resolveAssignee()` wrapper, not the raw
+     `resolveAssigneeRaw()` (fixed ACC-40)** — previously checked the
+     raw pool, so an out-of-office holder's acting user could not
+     trigger a transition they'd effectively been delegated; see the
+     new Tier 2 tracker entry below. Composes with `requiredPermission`
+     as an ordinary AND, same as the other three conditions. The only
+     `triggerCondition` value that actually consults assignee
+     resolution — see the corrected 2.8 below.
 5. Load `fromStage`, confirm the active `WorkflowInstanceStage` entry
    exists.
 6. `checkValidatorConfig()` — see 2.10.
@@ -591,8 +595,12 @@ existing behavior.
 ### 2.5 `resolveAssigneeRaw()` — All 6 Strategies (`workflow.service.ts:720–776`)
 
 Used for `CREATE_TASK`/`SEND_NOTIFICATION` targeting and the initial-
-stage notification — **never** consulted by `triggerTransition()`'s
-gating (see 2.8).
+stage notification. The raw resolver itself is never called directly
+by `triggerTransition()`'s gating — but as of ACC-40, `triggerTransition()`'s
+`ASSIGNEE_POOL` check now goes through the same OOO-aware
+`resolveAssignee()` wrapper (2.5.1) that these other callers already
+used, closing what had been a real behavioral split between "who gets
+the task" and "who is allowed to trigger the transition" (see 2.8).
 
 | Strategy | Exact logic | Exact limitation |
 |---|---|---|
@@ -632,8 +640,15 @@ two strategies:
   `[]`** — treated as a seed/config error, "no well-defined pool to
   size a threshold against."
 
-Called from exactly one place: `isApprovalThresholdMet()` (2.7), only
-when `approvalMode !== 'COMMITTEE'`.
+**As of ACC-40, the resolved pool (whichever branch produced it) is
+routed through `applyOutOfOfficeRouting()` (2.5.1) before being
+returned** — previously this method returned the raw pool untouched,
+so an out-of-office approver's acting user could neither cast their
+delegated vote nor count toward the threshold denominator; see the new
+Tier 2 tracker entry below. Called from `isApprovalThresholdMet()`
+(2.7, only when `approvalMode !== 'COMMITTEE'`) and directly from
+`submitApproval()`'s own eligibility gate (2.8) — both callers get the
+fix from this one change.
 
 ### 2.7 Approval Mode / Threshold Logic — `isApprovalThresholdMet()` (`workflow.service.ts:401–435`)
 
@@ -666,9 +681,10 @@ for sizing the approval-threshold denominator — never to check who was
 
 **ACC-28 closed this for `triggerTransition()`, opt-in per transition**
 — the new `ASSIGNEE_POOL` `triggerCondition` value (2.4) has
-`triggerTransition()` check `actorId` against `resolveAssigneeRaw()`'s
-own result for the current stage, reusing rather than duplicating the
-resolution logic. This is **not** a change to the other four
+`triggerTransition()` check `actorId` against `resolveAssignee()`'s
+own result for the current stage (the OOO-aware wrapper as of ACC-40 —
+see 2.4/2.5), reusing rather than duplicating the resolution logic.
+This is **not** a change to the other four
 `triggerCondition` values' behavior (`SPECIFIC_USER`/`ROLE_BASED`/
 `ANY_AUTHENTICATED`/`SYSTEM_AUTOMATIC` still never consult assignee
 resolution) — it's a fifth option a tenant admin configures per
@@ -860,7 +876,11 @@ misconfiguration).
 - **`resolveUnassignedBlockingTransitions(stage, instance,
   organizationId)`** (public on `WorkflowService`) — for every outgoing
   `WorkflowTransition` from `stage` where `triggerCondition ===
-  'ASSIGNEE_POOL'`: resolves the pool via `resolveAssigneeRaw()`; if the
+  'ASSIGNEE_POOL'`: resolves the pool via `resolveAssignee()` (the
+  OOO-aware wrapper as of ACC-40 — previously used the raw
+  `resolveAssigneeRaw()`, which could misreport a stage as blocked when
+  its sole holder was out-of-office with a valid acting user set; see
+  the new Tier 2 tracker entry below); if the
   pool is empty, the transition is blocking **regardless of
   `requiredPermission`** (nobody can ever satisfy
   `pool.includes(actorId)`); if the pool is non-empty and
@@ -2393,6 +2413,21 @@ Purpose section, written directly in response to the ACC-28 incident.
   (`GET /tasks/unassigned`, gated by `tasks:manage` — also closing that
   permission's "currently inert" note below), which calls `reassign()`
   as-is, unmodified.
+- **CLOSED (ACC-40)** — Three workflow-gating call sites checked the
+  raw, non-OOO-substituted assignee/approver pool instead of the
+  OOO-aware `resolveAssignee()`/`resolveApproverPool()` result already
+  used for `CREATE_TASK`/`SEND_NOTIFICATION` targeting: `triggerTransition()`'s
+  `ASSIGNEE_POOL` gate (2.4), `resolveApproverPool()` itself (2.6, which
+  feeds both `submitApproval()`'s eligibility gate and
+  `isApprovalThresholdMet()`'s pool-sizing calc), and
+  `resolveUnassignedBlockingTransitions()` (2.13). Net effect before the
+  fix: an out-of-office holder with a valid acting user set could still
+  block the very transition/approval/task their coverage was supposed
+  to unblock, and a stage could be misreported as unassigned even with
+  working coverage in place. Found during ACC-40 planning (re-verifying
+  backward compatibility against already-shipped ACC-28/33 code, not a
+  new feature investigation); fixed by routing all three through the
+  existing `applyOutOfOfficeRouting()` helper — no new mechanism.
 - Task: out-of-office substitution is missing for tasks created
   directly via `POST /tasks` (Section 3.5) — only workflow-engine-driven
   `CREATE_TASK` gets it, because the substitution logic lives upstream
