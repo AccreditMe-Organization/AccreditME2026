@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
@@ -42,7 +42,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </div>
 
       <div class="flex flex-col gap-1">
-        <label for="positionId" class="text-sm font-medium">{{ 'user.position' | translate }}</label>
+        <label for="positionId" class="text-sm font-medium">
+          {{ 'user.position' | translate }} <span class="text-red-500">*</span>
+        </label>
         <p-select
           inputId="positionId"
           formControlName="positionId"
@@ -56,6 +58,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       <div class="flex flex-col gap-1">
         <label for="primaryOrgUnitId" class="text-sm font-medium">
           {{ 'user.primaryOrgUnit' | translate }}
+          @if (primaryOrgUnitRequired()) {
+            <span class="text-red-500">*</span>
+          }
         </label>
         <p-select
           inputId="primaryOrgUnitId"
@@ -114,17 +119,31 @@ export class InviteUserComponent implements OnInit {
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly managers = signal<{ id: string; name: string; primaryOrgUnitId: string | null }[]>([]);
 
+  // ACC-40 Section 2.4 — mirrors UserService.invite()'s own conditional
+  // check exactly: required once the tenant has at least one active
+  // OrgUnit, not a blanket rule (a brand-new tenant has none yet).
+  readonly primaryOrgUnitRequired = computed(() => this.orgUnits().some((u) => u.isActive));
+
   readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(255)]],
     email: ['', [Validators.required, Validators.email]],
-    positionId: [null as string | null],
+    positionId: [null as string | null, [Validators.required]],
     primaryOrgUnitId: [null as string | null],
     managerId: [null as string | null],
   });
 
   ngOnInit(): void {
     this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
-    this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
+    this.orgUnitService.getFlat().subscribe({
+      next: (units) => {
+        this.orgUnits.set(units);
+        if (this.primaryOrgUnitRequired()) {
+          const control = this.form.get('primaryOrgUnitId')!;
+          control.addValidators(Validators.required);
+          control.updateValueAndValidity();
+        }
+      },
+    });
     this.userService.listUsers({ status: 'ACTIVE' }).subscribe({
       next: (users) =>
         this.managers.set(
