@@ -391,6 +391,14 @@ model User {
   outOfOfficeTo    DateTime?
   actingUserId     String?
 
+  // ACC-40 Section 2.7 — a recovered, seven-month-old dropped business rule
+  // (step-02-organization-structure.md Section 11). Pure scoping, confers
+  // no authority — fully independent of positionId/primaryOrgUnitId-driven
+  // Head derivation (2.1/2.2/2.5) and of OrgUnit.actingHeadUserId (2.6),
+  // by deliberate design, not oversight. See 2.7's own "THE KEY QUESTION".
+  actingOrgUnitId    String?
+  actingOrgUnitUntil DateTime?
+
   // Step 9 additions — see backend/Plans/step-09-user-management.md Section 2
   authUserId          String?   @unique // link to Better Auth's own identity row (AuthUser)
   managerId           String?
@@ -415,6 +423,7 @@ model User {
   aiInteractionLogs         AiInteractionLog[]
   position                  OrgPosition?               @relation(fields: [positionId], references: [id])
   primaryOrgUnit            OrgUnit?                   @relation(fields: [primaryOrgUnitId], references: [id])
+  actingOrgUnit             OrgUnit?                   @relation("UserActingOrgUnit", fields: [actingOrgUnitId], references: [id])
   actingUser                User?                      @relation("UserActingUser", fields: [actingUserId], references: [id])
   actingForUsers            User[]                     @relation("UserActingUser")
   authUser                  AuthUser?                  @relation(fields: [authUserId], references: [id])
@@ -429,6 +438,7 @@ model User {
   @@index([status])
   @@index([positionId])
   @@index([primaryOrgUnitId])
+  @@index([actingOrgUnitId])
   @@index([managerId])
   @@index([invitationToken])
 }
@@ -605,6 +615,7 @@ model OrgUnit {
   parent       OrgUnit?     @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
   children     OrgUnit[]    @relation("OrgUnitHierarchy")
   users        User[]
+  actingUsers  User[]       @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
 
   @@unique([organizationId, code])
   @@index([organizationId])
