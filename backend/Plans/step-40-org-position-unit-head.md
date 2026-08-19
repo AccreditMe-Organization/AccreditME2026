@@ -501,13 +501,45 @@ own explicit confirmation):
   already used elsewhere). The actual *fix* happens through the
   already-fully-wired `user-profile.component.ts` edit form — no new
   UI needed for the fix itself.
-- **Scoped exception for `primaryOrgUnitId`**: a brand-new tenant has
-  zero `OrgUnit` rows until an admin creates one (bootstrap doesn't
-  seed any). `primaryOrgUnitId`'s mandatoriness is conditional on the
+- **Scoped exception for `primaryOrgUnitId`, and a confirmed correction
+  to this document's own original claim.** This section originally
+  assumed `TenantService.bootstrap()` seeds zero `OrgUnit` rows for a
+  brand-new tenant — **confirmed wrong during Phase 2 implementation**,
+  verified directly against the current code, not left as an
+  unreconciled assumption. `bootstrap()` already creates a root
+  `OrgUnit` (`parentId: null`) if none exists, and always seeds all 10
+  `DEFAULT_POSITIONS` (including "Director", the highest-graded) via
+  `OrgPositionService.seedDefaultPositions()` — both unconditionally,
+  on every bootstrap.
+
+  This has a real, immediate consequence, not just a documentation
+  correction: `PlatformTenantService.createTenant()` is the one live
+  call site of `UserService.invite()` today, and it always calls
+  `bootstrap()` first — so by the time it invites the tenant's first
+  admin, an active `OrgUnit` and the "Director" position both already
+  exist. The conditional check below is therefore **not dormant** for
+  this call site; it is immediately true. Making `positionId`/
+  `primaryOrgUnitId` required without also fixing this call site would
+  have broken tenant creation outright — confirmed via `tsc --noEmit`
+  the moment `positionId` became a required DTO field.
+
+  **The fix, built in Phase 2**: `TenantService.resolveDefaultTenantAdminAssignment(organizationId)`
+  resolves both ids from what `bootstrap()` already guarantees — the
+  seeded "Director" `OrgPosition` and the root `OrgUnit` — throwing an
+  invariant-violation error (not a user-facing exception) if either is
+  somehow missing. `PlatformTenantService.createTenant()` calls this
+  immediately after `bootstrap()` and passes both ids into `invite()`.
+
+  The conditional-mandatoriness rule itself remains correct and
+  necessary as a general safeguard, independent of the correction
+  above: `primaryOrgUnitId`'s mandatoriness is conditional on the
   tenant having at least one active `OrgUnit`
   (`orgUnit.count({ where: { organizationId, isActive: true } }) > 0`)
-  — not a blanket "always required" rule that would make onboarding a
-  brand-new tenant self-contradictory.
+  — not a blanket "always required" rule. This still matters for any
+  *future* invite path that might run before `bootstrap()`, or a
+  tenant whose only `OrgUnit` later gets deactivated — even though, for
+  the one call site that exists today, it is never actually the reason
+  `primaryOrgUnitId` goes unset.
 
 ### 2.5 Vacancy Detection and Hierarchy Escalation — Pending Discussion #3, Resolved With a Recommendation
 
@@ -1585,10 +1617,18 @@ reviewed — not this ticket's own acceptance criteria.
 - [ ] One-time `notifyTenantAdminsOfIncompleteProfiles()` run (or
       equivalent report) for existing tenants at rollout — not a data
       migration (2.4)
-- [ ] `TenantService.bootstrap()`: assign the newly-created Tenant Admin
-      a default `positionId` (e.g. "Director") at provisioning time;
+- [x] `TenantService.resolveDefaultTenantAdminAssignment()` — resolves
+      **both** `positionId` (the seeded "Director" `OrgPosition`) and
+      `primaryOrgUnitId` (the root `OrgUnit`, `parentId: null`) for the
+      tenant's first admin, called by
+      `PlatformTenantService.createTenant()` immediately after
+      `bootstrap()`. **Correction to this checklist's own original
+      item**: previously described as "assign a default `positionId`;
       `primaryOrgUnitId` correctly stays unset until the tenant creates
-      its first `OrgUnit` (2.4's conditional exception)
+      its first `OrgUnit`" — wrong, confirmed against the current code
+      during Phase 2. `bootstrap()` already creates a root `OrgUnit` on
+      every run, so `primaryOrgUnitId` must be resolved too, not left
+      unset (see 2.4's fully corrected text above)
 
 **Frontend** (belongs to the implementation ticket, not this plan)
 - [ ] `position-form.component.ts`: remove the `orgUnitId` field
@@ -1787,6 +1827,24 @@ back before Phase 2.
    — new method/script + tests.
 4. `feat(user): require positionId/primaryOrgUnitId in invite-user form [ACC-40]`
    — `invite-user.component.ts` validators.
+
+**Retrospective note (added after Phase 2 actually shipped)**: commits 1
+and 2 above were built as **one merged commit**
+(`feat(user): require positionId/primaryOrgUnitId on invite, conditional
+on OrgUnit existing`), not two independent ones — real dependency, not a
+process shortcut. `PlatformTenantService.createTenant()` is the one live
+call site of `UserService.invite()` today, and it always calls
+`bootstrap()` first, so making `positionId` required broke that call
+site immediately, in the very same commit that made it required, not on
+a separate later commit. Commit 2's actual touched file also differs
+from what's listed here: not `TenantService.bootstrap()` itself, but a
+new sibling method, `TenantService.resolveDefaultTenantAdminAssignment()`
+(full detail and the wrong-assumption correction it's built on: 2.4
+above), consumed by `PlatformTenantService.createTenant()`. Commits 3
+and 4 shipped exactly as planned. Full checkpoint detail already
+reported at Phase 2's own review point — this note exists so the
+document itself carries the correction, not just the conversation that
+found it.
 
 **Checkpoint**: light. Report back before Phase 3.
 
