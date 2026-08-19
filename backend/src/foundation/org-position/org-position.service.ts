@@ -15,23 +15,16 @@ export class OrgPositionService {
 
   // Upserts the 10 org-wide default positions for one tenant. Idempotent —
   // safe to call repeatedly. Called by TenantService.bootstrap().
-  //
-  // Not a real Prisma upsert() — the generated compound-unique input type for
-  // organizationId_orgUnitId_nameEn types orgUnitId as `string`, not
-  // `string | null`, even though the column is nullable (a known Prisma
-  // type-generation gap for compound unique indexes containing a nullable
-  // field). findFirst + conditional create sidesteps it cleanly.
   async seedDefaultPositions(organizationId: string): Promise<void> {
     for (const position of DEFAULT_POSITIONS) {
       const existing = await this.prisma.orgPosition.findFirst({
-        where: { organizationId, orgUnitId: null, nameEn: position.nameEn },
+        where: { organizationId, nameEn: position.nameEn },
       });
       if (existing) continue;
 
       await this.prisma.orgPosition.create({
         data: {
           organizationId,
-          orgUnitId: null,
           nameEn: position.nameEn,
           nameAr: position.nameAr,
           grade: position.grade,
@@ -40,12 +33,12 @@ export class OrgPositionService {
     }
   }
 
-  async listPositions(organizationId: string, orgUnitId?: string): Promise<IOrgPosition[]> {
+  // ACC-40 Section 2.1 — OrgPosition is now an org-wide catalog (no more
+  // per-OrgUnit scoping), so this simply lists every position for the
+  // tenant. No orgUnitId parameter anymore.
+  async listPositions(organizationId: string): Promise<IOrgPosition[]> {
     return this.prisma.orgPosition.findMany({
-      where: {
-        organizationId,
-        OR: orgUnitId ? [{ orgUnitId: null }, { orgUnitId }] : [{ orgUnitId: null }],
-      },
+      where: { organizationId },
       orderBy: [{ grade: 'desc' }, { nameEn: 'asc' }],
     });
   }
@@ -63,22 +56,15 @@ export class OrgPositionService {
     organizationId: string,
     actorId: string,
   ): Promise<IOrgPosition> {
-    if (dto.orgUnitId) {
-      const orgUnit = await this.prisma.orgUnit.findFirst({
-        where: { id: dto.orgUnitId, organizationId },
-      });
-      if (!orgUnit) {
-        throw new BadRequestException('orgUnitId does not belong to this organization');
-      }
-    }
-
     const position = await this.prisma.orgPosition.create({
       data: {
         organizationId,
         nameEn: dto.nameEn,
         nameAr: dto.nameAr ?? null,
-        orgUnitId: dto.orgUnitId ?? null,
         grade: dto.grade,
+        isSingleAssignee: dto.isSingleAssignee ?? false,
+        isUnitHeadPosition: dto.isUnitHeadPosition ?? false,
+        roleId: dto.roleId ?? null,
       },
     });
 
@@ -101,15 +87,6 @@ export class OrgPositionService {
     actorId: string,
   ): Promise<IOrgPosition> {
     const existing = await this.getPositionById(id, organizationId);
-
-    if (dto.orgUnitId) {
-      const orgUnit = await this.prisma.orgUnit.findFirst({
-        where: { id: dto.orgUnitId, organizationId },
-      });
-      if (!orgUnit) {
-        throw new BadRequestException('orgUnitId does not belong to this organization');
-      }
-    }
 
     const position = await this.prisma.orgPosition.update({
       where: { id },

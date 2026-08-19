@@ -10,10 +10,12 @@ const ORG_B = 'org-b-id';
 const BASE_POSITION = {
   id: 'position-1',
   organizationId: ORG_A,
-  orgUnitId: null as string | null,
   nameEn: 'Director',
   nameAr: 'مدير عام',
   grade: 10,
+  isSingleAssignee: false,
+  isUnitHeadPosition: false,
+  roleId: null as string | null,
   isActive: true,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -91,25 +93,15 @@ describe('OrgPositionService', () => {
   });
 
   describe('listPositions', () => {
-    it('returns org-wide + unit-specific when orgUnitId given', async () => {
-      mockPrisma.orgPosition.findMany.mockResolvedValue([BASE_POSITION]);
-
-      await service.listPositions(ORG_A, 'unit-1');
-
-      expect(mockPrisma.orgPosition.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { organizationId: ORG_A, OR: [{ orgUnitId: null }, { orgUnitId: 'unit-1' }] },
-        }),
-      );
-    });
-
-    it('returns only org-wide when no orgUnitId given', async () => {
+    // ACC-40 Section 2.1 — OrgPosition is now an org-wide catalog, no more
+    // per-OrgUnit scoping/filtering.
+    it('lists every position for the tenant', async () => {
       mockPrisma.orgPosition.findMany.mockResolvedValue([BASE_POSITION]);
 
       await service.listPositions(ORG_A);
 
       expect(mockPrisma.orgPosition.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { organizationId: ORG_A, OR: [{ orgUnitId: null }] } }),
+        expect.objectContaining({ where: { organizationId: ORG_A } }),
       );
     });
 
@@ -168,14 +160,6 @@ describe('OrgPositionService', () => {
       expect(mockPrisma.orgPosition.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ organizationId: ORG_A }) }),
       );
-    });
-
-    it('validates orgUnitId belongs to the same org', async () => {
-      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
-
-      await expect(
-        service.createPosition({ nameEn: 'ICU Manager', grade: 7, orgUnitId: 'unit-x' }, ORG_A, 'actor-1'),
-      ).rejects.toThrow(BadRequestException);
     });
 
     it('calls AuditLogService.log() on creation', async () => {

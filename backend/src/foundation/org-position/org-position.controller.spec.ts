@@ -11,10 +11,12 @@ const USER_ID = 'user-test';
 const MOCK_POSITION: IOrgPosition = {
   id: 'position-1',
   organizationId: TENANT_ID,
-  orgUnitId: null,
   nameEn: 'Director',
   nameAr: 'مدير عام',
   grade: 10,
+  isSingleAssignee: false,
+  isUnitHeadPosition: false,
+  roleId: null,
   isActive: true,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -55,9 +57,9 @@ describe('OrgPositionController', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('listPositions delegates to the service', async () => {
-    const result = await controller.listPositions(TENANT_ID, 'unit-1');
+    const result = await controller.listPositions(TENANT_ID);
 
-    expect(service.listPositions).toHaveBeenCalledWith(TENANT_ID, 'unit-1');
+    expect(service.listPositions).toHaveBeenCalledWith(TENANT_ID);
     expect(result).toEqual([MOCK_POSITION]);
   });
 

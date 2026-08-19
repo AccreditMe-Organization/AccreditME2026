@@ -1,10 +1,12 @@
 export interface IOrgPosition {
   id: string;
   organizationId: string;
-  orgUnitId: string | null;
   nameEn: string;
   nameAr: string | null;
   grade: number;
+  isSingleAssignee: boolean;
+  isUnitHeadPosition: boolean;
+  roleId: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
