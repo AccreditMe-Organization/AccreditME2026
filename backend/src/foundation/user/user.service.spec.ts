@@ -315,6 +315,48 @@ describe('UserService', () => {
       );
     });
 
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      // A holder of the same positionId exists, but under ORG_B — the
+      // holder-count query's own organizationId scoping must exclude it.
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.positionId === 'pos-head' && where.organizationId === ORG_A ? 0 : 1),
+      );
+      mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).resolves.not.toThrow();
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // validatePositionAssignment()'s own orgPosition.findFirst() lookup —
+      // a positionId that exists, but only under ORG_B, must not resolve
+      // when the assignment is being made under ORG_A. Same literal gate
+      // string as every other isolation test in this file, deliberately —
+      // ACC-33 found several near-miss-worded tests CI's tenant-isolation
+      // job silently never ran because the wording didn't match exactly.
+      mockPrisma.orgPosition.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? null : SINGLE_ASSIGNEE_POSITION),
+      );
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
     // ACC-40 Section 2.1's own "excludeUserId, not isNoOpReassignment"
     // correctness: a user re-saving their own already-held single-assignee
     // position (e.g. an unrelated profile edit that resubmits the same
@@ -470,6 +512,33 @@ describe('UserService', () => {
           'actor-1',
         ),
       ).resolves.not.toThrow();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(HEAD_POSITION_A);
+      // A head-position holder exists in the same-named unit, but under
+      // ORG_B — validateUnitHeadUniqueness()'s own count query must not
+      // see it when the assignment is being made under ORG_A. Every count
+      // query genuinely scoped to ORG_A (both the single-assignee cap and
+      // the head-uniqueness check) resolves to zero holders; only a
+      // hypothetical ORG_B-scoped query would see the ORG_B holder.
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? 0 : 1),
+      );
+      mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head-a', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).resolves.not.toThrow();
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_A, position: { isUnitHeadPosition: true } }),
+        }),
+      );
     });
 
     it('allows a no-op re-save of the same head position by its current holder — excludeUserId applies to both checks', async () => {
