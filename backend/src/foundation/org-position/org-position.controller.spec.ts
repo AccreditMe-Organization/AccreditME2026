@@ -30,6 +30,7 @@ describe('OrgPositionController', () => {
     createPosition: jest.Mock;
     updatePosition: jest.Mock;
     deactivatePosition: jest.Mock;
+    reactivatePosition: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -39,6 +40,7 @@ describe('OrgPositionController', () => {
       createPosition: jest.fn().mockResolvedValue(MOCK_POSITION),
       updatePosition: jest.fn().mockResolvedValue(MOCK_POSITION),
       deactivatePosition: jest.fn().mockResolvedValue(undefined),
+      reactivatePosition: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -90,5 +92,11 @@ describe('OrgPositionController', () => {
     await controller.deactivatePosition('position-1', TENANT_ID, USER_ID);
 
     expect(service.deactivatePosition).toHaveBeenCalledWith('position-1', TENANT_ID, USER_ID);
+  });
+
+  it('reactivatePosition delegates to the service with tenant and actor', async () => {
+    await controller.reactivatePosition('position-1', TENANT_ID, USER_ID);
+
+    expect(service.reactivatePosition).toHaveBeenCalledWith('position-1', TENANT_ID, USER_ID);
   });
 });

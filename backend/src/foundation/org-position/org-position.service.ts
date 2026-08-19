@@ -143,6 +143,27 @@ export class OrgPositionService {
     });
   }
 
+  // Mirrors RoleService.reactivateRole() exactly (ACC-40 — a distinct
+  // concern from the main OrgPosition redesign, bundled into the same
+  // phase for convenience).
+  async reactivatePosition(id: string, organizationId: string, actorId: string): Promise<void> {
+    const position = await this.prisma.orgPosition.findFirst({ where: { id, organizationId } });
+    if (!position) throw new NotFoundException('Org position not found');
+    if (position.isActive) return;
+
+    await this.prisma.orgPosition.update({ where: { id }, data: { isActive: true } });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'OrgPosition',
+      objectId: position.id,
+      before: { isActive: false },
+      after: { isActive: true },
+    });
+  }
+
   // THE CORE METHOD — used by TaskService (and, in later steps, Committees/
   // Meetings/Documents/CAPA/Audits per the Step 8 plan's Section 7).
   async validateEscalationTarget(

@@ -320,6 +320,39 @@ describe('OrgPositionService', () => {
     });
   });
 
+  // Mirrors RoleService.reactivateRole()'s own test shape (ACC-40).
+  describe('reactivatePosition', () => {
+    it('sets isActive to true and writes an audit log', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ ...BASE_POSITION, isActive: false });
+      mockPrisma.orgPosition.update.mockResolvedValue({ ...BASE_POSITION, isActive: true });
+
+      await service.reactivatePosition('position-1', ORG_A, 'actor-1');
+
+      expect(mockPrisma.orgPosition.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { isActive: true } }),
+      );
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'UPDATE', objectType: 'OrgPosition' }),
+      );
+    });
+
+    it('is idempotent — no error and no write if already active', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ ...BASE_POSITION, isActive: true });
+
+      await service.reactivatePosition('position-1', ORG_A, 'actor-1');
+
+      expect(mockPrisma.orgPosition.update).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for a cross-tenant position', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(null);
+
+      await expect(service.reactivatePosition('position-1', ORG_B, 'actor-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('validateEscalationTarget', () => {
     const unitChild = { id: 'unit-child', parentId: 'unit-parent' };
     const unitParent = { id: 'unit-parent', parentId: null };
