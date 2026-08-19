@@ -577,6 +577,59 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-40 Section 2.3, Non-Goals — the bypass restriction confirmed to
+  // actually hold in code, not just documented. invite()/updateProfile()
+  // below never pass a 5th argument to validatePositionAssignment() at
+  // all — there is no code path by which either could set
+  // isDeclaredHandoverBypass to true, structurally, regardless of what a
+  // caller puts in the request body. These tests prove that concretely:
+  // even a dto object carrying an extraneous isDeclaredHandoverBypass:
+  // true property (simulating a caller attempting to smuggle it through
+  // the request body) has zero effect, because neither UpdateUserProfileDto
+  // nor InviteUserDto has such a field, and updateProfile()/invite() never
+  // read one off the dto to forward it.
+  describe('isDeclaredHandoverBypass — unreachable from the ordinary updateProfile()/invite() path (ACC-40 Section 2.3 Non-Goals)', () => {
+    const HEAD_POSITION = { id: 'pos-head', isSingleAssignee: true, isUnitHeadPosition: true };
+
+    beforeEach(() => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(1); // an existing holder is present — would block without a bypass
+    });
+
+    it('updateProfile() still rejects a conflicting single-assignee/head position even when the dto smuggles isDeclaredHandoverBypass: true', async () => {
+      const targetUser = { id: 'user-2', organizationId: ORG_A, primaryOrgUnitId: 'unit-1' };
+      mockPrisma.user.findFirst.mockResolvedValue(targetUser);
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(HEAD_POSITION);
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id?.not === 'user-2' ? 1 : 0),
+      );
+
+      const dtoWithSmuggledBypass = {
+        positionId: 'pos-head',
+        isDeclaredHandoverBypass: true,
+      } as unknown as Parameters<typeof service.updateProfile>[1];
+
+      await expect(
+        service.updateProfile('user-2', dtoWithSmuggledBypass, ORG_A, 'admin-1', ['users:manage']),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('invite() still rejects a conflicting single-assignee/head position even when the dto smuggles isDeclaredHandoverBypass: true', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null); // no email conflict
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(HEAD_POSITION);
+
+      const dtoWithSmuggledBypass = {
+        email: 'new@example.com',
+        name: 'New User',
+        positionId: 'pos-head',
+        primaryOrgUnitId: 'unit-1',
+        isDeclaredHandoverBypass: true,
+      } as unknown as Parameters<typeof service.invite>[0];
+
+      await expect(service.invite(dtoWithSmuggledBypass, ORG_A, 'actor-1')).rejects.toThrow(ConflictException);
+    });
+  });
+
   // ACC-40 Section 2.4 — remediation report, not a data migration.
   describe('notifyTenantAdminsOfIncompleteProfiles', () => {
     it('does nothing when no active user is missing a position or org unit', async () => {

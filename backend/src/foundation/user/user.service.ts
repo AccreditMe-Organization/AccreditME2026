@@ -275,19 +275,42 @@ export class UserService {
   // same-value re-save count as zero *other* holders automatically,
   // without the caller having to separately compute whether anything
   // actually changed) — or null for invite(), where no such user exists yet.
+  //
+  // isDeclaredHandoverBypass (ACC-40 Section 2.3, Phase 5) — defaults false
+  // everywhere in this file. The ONLY caller that ever sets it true is
+  // OrgUnitHeadService.declareHandover() (Phase 5 commit 3), granting the
+  // incoming successor the SAME head-conferring position the outgoing
+  // holder already holds — deliberately violating both caps below, but
+  // only through that one dedicated code path, only for the two people it
+  // explicitly names. invite()/updateProfile() below never pass this
+  // parameter at all, so it is structurally unreachable from the ordinary
+  // profile-edit path — not merely defaulted false by convention.
   private async validatePositionAssignment(
     targetPositionId: string,
     targetPrimaryOrgUnitId: string | null,
     organizationId: string,
     excludeUserId: string | null,
+    isDeclaredHandoverBypass = false,
   ): Promise<void> {
     const position = await this.prisma.orgPosition.findFirst({
       where: { id: targetPositionId, organizationId },
     });
     if (!position) throw new NotFoundException('Position not found in this organization');
 
-    await this.validateSingleAssigneeCap(position, targetPrimaryOrgUnitId, organizationId, excludeUserId);
-    await this.validateUnitHeadUniqueness(position, targetPrimaryOrgUnitId, organizationId, excludeUserId);
+    await this.validateSingleAssigneeCap(
+      position,
+      targetPrimaryOrgUnitId,
+      organizationId,
+      excludeUserId,
+      isDeclaredHandoverBypass,
+    );
+    await this.validateUnitHeadUniqueness(
+      position,
+      targetPrimaryOrgUnitId,
+      organizationId,
+      excludeUserId,
+      isDeclaredHandoverBypass,
+    );
   }
 
   // ACC-40 Section 2.1 — scoped per (positionId, primaryOrgUnitId), not per
@@ -303,8 +326,14 @@ export class UserService {
     targetPrimaryOrgUnitId: string | null,
     organizationId: string,
     excludeUserId: string | null,
+    isDeclaredHandoverBypass = false,
   ): Promise<void> {
     if (!position.isSingleAssignee) return;
+    // Short-circuits before ever querying — matching this file's own
+    // established "an inapplicable check never even reaches the count
+    // query" convention (Phase 4's own regression tests assert this for
+    // ordinary positions).
+    if (isDeclaredHandoverBypass) return;
 
     const existingHolders = await this.prisma.user.count({
       where: {
@@ -339,8 +368,10 @@ export class UserService {
     targetPrimaryOrgUnitId: string | null,
     organizationId: string,
     excludeUserId: string | null,
+    isDeclaredHandoverBypass = false,
   ): Promise<void> {
     if (!position.isUnitHeadPosition) return;
+    if (isDeclaredHandoverBypass) return;
 
     const anyHeadHolders = await this.prisma.user.count({
       where: {
