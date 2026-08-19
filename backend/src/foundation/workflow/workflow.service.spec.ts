@@ -1191,6 +1191,14 @@ describe('WorkflowService', () => {
       );
       mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'member-1' }, { userId: 'member-2' }]);
       mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+      // ACC-40 Section 2.6.1 — resolveApproverPool() now routes through
+      // applyOutOfOfficeRouting(); explicit non-OOO stub makes this test's
+      // dependency on that query visible rather than relying on beforeEach's
+      // global default.
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'member-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        { id: 'member-2', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
 
@@ -1227,6 +1235,9 @@ describe('WorkflowService', () => {
       // Pool of 1 (the chairman only) with 1 APPROVED vote — threshold ALL met.
       mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'chairman-user' }]);
       mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'chairman-user', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
 
@@ -1427,6 +1438,12 @@ describe('WorkflowService', () => {
         );
         mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
         mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'someone-else' }]);
+        // ACC-40 Section 2.6.1 — resolveApproverPool() now routes through
+        // applyOutOfOfficeRouting(); explicit non-OOO stub makes this test's
+        // dependency on that query visible.
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          { id: 'someone-else', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        ]);
 
         await expect(
           service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
@@ -1440,6 +1457,9 @@ describe('WorkflowService', () => {
         );
         mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
         mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'someone-else' }]);
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          { id: 'someone-else', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        ]);
 
         await expect(
           service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
@@ -1453,6 +1473,38 @@ describe('WorkflowService', () => {
         );
         mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
         mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          { id: ACTOR, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        ]);
+        mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+        mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+          makeInstance({ currentStageId: 'stage-parallel' }),
+        );
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
+
+        await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+      });
+
+      // ACC-40 Section 2.6.1 — the live defect this phase fixes: before,
+      // this exact scenario incorrectly threw ForbiddenException, because
+      // resolveApproverPool() checked the raw (non-OOO-substituted) pool.
+      it('allows an actor who is only in the resolved ROLE approver pool via out-of-office substitution', async () => {
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+          makeInstanceStage({ stageId: 'stage-parallel' }),
+        );
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
+        mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
+        const now = new Date();
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          {
+            id: 'holder-1',
+            outOfOfficeFrom: new Date(now.getTime() - 86400000),
+            outOfOfficeTo: new Date(now.getTime() + 86400000),
+            actingUserId: ACTOR,
+          },
+        ]);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
         mockPrisma.workflowInstance.findUnique.mockResolvedValue(
           makeInstance({ currentStageId: 'stage-parallel' }),
@@ -1468,6 +1520,8 @@ describe('WorkflowService', () => {
         // SINGLE_STAGE's assigneeStrategy is SELF — resolveApproverPool()
         // returns [] for anything that isn't COMMITTEE or ROLE (its own
         // documented "seed/config error" fallback), same as before this fix.
+        // Pool stays empty before ever reaching applyOutOfOfficeRouting(),
+        // so no user.findMany stub is needed here.
         mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
         mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));

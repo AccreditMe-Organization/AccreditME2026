@@ -1131,10 +1131,17 @@ export class WorkflowService {
   // Sizes the eligible-approver pool for PARALLEL/SEQUENTIAL threshold checks
   // — deliberately separate from resolveAssignee() above, which needs the
   // full instance (for SELF) and isn't meaningful for pool-sizing purposes.
+  // ACC-40 Section 2.6.1 — routes its result through applyOutOfOfficeRouting()
+  // before returning, same as resolveAssignee() does for resolveAssigneeRaw().
+  // Fixes both of this method's callers at once: submitApproval()'s
+  // eligibility gate and isApprovalThresholdMet()'s pool-sizing calculation —
+  // an out-of-office approver's acting user must be able to both cast the
+  // vote and count toward the threshold in their place.
   private async resolveApproverPool(
     stage: PrismaWorkflowStage,
     organizationId: string,
   ): Promise<string[]> {
+    let rawPool: string[];
     if (stage.assigneeStrategy === 'COMMITTEE') {
       if (!stage.committeeId) return [];
       // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — same
@@ -1152,17 +1159,18 @@ export class WorkflowService {
             : {}),
         },
       });
-      return members.map((m) => m.userId);
-    }
-    if (stage.assigneeStrategy === 'ROLE' && stage.assigneeRoleId) {
+      rawPool = members.map((m) => m.userId);
+    } else if (stage.assigneeStrategy === 'ROLE' && stage.assigneeRoleId) {
       const userRoles = await this.prisma.userRole.findMany({
         where: { roleId: stage.assigneeRoleId, user: { organizationId, status: 'ACTIVE' } },
       });
-      return userRoles.map((ur) => ur.userId);
+      rawPool = userRoles.map((ur) => ur.userId);
+    } else {
+      // Any other assigneeStrategy on a multi-approver stage is a seed/config
+      // error — there is no well-defined pool to size a threshold against.
+      return [];
     }
-    // Any other assigneeStrategy on a multi-approver stage is a seed/config
-    // error — there is no well-defined pool to size a threshold against.
-    return [];
+    return this.applyOutOfOfficeRouting(rawPool, organizationId);
   }
 
   private async computeSlaDueAt(
