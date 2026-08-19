@@ -281,6 +281,34 @@ describe('TenantService', () => {
         'Root org unit not found after bootstrap — this should never happen',
       );
     });
+
+    // ── TENANT ISOLATION ────────────────────────────────────────────────────
+    it('should NOT return records belonging to a different tenant', async () => {
+      const positionsByOrg: Record<string, { id: string; nameEn: string }> = {
+        'org-a': { id: 'pos-director-a', nameEn: 'Director' },
+        'org-b': { id: 'pos-director-b', nameEn: 'Director' },
+      };
+      const rootUnitsByOrg: Record<string, { id: string; parentId: null }> = {
+        'org-a': { id: 'unit-root-a', parentId: null },
+        'org-b': { id: 'unit-root-b', parentId: null },
+      };
+      prisma.orgPosition.findFirst.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(positionsByOrg[where.organizationId] ?? null),
+      );
+      prisma.orgUnit.findFirst.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(rootUnitsByOrg[where.organizationId] ?? null),
+      );
+
+      const result = await service.resolveDefaultTenantAdminAssignment('org-a');
+
+      expect(result).toEqual({ positionId: 'pos-director-a', primaryOrgUnitId: 'unit-root-a' });
+      expect(prisma.orgPosition.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: 'org-a' }) }),
+      );
+      expect(prisma.orgUnit.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: 'org-a' }) }),
+      );
+    });
   });
 
   // ── getTenantConfig ───────────────────────────────────────────────────────
