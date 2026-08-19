@@ -48,6 +48,7 @@ const mockPrisma = {
   workflowInstanceStage: { findMany: jest.fn(), update: jest.fn() },
   task: { findMany: jest.fn(), update: jest.fn() },
   userRole: { findMany: jest.fn() },
+  user: { findMany: jest.fn(), update: jest.fn() },
 };
 
 // Always-open working-hours calendar — avoids clock-dependent flakiness in
@@ -89,6 +90,10 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.task.findMany.mockResolvedValue([]); // no-op sweepOverdueTasks
+    // ACC-40 Section 2.7 — default: no expired acting-org-unit assignments,
+    // so sweepExpiredActingOrgUnitAssignments() is a no-op for every
+    // pre-existing test. Tests exercising it override this per-case.
+    mockPrisma.user.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue({});
     mockWorkingCalendar.getOrCreate.mockResolvedValue(ALWAYS_OPEN_CALENDAR);
     mockWorkingCalendar.listHolidays.mockResolvedValue([]);
@@ -442,6 +447,68 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
       expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ACC-40 Section 2.7 — the simplest sweep step: actingOrgUnitId feeds
+  // nothing in Head derivation/vacancy detection, so clearing it on expiry
+  // needs no follow-on work at all.
+  describe('sweepExpiredActingOrgUnitAssignments (ACC-40 Section 2.7)', () => {
+    const EXPIRED_USER = {
+      id: 'user-1',
+      organizationId: ORG_A,
+      actingOrgUnitId: 'unit-x',
+      actingOrgUnitUntil: new Date('2026-01-01T00:00:00.000Z'), // in the past
+    };
+
+    it('clears actingOrgUnitId/actingOrgUnitUntil for a user past their expiry', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([EXPIRED_USER]);
+
+      await runProcess();
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { actingOrgUnitId: null, actingOrgUnitUntil: null },
+      });
+    });
+
+    it('notifies the affected user that their acting assignment has ended', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([EXPIRED_USER]);
+
+      await runProcess();
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1' }),
+        ORG_A,
+      );
+    });
+
+    it('does nothing when no user has an expired acting-org-unit assignment', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      await runProcess();
+
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    // Confirms Pending Discussion #7 (plan Section 2.7 "THE KEY QUESTION")
+    // holds in code, not just in the design document: expiring an
+    // acting-org-unit assignment must not touch anything Head-derivation-
+    // or vacancy-related — no follow-on work of any kind.
+    it('does not touch any workflow, org-position, or role-related mechanism — pure scoping, no side effects', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([EXPIRED_USER]);
+
+      await runProcess();
+
+      expect(mockWorkflowService.resolveUnassignedBlockingTransitions).not.toHaveBeenCalled();
+      expect(mockWorkflowService.resolveUnreachableTriggerConditionTransitions).not.toHaveBeenCalled();
+      expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).not.toHaveBeenCalled();
+      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
+      expect(mockPrisma.userRole.findMany).not.toHaveBeenCalled();
+      // Exactly one notification — the direct "assignment ended" message to
+      // the affected user themself, no admin fan-out of any kind.
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(1);
     });
   });
 });

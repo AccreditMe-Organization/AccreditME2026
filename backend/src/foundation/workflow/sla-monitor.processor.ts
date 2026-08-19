@@ -97,6 +97,35 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
 
     await this.sweepOverdueTasks(now);
     await this.sweepUnassignedStages();
+    await this.sweepExpiredActingOrgUnitAssignments(now);
+  }
+
+  // ACC-40 Section 2.7 — the simplest sweep step this file adds: unlike
+  // sweepUnassignedStages()/sweepOverdueTasks() above, actingOrgUnitId
+  // feeds nothing in Head derivation (2.1/2.2/2.5) or vacancy detection —
+  // it's a pure scoping fact, so clearing it on expiry needs no follow-on
+  // work (no refreshOrgUnitHeadVacancy() call, no escalation re-check).
+  private async sweepExpiredActingOrgUnitAssignments(now: Date): Promise<void> {
+    const expired = await this.prisma.user.findMany({
+      where: { actingOrgUnitId: { not: null }, actingOrgUnitUntil: { lte: now } },
+    });
+
+    for (const user of expired) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { actingOrgUnitId: null, actingOrgUnitUntil: null },
+      });
+
+      // A nicety, not a required part of the core mechanism (plan Section 2.7).
+      await this.notificationService.create(
+        {
+          userId: user.id,
+          titleEn: 'Acting-unit assignment ended',
+          bodyEn: 'Your acting assignment to another org unit has ended.',
+        },
+        user.organizationId,
+      );
+    }
   }
 
   // ACC-28 Section 2.5.1 — drift-after-entry re-check. The entry-time check
