@@ -44,6 +44,51 @@ describe('OrgUnitHeadService', () => {
     service = module.get<OrgUnitHeadService>(OrgUnitHeadService);
   });
 
+  // ── getHeadStatus ────────────────────────────────────────────────────────
+
+  describe('getHeadStatus', () => {
+    it('throws NotFoundException when the org unit does not exist in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(service.getHeadStatus(UNIT_1, ORG_A)).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns the live derivation of current holders plus the OrgUnit cache fields', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({
+        ...BASE_ORG_UNIT,
+        pendingHeadUserId: INCOMING_SUCCESSOR.id,
+        headHandoverEffectiveDate: new Date('2026-09-01T00:00:00.000Z'),
+      });
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: OUTGOING_HOLDER.id, name: 'Outgoing', positionId: HEAD_POSITION_ID },
+        { id: INCOMING_SUCCESSOR.id, name: 'Incoming', positionId: HEAD_POSITION_ID },
+      ]);
+
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          primaryOrgUnitId: UNIT_1,
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true },
+        },
+        select: { id: true, name: true, positionId: true },
+      });
+      expect(result.holders).toHaveLength(2); // both holders during an open handover
+      expect(result.pendingHeadUserId).toBe(INCOMING_SUCCESSOR.id);
+      expect(result.headHandoverEffectiveDate).toEqual(new Date('2026-09-01T00:00:00.000Z'));
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? BASE_ORG_UNIT : null),
+      );
+
+      await expect(service.getHeadStatus(UNIT_1, ORG_B)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   // ── declareHandover ───────────────────────────────────────────────────────
 
   describe('declareHandover', () => {

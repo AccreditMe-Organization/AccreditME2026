@@ -7,6 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../services/org-unit.service';
 import { OrgUnitFormComponent } from '../org-unit-form/org-unit-form.component';
+import { OrgUnitHeadPanelComponent } from '../org-unit-head-panel/org-unit-head-panel.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
@@ -20,6 +21,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TagModule,
     TooltipModule,
     OrgUnitFormComponent,
+    OrgUnitHeadPanelComponent,
     EditDialogComponent,
   ],
   template: `
@@ -84,6 +86,14 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                 [pTooltip]="'common.edit' | translate"
               />
               <p-button
+                icon="pi pi-crown"
+                [text]="true"
+                size="small"
+                [disabled]="!rowData.isActive"
+                [pTooltip]="'orgUnitHead.manageHead' | translate"
+                (onClick)="onManageHead(rowData)"
+              />
+              <p-button
                 icon="pi pi-ban"
                 [text]="true"
                 size="small"
@@ -119,10 +129,22 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       [header]="(editingUnit() ? 'organization.editUnit' : 'organization.addUnit') | translate"
       [content]="formTpl"
     />
+
+    <ng-template #headPanelTpl>
+      @if (managingHeadUnitId(); as unitId) {
+        <app-org-unit-head-panel [orgUnitId]="unitId" (saved)="onHeadPanelSaved()" />
+      }
+    </ng-template>
+    <app-edit-dialog
+      [(visible)]="headPanelVisible"
+      [header]="'orgUnitHead.manageHead' | translate"
+      [content]="headPanelTpl"
+    />
   `,
 })
 export class OrgUnitTreeComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+  @ViewChild('headPanelTpl', { read: TemplateRef, static: true }) headPanelTpl!: TemplateRef<unknown>;
 
   private readonly orgUnitService = inject(OrgUnitService);
 
@@ -134,12 +156,27 @@ export class OrgUnitTreeComponent implements OnInit {
   readonly editingUnit = signal<OrgUnitDto | null>(null);
   readonly newUnitParentId = signal<string | null>(null);
 
+  readonly headPanelVisible = signal(false);
+  readonly managingHeadUnitId = signal<string | null>(null);
+
   ngOnInit(): void {
     this.loadTree();
   }
 
   displayName(unit: OrgUnitDto): string {
     return orgUnitDisplayName(unit);
+  }
+
+  onManageHead(unit: OrgUnitDto): void {
+    this.managingHeadUnitId.set(unit.id);
+    this.headPanelVisible.set(true);
+  }
+
+  onHeadPanelSaved(): void {
+    // Deliberately left open — declare/complete/cancel/assign/vacate are
+    // each one step in an ongoing workflow, not a single closing save
+    // (unlike app-org-unit-form's onFormSaved()). The panel reloads its
+    // own status internally after each action.
   }
 
   onAdd(): void {

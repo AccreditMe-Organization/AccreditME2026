@@ -11,6 +11,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
+import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
 
 // ACC-40 Section 2.3 — Deliberate Handover. A handover is not a change to
 // a separately-stored "who is Head" fact — it is a declared, temporary,
@@ -28,6 +29,32 @@ export class OrgUnitHeadService {
     @Inject(forwardRef(() => UserService))
     private readonly userService: UserService,
   ) {}
+
+  // ACC-40 Section 2.2 — a read-only projection for UI consumption
+  // (Phase 5 commit 7's necessary companion: the frontend needs to know
+  // current state to decide which actions to offer). "holders" is
+  // Section 2.2's own live derivation query, never the cached
+  // isHeadVacant field — that stays inert until Phase 6 wires
+  // refreshOrgUnitHeadVacancy() against it.
+  async getHeadStatus(orgUnitId: string, organizationId: string): Promise<IOrgUnitHeadStatus> {
+    const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+
+    const holders = await this.prisma.user.findMany({
+      where: {
+        organizationId,
+        primaryOrgUnitId: orgUnitId,
+        status: 'ACTIVE',
+        position: { isUnitHeadPosition: true },
+      },
+      select: { id: true, name: true, positionId: true },
+    });
+
+    return {
+      holders,
+      pendingHeadUserId: orgUnit.pendingHeadUserId,
+      headHandoverEffectiveDate: orgUnit.headHandoverEffectiveDate,
+    };
+  }
 
   async declareHandover(
     orgUnitId: string,

@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -8,6 +8,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrgUnitHeadService } from './org-unit-head.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
+import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
 
 // ACC-40 Section 2.3 — Head-management actions (declare/complete/cancel a
 // handover, direct assign/vacate) are gated by org:manage, NOT
@@ -21,6 +22,17 @@ import { AssignHeadDto } from './dto/assign-head.dto';
 @UseGuards(TenantGuard, PermissionGuard)
 export class OrgUnitHeadController {
   constructor(private readonly orgUnitHeadService: OrgUnitHeadService) {}
+
+  // Read — gated by org:view, not org:manage, matching this controller's
+  // own org:manage/org:view split for the write actions below.
+  @Get()
+  @Permissions(ORG_PERMISSIONS.VIEW)
+  getHeadStatus(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+  ): Promise<IOrgUnitHeadStatus> {
+    return this.orgUnitHeadService.getHeadStatus(id, tenantId);
+  }
 
   @Post('assign')
   @HttpCode(HttpStatus.OK)

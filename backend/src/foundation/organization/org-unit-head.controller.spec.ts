@@ -13,6 +13,7 @@ const UNIT_ID = 'unit-test';
 describe('OrgUnitHeadController', () => {
   let controller: OrgUnitHeadController;
   let service: {
+    getHeadStatus: jest.Mock;
     assignHead: jest.Mock;
     vacateHead: jest.Mock;
     declareHandover: jest.Mock;
@@ -22,6 +23,7 @@ describe('OrgUnitHeadController', () => {
 
   beforeEach(async () => {
     service = {
+      getHeadStatus: jest.fn().mockResolvedValue({ holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null }),
       assignHead: jest.fn().mockResolvedValue(undefined),
       vacateHead: jest.fn().mockResolvedValue(undefined),
       declareHandover: jest.fn().mockResolvedValue(undefined),
@@ -43,6 +45,11 @@ describe('OrgUnitHeadController', () => {
   });
 
   afterEach(() => jest.clearAllMocks());
+
+  it('getHeadStatus delegates to the service with tenant', async () => {
+    await controller.getHeadStatus(UNIT_ID, TENANT_ID);
+    expect(service.getHeadStatus).toHaveBeenCalledWith(UNIT_ID, TENANT_ID);
+  });
 
   it('assignHead delegates to the service with tenant and actor', async () => {
     const dto = { userId: 'target-user', positionId: 'pos-head' };

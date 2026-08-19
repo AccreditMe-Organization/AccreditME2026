@@ -62,6 +62,28 @@
     "confirmDeactivate": "Deactivate this unit? Active children must be deactivated first.",
     "codeInUse": "This code is already in use in your organization."
   },
+  "orgUnitHead": {
+    "manageHead": "Manage Head",
+    "vacant": "Vacant — No Head Assigned",
+    "currentHead": "Head: {{name}}",
+    "position": "Position",
+    "candidate": "Candidate",
+    "assign": "Assign Head",
+    "vacate": "Vacate Head",
+    "vacateConfirmMessage": "Vacate this unit's Head position? The unit will have no Head until a successor is assigned.",
+    "declareHandover": "Declare Handover",
+    "successor": "Successor",
+    "effectiveDate": "Effective Date",
+    "reason": "Reason",
+    "declare": "Declare",
+    "handoverInProgress": "Handover In Progress",
+    "handoverSummary": "Handover:",
+    "completeNow": "Complete Now",
+    "cancelHandover": "Cancel Handover",
+    "cancelHandoverConfirmMessage": "Cancel this handover? The incoming successor's position grant will be reverted; the current Head remains unaffected.",
+    "errorLoad": "Failed to load Head status.",
+    "errorSave": "Failed to save changes."
+  },
   "lookup": {
     "title": "Lookup Categories",
     "columnLabel": "Label",
