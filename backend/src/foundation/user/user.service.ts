@@ -139,6 +139,59 @@ export class UserService {
     return user;
   }
 
+  // ACC-40 Section 2.4 — a remediation REPORT, not a data-transformation
+  // script: which position/org unit an existing active user belongs to is
+  // not programmatically derivable, unlike every existing backfill-*.ts
+  // precedent in this codebase. Reuses the exact
+  // Role.findFirst({ key: 'TENANT_ADMIN' }) → UserRole.findMany() →
+  // NotificationService.create() chain already used by
+  // notifyTenantAdminsOfCoverageGap()/notifyTenantAdminsOfUnassignedStage()
+  // in workflow.service.ts, rather than a new mechanism. The actual fix
+  // happens through the already-fully-wired user-profile.component.ts edit
+  // form — no new UI needed for the fix itself, only this notification.
+  async notifyTenantAdminsOfIncompleteProfiles(organizationId: string): Promise<void> {
+    // primaryOrgUnitId's mandatoriness is itself conditional (2.4's scoped
+    // exception) — a tenant with zero active OrgUnits has nothing missing
+    // on that field, so it must not be counted as incomplete for it.
+    const activeOrgUnitCount = await this.prisma.orgUnit.count({
+      where: { organizationId, isActive: true },
+    });
+
+    const incompleteUsers = await this.prisma.user.findMany({
+      where: {
+        organizationId,
+        status: 'ACTIVE',
+        OR: [
+          { positionId: null },
+          ...(activeOrgUnitCount > 0 ? [{ primaryOrgUnitId: null }] : []),
+        ],
+      },
+    });
+    if (incompleteUsers.length === 0) return;
+
+    const adminRole = await this.prisma.role.findFirst({
+      where: { organizationId, key: 'TENANT_ADMIN' },
+    });
+    if (!adminRole) return;
+
+    const adminUserRoles = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+    });
+
+    for (const userRole of adminUserRoles) {
+      await this.notificationService.create(
+        {
+          userId: userRole.userId,
+          titleEn: `${incompleteUsers.length} active user(s) missing position or org unit`,
+          titleAr: `${incompleteUsers.length} مستخدم نشط ينقصه المسمى الوظيفي أو الوحدة التنظيمية`,
+          bodyEn: `${incompleteUsers.length} active user(s) in your organization have no assigned position and/or org unit. Update each user's profile to complete their record.`,
+          bodyAr: `يوجد ${incompleteUsers.length} مستخدم نشط في مؤسستك بلا مسمى وظيفي و/أو وحدة تنظيمية. حدّث ملف كل مستخدم لإكمال بياناته.`,
+        },
+        organizationId,
+      );
+    }
+  }
+
   async updateProfile(
     id: string,
     dto: UpdateUserProfileDto,

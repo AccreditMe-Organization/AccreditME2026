@@ -211,6 +211,82 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-40 Section 2.4 — remediation report, not a data migration.
+  describe('notifyTenantAdminsOfIncompleteProfiles', () => {
+    it('does nothing when no active user is missing a position or org unit', async () => {
+      mockPrisma.orgUnit.count.mockResolvedValue(1);
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      await service.notifyTenantAdminsOfIncompleteProfiles(ORG_A);
+
+      expect(mockPrisma.role.findFirst).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+
+    it('notifies every active TENANT_ADMIN with the incomplete-profile count', async () => {
+      mockPrisma.orgUnit.count.mockResolvedValue(1);
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1' }, { id: 'u2' }]);
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }]);
+
+      await service.notifyTenantAdminsOfIncompleteProfiles(ORG_A);
+
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: ORG_A, key: 'TENANT_ADMIN' },
+      });
+      expect(mockNotification.create).toHaveBeenCalledTimes(2);
+      expect(mockNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-1', titleEn: expect.stringContaining('2') }),
+        ORG_A,
+      );
+      expect(mockNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-2', titleEn: expect.stringContaining('2') }),
+        ORG_A,
+      );
+    });
+
+    it('does not query primaryOrgUnitId completeness when the tenant has zero active OrgUnits', async () => {
+      mockPrisma.orgUnit.count.mockResolvedValue(0);
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      await service.notifyTenantAdminsOfIncompleteProfiles(ORG_A);
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ OR: [{ positionId: null }] }),
+        }),
+      );
+    });
+
+    it('does nothing when no TENANT_ADMIN role exists for the tenant', async () => {
+      mockPrisma.orgUnit.count.mockResolvedValue(1);
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1' }]);
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      await service.notifyTenantAdminsOfIncompleteProfiles(ORG_A);
+
+      expect(mockPrisma.userRole.findMany).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgUnit.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? 1 : 5),
+      );
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? [] : [{ id: 'leaked' }]),
+      );
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      await service.notifyTenantAdminsOfIncompleteProfiles(ORG_A);
+
+      expect(mockPrisma.orgUnit.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateProfile', () => {
     const EXISTING = { id: 'user-1', organizationId: ORG_A, name: 'Old Name' };
 
