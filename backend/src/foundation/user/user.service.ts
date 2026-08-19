@@ -213,6 +213,11 @@ export class UserService {
       data['positionId'] = dto.positionId;
       data['primaryOrgUnitId'] = dto.primaryOrgUnitId;
       data['managerId'] = dto.managerId;
+      // ACC-40 Section 2.7 — no referential-integrity check against
+      // OrgUnit, matching this block's own existing precedent for
+      // positionId/primaryOrgUnitId/managerId above.
+      data['actingOrgUnitId'] = dto.actingOrgUnitId;
+      data['actingOrgUnitUntil'] = dto.actingOrgUnitUntil ? new Date(dto.actingOrgUnitUntil) : dto.actingOrgUnitUntil;
     }
 
     const user = await this.prisma.user.update({ where: { id }, data });

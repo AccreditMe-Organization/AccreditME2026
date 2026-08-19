@@ -373,6 +373,8 @@
     "position": "المسمى الوظيفي",
     "primaryOrgUnit": "الوحدة التنظيمية الرئيسية",
     "manager": "المدير المباشر",
+    "actingOrgUnit": "ينوب عن وحدة",
+    "actingOrgUnitUntil": "حتى",
     "lastLogin": "آخر تسجيل دخول",
     "outOfOffice": "خارج المكتب",
     "outOfOfficeFrom": "من",

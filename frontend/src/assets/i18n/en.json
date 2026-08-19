@@ -373,6 +373,8 @@
     "position": "Position",
     "primaryOrgUnit": "Primary Org Unit",
     "manager": "Manager",
+    "actingOrgUnit": "Acting For Unit",
+    "actingOrgUnitUntil": "Until",
     "lastLogin": "Last Login",
     "outOfOffice": "Out of Office",
     "outOfOfficeFrom": "From",

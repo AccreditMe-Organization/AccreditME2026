@@ -342,6 +342,41 @@ describe('UserService', () => {
       expect(call.data.managerId).toBe('mgr-1');
     });
 
+    // ACC-40 Section 2.7
+    it('allows an admin to set actingOrgUnitId/actingOrgUnitUntil on another user', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(EXISTING);
+      mockPrisma.user.update.mockResolvedValue(EXISTING);
+
+      await service.updateProfile(
+        'user-1',
+        { actingOrgUnitId: 'unit-x', actingOrgUnitUntil: '2026-12-31T00:00:00.000Z' },
+        ORG_A,
+        'admin-1',
+        ['users:manage'],
+      );
+
+      const call = mockPrisma.user.update.mock.calls[0][0];
+      expect(call.data.actingOrgUnitId).toBe('unit-x');
+      expect(call.data.actingOrgUnitUntil).toEqual(new Date('2026-12-31T00:00:00.000Z'));
+    });
+
+    it('strips actingOrgUnitId/actingOrgUnitUntil when a non-admin edits their own profile', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(EXISTING);
+      mockPrisma.user.update.mockResolvedValue(EXISTING);
+
+      await service.updateProfile(
+        'user-1',
+        { actingOrgUnitId: 'unit-x', actingOrgUnitUntil: '2026-12-31T00:00:00.000Z' },
+        ORG_A,
+        'user-1',
+        [],
+      );
+
+      const call = mockPrisma.user.update.mock.calls[0][0];
+      expect(call.data).not.toHaveProperty('actingOrgUnitId');
+      expect(call.data).not.toHaveProperty('actingOrgUnitUntil');
+    });
+
     it('throws ForbiddenException when a non-self, non-admin actor attempts the update', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(EXISTING);
 
