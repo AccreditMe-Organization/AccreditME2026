@@ -430,6 +430,11 @@ model User {
   manager                   User?                      @relation("UserManager", fields: [managerId], references: [id])
   directReports             User[]                     @relation("UserManager")
   refreshTokens             RefreshToken[]
+  // ACC-40 Section 2.3 — back-relations for OrgUnit.pendingHeadUserId/
+  // actingHeadUserId and OrgUnitHeadEvent.userId.
+  pendingHeadForOrgUnits    OrgUnit[]                  @relation("OrgUnitPendingHead")
+  actingHeadForOrgUnits     OrgUnit[]                  @relation("OrgUnitActingHead")
+  orgUnitHeadEvents         OrgUnitHeadEvent[]         @relation("OrgUnitHeadEventUser")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -611,15 +616,69 @@ model OrgUnit {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  parent       OrgUnit?     @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
-  children     OrgUnit[]    @relation("OrgUnitHierarchy")
+  // ACC-40 Section 2.3 — cache fields for the currently-open handover (if
+  // any). NOT the source of truth (the actual state is two real
+  // User.positionId assignments) — a cheap read for "is a handover in
+  // progress here" without re-deriving it from a position count each time.
+  pendingHeadUserId         String?
+  headHandoverEffectiveDate DateTime?
+  // ACC-40 Section 2.5 — cache of a position-holding query, land now but
+  // stay inert until Phase 6 wires refreshOrgUnitHeadVacancy() against them.
+  isHeadVacant              Boolean   @default(false)
+  headVacantSince           DateTime?
+  // ACC-40 Section 2.6 — independent of position-holding entirely, land now
+  // but stay inert until Phase 6's Acting Head assign/clear methods exist.
+  actingHeadUserId          String?
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  parent       OrgUnit?           @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
+  children     OrgUnit[]          @relation("OrgUnitHierarchy")
   users        User[]
-  actingUsers  User[]       @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
+  actingUsers  User[]             @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
+  pendingHead  User?              @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
+  actingHead   User?              @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
+  headEvents   OrgUnitHeadEvent[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([parentId])
+  @@index([pendingHeadUserId])
+  @@index([actingHeadUserId])
+}
+
+// ACC-40 Section 2.3 — deliberately modeled after CommitteeMembershipEvent's
+// exact shape: action enum, effectiveDate distinct from createdAt,
+// reason/approvedBy both nullable. Same precedent, same reasoning: an
+// append-only ledger answering "who held this authority, when, and why."
+model OrgUnitHeadEvent {
+  id             String            @id @default(cuid())
+  organizationId String // denormalized from OrgUnit.organizationId, set once at creation
+  orgUnitId      String
+  userId         String // the person the event is about
+  positionId     String? // the specific isUnitHeadPosition position involved; null only for ACTING_* events
+  action         OrgUnitHeadAction
+  effectiveDate  DateTime
+  reason         String?
+  approvedBy     String? // userId — nullable, not every event needs approval
+  createdAt      DateTime          @default(now())
+
+  orgUnit  OrgUnit      @relation(fields: [orgUnitId], references: [id])
+  user     User         @relation("OrgUnitHeadEventUser", fields: [userId], references: [id])
+  position OrgPosition? @relation(fields: [positionId], references: [id])
+
+  @@index([organizationId])
+  @@index([orgUnitId])
+  @@index([userId])
+}
+
+enum OrgUnitHeadAction {
+  ASSIGNED // direct appointment to a head-conferring position, no handover — e.g. filling a vacancy
+  HANDOVER_DECLARED // incoming successor granted the same position, outgoing holder unchanged
+  HANDOVER_COMPLETED // outgoing holder's position cleared, incoming successor now sole holder
+  HANDOVER_CANCELLED // incoming successor's position grant reverted, outgoing holder unaffected
+  VACATED // head-conferring position cleared with no successor declared
+  ACTING_ASSIGNED // 2.6 — does not touch position-holding
+  ACTING_ENDED // 2.6 — does not touch position-holding
 }
 
 // ACC-40 — org-wide catalog (no longer per-OrgUnit): a position title like
@@ -641,9 +700,10 @@ model OrgPosition {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  role         Role?        @relation(fields: [roleId], references: [id])
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  role         Role?              @relation(fields: [roleId], references: [id])
   users        User[]
+  headEvents   OrgUnitHeadEvent[] // back-relation for OrgUnitHeadEvent.positionId (ACC-40 Section 2.3)
 
   @@unique([organizationId, nameEn])
   @@index([organizationId])
