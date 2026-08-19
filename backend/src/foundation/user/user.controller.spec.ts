@@ -64,7 +64,7 @@ describe('UserController', () => {
   });
 
   it('invite delegates to UserService.invite', async () => {
-    const dto = { email: 'a@example.com', name: 'A' };
+    const dto = { email: 'a@example.com', name: 'A', positionId: 'pos-1' };
     await controller.invite(dto, TENANT_ID, USER_ID);
     expect(service.invite).toHaveBeenCalledWith(dto, TENANT_ID, USER_ID);
   });

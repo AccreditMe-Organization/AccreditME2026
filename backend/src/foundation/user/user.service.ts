@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -81,6 +82,21 @@ export class UserService {
       where: { organizationId, email: dto.email },
     });
     if (existing) throw new ConflictException('A user with this email already exists');
+
+    // ACC-40 Section 2.4 — primaryOrgUnitId is conditionally mandatory:
+    // required once the tenant has at least one active OrgUnit, not a
+    // blanket rule (a brand-new tenant has zero until an admin creates
+    // one — bootstrap doesn't seed any).
+    if (!dto.primaryOrgUnitId) {
+      const activeOrgUnitCount = await this.prisma.orgUnit.count({
+        where: { organizationId, isActive: true },
+      });
+      if (activeOrgUnitCount > 0) {
+        throw new BadRequestException(
+          'primaryOrgUnitId is required once this organization has at least one active org unit',
+        );
+      }
+    }
 
     const invitationToken = randomBytes(24).toString('hex');
     const invitationExpiresAt = new Date(Date.now() + INVITATION_TTL_MS);

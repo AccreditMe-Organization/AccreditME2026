@@ -48,6 +48,7 @@ describe('TenantService', () => {
   let prisma: {
     organization: { findUnique: jest.Mock; update: jest.Mock };
     orgUnit: { findFirst: jest.Mock; create: jest.Mock };
+    orgPosition: { findFirst: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
   let lookupService: { seedSystemData: jest.Mock };
@@ -66,6 +67,9 @@ describe('TenantService', () => {
       orgUnit: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(undefined),
+      },
+      orgPosition: {
+        findFirst: jest.fn(),
       },
     };
 
@@ -239,6 +243,42 @@ describe('TenantService', () => {
       prisma.organization.findUnique.mockResolvedValue(null);
       await expect(service.bootstrap('missing', 'user-1')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  // ── resolveDefaultTenantAdminAssignment (ACC-40 Section 2.4) ────────────────
+
+  describe('resolveDefaultTenantAdminAssignment', () => {
+    it('resolves the seeded "Director" position and the root org unit', async () => {
+      prisma.orgPosition.findFirst.mockResolvedValue({ id: 'pos-director', nameEn: 'Director' });
+      prisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-root', parentId: null });
+
+      const result = await service.resolveDefaultTenantAdminAssignment('org-a');
+
+      expect(prisma.orgPosition.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: 'org-a', nameEn: 'Director' },
+      });
+      expect(prisma.orgUnit.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: 'org-a', parentId: null },
+      });
+      expect(result).toEqual({ positionId: 'pos-director', primaryOrgUnitId: 'unit-root' });
+    });
+
+    it('throws when the default "Director" position is missing — invariant violation, not a valid state', async () => {
+      prisma.orgPosition.findFirst.mockResolvedValue(null);
+
+      await expect(service.resolveDefaultTenantAdminAssignment('org-a')).rejects.toThrow(
+        'Default "Director" position not found after bootstrap — this should never happen',
+      );
+    });
+
+    it('throws when the root org unit is missing — invariant violation, not a valid state', async () => {
+      prisma.orgPosition.findFirst.mockResolvedValue({ id: 'pos-director', nameEn: 'Director' });
+      prisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(service.resolveDefaultTenantAdminAssignment('org-a')).rejects.toThrow(
+        'Root org unit not found after bootstrap — this should never happen',
       );
     });
   });

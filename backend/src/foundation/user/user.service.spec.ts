@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -35,6 +35,7 @@ describe('UserService', () => {
       organization: { findUnique: jest.fn() },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       userRole: { findMany: jest.fn().mockResolvedValue([]) },
+      orgUnit: { count: jest.fn() },
     };
     mockAuditLog = { log: jest.fn() };
     mockNotification = { create: jest.fn().mockResolvedValue({}) };
@@ -119,6 +120,11 @@ describe('UserService', () => {
       });
       mockPrisma.user.count.mockResolvedValue(2);
       mockPrisma.user.findFirst.mockResolvedValue(null);
+      // ACC-40 Section 2.4 — no active OrgUnit yet, so the conditional
+      // primaryOrgUnitId requirement does not apply; explicit stub (rather
+      // than relying on an unconfigured jest.fn()) makes this test's
+      // dependency on the new query visible.
+      mockPrisma.orgUnit.count.mockResolvedValue(0);
       mockPrisma.user.create.mockResolvedValue({
         id: 'new-user',
         organizationId: ORG_A,
@@ -128,7 +134,7 @@ describe('UserService', () => {
       });
 
       const result = await service.invite(
-        { email: 'new@example.com', name: 'New User' },
+        { email: 'new@example.com', name: 'New User', positionId: 'pos-1' },
         ORG_A,
         'actor-1',
       );
@@ -151,7 +157,7 @@ describe('UserService', () => {
       mockPrisma.user.count.mockResolvedValue(2);
 
       await expect(
-        service.invite({ email: 'new@example.com', name: 'New User' }, ORG_A, 'actor-1'),
+        service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-1' }, ORG_A, 'actor-1'),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -161,8 +167,47 @@ describe('UserService', () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'existing' });
 
       await expect(
-        service.invite({ email: 'dup@example.com', name: 'Dup User' }, ORG_A, 'actor-1'),
+        service.invite({ email: 'dup@example.com', name: 'Dup User', positionId: 'pos-1' }, ORG_A, 'actor-1'),
       ).rejects.toThrow(ConflictException);
+    });
+
+    // ACC-40 Section 2.4 — conditional primaryOrgUnitId requirement.
+    describe('primaryOrgUnitId conditional requirement', () => {
+      beforeEach(() => {
+        mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+        mockPrisma.user.count.mockResolvedValue(1);
+        mockPrisma.user.findFirst.mockResolvedValue(null);
+      });
+
+      it('rejects a missing primaryOrgUnitId once the tenant has at least one active OrgUnit', async () => {
+        mockPrisma.orgUnit.count.mockResolvedValue(1);
+
+        await expect(
+          service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-1' }, ORG_A, 'actor-1'),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockPrisma.user.create).not.toHaveBeenCalled();
+      });
+
+      it('allows a missing primaryOrgUnitId when the tenant has zero active OrgUnits (brand-new tenant)', async () => {
+        mockPrisma.orgUnit.count.mockResolvedValue(0);
+        mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+        await expect(
+          service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-1' }, ORG_A, 'actor-1'),
+        ).resolves.not.toThrow();
+      });
+
+      it('does not even check OrgUnit count when primaryOrgUnitId is supplied', async () => {
+        mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+        await service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-1', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        );
+
+        expect(mockPrisma.orgUnit.count).not.toHaveBeenCalled();
+      });
     });
   });
 

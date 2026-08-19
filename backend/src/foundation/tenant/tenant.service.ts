@@ -282,6 +282,35 @@ export class TenantService {
     });
   }
 
+  // ACC-40 Section 2.4 — bootstrap() itself never creates a User (the
+  // tenant's first admin is created separately, via
+  // PlatformTenantService.createTenant()'s own UserService.invite() call,
+  // immediately after bootstrap() runs). That invite() call now requires
+  // positionId unconditionally and primaryOrgUnitId once an active OrgUnit
+  // exists — which, for a just-bootstrapped tenant, is always true:
+  // bootstrap() itself guarantees both the "Director" position (highest-
+  // graded of DEFAULT_POSITIONS) and a root OrgUnit (parentId: null)
+  // already exist by the time this is called.
+  async resolveDefaultTenantAdminAssignment(
+    organizationId: string,
+  ): Promise<{ positionId: string; primaryOrgUnitId: string }> {
+    const position = await this.prisma.orgPosition.findFirst({
+      where: { organizationId, nameEn: 'Director' },
+    });
+    if (!position) {
+      throw new Error('Default "Director" position not found after bootstrap — this should never happen');
+    }
+
+    const rootUnit = await this.prisma.orgUnit.findFirst({
+      where: { organizationId, parentId: null },
+    });
+    if (!rootUnit) {
+      throw new Error('Root org unit not found after bootstrap — this should never happen');
+    }
+
+    return { positionId: position.id, primaryOrgUnitId: rootUnit.id };
+  }
+
   encryptConfig(data: Record<string, unknown>): string {
     return encryptTenantConfig(data, this.encryptionKey);
   }
