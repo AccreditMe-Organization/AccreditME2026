@@ -669,7 +669,7 @@ fix from this one change.
   pool resolves empty. `ALL` → `approvedCount >= poolSize`. `ANY` →
   `approvedCount >= 1`. `MAJORITY` → `approvedCount > poolSize / 2`.
 
-### 2.8 The Assignee-Resolution / Trigger-Gating Disconnect (Partially Closed, ACC-28)
+### 2.8 The Assignee-Resolution / Trigger-Gating Disconnect (Closed, ACC-28 + ACC-33 — residual gap tracked in Section 11)
 
 **Assignee-resolution and trigger-gating were, until ACC-28, two fully
 disconnected code paths.** `resolveAssigneeRaw()`/`resolveApproverPool()`
@@ -706,9 +706,9 @@ notifies every `TENANT_ADMIN` — see the new 2.13 below. Scoped to
 (nobody holds the configured role) and `SPECIFIC_USER` (the named user
 was deactivated) is tracked, not fixed, in Section 11.
 
-**A second, adjacent gap found in the same investigation, verified
-directly against both files** (`workflow.controller.ts:56–65`,
-`workflow.service.ts:295–340`):
+**A second, adjacent gap found in the same investigation — since
+CLOSED (ACC-33), verified directly against both files**
+(`workflow.controller.ts:56–65`, `workflow.service.ts:315–346`):
 
 ```ts
 // Same deliberate exception as triggerTransition() above.
@@ -729,18 +729,25 @@ this method — so authentication (`TenantGuard`) is genuinely required,
 and tenant isolation is genuinely intact (the service's own
 `workflowInstanceStage.findFirst({ where: { id: instanceStageId,
 workflowInstance: { organizationId } } })` means a `WorkflowInstanceStage`
-id from another tenant simply won't resolve). What's absent is
-authorization beyond bare authentication: no `@Permissions()` decorator
-on this method (confirmed — none present), so `PermissionGuard`
-no-ops (`required.length === 0`); no flat-permission check inside the
-service; no resource/pool check of any kind. **Net effect, confirmed
-precisely**: any authenticated user in their own tenant, holding any
-role or none beyond a valid session, can record a `WorkflowApproval` on
-any `WorkflowInstanceStage` in that same tenant, merely by knowing its
-id. This is real, unaddressed, and — per the Frontend Consumption
-subsection below — currently has no live UI path reaching it, which
-narrows but does not close the risk (still directly callable via the
-raw API by anyone with a valid session). See Section 11.
+id from another tenant simply won't resolve). Still no `@Permissions()`
+decorator on this method (confirmed — none present, deliberately: same
+pattern as `triggerTransition()`'s own `ASSIGNEE_POOL` condition
+above — a static permission string can't express "must be in this
+stage's resolved pool," so `PermissionGuard` no-ops here by design, not
+by oversight) and still no flat-permission check inside the service.
+**What ACC-33 added**: `submitApproval()` now calls
+`resolveApproverPool()` (2.6 — the OOO-aware wrapper as of ACC-40) and
+rejects an actor who isn't in the resolved pool with
+`ForbiddenException`, mirroring `triggerTransition()`'s `ASSIGNEE_POOL`
+pattern (2.4). **Confirmed residual scope, unchanged by ACC-33**:
+`resolveApproverPool()` only resolves a concrete pool for `COMMITTEE`/`ROLE`
+`assigneeStrategy` — any other strategy on a multi-approver stage still
+returns `[]`, and `submitApproval()`'s own gate treats an empty pool as
+"nothing to check against" (`approverPool.length > 0 && ...`), so that
+combination remains ungated. This is a pre-existing seed/config-error
+case (2.6's own documented fallback), not a gap ACC-33 introduced or
+was expected to close. See Section 11 for the still-open, structurally
+different `ROLE_BASED`/`SPECIFIC_USER` `triggerCondition` gaps.
 
 ### 2.9 Transition Actions — `fireTransitionActions()` (`workflow.service.ts:485–550`)
 
