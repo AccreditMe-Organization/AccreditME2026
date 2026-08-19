@@ -1,14 +1,11 @@
 import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
-import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
-import { FormsModule } from '@angular/forms';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
-import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { PositionFormComponent } from '../position-form/position-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -21,9 +18,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TableModule,
     ButtonModule,
     TagModule,
-    SelectModule,
     TooltipModule,
-    FormsModule,
     PositionFormComponent,
     EditDialogComponent,
   ],
@@ -36,20 +31,6 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           [label]="'orgPosition.addPosition' | translate"
           icon="pi pi-plus"
           (onClick)="onAdd()"
-        />
-      </div>
-
-      <div class="flex items-center gap-2">
-        <p-select
-          [options]="orgUnitOptions()"
-          [(ngModel)]="selectedOrgUnitId"
-          optionLabel="nameEn"
-          optionValue="id"
-          [showClear]="true"
-          [placeholder]="'orgPosition.orgUnit' | translate"
-          (onChange)="loadPositions()"
-          (onClear)="onClearFilter()"
-          styleClass="w-64"
         />
       </div>
 
@@ -66,10 +47,11 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       >
         <ng-template pTemplate="header">
           <tr>
-            <th style="width: 22%">{{ 'orgPosition.nameEn' | translate }}</th>
-            <th style="width: 18%">{{ 'orgPosition.nameAr' | translate }}</th>
-            <th style="width: 12%">{{ 'orgPosition.grade' | translate }}</th>
-            <th style="width: 18%">{{ 'orgPosition.orgUnit' | translate }}</th>
+            <th style="width: 20%">{{ 'orgPosition.nameEn' | translate }}</th>
+            <th style="width: 16%">{{ 'orgPosition.nameAr' | translate }}</th>
+            <th style="width: 10%">{{ 'orgPosition.grade' | translate }}</th>
+            <th style="width: 12%">{{ 'orgPosition.isSingleAssignee' | translate }}</th>
+            <th style="width: 12%">{{ 'orgPosition.isUnitHeadPosition' | translate }}</th>
             <th style="width: 12%">{{ 'common.active' | translate }}</th>
             <th style="width: 18%"></th>
           </tr>
@@ -82,7 +64,16 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             <td>
               <p-tag [value]="position.grade.toString()" severity="info" />
             </td>
-            <td>{{ orgUnitName(position.orgUnitId) }}</td>
+            <td>
+              @if (position.isSingleAssignee) {
+                <p-tag [value]="'common.yes' | translate" severity="info" />
+              }
+            </td>
+            <td>
+              @if (position.isUnitHeadPosition) {
+                <p-tag [value]="'common.yes' | translate" severity="warn" />
+              }
+            </td>
             <td>
               <p-tag
                 [value]="(position.isActive ? 'common.active' : 'common.inactive') | translate"
@@ -114,7 +105,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="6" class="text-center py-8 text-[var(--am-text-secondary)]">
+            <td colspan="7" class="text-center py-8 text-[var(--am-text-secondary)]">
               {{ 'orgPosition.noPositions' | translate }}
             </td>
           </tr>
@@ -140,30 +131,16 @@ export class PositionListComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly orgPositionService = inject(OrgPositionService);
-  private readonly orgUnitService = inject(OrgUnitService);
-  private readonly translate = inject(TranslateService);
   private readonly confirmationService = inject(ConfirmationService);
 
   readonly loading = signal(false);
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly error = signal<string | null>(null);
-  readonly orgUnitOptions = signal<OrgUnitDto[]>([]);
   readonly formVisible = signal(false);
   readonly editingPosition = signal<IOrgPositionDto | null>(null);
 
-  selectedOrgUnitId: string | null = null;
-
   ngOnInit(): void {
-    this.orgUnitService.getFlat().subscribe({
-      next: (units) => this.orgUnitOptions.set(units),
-      error: () => this.error.set('orgPosition.errorLoad'),
-    });
     this.loadPositions();
-  }
-
-  orgUnitName(orgUnitId: string | null): string {
-    if (!orgUnitId) return this.translate.instant('orgPosition.orgWide');
-    return this.orgUnitOptions().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
   onAdd(): void {
@@ -178,11 +155,6 @@ export class PositionListComponent implements OnInit {
 
   onSaved(): void {
     this.formVisible.set(false);
-    this.loadPositions();
-  }
-
-  onClearFilter(): void {
-    this.selectedOrgUnitId = null;
     this.loadPositions();
   }
 
@@ -205,7 +177,7 @@ export class PositionListComponent implements OnInit {
   loadPositions(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.orgPositionService.listPositions(this.selectedOrgUnitId ?? undefined).subscribe({
+    this.orgPositionService.listPositions().subscribe({
       next: (positions) => {
         this.positions.set(positions);
         this.loading.set(false);
