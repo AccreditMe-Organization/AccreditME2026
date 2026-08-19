@@ -548,6 +548,17 @@ allowed," not "who should this be." The new method enumerates
 candidates at a unit and only walks to the parent when that unit's own
 candidate set is empty:
 
+**Placement, confirmed: `OrgUnitService`, not `WorkflowService`.**
+`resolveActingHeadForOrgUnit()` is a pure org-structure query — it never
+reads a `WorkflowStage`/`WorkflowInstance`, only `User`/`OrgUnit`. It has
+two independent callers: plain vacancy detection (this section, no
+workflow involvement at all) and, later, the workflow engine's
+`ORG_UNIT_HEAD` assignee resolution (2.6.2's `resolveApproverPool()`
+case and `resolveAssigneeRaw()`'s own new case). It belongs in the
+domain it actually describes, with `WorkflowService` calling *into*
+`OrgUnitService` for it — not the reverse, and not duplicated in both
+places.
+
 ```typescript
 async resolveActingHeadForOrgUnit(
   orgUnitId: string,
@@ -1008,7 +1019,23 @@ the union of all their permissions, no special-casing per role). A new,
 marked `UserRole` row participates in that exact same union
 automatically the moment it's created, and stops the moment it's
 deleted — no new permission-computation branch, no new resolver, no
-change to any existing consumer of `getUserPermissions()`.
+change to any existing consumer of `getUserPermissions()`. Confirmed
+directly against the current method body (`role.service.ts:381-400`),
+not merely asserted — a flat, uncached `userRole.findMany()` union, and
+`step-04-roles-permissions.md` independently confirms this is
+deliberately real-time with no caching layer today.
+
+**Forward-looking note, not a current requirement — recorded so it
+isn't lost.** `step-04`'s own text already anticipates a *future* pass
+adding permission caching if request latency ever becomes a concern
+("a future pass should cache per-user permission sets... with
+invalidation on role/permission-assignment change and on
+`User.tokenVersion` bump"). If that future pass ships, the grant/revoke
+helper this section describes would need to participate in whatever
+invalidation signal gets introduced then — most likely the same
+`tokenVersion`-bump precedent already established for forced-logout-on-
+role-change. Nothing to build now; no cache exists today for this
+helper to invalidate.
 
 ---
 
@@ -1680,3 +1707,232 @@ reviewed — not this ticket's own acceptance criteria.
       independent-axes decision actually holds in code)
 - [ ] Tenant isolation on every new query this introduces (same rigor
       as every other ACC-17-pattern check)
+
+---
+
+## 6. IMPLEMENTATION PHASE & COMMIT PLAN
+
+Grouped by genuine dependency/risk boundary, not Section 2's numbering
+— three places diverge from that numbering directly: Phase 0 is pulled
+out and placed first (Section 2.6.1's live defect fix touches
+already-shipped, well-tested code, and re-verifying its own test
+coverage this session found ~6 existing tests need *updating*, not just
+extending — isolating it makes any regression unambiguous to bisect);
+2.9's `roleId` *field* lands in Phase 1 (pure schema) while its
+*granting effect* moves to Phase 8, after both real position-holding
+enforcement (Phase 4) and Acting Head (Phase 6) exist to trigger it;
+2.6.3's delegation stamp moves to the end (Phase 9), since it is inert
+without both Phase 0's OOO half and Phase 7's `ORG_UNIT_HEAD` half
+already working.
+
+**Standing discipline for every phase below, per the ACC-33 lesson —
+stated once here, applies throughout, not repeated per commit**: commit
+immediately after each logical unit is verified (`tsc --noEmit` +
+relevant test file green), never let more than one unit's worth of
+change sit uncommitted; stage the specific files that unit touched
+(`git add <path> <path>`), never a broad `git add -A`/`git add .` that
+could sweep in another in-progress unit's edits.
+
+### Phase 0 — Fix the live OOO-substitution defect (2.6.1)
+
+No new schema. No ACC-40 feature surface — this is a fix to already-shipped
+ACC-28/33 code, isolated on purpose.
+
+1. `fix(workflow): route ASSIGNEE_POOL gating through OOO substitution [ACC-40]`
+   — `triggerTransition()`'s check switches to `resolveAssignee()`;
+   updates the 2 directly-affected existing tests
+   (`workflow.service.spec.ts`'s `ASSIGNEE_POOL` gate tests); adds one
+   new regression test (an OOO-substituted actor can trigger).
+2. `fix(workflow): add OOO-substitution awareness to resolveApproverPool() [ACC-40]`
+   — updates the 4 directly-affected existing `submitApproval` ×
+   `authorization (ACC-33 item 7)` tests; adds one new regression test.
+3. `fix(workflow): use OOO-substituted pool in resolveUnassignedBlockingTransitions() [ACC-40]`
+   — updates the relevant existing tests in that `describe` block; adds
+   one new regression test (an available OOO substitute is not
+   incorrectly flagged unassigned).
+4. `docs(system-reference): document the ASSIGNEE_POOL/submitApproval OOO-substitution fix [ACC-40]`
+   — small, scoped note; not deferred to Phase 10's consolidated pass.
+
+**Checkpoint**: full existing `workflow.service.spec.ts` suite green,
+including the updated tests. Report back before Phase 1.
+
+### Phase 1 — `OrgPosition` foundation
+
+1. `feat(org-position): drop per-unit scoping, add isSingleAssignee/isUnitHeadPosition/roleId [ACC-40]`
+   — `schema.prisma` + migration only. Re-verify the no-op claim
+   against the live DB immediately before running.
+2. `feat(org-position): update create/update DTOs for new fields [ACC-40]`
+   — `CreateOrgPositionDto`/`UpdateOrgPositionDto`.
+3. `feat(org-position): enforce isUnitHeadPosition requires isSingleAssignee, exclude PLATFORM_ADMIN/TENANT_ADMIN from roleId [ACC-40]`
+   — service-layer validation + tests.
+4. `feat(org-position): add reactivatePosition() [ACC-40]`
+   — mirrors `RoleService.reactivateRole()`; own commit, distinct
+   concern (Pending Discussion #5) from the main redesign; controller
+   endpoint + tests.
+5. `feat(org-position): remove orgUnitId field, add isSingleAssignee/isUnitHeadPosition/roleId controls [ACC-40]`
+   — `position-form.component.ts`/`position-list.component.ts`.
+6. `chore(i18n): add translation keys for new position fields [ACC-40]`
+   — `en.json`/`ar.json`.
+
+**Checkpoint**: schema foundation everything else depends on. Report
+back before Phase 2.
+
+### Phase 2 — Mandatory fields + bootstrap + remediation report (2.4)
+
+1. `feat(user): require positionId/primaryOrgUnitId on invite, conditional on OrgUnit existing [ACC-40]`
+   — `InviteUserDto` + `UserService.invite()` + tests.
+2. `feat(tenant): seed default positionId for newly-bootstrapped Tenant Admin [ACC-40]`
+   — `TenantService.bootstrap()` + tests.
+3. `feat(user): add notifyTenantAdminsOfIncompleteProfiles remediation report [ACC-40]`
+   — new method/script + tests.
+4. `feat(user): require positionId/primaryOrgUnitId in invite-user form [ACC-40]`
+   — `invite-user.component.ts` validators.
+
+**Checkpoint**: light. Report back before Phase 3.
+
+### Phase 3 — User-level acting-for-a-unit (2.7)
+
+1. `feat(user): add actingOrgUnitId/actingOrgUnitUntil fields [ACC-40]`
+   — `schema.prisma` + migration.
+2. `feat(workflow): add sweepExpiredActingOrgUnitAssignments to SlaMonitorProcessor [ACC-40]`
+   — sweep step + tests, including the explicit non-interaction
+   regression tests (confirms Pending Discussion #7 holds in code).
+3. `feat(user): add optional acting-for-a-unit control to profile [ACC-40]`
+   — frontend.
+
+**Checkpoint**: light. Report back before Phase 4.
+
+### Phase 4 — Head derivation + assignment-time enforcement (2.2)
+
+1. `feat(user): enforce per-unit single-assignee check on position assignment [ACC-40]`
+   — tests, plus regression tests confirming ordinary non-head
+   assignments are unaffected.
+2. `feat(user): enforce cross-position head-uniqueness check on position assignment [ACC-40]`
+   — kept as its own commit, matching 2.2's own explicit "both checks
+   run, kept separate" reasoning; tests.
+
+**Checkpoint**: first new blocking behavior on an existing, widely-used
+path. Report back before Phase 5.
+
+### Phase 5 — `OrgUnit` head-management schema + handover (2.3)
+
+1. `feat(organization): add OrgUnit head-management schema (cache fields + OrgUnitHeadEvent log) [ACC-40]`
+   — one migration: `pendingHeadUserId`, `headHandoverEffectiveDate`,
+   `isHeadVacant`, `headVacantSince`, `actingHeadUserId`,
+   `OrgUnitHeadEvent` + `OrgUnitHeadAction`. `isHeadVacant`/
+   `actingHeadUserId` land now but stay inert until Phases 6/7 wire
+   logic against them — harmless, unused nullable columns until then.
+2. `feat(user): thread isDeclaredHandoverBypass through Phase 4's checks [ACC-40]`
+   — modifies Phase 4's check functions to accept+respect the flag
+   (defaulting `false` everywhere until this phase's own caller sets
+   it); negative test confirming it's unreachable from the ordinary
+   `updateProfile()` path (Non-Goals).
+3. `feat(organization): add declareHandover()/completeHandoverNow()/cancelHandover() [ACC-40]`
+   — tests covering the full lifecycle.
+4. `feat(organization): add direct assign/vacate for head-conferring positions [ACC-40]`
+   — `ASSIGNED`/`VACATED` events + tests.
+5. `feat(workflow): auto-complete handovers past headHandoverEffectiveDate in the sweep [ACC-40]`
+   — `SlaMonitorProcessor` step + tests.
+6. `feat(roles): gate Head-management actions with org:manage [ACC-40]`
+   — controller/guard wiring.
+7. `feat(organization): add Head-management UI (assign, handover declare/complete/cancel) [ACC-40]`
+   — frontend.
+
+**Checkpoint**: new `OrgUnit` schema plus a real bypass into Phase 4's
+enforcement — confirm the bypass is airtight before Phase 6 builds on
+`isHeadVacant`. Report back before Phase 6.
+
+### Phase 6 — Vacancy detection, escalation resolver, Acting Head core (2.5 + 2.6 base)
+
+1. `feat(organization): add resolveActingHeadForOrgUnit() to OrgUnitService [ACC-40]`
+   — per this document's own placement confirmation (2.5); tests
+   (own-unit holder(s), ancestor walk, Acting Head stop, full
+   exhaustion).
+2. `feat(organization): add refreshOrgUnitHeadVacancy() and wire into position/user mutation call sites [ACC-40]`
+   — entry-time check + call sites in `user.service.ts`/
+   `org-position.service.ts` + tests.
+3. `feat(workflow): add sweepOrgUnitVacancies() and notifyTenantAdminsOfOrgUnitVacancy() [ACC-40]`
+   — sweep + notification + tests (symmetric set/clear, no duplicate
+   notification).
+4. `feat(organization): add assign/clear Acting Head with ACTING_ASSIGNED/ACTING_ENDED events [ACC-40]`
+   — tests.
+
+**Checkpoint**: the resolver everything downstream depends on — confirm
+correctness in isolation before wiring into the real workflow engine.
+Report back before Phase 7.
+
+### Phase 7 — Wire `ORG_UNIT_HEAD` into the real workflow engine (2.5's `resolveAssigneeRaw()` case + 2.6.2)
+
+1. `feat(workflow): add ORG_UNIT_HEAD case to resolveAssigneeRaw() [ACC-40]`
+   — tests (with a synthetic/test-only `orgUnitId`, per the confirmed
+   prerequisite gap below).
+2. `feat(workflow): add ORG_UNIT_HEAD case to resolveApproverPool() [ACC-40]`
+   — tests.
+3. `feat(workflow): re-add ORG_UNIT_HEAD to workflow-stage-form's assignee-strategy dropdown [ACC-40]`
+   — frontend.
+
+**Explicit constraint, confirmed today**: no workflow-driven object
+(`Committee`, `Meeting`) has an `orgUnitId` field — full live
+end-to-end testing is blocked until a real consumer supplies one. This
+phase ships "wired, not yet reachable in practice" — the same state
+`ASSIGNEE_POOL` sat in for months before ACC-28 gave it real behavior.
+
+**Checkpoint**: decide explicitly whether shipping in this dormant
+state is acceptable, rather than letting it pass silently. Report back
+before Phase 8.
+
+### Phase 8 — Role inheritance (2.6.4/2.6.5, 2.9's granting effect)
+
+1. `feat(roles): add grantedViaHeadPositionOrgUnitId to UserRole [ACC-40]`
+   — migration.
+2. `feat(roles): add shared grant/revoke-if-marked helper for head-authority role inheritance [ACC-40]`
+   — the helper; tests **must** cover the check-first-before-create
+   path as a hard requirement, not a nicety — confirmed this session
+   directly against `step-04-roles-permissions.md`'s original schema:
+   `UserRole` carries `@@unique([userId, roleId])`, so creating a
+   duplicate row for an already-independently-held role would throw a
+   Prisma unique-constraint violation, not silently succeed.
+3. `feat(user): wire grant/revoke helper into real position-holding assignment/removal [ACC-40]`
+   — Phase 4's enforcement gains the role-grant side effect; tests.
+4. `feat(organization): wire grant/revoke helper into Acting Head assignment with optional coveringForUserId [ACC-40]`
+   — Phase 6's Acting Head methods gain `coveringForUserId` + position/
+   role resolution via the predecessor; tests, including a live-run
+   (not just asserted) confirmation that `getUserPermissions()` requires
+   zero code changes.
+
+**Checkpoint**: most correctness-sensitive phase — real permission
+grants. Report back before Phase 9.
+
+### Phase 9 — Unified delegation stamp (2.6.3)
+
+1. `feat(workflow): add DelegationReason enum and stamp fields to WorkflowInstanceStage/WorkflowApproval/TaskAssignee [ACC-40]`
+   — migration.
+2. `feat(workflow): add resolveActingHeadOrgUnitIdForUser() and resolveOutOfOfficeCoverageForUser() [ACC-40]`
+   — the two narrow, single-actor helpers; tests.
+3. `feat(workflow): stamp delegationReason on WorkflowInstanceStage/WorkflowApproval writes [ACC-40]`
+   — `triggerTransition()`/`submitApproval()` wiring; tests, including
+   the precedence case (`ACTING_HEAD` over `OUT_OF_OFFICE_COVERAGE`
+   when both could apply).
+4. `feat(task): stamp delegationReason on TaskAssignee creation [ACC-40]`
+   — `fireTransitionActions()`'s `CREATE_TASK` handling; tests
+   confirming `Task.complete()` reads the matching row without
+   re-deriving anything.
+5. `feat(workflow): display delegation-reason qualifier in approval/task history [ACC-40]`
+   — frontend.
+
+**Checkpoint**: mostly additive/observational once Phases 0 and 7 are
+both real. Report back before Phase 10.
+
+### Phase 10 — Docs
+
+1. `docs(system-reference): rewrite Section 5 for org-wide OrgPosition, Head derivation, handover, vacancy, Acting Head, and role-mapping [ACC-40]`
+2. `docs(system-reference): close deactivatePosition/reactivatePosition Tier 2 gap [ACC-40]`
+3. `docs(claude): mark ORG_UNIT_HEAD as supported in Assignee Resolution Strategies [ACC-40]`
+
+**Checkpoint**: none — final wrap-up.
+
+---
+
+Adjacent phase pairs (1+2, 5+6, 9 folded into 7 or 8) could reasonably
+merge if fewer checkpoints are preferred — noted for flexibility, not
+treated as fixed.
