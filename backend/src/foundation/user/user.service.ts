@@ -285,7 +285,11 @@ export class UserService {
   // explicitly names. invite()/updateProfile() below never pass this
   // parameter at all, so it is structurally unreachable from the ordinary
   // profile-edit path — not merely defaulted false by convention.
-  private async validatePositionAssignment(
+  //
+  // Public (not private) specifically so OrgUnitHeadService can call it —
+  // still only ever invoked internally by this codebase's own services,
+  // never exposed through a controller.
+  async validatePositionAssignment(
     targetPositionId: string,
     targetPrimaryOrgUnitId: string | null,
     organizationId: string,
