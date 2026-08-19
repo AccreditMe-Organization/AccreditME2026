@@ -56,6 +56,11 @@ export class OrgPositionService {
     organizationId: string,
     actorId: string,
   ): Promise<IOrgPosition> {
+    this.validateHeadFlagPairing(dto.isUnitHeadPosition ?? false, dto.isSingleAssignee ?? false);
+    if (dto.roleId) {
+      await this.validateRoleReference(dto.roleId, organizationId);
+    }
+
     const position = await this.prisma.orgPosition.create({
       data: {
         organizationId,
@@ -87,6 +92,18 @@ export class OrgPositionService {
     actorId: string,
   ): Promise<IOrgPosition> {
     const existing = await this.getPositionById(id, organizationId);
+
+    // Partial dto merged onto the existing row — isUnitHeadPosition/
+    // isSingleAssignee must be validated as a pair reflecting the resulting
+    // state, not just whichever field this particular update happens to
+    // touch (ACC-40 Section 2.1).
+    this.validateHeadFlagPairing(
+      dto.isUnitHeadPosition ?? existing.isUnitHeadPosition,
+      dto.isSingleAssignee ?? existing.isSingleAssignee,
+    );
+    if (dto.roleId) {
+      await this.validateRoleReference(dto.roleId, organizationId);
+    }
 
     const position = await this.prisma.orgPosition.update({
       where: { id },
@@ -166,6 +183,36 @@ export class OrgPositionService {
     if (!inSameOrParentUnit) {
       throw new BadRequestException(
         'Escalation target must be in the same or parent org unit as the assignee',
+      );
+    }
+  }
+
+  // ACC-40 Section 2.1 — a head-conferring position that permits multiple
+  // simultaneous holders would recreate the exact ambiguity ("who is the
+  // head of this unit") this whole design exists to remove. Validated
+  // centrally here, not trusted to client-side enforcement alone.
+  private validateHeadFlagPairing(isUnitHeadPosition: boolean, isSingleAssignee: boolean): void {
+    if (isUnitHeadPosition && !isSingleAssignee) {
+      throw new BadRequestException(
+        'A head-conferring position must also be single-assignee',
+      );
+    }
+  }
+
+  // ACC-40 Section 2.9c — same validateRoleReference() shape as
+  // CommitteesService's reportingToRoleId check, plus the PLATFORM_ADMIN/
+  // TENANT_ADMIN hard-exclusion specific to this field: granting either
+  // automatically as a side effect of holding an ordinary-sounding position
+  // (rather than through the deliberate Roles UI) is a real self-escalation
+  // risk, not merely a redundant safeguard.
+  private async validateRoleReference(roleId: string, organizationId: string): Promise<void> {
+    const role = await this.prisma.role.findFirst({ where: { id: roleId, organizationId } });
+    if (!role) {
+      throw new NotFoundException('Role not found in this tenant');
+    }
+    if (role.key === 'PLATFORM_ADMIN' || role.key === 'TENANT_ADMIN') {
+      throw new BadRequestException(
+        'PLATFORM_ADMIN and TENANT_ADMIN cannot be mapped to an org position',
       );
     }
   }

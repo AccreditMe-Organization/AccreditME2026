@@ -36,6 +36,9 @@ const mockPrisma = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
   },
+  role: {
+    findFirst: jest.fn(),
+  },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -171,6 +174,62 @@ describe('OrgPositionService', () => {
         expect.objectContaining({ action: 'CREATE', objectType: 'OrgPosition' }),
       );
     });
+
+    // ACC-40 Section 2.1
+    it('rejects isUnitHeadPosition: true combined with isSingleAssignee: false', async () => {
+      await expect(
+        service.createPosition(
+          { nameEn: 'Department Head', grade: 8, isUnitHeadPosition: true, isSingleAssignee: false },
+          ORG_A,
+          'actor-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.orgPosition.create).not.toHaveBeenCalled();
+    });
+
+    it('allows isUnitHeadPosition: true combined with isSingleAssignee: true', async () => {
+      mockPrisma.orgPosition.create.mockResolvedValue({
+        ...BASE_POSITION,
+        isUnitHeadPosition: true,
+        isSingleAssignee: true,
+      });
+
+      await expect(
+        service.createPosition(
+          { nameEn: 'Department Head', grade: 8, isUnitHeadPosition: true, isSingleAssignee: true },
+          ORG_A,
+          'actor-1',
+        ),
+      ).resolves.not.toThrow();
+    });
+
+    // ACC-40 Section 2.9c
+    it('rejects a roleId that does not belong to this tenant', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.createPosition({ nameEn: 'Director', grade: 10, roleId: 'role-x' }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.orgPosition.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['PLATFORM_ADMIN', 'TENANT_ADMIN'])('rejects roleId mapped to %s', async (key) => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-x', key });
+
+      await expect(
+        service.createPosition({ nameEn: 'Director', grade: 10, roleId: 'role-x' }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.orgPosition.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a roleId mapped to an ordinary, non-excluded role', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-x', key: 'QUALITY_OFFICER' });
+      mockPrisma.orgPosition.create.mockResolvedValue({ ...BASE_POSITION, roleId: 'role-x' });
+
+      await expect(
+        service.createPosition({ nameEn: 'Director', grade: 10, roleId: 'role-x' }, ORG_A, 'actor-1'),
+      ).resolves.not.toThrow();
+    });
   });
 
   describe('updatePosition', () => {
@@ -204,6 +263,31 @@ describe('OrgPositionService', () => {
           after: expect.objectContaining({ grade: 9 }),
         }),
       );
+    });
+
+    // ACC-40 Section 2.1 — merged-state validation: this update only
+    // touches isUnitHeadPosition, but the existing row's isSingleAssignee
+    // (false, per BASE_POSITION) is what makes the resulting state invalid.
+    it('rejects setting isUnitHeadPosition: true when the existing row has isSingleAssignee: false', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(BASE_POSITION); // isSingleAssignee: false
+
+      await expect(
+        service.updatePosition('position-1', { isUnitHeadPosition: true }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.orgPosition.update).not.toHaveBeenCalled();
+    });
+
+    it('allows setting isUnitHeadPosition: true when the existing row already has isSingleAssignee: true', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ ...BASE_POSITION, isSingleAssignee: true });
+      mockPrisma.orgPosition.update.mockResolvedValue({
+        ...BASE_POSITION,
+        isSingleAssignee: true,
+        isUnitHeadPosition: true,
+      });
+
+      await expect(
+        service.updatePosition('position-1', { isUnitHeadPosition: true }, ORG_A, 'actor-1'),
+      ).resolves.not.toThrow();
     });
   });
 
