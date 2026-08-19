@@ -85,8 +85,12 @@ export class UserService {
 
     // ACC-40 Section 2.4 — primaryOrgUnitId is conditionally mandatory:
     // required once the tenant has at least one active OrgUnit, not a
-    // blanket rule (a brand-new tenant has zero until an admin creates
-    // one — bootstrap doesn't seed any).
+    // blanket rule. In practice TenantService.bootstrap() already creates
+    // a root OrgUnit on every run (see resolveDefaultTenantAdminAssignment()
+    // below and Section 2.4's own corrected text), so this branch is live
+    // for every real invite() call today — kept as a general safeguard for
+    // any future invite path that might run before bootstrap(), not dead
+    // code for the current one.
     if (!dto.primaryOrgUnitId) {
       const activeOrgUnitCount = await this.prisma.orgUnit.count({
         where: { organizationId, isActive: true },
@@ -97,6 +101,16 @@ export class UserService {
         );
       }
     }
+
+    // ACC-40 Section 2.1/2.2 — positionId is unconditionally required as of
+    // Phase 2, so this always runs for invite(). excludeUserId: null — the
+    // invited user doesn't exist yet, nothing to exclude from the count.
+    await this.validatePositionAssignment(
+      dto.positionId,
+      dto.primaryOrgUnitId ?? null,
+      organizationId,
+      null,
+    );
 
     const invitationToken = randomBytes(24).toString('hex');
     const invitationExpiresAt = new Date(Date.now() + INVITATION_TTL_MS);
@@ -210,6 +224,19 @@ export class UserService {
     // Discussion 3.
     const data: Record<string, unknown> = { name: dto.name, language: dto.language };
     if (isAdmin) {
+      // ACC-40 Section 2.1/2.2 — only runs when positionId is actually
+      // being set/changed by this call (mirrors the Prisma undefined-means-
+      // untouched semantics data['positionId'] itself relies on below).
+      // The target org unit is the resulting state after this update, not
+      // necessarily existing.primaryOrgUnitId — merges the partial dto onto
+      // the existing row, same pattern as OrgPositionService.updatePosition()'s
+      // isUnitHeadPosition/isSingleAssignee merge (ACC-40 Phase 1).
+      if (dto.positionId !== undefined) {
+        const targetPrimaryOrgUnitId =
+          dto.primaryOrgUnitId !== undefined ? dto.primaryOrgUnitId : existing.primaryOrgUnitId;
+        await this.validatePositionAssignment(dto.positionId, targetPrimaryOrgUnitId, organizationId, id);
+      }
+
       data['positionId'] = dto.positionId;
       data['primaryOrgUnitId'] = dto.primaryOrgUnitId;
       data['managerId'] = dto.managerId;
@@ -233,6 +260,63 @@ export class UserService {
     });
 
     return user;
+  }
+
+  // ACC-40 Section 2.1/2.2 — the shared entry point both invite() and
+  // updateProfile() call whenever positionId is actually being set. Fetches
+  // the target position once, then runs each real-world constraint as its
+  // own explicit, separate check (2.2's own reasoning: neither check
+  // subsumes the other, so a future reader sees the two distinct
+  // constraints they each name, not one query with an unexplained extra
+  // condition folded in). excludeUserId is the user being updated (so
+  // their own pre-existing holding doesn't count against their own new
+  // state — the correct, simpler replacement for a separate
+  // isNoOpReassignment flag: excluding the target user's own row makes a
+  // same-value re-save count as zero *other* holders automatically,
+  // without the caller having to separately compute whether anything
+  // actually changed) — or null for invite(), where no such user exists yet.
+  private async validatePositionAssignment(
+    targetPositionId: string,
+    targetPrimaryOrgUnitId: string | null,
+    organizationId: string,
+    excludeUserId: string | null,
+  ): Promise<void> {
+    const position = await this.prisma.orgPosition.findFirst({
+      where: { id: targetPositionId, organizationId },
+    });
+    if (!position) throw new NotFoundException('Position not found in this organization');
+
+    await this.validateSingleAssigneeCap(position, targetPrimaryOrgUnitId, organizationId, excludeUserId);
+  }
+
+  // ACC-40 Section 2.1 — scoped per (positionId, primaryOrgUnitId), not per
+  // positionId alone: the position catalog entry is tenant-wide, but
+  // whether more than one person may simultaneously hold it is a per-unit
+  // question. primaryOrgUnitId: null is not a special case skipped by this
+  // check — it is simply one more partition value (a genuinely org-wide,
+  // isSingleAssignee: true position is enforced correctly by the same
+  // query: every holder with primaryOrgUnitId: null falls into the same
+  // partition).
+  private async validateSingleAssigneeCap(
+    position: { id: string; isSingleAssignee: boolean },
+    targetPrimaryOrgUnitId: string | null,
+    organizationId: string,
+    excludeUserId: string | null,
+  ): Promise<void> {
+    if (!position.isSingleAssignee) return;
+
+    const existingHolders = await this.prisma.user.count({
+      where: {
+        organizationId,
+        positionId: position.id,
+        primaryOrgUnitId: targetPrimaryOrgUnitId,
+        status: 'ACTIVE',
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      },
+    });
+    if (existingHolders >= 1) {
+      throw new ConflictException('This position already has an active holder in this org unit');
+    }
   }
 
   async updateOutOfOffice(

@@ -36,6 +36,18 @@ describe('UserService', () => {
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       userRole: { findMany: jest.fn().mockResolvedValue([]) },
       orgUnit: { count: jest.fn() },
+      // ACC-40 Section 2.1/2.2 — default: an ordinary position (matching
+      // DEFAULT_POSITIONS' own real seed defaults — isSingleAssignee/
+      // isUnitHeadPosition both false), so validatePositionAssignment() is
+      // a no-op for every pre-existing test. Tests exercising the new
+      // checks override this per-case.
+      orgPosition: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'pos-1',
+          isSingleAssignee: false,
+          isUnitHeadPosition: false,
+        }),
+      },
     };
     mockAuditLog = { log: jest.fn() };
     mockNotification = { create: jest.fn().mockResolvedValue({}) };
@@ -125,6 +137,14 @@ describe('UserService', () => {
       // than relying on an unconfigured jest.fn()) makes this test's
       // dependency on the new query visible.
       mockPrisma.orgUnit.count.mockResolvedValue(0);
+      // ACC-40 Section 2.1/2.2 — explicit stub (rather than the global
+      // ordinary-position default) makes this test's dependency on
+      // validatePositionAssignment() visible.
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+        id: 'pos-1',
+        isSingleAssignee: false,
+        isUnitHeadPosition: false,
+      });
       mockPrisma.user.create.mockResolvedValue({
         id: 'new-user',
         organizationId: ORG_A,
@@ -190,6 +210,11 @@ describe('UserService', () => {
 
       it('allows a missing primaryOrgUnitId when the tenant has zero active OrgUnits (brand-new tenant)', async () => {
         mockPrisma.orgUnit.count.mockResolvedValue(0);
+        mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+          id: 'pos-1',
+          isSingleAssignee: false,
+          isUnitHeadPosition: false,
+        });
         mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
 
         await expect(
@@ -198,6 +223,11 @@ describe('UserService', () => {
       });
 
       it('does not even check OrgUnit count when primaryOrgUnitId is supplied', async () => {
+        mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+          id: 'pos-1',
+          isSingleAssignee: false,
+          isUnitHeadPosition: false,
+        });
         mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
 
         await service.invite(
@@ -207,6 +237,186 @@ describe('UserService', () => {
         );
 
         expect(mockPrisma.orgUnit.count).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  // ACC-40 Section 2.1 — validatePositionAssignment() is private, tested
+  // through its two real callers (invite()/updateProfile()), same
+  // convention already used elsewhere in this file (isInSameOrParentOrgUnit
+  // via validateEscalationTarget in org-position.service.spec.ts).
+  describe('validatePositionAssignment — single-assignee enforcement (ACC-40 Section 2.1)', () => {
+    const SINGLE_ASSIGNEE_POSITION = { id: 'pos-head', isSingleAssignee: true, isUnitHeadPosition: false };
+    const ORDINARY_POSITION = { id: 'pos-ordinary', isSingleAssignee: false, isUnitHeadPosition: false };
+
+    beforeEach(() => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(1);
+      mockPrisma.user.findFirst.mockResolvedValue(null); // no email conflict
+    });
+
+    it('throws ConflictException when the target unit already has an active holder of a single-assignee position', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.positionId === 'pos-head' ? 1 : 1), // existing holder present
+      );
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('allows assigning a single-assignee position when the target unit has no existing holder', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      mockPrisma.user.count.mockImplementation(({ where }: any) => Promise.resolve(where.positionId ? 0 : 1));
+      mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).resolves.not.toThrow();
+    });
+
+    it('allows the same single-assignee position to be held by different people in different units — scoped per unit, not per position', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      // The existing holder is scoped to 'unit-1'; this invite targets 'unit-2'.
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.positionId === 'pos-head' && where.primaryOrgUnitId === 'unit-2' ? 0 : 1),
+      );
+      mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-2' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).resolves.not.toThrow();
+    });
+
+    it('treats primaryOrgUnitId: null as one more partition — a second org-wide holder of the same single-assignee position is rejected', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      mockPrisma.user.count.mockResolvedValue(1); // an org-wide (primaryOrgUnitId: null) holder already exists
+
+      await expect(
+        service.invite({ email: 'new@example.com', name: 'New User', positionId: 'pos-head' }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ positionId: 'pos-head', primaryOrgUnitId: null }),
+        }),
+      );
+    });
+
+    // ACC-40 Section 2.1's own "excludeUserId, not isNoOpReassignment"
+    // correctness: a user re-saving their own already-held single-assignee
+    // position (e.g. an unrelated profile edit that resubmits the same
+    // value) must not be blocked by their own existing row.
+    it('allows a no-op re-save of the same single-assignee position by its current holder', async () => {
+      const existingHolder = { id: 'user-1', organizationId: ORG_A, primaryOrgUnitId: 'unit-1' };
+      mockPrisma.user.findFirst.mockResolvedValue(existingHolder); // getById() inside updateProfile()
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id?.not === 'user-1' ? 0 : 1),
+      );
+      mockPrisma.user.update.mockResolvedValue(existingHolder);
+
+      await expect(
+        service.updateProfile('user-1', { positionId: 'pos-head' }, ORG_A, 'admin-1', ['users:manage']),
+      ).resolves.not.toThrow();
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: { not: 'user-1' } }) }),
+      );
+    });
+
+    it('rejects moving a DIFFERENT user into a single-assignee position someone else already holds in that unit', async () => {
+      const targetUser = { id: 'user-2', organizationId: ORG_A, primaryOrgUnitId: 'unit-1' };
+      mockPrisma.user.findFirst.mockResolvedValue(targetUser);
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      // Excludes user-2 (the target), but user-1 (a different existing
+      // holder) still counts.
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id?.not === 'user-2' ? 1 : 0),
+      );
+
+      await expect(
+        service.updateProfile('user-2', { positionId: 'pos-head' }, ORG_A, 'admin-1', ['users:manage']),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    // The user's own explicit ask: confirm ORDINARY, non-single-assignee
+    // position assignment is completely unaffected by this new check —
+    // not just that head-specific checks fire correctly when they should.
+    describe('regression — ordinary (non-single-assignee) position assignment is unaffected', () => {
+      it('allows an ordinary position to be freely assigned with no existing holder', async () => {
+        mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(ORDINARY_POSITION);
+        mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+        await expect(
+          service.invite(
+            { email: 'new@example.com', name: 'New User', positionId: 'pos-ordinary', primaryOrgUnitId: 'unit-1' },
+            ORG_A,
+            'actor-1',
+          ),
+        ).resolves.not.toThrow();
+        // The single-assignee cap short-circuits before ever counting —
+        // an ordinary position's holder count is irrelevant and never
+        // queried.
+        expect(mockPrisma.user.count).toHaveBeenCalledTimes(1); // only the seat-limit count
+      });
+
+      it('allows an ordinary position to already have multiple active holders in the same unit', async () => {
+        mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(ORDINARY_POSITION);
+        // Even if 5 people already hold this position in this unit, an
+        // ordinary (non-single-assignee) position is never checked.
+        mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+        await expect(
+          service.invite(
+            { email: 'new@example.com', name: 'New User', positionId: 'pos-ordinary', primaryOrgUnitId: 'unit-1' },
+            ORG_A,
+            'actor-1',
+          ),
+        ).resolves.not.toThrow();
+      });
+
+      it('allows an admin to reassign a user to a completely unrelated ordinary position in a completely unrelated unit', async () => {
+        const existing = { id: 'user-3', organizationId: ORG_A, primaryOrgUnitId: 'unit-old' };
+        mockPrisma.user.findFirst.mockResolvedValue(existing);
+        mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(ORDINARY_POSITION);
+        mockPrisma.user.update.mockResolvedValue({ ...existing, positionId: 'pos-ordinary', primaryOrgUnitId: 'unit-new' });
+
+        await expect(
+          service.updateProfile(
+            'user-3',
+            { positionId: 'pos-ordinary', primaryOrgUnitId: 'unit-new' },
+            ORG_A,
+            'admin-1',
+            ['users:manage'],
+          ),
+        ).resolves.not.toThrow();
+        expect(mockPrisma.user.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ positionId: 'pos-ordinary', primaryOrgUnitId: 'unit-new' }),
+          }),
+        );
+      });
+
+      it('does not run validatePositionAssignment at all when updateProfile() does not touch positionId', async () => {
+        const existing = { id: 'user-4', organizationId: ORG_A, primaryOrgUnitId: 'unit-1' };
+        mockPrisma.user.findFirst.mockResolvedValue(existing);
+        mockPrisma.user.update.mockResolvedValue({ ...existing, name: 'Renamed' });
+
+        await service.updateProfile('user-4', { name: 'Renamed' }, ORG_A, 'admin-1', ['users:manage']);
+
+        expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
       });
     });
   });
@@ -328,6 +538,13 @@ describe('UserService', () => {
     it('allows an admin to set positionId/primaryOrgUnitId/managerId on another user', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(EXISTING);
       mockPrisma.user.update.mockResolvedValue(EXISTING);
+      // ACC-40 Section 2.1/2.2 — explicit stub for this test's dependency
+      // on validatePositionAssignment().
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+        id: 'pos-1',
+        isSingleAssignee: false,
+        isUnitHeadPosition: false,
+      });
 
       await service.updateProfile(
         'user-1',
