@@ -3,6 +3,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { UserModule } from '../user/user.module';
 import { OrganizationController } from './organization.controller';
+import { OrgUnitHeadController } from './org-unit-head.controller';
 import { OrganizationService } from './organization.service';
 import { OrgUnitHeadService } from './org-unit-head.service';
 
@@ -30,7 +31,7 @@ import { OrgUnitHeadService } from './org-unit-head.service';
     // codebase touching TenantModule.
     forwardRef(() => UserModule),
   ],
-  controllers: [OrganizationController],
+  controllers: [OrganizationController, OrgUnitHeadController],
   providers: [OrganizationService, OrgUnitHeadService],
   exports: [OrganizationService, OrgUnitHeadService],
 })
