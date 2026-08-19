@@ -287,6 +287,7 @@ export class UserService {
     if (!position) throw new NotFoundException('Position not found in this organization');
 
     await this.validateSingleAssigneeCap(position, targetPrimaryOrgUnitId, organizationId, excludeUserId);
+    await this.validateUnitHeadUniqueness(position, targetPrimaryOrgUnitId, organizationId, excludeUserId);
   }
 
   // ACC-40 Section 2.1 — scoped per (positionId, primaryOrgUnitId), not per
@@ -316,6 +317,42 @@ export class UserService {
     });
     if (existingHolders >= 1) {
       throw new ConflictException('This position already has an active holder in this org unit');
+    }
+  }
+
+  // ACC-40 Section 2.2 — a genuinely separate constraint from
+  // validateSingleAssigneeCap() above, not a generalization of it: a
+  // tenant could flag more than one distinct OrgPosition as
+  // isUnitHeadPosition: true (e.g. "Department Head" and "Acting
+  // Department Chief" both independently marked head-conferring).
+  // validateSingleAssigneeCap() alone would not catch one person holding
+  // "Department Head" in unit U while a DIFFERENT person simultaneously
+  // holds "Acting Department Chief" in the same unit U — each position's
+  // own single-assignee cap is individually satisfied, but the unit now
+  // has two people with head-level authority from two different
+  // positions. Only runs for a head-conferring position (2.1 already
+  // guarantees isUnitHeadPosition: true implies isSingleAssignee: true —
+  // this check exists BECAUSE that per-position guarantee alone isn't
+  // enough across DIFFERENT positions).
+  private async validateUnitHeadUniqueness(
+    position: { id: string; isUnitHeadPosition: boolean },
+    targetPrimaryOrgUnitId: string | null,
+    organizationId: string,
+    excludeUserId: string | null,
+  ): Promise<void> {
+    if (!position.isUnitHeadPosition) return;
+
+    const anyHeadHolders = await this.prisma.user.count({
+      where: {
+        organizationId,
+        primaryOrgUnitId: targetPrimaryOrgUnitId,
+        status: 'ACTIVE',
+        position: { isUnitHeadPosition: true },
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      },
+    });
+    if (anyHeadHolders >= 1) {
+      throw new ConflictException('This org unit already has an active Head-position holder');
     }
   }
 

@@ -421,6 +421,93 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-40 Section 2.2 — kept as its own describe block, matching the
+  // plan's own "both checks run, kept separate" reasoning: this catches a
+  // real gap validateSingleAssigneeCap() alone cannot — two DIFFERENT
+  // head-conferring positions, each individually single-assignee-capped,
+  // both held in the same unit at once.
+  describe('validatePositionAssignment — cross-position head-uniqueness (ACC-40 Section 2.2)', () => {
+    const HEAD_POSITION_A = { id: 'pos-head-a', isSingleAssignee: true, isUnitHeadPosition: true };
+    const HEAD_POSITION_B = { id: 'pos-head-b', isSingleAssignee: true, isUnitHeadPosition: true };
+
+    beforeEach(() => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(1);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+    });
+
+    it('rejects assigning a head-conferring position when a DIFFERENT head-conferring position is already held in that unit', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(HEAD_POSITION_B);
+      // pos-head-b itself has no holders (validateSingleAssigneeCap would
+      // pass) — but someone holds pos-head-a (a different position) in the
+      // same unit, and that's what this cross-position check must catch.
+      mockPrisma.user.count.mockImplementation(({ where }: any) => {
+        if (where.positionId === 'pos-head-b') return Promise.resolve(0);
+        if (where.position?.isUnitHeadPosition) return Promise.resolve(1); // pos-head-a's holder
+        return Promise.resolve(1); // seat-limit count
+      });
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head-b', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('allows assigning a head-conferring position when no head-conferring position is held anywhere in that unit', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(HEAD_POSITION_A);
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.positionId || where.position?.isUnitHeadPosition ? 0 : 1),
+      );
+      mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head-a', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).resolves.not.toThrow();
+    });
+
+    it('allows a no-op re-save of the same head position by its current holder — excludeUserId applies to both checks', async () => {
+      const existingHolder = { id: 'user-1', organizationId: ORG_A, primaryOrgUnitId: 'unit-1' };
+      mockPrisma.user.findFirst.mockResolvedValue(existingHolder);
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(HEAD_POSITION_A);
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id?.not === 'user-1' ? 0 : 1),
+      );
+      mockPrisma.user.update.mockResolvedValue(existingHolder);
+
+      await expect(
+        service.updateProfile('user-1', { positionId: 'pos-head-a' }, ORG_A, 'admin-1', ['users:manage']),
+      ).resolves.not.toThrow();
+    });
+
+    // Regression, specific to this second check: a non-head position must
+    // never even reach validateUnitHeadUniqueness()'s own count query,
+    // regardless of how many head-position holders exist elsewhere in the
+    // same unit.
+    it('regression — an ordinary, non-head position is never checked against unit-head holders', async () => {
+      const ORDINARY_POSITION = { id: 'pos-ordinary', isSingleAssignee: false, isUnitHeadPosition: false };
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(ORDINARY_POSITION);
+      mockPrisma.user.create.mockResolvedValue({ id: 'new-user', organizationId: ORG_A, status: 'INVITED' });
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-ordinary', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).resolves.not.toThrow();
+      // Only the seat-limit count — neither validateSingleAssigneeCap() nor
+      // validateUnitHeadUniqueness() ever queries for an ordinary position.
+      expect(mockPrisma.user.count).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // ACC-40 Section 2.4 — remediation report, not a data migration.
   describe('notifyTenantAdminsOfIncompleteProfiles', () => {
     it('does nothing when no active user is missing a position or org unit', async () => {
