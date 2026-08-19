@@ -225,13 +225,16 @@ export class WorkflowService {
     if (!fromStage) throw new NotFoundException('Current stage not found');
 
     // ASSIGNEE_POOL (ACC-28) — placed after fromStage resolves, unlike the
-    // three triggerCondition checks above, because resolveAssigneeRaw()
+    // three triggerCondition checks above, because resolveAssignee()
     // needs the full stage row, not just its id. Reuses the existing
     // assignee-resolution machinery rather than a new authorization
     // primitive — see backend/Plans/step-28-resource-scoped-roles.md
-    // Section 2.2.
+    // Section 2.2. Uses resolveAssignee() (OOO-aware), not the raw
+    // resolveAssigneeRaw() — fixed per ACC-40 Section 2.6.1: an
+    // out-of-office holder's acting user must be able to trigger this
+    // transition too, same as they'd receive the task/notification for it.
     if (transition.triggerCondition === 'ASSIGNEE_POOL') {
-      const pool = await this.resolveAssigneeRaw(fromStage, instance, organizationId);
+      const pool = await this.resolveAssignee(fromStage, instance, organizationId);
       if (!pool.includes(actorId)) {
         throw new ForbiddenException('You are not in the resolved assignee pool for this stage');
       }

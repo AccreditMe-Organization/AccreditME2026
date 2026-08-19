@@ -825,10 +825,13 @@ describe('WorkflowService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    // ACC-28 — ASSIGNEE_POOL reuses resolveAssigneeRaw() rather than a new
-    // query pattern; SINGLE_STAGE's assigneeStrategy is SELF, so the pool
-    // resolves to whoever started the instance (the first WorkflowInstanceStage's
-    // actorId — BASE_INSTANCE_STAGE.actorId is ACTOR).
+    // ACC-28 — ASSIGNEE_POOL reuses resolveAssignee() (OOO-aware, fixed
+    // ACC-40 Section 2.6.1) rather than a new query pattern; SINGLE_STAGE's
+    // assigneeStrategy is SELF, so the raw pool resolves to whoever started
+    // the instance (the first WorkflowInstanceStage's actorId —
+    // BASE_INSTANCE_STAGE.actorId is ACTOR). Explicit non-OOO user.findMany
+    // stub below (rather than relying on beforeEach's global default) makes
+    // this test's dependency on OOO-substitution's own query visible.
     it('throws ForbiddenException for ASSIGNEE_POOL when the actor is not in the resolved pool', async () => {
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
         makeTransition({ triggerCondition: 'ASSIGNEE_POOL' }),
@@ -840,6 +843,9 @@ describe('WorkflowService', () => {
         ...BASE_INSTANCE_STAGE,
         actorId: 'someone-else',
       });
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'someone-else', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       await expect(
         service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
@@ -855,6 +861,36 @@ describe('WorkflowService', () => {
       // fetch (wants an active, non-exited entry — BASE_INSTANCE_STAGE
       // already has exitedAt: null).
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE); // actorId: ACTOR
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: ACTOR, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+
+      await expect(
+        service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
+      ).resolves.not.toThrow();
+    });
+
+    // ACC-40 Section 2.6.1 — the live defect this phase fixes: before, this
+    // exact scenario incorrectly threw ForbiddenException, because
+    // triggerTransition() checked the raw (non-OOO-substituted) pool.
+    it('allows ASSIGNEE_POOL when the actor is only in the pool via out-of-office substitution', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ triggerCondition: 'ASSIGNEE_POOL' }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue({
+        ...BASE_INSTANCE_STAGE,
+        actorId: 'holder-1',
+      });
+      const now = new Date();
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        {
+          id: 'holder-1',
+          outOfOfficeFrom: new Date(now.getTime() - 86400000),
+          outOfOfficeTo: new Date(now.getTime() + 86400000),
+          actingUserId: ACTOR,
+        },
+      ]);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
 
       await expect(
