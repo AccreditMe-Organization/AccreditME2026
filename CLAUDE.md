@@ -1101,6 +1101,13 @@ report-scheduler    Scheduled automated report generation and email delivery
 4. 14-day free trial — no credit card required
 5. Welcome email sequence (day 1, 7, 13)
 ```
+Org unit / position / head-role setup (per
+backend/Plans/step-40-org-position-unit-head.md) has no home in this
+wizard yet — flagged, not designed here. The original note for this
+(step-02-organization-structure.md's Section 11, "Users: one primary
+unit + optional acting-as unit with expiry date — note for Step 9")
+was silently dropped when Step 9 was built; this line exists so the
+ACC-40 concepts don't suffer the same fate.
 
 ### Subdomain Routing
 - Each tenant gets {slug}.accreditme.com
