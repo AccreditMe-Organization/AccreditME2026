@@ -6,6 +6,7 @@ import { TenantModule } from '../tenant/tenant.module';
 import { NotificationModule } from '../notification/notification.module';
 import { TaskModule } from '../task/task.module';
 import { OrgPositionModule } from '../org-position/org-position.module';
+import { OrganizationModule } from '../organization/organization.module';
 import { RolesModule } from '../roles/roles.module';
 import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
@@ -42,6 +43,15 @@ import { SlaMonitorProcessor } from './sla-monitor.processor';
     // edge above: TenantModule → WorkflowModule → OrgPositionModule →
     // TenantModule (OrgPositionModule already forwardRef()s TenantModule).
     forwardRef(() => OrgPositionModule),
+    // ACC-40 Section 2.3 — needed for SlaMonitorProcessor's OrgUnitHeadService
+    // injection (automatic handover completion, Phase 5 commit 5). Same
+    // transitive-cycle shape as OrgPositionModule's edge above:
+    // OrganizationModule already forwardRef()s UserModule, which itself
+    // forwardRef()s TenantModule — TenantModule → WorkflowModule →
+    // OrganizationModule → ... → TenantModule. Verified safe via a real
+    // `nest start` boot, not just tsc/jest, same standard as every other
+    // edge in this file.
+    forwardRef(() => OrganizationModule),
     // RolesModule is @Global() — RoleService.getUserPermissions() would
     // already resolve without this (see platform.module.ts's identical
     // comment) — imported explicitly anyway for clarity/testability, same

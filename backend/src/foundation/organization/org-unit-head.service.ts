@@ -193,11 +193,26 @@ export class OrgUnitHeadService {
     });
   }
 
-  // Shared by completeHandoverNow() (explicit early completion) and the
-  // SlaMonitorProcessor sweep (Phase 5 commit 5, automatic completion past
-  // headHandoverEffectiveDate) — actorId is null for the automatic path,
-  // matching sweepExpiredActingOrgUnitAssignments()'s own no-human-actor
-  // precedent.
+  // ACC-40 Section 2.3 — the automatic half of "what closes the window,
+  // recommend both, not a single mechanism" (the other being explicit
+  // early completion via completeHandoverNow() above). Called by
+  // SlaMonitorProcessor's sweep for every open handover past its declared
+  // effectiveDate — actorId is null, no human actor triggers this,
+  // matching sweepExpiredActingOrgUnitAssignments()'s own precedent. Thin
+  // wrapper reusing the exact same shared completion logic as the
+  // explicit path — no behavioral difference between the two beyond who
+  // (or what) triggered it.
+  async completeHandoverAutomatically(
+    orgUnit: { id: string; pendingHeadUserId: string | null },
+    organizationId: string,
+  ): Promise<void> {
+    await this.performHandoverCompletion(orgUnit, organizationId, null);
+  }
+
+  // Shared by completeHandoverNow() (explicit early completion) and
+  // completeHandoverAutomatically() (the sweep, above) — actorId is null
+  // for the automatic path, matching
+  // sweepExpiredActingOrgUnitAssignments()'s own no-human-actor precedent.
   private async performHandoverCompletion(
     orgUnit: { id: string; pendingHeadUserId: string | null },
     organizationId: string,

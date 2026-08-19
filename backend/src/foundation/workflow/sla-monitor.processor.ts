@@ -7,6 +7,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
+import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { WorkflowService } from './workflow.service';
 
 interface EscalationRule {
@@ -36,6 +37,10 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // notifyTenantAdminsOfUnassignedStage() rather than duplicating that
     // resolution logic here.
     private readonly workflowService: WorkflowService,
+    // ACC-40 Section 2.3 — automatic handover completion (Phase 5 commit 5)
+    // reuses OrgUnitHeadService.completeHandoverAutomatically() rather than
+    // duplicating that logic here, same precedent as workflowService above.
+    private readonly orgUnitHeadService: OrgUnitHeadService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -98,6 +103,23 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     await this.sweepOverdueTasks(now);
     await this.sweepUnassignedStages();
     await this.sweepExpiredActingOrgUnitAssignments(now);
+    await this.sweepDueHandovers(now);
+  }
+
+  // ACC-40 Section 2.3 — the automatic half of "what closes the window:
+  // recommend both, not a single mechanism" (the other being explicit
+  // early completion via OrgUnitHeadService.completeHandoverNow()).
+  // organizationId is read from each fetched OrgUnit row itself, not
+  // filtered by a single tenant upfront — same cross-tenant one-pass
+  // sweep shape as sweepOverdueTasks() above.
+  private async sweepDueHandovers(now: Date): Promise<void> {
+    const dueHandovers = await this.prisma.orgUnit.findMany({
+      where: { pendingHeadUserId: { not: null }, headHandoverEffectiveDate: { lte: now } },
+    });
+
+    for (const orgUnit of dueHandovers) {
+      await this.orgUnitHeadService.completeHandoverAutomatically(orgUnit, orgUnit.organizationId);
+    }
   }
 
   // ACC-40 Section 2.7 — the simplest sweep step this file adds: unlike

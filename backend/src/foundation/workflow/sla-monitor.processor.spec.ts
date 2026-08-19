@@ -6,6 +6,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
+import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { WorkflowService } from './workflow.service';
 
 // Originally scoped narrowly to ACC-28 Section 2.5.1's new
@@ -49,6 +50,7 @@ const mockPrisma = {
   task: { findMany: jest.fn(), update: jest.fn() },
   userRole: { findMany: jest.fn() },
   user: { findMany: jest.fn(), update: jest.fn() },
+  orgUnit: { findMany: jest.fn() },
 };
 
 // Always-open working-hours calendar — avoids clock-dependent flakiness in
@@ -82,6 +84,7 @@ const mockWorkflowService = {
   resolveUnreachableTriggerConditionTransitions: jest.fn(),
   notifyTenantAdminsOfUnassignedStage: jest.fn(),
 };
+const mockOrgUnitHeadService = { completeHandoverAutomatically: jest.fn() };
 const mockQueue = { add: jest.fn() };
 
 describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)', () => {
@@ -94,6 +97,9 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // so sweepExpiredActingOrgUnitAssignments() is a no-op for every
     // pre-existing test. Tests exercising it override this per-case.
     mockPrisma.user.findMany.mockResolvedValue([]);
+    // ACC-40 Section 2.3 — default: no handovers past their effectiveDate,
+    // so sweepDueHandovers() is a no-op for every pre-existing test.
+    mockPrisma.orgUnit.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue({});
     mockWorkingCalendar.getOrCreate.mockResolvedValue(ALWAYS_OPEN_CALENDAR);
     mockWorkingCalendar.listHolidays.mockResolvedValue([]);
@@ -111,6 +117,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: OrgPositionService, useValue: mockOrgPositionService },
         { provide: WorkflowService, useValue: mockWorkflowService },
+        { provide: OrgUnitHeadService, useValue: mockOrgUnitHeadService },
         { provide: getQueueToken('sla-monitor'), useValue: mockQueue },
       ],
     }).compile();
@@ -509,6 +516,49 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       // Exactly one notification — the direct "assignment ended" message to
       // the affected user themself, no admin fan-out of any kind.
       expect(mockNotificationService.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ACC-40 Section 2.3 — the automatic half of "what closes the window:
+  // recommend both, not a single mechanism." Reuses
+  // OrgUnitHeadService.completeHandoverAutomatically() rather than
+  // duplicating the completion logic here.
+  describe('sweepDueHandovers (ACC-40 Section 2.3)', () => {
+    const DUE_ORG_UNIT = {
+      id: 'unit-1',
+      organizationId: ORG_A,
+      pendingHeadUserId: 'incoming-user',
+      headHandoverEffectiveDate: new Date('2026-01-01T00:00:00.000Z'), // in the past
+    };
+
+    it('completes every handover past its declared effectiveDate', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([DUE_ORG_UNIT]);
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledWith({
+        where: { pendingHeadUserId: { not: null }, headHandoverEffectiveDate: { lte: expect.any(Date) } },
+      });
+      expect(mockOrgUnitHeadService.completeHandoverAutomatically).toHaveBeenCalledWith(DUE_ORG_UNIT, ORG_A);
+    });
+
+    it('does nothing when no handover is past its declared effectiveDate', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+
+      await runProcess();
+
+      expect(mockOrgUnitHeadService.completeHandoverAutomatically).not.toHaveBeenCalled();
+    });
+
+    it('completes multiple due handovers across different tenants in one pass — same cross-tenant sweep shape as sweepOverdueTasks()', async () => {
+      const otherOrgUnit = { ...DUE_ORG_UNIT, id: 'unit-2', organizationId: 'org-b-id', pendingHeadUserId: 'other-incoming' };
+      mockPrisma.orgUnit.findMany.mockResolvedValue([DUE_ORG_UNIT, otherOrgUnit]);
+
+      await runProcess();
+
+      expect(mockOrgUnitHeadService.completeHandoverAutomatically).toHaveBeenCalledTimes(2);
+      expect(mockOrgUnitHeadService.completeHandoverAutomatically).toHaveBeenCalledWith(DUE_ORG_UNIT, ORG_A);
+      expect(mockOrgUnitHeadService.completeHandoverAutomatically).toHaveBeenCalledWith(otherOrgUnit, 'org-b-id');
     });
   });
 });
