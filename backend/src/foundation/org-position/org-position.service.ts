@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { OrganizationService } from '../organization/organization.service';
 import { CreateOrgPositionDto } from './dto/create-org-position.dto';
 import { UpdateOrgPositionDto } from './dto/update-org-position.dto';
 import { IOrgPosition } from './interfaces/org-position.interface';
@@ -11,6 +12,7 @@ export class OrgPositionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly organizationService: OrganizationService,
   ) {}
 
   // Upserts the 10 org-wide default positions for one tenant. Idempotent —
@@ -141,6 +143,22 @@ export class OrgPositionService {
       before: existing as unknown as Record<string, unknown>,
       after: position,
     });
+
+    // ACC-40 Section 2.5.1 — deactivating a position never clears its
+    // holders' own positionId (see resolveActingHeadForOrgUnit()'s
+    // position.isActive filter comment) — refresh every distinct org unit
+    // an ACTIVE holder of this position sits in, since the position's own
+    // deactivation may have just made that unit's Head vacant.
+    const holders = await this.prisma.user.findMany({
+      where: { organizationId, positionId: id, status: 'ACTIVE' },
+      select: { primaryOrgUnitId: true },
+    });
+    const affectedOrgUnitIds = new Set(
+      holders.map((h) => h.primaryOrgUnitId).filter((v): v is string => !!v),
+    );
+    for (const orgUnitId of affectedOrgUnitIds) {
+      await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+    }
   }
 
   // Mirrors RoleService.reactivateRole() exactly (ACC-40 — a distinct

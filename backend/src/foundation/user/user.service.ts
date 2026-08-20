@@ -12,6 +12,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
+import { OrganizationService } from '../organization/organization.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
@@ -42,6 +43,7 @@ export class UserService {
     private readonly notificationService: NotificationService,
     private readonly roleService: RoleService,
     private readonly taskService: TaskService,
+    private readonly organizationService: OrganizationService,
     @Inject(AUTH_PROVIDER) private readonly authProvider: AuthProvider,
   ) {}
 
@@ -259,6 +261,20 @@ export class UserService {
       after: user as unknown as Record<string, unknown>,
     });
 
+    // ACC-40 Section 2.5.1 — a positionId/primaryOrgUnitId change can affect
+    // head-vacancy status for up to two org units: the one the user is
+    // leaving and the one they're joining (the same unit, deduplicated via
+    // Set, when this is an in-place position change within one unit).
+    // Refreshed after the mutation commits, using before/after state.
+    if (isAdmin && (dto.positionId !== undefined || dto.primaryOrgUnitId !== undefined)) {
+      const affectedOrgUnitIds = new Set(
+        [existing.primaryOrgUnitId, user.primaryOrgUnitId].filter((v): v is string => !!v),
+      );
+      for (const orgUnitId of affectedOrgUnitIds) {
+        await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+      }
+    }
+
     return user;
   }
 
@@ -470,6 +486,14 @@ export class UserService {
 
     await this.prisma.user.update({ where: { id }, data: { status: 'INACTIVE' } });
     await this.authProvider.invalidateUserSessions(id);
+
+    // ACC-40 Section 2.5.1 — a departing user may have been a unit's direct
+    // Head-position holder; the status flip above already excludes them
+    // from refreshOrgUnitHeadVacancy()'s own ACTIVE-only holder count, so
+    // this call correctly detects a resulting vacancy.
+    if (existing.primaryOrgUnitId) {
+      await this.organizationService.refreshOrgUnitHeadVacancy(existing.primaryOrgUnitId, organizationId);
+    }
 
     const { reassignedCount, unassignedCount } = await this.taskService.reassignAllForUser(
       id,

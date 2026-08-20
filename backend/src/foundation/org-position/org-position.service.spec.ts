@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OrgPositionService } from './org-position.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { OrganizationService } from '../organization/organization.service';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -42,18 +43,23 @@ const mockPrisma = {
 };
 
 const mockAuditLog = { log: jest.fn() };
+const mockOrganizationService = { refreshOrgUnitHeadVacancy: jest.fn() };
 
 describe('OrgPositionService', () => {
   let service: OrgPositionService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Safe default for deactivatePosition()'s own holder lookup — tests
+    // exercising that lookup specifically override this per-case.
+    mockPrisma.user.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OrgPositionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        { provide: OrganizationService, useValue: mockOrganizationService },
       ],
     }).compile();
 
@@ -317,6 +323,62 @@ describe('OrgPositionService', () => {
       await expect(service.deactivatePosition('position-1', ORG_B, 'actor-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // ACC-40 Section 2.5.1 — refreshOrgUnitHeadVacancy() wiring. Position
+    // deactivation never clears holders' own positionId, so every distinct
+    // org unit an ACTIVE holder currently sits in must be refreshed.
+
+    it("refreshes every distinct org unit an ACTIVE holder of this position sits in", async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(BASE_POSITION);
+      mockPrisma.orgPosition.update.mockResolvedValue({ ...BASE_POSITION, isActive: false });
+      mockPrisma.user.findMany.mockResolvedValue([
+        { primaryOrgUnitId: 'unit-1' },
+        { primaryOrgUnitId: 'unit-2' },
+      ]);
+
+      await service.deactivatePosition('position-1', ORG_A, 'actor-1');
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: { organizationId: ORG_A, positionId: 'position-1', status: 'ACTIVE' },
+        select: { primaryOrgUnitId: true },
+      });
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledTimes(2);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-1', ORG_A);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-2', ORG_A);
+    });
+
+    it('dedupes when two ACTIVE holders share the same org unit', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(BASE_POSITION);
+      mockPrisma.orgPosition.update.mockResolvedValue({ ...BASE_POSITION, isActive: false });
+      mockPrisma.user.findMany.mockResolvedValue([
+        { primaryOrgUnitId: 'unit-1' },
+        { primaryOrgUnitId: 'unit-1' },
+      ]);
+
+      await service.deactivatePosition('position-1', ORG_A, 'actor-1');
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledTimes(1);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-1', ORG_A);
+    });
+
+    it('skips holders with no primary org unit and calls nothing when there are no ACTIVE holders', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(BASE_POSITION);
+      mockPrisma.orgPosition.update.mockResolvedValue({ ...BASE_POSITION, isActive: false });
+      mockPrisma.user.findMany.mockResolvedValue([{ primaryOrgUnitId: null }]);
+
+      await service.deactivatePosition('position-1', ORG_A, 'actor-1');
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+    });
+
+    it('does not attempt a vacancy refresh when already inactive (idempotent short-circuit)', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ ...BASE_POSITION, isActive: false });
+
+      await service.deactivatePosition('position-1', ORG_A, 'actor-1');
+
+      expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
     });
   });
 

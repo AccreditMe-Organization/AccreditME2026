@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { UserModule } from '../user/user.module';
+import { NotificationModule } from '../notification/notification.module';
 import { OrganizationController } from './organization.controller';
 import { OrgUnitHeadController } from './org-unit-head.controller';
 import { OrganizationService } from './organization.service';

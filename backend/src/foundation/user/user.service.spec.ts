@@ -5,6 +5,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
+import { OrganizationService } from '../organization/organization.service';
 import { AuthProvider } from '../../providers/auth/auth.provider';
 
 const ORG_A = 'org-a';
@@ -22,6 +23,7 @@ describe('UserService', () => {
   };
   let mockAuthProvider: { invalidateUserSessions: jest.Mock; validateToken: jest.Mock };
   let mockTaskService: { reassignAllForUser: jest.Mock };
+  let mockOrganizationService: { refreshOrgUnitHeadVacancy: jest.Mock };
 
   beforeEach(() => {
     mockPrisma = {
@@ -63,6 +65,9 @@ describe('UserService', () => {
     mockTaskService = {
       reassignAllForUser: jest.fn().mockResolvedValue({ reassignedCount: 0, unassignedCount: 0 }),
     };
+    mockOrganizationService = {
+      refreshOrgUnitHeadVacancy: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new UserService(
       mockPrisma as unknown as PrismaService,
@@ -70,6 +75,7 @@ describe('UserService', () => {
       mockNotification as unknown as NotificationService,
       mockRoleService as unknown as RoleService,
       mockTaskService as unknown as TaskService,
+      mockOrganizationService as unknown as OrganizationService,
       mockAuthProvider as unknown as AuthProvider,
     );
   });
@@ -810,6 +816,65 @@ describe('UserService', () => {
         service.updateProfile('user-1', { name: 'Hacked' }, ORG_A, 'other-user', []),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    // ACC-40 Section 2.5.1 — refreshOrgUnitHeadVacancy() wiring.
+
+    it('refreshes both the old and new org unit when an admin moves the user to a different unit', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-old' });
+      mockPrisma.user.update.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-new' });
+
+      await service.updateProfile(
+        'user-1',
+        { positionId: 'pos-1', primaryOrgUnitId: 'unit-new' },
+        ORG_A,
+        'admin-1',
+        ['users:manage'],
+      );
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledTimes(2);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-old', ORG_A);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-new', ORG_A);
+    });
+
+    it('refreshes the unit only once when positionId changes but the org unit stays the same', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-1' });
+      mockPrisma.user.update.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-1' });
+
+      await service.updateProfile(
+        'user-1',
+        { positionId: 'pos-2' },
+        ORG_A,
+        'admin-1',
+        ['users:manage'],
+      );
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledTimes(1);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-1', ORG_A);
+    });
+
+    it('does not refresh vacancy when neither positionId nor primaryOrgUnitId is in the update', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-1' });
+      mockPrisma.user.update.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-1' });
+
+      await service.updateProfile('user-1', { name: 'New Name' }, ORG_A, 'admin-1', ['users:manage']);
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+    });
+
+    it('does not refresh vacancy when a non-admin edits their own profile, even if positionId is present in the raw dto', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-1' });
+      mockPrisma.user.update.mockResolvedValue({ ...EXISTING, primaryOrgUnitId: 'unit-1' });
+
+      await service.updateProfile(
+        'user-1',
+        { name: 'New Name', positionId: 'pos-1' },
+        ORG_A,
+        'user-1',
+        [],
+      );
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateOutOfOffice', () => {
@@ -876,6 +941,36 @@ describe('UserService', () => {
     it('throws NotFoundException for a nonexistent user id', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(null);
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
+    });
+
+    // ACC-40 Section 2.5.1 — refreshOrgUnitHeadVacancy() wiring.
+
+    it('refreshes the departing user\'s own primary org unit after the status flip', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        status: 'ACTIVE',
+        primaryOrgUnitId: 'unit-1',
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-1', ORG_A);
+    });
+
+    it('does not attempt a vacancy refresh when the departing user has no primary org unit', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        status: 'ACTIVE',
+        primaryOrgUnitId: null,
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
     });
 
     it('should NOT deactivate a user belonging to a different tenant', async () => {

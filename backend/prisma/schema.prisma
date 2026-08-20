@@ -620,15 +620,22 @@ model OrgUnit {
   // any). NOT the source of truth (the actual state is two real
   // User.positionId assignments) — a cheap read for "is a handover in
   // progress here" without re-deriving it from a position count each time.
-  pendingHeadUserId         String?
-  headHandoverEffectiveDate DateTime?
-  // ACC-40 Section 2.5 — cache of a position-holding query, land now but
-  // stay inert until Phase 6 wires refreshOrgUnitHeadVacancy() against them.
-  isHeadVacant              Boolean   @default(false)
-  headVacantSince           DateTime?
-  // ACC-40 Section 2.6 — independent of position-holding entirely, land now
-  // but stay inert until Phase 6's Acting Head assign/clear methods exist.
-  actingHeadUserId          String?
+  pendingHeadUserId                 String?
+  headHandoverEffectiveDate         DateTime?
+  // ACC-40 Section 2.5 — cache of a position-holding query.
+  isHeadVacant                      Boolean   @default(false)
+  headVacantSince                   DateTime?
+  // ACC-40 Section 2.5.1 — isHeadVacant alone cannot serve as the
+  // sweepOrgUnitVacancies() wasFullyExhausted/isNowFullyExhausted
+  // comparison target (it captures only this unit's own vacancy, not
+  // whether ancestor escalation currently covers it) — mirrors
+  // WorkflowInstanceStage.isUnassigned's exact role, one level deeper.
+  // headFullyUnresolvedLastRemindedAt: set on every notification (first +
+  // every 2-day reminder), cleared entirely on recovery, never left stale.
+  isHeadFullyUnresolved             Boolean   @default(false)
+  headFullyUnresolvedLastRemindedAt DateTime?
+  // ACC-40 Section 2.6 — independent of position-holding entirely.
+  actingHeadUserId                  String?
 
   organization Organization       @relation(fields: [organizationId], references: [id])
   parent       OrgUnit?           @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
