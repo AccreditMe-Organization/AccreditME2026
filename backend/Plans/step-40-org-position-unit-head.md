@@ -1781,17 +1781,26 @@ reviewed — not this ticket's own acceptance criteria.
       via sweep leaves only the incoming successor; declare → explicit
       early completion; declare → explicit cancellation restores the
       original sole holder
-- [ ] `resolveActingHeadForOrgUnit()`: own unit's holder(s) found
+- [x] `resolveActingHeadForOrgUnit()`: own unit's holder(s) found
       directly (including the 2-holder handover case); own unit vacant,
       Acting Head found; own unit vacant with no Acting Head, ancestor's
       holder found; full chain exhausted returns `[]`
-- [ ] Vacancy sweep: symmetric set/clear; no duplicate notification on
+- [x] Vacancy sweep: symmetric set/clear; no duplicate notification on
       repeated sweeps of an already-flagged, still-fully-vacant chain;
       notification fires only on the genuine false→true transition;
       vacancy correctly re-derives after an *ordinary* profile edit
       changes a head-position holder's `primaryOrgUnitId` (not just
-      through the dedicated Head-management methods)
-- [ ] `OrgUnit.isHeadFullyUnresolved`/`headFullyUnresolvedLastRemindedAt`
+      through the dedicated Head-management methods) — **and**, per a
+      real gap found starting Phase 6 commit 4 (fixed in its own
+      commit): also re-derives correctly when the change comes through
+      the dedicated Head-management methods themselves
+      (`OrgUnitHeadService.assignHead()`/`vacateHead()`/handover
+      declare/complete/cancel), which mutate `User.positionId` directly
+      and previously bypassed `refreshOrgUnitHeadVacancy()` entirely —
+      proven via a real (not mocked) `OrganizationService` wired into a
+      real `OrgUnitHeadService`, confirming `vacateHead()` alone flips
+      `isHeadVacant` to `true`
+- [x] `OrgUnit.isHeadFullyUnresolved`/`headFullyUnresolvedLastRemindedAt`
       (2.5.1) — new fields, this Phase 6 migration, both default
       correctly for every existing `OrgUnit` row; periodic reminder
       cadence: first notification fires immediately on the false→true
