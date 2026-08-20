@@ -42,6 +42,7 @@ const mockPrisma = {
   },
   user: {
     count: jest.fn(),
+    findMany: jest.fn(),
   },
 };
 
@@ -292,6 +293,124 @@ describe('OrganizationService', () => {
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
         where: { id: 'unit-1', organizationId: ORG_B },
       });
+    });
+  });
+
+  // ── resolveActingHeadForOrgUnit (ACC-40 Section 2.5) ────────────────────────
+  //
+  // The resolver everything downstream depends on — Phase 6's own
+  // checkpoint requires isolated confidence in this method before it's
+  // wired into anything else. Covers all 4 cases the plan's own test
+  // checklist names, verbatim.
+
+  describe('resolveActingHeadForOrgUnit', () => {
+    it("returns the unit's own holder directly, without ever checking actingHeadUserId or walking to the parent", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'holder-1' }]);
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['holder-1']);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          primaryOrgUnitId: 'unit-1',
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true, isActive: true },
+        },
+        select: { id: true },
+      });
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+    });
+
+    // ACC-40 Section 2.3 — now reachable per Phase 5's own handover
+    // mechanism: during a declared handover, both the outgoing and
+    // incoming users genuinely hold the position at once. The resolver
+    // needs no special-case logic for this — it's the same query,
+    // returning 2 rows instead of 1 by construction.
+    it("returns BOTH holders during a declared handover — the 2-holder case, no special-casing needed", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'outgoing-holder' }, { id: 'incoming-successor' }]);
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['outgoing-holder', 'incoming-successor']);
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("falls through to the unit's own Acting Head when vacant, without walking to the parent", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]); // unit-1 has no direct holder
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: 'acting-1', parentId: 'parent-1' });
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['acting-1']);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1); // never reaches parent-1
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it("escalates to the parent's holder when the unit is vacant with no Acting Head of its own", async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.primaryOrgUnitId === 'unit-1' ? [] : [{ id: 'parent-holder' }]),
+      );
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1' ? { actingHeadUserId: null, parentId: 'parent-1' } : null,
+        ),
+      );
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['parent-holder']);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(2);
+      // Confirms the walk actually reached the parent, not a coincidence.
+      expect(mockPrisma.user.findMany).toHaveBeenNthCalledWith(2, {
+        where: {
+          organizationId: ORG_A,
+          primaryOrgUnitId: 'parent-1',
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true, isActive: true },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('returns an empty pool when the full chain is exhausted — vacant at every level, no Acting Head anywhere, walk reaches the root', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]); // vacant at every level
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1'
+            ? { actingHeadUserId: null, parentId: 'parent-1' }
+            : { actingHeadUserId: null, parentId: null }, // parent-1: root, chain ends here
+        ),
+      );
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual([]);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(2); // unit-1, then parent-1 — walk stops there
+    });
+
+    it('returns an empty pool immediately when the starting unit does not exist in this tenant', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? [{ id: 'holder-a' }] : [{ id: 'leaked-holder' }]),
+      );
+
+      const resultA = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+      const resultB = await service.resolveActingHeadForOrgUnit('unit-1', ORG_B);
+
+      expect(resultA).toEqual(['holder-a']);
+      expect(resultB).toEqual(['leaked-holder']); // scoped correctly to ORG_B, not a leak from ORG_A
+      expect(mockPrisma.user.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }));
+      expect(mockPrisma.user.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }));
     });
   });
 

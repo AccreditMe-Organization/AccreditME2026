@@ -41,6 +41,66 @@ export class OrganizationService {
     return this.toInterface(unit);
   }
 
+  // ACC-40 Section 2.5 — a genuine resolver, not isInSameOrParentOrgUnit()
+  // reused directly: that method is a validator (given one already-known
+  // target, walk upward checking for equality); this one enumerates
+  // candidates at a unit and only walks to the parent when that unit's own
+  // candidate set is empty. Returns a pool (string[]), matching
+  // resolveAssigneeRaw()'s established convention, not a single nullable
+  // id. Placement confirmed here, not WorkflowService: this is a pure
+  // org-structure query (User/OrgUnit only, never WorkflowStage/
+  // WorkflowInstance) with two independent callers — plain vacancy
+  // detection (this file) and, later, the workflow engine's ORG_UNIT_HEAD
+  // assignee resolution (Phase 7) — WorkflowService calls into this
+  // service for it, not the reverse.
+  //
+  // No special-case logic for an in-progress handover: during a declared
+  // handover, the holders query below naturally returns both the outgoing
+  // and incoming users, because both genuinely hold the position at that
+  // moment (2.3). The pool is sized 1 in the normal case, 2 during a
+  // handover, by construction.
+  //
+  // position.isActive: true is a deliberate extension beyond this
+  // document's own original illustrative code for this method (which
+  // showed no isActive filter at all) — added because it's the only way
+  // OrgPositionService.deactivatePosition()'s refreshOrgUnitHeadVacancy()
+  // wiring (2.5.1, Phase 6 commit 2) has any real effect: deactivating a
+  // position never clears existing holders' positionId, so without this
+  // filter a deactivated position's holder would still count as "the
+  // Head" forever. Flagged here explicitly as a reasoned deviation, not a
+  // silent one.
+  async resolveActingHeadForOrgUnit(
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<string[]> {
+    let current: string | null = orgUnitId;
+    while (current) {
+      const holders = await this.prisma.user.findMany({
+        where: {
+          organizationId,
+          primaryOrgUnitId: current,
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true, isActive: true },
+        },
+        select: { id: true },
+      });
+      if (holders.length > 0) {
+        return holders.map((h) => h.id);
+      }
+
+      const unit: { actingHeadUserId: string | null; parentId: string | null } | null =
+        await this.prisma.orgUnit.findFirst({
+          where: { id: current, organizationId },
+          select: { actingHeadUserId: true, parentId: true },
+        });
+      if (!unit) return [];
+      if (unit.actingHeadUserId) return [unit.actingHeadUserId];
+
+      current = unit.parentId;
+    }
+    return [];
+  }
+
   async create(
     organizationId: string,
     dto: CreateOrgUnitDto,
