@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
+import { OrganizationService } from './organization.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
@@ -28,6 +29,15 @@ export class OrgUnitHeadService {
     private readonly auditLog: AuditLogService,
     @Inject(forwardRef(() => UserService))
     private readonly userService: UserService,
+    // Same module (OrganizationModule provides both) — no forwardRef
+    // needed. ACC-40 Section 2.5.1 gap fix (found while starting Phase 6
+    // commit 4): every method below mutates User.positionId directly via
+    // this.prisma.user.update(), never through UserService.updateProfile()
+    // — so refreshOrgUnitHeadVacancy()'s Phase 6 commit 2 wiring (which
+    // only covers updateProfile()/deactivate()/deactivatePosition()) never
+    // fired for the dedicated Head-management endpoints. Every method that
+    // touches positionId below now calls it directly.
+    private readonly organizationService: OrganizationService,
   ) {}
 
   // ACC-40 Section 2.2 — a read-only projection for UI consumption
@@ -157,6 +167,8 @@ export class OrgUnitHeadService {
       objectId: orgUnitId,
       metadata: { handoverDeclared: true, incomingUserId: incomingUser.id, outgoingUserId: outgoingHolder.id },
     });
+
+    await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
   }
 
   // Explicit early completion — for the case where the successor is ready
@@ -218,6 +230,8 @@ export class OrgUnitHeadService {
       objectId: orgUnitId,
       metadata: { handoverCancelled: true, incomingUserId },
     });
+
+    await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
   }
 
   // ACC-40 Section 2.3 — the automatic half of "what closes the window,
@@ -298,6 +312,8 @@ export class OrgUnitHeadService {
         outgoingUserId: outgoingHolder?.id ?? null,
       },
     });
+
+    await this.organizationService.refreshOrgUnitHeadVacancy(orgUnit.id, organizationId);
   }
 
   // ACC-40 Section 2.3 — direct appointment, no handover: "e.g. filling a
@@ -361,6 +377,8 @@ export class OrgUnitHeadService {
       objectId: orgUnitId,
       metadata: { headAssigned: true, userId: targetUser.id, positionId: dto.positionId },
     });
+
+    await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
   }
 
   // ACC-40 Section 2.3 — "a deliberate divergence from the RoleService
@@ -408,6 +426,8 @@ export class OrgUnitHeadService {
       objectId: orgUnitId,
       metadata: { headVacated: true, userId: currentHolder.id },
     });
+
+    await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
   }
 
   private async getOrgUnitOrThrow(id: string, organizationId: string) {

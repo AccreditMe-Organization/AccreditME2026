@@ -4,6 +4,8 @@ import { OrgUnitHeadService } from './org-unit-head.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
+import { OrganizationService } from './organization.service';
+import { NotificationService } from '../notification/notification.service';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -21,6 +23,7 @@ const mockPrisma = {
 };
 const mockAuditLog = { log: jest.fn() };
 const mockUserService = { validatePositionAssignment: jest.fn() };
+const mockOrganizationService = { refreshOrgUnitHeadVacancy: jest.fn() };
 
 describe('OrgUnitHeadService', () => {
   let service: OrgUnitHeadService;
@@ -31,6 +34,7 @@ describe('OrgUnitHeadService', () => {
     mockPrisma.orgUnit.update.mockResolvedValue({});
     mockPrisma.user.update.mockResolvedValue({});
     mockUserService.validatePositionAssignment.mockResolvedValue(undefined);
+    mockOrganizationService.refreshOrgUnitHeadVacancy.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -38,6 +42,7 @@ describe('OrgUnitHeadService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: UserService, useValue: mockUserService },
+        { provide: OrganizationService, useValue: mockOrganizationService },
       ],
     }).compile();
 
@@ -499,6 +504,75 @@ describe('OrgUnitHeadService', () => {
       );
 
       await expect(service.vacateHead(UNIT_1, ORG_B, 'actor-1')).rejects.toThrow(NotFoundException);
+    });
+  });
+});
+
+// ACC-40 Section 2.5.1 gap fix — regression proof, not a mock-call
+// assertion. The gap: every OrgUnitHeadService method mutates
+// User.positionId directly via prisma.user.update(), never through
+// UserService.updateProfile() — so refreshOrgUnitHeadVacancy()'s Phase 6
+// commit 2 wiring never fired for these endpoints. Proving the fix
+// requires the REAL OrganizationService (not the mocked stand-in used by
+// every other describe block above) wired into a REAL OrgUnitHeadService,
+// sharing one mockPrisma — so this test observes the actual end-to-end
+// effect of calling vacateHead() directly: mockPrisma.orgUnit.update
+// receiving isHeadVacant: true, not just a call to a mocked method.
+describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 Section 2.5.1 gap fix)', () => {
+  const VACATE_UNIT = {
+    id: UNIT_1,
+    organizationId: ORG_A,
+    pendingHeadUserId: null as string | null,
+    headHandoverEffectiveDate: null as Date | null,
+    // The state refreshOrgUnitHeadVacancy() itself reads, distinct from
+    // the object vacateHead()'s own getOrgUnitOrThrow() reads — both are
+    // the same underlying row in real Postgres, modeled here as two
+    // sequential mock returns from the same orgUnit.findFirst call site.
+    isHeadVacant: false,
+    actingHeadUserId: null as string | null,
+    parentId: null as string | null,
+  };
+
+  it("flips isHeadVacant to true when vacateHead() is called directly — not through updateProfile() — proving the wiring gap found before commit 4 is actually closed", async () => {
+    const realMockPrisma = {
+      orgUnit: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+      orgPosition: { findFirst: jest.fn() },
+      user: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), update: jest.fn().mockResolvedValue({}) },
+      orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
+      role: { findFirst: jest.fn().mockResolvedValue(null) }, // no TENANT_ADMIN role — short-circuits before any notification call
+      userRole: { findMany: jest.fn() },
+    };
+    const realMockAuditLog = { log: jest.fn() };
+    const realMockNotificationService = { create: jest.fn() };
+    const realMockUserService = { validatePositionAssignment: jest.fn() };
+
+    // Sequential orgUnit.findFirst calls across the real call chain:
+    // 1. OrgUnitHeadService.getOrgUnitOrThrow() (vacateHead()'s own precondition check)
+    // 2. OrganizationService.refreshOrgUnitHeadVacancy()'s own lookup
+    // 3. OrganizationService.resolveActingHeadForOrgUnit()'s walk step (unit-1 has no acting head, no parent — chain ends immediately)
+    realMockPrisma.orgUnit.findFirst
+      .mockResolvedValueOnce(VACATE_UNIT)
+      .mockResolvedValueOnce(VACATE_UNIT)
+      .mockResolvedValueOnce({ actingHeadUserId: null, parentId: null });
+    realMockPrisma.user.findFirst.mockResolvedValue(OUTGOING_HOLDER); // vacateHead()'s current-holder lookup
+
+    const realOrganizationService = new OrganizationService(
+      realMockPrisma as unknown as PrismaService,
+      realMockAuditLog as unknown as AuditLogService,
+      realMockNotificationService as unknown as NotificationService,
+    );
+    const realOrgUnitHeadService = new OrgUnitHeadService(
+      realMockPrisma as unknown as PrismaService,
+      realMockAuditLog as unknown as AuditLogService,
+      realMockUserService as unknown as UserService,
+      realOrganizationService,
+    );
+
+    await realOrgUnitHeadService.vacateHead(UNIT_1, ORG_A, 'actor-1');
+
+    expect(realMockPrisma.orgUnit.update).toHaveBeenCalledWith({
+      where: { id: UNIT_1 },
+      data: expect.objectContaining({ isHeadVacant: true }),
     });
   });
 });
