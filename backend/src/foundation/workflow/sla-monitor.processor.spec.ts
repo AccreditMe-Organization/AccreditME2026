@@ -7,6 +7,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
+import { OrganizationService } from '../organization/organization.service';
 import { WorkflowService } from './workflow.service';
 
 // Originally scoped narrowly to ACC-28 Section 2.5.1's new
@@ -50,7 +51,7 @@ const mockPrisma = {
   task: { findMany: jest.fn(), update: jest.fn() },
   userRole: { findMany: jest.fn() },
   user: { findMany: jest.fn(), update: jest.fn() },
-  orgUnit: { findMany: jest.fn() },
+  orgUnit: { findMany: jest.fn(), update: jest.fn() },
 };
 
 // Always-open working-hours calendar — avoids clock-dependent flakiness in
@@ -85,6 +86,10 @@ const mockWorkflowService = {
   notifyTenantAdminsOfUnassignedStage: jest.fn(),
 };
 const mockOrgUnitHeadService = { completeHandoverAutomatically: jest.fn() };
+const mockOrganizationService = {
+  resolveActingHeadForOrgUnit: jest.fn(),
+  notifyTenantAdminsOfOrgUnitVacancy: jest.fn(),
+};
 const mockQueue = { add: jest.fn() };
 
 describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)', () => {
@@ -97,9 +102,22 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // so sweepExpiredActingOrgUnitAssignments() is a no-op for every
     // pre-existing test. Tests exercising it override this per-case.
     mockPrisma.user.findMany.mockResolvedValue([]);
-    // ACC-40 Section 2.3 — default: no handovers past their effectiveDate,
-    // so sweepDueHandovers() is a no-op for every pre-existing test.
+    // ACC-40 Section 2.3/2.5.1 — default: no handovers past their
+    // effectiveDate AND no vacant org units, so both sweepDueHandovers()
+    // and sweepOrgUnitVacancies() (both query orgUnit.findMany with
+    // different where clauses) are no-ops for every pre-existing test.
+    // Tests exercising either sweep override this per-case, keyed on the
+    // where clause so the two sweeps' queries don't leak into each other.
     mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+    mockPrisma.orgUnit.update.mockResolvedValue({});
+    mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
+    // Default: no breached stages / no open stages, so tests that don't
+    // care about sweepUnassignedStages()/the top-of-process() breach loop
+    // (e.g. the new sweepOrgUnitVacancies tests below) aren't broken by a
+    // missing mock — this mirrors the same defensive-default reasoning as
+    // every other mock set in this block. Tests exercising those two
+    // concerns override with their own mockResolvedValueOnce() sequence.
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
     mockPrisma.workflowInstanceStage.update.mockResolvedValue({});
     mockWorkingCalendar.getOrCreate.mockResolvedValue(ALWAYS_OPEN_CALENDAR);
     mockWorkingCalendar.listHolidays.mockResolvedValue([]);
@@ -118,6 +136,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         { provide: OrgPositionService, useValue: mockOrgPositionService },
         { provide: WorkflowService, useValue: mockWorkflowService },
         { provide: OrgUnitHeadService, useValue: mockOrgUnitHeadService },
+        { provide: OrganizationService, useValue: mockOrganizationService },
         { provide: getQueueToken('sla-monitor'), useValue: mockQueue },
       ],
     }).compile();
@@ -532,7 +551,9 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     };
 
     it('completes every handover past its declared effectiveDate', async () => {
-      mockPrisma.orgUnit.findMany.mockResolvedValue([DUE_ORG_UNIT]);
+      mockPrisma.orgUnit.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.pendingHeadUserId !== undefined ? [DUE_ORG_UNIT] : []),
+      );
 
       await runProcess();
 
@@ -552,13 +573,196 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
     it('completes multiple due handovers across different tenants in one pass — same cross-tenant sweep shape as sweepOverdueTasks()', async () => {
       const otherOrgUnit = { ...DUE_ORG_UNIT, id: 'unit-2', organizationId: 'org-b-id', pendingHeadUserId: 'other-incoming' };
-      mockPrisma.orgUnit.findMany.mockResolvedValue([DUE_ORG_UNIT, otherOrgUnit]);
+      mockPrisma.orgUnit.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.pendingHeadUserId !== undefined ? [DUE_ORG_UNIT, otherOrgUnit] : []),
+      );
 
       await runProcess();
 
       expect(mockOrgUnitHeadService.completeHandoverAutomatically).toHaveBeenCalledTimes(2);
       expect(mockOrgUnitHeadService.completeHandoverAutomatically).toHaveBeenCalledWith(DUE_ORG_UNIT, ORG_A);
       expect(mockOrgUnitHeadService.completeHandoverAutomatically).toHaveBeenCalledWith(otherOrgUnit, 'org-b-id');
+    });
+  });
+
+  // ACC-40 Section 2.5.1 — drift-after-entry re-check for org-unit head
+  // vacancy, same shape as sweepUnassignedStages() above. Covers: the
+  // duplicate-notification guard (no re-notify on repeated sweeps of an
+  // already-flagged, still-fully-vacant chain), and the reminder-cadence
+  // test explicitly named in the Phase 6 checkpoint requirements (first
+  // notification fires immediately, no repeat before 2 days, a repeat
+  // fires correctly once the interval elapses, silence resumes immediately
+  // on recovery).
+  describe('sweepOrgUnitVacancies (ACC-40 Section 2.5.1)', () => {
+    const VACANT_UNIT = {
+      id: 'unit-1',
+      organizationId: ORG_A,
+      nameEn: 'Intensive Care Unit',
+      isHeadVacant: true,
+      headVacantSince: new Date('2026-08-01T00:00:00.000Z'),
+      isHeadFullyUnresolved: false,
+      headFullyUnresolvedLastRemindedAt: null as Date | null,
+    };
+
+    function mockVacantUnits(units: unknown[]) {
+      mockPrisma.orgUnit.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.isHeadVacant !== undefined ? units : []),
+      );
+    }
+
+    it('is a no-op when there are no isHeadVacant org units at all', async () => {
+      mockVacantUnits([]);
+
+      await runProcess();
+
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
+    });
+
+    it('leaves a partially-covered vacant unit (an ancestor holds it) untouched — no write, no notify', async () => {
+      mockVacantUnits([VACANT_UNIT]); // isHeadFullyUnresolved: false already
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['ancestor-holder']);
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).not.toHaveBeenCalled();
+    });
+
+    it('on a false→true transition (sweep-discovered), flags isHeadFullyUnresolved, stamps the reminder timestamp, and notifies immediately with first-notification wording', async () => {
+      mockVacantUnits([VACANT_UNIT]); // isHeadFullyUnresolved: false
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]); // now fully exhausted
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: 'unit-1' },
+        data: { isHeadFullyUnresolved: true, headFullyUnresolvedLastRemindedAt: expect.any(Date) },
+      });
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledTimes(1);
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledWith(
+        ORG_A,
+        VACANT_UNIT,
+        false,
+      );
+    });
+
+    it('on a true→false transition (an ancestor recovers coverage), clears both fields silently — the duplicate-notification guard\'s symmetric clear case', async () => {
+      const fullyUnresolvedUnit = {
+        ...VACANT_UNIT,
+        isHeadFullyUnresolved: true,
+        headFullyUnresolvedLastRemindedAt: new Date('2026-08-10T00:00:00.000Z'),
+      };
+      mockVacantUnits([fullyUnresolvedUnit]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['newly-available-ancestor']);
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: 'unit-1' },
+        data: { isHeadFullyUnresolved: false, headFullyUnresolvedLastRemindedAt: null },
+      });
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).not.toHaveBeenCalled();
+    });
+
+    // The duplicate-notification guard itself: re-sweeping an
+    // already-flagged, still-fully-vacant chain must not re-notify —
+    // exact discipline sweepUnassignedStages() already proved once.
+    it('does not re-notify on repeated sweeps of an already-flagged, still-fully-vacant chain — no state change, no write at all', async () => {
+      const fullyUnresolvedUnit = {
+        ...VACANT_UNIT,
+        isHeadFullyUnresolved: true,
+        // Reminded 1 hour ago — well within the 2-day interval, so this
+        // pass must stay completely silent (no write, no notify).
+        headFullyUnresolvedLastRemindedAt: new Date(Date.now() - 60 * 60 * 1000),
+      };
+      mockVacantUnits([fullyUnresolvedUnit]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]); // still fully exhausted
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).not.toHaveBeenCalled();
+    });
+
+    it('does not send a reminder before the 2-day interval has elapsed', async () => {
+      const almostDue = {
+        ...VACANT_UNIT,
+        isHeadFullyUnresolved: true,
+        // 1 day 23 hours ago — just under the 2-day threshold.
+        headFullyUnresolvedLastRemindedAt: new Date(Date.now() - (2 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000)),
+      };
+      mockVacantUnits([almostDue]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).not.toHaveBeenCalled();
+    });
+
+    it('sends a reminder once the 2-day interval has elapsed, stating the actual elapsed duration via the reminder wording flag', async () => {
+      const dueForReminder = {
+        ...VACANT_UNIT,
+        isHeadFullyUnresolved: true,
+        // Just over 2 days ago.
+        headFullyUnresolvedLastRemindedAt: new Date(Date.now() - (2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000)),
+      };
+      mockVacantUnits([dueForReminder]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: 'unit-1' },
+        data: { headFullyUnresolvedLastRemindedAt: expect.any(Date) },
+      });
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledTimes(1);
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledWith(
+        ORG_A,
+        dueForReminder,
+        true, // isReminder — the reminder wording, not the first-notification wording
+      );
+    });
+
+    it('resumes silence immediately on recovery — no lingering reminder cadence once cleared', async () => {
+      // A unit that was fully unresolved and overdue for a reminder, but
+      // this same sweep pass finds it's now covered by an ancestor —
+      // resolveActingHeadForOrgUnit's fresh result governs, not the stale
+      // reminder timestamp.
+      const recoveredButOverdue = {
+        ...VACANT_UNIT,
+        isHeadFullyUnresolved: true,
+        headFullyUnresolvedLastRemindedAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      };
+      mockVacantUnits([recoveredButOverdue]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['recovered-ancestor']);
+
+      await runProcess();
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: 'unit-1' },
+        data: { isHeadFullyUnresolved: false, headFullyUnresolvedLastRemindedAt: null },
+      });
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      const otherTenantUnit = { ...VACANT_UNIT, id: 'unit-2', organizationId: 'org-b-id' };
+      mockVacantUnits([VACANT_UNIT, otherTenantUnit]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockImplementation((_id: string, organizationId: string) =>
+        Promise.resolve(organizationId === ORG_A ? [] : ['org-b-holder']),
+      );
+
+      await runProcess();
+
+      // ORG_A's unit is fully exhausted and notified; org-b's unit is
+      // resolved by its own holder and correctly left untouched — the
+      // resolver call for each unit is scoped to that unit's own
+      // organizationId, never leaking cross-tenant.
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-1', ORG_A);
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-2', 'org-b-id');
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledTimes(1);
+      expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledWith(ORG_A, VACANT_UNIT, false);
     });
   });
 });
