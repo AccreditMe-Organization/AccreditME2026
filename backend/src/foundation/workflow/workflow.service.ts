@@ -13,6 +13,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
 import { RoleService } from '../roles/role.service';
+import { OrganizationService } from '../organization/organization.service';
 import {
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowInstanceStage as PrismaWorkflowInstanceStage,
@@ -51,6 +52,13 @@ export class WorkflowService {
     private readonly notificationService: NotificationService,
     private readonly taskService: TaskService,
     private readonly roleService: RoleService,
+    // ACC-40 Section 2.5/2.6.2 — resolveAssigneeRaw()'s and
+    // resolveApproverPool()'s new ORG_UNIT_HEAD cases call
+    // OrganizationService.resolveActingHeadForOrgUnit() rather than
+    // duplicating that resolution logic here, same "domain service owns
+    // the query, WorkflowService calls into it" placement the plan's own
+    // 2.5 section confirms.
+    private readonly organizationService: OrganizationService,
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
   ) {}
 
@@ -837,17 +845,22 @@ export class WorkflowService {
         return stage.approvalMode === 'SINGLE' ? [userIds[0] as string] : userIds;
       }
 
-      case 'ORG_UNIT_HEAD':
-        // Stubbed — resolving the workflow object's own org unit requires the
-        // calling functional module to supply an orgUnitId, and no module
-        // calls startInstance()/triggerTransition() yet. Documented
-        // limitation, not an oversight — see Step 6 plan, Business Rules.
-        // Degrades gracefully to an empty pool (matching every other case in
-        // this switch, per this method's own "always returns an array" doc
-        // comment above) rather than throwing — an unconditional throw here
-        // would crash the entire transition for a tenant that configures
-        // this strategy, not just leave the stage unassigned.
-        return [];
+      case 'ORG_UNIT_HEAD': {
+        // ACC-40 Section 2.5 — real resolver wiring, but still degrades to
+        // an empty pool for every REAL caller today: no workflow-driven
+        // object (Committee, Meeting) has its own orgUnitId field yet
+        // (confirmed prerequisite gap, Section 2.5's own checklist note) —
+        // a real, separate schema addition on whichever functional module
+        // first consumes this strategy, not made by this ticket. Reads
+        // instance.orgUnitId defensively (a property the real
+        // WorkflowInstance Prisma model does not carry — no schema change
+        // here), so this is exactly as safe as the previous unconditional
+        // stub for every existing tenant/workflow, while being real,
+        // tested wiring for whichever module supplies the field next.
+        const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
+        if (!orgUnitId) return [];
+        return this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId);
+      }
 
       case 'SELF': {
         const firstStage = await this.prisma.workflowInstanceStage.findFirst({

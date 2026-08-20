@@ -9,6 +9,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
 import { RoleService } from '../roles/role.service';
+import { OrganizationService } from '../organization/organization.service';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -178,6 +179,7 @@ const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
 const mockTaskService = { create: jest.fn() };
 const mockRoleService = { getUserPermissions: jest.fn() };
+const mockOrganizationService = { resolveActingHeadForOrgUnit: jest.fn() };
 const mockQueue = { add: jest.fn() };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -212,6 +214,7 @@ describe('WorkflowService', () => {
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TaskService, useValue: mockTaskService },
         { provide: RoleService, useValue: mockRoleService },
+        { provide: OrganizationService, useValue: mockOrganizationService },
         { provide: getQueueToken('workflow-actions'), useValue: mockQueue },
       ],
     }).compile();
@@ -1592,14 +1595,14 @@ describe('WorkflowService', () => {
     });
   });
 
-  // ── ACC-33 item 6 — ORG_UNIT_HEAD degrades gracefully ──────────────────────
+  // ── ACC-33 item 6 / ACC-40 Section 2.5 — ORG_UNIT_HEAD ──────────────────────
 
-  describe('resolveAssigneeRaw — ORG_UNIT_HEAD (ACC-33 item 6)', () => {
-    it('resolves to an empty pool instead of throwing, for a stage using the ORG_UNIT_HEAD strategy', async () => {
+  describe('resolveAssigneeRaw — ORG_UNIT_HEAD (ACC-33 item 6 / ACC-40 Section 2.5)', () => {
+    it('resolves to an empty pool instead of throwing, for a stage using the ORG_UNIT_HEAD strategy when the instance carries no orgUnitId (every real caller today)', async () => {
       const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
       mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
-      mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE); // no orgUnitId field
       mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
 
       // The regression this guards: before this fix, resolveAssigneeRaw()
@@ -1614,6 +1617,56 @@ describe('WorkflowService', () => {
       // result and notifies each — an empty pool means this loop runs zero
       // times, so no "New workflow assignment" notification fires. Confirms
       // the resolved pool is genuinely [], not some other unintended value.
+      expect(mockNotificationService.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ titleEn: 'New workflow assignment' }),
+        ORG_A,
+      );
+      // Never even attempts the resolver when there's no orgUnitId to
+      // resolve against.
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
+    });
+
+    // ACC-40 Section 2.5 — real wiring proof, using a synthetic/test-only
+    // orgUnitId on the calling instance object, per the plan's own
+    // confirmed prerequisite gap: no real workflow-driven object
+    // (Committee, Meeting) carries this field yet, so no real end-to-end
+    // consumer exists to test against. This proves the CASE itself is
+    // correctly wired to OrganizationService.resolveActingHeadForOrgUnit(),
+    // ready for whichever module supplies a real orgUnitId next.
+    it('calls resolveActingHeadForOrgUnit() with the instance-supplied orgUnitId and returns its resolved pool', async () => {
+      const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
+      const instanceWithOrgUnit = { ...BASE_INSTANCE, orgUnitId: 'unit-synthetic-1' };
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
+      mockPrisma.workflowInstance.create.mockResolvedValue(instanceWithOrgUnit);
+      mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['head-user-1']);
+
+      await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
+
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-synthetic-1', ORG_A);
+      // The resolved pool reached resolveAndNotifyInitialAssignee() — proof
+      // the case's return value actually flows through, not just that the
+      // resolver was called.
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ titleEn: 'New workflow assignment' }),
+        ORG_A,
+      );
+    });
+
+    it('resolves to an empty pool when resolveActingHeadForOrgUnit() itself returns an empty pool (full chain exhausted) — no throw, matches every other empty-pool case', async () => {
+      const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
+      const instanceWithOrgUnit = { ...BASE_INSTANCE, orgUnitId: 'unit-synthetic-1' };
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
+      mockPrisma.workflowInstance.create.mockResolvedValue(instanceWithOrgUnit);
+      mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
+
+      await expect(
+        service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR),
+      ).resolves.toBeDefined();
+
       expect(mockNotificationService.create).not.toHaveBeenCalledWith(
         expect.objectContaining({ titleEn: 'New workflow assignment' }),
         ORG_A,
