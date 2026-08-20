@@ -2054,6 +2054,31 @@ end-to-end testing is blocked until a real consumer supplies one. This
 phase ships "wired, not yet reachable in practice" — the same state
 `ASSIGNEE_POOL` sat in for months before ACC-28 gave it real behavior.
 
+**A real, disclosed behavioral tightening in `submitApproval()`, found
+on post-hoc re-review, not caught up front.** Commit 2 (`resolveApproverPool()`)
+consolidated a redundant double-fetch of `WorkflowInstance` — before,
+`submitApproval()` never fetched it at all; only `maybeAdvanceAfterApproval()`
+did, via its own later `findUnique()`, and if that came back `null` it
+silently no-op'd (`if (!instance) return;`) — but only *after*
+`workflowApproval.upsert()` had already recorded the decision. After
+the consolidation, `submitApproval()` fetches the instance itself, up
+front, and throws `NotFoundException` before any write if it's
+missing — silent partial-success became a hard failure before any
+side effect. **Kept deliberately, not reverted**: in real operation
+this path is unreachable — `WorkflowInstanceStage.workflowInstanceId`
+carries a real Prisma `@relation` to `WorkflowInstance`, which Postgres
+enforces as an FK constraint (default RESTRICT), so a stage can never
+reference a nonexistent instance under normal referential integrity,
+and nothing in this codebase ever deletes a `WorkflowInstance` row.
+Failing loudly before writing anything is judged more correct than the
+old silent-half-success for the only way this could ever fire (a
+genuine concurrent-delete race). Regression test:
+`workflow.service.spec.ts`'s `'throws NotFoundException and writes
+nothing when the stage references a WorkflowInstance that no longer
+resolves'` — proves both the exception and the no-write guarantee,
+closing what had been an untested edge case under both the old and new
+behavior.
+
 **Checkpoint**: decide explicitly whether shipping in this dormant
 state is acceptable, rather than letting it pass silently. Report back
 before Phase 8.

@@ -1355,6 +1355,34 @@ describe('WorkflowService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    // ACC-40 Section 2.6.2 — regression test for a real behavioral
+    // tightening this refactor introduced (found on re-review, not caught
+    // up front). Before: submitApproval() never fetched WorkflowInstance
+    // itself — workflowApproval.upsert() ran unconditionally, and only
+    // maybeAdvanceAfterApproval()'s OWN later findUnique() could discover
+    // a missing instance, silently no-op-ing (`if (!instance) return;`)
+    // AFTER the approval had already been recorded. After: submitApproval()
+    // fetches the instance itself, up front, and throws before any write
+    // if it's missing — a genuinely stricter, not merely relocated, check.
+    // In real operation this is unreachable — WorkflowInstanceStage.workflowInstanceId
+    // carries a real Prisma @relation, which Postgres enforces as a FK
+    // constraint, so a stage can never reference a nonexistent instance
+    // under normal referential integrity. Kept deliberately (fail loudly
+    // before writing anything, rather than silently half-succeeding) —
+    // see step-40-org-position-unit-head.md's Phase 7 section for the full
+    // writeup of why this was kept rather than reverted to match the old
+    // silent-partial-success behavior.
+    it('throws NotFoundException and writes nothing when the stage references a WorkflowInstance that no longer resolves', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+    });
+
     it('never auto-advances on ABSTAINED', async () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'ABSTAINED' }));

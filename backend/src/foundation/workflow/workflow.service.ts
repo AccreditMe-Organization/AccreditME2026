@@ -868,6 +868,11 @@ export class WorkflowService {
         // here), so this is exactly as safe as the previous unconditional
         // stub for every existing tenant/workflow, while being real,
         // tested wiring for whichever module supplies the field next.
+        // TODO(ACC-40): once a real orgUnitId column is added to a
+        // consuming object's schema, REPLACE this cast with a properly-typed
+        // field reference (e.g. instance.orgUnitId directly, once the
+        // Prisma-generated WorkflowInstance type actually carries it) —
+        // don't just leave the cast in place and trust it keeps compiling.
         const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
         if (!orgUnitId) return [];
         return this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId);
@@ -1204,6 +1209,9 @@ export class WorkflowService {
       // instance.orgUnitId defensive read as resolveAssigneeRaw()'s case —
       // degrades to an empty pool for every real caller today, for the
       // identical reason (no workflow-driven object has this field yet).
+      // TODO(ACC-40): same note as resolveAssigneeRaw()'s ORG_UNIT_HEAD
+      // case — replace this cast with a properly-typed field reference
+      // once a real orgUnitId column exists, don't just trust the cast.
       const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
       rawPool = orgUnitId
         ? await this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId)
