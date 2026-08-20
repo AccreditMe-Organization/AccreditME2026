@@ -13,7 +13,14 @@ const UNIT_1 = 'unit-1';
 const HEAD_POSITION_ID = 'pos-head';
 const OUTGOING_HOLDER = { id: 'outgoing-user', organizationId: ORG_A, primaryOrgUnitId: UNIT_1, positionId: HEAD_POSITION_ID, status: 'ACTIVE' };
 const INCOMING_SUCCESSOR = { id: 'incoming-user', organizationId: ORG_A, primaryOrgUnitId: UNIT_1, positionId: null, status: 'ACTIVE', position: null };
-const BASE_ORG_UNIT = { id: UNIT_1, organizationId: ORG_A, pendingHeadUserId: null as string | null, headHandoverEffectiveDate: null as Date | null };
+const BASE_ORG_UNIT = {
+  id: UNIT_1,
+  organizationId: ORG_A,
+  pendingHeadUserId: null as string | null,
+  headHandoverEffectiveDate: null as Date | null,
+  actingHeadUserId: null as string | null,
+};
+const ACTING_USER = { id: 'acting-user', organizationId: ORG_A, status: 'ACTIVE' };
 
 const mockPrisma = {
   orgUnit: { findFirst: jest.fn(), update: jest.fn() },
@@ -504,6 +511,140 @@ describe('OrgUnitHeadService', () => {
       );
 
       await expect(service.vacateHead(UNIT_1, ORG_B, 'actor-1')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── assignActingHead (ACC-40 Section 2.6) ───────────────────────────────
+
+  describe('assignActingHead', () => {
+    it('throws NotFoundException when the org unit does not exist in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ConflictException when a handover is in progress for this unit', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, pendingHeadUserId: 'someone' });
+
+      await expect(
+        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('throws ConflictException when an Acting Head is already assigned', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: 'someone-else' });
+
+      await expect(
+        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('throws ConflictException when the unit already has an active real Head — never shadows a real holder', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst.mockResolvedValueOnce(OUTGOING_HOLDER); // current-holder lookup finds one
+
+      await expect(
+        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException when the designated acting user is not active in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce(null) // no current real holder — vacant, proceeds
+        .mockResolvedValueOnce(null); // acting user lookup — not found
+
+      await expect(
+        service.assignActingHead(UNIT_1, { userId: 'nonexistent' }, ORG_A, 'actor-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('assigns Acting Head coverage to a vacant unit: sets actingHeadUserId, writes ACTING_ASSIGNED with positionId: null, and refreshes vacancy', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce(null) // no current real holder
+        .mockResolvedValueOnce(ACTING_USER); // acting user found
+
+      await service.assignActingHead(UNIT_1, { userId: ACTING_USER.id, reason: 'covering during recruitment' }, ORG_A, 'admin-1');
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: UNIT_1 },
+        data: { actingHeadUserId: ACTING_USER.id },
+      });
+      expect(mockPrisma.orgUnitHeadEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_A,
+          orgUnitId: UNIT_1,
+          userId: ACTING_USER.id,
+          positionId: null,
+          action: 'ACTING_ASSIGNED',
+          reason: 'covering during recruitment',
+          approvedBy: 'admin-1',
+        }),
+      });
+      // Never touches User.positionId — the load-bearing distinction from
+      // assignHead()'s actual position grant (2.6's own framing).
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? BASE_ORG_UNIT : null),
+      );
+
+      await expect(
+        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_B, 'actor-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── clearActingHead (ACC-40 Section 2.6) ────────────────────────────────
+
+  describe('clearActingHead', () => {
+    it('throws NotFoundException when the org unit does not exist in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(service.clearActingHead(UNIT_1, ORG_A, 'actor-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ConflictException when no Acting Head is currently assigned', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT); // actingHeadUserId: null
+
+      await expect(service.clearActingHead(UNIT_1, ORG_A, 'actor-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('clears Acting Head coverage: sets actingHeadUserId to null, writes ACTING_ENDED with positionId: null, and refreshes vacancy', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+
+      await service.clearActingHead(UNIT_1, ORG_A, 'admin-1');
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: UNIT_1 },
+        data: { actingHeadUserId: null },
+      });
+      expect(mockPrisma.orgUnitHeadEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_A,
+          orgUnitId: UNIT_1,
+          userId: ACTING_USER.id,
+          positionId: null,
+          action: 'ACTING_ENDED',
+          approvedBy: 'admin-1',
+        }),
+      });
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.organizationId === ORG_A ? { ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id } : null,
+        ),
+      );
+
+      await expect(service.clearActingHead(UNIT_1, ORG_B, 'actor-1')).rejects.toThrow(NotFoundException);
     });
   });
 });

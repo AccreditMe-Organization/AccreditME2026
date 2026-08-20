@@ -12,6 +12,7 @@ import { UserService } from '../user/user.service';
 import { OrganizationService } from './organization.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
+import { AssignActingHeadDto } from './dto/assign-acting-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
 
 // ACC-40 Section 2.3 — Deliberate Handover. A handover is not a change to
@@ -425,6 +426,111 @@ export class OrgUnitHeadService {
       objectType: 'OrgUnit',
       objectId: orgUnitId,
       metadata: { headVacated: true, userId: currentHolder.id },
+    });
+
+    await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+  }
+
+  // ACC-40 Section 2.6 — Acting Head: coverage for head-of-unit authority
+  // specifically, during an absence or a not-yet-resolved vacancy — never
+  // a position-holding grant (no positionId anywhere in this method,
+  // unlike assignHead()). Only assignable when the unit genuinely has no
+  // real position-holder and no handover in progress — a real Head should
+  // always be assigned directly via assignHead(), not shadowed by Acting
+  // Head coverage sitting alongside it.
+  async assignActingHead(
+    orgUnitId: string,
+    dto: AssignActingHeadDto,
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+    if (orgUnit.pendingHeadUserId) {
+      throw new ConflictException('A handover is in progress for this unit — cannot assign Acting Head coverage');
+    }
+    if (orgUnit.actingHeadUserId) {
+      throw new ConflictException('An Acting Head is already assigned for this unit — clear it first');
+    }
+
+    const currentHolder = await this.prisma.user.findFirst({
+      where: { organizationId, primaryOrgUnitId: orgUnitId, status: 'ACTIVE', position: { isUnitHeadPosition: true } },
+    });
+    if (currentHolder) {
+      throw new ConflictException('This unit already has an active Head — Acting Head coverage is only for a vacant unit');
+    }
+
+    const actingUser = await this.prisma.user.findFirst({
+      where: { id: dto.userId, organizationId, status: 'ACTIVE' },
+    });
+    if (!actingUser) {
+      throw new NotFoundException('User not found or not active in this tenant');
+    }
+
+    await this.prisma.orgUnit.update({
+      where: { id: orgUnitId },
+      data: { actingHeadUserId: actingUser.id },
+    });
+
+    await this.prisma.orgUnitHeadEvent.create({
+      data: {
+        organizationId,
+        orgUnitId,
+        userId: actingUser.id,
+        positionId: null, // ACTING_* events never carry a position — 2.3's schema note
+        action: 'ACTING_ASSIGNED',
+        effectiveDate: new Date(),
+        reason: dto.reason ?? null,
+        approvedBy: actorId,
+      },
+    });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'OrgUnit',
+      objectId: orgUnitId,
+      metadata: { actingHeadAssigned: true, userId: actingUser.id },
+    });
+
+    await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+  }
+
+  // Ends Acting Head coverage — the unit reverts to whatever
+  // refreshOrgUnitHeadVacancy() recomputes it to be (still vacant if no
+  // real Head was assigned in the meantime, resolved if one was).
+  async clearActingHead(orgUnitId: string, organizationId: string, actorId: string): Promise<void> {
+    const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+    if (!orgUnit.actingHeadUserId) {
+      throw new ConflictException('No Acting Head is currently assigned for this unit');
+    }
+
+    const actingHeadUserId = orgUnit.actingHeadUserId;
+
+    await this.prisma.orgUnit.update({
+      where: { id: orgUnitId },
+      data: { actingHeadUserId: null },
+    });
+
+    await this.prisma.orgUnitHeadEvent.create({
+      data: {
+        organizationId,
+        orgUnitId,
+        userId: actingHeadUserId,
+        positionId: null,
+        action: 'ACTING_ENDED',
+        effectiveDate: new Date(),
+        approvedBy: actorId,
+      },
+    });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'OrgUnit',
+      objectId: orgUnitId,
+      metadata: { actingHeadEnded: true, userId: actingHeadUserId },
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
