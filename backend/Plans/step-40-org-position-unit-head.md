@@ -682,6 +682,91 @@ exact two-part shape:
   identical duplicate-notification guard `sweepUnassignedStages()`
   already uses.
 
+**A real gap found during Phase 6 implementation, resolved here before
+building it**: `isHeadVacant` alone cannot serve as the
+`wasFullyExhausted`/`isNowFullyExhausted` comparison
+`sweepUnassignedStages()`'s guard needs — it captures only *this unit's
+own* vacancy, not whether escalation to an ancestor currently covers it.
+A unit can stay `isHeadVacant: true` for weeks while its escalation
+coverage silently changes (an ancestor's own Head departs, then a new
+one is appointed) — a distinct fact `isHeadVacant` was never designed to
+carry. Investigated first, per standing practice: confirmed (grep across
+`sla-monitor.processor.ts`, `schema.prisma`, `notification/`, every
+`@Processor` in the codebase, and every Plans file) that **no existing
+mechanism anywhere in this codebase already does a periodic
+"remind-again-while-still-unresolved" pattern** — `fireEscalation()`/
+`fireTaskEscalation()` are fire-once-per-rule (`escalatedRuleIndexes`/
+`escalatedAt`, no re-arm), and `sweepUnassignedStages()` itself is
+fire-once-on-transition, explicitly silent on every subsequent pass by
+design. This is new, not a reuse of an existing pattern.
+
+**Two new `OrgUnit` fields, added in this same Phase 6 migration**:
+
+```prisma
+model OrgUnit {
+  // ...2.3's fields unchanged, plus:
+  isHeadFullyUnresolved             Boolean   @default(false)  // NEW — mirrors WorkflowInstanceStage.isUnassigned's exact role, one level deeper than isHeadVacant
+  headFullyUnresolvedLastRemindedAt DateTime?                   // NEW — set on every notification (first + every reminder), cleared entirely on recovery
+}
+```
+
+`isHeadFullyUnresolved` is the real `wasFullyExhausted`/
+`isNowFullyExhausted` comparison target — read fresh at the top of each
+sweep pass (before this pass touches anything), compared against a
+freshly-run escalation walk, exactly mirroring how
+`sweepUnassignedStages()` reads `wasUnassigned = instanceStage.isUnassigned`
+before its own update. `headFullyUnresolvedLastRemindedAt` exists for the
+periodic-reminder mechanism below — cleared to `null` the moment the unit
+is no longer fully unresolved (either recovered entirely, or now covered
+by escalation), never left stale.
+
+**Periodic reminder while still fully unresolved — a genuinely new
+mechanism, not a copy of `sweepUnassignedStages()`'s fire-once shape**:
+a unit left with *nobody* able to act — the fully-exhausted case, the
+only one that ever blocks anything — is a materially more urgent
+situation than a routine unassigned-transition warning, and paging a
+Tenant Admin exactly once, permanently, for a problem that might persist
+for months, is a real gap. Resolved as an explicit, separate reminder
+cadence layered on top of `isHeadFullyUnresolved`'s own false→true
+guard, not a replacement for it:
+
+```typescript
+const HEAD_VACANCY_REMINDER_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000; // 2 days — named constant, not a magic number buried in sweep logic
+```
+
+Sweep logic, per still-vacant unit, after the recovery check above:
+
+1. Read `wasFullyUnresolved = orgUnit.isHeadFullyUnresolved` (before this
+   pass touches anything). Run the escalation walk fresh; `isNowFullyUnresolved = pool.length === 0`.
+2. **Transitioned** (`wasFullyUnresolved !== isNowFullyUnresolved`):
+   update `isHeadFullyUnresolved` to the new value. If it became `true`:
+   also set `headFullyUnresolvedLastRemindedAt = now` and send the
+   **first** notification. If it became `false` (an ancestor got
+   covered): clear `headFullyUnresolvedLastRemindedAt` to `null`,
+   silently — no "resolved by escalation" notice, same silent-recovery
+   precedent as everywhere else in this design.
+3. **Not transitioned, still fully unresolved**: check
+   `now - headFullyUnresolvedLastRemindedAt >= HEAD_VACANCY_REMINDER_INTERVAL_MS`.
+   If due, send a **reminder** notification and bump
+   `headFullyUnresolvedLastRemindedAt = now`. If not due, stay silent.
+4. **Not transitioned, still only partially covered by escalation**:
+   silent — matches "partial vacancy never blocks or notifies."
+
+The entry-time check (`refreshOrgUnitHeadVacancy()`) gets the identical
+treatment on its own one-time escalation walk: if it returns empty, set
+`isHeadFullyUnresolved: true` + `headFullyUnresolvedLastRemindedAt: now`
+and send the first notification directly — the sweep's job from that
+point on is purely to catch drift and handle the reminder cadence, not
+to re-detect the initial transition.
+
+**Reminder wording states the actual elapsed duration, computed from
+`headVacantSince`** (already-existing field, no new field needed for
+this) — e.g. "has been unresolved for 6 days" — rather than a generic
+repeat of the first notification's sentence. Gives the Tenant Admin real,
+actionable information (is this fresh or long-standing) instead of an
+identical restatement. `notifyTenantAdminsOfOrgUnitVacancy()` takes an
+`isReminder: boolean` parameter to select between the two wordings.
+
 ### 2.6 "Acting Head" — Coverage, Authority, and the Audit Trail — Pending Discussion #4, Resolved With a Recommendation
 
 **Explicitly scoped**: coverage for **head-of-unit authority
@@ -1706,6 +1791,15 @@ reviewed — not this ticket's own acceptance criteria.
       vacancy correctly re-derives after an *ordinary* profile edit
       changes a head-position holder's `primaryOrgUnitId` (not just
       through the dedicated Head-management methods)
+- [ ] `OrgUnit.isHeadFullyUnresolved`/`headFullyUnresolvedLastRemindedAt`
+      (2.5.1) — new fields, this Phase 6 migration, both default
+      correctly for every existing `OrgUnit` row; periodic reminder
+      cadence: first notification fires immediately on the false→true
+      transition, no repeat fires before `HEAD_VACANCY_REMINDER_INTERVAL_MS`
+      (2 days) has elapsed, a repeat fires correctly once it has, silence
+      resumes immediately on recovery (both fields cleared, not left
+      stale); reminder wording states actual elapsed duration from
+      `headVacantSince`, not a generic repeat of the first notification
 - [ ] Mandatory-field enforcement: new invite rejected without both
       fields; `primaryOrgUnitId` not required when the tenant has zero
       `OrgUnit` rows, required once one exists; existing active user
@@ -1907,11 +2001,15 @@ enforcement — confirm the bypass is airtight before Phase 6 builds on
    (own-unit holder(s), ancestor walk, Acting Head stop, full
    exhaustion).
 2. `feat(organization): add refreshOrgUnitHeadVacancy() and wire into position/user mutation call sites [ACC-40]`
-   — entry-time check + call sites in `user.service.ts`/
-   `org-position.service.ts` + tests.
+   — includes the migration for `isHeadFullyUnresolved`/
+   `headFullyUnresolvedLastRemindedAt` (2.5.1, a real gap found during
+   this phase's own implementation, resolved before building it — see
+   2.5.1's full writeup); entry-time check + call sites in
+   `user.service.ts`/`org-position.service.ts` + tests.
 3. `feat(workflow): add sweepOrgUnitVacancies() and notifyTenantAdminsOfOrgUnitVacancy() [ACC-40]`
    — sweep + notification + tests (symmetric set/clear, no duplicate
-   notification).
+   notification, plus the 2-day periodic-reminder cadence on top of the
+   fully-unresolved false→true guard).
 4. `feat(organization): add assign/clear Acting Head with ACTING_ASSIGNED/ACTING_ENDED events [ACC-40]`
    — tests.
 
