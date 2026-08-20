@@ -306,7 +306,7 @@ export class WorkflowService {
       );
     }
 
-    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId);
+    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance);
     if (!satisfied) {
       // Threshold not yet met — approval recorded, instance unchanged.
       return this.mapInstance(instance);
@@ -342,16 +342,26 @@ export class WorkflowService {
     const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
     if (!stage) throw new NotFoundException('Workflow stage not found');
 
+    // ACC-40 Section 2.6.2 — resolveApproverPool()'s ORG_UNIT_HEAD case
+    // needs the calling object's orgUnitId, read off the instance (see
+    // that case's own comment) — this method only had instanceStage in
+    // scope until now, so a real fetch is required here (unlike
+    // triggerTransition(), which already has instance loaded).
+    const instance = await this.prisma.workflowInstance.findFirst({
+      where: { id: instanceStage.workflowInstanceId },
+    });
+    if (!instance) throw new NotFoundException('Workflow instance not found');
+
     // Mirrors triggerTransition()'s ASSIGNEE_POOL check (pool.includes(actorId))
     // — reuses resolveApproverPool(), the same pool-resolution isApprovalThresholdMet()
     // already trusts for this exact stage, rather than inventing a new
     // authorization primitive. Only enforced when the pool resolves to
-    // something concrete (COMMITTEE/ROLE strategies, the only two
-    // resolveApproverPool() understands) — an unresolvable strategy on a
-    // multi-approver stage is a pre-existing, separately-tracked config-error
-    // case (see resolveApproverPool()'s own comment), not one this check
-    // newly blocks.
-    const approverPool = await this.resolveApproverPool(stage, organizationId);
+    // something concrete (COMMITTEE/ROLE/ORG_UNIT_HEAD strategies — the only
+    // three resolveApproverPool() understands) — an unresolvable strategy on
+    // a multi-approver stage is a pre-existing, separately-tracked
+    // config-error case (see resolveApproverPool()'s own comment), not one
+    // this check newly blocks.
+    const approverPool = await this.resolveApproverPool(stage, organizationId, instance);
     if (approverPool.length > 0 && !approverPool.includes(actorId)) {
       throw new ForbiddenException('You are not an eligible approver for this stage');
     }
@@ -379,7 +389,7 @@ export class WorkflowService {
       after: { decision: approval.decision },
     });
 
-    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto);
+    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto, instance);
 
     return this.mapApproval(approval);
   }
@@ -392,15 +402,15 @@ export class WorkflowService {
     organizationId: string,
     actorId: string,
     dto: SubmitApprovalDto,
+    // ACC-40 Section 2.6.2 — caller-supplied now (submitApproval() already
+    // fetches this for resolveApproverPool()'s ORG_UNIT_HEAD case), rather
+    // than this method re-fetching the same row a second time in the same
+    // request.
+    instance: PrismaWorkflowInstance,
   ): Promise<void> {
     // ABSTAINED never auto-routes — per module-designs.md, majority-abstained
     // requires Quality Officer escalation, not automatic advancement.
     if (dto.decision === 'ABSTAINED') return;
-
-    const instance = await this.prisma.workflowInstance.findUnique({
-      where: { id: instanceStage.workflowInstanceId },
-    });
-    if (!instance) return;
 
     const isApprovalDecision = dto.decision === 'APPROVED' || dto.decision === 'APPROVED_WITH_COMMENTS';
 
@@ -423,7 +433,7 @@ export class WorkflowService {
       return;
     }
 
-    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId);
+    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance);
     if (!satisfied) return;
 
     const approveTransition = await this.prisma.workflowTransition.findFirst({
@@ -447,6 +457,7 @@ export class WorkflowService {
     fromStage: PrismaWorkflowStage,
     currentInstanceStage: PrismaWorkflowInstanceStage,
     organizationId: string,
+    instance: PrismaWorkflowInstance,
   ): Promise<boolean> {
     const approvals = await this.prisma.workflowApproval.findMany({
       where: { workflowInstanceStageId: currentInstanceStage.id },
@@ -468,7 +479,7 @@ export class WorkflowService {
       return approvedCount > approvals.length / 2;
     }
 
-    const pool = await this.resolveApproverPool(fromStage, organizationId);
+    const pool = await this.resolveApproverPool(fromStage, organizationId, instance);
     const poolSize = pool.length || Math.max(approvals.length, 1);
     // SEQUENTIAL has no dedicated ordered-roster mechanism in the current
     // schema — treated as PARALLEL+ALL until a real sequence concept exists.
@@ -1157,6 +1168,7 @@ export class WorkflowService {
   private async resolveApproverPool(
     stage: PrismaWorkflowStage,
     organizationId: string,
+    instance: PrismaWorkflowInstance,
   ): Promise<string[]> {
     let rawPool: string[];
     if (stage.assigneeStrategy === 'COMMITTEE') {
@@ -1182,6 +1194,20 @@ export class WorkflowService {
         where: { roleId: stage.assigneeRoleId, user: { organizationId, status: 'ACTIVE' } },
       });
       rawPool = userRoles.map((ur) => ur.userId);
+    } else if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
+      // ACC-40 Section 2.6.2 — required prerequisite this investigation
+      // surfaced: without this case, submitApproval()'s eligibility gate
+      // and isApprovalThresholdMet()'s pool-sizing calculation are both
+      // complete no-ops for ORG_UNIT_HEAD-strategy stages, even after
+      // resolveAssigneeRaw() gains its own case, since this is a
+      // structurally separate method that case doesn't touch. Same
+      // instance.orgUnitId defensive read as resolveAssigneeRaw()'s case —
+      // degrades to an empty pool for every real caller today, for the
+      // identical reason (no workflow-driven object has this field yet).
+      const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
+      rawPool = orgUnitId
+        ? await this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId)
+        : [];
     } else {
       // Any other assigneeStrategy on a multi-approver stage is a seed/config
       // error — there is no well-defined pool to size a threshold against.

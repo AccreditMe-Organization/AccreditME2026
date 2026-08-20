@@ -60,6 +60,16 @@ const COMMITTEE_STAGE = {
   committeeId: 'committee-a',
 };
 
+// ACC-40 Section 2.6.2
+const ORG_UNIT_HEAD_STAGE = {
+  ...SINGLE_STAGE,
+  id: 'stage-org-unit-head',
+  isInitial: false,
+  approvalMode: 'PARALLEL',
+  parallelThreshold: 'ALL',
+  assigneeStrategy: 'ORG_UNIT_HEAD',
+};
+
 const TARGET_STAGE = {
   ...SINGLE_STAGE,
   id: 'stage-target',
@@ -204,6 +214,13 @@ describe('WorkflowService', () => {
       ),
     );
     mockTaskService.create.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
+    // ACC-40 Section 2.6.2 — default: submitApproval() now fetches the
+    // WorkflowInstance itself (for resolveApproverPool()'s ORG_UNIT_HEAD
+    // case), previously only maybeAdvanceAfterApproval() did via
+    // findUnique(). Tests needing a specific instance state (e.g.
+    // currentStageId) override this per-case via findFirst, not findUnique
+    // — findUnique is no longer called anywhere in this path.
+    mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -1360,7 +1377,7 @@ describe('WorkflowService', () => {
           { 'stage-parallel': PARALLEL_STAGE, 'stage-target': TARGET_STAGE }[where.id] ?? null,
         ),
       );
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
@@ -1383,7 +1400,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }, { userId: 'user-2' }, { userId: ACTOR }]);
@@ -1401,7 +1418,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
@@ -1419,7 +1436,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'RETURNED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
@@ -1480,7 +1497,7 @@ describe('WorkflowService', () => {
           { id: ACTOR, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
         ]);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
-        mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(
           makeInstance({ currentStageId: 'stage-parallel' }),
         );
         mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
@@ -1509,7 +1526,7 @@ describe('WorkflowService', () => {
           },
         ]);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
-        mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(
           makeInstance({ currentStageId: 'stage-parallel' }),
         );
         mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
@@ -1671,6 +1688,73 @@ describe('WorkflowService', () => {
         expect.objectContaining({ titleEn: 'New workflow assignment' }),
         ORG_A,
       );
+    });
+  });
+
+  // ── ACC-40 Section 2.6.2 — resolveApproverPool()'s ORG_UNIT_HEAD case ──────
+  //
+  // Required prerequisite the plan's own investigation surfaced: without
+  // this case, submitApproval()'s eligibility gate is a complete no-op for
+  // ORG_UNIT_HEAD-strategy stages even after resolveAssigneeRaw() gains its
+  // own case, since resolveApproverPool() is a structurally separate
+  // method. Exercised through submitApproval() (the real, public entry
+  // point), same pattern as the other 'authorization (ACC-33 item 7)'
+  // tests above — with a synthetic/test-only orgUnitId on the instance,
+  // per the same confirmed prerequisite gap as resolveAssigneeRaw()'s case.
+
+  describe('resolveApproverPool — ORG_UNIT_HEAD (ACC-40 Section 2.6.2)', () => {
+    it('throws ForbiddenException when actor is not in the resolved ORG_UNIT_HEAD approver pool', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-org-unit-head' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(ORG_UNIT_HEAD_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+        makeInstance({ orgUnitId: 'unit-synthetic-1' } as never),
+      );
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['head-user-1']);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'head-user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
+
+      await expect(
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-synthetic-1', ORG_A);
+      expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+    });
+
+    it('allows an actor who IS in the resolved ORG_UNIT_HEAD approver pool', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-org-unit-head' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(ORG_UNIT_HEAD_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+        makeInstance({ orgUnitId: 'unit-synthetic-1' } as never),
+      );
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([ACTOR]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: ACTOR, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
+      mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
+
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+    });
+
+    it('does not gate — degrades to an empty pool — when the instance carries no orgUnitId (every real caller today), same stub-safe behavior as before', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-org-unit-head' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(ORG_UNIT_HEAD_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE); // no orgUnitId field
+      mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
     });
   });
 
