@@ -1670,16 +1670,28 @@ reviewed — not this ticket's own acceptance criteria.
       `resolveAssigneeRaw()` to `resolveAssignee()`; `resolveApproverPool()`
       gains OOO-substitution awareness; `resolveUnassignedBlockingTransitions()`'s
       raw-pool read switches to the substituted read (2.6.1)
-- [ ] `resolveApproverPool()`: new `ORG_UNIT_HEAD` case calling
+- [x] `resolveApproverPool()`: new `ORG_UNIT_HEAD` case calling
       `resolveActingHeadForOrgUnit()` (2.6.2) — required for
-      `submitApproval()` to gate anything for this strategy
-- [ ] `WorkflowService.resolveAssigneeRaw()`: new `ORG_UNIT_HEAD` case
+      `submitApproval()` to gate anything for this strategy. Signature
+      extended to accept the `WorkflowInstance` (mirroring
+      `resolveAssigneeRaw()`), threaded through both call sites —
+      `submitApproval()` gained its own fetch, also now shared with
+      `maybeAdvanceAfterApproval()` instead of a second redundant fetch
+      of the same row.
+- [x] `WorkflowService.resolveAssigneeRaw()`: new `ORG_UNIT_HEAD` case
       calling `resolveActingHeadForOrgUnit()` against the calling
       object's `orgUnitId` — **prerequisite, confirmed today**: no
       workflow-driven object (Committee, Meeting) currently has an
       `orgUnitId` field; a real, separate schema addition on whichever
       object first consumes `ORG_UNIT_HEAD`, not provided by this
-      ticket's own schema changes
+      ticket's own schema changes. Both cases tested with a
+      synthetic/test-only `orgUnitId` on the calling instance object —
+      no real consumer forced into existence, per the plan's own
+      guidance. `workflow-stage-form.component.ts`'s assignee-strategy
+      dropdown has `ORG_UNIT_HEAD` re-added now that both cases are
+      confirmed working — ships "wired, not yet reachable in
+      practice," explicitly confirmed acceptable, the same state
+      `ASSIGNEE_POOL` itself sat in for months before ACC-28.
 - [ ] Delegation stamping at all write sites: `triggerTransition()`'s
       two `WorkflowInstanceStage.create()` calls and its own
       `WorkflowApproval.upsert()`; `submitApproval()`'s
