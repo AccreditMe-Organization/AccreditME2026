@@ -1733,6 +1733,20 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
      rotation logic, `SEQUENTIAL` approval mode's missing ordering —
      some may be load-bearing for Meeting, most are not; check
      per-item against Meeting's actual design).
+     **ACC-40 cross-reference**: when a Task detail view (or any
+     approval-history surface) finally gets built, `TaskAssignee` and
+     `WorkflowApproval` already carry real, fully-populated
+     `delegationReason`/`delegationContextId` fields (`ACTING_HEAD` |
+     `OUT_OF_OFFICE_COVERAGE` | `null`) — stamped end-to-end on the
+     backend since ACC-40 Phase 9, just never surfaced. Wire it in
+     directly rather than re-deriving anything: resolve the qualifier
+     from those two fields and render it next to the actor's name,
+     e.g. "Approved by Sarah — Acting Head of Cardiology" or
+     "Completed by Sarah — covering for Ahmad" (exact format specified
+     in `backend/Plans/step-40-org-position-unit-head.md` Section
+     2.6.3). This note exists so this doesn't get silently dropped the
+     way the original org-unit/position note was lost for seven months
+     before this same ticket had to recover it.
    - Design Meeting's Vote Record fields from scratch — the current
      `Meeting`/`AgendaItem` schema is a dormant scaffold only, and
      even that scaffold is incomplete relative to Meeting's own

@@ -1626,10 +1626,10 @@ reviewed — not this ticket's own acceptance criteria.
       `OrgUnitHeadAction` enum (2.3, 2.6)
 - [ ] `User`: add `actingOrgUnitId String?` + `actingOrgUnitUntil
       DateTime?` + named `OrgUnit` relation (2.7)
-- [ ] New `DelegationReason` enum (`ACTING_HEAD`,
+- [x] New `DelegationReason` enum (`ACTING_HEAD`,
       `OUT_OF_OFFICE_COVERAGE`); add `delegationReason`/
       `delegationContextId` to `WorkflowInstanceStage`, `WorkflowApproval`,
-      and `TaskAssignee` (2.6.3)
+      and `TaskAssignee` (2.6.3) — Phase 9 commit 1
 - [x] `UserRole`: add `grantedViaHeadPositionOrgUnitId String?` (2.6.5) —
       done in Phase 8; the `DelegationReason` enum/stamp fields on this
       same schema block remain Phase 9, still `[ ]` below
@@ -1664,9 +1664,9 @@ reviewed — not this ticket's own acceptance criteria.
       they touch a user holding an `isUnitHeadPosition` position (2.5)
 - [ ] `resolveActingHeadForOrgUnit()` — new resolver returning
       `Promise<string[]>` (2.5)
-- [ ] `resolveActingHeadOrgUnitIdForUser()` and
+- [x] `resolveActingHeadOrgUnitIdForUser()` and
       `resolveOutOfOfficeCoverageForUser()` — new narrow, single-actor
-      helpers for the delegation stamp (2.6.3)
+      helpers for the delegation stamp (2.6.3) — Phase 9 commit 2
 - [ ] **Fix (Pending Discussion #8 — confirm before implementing)**:
       `triggerTransition()`'s `ASSIGNEE_POOL` check switches from
       `resolveAssigneeRaw()` to `resolveAssignee()`; `resolveApproverPool()`
@@ -1694,11 +1694,33 @@ reviewed — not this ticket's own acceptance criteria.
       confirmed working — ships "wired, not yet reachable in
       practice," explicitly confirmed acceptable, the same state
       `ASSIGNEE_POOL` itself sat in for months before ACC-28.
-- [ ] Delegation stamping at all write sites: `triggerTransition()`'s
-      two `WorkflowInstanceStage.create()` calls and its own
-      `WorkflowApproval.upsert()`; `submitApproval()`'s
-      `WorkflowApproval.upsert()`; `fireTransitionActions()`'s
-      `CREATE_TASK` handling for each `TaskAssignee` row (2.6.3)
+- [x] Delegation stamping at all write sites (2.6.3) — Phase 9 commits
+      3-4. Reconciled against the actual code: there is only ONE literal
+      `WorkflowInstanceStage.create()` call, inside the shared private
+      `performTransition()` (used by 5 call sites total —
+      `triggerTransition()`'s 3 branches + `maybeAdvanceAfterApproval()`'s
+      2 — not "two" as this document's prose assumed; same kind of
+      implementation-level miscount as the five-vs-six
+      `OrgUnitHeadService` methods found in Phase 8). Stamped via a new
+      private `resolveDelegationStamp()` combined helper (checks
+      `ACTING_HEAD` first, falls back to `OUT_OF_OFFICE_COVERAGE`) at:
+      `performTransition()`'s create, `triggerTransition()`'s own
+      multi-approver `WorkflowApproval.upsert()`, `submitApproval()`'s
+      `WorkflowApproval.upsert()` (both branches of each upsert), and
+      `executeCreateTask()`'s per-assignee `TaskAssignee` stamping via a
+      new `assigneeDelegations` array threaded through
+      `CreateTaskDto`/`TaskService.create()`. End-to-end tests (not just
+      isolated resolver tests) confirm both `OUT_OF_OFFICE_COVERAGE` and
+      `ACTING_HEAD` produce a correctly-stamped row via the real
+      `triggerTransition()`/`submitApproval()` methods, plus a real
+      `CREATE_TASK` action all the way into `TaskService.create()`'s dto;
+      a structural precedence test confirms `ACTING_HEAD` is checked
+      first and the `OUT_OF_OFFICE_COVERAGE` path is never even attempted
+      once it resolves. `IWorkflowApproval` (actively used by
+      `mapApproval()`) updated to include both fields — was silently
+      dropping them from the API response until fixed;
+      `IWorkflowInstanceStage`/`ITaskAssignee` also updated for
+      completeness though confirmed (via grep) unused/orphaned today.
 - [ ] `SlaMonitorProcessor`: new `sweepOrgUnitVacancies()` step
       (symmetric set/clear, notify only on false→true, 2.5.1), a
       handover-cutoff check (2.3), and a new
@@ -1749,12 +1771,25 @@ reviewed — not this ticket's own acceptance criteria.
       as-is per 2.4's no-retroactive-blocking decision; a new,
       optional acting-for-a-unit assignment control (2.7), unrelated to
       the Head-management UI above
-- [ ] Wherever approval history or task-completion history renders:
-      when `delegationReason` is non-null, resolve and display a
-      qualifier next to the actor's name — e.g. "Approved by Sarah —
-      Acting Head of Cardiology" or "Completed by Sarah — covering for
-      Ahmad" — using the same `OrgUnitService`/name-resolution pattern
-      already established (2.6.3)
+- [ ] **DEFERRED, by explicit decision — not built in this phase**:
+      "wherever approval history or task-completion history renders" —
+      confirmed via grep across the entire frontend that no such surface
+      exists today. No approval-history component, no task-detail/
+      history component anywhere (`frontend/src/app/foundation/tasks/`
+      has only `my-tasks`/`task-list`/`task-form`/`unassigned-tasks` —
+      no per-task detail view). `WorkflowApprovalDto`
+      (`frontend/.../workflow.service.ts`) doesn't even carry
+      `decidedAt` through to any template, let alone the two new
+      delegation fields. This is the same gap already tracked in
+      CLAUDE.md's Open/Deferred Items ("Task's missing detail/
+      reassignment/evidence-upload UI"), cross-referenced there now with
+      the exact display format so it isn't rediscovered from scratch.
+      The backend stamp (commits 1-4) is real and complete regardless —
+      this item is a pure frontend-display gap with nothing to wire into
+      yet, not a backend deficiency. Building a history/detail view was
+      explicitly rejected as real new scope beyond "display a
+      qualifier" (would need new list endpoints too) — do this when
+      Task/Approval detail UI is eventually built for its own reasons.
 - [ ] Re-add `ORG_UNIT_HEAD` to `workflow-stage-form.component.ts`'s
       assignee-strategy dropdown — only once both backend resolvers
       (2.5's `resolveAssigneeRaw()` case, 2.6.2's `resolveApproverPool()`
@@ -2230,11 +2265,45 @@ grants. Report back before Phase 9.
    — `fireTransitionActions()`'s `CREATE_TASK` handling; tests
    confirming `Task.complete()` reads the matching row without
    re-deriving anything.
-5. `feat(workflow): display delegation-reason qualifier in approval/task history [ACC-40]`
-   — frontend.
+5. ~~`feat(workflow): display delegation-reason qualifier in approval/task history [ACC-40]`~~
+   — **deferred, not built, by explicit decision** (checkpoint finding,
+   confirmed with user). See below.
 
-**Checkpoint**: mostly additive/observational once Phases 0 and 7 are
-both real. Report back before Phase 10.
+**Commits 1-4 done.** Backend delegation stamping is fully real and
+correct end-to-end, not just at the resolver level — both
+`ACTING_HEAD` and `OUT_OF_OFFICE_COVERAGE` proven via tests that drive
+the actual public entry points (`triggerTransition()`, `submitApproval()`,
+a real `CREATE_TASK` action into `TaskService.create()`) and assert on
+the actual write, plus a structural test proving the precedence rule
+(`ACTING_HEAD` checked first) by asserting the `OUT_OF_OFFICE_COVERAGE`
+path's own dependencies are never even called once `ACTING_HEAD`
+resolves. Full checkpoint (tsc, full jest, tenant isolation, real
+boot) green after every commit.
+
+**Commit 5 ships "stamped, not yet displayed" — the same dormant-but-
+real state Phase 7 shipped `ORG_UNIT_HEAD` in, disclosed the same way,
+not left as a silent gap.** Checkpoint investigation (grep across the
+entire frontend) confirmed no approval-history or task-detail/history
+surface exists anywhere to attach a qualifier to —
+`frontend/src/app/foundation/tasks/` has only `my-tasks`/`task-list`/
+`task-form`/`unassigned-tasks`, no per-task detail view; the frontend's
+own `WorkflowApprovalDto` doesn't even carry `decidedAt` through to any
+template. This is the same gap already tracked in CLAUDE.md's Open/
+Deferred Items ("Task's missing detail/reassignment/evidence-upload
+UI") — not a new discovery, just the first time it's blocked a
+specific, named piece of work. Explicit decision: do NOT build new
+Task/Approval detail UI as part of this phase — that's real,
+undefined-size scope (new list endpoints, new components), not "add a
+qualifier." `delegationReason`/`delegationContextId` are fully written
+and correct in the database today; a CLAUDE.md cross-reference note
+(added, see below) means the exact display format
+(2.6.3's "Approved by Sarah — Acting Head of Cardiology" /
+"Completed by Sarah — covering for Ahmad" style) is ready to wire in
+immediately once that UI is eventually built, rather than needing to be
+rediscovered.
+
+**Checkpoint**: reported to user, commit 5 deferral confirmed. Proceed
+to Phase 10.
 
 ### Phase 10 — Docs
 
