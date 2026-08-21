@@ -52,6 +52,14 @@ export class TaskService {
     const eligibleAssigneeIds = await this.filterActiveUsers(dto.assigneeUserIds, organizationId);
     const isUnassigned = eligibleAssigneeIds.length === 0;
 
+    // ACC-40 Section 2.6.3 — stamped once, at the moment each TaskAssignee
+    // row is created, from the caller-supplied per-assignee delegation map
+    // (workflow-engine calls only; manual tasks:create callers never send
+    // this, so every assignee there simply has no matching entry).
+    const delegationByUserId = new Map(
+      (dto.assigneeDelegations ?? []).map((d) => [d.userId, d]),
+    );
+
     const task = await this.prisma.task.create({
       data: {
         organizationId,
@@ -72,7 +80,15 @@ export class TaskService {
         assignees: isUnassigned
           ? undefined
           : {
-              create: eligibleAssigneeIds.map((userId) => ({ userId, assignedById: actorId })),
+              create: eligibleAssigneeIds.map((userId) => {
+                const delegation = delegationByUserId.get(userId);
+                return {
+                  userId,
+                  assignedById: actorId,
+                  delegationReason: delegation?.delegationReason ?? null,
+                  delegationContextId: delegation?.delegationContextId ?? null,
+                };
+              }),
             },
       },
       include: { assignees: true },

@@ -736,6 +736,21 @@ export class WorkflowService {
     const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
     const subjectLabel = await this.resolveObjectSubjectLabel(instance, organizationId);
 
+    // ACC-40 Section 2.6.3 — computed once, per assignee, at exactly the
+    // moment resolveAssignee() (already OOO-aware) has full, fresh
+    // knowledge of why each resolved user was included — the exact moment
+    // the plan calls for, not re-derived later at Task.complete() time.
+    // Only delegated assignees get an entry; a direct, undelegated
+    // assignee simply has none.
+    const assigneeDelegations = (
+      await Promise.all(
+        assigneeIds.map(async (userId) => {
+          const stamp = await this.resolveDelegationStamp(userId, toStage, instance, organizationId);
+          return stamp ? { userId, ...stamp } : null;
+        }),
+      )
+    ).filter((d): d is NonNullable<typeof d> => d !== null);
+
     const task = await this.taskService.create(
       {
         title: `${transition.labelEn} — ${subjectLabel}`,
@@ -744,6 +759,7 @@ export class WorkflowService {
         sourceStageId: toStage.id,
         workflowInstanceId: instance.id,
         assigneeUserIds: assigneeIds,
+        assigneeDelegations,
         priority: 'MEDIUM', // TODO(future step): derive from source object urgency, not a fixed default
       },
       organizationId,
@@ -1419,6 +1435,8 @@ export class WorkflowService {
       comment: approval.comment,
       decidedAt: approval.decidedAt,
       createdAt: approval.createdAt,
+      delegationReason: approval.delegationReason,
+      delegationContextId: approval.delegationContextId,
     };
   }
 }

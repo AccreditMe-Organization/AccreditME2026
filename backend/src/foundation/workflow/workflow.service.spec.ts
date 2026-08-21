@@ -2082,6 +2082,63 @@ describe('WorkflowService', () => {
         }),
       );
     });
+
+    // Commit 4's own scope: proves the chain all the way from a real
+    // CREATE_TASK transition action through executeCreateTask()'s
+    // per-assignee resolveDelegationStamp() call to the exact dto passed
+    // into TaskService.create() — task.service.spec.ts's own "delegation
+    // stamping" tests separately prove that dto correctly becomes a
+    // stamped TaskAssignee row, so together the two specs cover the full
+    // path with no unverified link in between.
+    it('produces a correctly-stamped assigneeDelegations entry via a real CREATE_TASK transition action, end to end from executeCreateTask() into TaskService.create()', async () => {
+      const roleTargetStage = { ...TARGET_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve(({ 'stage-single': SINGLE_STAGE, 'stage-target': roleTargetStage } as Record<string, unknown>)[where.id] ?? null),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'absent-user' }]);
+      // Raw ROLE pool resolves to 'absent-user' — applyOutOfOfficeRouting()
+      // substitutes it to ACTOR before executeCreateTask() ever sees the
+      // resolved assigneeIds, so the task's real assignee is ACTOR, not
+      // 'absent-user'.
+      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(
+          where.id.in.map((id) =>
+            id === 'absent-user'
+              ? {
+                  id,
+                  outOfOfficeFrom: new Date(Date.now() - 86400000),
+                  outOfOfficeTo: new Date(Date.now() + 86400000),
+                  actingUserId: ACTOR,
+                }
+              : { id, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+          ),
+        ),
+      );
+      // resolveOutOfOfficeCoverageForUser()'s own query, run against the
+      // RAW pool (['absent-user']) inside resolveDelegationStamp() —
+      // independent of the substitution above.
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assigneeUserIds: [ACTOR],
+          assigneeDelegations: [
+            { userId: ACTOR, delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: 'absent-user' },
+          ],
+        }),
+        ORG_A,
+        ACTOR,
+      );
+    });
   });
 
   // ── ACC-28 Section 2.5 — unassigned-stage detection ────────────────────────

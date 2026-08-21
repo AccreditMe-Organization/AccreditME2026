@@ -31,6 +31,8 @@ const MOCK_APPROVAL: IWorkflowApproval = {
   comment: null,
   decidedAt: new Date('2026-01-01'),
   createdAt: new Date('2026-01-01'),
+  delegationReason: null,
+  delegationContextId: null,
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
