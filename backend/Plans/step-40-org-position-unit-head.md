@@ -2107,52 +2107,111 @@ before Phase 8.
    role resolution via the predecessor; tests, including a live-run
    (not just asserted) confirmation that `getUserPermissions()` requires
    zero code changes.
+5. `fix(roles): add grantedViaHeadPositionId so org-wide head positions can safely participate in role inheritance [ACC-40]`
+   — a second migration, added after real investigation prompted by
+   direct review (see below) found the original org-wide carve-out was
+   not the correct reading.
 
-**Deliberate scope decisions made during implementation, not fully
-resolved by this document's own prose — recorded here so a future
-reader doesn't have to reconstruct them from a diff:**
+**Three findings from a direct correctness review after the phase's
+first pass, each investigated for real rather than restated — recorded
+here, not left as implementation-time footnotes:**
 
-- **Org-wide (`primaryOrgUnitId: null`) head-conferring positions never
-  participate in this mechanism.** `grantedViaHeadPositionOrgUnitId`
-  can never safely be `null` on a marked row — Prisma's `equals: null`
-  in `revokeRoleViaHeadAuthority()`'s `deleteMany` where-clause would
-  also match ordinary, unmarked rows (an independently-held role has
-  this field `null` by default), risking deletion of a grant that has
-  nothing to do with head authority. `syncHeadAuthorityRoleGrant()`
-  (`user.service.ts`) skips both the grant and revoke sides entirely
-  when the relevant `orgUnitId` is `null`. An org-wide head position
-  holder who should receive the mapped role must be assigned it
-  directly via the ordinary Roles UI — consistent with 2.1's own
-  "`primaryOrgUnitId: null` + `isUnitHeadPosition: true` is a
-  valid-but-inert combination" framing, not a new exception.
-- **`revokeRoleViaHeadAuthority()` matches purely on the
-  `(userId, grantedViaHeadPositionOrgUnitId)` marker, not `roleId`** —
-  a deliberate simplification from this document's own illustrative
-  delete filter (2.6.5), which included `roleId`. Under this
-  codebase's actual usage, a given `(userId, orgUnitId)` pair can have
-  at most one row ever marked with that `orgUnitId` (each grant call
-  targets one resolved role at a time, and a unit's authority — real
-  holder or Acting Head — is never concurrently held two ways by the
-  same person), so the marker alone unambiguously identifies the
-  correct row. This specifically simplifies Acting Head's
-  `clearActingHead()`, which has no reason to re-walk
-  `resolveCoveringPositionId()`'s predecessor-resolution chain just to
-  learn which `roleId` to revoke — it calls
-  `revokeRoleViaHeadAuthority(actingHeadUserId, orgUnitId, ...)`
-  unconditionally, a safe no-op if `assignActingHead()` never actually
-  granted anything.
-- **`resolveCoveringPositionId()`'s case (b) orders by
-  `OrgUnitHeadEvent.createdAt`, not `effectiveDate`.** `effectiveDate`
-  is business-meaningful but not always monotonic with real time (a
-  declared handover's `effectiveDate` can be future-dated); `createdAt`
-  is always the actual moment the event was recorded, the more
-  reliable signal for "most recent."
-- **The live-run `getUserPermissions()` proof (2.6.5's own explicit
-  requirement) was written once, in Phase 8 commit 2, against
-  `grantRoleViaHeadAuthority()` directly** — not duplicated for Acting
-  Head in commit 4. Acting Head calls the identical method, not a
-  second implementation, so a second live-run test would prove nothing
-  a mocked assertion doesn't already cover.
+**1. Org-wide head-conferring positions — the carve-out was wrong;
+2.9a governs, not 2.1.** The first pass excluded org-wide
+(`primaryOrgUnitId: null`) positions from role inheritance entirely,
+reasoning that `grantedViaHeadPositionOrgUnitId` could never safely be
+`null` on a marked row. Investigated properly: a clean fix exists.
+`UserRole` gained a second marker field,
+`grantedViaHeadPositionId String?` — the `OrgPosition` id the grant
+derives from, always non-null on any marked row (a grant always
+originates from a specific, real position, whether or not that
+position happens to be unit-scoped). `revokeRoleViaHeadAuthority()`
+now takes both `orgUnitId: string | null` and `positionId: string |
+null`: when `orgUnitId` is present it remains the revoke key (the
+common, unit-scoped case — real holding in a unit, or Acting Head,
+which is unit-scoped by construction); when it's `null` (org-wide real
+position-holding, the only case where this happens — Acting Head is
+never org-wide, see finding 2 below), `grantedViaHeadPositionId`
+becomes the key instead, and is never null there, so it's exactly as
+unambiguous as `orgUnitId` is in its own case. `syncHeadAuthorityRoleGrant()`
+no longer gates on `oldOrgUnitId`/`newOrgUnitId` at all — only
+`oldPositionId`/`newPositionId` (always known, never the problem)
+decide whether to attempt a grant/revoke; `orgUnitId` is simply passed
+through, `null` or not. 2.9a's literal "applies to whoever holds... it"
+now holds without a carve-out, as it should — 2.1's "valid but inert"
+framing describes what an org-wide head position confers structurally
+(no unit to be Head *of*), not whether its mapped role should be
+withheld; those are different questions, and conflating them was the
+actual mistake in the first pass, not a defensible reading of 2.1.
+2.1's own designed intent for role-mapping is 2.9a's, not a silent
+exception to it.
+
+**2. Can a single `(userId, orgUnitId)` pair ever have more than one
+active marked grant at once? No — traced through every path, not
+merely asserted.** The revoke's marker-only matching (no `roleId` in
+the filter) is only safe if this is structurally impossible, not just
+usually true:
+- *Real holding + Acting Head, same unit, same person, at once?*
+  Impossible. `assignActingHead()`'s own `currentHolder` check throws
+  if the unit has *any* active real holder — and if `dto.userId`
+  themselves held it, they'd be that `currentHolder`, so the call
+  would already have thrown before any Acting Head row could be
+  created. A unit can never have both a real holder and an Acting Head
+  simultaneously, by construction.
+- *Two overlapping Acting Head assignments (different predecessors,
+  different resolved roles) for the same unit?* Impossible.
+  `assignActingHead()` throws if `orgUnit.actingHeadUserId` is already
+  set — reassigning requires `clearActingHead()` first, which
+  unconditionally revokes before any new assignment can succeed. There
+  is no "change predecessor mid-assignment" path; the API structurally
+  forces clear-then-reassign.
+- *A user holding a real position in unit U while separately Acting
+  Head of a *different* unit V?* Allowed, and correctly non-colliding
+  — two distinct marker values (`U` and `V`), never the same
+  `(userId, orgUnitId)` pair.
+- *Real position-holding: can a user hold two positions at once,
+  hence two org-wide grants?* No — `User.positionId` is a single
+  scalar field; a user holds at most one position, hence at most one
+  real-holding-derived grant, at any time.
+
+  So: for a given user and a given unit-scoping context, at most one
+  authority relationship (real XOR Acting Head XOR neither) can exist
+  at a time, each mapping to at most one resolved role — structurally,
+  not incidentally, guaranteeing at most one marked row per
+  `(userId, orgUnitId)` pair (or per `(userId, positionId)` pair, for
+  the org-wide case).
+
+  **Caveat, stated explicitly rather than left implied**: this holds
+  for sequential, single-request correctness — the guards above are
+  ordinary application-level checks, not database transactions or
+  row-level locks. A genuine *concurrent*-request race (two admins
+  simultaneously vacating and assigning against the same unit) is not
+  prevented by these guards, the same way it isn't prevented anywhere
+  else multi-step mutations happen in this codebase (no `$transaction`
+  usage exists anywhere in this codebase today). Not a new gap
+  introduced by this phase — the same class of limitation already
+  accepted throughout, not newly assumed away here.
+
+**3. The "five vs. six methods" question — not a gap, a counting-level
+mismatch, confirmed by re-reading the actual code.** Phase 6's own
+gap-fix commit named six `OrgUnitHeadService` *method names*
+(`assignHead`, `vacateHead`, `declareHandover`, `completeHandoverNow`,
+`completeHandoverAutomatically`, `cancelHandover`). This phase's own
+report described five *call sites*. Both are correct, counting
+different things: `completeHandoverNow()` and
+`completeHandoverAutomatically()` are two distinct public entry
+points, but both are thin wrappers delegating to the one shared
+private `performHandoverCompletion()` — confirmed by direct re-read of
+`org-unit-head.service.ts`, not assumed from memory — and the
+`syncHeadAuthorityRoleGrant()` revoke call lives inside that one
+shared method. So "six" (public API surface) and "five" (actual
+code-location count) both describe the same wiring correctly; no
+method was excluded. One real gap this check did surface, though:
+**no test anywhere called `completeHandoverAutomatically()` directly**
+— its coverage existed only by inference through the shared private
+method, never actually exercised. Closed with a dedicated test proving
+the identical wiring fires via that entry point too, not just
+`completeHandoverNow()`.
 
 **Checkpoint**: most correctness-sensitive phase — real permission
 grants. Report back before Phase 9.

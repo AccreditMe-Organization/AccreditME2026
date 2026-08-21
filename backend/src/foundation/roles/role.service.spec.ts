@@ -458,17 +458,41 @@ describe('RoleService', () => {
   // ── grantRoleViaHeadAuthority / revokeRoleViaHeadAuthority (ACC-40 Section 2.6.5) ──
 
   describe('grantRoleViaHeadAuthority', () => {
-    it('creates a marked UserRole row and writes audit log when the user holds nothing yet', async () => {
+    it('creates a marked UserRole row (both marker fields) and writes audit log when the user holds nothing yet', async () => {
       mockPrisma.userRole.findFirst.mockResolvedValue(null);
 
-      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'unit-1', ORG_A, ACTOR);
+      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'pos-1', 'unit-1', ORG_A, ACTOR);
 
       expect(mockPrisma.userRole.create).toHaveBeenCalledWith({
-        data: { userId: 'user-1', roleId: 'role-1', grantedViaHeadPositionOrgUnitId: 'unit-1' },
+        data: {
+          userId: 'user-1',
+          roleId: 'role-1',
+          grantedViaHeadPositionId: 'pos-1',
+          grantedViaHeadPositionOrgUnitId: 'unit-1',
+        },
       });
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({ tenantId: ORG_A, actorId: ACTOR, action: 'CREATE', objectType: 'UserRole' }),
       );
+    });
+
+    // ACC-40 Section 2.6.4/2.6.5 (revised) — 2.9a's "applies to whoever
+    // holds... it" holds without a carve-out: an org-wide head-conferring
+    // position (orgUnitId: null) still grants successfully, marked via
+    // grantedViaHeadPositionId instead (never null for a real grant).
+    it('grants successfully for an org-wide position (orgUnitId: null), marking the row via grantedViaHeadPositionId instead', async () => {
+      mockPrisma.userRole.findFirst.mockResolvedValue(null);
+
+      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'pos-org-wide', null, ORG_A, ACTOR);
+
+      expect(mockPrisma.userRole.create).toHaveBeenCalledWith({
+        data: {
+          userId: 'user-1',
+          roleId: 'role-1',
+          grantedViaHeadPositionId: 'pos-org-wide',
+          grantedViaHeadPositionOrgUnitId: null,
+        },
+      });
     });
 
     // The hard requirement: UserRole carries @@unique([userId, roleId]) —
@@ -476,10 +500,10 @@ describe('RoleService', () => {
     // violation, not silently succeed.
     it('does not create a duplicate row, and does not mark anything, when the user already independently holds the role', async () => {
       mockPrisma.userRole.findFirst.mockResolvedValue({
-        id: 'ur-existing', userId: 'user-1', roleId: 'role-1', grantedViaHeadPositionOrgUnitId: null,
+        id: 'ur-existing', userId: 'user-1', roleId: 'role-1', grantedViaHeadPositionOrgUnitId: null, grantedViaHeadPositionId: null,
       });
 
-      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'unit-1', ORG_A, ACTOR);
+      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'pos-1', 'unit-1', ORG_A, ACTOR);
 
       expect(mockPrisma.userRole.create).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
@@ -487,10 +511,10 @@ describe('RoleService', () => {
 
     it('is idempotent — does not create a duplicate when the role was already granted via this exact mechanism', async () => {
       mockPrisma.userRole.findFirst.mockResolvedValue({
-        id: 'ur-existing', userId: 'user-1', roleId: 'role-1', grantedViaHeadPositionOrgUnitId: 'unit-1',
+        id: 'ur-existing', userId: 'user-1', roleId: 'role-1', grantedViaHeadPositionOrgUnitId: 'unit-1', grantedViaHeadPositionId: 'pos-1',
       });
 
-      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'unit-1', ORG_A, ACTOR);
+      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'pos-1', 'unit-1', ORG_A, ACTOR);
 
       expect(mockPrisma.userRole.create).not.toHaveBeenCalled();
     });
@@ -498,7 +522,7 @@ describe('RoleService', () => {
     it('accepts a null actorId (system-triggered grant) without throwing, recording actorId as undefined in the audit log', async () => {
       mockPrisma.userRole.findFirst.mockResolvedValue(null);
 
-      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'unit-1', ORG_A, null);
+      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'pos-1', 'unit-1', ORG_A, null);
 
       expect(mockAuditLog.log).toHaveBeenCalledWith(expect.objectContaining({ actorId: undefined }));
     });
@@ -508,8 +532,8 @@ describe('RoleService', () => {
         Promise.resolve(where.user.organizationId === ORG_A ? { id: 'ur-a' } : null),
       );
 
-      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'unit-1', ORG_A, ACTOR);
-      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'unit-1', ORG_B, ACTOR);
+      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'pos-1', 'unit-1', ORG_A, ACTOR);
+      await service.grantRoleViaHeadAuthority('user-1', 'role-1', 'pos-1', 'unit-1', ORG_B, ACTOR);
 
       expect(mockPrisma.userRole.findFirst).toHaveBeenNthCalledWith(1, {
         where: { userId: 'user-1', roleId: 'role-1', user: { organizationId: ORG_A } },
@@ -524,10 +548,10 @@ describe('RoleService', () => {
   });
 
   describe('revokeRoleViaHeadAuthority', () => {
-    it('deletes the marked row and writes audit log when one exists', async () => {
+    it('deletes the marked row via the orgUnitId key and writes audit log when one exists', async () => {
       mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 1 });
 
-      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', ORG_A, ACTOR);
+      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', null, ORG_A, ACTOR);
 
       expect(mockPrisma.userRole.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-1', grantedViaHeadPositionOrgUnitId: 'unit-1', user: { organizationId: ORG_A } },
@@ -537,18 +561,45 @@ describe('RoleService', () => {
       );
     });
 
+    // ACC-40 Section 2.6.4/2.6.5 (revised) — the org-wide fallback path.
+    it('deletes the marked row via the grantedViaHeadPositionId key when orgUnitId is null (the org-wide case)', async () => {
+      mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.revokeRoleViaHeadAuthority('user-1', null, 'pos-org-wide', ORG_A, ACTOR);
+
+      expect(mockPrisma.userRole.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1', grantedViaHeadPositionId: 'pos-org-wide', user: { organizationId: ORG_A } },
+      });
+    });
+
+    it('prefers the orgUnitId key over positionId when both are supplied', async () => {
+      mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 1 });
+
+      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', 'pos-1', ORG_A, ACTOR);
+
+      const call = mockPrisma.userRole.deleteMany.mock.calls[0][0];
+      expect(call.where).toHaveProperty('grantedViaHeadPositionOrgUnitId', 'unit-1');
+      expect(call.where).not.toHaveProperty('grantedViaHeadPositionId');
+    });
+
+    it('is a no-op — no query at all — when neither orgUnitId nor positionId is supplied', async () => {
+      await service.revokeRoleViaHeadAuthority('user-1', null, null, ORG_A, ACTOR);
+
+      expect(mockPrisma.userRole.deleteMany).not.toHaveBeenCalled();
+    });
+
     it('is a silent no-op — no audit log — when nothing was ever granted via this mechanism', async () => {
       mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 0 });
 
-      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', ORG_A, ACTOR);
+      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', null, ORG_A, ACTOR);
 
       expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
 
-    it('only ever targets rows matching the exact grantedViaHeadPositionOrgUnitId marker — an independently-held role for the same user is never included in the delete filter', async () => {
+    it('only ever targets rows matching the exact marker, not roleId — an independently-held role for the same user is never included in the delete filter', async () => {
       mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 1 });
 
-      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', ORG_A, ACTOR);
+      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', null, ORG_A, ACTOR);
 
       const call = mockPrisma.userRole.deleteMany.mock.calls[0][0];
       expect(call.where.grantedViaHeadPositionOrgUnitId).toBe('unit-1');
@@ -558,7 +609,7 @@ describe('RoleService', () => {
     it('accepts a null actorId (system-triggered revoke) without throwing', async () => {
       mockPrisma.userRole.deleteMany.mockResolvedValue({ count: 1 });
 
-      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', ORG_A, null);
+      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', null, ORG_A, null);
 
       expect(mockAuditLog.log).toHaveBeenCalledWith(expect.objectContaining({ actorId: undefined }));
     });
@@ -568,8 +619,8 @@ describe('RoleService', () => {
         Promise.resolve(where.user.organizationId === ORG_A ? { count: 1 } : { count: 0 }),
       );
 
-      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', ORG_A, ACTOR);
-      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', ORG_B, ACTOR);
+      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', null, ORG_A, ACTOR);
+      await service.revokeRoleViaHeadAuthority('user-1', 'unit-1', null, ORG_B, ACTOR);
 
       expect(mockPrisma.userRole.deleteMany).toHaveBeenNthCalledWith(1, {
         where: { userId: 'user-1', grantedViaHeadPositionOrgUnitId: 'unit-1', user: { organizationId: ORG_A } },
@@ -619,7 +670,7 @@ describe('RoleService', () => {
       // Before the grant: no permissions.
       expect(await service.getUserPermissions('user-1', ORG_A)).toEqual([]);
 
-      await service.grantRoleViaHeadAuthority('user-1', 'role-head', 'unit-1', ORG_A, ACTOR);
+      await service.grantRoleViaHeadAuthority('user-1', 'role-head', 'pos-1', 'unit-1', ORG_A, ACTOR);
 
       // After the grant, with no change to getUserPermissions() itself:
       // the new row is already part of the union.

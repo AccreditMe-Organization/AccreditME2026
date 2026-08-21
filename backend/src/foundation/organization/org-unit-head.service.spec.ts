@@ -334,6 +334,36 @@ describe('OrgUnitHeadService', () => {
       expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledTimes(1);
     });
 
+    // ACC-40 — confirms the shared performHandoverCompletion() wiring
+    // reaches completeHandoverAutomatically() too, not just this method's
+    // own completeHandoverNow() entry point. Previously unverified: no
+    // test called completeHandoverAutomatically() directly at all, so the
+    // "both public entry points are covered because they share one
+    // private implementation" claim had never actually been exercised —
+    // closing that gap here.
+    it('completeHandoverAutomatically() reaches the identical shared wiring — proves both public entry points are covered by the one revoke call, not just completeHandoverNow()', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        OUTGOING_HOLDER,
+        { ...INCOMING_SUCCESSOR, positionId: HEAD_POSITION_ID },
+      ]);
+
+      await service.completeHandoverAutomatically(OPEN_HANDOVER_UNIT, ORG_A);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: OUTGOING_HOLDER.id },
+        data: { positionId: null },
+      });
+      expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledWith(
+        OUTGOING_HOLDER.id,
+        OUTGOING_HOLDER.positionId,
+        UNIT_1,
+        null,
+        null,
+        ORG_A,
+        null, // no human actor triggers the automatic sweep path
+      );
+    });
+
     it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
         Promise.resolve(where.organizationId === ORG_A ? OPEN_HANDOVER_UNIT : null),
@@ -702,7 +732,7 @@ describe('OrgUnitHeadService', () => {
 
         expect(mockPrisma.orgUnitHeadEvent.findFirst).not.toHaveBeenCalled(); // never reaches case (b)
         expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
-          ACTING_USER.id, 'role-head', UNIT_1, ORG_A, 'admin-1',
+          ACTING_USER.id, 'role-head', HEAD_POSITION_ID, UNIT_1, ORG_A, 'admin-1',
         );
       });
 
@@ -728,7 +758,7 @@ describe('OrgUnitHeadService', () => {
           select: { positionId: true },
         });
         expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
-          ACTING_USER.id, 'role-head', UNIT_1, ORG_A, 'admin-1',
+          ACTING_USER.id, 'role-head', HEAD_POSITION_ID, UNIT_1, ORG_A, 'admin-1',
         );
       });
 
@@ -818,8 +848,8 @@ describe('OrgUnitHeadService', () => {
         });
         // Correctly resolved a DIFFERENT role per tenant — proof the two
         // calls are genuinely scoped independently, not sharing state.
-        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(1, ACTING_USER.id, 'role-a', UNIT_1, ORG_A, 'admin-1');
-        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(2, ACTING_USER.id, 'role-b', UNIT_1, ORG_B, 'admin-1');
+        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(1, ACTING_USER.id, 'role-a', 'pos-a', UNIT_1, ORG_A, 'admin-1');
+        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(2, ACTING_USER.id, 'role-b', 'pos-b', UNIT_1, ORG_B, 'admin-1');
       });
     });
   });
@@ -864,7 +894,7 @@ describe('OrgUnitHeadService', () => {
       // was ever granted (see RoleService's own tests) — clearActingHead()
       // doesn't need to know whether a grant happened.
       expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith(
-        ACTING_USER.id, UNIT_1, ORG_A, 'admin-1',
+        ACTING_USER.id, UNIT_1, null, ORG_A, 'admin-1',
       );
     });
 

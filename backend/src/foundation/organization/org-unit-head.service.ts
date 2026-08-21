@@ -593,7 +593,14 @@ export class OrgUnitHeadService {
           select: { isUnitHeadPosition: true, roleId: true },
         });
         if (position?.isUnitHeadPosition && position.roleId) {
-          await this.roleService.grantRoleViaHeadAuthority(actingUser.id, position.roleId, orgUnitId, organizationId, actorId);
+          // Acting Head is always unit-scoped (orgUnitId is a required
+          // method parameter, never null) — the grant always uses the
+          // orgUnitId-based revoke key. resolvedPositionId is still
+          // passed for audit value on the row, even though it's never
+          // the key used to revoke this specific grant.
+          await this.roleService.grantRoleViaHeadAuthority(
+            actingUser.id, position.roleId, resolvedPositionId, orgUnitId, organizationId, actorId,
+          );
         }
       }
     }
@@ -681,8 +688,10 @@ export class OrgUnitHeadService {
     // is a safe no-op if assignActingHead() never actually granted anything
     // (no coveringForUserId, or its resolution chain found nothing) — no
     // need to re-derive whether a grant happened just to decide whether to
-    // call this.
-    await this.roleService.revokeRoleViaHeadAuthority(actingHeadUserId, orgUnitId, organizationId, actorId);
+    // call this. orgUnitId is always known and always non-null here
+    // (Acting Head is unit-scoped by construction), so the orgUnitId-based
+    // revoke key always applies — positionId is never needed.
+    await this.roleService.revokeRoleViaHeadAuthority(actingHeadUserId, orgUnitId, null, organizationId, actorId);
   }
 
   private async getOrgUnitOrThrow(id: string, organizationId: string) {

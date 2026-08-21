@@ -495,12 +495,22 @@ model UserRole {
 
   // ACC-40 Section 2.6.5 — set only when this row was created by
   // head-authority coverage (real position-holding or Acting Head), not an
-  // ordinary role assignment. Holds the OrgUnit id the authority came from
-  // — never null for a marked row (a null value here is indistinguishable
-  // from "not granted via this mechanism" in a where-clause match, so
-  // org-wide/inert head-conferring positions deliberately never use this
-  // mechanism — see RoleService's grant/revoke helpers).
+  // ordinary role assignment. Holds the OrgUnit id the authority is scoped
+  // to — the revoke key for every unit-scoped grant (real position-holding
+  // in a unit, and Acting Head, which is always unit-scoped by
+  // construction). Null for org-wide (primaryOrgUnitId: null) real
+  // position-holding grants, where grantedViaHeadPositionId below is the
+  // revoke key instead — never both null, never both set, on a marked row.
   grantedViaHeadPositionOrgUnitId String?
+
+  // ACC-40 Section 2.6.5 (revised) — the OrgPosition id this grant derives
+  // from. Always populated on a marked row for audit value, but only ever
+  // used as the REVOKE key when grantedViaHeadPositionOrgUnitId above is
+  // null (the org-wide case) — a positionId is never null for a real
+  // grant, so it's unambiguous where the OrgUnit id can't safely be used
+  // (Prisma's equals:null would also match ordinary, independently-held
+  // rows in a deleteMany where-clause).
+  grantedViaHeadPositionId String?
 
   user User @relation(fields: [userId], references: [id])
   role Role @relation(fields: [roleId], references: [id])

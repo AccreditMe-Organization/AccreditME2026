@@ -399,10 +399,18 @@ export class RoleService {
   // — critically, an independent grant is never overwritten/relabeled as
   // "granted via head authority," so a later revoke correctly leaves it
   // alone.
+  // positionId is always required — a grant always originates from a
+  // specific, real position (that's how its roleId was resolved in the
+  // first place). orgUnitId is nullable — null specifically for an
+  // org-wide (primaryOrgUnitId: null) head-conferring position, the one
+  // case 2.1 itself calls "valid but inert." Both are stored on the row;
+  // revokeRoleViaHeadAuthority() below picks whichever is the safe,
+  // unambiguous key at revoke time.
   async grantRoleViaHeadAuthority(
     userId: string,
     roleId: string,
-    orgUnitId: string,
+    positionId: string,
+    orgUnitId: string | null,
     organizationId: string,
     actorId: string | null,
   ): Promise<void> {
@@ -412,7 +420,12 @@ export class RoleService {
     if (existing) return;
 
     await this.prisma.userRole.create({
-      data: { userId, roleId, grantedViaHeadPositionOrgUnitId: orgUnitId },
+      data: {
+        userId,
+        roleId,
+        grantedViaHeadPositionId: positionId,
+        grantedViaHeadPositionOrgUnitId: orgUnitId,
+      },
     });
 
     await this.auditLog.log({
@@ -421,30 +434,45 @@ export class RoleService {
       action: 'CREATE',
       objectType: 'UserRole',
       objectId: roleId,
-      metadata: { userId, roleId, grantedViaHeadPositionOrgUnitId: orgUnitId },
+      metadata: { userId, roleId, grantedViaHeadPositionId: positionId, grantedViaHeadPositionOrgUnitId: orgUnitId },
     });
   }
 
-  // Matches purely on the marker (userId + grantedViaHeadPositionOrgUnitId),
-  // not roleId — deliberately simpler than the plan's own illustrative
-  // delete filter. Under this codebase's actual usage, a given
-  // (userId, orgUnitId) pair can have at most one row ever marked with
-  // that orgUnitId (each grant call targets one resolved role at a time,
-  // and a unit's authority — real holder or Acting Head — is never
-  // concurrently held two ways by the same person), so the marker alone
-  // unambiguously identifies "the row (if any) granted because of
-  // authority over this unit," without requiring the caller to re-derive
-  // which roleId was granted at grant time — awkward for Acting Head's
-  // clear path, which has no reason to re-walk the predecessor-resolution
-  // chain just to revoke.
+  // Matches on the marker (userId + one discriminator), not roleId —
+  // deliberately simpler than the plan's own illustrative delete filter.
+  // Under this codebase's actual usage, a given (userId, orgUnitId) pair
+  // — or (userId, positionId) pair, for the org-wide case — can have at
+  // most one row ever marked that way (each grant call targets one
+  // resolved role at a time, and a unit's authority — real holder or
+  // Acting Head — is never concurrently held two ways by the same
+  // person; a user's own positionId is a single scalar field, so at most
+  // one org-wide grant can ever exist for them at a time either), so the
+  // marker alone unambiguously identifies "the row (if any) granted
+  // because of this authority" — without requiring the caller to
+  // re-derive which roleId was granted at grant time.
+  //
+  // orgUnitId, when non-null, is ALWAYS the revoke key — it's the safe,
+  // always-correct choice for every unit-scoped grant (real holding in a
+  // unit, or Acting Head, which is unit-scoped by construction — there is
+  // no such thing as an "org-wide Acting Head" anywhere in this design).
+  // positionId is the fallback key ONLY when orgUnitId is null — the
+  // narrow org-wide real-position-holding case, the one case where
+  // matching on orgUnitId would be unsafe (Prisma's equals:null would
+  // also match ordinary, independently-held rows, which default to null
+  // on both marker fields).
   async revokeRoleViaHeadAuthority(
     userId: string,
-    orgUnitId: string,
+    orgUnitId: string | null,
+    positionId: string | null,
     organizationId: string,
     actorId: string | null,
   ): Promise<void> {
+    if (!orgUnitId && !positionId) return; // nothing to key off — should never happen given real callers
+
     const result = await this.prisma.userRole.deleteMany({
-      where: { userId, grantedViaHeadPositionOrgUnitId: orgUnitId, user: { organizationId } },
+      where: orgUnitId
+        ? { userId, grantedViaHeadPositionOrgUnitId: orgUnitId, user: { organizationId } }
+        : { userId, grantedViaHeadPositionId: positionId as string, user: { organizationId } },
     });
     if (result.count === 0) return; // nothing was ever granted via this mechanism — silent no-op, no audit noise
 
@@ -454,7 +482,9 @@ export class RoleService {
       action: 'DELETE',
       objectType: 'UserRole',
       objectId: userId,
-      metadata: { userId, grantedViaHeadPositionOrgUnitId: orgUnitId },
+      metadata: orgUnitId
+        ? { userId, grantedViaHeadPositionOrgUnitId: orgUnitId }
+        : { userId, grantedViaHeadPositionId: positionId },
     });
   }
 

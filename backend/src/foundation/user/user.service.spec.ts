@@ -283,7 +283,7 @@ describe('UserService', () => {
       );
 
       expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
-        'new-user', 'role-head', 'unit-1', ORG_A, 'actor-1',
+        'new-user', 'role-head', 'pos-head', 'unit-1', ORG_A, 'actor-1',
       );
     });
 
@@ -335,7 +335,7 @@ describe('UserService', () => {
       await service.syncHeadAuthorityRoleGrant('user-1', null, null, 'pos-head', 'unit-1', ORG_A, 'actor-1');
 
       expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
-      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-head', 'unit-1', ORG_A, 'actor-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-head', 'pos-head', 'unit-1', ORG_A, 'actor-1');
     });
 
     it('revokes only (no new position) when transitioning from a head-conferring position to nothing', async () => {
@@ -344,7 +344,7 @@ describe('UserService', () => {
       await service.syncHeadAuthorityRoleGrant('user-1', 'pos-head', 'unit-1', null, null, ORG_A, 'actor-1');
 
       expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
-      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', ORG_A, 'actor-1');
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', 'pos-head', ORG_A, 'actor-1');
     });
 
     it('revokes the old head-conferring position and grants the new one when both change', async () => {
@@ -354,8 +354,8 @@ describe('UserService', () => {
 
       await service.syncHeadAuthorityRoleGrant('user-1', 'pos-old', 'unit-old', 'pos-new', 'unit-new', ORG_A, 'actor-1');
 
-      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-old', ORG_A, 'actor-1');
-      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-new', 'unit-new', ORG_A, 'actor-1');
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-old', 'pos-old', ORG_A, 'actor-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-new', 'pos-new', 'unit-new', ORG_A, 'actor-1');
     });
 
     it('does nothing for either side when the position is ordinary (not head-conferring)', async () => {
@@ -375,21 +375,29 @@ describe('UserService', () => {
       expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
     });
 
-    // The deliberate scope decision: org-wide (orgUnitId: null) head
-    // positions never use this mechanism — the marker can't safely be
-    // null in a revoke's where-clause.
-    it('skips the grant entirely when the new position has no org unit context (org-wide, primaryOrgUnitId: null)', async () => {
+    // ACC-40 Section 2.6.4/2.6.5 (revised) — 2.9a's "applies to whoever
+    // holds... it" holds without a carve-out. An org-wide position still
+    // grants/revokes successfully — only positionId gates whether the
+    // attempt happens at all; orgUnitId is passed through as-is (null),
+    // and RoleService picks the safe key for that case.
+    it('still grants for an org-wide position (orgUnitId: null) — passes orgUnitId through as null, not skipped', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+
       await service.syncHeadAuthorityRoleGrant('user-1', null, null, 'pos-head', null, ORG_A, 'actor-1');
 
-      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
-      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+      expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
+        where: { id: 'pos-head', organizationId: ORG_A },
+        select: { isUnitHeadPosition: true, roleId: true },
+      });
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-head', 'pos-head', null, ORG_A, 'actor-1');
     });
 
-    it('skips the revoke entirely when the old position had no org unit context (org-wide, primaryOrgUnitId: null)', async () => {
+    it('still revokes for an org-wide position (orgUnitId: null) — the positionId alone is enough to attempt it', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+
       await service.syncHeadAuthorityRoleGrant('user-1', 'pos-head', null, null, null, ORG_A, 'actor-1');
 
-      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
-      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', null, 'pos-head', ORG_A, 'actor-1');
     });
 
     it('accepts a null actorId (system-triggered) and threads it through to both grant and revoke', async () => {
@@ -399,8 +407,8 @@ describe('UserService', () => {
 
       await service.syncHeadAuthorityRoleGrant('user-1', 'pos-old', 'unit-old', 'pos-new', 'unit-new', ORG_A, null);
 
-      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-old', ORG_A, null);
-      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-new', 'unit-new', ORG_A, null);
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-old', 'pos-old', ORG_A, null);
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-new', 'pos-new', 'unit-new', ORG_A, null);
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -423,8 +431,8 @@ describe('UserService', () => {
         where: { id: 'pos-head', organizationId: ORG_B },
         select: { isUnitHeadPosition: true, roleId: true },
       });
-      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(1, 'user-1', 'role-a', 'unit-1', ORG_A, 'actor-1');
-      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(2, 'user-1', 'role-b', 'unit-1', ORG_B, 'actor-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(1, 'user-1', 'role-a', 'pos-head', 'unit-1', ORG_A, 'actor-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(2, 'user-1', 'role-b', 'pos-head', 'unit-1', ORG_B, 'actor-1');
     });
   });
 
@@ -1068,7 +1076,7 @@ describe('UserService', () => {
 
       await service.updateProfile('user-1', { positionId: 'pos-head' }, ORG_A, 'admin-1', ['users:manage']);
 
-      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-head', 'unit-1', ORG_A, 'admin-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-head', 'pos-head', 'unit-1', ORG_A, 'admin-1');
     });
 
     it('revokes the mapped role when an admin moves a user out of a head-conferring position', async () => {
@@ -1084,7 +1092,7 @@ describe('UserService', () => {
 
       await service.updateProfile('user-1', { positionId: 'pos-ordinary' }, ORG_A, 'admin-1', ['users:manage']);
 
-      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', ORG_A, 'admin-1');
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', 'pos-head', ORG_A, 'admin-1');
       expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
     });
 
@@ -1206,7 +1214,7 @@ describe('UserService', () => {
 
       await service.deactivate('user-1', ORG_A, 'admin-1');
 
-      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', ORG_A, 'admin-1');
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', 'pos-head', ORG_A, 'admin-1');
     });
 
     it('does not attempt a revoke when the departing user held no position at all', async () => {

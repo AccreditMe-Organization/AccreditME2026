@@ -317,17 +317,14 @@ export class UserService {
   // "affected pair" reasoning already established for
   // refreshOrgUnitHeadVacancy()'s own wiring (Phase 6).
   //
-  // Deliberately skips org-wide (primaryOrgUnitId: null) head-conferring
-  // positions — grantedViaHeadPositionOrgUnitId's provenance marker can
-  // never safely be null: RoleService.revokeRoleViaHeadAuthority()'s
-  // deleteMany where-clause matches on that field, and a null value there
-  // is indistinguishable from "never granted via this mechanism at all" —
-  // an org-wide grant would risk a later revoke matching (and deleting) an
-  // unrelated, independently-held role. An org-wide head position holder
-  // who should receive the mapped role must be assigned it directly via
-  // the ordinary Roles UI — consistent with 2.1's own "primaryOrgUnitId:
-  // null + isUnitHeadPosition: true is a valid-but-inert combination"
-  // framing.
+  // Org-wide (primaryOrgUnitId: null) head-conferring positions ARE
+  // supported — 2.9a's "applies to whoever holds... it" holds without a
+  // carve-out. Only attempting a grant/revoke requires a positionId, not
+  // an orgUnitId: RoleService.revokeRoleViaHeadAuthority() uses
+  // grantedViaHeadPositionOrgUnitId as the revoke key when orgUnitId is
+  // present, and falls back to grantedViaHeadPositionId (never null for a
+  // real grant) specifically when it's not — see that method's own
+  // comment for why each field is safe as a revoke key in its own case.
   //
   // Public (not private) specifically so OrgUnitHeadService can call it —
   // same precedent as validatePositionAssignment() below.
@@ -342,23 +339,23 @@ export class UserService {
   ): Promise<void> {
     if (oldPositionId === newPositionId && oldOrgUnitId === newOrgUnitId) return;
 
-    if (oldPositionId && oldOrgUnitId) {
+    if (oldPositionId) {
       const oldPosition = await this.prisma.orgPosition.findFirst({
         where: { id: oldPositionId, organizationId },
         select: { isUnitHeadPosition: true, roleId: true },
       });
       if (oldPosition?.isUnitHeadPosition && oldPosition.roleId) {
-        await this.roleService.revokeRoleViaHeadAuthority(userId, oldOrgUnitId, organizationId, actorId);
+        await this.roleService.revokeRoleViaHeadAuthority(userId, oldOrgUnitId, oldPositionId, organizationId, actorId);
       }
     }
 
-    if (newPositionId && newOrgUnitId) {
+    if (newPositionId) {
       const newPosition = await this.prisma.orgPosition.findFirst({
         where: { id: newPositionId, organizationId },
         select: { isUnitHeadPosition: true, roleId: true },
       });
       if (newPosition?.isUnitHeadPosition && newPosition.roleId) {
-        await this.roleService.grantRoleViaHeadAuthority(userId, newPosition.roleId, newOrgUnitId, organizationId, actorId);
+        await this.roleService.grantRoleViaHeadAuthority(userId, newPosition.roleId, newPositionId, newOrgUnitId, organizationId, actorId);
       }
     }
   }
