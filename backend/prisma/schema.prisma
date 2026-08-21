@@ -137,6 +137,15 @@ enum WorkflowInstanceStageOutcome {
   SKIPPED
 }
 
+// ACC-40 Section 2.6.3 — one unified shape for both delegation reasons this
+// document defines, not two separate ad hoc fields. Neither
+// WorkflowInstanceStage/WorkflowApproval/TaskAssignee previously recorded
+// *why* an actor was eligible, only *who* acted.
+enum DelegationReason {
+  ACTING_HEAD // eligibility came from OrgUnit.actingHeadUserId, not real position-holding
+  OUT_OF_OFFICE_COVERAGE // eligibility came from substituting in for an absent user via User.actingUserId
+}
+
 enum TaskStatus {
   PENDING
   IN_PROGRESS
@@ -853,6 +862,12 @@ model WorkflowInstanceStage {
   comment              String?
   isUnassigned         Boolean                      @default(false)
   unassignedAt         DateTime?
+  // ACC-40 Section 2.6.3 — why actorId was eligible, not just who acted.
+  // Null for the ordinary case (actorId is a direct, undelegated
+  // participant). delegationContextId: the OrgUnit id for ACTING_HEAD, the
+  // covered-for user's id for OUT_OF_OFFICE_COVERAGE.
+  delegationReason     DelegationReason?
+  delegationContextId  String?
 
   workflowInstance WorkflowInstance   @relation(fields: [workflowInstanceId], references: [id])
   stage            WorkflowStage      @relation(fields: [stageId], references: [id])
@@ -871,6 +886,9 @@ model WorkflowApproval {
   comment                 String?
   decidedAt               DateTime?
   createdAt               DateTime                 @default(now())
+  // ACC-40 Section 2.6.3 — same shape as WorkflowInstanceStage's own pair.
+  delegationReason        DelegationReason?
+  delegationContextId     String?
 
   workflowInstanceStage WorkflowInstanceStage @relation(fields: [workflowInstanceStageId], references: [id])
   approver              User                  @relation(fields: [approverId], references: [id])
@@ -959,12 +977,19 @@ model Task {
 }
 
 model TaskAssignee {
-  id           String    @id @default(cuid())
-  taskId       String
-  userId       String
-  assignedAt   DateTime  @default(now())
-  assignedById String
-  removedAt    DateTime?
+  id                  String            @id @default(cuid())
+  taskId              String
+  userId              String
+  assignedAt          DateTime          @default(now())
+  assignedById        String
+  removedAt           DateTime?
+  // ACC-40 Section 2.6.3 — stamped once, at the moment this row is created,
+  // by fireTransitionActions()'s CREATE_TASK handling — the exact moment
+  // resolveAssignee() has full, fresh knowledge of why each resolved user
+  // was included. Task.complete() needs no new fields — it reads this row
+  // directly (userId === completedById), never re-derives.
+  delegationReason    DelegationReason?
+  delegationContextId String?
 
   task       Task @relation(fields: [taskId], references: [id])
   user       User @relation("TaskAssigneeUser", fields: [userId], references: [id])
