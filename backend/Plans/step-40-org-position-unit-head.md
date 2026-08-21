@@ -1630,7 +1630,9 @@ reviewed — not this ticket's own acceptance criteria.
       `OUT_OF_OFFICE_COVERAGE`); add `delegationReason`/
       `delegationContextId` to `WorkflowInstanceStage`, `WorkflowApproval`,
       and `TaskAssignee` (2.6.3)
-- [ ] `UserRole`: add `grantedViaHeadPositionOrgUnitId String?` (2.6.5)
+- [x] `UserRole`: add `grantedViaHeadPositionOrgUnitId String?` (2.6.5) —
+      done in Phase 8; the `DelegationReason` enum/stamp fields on this
+      same schema block remain Phase 9, still `[ ]` below
 - [ ] Confirm migration is a genuine no-op for existing `OrgPosition`
       data (2.1) — verify against the live DB one more time immediately
       before running
@@ -1844,16 +1846,20 @@ reviewed — not this ticket's own acceptance criteria.
       could apply (`ACTING_HEAD` wins); `TaskAssignee` rows stamped once
       at creation, `Task.complete()` reads the matching row without
       re-deriving anything
-- [ ] Role-inheritance (2.6.4/2.6.5): Acting Head assignment with a real
+- [x] Role-inheritance (2.6.4/2.6.5): Acting Head assignment with a real
       `coveringForUserId` grants the resolved position's `roleId` via a
       marked `UserRole` row; assignment with no `coveringForUserId`
       grants no role; ending the assignment removes only the marked
       row, never an independently-held grant on the same role;
       `getUserPermissions()` correctly includes the granted role while
       active and excludes it once revoked, with no code change to that
-      method itself
-- [ ] Real position-holding also grants/revokes the mapped role via the
-      same shared helper (2.6.5's "applies to whoever holds... it")
+      method itself — live-run proof (not just asserted), Phase 8
+      commit 2
+- [x] Real position-holding also grants/revokes the mapped role via the
+      same shared helper (2.6.5's "applies to whoever holds... it") —
+      Phase 8 commit 3, both `UserService` (invite/updateProfile/
+      deactivate) and `OrgUnitHeadService` (assignHead/vacateHead/
+      declareHandover/completeHandover*/cancelHandover)
 - [ ] `actingOrgUnitId`/`actingOrgUnitUntil`: expiry sweep clears both
       fields correctly; confirm non-interaction — assigning/clearing
       `actingOrgUnitId` never changes any unit's `isHeadVacant`,
@@ -2101,6 +2107,52 @@ before Phase 8.
    role resolution via the predecessor; tests, including a live-run
    (not just asserted) confirmation that `getUserPermissions()` requires
    zero code changes.
+
+**Deliberate scope decisions made during implementation, not fully
+resolved by this document's own prose — recorded here so a future
+reader doesn't have to reconstruct them from a diff:**
+
+- **Org-wide (`primaryOrgUnitId: null`) head-conferring positions never
+  participate in this mechanism.** `grantedViaHeadPositionOrgUnitId`
+  can never safely be `null` on a marked row — Prisma's `equals: null`
+  in `revokeRoleViaHeadAuthority()`'s `deleteMany` where-clause would
+  also match ordinary, unmarked rows (an independently-held role has
+  this field `null` by default), risking deletion of a grant that has
+  nothing to do with head authority. `syncHeadAuthorityRoleGrant()`
+  (`user.service.ts`) skips both the grant and revoke sides entirely
+  when the relevant `orgUnitId` is `null`. An org-wide head position
+  holder who should receive the mapped role must be assigned it
+  directly via the ordinary Roles UI — consistent with 2.1's own
+  "`primaryOrgUnitId: null` + `isUnitHeadPosition: true` is a
+  valid-but-inert combination" framing, not a new exception.
+- **`revokeRoleViaHeadAuthority()` matches purely on the
+  `(userId, grantedViaHeadPositionOrgUnitId)` marker, not `roleId`** —
+  a deliberate simplification from this document's own illustrative
+  delete filter (2.6.5), which included `roleId`. Under this
+  codebase's actual usage, a given `(userId, orgUnitId)` pair can have
+  at most one row ever marked with that `orgUnitId` (each grant call
+  targets one resolved role at a time, and a unit's authority — real
+  holder or Acting Head — is never concurrently held two ways by the
+  same person), so the marker alone unambiguously identifies the
+  correct row. This specifically simplifies Acting Head's
+  `clearActingHead()`, which has no reason to re-walk
+  `resolveCoveringPositionId()`'s predecessor-resolution chain just to
+  learn which `roleId` to revoke — it calls
+  `revokeRoleViaHeadAuthority(actingHeadUserId, orgUnitId, ...)`
+  unconditionally, a safe no-op if `assignActingHead()` never actually
+  granted anything.
+- **`resolveCoveringPositionId()`'s case (b) orders by
+  `OrgUnitHeadEvent.createdAt`, not `effectiveDate`.** `effectiveDate`
+  is business-meaningful but not always monotonic with real time (a
+  declared handover's `effectiveDate` can be future-dated); `createdAt`
+  is always the actual moment the event was recorded, the more
+  reliable signal for "most recent."
+- **The live-run `getUserPermissions()` proof (2.6.5's own explicit
+  requirement) was written once, in Phase 8 commit 2, against
+  `grantRoleViaHeadAuthority()` directly** — not duplicated for Acting
+  Head in commit 4. Acting Head calls the identical method, not a
+  second implementation, so a second live-run test would prove nothing
+  a mocked assertion doesn't already cover.
 
 **Checkpoint**: most correctness-sensitive phase — real permission
 grants. Report back before Phase 9.
