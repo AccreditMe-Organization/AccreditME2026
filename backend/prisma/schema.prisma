@@ -493,6 +493,15 @@ model UserRole {
   roleId    String
   createdAt DateTime @default(now())
 
+  // ACC-40 Section 2.6.5 — set only when this row was created by
+  // head-authority coverage (real position-holding or Acting Head), not an
+  // ordinary role assignment. Holds the OrgUnit id the authority came from
+  // — never null for a marked row (a null value here is indistinguishable
+  // from "not granted via this mechanism" in a where-clause match, so
+  // org-wide/inert head-conferring positions deliberately never use this
+  // mechanism — see RoleService's grant/revoke helpers).
+  grantedViaHeadPositionOrgUnitId String?
+
   user User @relation(fields: [userId], references: [id])
   role Role @relation(fields: [roleId], references: [id])
 
