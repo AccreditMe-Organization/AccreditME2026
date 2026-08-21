@@ -1800,17 +1800,30 @@ reviewed — not this ticket's own acceptance criteria.
       redesign; new section for the derived-Head/handover/vacancy/
       Acting-Head/role-mapping mechanism, explicit about "Head" never
       being a stored fact
-- [ ] `SYSTEM-REFERENCE.md`'s Tier 2 `deactivatePosition()`/no-
-      `reactivatePosition()` entry closed (Pending Discussion #5)
-- [ ] `SYSTEM-REFERENCE.md` Section 2 (Workflow Engine) — new note on
+- [x] `SYSTEM-REFERENCE.md`'s Tier 2 `deactivatePosition()`/no-
+      `reactivatePosition()` entry closed (Pending Discussion #5) —
+      Phase 10 commit 2.
+- [x] `SYSTEM-REFERENCE.md` Section 2 (Workflow Engine) — new note on
       the `ASSIGNEE_POOL`/`submitApproval()` OOO-substitution defect
-      and its fix (2.6.1), once the Pending Discussion #8 decision is
-      confirmed
-- [ ] `CLAUDE.md`'s Assignee Resolution Strategies section updated —
-      `ORG_UNIT_HEAD` is no longer "not yet supported"
-- [ ] `CLAUDE.md`'s Tenant Onboarding wizard steps — one-line note
-      added flagging the org unit/position/head-role setup gap (2.9d),
-      applied alongside this document's own commit
+      and its fix (2.6.1) — already present (multiple "as of ACC-40"
+      annotations at the OOO-wrapper call sites, plus a Tier 2 `CLOSED
+      (ACC-40)` entry for the three-call-site fix), done as part of
+      Phase 0's own work, before this Phase 10 pass began.
+- [x] **RECONCILED, not a real gap** — `CLAUDE.md`'s Assignee
+      Resolution Strategies line (`SPECIFIC_USER, ROLE, ORG_UNIT_HEAD,
+      SELF, COMMITTEE, ROUND_ROBIN`) has listed all six strategies
+      unqualified since the project's very first setup commit
+      (`94feb56`), confirmed via `git log -S` — it never said "not yet
+      supported" for `ORG_UNIT_HEAD` or anything else. This checklist
+      item's premise didn't hold up against the actual file, same
+      category as the "two vs one `WorkflowInstanceStage.create()`
+      calls" and "five vs six `OrgUnitHeadService` methods" miscounts
+      found earlier in this document — no CLAUDE.md edit was needed or
+      made.
+- [x] `CLAUDE.md`'s Tenant Onboarding wizard steps — one-line note
+      flagging the org unit/position/head-role setup gap (2.9d) —
+      already present (`CLAUDE.md` Onboarding section, added alongside
+      this document's own creation at Phase 1, not deferred to now).
 
 **Tests**
 - [ ] `isSingleAssignee` enforcement: scoped correctly per
@@ -2309,9 +2322,34 @@ to Phase 10.
 
 1. `docs(system-reference): rewrite Section 5 for org-wide OrgPosition, Head derivation, handover, vacancy, Acting Head, and role-mapping [ACC-40]`
 2. `docs(system-reference): close deactivatePosition/reactivatePosition Tier 2 gap [ACC-40]`
-3. `docs(claude): mark ORG_UNIT_HEAD as supported in Assignee Resolution Strategies [ACC-40]`
+3. ~~`docs(claude): mark ORG_UNIT_HEAD as supported in Assignee Resolution Strategies [ACC-40]`~~
+   — **no-op, reconciled**: `CLAUDE.md` never marked it unsupported
+   (see Section 5 checklist entry above). No commit made for this item.
 
-**Checkpoint**: none — final wrap-up.
+**Rewrite grounded against real code, not the (in places stale)
+Section 5 checklist above** — this document's own checklist showed
+most Phase 1-8 items as `[ ]` despite being genuinely implemented (the
+checklist was apparently never batch-updated as phases landed, only
+the items directly touched during Phase 9 got checked off in real
+time). Verified the actual implementation state directly: schema
+(`grep` for every ACC-40 field), all five relevant services
+(`OrgPositionService`, `OrgUnitHeadService`, `OrganizationService`'s
+new methods, `UserService`'s new methods, `RoleService`'s grant/revoke
+pair), the controller layer, and the frontend — before writing a
+single line of the new Section 5.
+
+**One new, previously-undisclosed gap surfaced by this verification
+pass**: `OrgUnitHeadService.assignActingHead()`/`clearActingHead()`
+are real and unit-tested but have zero HTTP surface (no controller
+route) and zero frontend UI — nobody can reach Acting Head coverage
+through the product today. Added as a new Tier 2 entry in
+`SYSTEM-REFERENCE.md` Section 11 (Section 5.6 has the full detail) —
+not fixed in this phase, since Phase 10 is docs-only by design.
+
+**Checkpoint**: none — final wrap-up. Full backend/frontend
+`tsc --noEmit` + `jest` + tenant-isolation re-run anyway, since a
+docs-only phase touching zero `.ts` files should trivially stay green
+— confirms nothing regressed, not that anything new was tested.
 
 ---
 

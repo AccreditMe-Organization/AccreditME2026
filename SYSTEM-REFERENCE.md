@@ -2749,10 +2749,27 @@ Purpose section, written directly in response to the ACC-28 incident.
   `CREATE_TASK` gets it, because the substitution logic lives upstream
   in `WorkflowService`, not in `TaskService` itself. No coverage-gap
   notification fires for this path either, same reason.
-- `OrgPositionService.deactivatePosition()` has no
-  `reactivatePosition()` counterpart (Section 5.2) — unlike `Role`,
-  which has both. A mistakenly deactivated position can only be
-  re-created, not restored.
+- **CLOSED (ACC-40)** — `OrgPositionService.deactivatePosition()` had
+  no `reactivatePosition()` counterpart (Section 5.2), unlike `Role`.
+  Closed: `reactivatePosition()` now exists, mirroring
+  `RoleService.reactivateRole()` exactly (Section 5.2).
+- **`OrgUnitHeadService.assignActingHead()`/`clearActingHead()` have
+  zero HTTP surface** (Section 5.6) — found during this Phase 10
+  documentation pass, not previously written down anywhere. Both
+  methods are real, correctly implemented, and unit-tested, including
+  their role-grant/revoke side effects, but no controller route exposes
+  either one (`OrgUnitHeadController` stops at `assignHead`/
+  `vacateHead`/`declareHandover`/`completeHandoverNow`/`cancelHandover`)
+  and the frontend `OrgUnitHeadService`/`OrgUnitHeadPanelComponent` have
+  no Acting Head UI to match. No tenant admin can reach Acting Head
+  coverage through the product today — the only path in is a direct
+  service call. Straightforward to close (two routes + one DTO
+  wire-up + a panel section mirroring the existing assign/vacate/
+  handover forms) whenever Acting Head coverage is actually needed by a
+  real workflow (most directly: once a workflow-driven object gains an
+  `orgUnitId` field and `ORG_UNIT_HEAD`, Section 5.8, gets a real
+  consumer — Acting Head coverage is what makes that consumer's vacant-
+  unit case resolvable instead of fully-unresolved).
 - **CLOSED (ACC-34)** — `tasks:manage` was seeded into role permission
   sets but never checked by any `@Permissions()` decorator anywhere in
   `task.controller.ts` (Section 3.6) — currently-inert permission
