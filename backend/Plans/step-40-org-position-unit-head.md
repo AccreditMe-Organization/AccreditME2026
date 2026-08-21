@@ -1614,18 +1614,19 @@ For whoever picks up the implementation ticket after this plan is
 reviewed — not this ticket's own acceptance criteria.
 
 **Schema / migration**
-- [ ] `OrgPosition`: drop `orgUnitId` + its relation + its index; narrow
+- [x] `OrgPosition`: drop `orgUnitId` + its relation + its index; narrow
       `@@unique` to `(organizationId, nameEn)`; add `isSingleAssignee
       Boolean @default(false)`, `isUnitHeadPosition Boolean
       @default(false)`, and `roleId String?` + `Role` relation (2.1, 2.9)
-- [ ] `OrgUnit`: add `pendingHeadUserId`, `headHandoverEffectiveDate`,
+      — Phase 1
+- [x] `OrgUnit`: add `pendingHeadUserId`, `headHandoverEffectiveDate`,
       `isHeadVacant`, `headVacantSince`, `actingHeadUserId` + their
       `User` relations; remove `positions OrgPosition[]` reverse
-      relation. **No `headUserId` field** (2.2, 2.3, 2.5, 2.6)
-- [ ] New `OrgUnitHeadEvent` model (with nullable `positionId`) +
-      `OrgUnitHeadAction` enum (2.3, 2.6)
-- [ ] `User`: add `actingOrgUnitId String?` + `actingOrgUnitUntil
-      DateTime?` + named `OrgUnit` relation (2.7)
+      relation. **No `headUserId` field** (2.2, 2.3, 2.5, 2.6) — Phase 5
+- [x] New `OrgUnitHeadEvent` model (with nullable `positionId`) +
+      `OrgUnitHeadAction` enum (2.3, 2.6) — Phase 5
+- [x] `User`: add `actingOrgUnitId String?` + `actingOrgUnitUntil
+      DateTime?` + named `OrgUnit` relation (2.7) — Phase 3
 - [x] New `DelegationReason` enum (`ACTING_HEAD`,
       `OUT_OF_OFFICE_COVERAGE`); add `delegationReason`/
       `delegationContextId` to `WorkflowInstanceStage`, `WorkflowApproval`,
@@ -1633,45 +1634,50 @@ reviewed — not this ticket's own acceptance criteria.
 - [x] `UserRole`: add `grantedViaHeadPositionOrgUnitId String?` (2.6.5) —
       done in Phase 8; the `DelegationReason` enum/stamp fields on this
       same schema block remain Phase 9, still `[ ]` below
-- [ ] Confirm migration is a genuine no-op for existing `OrgPosition`
-      data (2.1) — verify against the live DB one more time immediately
-      before running
+- [x] Confirm migration is a genuine no-op for existing `OrgPosition`
+      data (2.1) — verified against the live Supabase DB before/after
+      every migration in this ticket, per this session's established
+      discipline
 
 **Backend logic**
-- [ ] `OrgPositionService`: `createPosition()`/`updatePosition()`
+- [x] `OrgPositionService`: `createPosition()`/`updatePosition()`
       validation rejecting `isUnitHeadPosition: true` +
       `isSingleAssignee: false` (2.1), and rejecting `roleId` values
       resolving to `PLATFORM_ADMIN`/`TENANT_ADMIN` (2.9c); new
-      `reactivatePosition()` (Pending Discussion #5)
-- [ ] Position-assignment enforcement (`UserService`, wherever
+      `reactivatePosition()` (Pending Discussion #5) — Phase 1
+- [x] Position-assignment enforcement (`UserService`, wherever
       `positionId` is set): per-`(positionId, primaryOrgUnitId)`
       single-assignee check (2.1) **and** the separate cross-position
       head-uniqueness check (2.2), both run for a head-conferring
       position; a shared `isDeclaredHandoverBypass` path usable only by
       2.3's dedicated handover method; the shared grant/revoke helper
       (2.6.5) fires on every position-holding change for an
-      `isUnitHeadPosition` position with a non-null `roleId`
-- [ ] New Head-management service methods, gated by `org:manage`:
+      `isUnitHeadPosition` position with a non-null `roleId` — Phases
+      4, 5, 8
+- [x] New Head-management service methods, gated by `org:manage`:
       declare handover, complete handover (auto + explicit), cancel
       handover, direct assign/vacate a head-conferring position,
       assign/clear Acting Head (now taking an optional
       `coveringForUserId`, 2.6.4) — all writing to `OrgUnitHeadEvent`
       (2.3, 2.6); Acting Head assign/clear also fires the shared
-      grant/revoke helper (2.6.5) when a predecessor was identified
-- [ ] `refreshOrgUnitHeadVacancy()` helper, called from the
+      grant/revoke helper (2.6.5) when a predecessor was identified —
+      Phases 5, 6, 8
+- [x] `refreshOrgUnitHeadVacancy()` helper, called from the
       Head-management methods **and** from `UserService.updateProfile()`/
       `deactivate()`/`OrgPositionService.deactivatePosition()` whenever
       they touch a user holding an `isUnitHeadPosition` position (2.5)
-- [ ] `resolveActingHeadForOrgUnit()` — new resolver returning
-      `Promise<string[]>` (2.5)
+      — Phase 6
+- [x] `resolveActingHeadForOrgUnit()` — new resolver returning
+      `Promise<string[]>` (2.5) — Phase 6
 - [x] `resolveActingHeadOrgUnitIdForUser()` and
       `resolveOutOfOfficeCoverageForUser()` — new narrow, single-actor
       helpers for the delegation stamp (2.6.3) — Phase 9 commit 2
-- [ ] **Fix (Pending Discussion #8 — confirm before implementing)**:
+- [x] **Fix (Pending Discussion #8 — confirmed before implementing)**:
       `triggerTransition()`'s `ASSIGNEE_POOL` check switches from
       `resolveAssigneeRaw()` to `resolveAssignee()`; `resolveApproverPool()`
       gains OOO-substitution awareness; `resolveUnassignedBlockingTransitions()`'s
-      raw-pool read switches to the substituted read (2.6.1)
+      raw-pool read switches to the substituted read (2.6.1) — Phase 0,
+      closed as a Tier 2 `CLOSED (ACC-40)` entry in SYSTEM-REFERENCE.md
 - [x] `resolveApproverPool()`: new `ORG_UNIT_HEAD` case calling
       `resolveActingHeadForOrgUnit()` (2.6.2) — required for
       `submitApproval()` to gate anything for this strategy. Signature
@@ -1721,23 +1727,30 @@ reviewed — not this ticket's own acceptance criteria.
       dropping them from the API response until fixed;
       `IWorkflowInstanceStage`/`ITaskAssignee` also updated for
       completeness though confirmed (via grep) unused/orphaned today.
-- [ ] `SlaMonitorProcessor`: new `sweepOrgUnitVacancies()` step
+- [x] `SlaMonitorProcessor`: new `sweepOrgUnitVacancies()` step
       (symmetric set/clear, notify only on false→true, 2.5.1), a
-      handover-cutoff check (2.3), and a new
+      handover-cutoff check (`sweepDueHandovers()`, 2.3), and a new
       `sweepExpiredActingOrgUnitAssignments()` step (2.7) — all
-      alongside the existing sweep, no new BullMQ queue
-- [ ] `notifyTenantAdminsOfOrgUnitVacancy()` — new method mirroring
+      alongside the existing sweep, no new BullMQ queue — Phase 6
+- [x] `notifyTenantAdminsOfOrgUnitVacancy()` — new method mirroring
       `notifyTenantAdminsOfCoverageGap()`/
-      `notifyTenantAdminsOfUnassignedStage()`'s exact shape (2.5)
-- [ ] `notifyTenantAdminsOfVacantHeadRoleMappings()` — new method,
-      identical three-part chain, surfacing both vacant units and
-      unmapped head-conferring positions together (2.9e)
-- [ ] `InviteUserDto`: `positionId`/`primaryOrgUnitId` become required;
+      `notifyTenantAdminsOfUnassignedStage()`'s exact shape (2.5) —
+      Phase 6
+- [ ] **NOT BUILT — genuine gap, confirmed via grep (zero matches),
+      not stale-checklist noise**: `notifyTenantAdminsOfVacantHeadRoleMappings()`
+      — new method, identical three-part chain, surfacing both vacant
+      units and unmapped head-conferring positions together (2.9e).
+      Every other notification method this plan called for was built;
+      this specific one was not, across all 11 phases. Flagged in the
+      PR description as known-missing scope, not silently dropped —
+      candidate for a small, standalone follow-up ticket rather than
+      reopening this branch.
+- [x] `InviteUserDto`: `positionId`/`primaryOrgUnitId` become required;
       conditional check that at least one active `OrgUnit` exists
-      before enforcing `primaryOrgUnitId` (2.4)
-- [ ] One-time `notifyTenantAdminsOfIncompleteProfiles()` run (or
+      before enforcing `primaryOrgUnitId` (2.4) — Phase 2
+- [x] One-time `notifyTenantAdminsOfIncompleteProfiles()` run (or
       equivalent report) for existing tenants at rollout — not a data
-      migration (2.4)
+      migration (2.4) — Phase 2
 - [x] `TenantService.resolveDefaultTenantAdminAssignment()` — resolves
       **both** `positionId` (the seeded "Director" `OrgPosition`) and
       `primaryOrgUnitId` (the root `OrgUnit`, `parentId: null`) for the
@@ -1752,25 +1765,27 @@ reviewed — not this ticket's own acceptance criteria.
       unset (see 2.4's fully corrected text above)
 
 **Frontend** (belongs to the implementation ticket, not this plan)
-- [ ] `position-form.component.ts`: remove the `orgUnitId` field
+- [x] `position-form.component.ts`: remove the `orgUnitId` field
       entirely; add `isSingleAssignee` and `isUnitHeadPosition` toggles
       (client-side validated against each other too, not just relying
       on the 400); a `roleId` picker shown only when
       `isUnitHeadPosition` is true, excluding `PLATFORM_ADMIN`/
       `TENANT_ADMIN` (2.9c), with the inline nudge when left unset
-      (2.9f)
-- [ ] `position-list.component.ts`: remove the org-unit filter/display
-      column
-- [ ] New Head-management UI on whichever `OrgUnit` detail screen
+      (2.9f) — Phase 1
+- [x] `position-list.component.ts`: remove the org-unit filter/display
+      column — Phase 1
+- [x] New Head-management UI on whichever `OrgUnit` detail screen
       exists (assign, declare/complete/cancel handover, assign/clear
       Acting Head — including the optional "covering for" person
       picker, 2.6.4) — reads the derived holder(s), not a stored field
-- [ ] `invite-user.component.ts`/`user-profile.component.ts`:
+      — Phase 5 (assign/handover), Phase 11 (Acting Head, closing a
+      sequencing gap found during Phase 10's own review)
+- [x] `invite-user.component.ts`/`user-profile.component.ts`:
       `positionId`/`primaryOrgUnitId` become required fields for the
       invite flow specifically — profile-edit for existing users stays
       as-is per 2.4's no-retroactive-blocking decision; a new,
       optional acting-for-a-unit assignment control (2.7), unrelated to
-      the Head-management UI above
+      the Head-management UI above — Phases 2, 3
 - [ ] **DEFERRED, by explicit decision — not built in this phase**:
       "wherever approval history or task-completion history renders" —
       confirmed via grep across the entire frontend that no such surface
@@ -1790,16 +1805,16 @@ reviewed — not this ticket's own acceptance criteria.
       explicitly rejected as real new scope beyond "display a
       qualifier" (would need new list endpoints too) — do this when
       Task/Approval detail UI is eventually built for its own reasons.
-- [ ] Re-add `ORG_UNIT_HEAD` to `workflow-stage-form.component.ts`'s
+- [x] Re-add `ORG_UNIT_HEAD` to `workflow-stage-form.component.ts`'s
       assignee-strategy dropdown — only once both backend resolvers
       (2.5's `resolveAssigneeRaw()` case, 2.6.2's `resolveApproverPool()`
-      case) are real, per this document's Non-Goals
+      case) are real, per this document's Non-Goals — Phase 7
 
 **Docs**
-- [ ] `SYSTEM-REFERENCE.md` Section 5 rewritten to reflect the org-wide
+- [x] `SYSTEM-REFERENCE.md` Section 5 rewritten to reflect the org-wide
       redesign; new section for the derived-Head/handover/vacancy/
       Acting-Head/role-mapping mechanism, explicit about "Head" never
-      being a stored fact
+      being a stored fact — Phase 10
 - [x] `SYSTEM-REFERENCE.md`'s Tier 2 `deactivatePosition()`/no-
       `reactivatePosition()` entry closed (Pending Discussion #5) —
       Phase 10 commit 2.
