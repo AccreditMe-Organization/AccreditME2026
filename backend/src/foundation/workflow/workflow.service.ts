@@ -266,12 +266,18 @@ export class WorkflowService {
         actorId,
         dto.comment,
         'APPROVED',
+        fromStage,
       );
     }
 
     // Multi-approver stage: naming a specific transitionId is itself the vote
     // — isApprovalPath maps it to APPROVED (advance) or RETURNED (send back).
     const decision = transition.isApprovalPath ? 'APPROVED' : 'RETURNED';
+
+    // ACC-40 Section 2.6.3 — stamped on both branches (create AND update)
+    // so a re-vote by the same actor always reflects their CURRENT
+    // delegation status, never a stale first-vote snapshot.
+    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
 
     await this.prisma.workflowApproval.upsert({
       where: {
@@ -280,13 +286,21 @@ export class WorkflowService {
           approverId: actorId,
         },
       },
-      update: { decision, comment: dto.comment ?? null, decidedAt: new Date() },
+      update: {
+        decision,
+        comment: dto.comment ?? null,
+        decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
+      },
       create: {
         workflowInstanceStageId: currentInstanceStage.id,
         approverId: actorId,
         decision,
         comment: dto.comment ?? null,
         decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
       },
     });
 
@@ -303,6 +317,7 @@ export class WorkflowService {
         actorId,
         dto.comment,
         'REJECTED',
+        fromStage,
       );
     }
 
@@ -320,6 +335,7 @@ export class WorkflowService {
       actorId,
       dto.comment,
       'APPROVED',
+      fromStage,
     );
   }
 
@@ -366,17 +382,30 @@ export class WorkflowService {
       throw new ForbiddenException('You are not an eligible approver for this stage');
     }
 
+    // ACC-40 Section 2.6.3 — stamped on both branches, same reasoning as
+    // triggerTransition()'s own upsert: a re-submitted approval always
+    // reflects the actor's CURRENT delegation status.
+    const delegationStamp = await this.resolveDelegationStamp(actorId, stage, instance, organizationId);
+
     const approval = await this.prisma.workflowApproval.upsert({
       where: {
         workflowInstanceStageId_approverId: { workflowInstanceStageId: instanceStageId, approverId: actorId },
       },
-      update: { decision: dto.decision, comment: dto.comment ?? null, decidedAt: new Date() },
+      update: {
+        decision: dto.decision,
+        comment: dto.comment ?? null,
+        decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
+      },
       create: {
         workflowInstanceStageId: instanceStageId,
         approverId: actorId,
         decision: dto.decision,
         comment: dto.comment ?? null,
         decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
       },
     });
 
@@ -429,6 +458,7 @@ export class WorkflowService {
         actorId,
         dto.comment,
         'REJECTED',
+        stage,
       );
       return;
     }
@@ -450,6 +480,7 @@ export class WorkflowService {
       actorId,
       dto.comment,
       'APPROVED',
+      stage,
     );
   }
 
@@ -498,6 +529,12 @@ export class WorkflowService {
     actorId: string,
     comment: string | undefined,
     outcome: 'APPROVED' | 'REJECTED' | 'SKIPPED',
+    // ACC-40 Section 2.6.3 — the stage actorId was resolved eligible
+    // against (not toStage) — every caller already has this in scope
+    // (triggerTransition()'s own fromStage local, or
+    // maybeAdvanceAfterApproval()'s own stage parameter), so it's threaded
+    // through rather than re-derived here.
+    fromStage: PrismaWorkflowStage,
   ): Promise<IWorkflowInstance> {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) throw new NotFoundException('Target stage not found');
@@ -508,9 +545,17 @@ export class WorkflowService {
     });
 
     const slaDueAt = await this.computeSlaDueAt(toStage, organizationId);
+    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
 
     const newInstanceStage = await this.prisma.workflowInstanceStage.create({
-      data: { workflowInstanceId: instance.id, stageId: toStage.id, slaDueAt, actorId },
+      data: {
+        workflowInstanceId: instance.id,
+        stageId: toStage.id,
+        slaDueAt,
+        actorId,
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
+      },
     });
 
     // ACC-28 Section 2.5 — same check as startInstance(), for the stage this
@@ -981,6 +1026,41 @@ export class WorkflowService {
       },
     });
     return coveredFor?.id ?? null;
+  }
+
+  // ACC-40 Section 2.6.3 — the unified delegation-reason stamp, computed at
+  // the exact moment of writing actorId/approverId (or, per Phase 9 commit
+  // 4, each TaskAssignee row). ACTING_HEAD checked first,
+  // OUT_OF_OFFICE_COVERAGE second — a stated, deliberate precedence for the
+  // rare edge case where both could theoretically resolve (an actor who is
+  // both the acting head of a vacant unit and separately covering an
+  // absent ROLE-based colleague in the same raw pool). The stamp records
+  // one reason, not a set.
+  private async resolveDelegationStamp(
+    userId: string,
+    stage: PrismaWorkflowStage,
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<{ delegationReason: 'ACTING_HEAD' | 'OUT_OF_OFFICE_COVERAGE'; delegationContextId: string } | null> {
+    if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
+      // Same instance.orgUnitId defensive read as resolveAssigneeRaw()'s
+      // own ORG_UNIT_HEAD case — see that case's own comment.
+      const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
+      if (orgUnitId) {
+        const actingForOrgUnitId = await this.resolveActingHeadOrgUnitIdForUser(userId, orgUnitId, organizationId);
+        if (actingForOrgUnitId) {
+          return { delegationReason: 'ACTING_HEAD', delegationContextId: actingForOrgUnitId };
+        }
+      }
+    }
+
+    const rawPool = await this.resolveAssigneeRaw(stage, instance, organizationId);
+    const coveredForUserId = await this.resolveOutOfOfficeCoverageForUser(userId, rawPool, organizationId);
+    if (coveredForUserId) {
+      return { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: coveredForUserId };
+    }
+
+    return null;
   }
 
   // Absence and Departure Management, Pattern 1 (Acting Assignment):
