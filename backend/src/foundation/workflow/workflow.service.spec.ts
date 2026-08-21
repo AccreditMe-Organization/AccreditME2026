@@ -180,8 +180,9 @@ const mockPrisma = {
   userRole: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   committee: { findFirst: jest.fn() },
   committeeMember: { findMany: jest.fn() },
-  user: { findMany: jest.fn(), findFirst: jest.fn() },
+  user: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
   role: { findFirst: jest.fn() },
+  orgUnit: { findFirst: jest.fn() },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -214,6 +215,13 @@ describe('WorkflowService', () => {
       ),
     );
     mockTaskService.create.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
+    // ACC-40 Section 2.6.3 — defaults for the two new delegation-stamp
+    // resolvers: no real holder found (user.count: 0) and no OrgUnit found
+    // (orgUnit.findFirst: null) — resolveActingHeadOrgUnitIdForUser() falls
+    // through to null for every pre-existing test. Tests exercising these
+    // resolvers directly override per-case.
+    mockPrisma.user.count.mockResolvedValue(0);
+    mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
     // ACC-40 Section 2.6.2 — default: submitApproval() now fetches the
     // WorkflowInstance itself (for resolveApproverPool()'s ORG_UNIT_HEAD
     // case), previously only maybeAdvanceAfterApproval() did via
@@ -1783,6 +1791,133 @@ describe('WorkflowService', () => {
 
       expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
       expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+    });
+  });
+
+  // ── ACC-40 Section 2.6.3 — the two delegation-stamp resolvers ───────────────
+  //
+  // Isolated tests, exercising each resolver directly — same precedent as
+  // resolveActingHeadForOrgUnit()'s own Phase 6 commit 1 tests, before
+  // Phase 9 commit 3 wires either into a real write site.
+
+  describe('resolveActingHeadOrgUnitIdForUser (ACC-40 Section 2.6.3)', () => {
+    it("returns null when the actor is a REAL position-holder at the starting unit — not \"acting\"", async () => {
+      mockPrisma.user.count.mockResolvedValue(1);
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBeNull();
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled(); // never even checks actingHeadUserId
+    });
+
+    it('returns the starting unit id when the actor is its actingHeadUserId', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: ACTOR, parentId: 'parent-1' });
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBe('unit-1');
+    });
+
+    it('walks up to the parent unit when the starting unit has neither a real holder nor this actor as its Acting Head', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1'
+            ? { actingHeadUserId: 'someone-else', parentId: 'parent-1' }
+            : { actingHeadUserId: ACTOR, parentId: null },
+        ),
+      );
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBe('parent-1');
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns null when the full chain is exhausted with no match anywhere', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1'
+            ? { actingHeadUserId: null, parentId: 'parent-1' }
+            : { actingHeadUserId: null, parentId: null },
+        ),
+      );
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null immediately when the starting unit does not exist in this tenant', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBeNull();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? { actingHeadUserId: ACTOR, parentId: null } : null),
+      );
+
+      const resultA = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+      const resultB = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_B);
+
+      expect(resultA).toBe('unit-1');
+      expect(resultB).toBeNull();
+    });
+  });
+
+  describe('resolveOutOfOfficeCoverageForUser (ACC-40 Section 2.6.3)', () => {
+    it('returns the covered-for user id when the actor is their actingUserId and coverage is currently active', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
+
+      const result = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['absent-user', 'other-user'], ORG_A);
+
+      expect(result).toBe('absent-user');
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['absent-user', 'other-user'] },
+          organizationId: ORG_A,
+          actingUserId: ACTOR,
+          outOfOfficeFrom: { lte: expect.any(Date) },
+          outOfOfficeTo: { gte: expect.any(Date) },
+        },
+      });
+    });
+
+    it('returns null when nothing in the raw pool is currently covered by this actor', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      const result = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['other-user'], ORG_A);
+
+      expect(result).toBeNull();
+    });
+
+    it('is a no-op — no query at all — when the raw pool is empty', async () => {
+      const result = await service.resolveOutOfOfficeCoverageForUser(ACTOR, [], ORG_A);
+
+      expect(result).toBeNull();
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? { id: 'absent-user-a' } : { id: 'absent-user-b' }),
+      );
+
+      const resultA = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['absent-user-a'], ORG_A);
+      const resultB = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['absent-user-b'], ORG_B);
+
+      expect(resultA).toBe('absent-user-a');
+      expect(resultB).toBe('absent-user-b');
+      expect(mockPrisma.user.findFirst).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }));
+      expect(mockPrisma.user.findFirst).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }));
     });
   });
 

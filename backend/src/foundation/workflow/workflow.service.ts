@@ -913,6 +913,76 @@ export class WorkflowService {
     }
   }
 
+  // ACC-40 Section 2.6.3 — the ACTING_HEAD half of the unified delegation
+  // stamp. A narrow, single-actor sibling to resolveAssigneeRaw()'s own
+  // ORG_UNIT_HEAD case and OrganizationService.resolveActingHeadForOrgUnit()
+  // — deliberately not a modification of either (pool resolution stays a
+  // flat string[], unchanged). Walks the SAME hierarchy shape, but asks a
+  // different, narrower question: not "who is eligible" but "is THIS
+  // specific actor eligible only because they're acting, not because they
+  // really hold the position." Returns the OrgUnit id they're acting FOR
+  // (the delegation context), or null if they're a real holder (not
+  // "acting") or not acting for anything found in the walk.
+  //
+  // Public (not private) so this phase's own tests can exercise it in
+  // isolation before Phase 9 commit 3 wires it into a real write site —
+  // same precedent as resolveActingHeadForOrgUnit() (Phase 6 commit 1).
+  async resolveActingHeadOrgUnitIdForUser(
+    actorId: string,
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<string | null> {
+    let current: string | null = orgUnitId;
+    while (current) {
+      const isRealHolder = await this.prisma.user.count({
+        where: {
+          id: actorId,
+          organizationId,
+          primaryOrgUnitId: current,
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true },
+        },
+      });
+      if (isRealHolder > 0) return null; // real position-holder — not "acting"
+
+      const unit: { actingHeadUserId: string | null; parentId: string | null } | null =
+        await this.prisma.orgUnit.findFirst({
+          where: { id: current, organizationId },
+          select: { actingHeadUserId: true, parentId: true },
+        });
+      if (!unit) return null;
+      if (unit.actingHeadUserId === actorId) return current; // the unit id they're acting FOR
+
+      current = unit.parentId;
+    }
+    return null;
+  }
+
+  // ACC-40 Section 2.6.3 — the OUT_OF_OFFICE_COVERAGE half. Constrained to
+  // rawPoolUserIds deliberately — actorId being *someone's* actingUserId
+  // tenant-wide is not relevant; only whether they're covering for a person
+  // who was actually part of *this* resolution's raw pool counts. Public
+  // for the same isolated-testing reason as the sibling above.
+  async resolveOutOfOfficeCoverageForUser(
+    actorId: string,
+    rawPoolUserIds: string[],
+    organizationId: string,
+  ): Promise<string | null> {
+    if (rawPoolUserIds.length === 0) return null;
+
+    const now = new Date();
+    const coveredFor = await this.prisma.user.findFirst({
+      where: {
+        id: { in: rawPoolUserIds },
+        organizationId,
+        actingUserId: actorId,
+        outOfOfficeFrom: { lte: now },
+        outOfOfficeTo: { gte: now },
+      },
+    });
+    return coveredFor?.id ?? null;
+  }
+
   // Absence and Departure Management, Pattern 1 (Acting Assignment):
   //   IF user.outOfOfficeFrom <= now <= outOfOfficeTo AND actingUserId set:
   //     → substitute actingUser, notify both, audit log the substitution
