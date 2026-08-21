@@ -99,6 +99,52 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
               [disabled]="assignForm.invalid"
             />
           </form>
+
+          <hr />
+
+          <h4 class="text-sm font-medium">{{ 'orgUnitHead.actingHead' | translate }}</h4>
+          @if (s.actingHeadUserId) {
+            <p-tag severity="info" [value]="'orgUnitHead.actingHeadCurrent' | translate: { name: holderName(s.actingHeadUserId) }" />
+            <p-button
+              [label]="'orgUnitHead.actingHeadClear' | translate"
+              severity="danger"
+              [text]="true"
+              [loading]="acting()"
+              (onClick)="onClearActingHead()"
+            />
+          } @else {
+            <form [formGroup]="actingHeadForm" (ngSubmit)="onAssignActingHead()" class="flex flex-col gap-3">
+              <div class="flex flex-col gap-1">
+                <label class="text-sm font-medium">{{ 'orgUnitHead.actingHeadCandidate' | translate }}</label>
+                <p-select
+                  formControlName="userId"
+                  [options]="unitUsers()"
+                  optionLabel="name"
+                  optionValue="id"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-sm font-medium">{{ 'orgUnitHead.actingHeadCoveringFor' | translate }}</label>
+                <p-select
+                  formControlName="coveringForUserId"
+                  [options]="unitUsers()"
+                  optionLabel="name"
+                  optionValue="id"
+                  [showClear]="true"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-sm font-medium">{{ 'orgUnitHead.reason' | translate }}</label>
+                <input pInputText formControlName="reason" />
+              </div>
+              <p-button
+                [label]="'orgUnitHead.actingHeadAssign' | translate"
+                type="submit"
+                [loading]="acting()"
+                [disabled]="actingHeadForm.invalid"
+              />
+            </form>
+          }
         </div>
       } @else {
         <!-- One (or, mid-handover only, two) active holder(s) -->
@@ -172,6 +218,12 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   readonly handoverForm = this.fb.group({
     incomingUserId: [null as string | null, [Validators.required]],
     effectiveDate: [null as Date | null, [Validators.required]],
+    reason: [''],
+  });
+
+  readonly actingHeadForm = this.fb.group({
+    userId: [null as string | null, [Validators.required]],
+    coveringForUserId: [null as string | null],
     reason: [''],
   });
 
@@ -305,6 +357,55 @@ export class OrgUnitHeadPanelComponent implements OnInit {
         this.acting.set(true);
         this.error.set(null);
         this.orgUnitHeadService.cancelHandover(this.orgUnitId()).subscribe({
+          next: () => {
+            this.acting.set(false);
+            this.load();
+            this.saved.emit();
+          },
+          error: (err: unknown) => {
+            this.acting.set(false);
+            this.error.set(extractErrorMessage(err, 'orgUnitHead.errorSave'));
+          },
+        });
+      },
+    });
+  }
+
+  onAssignActingHead(): void {
+    if (this.actingHeadForm.invalid) return;
+    const { userId, coveringForUserId, reason } = this.actingHeadForm.getRawValue();
+    this.acting.set(true);
+    this.error.set(null);
+    this.orgUnitHeadService
+      .assignActingHead(this.orgUnitId(), {
+        userId: userId!,
+        coveringForUserId: coveringForUserId || undefined,
+        reason: reason || undefined,
+      })
+      .subscribe({
+        next: () => {
+          this.acting.set(false);
+          this.actingHeadForm.reset();
+          this.load();
+          this.saved.emit();
+        },
+        error: (err: unknown) => {
+          this.acting.set(false);
+          this.error.set(extractErrorMessage(err, 'orgUnitHead.errorSave'));
+        },
+      });
+  }
+
+  onClearActingHead(): void {
+    this.confirmationService.confirm({
+      message: this.translateService.instant('orgUnitHead.actingHeadClearConfirmMessage'),
+      header: this.translateService.instant('common.confirm'),
+      icon: 'pi pi-exclamation-triangle',
+      acceptButtonProps: { severity: 'danger' },
+      accept: () => {
+        this.acting.set(true);
+        this.error.set(null);
+        this.orgUnitHeadService.clearActingHead(this.orgUnitId()).subscribe({
           next: () => {
             this.acting.set(false);
             this.load();

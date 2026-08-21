@@ -81,6 +81,13 @@
     "completeNow": "Complete Now",
     "cancelHandover": "Cancel Handover",
     "cancelHandoverConfirmMessage": "Cancel this handover? The incoming successor's position grant will be reverted; the current Head remains unaffected.",
+    "actingHead": "Acting Head Coverage",
+    "actingHeadCurrent": "Acting Head: {{name}}",
+    "actingHeadClear": "Clear Acting Head",
+    "actingHeadClearConfirmMessage": "Clear this unit's Acting Head coverage?",
+    "actingHeadCandidate": "Acting Head",
+    "actingHeadCoveringFor": "Covering For (optional)",
+    "actingHeadAssign": "Assign Acting Head",
     "errorLoad": "Failed to load Head status.",
     "errorSave": "Failed to save changes."
   },

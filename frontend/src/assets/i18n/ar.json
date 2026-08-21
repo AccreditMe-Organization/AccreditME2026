@@ -81,6 +81,13 @@
     "completeNow": "إتمام الآن",
     "cancelHandover": "إلغاء التسليم والتسلّم",
     "cancelHandoverConfirmMessage": "هل تريد إلغاء هذا التسليم والتسلّم؟ سيتم التراجع عن منح المنصب للخلف الوارد، ويبقى الرئيس الحالي دون تأثير.",
+    "actingHead": "تغطية الرئيس بالنيابة",
+    "actingHeadCurrent": "الرئيس بالنيابة: {{name}}",
+    "actingHeadClear": "إلغاء الرئيس بالنيابة",
+    "actingHeadClearConfirmMessage": "هل تريد إلغاء تغطية الرئيس بالنيابة لهذه الوحدة؟",
+    "actingHeadCandidate": "الرئيس بالنيابة",
+    "actingHeadCoveringFor": "يغطي عن (اختياري)",
+    "actingHeadAssign": "تعيين رئيس بالنيابة",
     "errorLoad": "فشل تحميل حالة الرئاسة.",
     "errorSave": "فشل حفظ التغييرات."
   },
