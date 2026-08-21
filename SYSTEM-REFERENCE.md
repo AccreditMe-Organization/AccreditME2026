@@ -1334,136 +1334,445 @@ Section 11.
 
 ---
 
-## 5. OrgPosition
+## 5. OrgPosition, Unit Head, and Delegated Authority (ACC-40)
 
-`backend/src/foundation/org-position/org-position.service.ts`.
-CLAUDE.md's own note is explicit that this is **not** the same concept
-as `OrgUnit.type` (department structure) — `OrgPosition` describes a
-user's seniority *within* their unit, a grade, not a department.
+`backend/src/foundation/org-position/org-position.service.ts` (position
+catalog) + `backend/src/foundation/organization/org-unit-head.service.ts`
+(Head-management actions) + `backend/src/foundation/organization/organization.service.ts`
+(derivation/vacancy — same module as ordinary `OrgUnit` CRUD).
+**Rewritten in full for ACC-40** — the entire previous per-org-unit,
+grade-cloned `OrgPosition` design (documented in this section before
+ACC-40) is gone, replaced end to end. Full design rationale:
+`backend/Plans/step-40-org-position-unit-head.md`. CLAUDE.md's note that
+`OrgPosition` is **not** the same concept as `OrgUnit.type` (department
+structure) still holds — `OrgPosition` describes a user's seniority and
+authority, not a department.
 
-### 5.1 Model
+### 5.1 Models
 
 ```prisma
 model OrgPosition {
-  id             String       @id @default(cuid())
-  organizationId String
-  orgUnitId      String?      // null = org-wide position (e.g. "Director"),
-                               // set = org-unit-specific (e.g. "ICU Unit Manager")
-  nameEn         String
-  nameAr         String?
-  grade          Int          // 1 = lowest, 10 = highest
-  isActive       Boolean      @default(true)
+  id                 String   @id @default(cuid())
+  organizationId     String
+  nameEn             String
+  nameAr             String?
+  grade              Int
+  isSingleAssignee   Boolean  @default(false)
+  isUnitHeadPosition Boolean  @default(false)
+  roleId             String?
+  isActive           Boolean  @default(true)
 
-  users          User[]       // back-relation — User.positionId
+  role       Role?              @relation(fields: [roleId], references: [id])
+  users      User[]             // back-relation — User.positionId
+  headEvents OrgUnitHeadEvent[]
 
-  @@unique([organizationId, orgUnitId, nameEn])
+  @@unique([organizationId, nameEn])
 }
 ```
 
-`User` carries exactly one nullable relation to this model —
-`positionId String?` → `position OrgPosition?` (`schema.prisma:385,413`)
-— a single position per user, not a history or a multi-position
-assignment. `User` separately carries `primaryOrgUnitId` (also nullable,
-also single), which `validateEscalationTarget()` (5.3) reads
-independently of `positionId`.
+Org-wide catalog now — **no more `orgUnitId`**. A position title like
+"Department Manager" is one catalog entry per tenant, not a per-unit
+clone. `isSingleAssignee`/`isUnitHeadPosition` express what used to be
+implied by per-unit scoping: whether more than one person may hold it
+*within a given unit* at once, and whether holding it confers Head
+authority. `isUnitHeadPosition: true` always implies
+`isSingleAssignee: true` — enforced server-side
+(`org-position.service.ts:233` `validateHeadFlagPairing()`), not
+trusted to the frontend alone. `roleId` (nullable) is the position-to-
+role mapping (5.9) — validated to reject `PLATFORM_ADMIN`/
+`TENANT_ADMIN` (`org-position.service.ts:247`).
 
-### 5.2 Service Methods
+```prisma
+model OrgUnit {
+  // ...existing fields (Section 7) unchanged, plus:
+  pendingHeadUserId                 String?    // open-handover cache (5.4)
+  headHandoverEffectiveDate         DateTime?
+  isHeadVacant                      Boolean   @default(false)  // vacancy cache (5.5)
+  headVacantSince                   DateTime?
+  isHeadFullyUnresolved             Boolean   @default(false)  // escalation-exhausted cache (5.5)
+  headFullyUnresolvedLastRemindedAt DateTime?
+  actingHeadUserId                  String?    // Acting Head (5.6) — independent of position-holding
+}
+```
 
-- **`seedDefaultPositions()`** — upserts the 10 org-wide default
-  positions (`Director(10)` down to `Staff(1)`, per CLAUDE.md) for one
-  tenant, called from `TenantService.bootstrap()`. Idempotent via
-  `findFirst` + conditional `create` — code comment explains why not a
-  real Prisma `upsert()`: the generated compound-unique input type for
-  `organizationId_orgUnitId_nameEn` types `orgUnitId` as `string`, not
-  `string | null`, even though the column is nullable — "a known Prisma
-  type-generation gap for compound unique indexes containing a nullable
-  field."
-- **`listPositions()`** — org-wide positions (`orgUnitId: null`) always
-  included; a specific `orgUnitId`'s positions included additionally
-  when passed. Never returns *other* org units' positions.
-- **`createPosition()` / `updatePosition()`** — validate a given
-  `orgUnitId` actually belongs to the caller's tenant before allowing
-  the association (`BadRequestException` otherwise).
-- **`deactivatePosition()`** — idempotent soft-deactivate
-  (`isActive: false`); no reactivation method exists (unlike `Role`,
-  which has both `deactivateRole()`/`reactivateRole()` — a real,
-  asymmetric gap: an `OrgPosition` deactivated by mistake cannot be
-  reactivated through the API, only re-created).
+**No `headUserId` field exists, deliberately** — "who is the Head" is
+never stored; it's derived live from a query every time it's needed
+(5.3). These six fields are all caches/logs of derivable state, not
+sources of truth, kept in sync by `refreshOrgUnitHeadVacancy()` (5.5)
+and the Head-management methods (5.4/5.6) — a bug in any of them can
+make the cache wrong, but can never corrupt the underlying position-
+holding facts that `resolveActingHeadForOrgUnit()` (5.3) re-derives
+from scratch.
 
-### 5.3 `validateEscalationTarget()` — Full Mechanics (Already Documented in Section 3.4, Cross-Referenced Here)
+```prisma
+model OrgUnitHeadEvent {
+  id             String            @id @default(cuid())
+  organizationId String
+  orgUnitId      String
+  userId         String
+  positionId     String?           // null only for ACTING_* actions
+  action         OrgUnitHeadAction
+  effectiveDate  DateTime
+  reason         String?
+  approvedBy     String?
+  createdAt      DateTime          @default(now())
+}
 
-The code comment on this method (`org-position.service.ts:152–153`)
-calls it out explicitly as "THE CORE METHOD — used by TaskService (and,
-in later steps, Committees/Meetings/Documents/CAPA/Audits per the Step
-8 plan's Section 7)." **That forward-looking claim is aspirational, not
-current** — see 5.4.
+enum OrgUnitHeadAction {
+  ASSIGNED             // direct appointment, no handover
+  HANDOVER_DECLARED    // incoming successor granted the same position; outgoing unchanged
+  HANDOVER_COMPLETED   // outgoing holder's position cleared
+  HANDOVER_CANCELLED   // incoming successor's grant reverted
+  VACATED              // cleared, no successor declared
+  ACTING_ASSIGNED      // does not touch position-holding
+  ACTING_ENDED         // does not touch position-holding
+}
+```
 
-Exact rules (verbatim logic, restated from 3.4 for this section's own
-completeness): target must have `grade >= max(assignee grades)`
-(missing position on either side treated as grade 0), **and**
-target must have a `primaryOrgUnitId` that is the same as, or a
-transitive parent of, at least one assignee's `primaryOrgUnitId` — a
-target with no `primaryOrgUnitId` at all fails unconditionally, even if
-the grade check passed. If no assignee has an org unit, that half of
-the check passes unconditionally (nothing to violate).
+Append-only ledger, modeled directly after `CommitteeMembershipEvent`
+(Section — Committee Management) — same "who held this authority, when,
+why" shape, same precedent reused rather than inventing a new one.
 
-### 5.4 Confirmed: Task Escalation Is the ONLY Real Consumer Today
+`User` additions: `actingOrgUnitId String?` + `actingOrgUnitUntil
+DateTime?` (5.7 — user-level "acting for a unit," independent of Head
+authority entirely). `UserRole` addition:
+`grantedViaHeadPositionOrgUnitId String?` (alongside the pre-existing
+`grantedViaHeadPositionId`) — the marker pair `RoleService` uses to
+know a grant came from this mechanism and is therefore safe to
+auto-revoke (5.9).
 
-Grepped every reference to `OrgPositionService`/`orgPositionService`
-across `backend/src`. Injected in exactly four places:
+`User.positionId`/`User.primaryOrgUnitId` are unchanged in shape (both
+still single, nullable relations) but are now **mandatory for every
+newly-invited active user** (5.4) — `primaryOrgUnitId` conditionally,
+only once the tenant has at least one active `OrgUnit`.
 
-- **`TaskService`** — calls `validateEscalationTarget()` at task
-  creation (Section 3.2).
-- **`SlaMonitorProcessor`** — calls `validateEscalationTarget()` again
-  at escalation-fire time (Section 3.4.1).
-- **`TenantService`** — calls `seedDefaultPositions()` only, during
-  `bootstrap()`. Does not call `validateEscalationTarget()`.
-- **`OrgPositionController`/`OrgPositionModule`** — the module's own
-  CRUD surface, not a consumer of the escalation logic.
+### 5.2 Position Catalog Service Methods (`OrgPositionService`)
 
-**Nothing else in the codebase references `OrgPositionService` at
-all.** The code comment's own forward-looking list — Committees,
-Meetings, Documents, CAPA, Audits — is entirely unrealized: confirmed
-directly against `committees.service.ts` (no `OrgPositionService`
-import, no reference to grade/position anywhere), and the other four
-modules don't exist yet to check. `CommitteeMember.roleValueId` and
-`OrgPosition` remain two completely disconnected concepts (also
-established during the ACC-28 investigation this session) — a
-committee "chair" is not, and has never been, resolved via grade or
-position in any way. **`OrgPosition`'s only live effect on the system
-today is gating who a task's SLA-breach escalation target may be.**
-Every other CLAUDE.md/module-designs.md reference to "position-based
-authority" (approval chains, audit team authority, etc.) is design
-intent that has not been built.
+- **`seedDefaultPositions()`** — upserts the 10 default positions for
+  one tenant, called from `TenantService.bootstrap()`. Idempotent via
+  `findFirst` + conditional `create`, same Prisma compound-unique
+  generated-type workaround as before ACC-40.
+- **`listPositions()`** (`:41`) — every position for the tenant, no
+  `orgUnitId` parameter anymore (there is nothing left to scope by).
+- **`createPosition()`/`updatePosition()`** (`:56`/`:90`) — validate
+  the `isUnitHeadPosition` ⇒ `isSingleAssignee` pairing against the
+  **resulting** state (existing row merged with the partial dto, not
+  just whichever field this call happens to touch), and validate
+  `roleId` when present (exists in tenant, not
+  `PLATFORM_ADMIN`/`TENANT_ADMIN`).
+- **`deactivatePosition()`** (`:128`) — idempotent soft-deactivate.
+  Deactivating a position never clears its holders' own `positionId`
+  (holders keep the FK), so this method now walks every *active*
+  holder's `primaryOrgUnitId` and calls `refreshOrgUnitHeadVacancy()`
+  for each — a position going inactive can silently make a unit's Head
+  vacant, and this is the only place that gets recomputed.
+- **`reactivatePosition()`** (`:167`) — **new in ACC-40, closes the
+  Tier 2 gap this section previously documented** (deactivate-with-no-
+  reactivate asymmetry vs. `Role`). Mirrors `RoleService.reactivateRole()`
+  exactly.
 
-### 5.5 Permission Model
+### 5.3 "Who Is This Unit's Head" — Derived, Never Stored
+
+`OrganizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId)`
+(`organization.service.ts:74`) is the one real derivation query,
+despite its name being written for its role as `ORG_UNIT_HEAD`'s
+workflow-assignee resolver (5.8) — it answers "who currently has Head
+authority here" generally, not just for workflow purposes:
+
+1. At the given unit: find every `ACTIVE` user with
+   `primaryOrgUnitId` = this unit and `position.isUnitHeadPosition: true`
+   AND `position.isActive: true` (the `isActive` filter is a deliberate
+   extension beyond the plan's own illustrative code — without it, a
+   deactivated position's existing holder would count as "the Head"
+   forever, since deactivation never clears `positionId`). Sized 1 in
+   the normal case, 2 during an open handover (both outgoing and
+   incoming genuinely hold the position at that moment — 5.4 — no
+   special-casing needed, the query just returns what's true).
+2. If empty, check this unit's own `actingHeadUserId` (5.6) — return it
+   if set.
+3. If still empty, walk to `parentId` and repeat from step 1 — this is
+   the hierarchy escalation the plan's Pending Discussion #3 resolved
+   as "escalation fully substitutes," not "vacant unit's actions get
+   blocked."
+4. Exhausted (`root.parentId` is `null` and step 1/2 both came up
+   empty at every level) → `[]`, "fully unresolved."
+
+No caching inside this method — every call re-walks from scratch.
+`isHeadVacant`/`isHeadFullyUnresolved` (5.5) are a separate,
+write-time-maintained cache of this query's outcome for cheap reads —
+never a substitute for calling it when a real, current answer is
+needed (every real consumer — Head-management methods, the workflow
+engine's `ORG_UNIT_HEAD` cases, the delegation stamp — calls the live
+query, never the cache).
+
+### 5.4 Deliberate Handover (`OrgUnitHeadService`, `org-unit-head.service.ts`)
+
+A handover is **not** a change to a separately-stored "who is Head"
+fact — it is a declared, temporary, logged exception that grants the
+incoming successor the same `isUnitHeadPosition` position the outgoing
+holder already holds, before the outgoing holder's own holding ends.
+During the open window, 5.3's derivation query genuinely returns both
+users — this **is** the "declared dual-holder transition period," with
+no special-casing anywhere else in the system.
+
+- **`declareHandover()`** (`:81`) — validates: a Head currently exists
+  to hand over from (else use direct assignment); the incoming
+  successor is active, different from the outgoing holder, does not
+  already hold a *different* head-conferring position (would silently
+  orphan that other unit's audit trail otherwise), and already belongs
+  to this unit (`primaryOrgUnitId` match — never silently moved as a
+  side effect). Grants the incoming successor the same `positionId` via
+  `UserService.validatePositionAssignment(..., isDeclaredHandoverBypass: true)`
+  (`user.service.ts:390`) — the **only** call site in the codebase that
+  ever passes `isDeclaredHandoverBypass: true`, deliberately violating
+  both the single-assignee cap and the cross-position Head-uniqueness
+  check, only for this one pair, only through this one path. Writes
+  `HANDOVER_DECLARED`, refreshes vacancy, and — since the incoming
+  successor genuinely holds the position from this moment — fires the
+  role grant (5.9) immediately, not at completion.
+- **`completeHandoverNow()`** (`:205`, explicit) and
+  **`completeHandoverAutomatically()`** (`:288`, called by
+  `SlaMonitorProcessor`'s `sweepDueHandovers()` for every open handover
+  past its declared `effectiveDate`) both call the same private
+  **`performHandoverCompletion()`** (`:299`): clears the outgoing
+  holder's `positionId`, writes `HANDOVER_COMPLETED`, refreshes
+  vacancy, revokes the outgoing holder's role grant. No behavioral
+  difference between explicit-early and automatic beyond who (or
+  what — `actorId: null` for the sweep) triggered it.
+- **`cancelHandover()`** (`:219`) — reverts the incoming successor's
+  grant only; the outgoing holder is unaffected. No stored history of
+  what the incoming successor held before (schema deliberately carries
+  none) — reverts to `null`, not a resurrected prior value.
+- **`vacateHead()`** (`:465`) — **a deliberate divergence from
+  `RoleService`'s last-`TENANT_ADMIN` lockout-protection precedent**: a
+  Unit Head is NOT unconditionally protected — a unit can legitimately
+  sit headless. Clearing writes `VACATED` and lets 5.5's escalation
+  mechanism be the real safety net, not a hard block on the removal
+  itself.
+
+### 5.5 Vacancy Detection and Hierarchy Escalation
+
+`OrganizationService.refreshOrgUnitHeadVacancy()` (`:117`) — the
+entry-time check, called from every Head-management method above, from
+`OrgPositionService.deactivatePosition()`, and from
+`UserService.updateProfile()`/`deactivate()` whenever they touch a
+user's `positionId`/`primaryOrgUnitId`. Re-runs the direct-holder count;
+on a genuine `false→true` vacancy transition, runs 5.3's escalation
+walk exactly once and sets `isHeadVacant`/`headVacantSince`/
+`isHeadFullyUnresolved`. Only a **fully-exhausted** result (escalation
+found nobody at any ancestor level either) notifies Tenant Admins
+(`notifyTenantAdminsOfOrgUnitVacancy()`, `:179` — same
+`Role.findFirst(TENANT_ADMIN)` → `UserRole.findMany()` →
+`NotificationService.create()` chain as every other admin-notification
+method in this codebase) — a partial vacancy covered by an ancestor's
+Acting Head is silent, matching the plan's "partial vacancy never
+blocks or notifies" resolution.
+
+`SlaMonitorProcessor.sweepOrgUnitVacancies()`
+(`sla-monitor.processor.ts:146`) is the drift-after-entry re-check —
+same architectural role as `sweepUnassignedStages()` (Section 2.13),
+one level deeper: `isHeadVacant` alone can't answer "is this STILL
+fully-unresolved" (it captures only this unit's own direct-holder
+count, not whether an ancestor's Acting Head now covers it), so
+`isHeadFullyUnresolved` is checked separately and can flip
+independently of `isHeadVacant`. Sends a reminder notification every 2
+days (`headFullyUnresolvedLastRemindedAt`) while still fully
+unresolved, silently clears both flags on recovery. Same processor's
+`sweepDueHandovers()` (`:127`) fires 5.4's automatic handover
+completion; `sweepExpiredActingOrgUnitAssignments()` (`:215`) clears
+5.7's user-level acting-for-a-unit assignment on expiry (a pure scoping
+fact with no follow-on vacancy/role effects, unlike everything else in
+this section). All three run alongside the pre-existing SLA sweep, no
+new BullMQ queue.
+
+### 5.6 Acting Head — Coverage, Not Position-Holding
+
+`assignActingHead()`/`clearActingHead()` (`org-unit-head.service.ts:525`/`:651`)
+cover Head-of-unit **authority** during an absence or unresolved
+vacancy — never a position grant (no `positionId` written anywhere in
+either method, unlike `assignHead()`). Only assignable when the unit
+genuinely has no real position-holder and no handover is in progress —
+a real Head must always be assigned via `assignHead()`, never shadowed
+by Acting Head coverage sitting alongside a real holder.
+
+`AssignActingHeadDto.coveringForUserId` (optional) — when supplied,
+`resolveCoveringPositionId()` (`:623`) resolves which head-conferring
+position the acting user is covering for, checking in order: (a) the
+named predecessor's own *current* `positionId`, if still an
+`isUnitHeadPosition` position scoped to this unit (the absence case —
+still nominally held, just personally away); (b) else, their most
+recent `OrgUnitHeadEvent` for this unit that recorded a real
+`positionId` (almost always `VACATED` — the departure case). The FINAL
+grant decision (`isUnitHeadPosition`/`roleId`) is always re-checked
+fresh against whichever id resolved — positions are mutable, a stale
+historical id is never trusted blind. `coveringForUserId` omitted
+entirely (pure vacancy, nobody's ever held the position) → Acting Head
+grants workflow-eligibility only (via 5.3's derivation query), no role
+grant — nothing identifies which role would even be relevant.
+
+**Confirmed gap, found during this Phase 10 documentation pass, not
+previously written down anywhere**: `assignActingHead()`/
+`clearActingHead()` are real, correctly-implemented, and fully unit-
+tested (`org-unit-head.service.spec.ts`) — including their role-grant/
+revoke side effects — but have **zero HTTP surface**.
+`OrgUnitHeadController` (`org-unit-head.controller.ts`) exposes
+`getHeadStatus`/`assignHead`/`vacateHead`/`declareHandover`/
+`completeHandoverNow`/`cancelHandover` only; no
+`POST .../acting-head` or `.../acting-head/clear` route exists anywhere
+in the codebase (confirmed via grep across every `@Controller` in
+`organization/` and `org-position/`). The frontend
+`OrgUnitHeadPanelComponent` matches this exactly — full assign/vacate/
+handover UI, and a comment noting `actingHeadUserId` "stay[s] inert
+until Phase 6/7" that is now stale (Phase 6/7 are done; the backend
+resolvers are real) but was never followed up with actual Acting Head
+UI. **The only way to reach `assignActingHead()`/`clearActingHead()`
+today is a direct service call (e.g. from a test, or a future internal
+caller) — no tenant admin can use this feature through the product.**
+This is the same "wired, not yet reachable in practice" state
+`ORG_UNIT_HEAD`'s workflow wiring (5.8) deliberately shipped in and
+disclosed — the difference is this one was never disclosed anywhere
+until now.
+
+### 5.7 User-Level "Acting-For-A-Unit" (`User.actingOrgUnitId`)
+
+Fully independent of everything above — a user can be flagged as
+acting for an entire *different* org unit (`actingOrgUnitId` +
+`actingOrgUnitUntil`), unrelated to Head authority, position-holding,
+or role grants. Set via `UserService.updateProfile()`
+(`user.service.ts:228`, no referential-integrity check against
+`OrgUnit`, matching that block's existing `positionId`/
+`primaryOrgUnitId`/`managerId` precedent), wired into
+`user-profile.component.ts`. Cleared by
+`sweepExpiredActingOrgUnitAssignments()` (5.5) on expiry, with a
+courtesy notification to the user — no vacancy/role side effects,
+since this axis feeds nothing in Head derivation (5.3) at all. Nothing
+in the codebase currently reads `actingOrgUnitId` for any authorization
+or assignment-resolution decision — it exists as a scoping fact only,
+confirmed via grep to have no consumer beyond the sweep that clears it.
+
+### 5.8 Wired Into the Workflow Engine — `ORG_UNIT_HEAD` Assignee Strategy
+
+Cross-referenced from Section 2 (Workflow Engine), not duplicated here:
+`WorkflowService.resolveAssigneeRaw()`'s and `resolveApproverPool()`'s
+`ORG_UNIT_HEAD` cases (`workflow.service.ts:920`, `:1368`) both call
+`OrganizationService.resolveActingHeadForOrgUnit()` (5.3) against
+`instance.orgUnitId`. **Ships "wired, not yet reachable in practice,"
+explicitly disclosed**: no workflow-driven object (`Committee`,
+`Meeting`) has an `orgUnitId` field yet — both cases read it via a
+defensive `(instance as { orgUnitId?: string | null })` cast against
+the real Prisma type, tested only with a synthetic/test-only
+`orgUnitId`, matching `ASSIGNEE_POOL`'s own multi-month dormant period
+before ACC-28 gave it a real consumer.
+
+### 5.9 The Unified Delegation-Reason Stamp
+
+Cross-referenced from Section 2 (Workflow Engine — `resolveDelegationStamp()`,
+`workflow.service.ts:1055`), not duplicated here: `WorkflowInstanceStage`,
+`WorkflowApproval`, and `TaskAssignee` each carry a nullable
+`delegationReason`/`delegationContextId` pair, stamped once at write
+time, recording *why* an actor was eligible (`ACTING_HEAD` via 5.6, or
+`OUT_OF_OFFICE_COVERAGE`, unrelated to this section) — never *who*
+acted, which every affected table already recorded. Fully real,
+end-to-end, backend-only as of ACC-40 Phase 9 — no frontend surface
+exists yet to display it (see CLAUDE.md's Open/Deferred Items for the
+cross-reference to exactly where this picks back up).
+
+### 5.10 Position-to-Role Mapping — Real Position-Holding Grants a Role
+
+`OrgPosition.roleId` (5.1) is the mapping; `UserService.syncHeadAuthorityRoleGrant()`
+(`user.service.ts:331`) is the one shared sync point, called from
+`invite()`, `updateProfile()`, and every Head-management method in 5.4/
+5.6 that changes a `(positionId, orgUnitId)` pairing. Revokes against
+the OLD pairing first (if ever granted via this mechanism), then grants
+against the NEW one. Applies to **real position-holding only** —
+`assignHead()`/`declareHandover()`/`vacateHead()`/`updateProfile()`/
+`invite()` — Acting Head (5.6) grants separately, only when
+`coveringForUserId` resolves to a real position. Org-wide
+(`primaryOrgUnitId: null`) head-conferring positions are supported
+without a carve-out — `RoleService.grantRoleViaHeadAuthority()`/
+`revokeRoleViaHeadAuthority()` (`role.service.ts:409`/`:463`) key the
+revoke off `grantedViaHeadPositionOrgUnitId` when unit-scoped, falling
+back to `grantedViaHeadPositionId` only for the org-wide case (the one
+case where matching on a null `orgUnitId` would be unsafe — it would
+also match ordinary, independently-held rows). An independent grant
+(a role assigned through the ordinary Roles UI, not through this
+mechanism) is never overwritten or relabeled — a later revoke via this
+mechanism correctly leaves it untouched.
+
+### 5.11 Mandatory `positionId`/`primaryOrgUnitId` and Existing-Tenant Remediation
+
+`InviteUserDto.positionId` is required for every new invitation from
+the moment this shipped; `primaryOrgUnitId` is required only once the
+tenant has at least one active `OrgUnit` (enforced in
+`UserService.invite()`, not a blanket DTO decorator — a brand-new
+tenant has zero units until an admin creates one).
+**Existing active users are explicitly NOT retroactively blocked** —
+no data migration forces this. Instead,
+`UserService.notifyTenantAdminsOfIncompleteProfiles()`
+(`user.service.ts:185`) is a remediation **report**, not a
+transformation script (a real difference from every other
+`backfill-*.ts` precedent in this codebase, where the target state
+*was* programmatically derivable) — counts active users missing
+`positionId` and/or (conditionally) `primaryOrgUnitId`, notifies Tenant
+Admins once via the same admin-notification chain used throughout this
+section. The actual fix happens through the already-wired
+`user-profile.component.ts` edit form — no new UI needed for the fix
+itself.
+
+### 5.12 `validateEscalationTarget()` — Unchanged, Cross-Referenced to Section 3.4
+
+ACC-40 did not touch task-escalation logic at all.
+`OrgPositionService.validateEscalationTarget()` (`:187`) still gates
+who a task's SLA-breach escalation target may be, using
+`position.grade` (unaffected by the `isSingleAssignee`/
+`isUnitHeadPosition` additions) and `primaryOrgUnitId` hierarchy — full
+mechanics in Section 3.4. Confirmed via grep, still the only real
+consumer of `OrgPositionService` outside its own controller — the code
+comment's forward-looking "Committees/Meetings/Documents/CAPA/Audits"
+list remains entirely unrealized, and `CommitteeMember.roleValueId`
+and `OrgPosition` remain two disconnected concepts.
+
+### 5.13 Permission Model
 
 ```
 positions:view    — OrgPositionController: listPositions, getPositionById
-positions:manage  — OrgPositionController: createPosition, updatePosition, deactivatePosition
+positions:manage  — OrgPositionController: createPosition, updatePosition, deactivatePosition, reactivatePosition
+org:view          — OrgUnitHeadController: getHeadStatus
+org:manage        — OrgUnitHeadController: assignHead, vacateHead, declareHandover, completeHandoverNow, cancelHandover
 ```
 
-Both fully wired, no inert permission string here.
+Head-management actions are gated by `org:manage`, **not**
+`positions:manage` — a deliberate split (`org-unit-head.controller.ts:13-20`):
+`positions:manage` governs the tenant-wide position catalog itself;
+Head-management doesn't edit the catalog, it changes who leads a
+specific org unit, the same kind of OrgUnit-scoped action `org:manage`
+already governs generally. `assignActingHead()`/`clearActingHead()`
+have no permission mapping at all — no controller route exists for
+them to gate (5.6).
 
-### 5.6 Frontend Consumption (Static Check)
+### 5.14 Frontend Consumption (Static Check)
 
-`frontend/src/app/foundation/org-position/services/org-position.service.ts`
-— 5 methods:
+`frontend/src/app/foundation/org-position/services/org-position.service.ts`:
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `listPositions()` | `GET /org-positions` | `position-list.component.ts:208`, `user-profile.component.ts:319`, `user-list.component.ts:120`, `invite-user.component.ts:119` |
-| `getById()` | `GET /org-positions/:id` | **ZERO frontend callers found** |
-| `create()` | `POST /org-positions` | `position-form.component.ts:120` |
-| `update()` | `PATCH /org-positions/:id` | `position-form.component.ts:119` |
-| `deactivate()` | `POST /org-positions/:id/deactivate` | `position-list.component.ts:196` |
+| `listPositions()` | `GET /org-positions` | `position-list.component.ts`, `user-profile.component.ts`, `user-list.component.ts`, `invite-user.component.ts`, `org-unit-head-panel.component.ts` |
+| `getById()` | `GET /org-positions/:id` | **ZERO frontend callers found** (unchanged from pre-ACC-40) |
+| `create()` / `update()` | `POST` / `PATCH /org-positions/:id` | `position-form.component.ts` — form includes `isSingleAssignee`/`isUnitHeadPosition` (with the head-implies-single constraint mirrored client-side, unchecking one clears the other) /`roleId` |
+| `deactivate()` / `reactivate()` | `POST /org-positions/:id/(de)activate` | `position-list.component.ts` |
 
-Confirms the position picker genuinely is wired into User Management
-(profile edit, user list, and the invitation flow all load the position
-list) — this was ACC-16's fix (a pre-ACC-16 gap where Org Positions
-were unreachable from any UI is documented in CLAUDE.md's Build
-Sequence). `getById()` is the one dead endpoint — components work off
-the already-loaded list rather than fetching a single position by id.
+`frontend/src/app/foundation/organization/services/org-unit-head.service.ts`
++ `org-unit-head-panel.component.ts` — `getHeadStatus`/`assignHead`/
+`vacateHead`/`declareHandover`/`completeHandoverNow`/`cancelHandover`
+all wired and reachable from an `OrgUnit` detail screen. **No
+`assignActingHead`/`clearActingHead` methods exist on the frontend
+service at all** — matches 5.6's backend-controller gap exactly; this
+is one gap (no HTTP route, so naturally no frontend caller either), not
+two independent ones.
+
+`user-profile.component.ts` — `actingOrgUnitId`/`actingOrgUnitUntil`
+(5.7) fully wired as an optional profile field, distinct from the
+position/org-unit picker above it.
 
 ---
 
