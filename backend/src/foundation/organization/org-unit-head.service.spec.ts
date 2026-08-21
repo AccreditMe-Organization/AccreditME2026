@@ -103,6 +103,17 @@ describe('OrgUnitHeadService', () => {
       expect(result.headHandoverEffectiveDate).toEqual(new Date('2026-09-01T00:00:00.000Z'));
     });
 
+    // Phase 11 — required so the frontend panel can distinguish
+    // assign-vs-clear state without a second round trip.
+    it('includes actingHeadUserId from the OrgUnit row', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      const result = await service.getHeadStatus(UNIT_1, ORG_A);
+
+      expect(result.actingHeadUserId).toBe(ACTING_USER.id);
+    });
+
     it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
         Promise.resolve(where.organizationId === ORG_A ? BASE_ORG_UNIT : null),

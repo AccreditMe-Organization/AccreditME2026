@@ -75,6 +75,7 @@ export class OrgUnitHeadService {
       holders,
       pendingHeadUserId: orgUnit.pendingHeadUserId,
       headHandoverEffectiveDate: orgUnit.headHandoverEffectiveDate,
+      actingHeadUserId: orgUnit.actingHeadUserId,
     };
   }
 
