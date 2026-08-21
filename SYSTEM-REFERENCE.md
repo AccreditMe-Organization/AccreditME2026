@@ -1610,28 +1610,24 @@ entirely (pure vacancy, nobody's ever held the position) → Acting Head
 grants workflow-eligibility only (via 5.3's derivation query), no role
 grant — nothing identifies which role would even be relevant.
 
-**Confirmed gap, found during this Phase 10 documentation pass, not
-previously written down anywhere**: `assignActingHead()`/
-`clearActingHead()` are real, correctly-implemented, and fully unit-
-tested (`org-unit-head.service.spec.ts`) — including their role-grant/
-revoke side effects — but have **zero HTTP surface**.
-`OrgUnitHeadController` (`org-unit-head.controller.ts`) exposes
+**CLOSED (ACC-40 Phase 11)** — found during Phase 10's documentation
+pass (`assignActingHead()`/`clearActingHead()` were real and fully
+unit-tested since Phase 6, including their role-grant/revoke side
+effects, but had zero HTTP surface — `OrgUnitHeadController` exposed
 `getHeadStatus`/`assignHead`/`vacateHead`/`declareHandover`/
-`completeHandoverNow`/`cancelHandover` only; no
-`POST .../acting-head` or `.../acting-head/clear` route exists anywhere
-in the codebase (confirmed via grep across every `@Controller` in
-`organization/` and `org-position/`). The frontend
-`OrgUnitHeadPanelComponent` matches this exactly — full assign/vacate/
-handover UI, and a comment noting `actingHeadUserId` "stay[s] inert
-until Phase 6/7" that is now stale (Phase 6/7 are done; the backend
-resolvers are real) but was never followed up with actual Acting Head
-UI. **The only way to reach `assignActingHead()`/`clearActingHead()`
-today is a direct service call (e.g. from a test, or a future internal
-caller) — no tenant admin can use this feature through the product.**
-This is the same "wired, not yet reachable in practice" state
-`ORG_UNIT_HEAD`'s workflow wiring (5.8) deliberately shipped in and
-disclosed — the difference is this one was never disclosed anywhere
-until now.
+`completeHandoverNow`/`cancelHandover` only, no tenant admin could
+reach Acting Head coverage through the product), closed the same
+session it was found. `OrgUnitHeadController` now also exposes
+`POST .../head/acting-head` and `POST .../head/acting-head/clear`,
+both `@Permissions(ORG_PERMISSIONS.MANAGE)`, matching every other
+route on this controller exactly. `OrgUnitHeadPanelComponent` gained a
+matching Acting Head section in its vacant-unit branch — assignment
+form (candidate + optional "covering for" picker, 2.6.4, + reason) when
+no Acting Head is set, current-holder display + clear button when one
+is. `getHeadStatus()`/`IOrgUnitHeadStatus` gained `actingHeadUserId` as
+required groundwork — the panel cannot render assign-vs-clear state
+without it, and it never left the database in any API response before
+this phase.
 
 ### 5.7 User-Level "Acting-For-A-Unit" (`User.actingOrgUnitId`)
 
@@ -1738,7 +1734,7 @@ and `OrgPosition` remain two disconnected concepts.
 positions:view    — OrgPositionController: listPositions, getPositionById
 positions:manage  — OrgPositionController: createPosition, updatePosition, deactivatePosition, reactivatePosition
 org:view          — OrgUnitHeadController: getHeadStatus
-org:manage        — OrgUnitHeadController: assignHead, vacateHead, declareHandover, completeHandoverNow, cancelHandover
+org:manage        — OrgUnitHeadController: assignHead, vacateHead, declareHandover, completeHandoverNow, cancelHandover, assignActingHead, clearActingHead
 ```
 
 Head-management actions are gated by `org:manage`, **not**
@@ -1747,8 +1743,8 @@ Head-management actions are gated by `org:manage`, **not**
 Head-management doesn't edit the catalog, it changes who leads a
 specific org unit, the same kind of OrgUnit-scoped action `org:manage`
 already governs generally. `assignActingHead()`/`clearActingHead()`
-have no permission mapping at all — no controller route exists for
-them to gate (5.6).
+(Phase 11) are gated identically to every other action on this
+controller — no special-casing.
 
 ### 5.14 Frontend Consumption (Static Check)
 
@@ -1763,12 +1759,19 @@ them to gate (5.6).
 
 `frontend/src/app/foundation/organization/services/org-unit-head.service.ts`
 + `org-unit-head-panel.component.ts` — `getHeadStatus`/`assignHead`/
-`vacateHead`/`declareHandover`/`completeHandoverNow`/`cancelHandover`
-all wired and reachable from an `OrgUnit` detail screen. **No
-`assignActingHead`/`clearActingHead` methods exist on the frontend
-service at all** — matches 5.6's backend-controller gap exactly; this
-is one gap (no HTTP route, so naturally no frontend caller either), not
-two independent ones.
+`vacateHead`/`declareHandover`/`completeHandoverNow`/`cancelHandover`/
+`assignActingHead`/`clearActingHead` (Phase 11) all wired and reachable
+from an `OrgUnit` detail screen's Head-management panel — the vacant-
+unit branch now offers both "assign a real Head" and, as a distinct
+action, "assign Acting Head coverage" (with an optional "covering for"
+picker, 2.6.4); a set `actingHeadUserId` shows the current holder plus
+a clear button instead of the assignment form. No component-level unit
+tests exist for this panel at all (none of the four prior actions had
+any either) — verified via `tsc --noEmit` and manual translation-key
+parity check instead, consistent with this codebase's actual testing
+pattern for this component (CLAUDE.md's Testing Strategy scopes
+Playwright E2E to critical workflows, not per-component unit tests for
+every Angular form).
 
 `user-profile.component.ts` — `actingOrgUnitId`/`actingOrgUnitUntil`
 (5.7) fully wired as an optional profile field, distinct from the
@@ -2764,23 +2767,16 @@ Purpose section, written directly in response to the ACC-28 incident.
   no `reactivatePosition()` counterpart (Section 5.2), unlike `Role`.
   Closed: `reactivatePosition()` now exists, mirroring
   `RoleService.reactivateRole()` exactly (Section 5.2).
-- **`OrgUnitHeadService.assignActingHead()`/`clearActingHead()` have
-  zero HTTP surface** (Section 5.6) — found during this Phase 10
-  documentation pass, not previously written down anywhere. Both
-  methods are real, correctly implemented, and unit-tested, including
-  their role-grant/revoke side effects, but no controller route exposes
-  either one (`OrgUnitHeadController` stops at `assignHead`/
-  `vacateHead`/`declareHandover`/`completeHandoverNow`/`cancelHandover`)
-  and the frontend `OrgUnitHeadService`/`OrgUnitHeadPanelComponent` have
-  no Acting Head UI to match. No tenant admin can reach Acting Head
-  coverage through the product today — the only path in is a direct
-  service call. Straightforward to close (two routes + one DTO
-  wire-up + a panel section mirroring the existing assign/vacate/
-  handover forms) whenever Acting Head coverage is actually needed by a
-  real workflow (most directly: once a workflow-driven object gains an
-  `orgUnitId` field and `ORG_UNIT_HEAD`, Section 5.8, gets a real
-  consumer — Acting Head coverage is what makes that consumer's vacant-
-  unit case resolvable instead of fully-unresolved).
+- **CLOSED (ACC-40 Phase 11)** — `OrgUnitHeadService.assignActingHead()`/
+  `clearActingHead()` had zero HTTP surface (Section 5.6) — found
+  during Phase 10's documentation pass, closed the same session.
+  `OrgUnitHeadController` now exposes both via `POST .../acting-head`
+  and `POST .../acting-head/clear`; the frontend panel gained a
+  matching Acting Head section. Still genuinely reachable only once a
+  workflow-driven object gains an `orgUnitId` field and `ORG_UNIT_HEAD`
+  (Section 5.8) gets a real consumer — that part remains open, tracked
+  there, not here; this entry was specifically about the missing
+  HTTP/UI surface, which is now closed.
 - **CLOSED (ACC-34)** — `tasks:manage` was seeded into role permission
   sets but never checked by any `@Permissions()` decorator anywhere in
   `task.controller.ts` (Section 3.6) — currently-inert permission
