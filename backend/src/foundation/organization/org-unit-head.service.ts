@@ -170,6 +170,21 @@ export class OrgUnitHeadService {
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+
+    // ACC-40 Section 2.6.4/2.6.5 — the incoming successor genuinely holds
+    // the position from this moment (2.3's own "declared dual-holder
+    // transition period"), so their role grant fires now, not at
+    // completion. The outgoing holder is untouched here — they keep their
+    // position (and role) until performHandoverCompletion() below clears it.
+    await this.userService.syncHeadAuthorityRoleGrant(
+      incomingUser.id,
+      incomingUser.positionId,
+      orgUnitId,
+      headPositionId,
+      orgUnitId,
+      organizationId,
+      actorId,
+    );
   }
 
   // Explicit early completion — for the case where the successor is ready
@@ -233,6 +248,21 @@ export class OrgUnitHeadService {
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+
+    // ACC-40 Section 2.6.4/2.6.5 — reverts declareHandover()'s own grant.
+    // incomingUser.positionId here is the pre-update (declared) value —
+    // exactly what was granted at declare time.
+    if (incomingUser) {
+      await this.userService.syncHeadAuthorityRoleGrant(
+        incomingUserId,
+        incomingUser.positionId,
+        orgUnitId,
+        null,
+        null,
+        organizationId,
+        actorId,
+      );
+    }
   }
 
   // ACC-40 Section 2.3 — the automatic half of "what closes the window,
@@ -315,6 +345,23 @@ export class OrgUnitHeadService {
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnit.id, organizationId);
+
+    // ACC-40 Section 2.6.4/2.6.5 — the outgoing holder's positionId was
+    // just cleared above; revoke whatever role that holding granted them.
+    // The incoming successor's own role was already granted at declare
+    // time (declareHandover()) — nothing changes for them here, their
+    // positionId is untouched by this method.
+    if (outgoingHolder) {
+      await this.userService.syncHeadAuthorityRoleGrant(
+        outgoingHolder.id,
+        outgoingHolder.positionId,
+        orgUnit.id,
+        null,
+        null,
+        organizationId,
+        actorId,
+      );
+    }
   }
 
   // ACC-40 Section 2.3 — direct appointment, no handover: "e.g. filling a
@@ -380,6 +427,21 @@ export class OrgUnitHeadService {
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+
+    // ACC-40 Section 2.6.4/2.6.5 — old = whatever targetUser held before
+    // (their primaryOrgUnitId is already validated === orgUnitId above),
+    // new = the position just assigned. Reuses UserService's shared
+    // sync helper — same reasoning as validatePositionAssignment() above,
+    // one mechanism, not a duplicate implementation.
+    await this.userService.syncHeadAuthorityRoleGrant(
+      targetUser.id,
+      targetUser.positionId,
+      orgUnitId,
+      dto.positionId,
+      orgUnitId,
+      organizationId,
+      actorId,
+    );
   }
 
   // ACC-40 Section 2.3 — "a deliberate divergence from the RoleService
@@ -429,6 +491,17 @@ export class OrgUnitHeadService {
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+
+    // ACC-40 Section 2.6.4/2.6.5 — revoke only, new = (null, null).
+    await this.userService.syncHeadAuthorityRoleGrant(
+      currentHolder.id,
+      currentHolder.positionId,
+      orgUnitId,
+      null,
+      null,
+      organizationId,
+      actorId,
+    );
   }
 
   // ACC-40 Section 2.6 — Acting Head: coverage for head-of-unit authority

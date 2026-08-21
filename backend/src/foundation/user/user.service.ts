@@ -152,6 +152,23 @@ export class UserService {
       after: user as unknown as Record<string, unknown>,
     });
 
+    // ACC-40 Section 2.6.4/2.6.5 — a newly invited user may already be
+    // assigned a head-conferring position (positionId is mandatory as of
+    // Phase 2) — grants the mapped role immediately, same as any other
+    // real position-holding. Fires regardless of INVITED-vs-ACTIVE status:
+    // the grant tracks position-holding, not login capability, and the
+    // UserRole row is already correct by the time the invitation is
+    // accepted, with no separate "grant on accept" step needed.
+    await this.syncHeadAuthorityRoleGrant(
+      user.id,
+      null,
+      null,
+      dto.positionId ?? null,
+      dto.primaryOrgUnitId ?? null,
+      organizationId,
+      actorId,
+    );
+
     return user;
   }
 
@@ -273,9 +290,77 @@ export class UserService {
       for (const orgUnitId of affectedOrgUnitIds) {
         await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
       }
+
+      // ACC-40 Section 2.6.4/2.6.5 — same guard, same before/after pairing
+      // as the vacancy refresh above: revoke against the old
+      // (positionId, primaryOrgUnitId) pairing, grant against the new one.
+      await this.syncHeadAuthorityRoleGrant(
+        id,
+        existing.positionId,
+        existing.primaryOrgUnitId,
+        user.positionId,
+        user.primaryOrgUnitId,
+        organizationId,
+        actorId,
+      );
     }
 
     return user;
+  }
+
+  // ACC-40 Section 2.6.4/2.6.5 — real position-holding role inheritance.
+  // Called whenever a user's (positionId, primaryOrgUnitId) pair changes —
+  // invite() (old: none -> new: assigned), updateProfile() (old: existing
+  // -> new: updated), deactivate() (old: existing -> new: none). Revokes
+  // against the OLD pairing first (if it was ever granted via this
+  // mechanism), then grants against the NEW pairing — mirroring the exact
+  // "affected pair" reasoning already established for
+  // refreshOrgUnitHeadVacancy()'s own wiring (Phase 6).
+  //
+  // Deliberately skips org-wide (primaryOrgUnitId: null) head-conferring
+  // positions — grantedViaHeadPositionOrgUnitId's provenance marker can
+  // never safely be null: RoleService.revokeRoleViaHeadAuthority()'s
+  // deleteMany where-clause matches on that field, and a null value there
+  // is indistinguishable from "never granted via this mechanism at all" —
+  // an org-wide grant would risk a later revoke matching (and deleting) an
+  // unrelated, independently-held role. An org-wide head position holder
+  // who should receive the mapped role must be assigned it directly via
+  // the ordinary Roles UI — consistent with 2.1's own "primaryOrgUnitId:
+  // null + isUnitHeadPosition: true is a valid-but-inert combination"
+  // framing.
+  //
+  // Public (not private) specifically so OrgUnitHeadService can call it —
+  // same precedent as validatePositionAssignment() below.
+  async syncHeadAuthorityRoleGrant(
+    userId: string,
+    oldPositionId: string | null,
+    oldOrgUnitId: string | null,
+    newPositionId: string | null,
+    newOrgUnitId: string | null,
+    organizationId: string,
+    actorId: string | null,
+  ): Promise<void> {
+    if (oldPositionId === newPositionId && oldOrgUnitId === newOrgUnitId) return;
+
+    if (oldPositionId && oldOrgUnitId) {
+      const oldPosition = await this.prisma.orgPosition.findFirst({
+        where: { id: oldPositionId, organizationId },
+        select: { isUnitHeadPosition: true, roleId: true },
+      });
+      if (oldPosition?.isUnitHeadPosition && oldPosition.roleId) {
+        await this.roleService.revokeRoleViaHeadAuthority(userId, oldOrgUnitId, organizationId, actorId);
+      }
+    }
+
+    if (newPositionId && newOrgUnitId) {
+      const newPosition = await this.prisma.orgPosition.findFirst({
+        where: { id: newPositionId, organizationId },
+        select: { isUnitHeadPosition: true, roleId: true },
+      });
+      if (newPosition?.isUnitHeadPosition && newPosition.roleId) {
+        await this.roleService.grantRoleViaHeadAuthority(userId, newPosition.roleId, newOrgUnitId, organizationId, actorId);
+      }
+    }
   }
 
   // ACC-40 Section 2.1/2.2 — the shared entry point both invite() and
@@ -494,6 +579,19 @@ export class UserService {
     if (existing.primaryOrgUnitId) {
       await this.organizationService.refreshOrgUnitHeadVacancy(existing.primaryOrgUnitId, organizationId);
     }
+
+    // ACC-40 Section 2.6.4/2.6.5 — departure unambiguously ends real
+    // position-holding authority; revoke any role granted via it. new =
+    // (null, null) — the departing user holds nothing after this.
+    await this.syncHeadAuthorityRoleGrant(
+      id,
+      existing.positionId,
+      existing.primaryOrgUnitId,
+      null,
+      null,
+      organizationId,
+      actorId,
+    );
 
     const { reassignedCount, unassignedCount } = await this.taskService.reassignAllForUser(
       id,

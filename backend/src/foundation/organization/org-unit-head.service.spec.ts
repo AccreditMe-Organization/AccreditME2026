@@ -29,7 +29,10 @@ const mockPrisma = {
   orgUnitHeadEvent: { create: jest.fn() },
 };
 const mockAuditLog = { log: jest.fn() };
-const mockUserService = { validatePositionAssignment: jest.fn() };
+const mockUserService = {
+  validatePositionAssignment: jest.fn(),
+  syncHeadAuthorityRoleGrant: jest.fn(),
+};
 const mockOrganizationService = { refreshOrgUnitHeadVacancy: jest.fn() };
 
 describe('OrgUnitHeadService', () => {
@@ -231,6 +234,19 @@ describe('OrgUnitHeadService', () => {
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({ tenantId: ORG_A, actorId: 'actor-1', objectType: 'OrgUnit', objectId: UNIT_1 }),
       );
+
+      // ACC-40 Section 2.6.4/2.6.5 — the incoming successor's role grant
+      // fires at declare time (old = whatever they held before, null here;
+      // new = the position just granted via the bypass).
+      expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledWith(
+        INCOMING_SUCCESSOR.id,
+        INCOMING_SUCCESSOR.positionId,
+        UNIT_1,
+        HEAD_POSITION_ID,
+        UNIT_1,
+        ORG_A,
+        'actor-1',
+      );
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -294,6 +310,20 @@ describe('OrgUnitHeadService', () => {
           approvedBy: 'admin-1',
         }),
       });
+
+      // ACC-40 Section 2.6.4/2.6.5 — revoke only, for the outgoing holder
+      // whose positionId was just cleared. The incoming successor's role
+      // was already granted at declare time — no second grant call here.
+      expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledWith(
+        OUTGOING_HOLDER.id,
+        OUTGOING_HOLDER.positionId,
+        UNIT_1,
+        null,
+        null,
+        ORG_A,
+        'admin-1',
+      );
+      expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledTimes(1);
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -348,6 +378,19 @@ describe('OrgUnitHeadService', () => {
           approvedBy: 'admin-1',
         }),
       });
+
+      // ACC-40 Section 2.6.4/2.6.5 — reverts declareHandover()'s own
+      // grant. incomingUser.positionId here is the pre-update (declared)
+      // value — exactly what was granted at declare time.
+      expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledWith(
+        INCOMING_SUCCESSOR.id,
+        HEAD_POSITION_ID,
+        UNIT_1,
+        null,
+        null,
+        ORG_A,
+        'admin-1',
+      );
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -364,7 +407,7 @@ describe('OrgUnitHeadService', () => {
   describe('assignHead', () => {
     const HEAD_POSITION = { id: HEAD_POSITION_ID, isUnitHeadPosition: true };
     const ORDINARY_POSITION = { id: 'pos-ordinary', isUnitHeadPosition: false };
-    const VACANT_TARGET_USER = { id: 'target-user', organizationId: ORG_A, primaryOrgUnitId: UNIT_1, status: 'ACTIVE' };
+    const VACANT_TARGET_USER = { id: 'target-user', organizationId: ORG_A, primaryOrgUnitId: UNIT_1, status: 'ACTIVE', positionId: null as string | null };
 
     it('throws NotFoundException when the org unit does not exist in this tenant', async () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
@@ -444,6 +487,18 @@ describe('OrgUnitHeadService', () => {
           approvedBy: 'admin-1',
         }),
       });
+
+      // ACC-40 Section 2.6.4/2.6.5 — old = whatever targetUser held before
+      // (null here, a genuinely vacant unit), new = the position just assigned.
+      expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledWith(
+        'target-user',
+        null,
+        UNIT_1,
+        HEAD_POSITION_ID,
+        UNIT_1,
+        ORG_A,
+        'admin-1',
+      );
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -503,6 +558,17 @@ describe('OrgUnitHeadService', () => {
           approvedBy: 'admin-1',
         }),
       });
+
+      // ACC-40 Section 2.6.4/2.6.5 — revoke only, new = (null, null).
+      expect(mockUserService.syncHeadAuthorityRoleGrant).toHaveBeenCalledWith(
+        OUTGOING_HOLDER.id,
+        OUTGOING_HOLDER.positionId,
+        UNIT_1,
+        null,
+        null,
+        ORG_A,
+        'admin-1',
+      );
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -685,7 +751,10 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
     };
     const realMockAuditLog = { log: jest.fn() };
     const realMockNotificationService = { create: jest.fn() };
-    const realMockUserService = { validatePositionAssignment: jest.fn() };
+    const realMockUserService = {
+      validatePositionAssignment: jest.fn(),
+      syncHeadAuthorityRoleGrant: jest.fn(),
+    };
 
     // Sequential orgUnit.findFirst calls across the real call chain:
     // 1. OrgUnitHeadService.getOrgUnitOrThrow() (vacateHead()'s own precondition check)

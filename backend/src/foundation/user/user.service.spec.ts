@@ -20,6 +20,8 @@ describe('UserService', () => {
     getUserRoles: jest.Mock;
     assignRoleToUser: jest.Mock;
     removeRoleFromUser: jest.Mock;
+    grantRoleViaHeadAuthority: jest.Mock;
+    revokeRoleViaHeadAuthority: jest.Mock;
   };
   let mockAuthProvider: { invalidateUserSessions: jest.Mock; validateToken: jest.Mock };
   let mockTaskService: { reassignAllForUser: jest.Mock };
@@ -57,6 +59,8 @@ describe('UserService', () => {
       getUserRoles: jest.fn(),
       assignRoleToUser: jest.fn(),
       removeRoleFromUser: jest.fn(),
+      grantRoleViaHeadAuthority: jest.fn().mockResolvedValue(undefined),
+      revokeRoleViaHeadAuthority: jest.fn().mockResolvedValue(undefined),
     };
     mockAuthProvider = {
       invalidateUserSessions: jest.fn().mockResolvedValue(undefined),
@@ -244,6 +248,183 @@ describe('UserService', () => {
 
         expect(mockPrisma.orgUnit.count).not.toHaveBeenCalled();
       });
+    });
+
+    // ACC-40 Section 2.6.4/2.6.5
+    it('grants the mapped role when the assigned position is head-conferring with a roleId — fires regardless of INVITED status', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      // Discriminates the seat-limit count (where.status: { in: [...] })
+      // from validatePositionAssignment()'s own internal single-assignee/
+      // unit-head-uniqueness holder counts (where.status: 'ACTIVE') —
+      // both go through the same mockPrisma.user.count mock, and a flat
+      // mockResolvedValue(1) here would incorrectly make the position
+      // look already-held, throwing ConflictException before this test
+      // ever reaches the grant it's trying to prove.
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(typeof where.status === 'object' ? 1 : 0),
+      );
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.count.mockResolvedValue(1);
+      // First call: validatePositionAssignment()'s own lookup. Second call:
+      // syncHeadAuthorityRoleGrant()'s own lookup, same position — both
+      // need isUnitHeadPosition/roleId visible, so both are stubbed
+      // identically rather than relying on the outer ordinary-position default.
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-head', isSingleAssignee: true, isUnitHeadPosition: true, roleId: 'role-head',
+      });
+      mockPrisma.user.create.mockResolvedValue({
+        id: 'new-user', organizationId: ORG_A, status: 'INVITED', positionId: 'pos-head', primaryOrgUnitId: 'unit-1',
+      });
+
+      await service.invite(
+        { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1' },
+        ORG_A,
+        'actor-1',
+      );
+
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
+        'new-user', 'role-head', 'unit-1', ORG_A, 'actor-1',
+      );
+    });
+
+    it('does not attempt a grant when the assigned position confers no role (roleId null)', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(typeof where.status === 'object' ? 1 : 0),
+      );
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.count.mockResolvedValue(1);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-head', isSingleAssignee: true, isUnitHeadPosition: true, roleId: null,
+      });
+      mockPrisma.user.create.mockResolvedValue({
+        id: 'new-user', organizationId: ORG_A, status: 'INVITED', positionId: 'pos-head', primaryOrgUnitId: 'unit-1',
+      });
+
+      await service.invite(
+        { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1' },
+        ORG_A,
+        'actor-1',
+      );
+
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── syncHeadAuthorityRoleGrant (ACC-40 Section 2.6.4/2.6.5) ─────────────────
+  //
+  // Tested directly (public specifically so OrgUnitHeadService can also
+  // call it) — covers the shared helper's own decision logic in isolation,
+  // separate from its three call-site integration tests above/below.
+
+  describe('syncHeadAuthorityRoleGrant', () => {
+    const HEAD_POSITION = { isUnitHeadPosition: true, roleId: 'role-head' };
+    const ORDINARY_POSITION = { isUnitHeadPosition: false, roleId: null };
+
+    it('is a no-op when the (positionId, orgUnitId) pair is unchanged', async () => {
+      await service.syncHeadAuthorityRoleGrant('user-1', 'pos-1', 'unit-1', 'pos-1', 'unit-1', ORG_A, 'actor-1');
+
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+
+    it('grants only (no old position) when transitioning from nothing to a head-conferring position', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+
+      await service.syncHeadAuthorityRoleGrant('user-1', null, null, 'pos-head', 'unit-1', ORG_A, 'actor-1');
+
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-head', 'unit-1', ORG_A, 'actor-1');
+    });
+
+    it('revokes only (no new position) when transitioning from a head-conferring position to nothing', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+
+      await service.syncHeadAuthorityRoleGrant('user-1', 'pos-head', 'unit-1', null, null, ORG_A, 'actor-1');
+
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', ORG_A, 'actor-1');
+    });
+
+    it('revokes the old head-conferring position and grants the new one when both change', async () => {
+      mockPrisma.orgPosition.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'pos-old' ? { isUnitHeadPosition: true, roleId: 'role-old' } : { isUnitHeadPosition: true, roleId: 'role-new' }),
+      );
+
+      await service.syncHeadAuthorityRoleGrant('user-1', 'pos-old', 'unit-old', 'pos-new', 'unit-new', ORG_A, 'actor-1');
+
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-old', ORG_A, 'actor-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-new', 'unit-new', ORG_A, 'actor-1');
+    });
+
+    it('does nothing for either side when the position is ordinary (not head-conferring)', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(ORDINARY_POSITION);
+
+      await service.syncHeadAuthorityRoleGrant('user-1', 'pos-ordinary', 'unit-1', 'pos-ordinary-2', 'unit-1', ORG_A, 'actor-1');
+
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+
+    it('does not attempt a grant when the new head-conferring position has no roleId mapped', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isUnitHeadPosition: true, roleId: null });
+
+      await service.syncHeadAuthorityRoleGrant('user-1', null, null, 'pos-head', 'unit-1', ORG_A, 'actor-1');
+
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+
+    // The deliberate scope decision: org-wide (orgUnitId: null) head
+    // positions never use this mechanism — the marker can't safely be
+    // null in a revoke's where-clause.
+    it('skips the grant entirely when the new position has no org unit context (org-wide, primaryOrgUnitId: null)', async () => {
+      await service.syncHeadAuthorityRoleGrant('user-1', null, null, 'pos-head', null, ORG_A, 'actor-1');
+
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+
+    it('skips the revoke entirely when the old position had no org unit context (org-wide, primaryOrgUnitId: null)', async () => {
+      await service.syncHeadAuthorityRoleGrant('user-1', 'pos-head', null, null, null, ORG_A, 'actor-1');
+
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+
+    it('accepts a null actorId (system-triggered) and threads it through to both grant and revoke', async () => {
+      mockPrisma.orgPosition.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id === 'pos-old' ? { isUnitHeadPosition: true, roleId: 'role-old' } : { isUnitHeadPosition: true, roleId: 'role-new' }),
+      );
+
+      await service.syncHeadAuthorityRoleGrant('user-1', 'pos-old', 'unit-old', 'pos-new', 'unit-new', ORG_A, null);
+
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-old', ORG_A, null);
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-new', 'unit-new', ORG_A, null);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgPosition.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.organizationId === ORG_A
+            ? { isUnitHeadPosition: true, roleId: 'role-a' }
+            : { isUnitHeadPosition: true, roleId: 'role-b' },
+        ),
+      );
+
+      await service.syncHeadAuthorityRoleGrant('user-1', null, null, 'pos-head', 'unit-1', ORG_A, 'actor-1');
+      await service.syncHeadAuthorityRoleGrant('user-1', null, null, 'pos-head', 'unit-1', ORG_B, 'actor-1');
+
+      expect(mockPrisma.orgPosition.findFirst).toHaveBeenNthCalledWith(1, {
+        where: { id: 'pos-head', organizationId: ORG_A },
+        select: { isUnitHeadPosition: true, roleId: true },
+      });
+      expect(mockPrisma.orgPosition.findFirst).toHaveBeenNthCalledWith(2, {
+        where: { id: 'pos-head', organizationId: ORG_B },
+        select: { isUnitHeadPosition: true, roleId: true },
+      });
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(1, 'user-1', 'role-a', 'unit-1', ORG_A, 'actor-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(2, 'user-1', 'role-b', 'unit-1', ORG_B, 'actor-1');
     });
   });
 
@@ -875,6 +1056,47 @@ describe('UserService', () => {
 
       expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
     });
+
+    // ACC-40 Section 2.6.4/2.6.5 — syncHeadAuthorityRoleGrant() wiring.
+
+    it('grants the mapped role when an admin assigns a user into a head-conferring position', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...EXISTING, positionId: null, primaryOrgUnitId: 'unit-1' });
+      mockPrisma.user.update.mockResolvedValue({ ...EXISTING, positionId: 'pos-head', primaryOrgUnitId: 'unit-1' });
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-head', isSingleAssignee: true, isUnitHeadPosition: true, roleId: 'role-head',
+      });
+
+      await service.updateProfile('user-1', { positionId: 'pos-head' }, ORG_A, 'admin-1', ['users:manage']);
+
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'role-head', 'unit-1', ORG_A, 'admin-1');
+    });
+
+    it('revokes the mapped role when an admin moves a user out of a head-conferring position', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...EXISTING, positionId: 'pos-head', primaryOrgUnitId: 'unit-1' });
+      mockPrisma.user.update.mockResolvedValue({ ...EXISTING, positionId: 'pos-ordinary', primaryOrgUnitId: 'unit-1' });
+      mockPrisma.orgPosition.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'pos-head'
+            ? { isUnitHeadPosition: true, roleId: 'role-head' }
+            : { isUnitHeadPosition: false, roleId: null },
+        ),
+      );
+
+      await service.updateProfile('user-1', { positionId: 'pos-ordinary' }, ORG_A, 'admin-1', ['users:manage']);
+
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', ORG_A, 'admin-1');
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+
+    it('does not attempt any role sync when the update never touches positionId or primaryOrgUnitId', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...EXISTING, positionId: 'pos-head', primaryOrgUnitId: 'unit-1' });
+      mockPrisma.user.update.mockResolvedValue({ ...EXISTING, positionId: 'pos-head', primaryOrgUnitId: 'unit-1' });
+
+      await service.updateProfile('user-1', { name: 'New Name' }, ORG_A, 'admin-1', ['users:manage']);
+
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateOutOfOffice', () => {
@@ -971,6 +1193,31 @@ describe('UserService', () => {
       await service.deactivate('user-1', ORG_A, 'admin-1');
 
       expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+    });
+
+    // ACC-40 Section 2.6.4/2.6.5 — syncHeadAuthorityRoleGrant() wiring.
+
+    it('revokes the mapped role when a departing user held a head-conferring position', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1', organizationId: ORG_A, status: 'ACTIVE', positionId: 'pos-head', primaryOrgUnitId: 'unit-1',
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isUnitHeadPosition: true, roleId: 'role-head' });
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith('user-1', 'unit-1', ORG_A, 'admin-1');
+    });
+
+    it('does not attempt a revoke when the departing user held no position at all', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1', organizationId: ORG_A, status: 'ACTIVE', positionId: null, primaryOrgUnitId: 'unit-1',
+      });
+      mockPrisma.user.update.mockResolvedValue({});
+
+      await service.deactivate('user-1', ORG_A, 'admin-1');
+
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
     });
 
     it('should NOT deactivate a user belonging to a different tenant', async () => {
