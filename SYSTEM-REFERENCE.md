@@ -2689,6 +2689,17 @@ Purpose section, written directly in response to the ACC-28 incident.
   `resolveAssigneeRaw()` now resolves to `[]` instead of throwing,
   matching every other case in the same switch; removed from the
   frontend's assignee-strategy dropdown until genuinely implemented.
+  **Update (ACC-40)** — genuinely implemented now: `resolveAssigneeRaw()`
+  and `resolveApproverPool()` both gained real `ORG_UNIT_HEAD` cases
+  (Section 5.8) calling `OrganizationService.resolveActingHeadForOrgUnit()`
+  (Section 5.3), and it's back in `workflow-stage-form.component.ts`'s
+  dropdown. Still "wired, not yet reachable in practice" for every real
+  tenant today — no workflow-driven object (`Committee`, `Meeting`) has
+  an `orgUnitId` field yet, so both cases read it via a defensive cast
+  against a field the real Prisma type doesn't carry — but the crash
+  risk this entry originally flagged is fully closed: a tenant
+  configuring this strategy today gets `[]` (an empty, correctly-handled
+  pool), never a crash.
 - **CLOSED (ACC-33)** — **Unassigned-transition detection (Section 2.13) covers `ASSIGNEE_POOL`
   only — `ROLE_BASED`/`SPECIFIC_USER` have the same underlying risk,
   undetected** (ACC-28, deliberately scoped out — see the plan's

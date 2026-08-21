@@ -1691,14 +1691,29 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
    unfinished Committee Management correctness, not separate new
    scope, and testing Committee (step 3 below) before closing this
    known gap doesn't validate a complete flow.
-2. **THEN — a new "Resource-Scoped Business Authority" ticket**
+2. **DONE — delivered as ACC-40, out of this list's original order**
    (Role-vs-OrgPosition for business-logic assignment, not
-   permissions) — not yet created. Meeting Management's own "chair or
-   organizer" concept was one of the original examples motivating
-   this. First required investigation before any design: does
-   Committee (or any future business object) carry an `orgUnitId` to
-   scope resolution against — without this, org-unit-scoped
-   assignment isn't reachable yet.
+   permissions; Meeting Management's own "chair or organizer" concept
+   was one of the original examples motivating this — this entry
+   previously described it as "not yet created," which stopped being
+   true once ACC-40 shipped). ACC-40 fully redesigned `OrgPosition`
+   (org-wide catalog, `isUnitHeadPosition`/`isSingleAssignee`,
+   position-to-role mapping) and gave the long-dormant `ORG_UNIT_HEAD`
+   workflow assignee strategy its first real implementation — derived
+   Head, deliberate handover, vacancy escalation, Acting Head coverage,
+   the unified delegation-reason stamp. Full detail: SYSTEM-REFERENCE.md
+   Section 5. **This item's own "first required investigation" was run
+   for real, not hypothetically**: confirmed via Phase 7 — no workflow-
+   driven object (`Committee`, `Meeting`) carries an `orgUnitId` field
+   yet, so `ORG_UNIT_HEAD` ships "wired, not yet reachable in
+   practice" (SYSTEM-REFERENCE.md Section 5.8) — org-unit-scoped
+   assignment is still not reachable by any real tenant today, exactly
+   as this item anticipated, just now backed by a real mechanism
+   instead of an unresolved question. Whichever business object first
+   needs org-unit-scoped assignment (Meeting's "chair/organizer" is
+   still the leading candidate) is the one that finally adds
+   `orgUnitId` and makes this reachable — not a new design ticket, an
+   application of what ACC-40 already built.
 3. **THEN — Committee Management's remaining production-readiness
    work**:
    - A live Quality Manager persona test — every test so far used
