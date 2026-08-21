@@ -376,6 +376,88 @@ export class RoleService {
     });
   }
 
+  // ── Head-authority role inheritance (ACC-40 Section 2.6.5) ──────────────────
+  //
+  // Reuses UserRole directly — a real, temporary row, not a new
+  // permission-computation path. getUserPermissions() below needs ZERO
+  // changes to pick up a grant made here: it already unions permissions
+  // across every UserRole row a user holds, and a new marked row
+  // participates in that same union automatically the moment it's created.
+  //
+  // Two independent callers: UserService (real position-holding
+  // assignment/removal) and OrgUnitHeadService (Acting Head assignment/end)
+  // — one shared mechanism, not two separate implementations to keep in
+  // sync (2.6.5's own framing).
+
+  // Check-first-before-create is a hard requirement, not a nicety —
+  // UserRole carries @@unique([userId, roleId]), so blindly creating a
+  // second row for a roleId the user already independently holds (or
+  // already holds via this exact mechanism) would throw a Prisma
+  // unique-constraint violation, not silently succeed. If the user already
+  // holds the role in ANY form (independent grant, or already granted via
+  // this same mechanism), nothing is created and nothing gets (re-)marked
+  // — critically, an independent grant is never overwritten/relabeled as
+  // "granted via head authority," so a later revoke correctly leaves it
+  // alone.
+  async grantRoleViaHeadAuthority(
+    userId: string,
+    roleId: string,
+    orgUnitId: string,
+    organizationId: string,
+    actorId: string | null,
+  ): Promise<void> {
+    const existing = await this.prisma.userRole.findFirst({
+      where: { userId, roleId, user: { organizationId } },
+    });
+    if (existing) return;
+
+    await this.prisma.userRole.create({
+      data: { userId, roleId, grantedViaHeadPositionOrgUnitId: orgUnitId },
+    });
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId: actorId ?? undefined,
+      action: 'CREATE',
+      objectType: 'UserRole',
+      objectId: roleId,
+      metadata: { userId, roleId, grantedViaHeadPositionOrgUnitId: orgUnitId },
+    });
+  }
+
+  // Matches purely on the marker (userId + grantedViaHeadPositionOrgUnitId),
+  // not roleId — deliberately simpler than the plan's own illustrative
+  // delete filter. Under this codebase's actual usage, a given
+  // (userId, orgUnitId) pair can have at most one row ever marked with
+  // that orgUnitId (each grant call targets one resolved role at a time,
+  // and a unit's authority — real holder or Acting Head — is never
+  // concurrently held two ways by the same person), so the marker alone
+  // unambiguously identifies "the row (if any) granted because of
+  // authority over this unit," without requiring the caller to re-derive
+  // which roleId was granted at grant time — awkward for Acting Head's
+  // clear path, which has no reason to re-walk the predecessor-resolution
+  // chain just to revoke.
+  async revokeRoleViaHeadAuthority(
+    userId: string,
+    orgUnitId: string,
+    organizationId: string,
+    actorId: string | null,
+  ): Promise<void> {
+    const result = await this.prisma.userRole.deleteMany({
+      where: { userId, grantedViaHeadPositionOrgUnitId: orgUnitId, user: { organizationId } },
+    });
+    if (result.count === 0) return; // nothing was ever granted via this mechanism — silent no-op, no audit noise
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId: actorId ?? undefined,
+      action: 'DELETE',
+      objectType: 'UserRole',
+      objectId: userId,
+      metadata: { userId, grantedViaHeadPositionOrgUnitId: orgUnitId },
+    });
+  }
+
   // ── Permission resolution — consumed by TenantGuard via PERMISSION_RESOLVER ──
 
   async getUserPermissions(userId: string, organizationId: string): Promise<string[]> {
