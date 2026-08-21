@@ -8,6 +8,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { OrgUnitHeadService } from './org-unit-head.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
+import { AssignActingHeadDto } from './dto/assign-acting-head.dto';
 import { IOrgUnitHeadStatus } from './interfaces/org-unit-head-status.interface';
 
 // ACC-40 Section 2.3 — Head-management actions (declare/complete/cancel a
@@ -89,5 +90,31 @@ export class OrgUnitHeadController {
     @CurrentUser() actorId: string,
   ): Promise<void> {
     return this.orgUnitHeadService.cancelHandover(id, tenantId, actorId);
+  }
+
+  // ACC-40 Phase 11 — closes the gap where assignActingHead()/
+  // clearActingHead() (Section 2.6) existed and were unit-tested since
+  // Phase 6 but had no route exposing either one.
+  @Post('acting-head')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(ORG_PERMISSIONS.MANAGE)
+  assignActingHead(
+    @Param('id') id: string,
+    @Body() dto: AssignActingHeadDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<void> {
+    return this.orgUnitHeadService.assignActingHead(id, dto, tenantId, actorId);
+  }
+
+  @Post('acting-head/clear')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(ORG_PERMISSIONS.MANAGE)
+  clearActingHead(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<void> {
+    return this.orgUnitHeadService.clearActingHead(id, tenantId, actorId);
   }
 }

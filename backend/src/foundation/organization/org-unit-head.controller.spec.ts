@@ -19,16 +19,20 @@ describe('OrgUnitHeadController', () => {
     declareHandover: jest.Mock;
     completeHandoverNow: jest.Mock;
     cancelHandover: jest.Mock;
+    assignActingHead: jest.Mock;
+    clearActingHead: jest.Mock;
   };
 
   beforeEach(async () => {
     service = {
-      getHeadStatus: jest.fn().mockResolvedValue({ holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null }),
+      getHeadStatus: jest.fn().mockResolvedValue({ holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null }),
       assignHead: jest.fn().mockResolvedValue(undefined),
       vacateHead: jest.fn().mockResolvedValue(undefined),
       declareHandover: jest.fn().mockResolvedValue(undefined),
       completeHandoverNow: jest.fn().mockResolvedValue(undefined),
       cancelHandover: jest.fn().mockResolvedValue(undefined),
+      assignActingHead: jest.fn().mockResolvedValue(undefined),
+      clearActingHead: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -78,6 +82,17 @@ describe('OrgUnitHeadController', () => {
     expect(service.cancelHandover).toHaveBeenCalledWith(UNIT_ID, TENANT_ID, USER_ID);
   });
 
+  it('assignActingHead delegates to the service with tenant and actor', async () => {
+    const dto = { userId: 'acting-user', coveringForUserId: 'absent-user' };
+    await controller.assignActingHead(UNIT_ID, dto, TENANT_ID, USER_ID);
+    expect(service.assignActingHead).toHaveBeenCalledWith(UNIT_ID, dto, TENANT_ID, USER_ID);
+  });
+
+  it('clearActingHead delegates to the service with tenant and actor', async () => {
+    await controller.clearActingHead(UNIT_ID, TENANT_ID, USER_ID);
+    expect(service.clearActingHead).toHaveBeenCalledWith(UNIT_ID, TENANT_ID, USER_ID);
+  });
+
   // ACC-40 Section 2.3 — Head-management actions must be gated by
   // org:manage specifically, not positions:manage (a deliberate,
   // explicitly-reasoned design choice — see the controller's own header
@@ -93,6 +108,8 @@ describe('OrgUnitHeadController', () => {
       ['declareHandover', () => OrgUnitHeadController.prototype.declareHandover],
       ['completeHandoverNow', () => OrgUnitHeadController.prototype.completeHandoverNow],
       ['cancelHandover', () => OrgUnitHeadController.prototype.cancelHandover],
+      ['assignActingHead', () => OrgUnitHeadController.prototype.assignActingHead],
+      ['clearActingHead', () => OrgUnitHeadController.prototype.clearActingHead],
     ];
 
     it.each(routes)('%s requires org:manage', (_name, getMethod) => {
