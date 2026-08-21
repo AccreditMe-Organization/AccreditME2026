@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OrgPositionService } from './org-position.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { NotificationService } from '../notification/notification.service';
 import { OrganizationService } from '../organization/organization.service';
 
 const ORG_A = 'org-a-id';
@@ -32,6 +33,7 @@ const mockPrisma = {
   },
   orgUnit: {
     findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   user: {
     findMany: jest.fn(),
@@ -40,10 +42,14 @@ const mockPrisma = {
   role: {
     findFirst: jest.fn(),
   },
+  userRole: {
+    findMany: jest.fn(),
+  },
 };
 
 const mockAuditLog = { log: jest.fn() };
 const mockOrganizationService = { refreshOrgUnitHeadVacancy: jest.fn() };
+const mockNotificationService = { create: jest.fn() };
 
 describe('OrgPositionService', () => {
   let service: OrgPositionService;
@@ -60,6 +66,7 @@ describe('OrgPositionService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: OrganizationService, useValue: mockOrganizationService },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -412,6 +419,112 @@ describe('OrgPositionService', () => {
       await expect(service.reactivatePosition('position-1', ORG_B, 'actor-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('notifyTenantAdminsOfVacantHeadRoleMappings (ACC-40 Section 2.9e)', () => {
+    const ADMIN_ROLE = { id: 'role-admin' };
+
+    it('notifies every active TENANT_ADMIN when vacant units exist', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([{ nameEn: 'Cardiology' }]);
+      mockPrisma.orgPosition.findMany.mockResolvedValue([]);
+      mockPrisma.role.findFirst.mockResolvedValue(ADMIN_ROLE);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+      await service.notifyTenantAdminsOfVacantHeadRoleMappings(ORG_A);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'admin-1',
+          titleEn: 'Head-authority setup incomplete',
+          bodyEn: expect.stringContaining('Cardiology'),
+        }),
+        ORG_A,
+      );
+    });
+
+    it('notifies every active TENANT_ADMIN when unmapped head-conferring positions exist', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+      mockPrisma.orgPosition.findMany.mockResolvedValue([{ nameEn: 'Department Manager' }]);
+      mockPrisma.role.findFirst.mockResolvedValue(ADMIN_ROLE);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+      await service.notifyTenantAdminsOfVacantHeadRoleMappings(ORG_A);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ bodyEn: expect.stringContaining('Department Manager') }),
+        ORG_A,
+      );
+    });
+
+    it('surfaces both signals together in one notification when both exist', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([{ nameEn: 'Cardiology' }]);
+      mockPrisma.orgPosition.findMany.mockResolvedValue([{ nameEn: 'Department Manager' }]);
+      mockPrisma.role.findFirst.mockResolvedValue(ADMIN_ROLE);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+      await service.notifyTenantAdminsOfVacantHeadRoleMappings(ORG_A);
+
+      const call = mockNotificationService.create.mock.calls[0][0];
+      expect(call.bodyEn).toContain('Cardiology');
+      expect(call.bodyEn).toContain('Department Manager');
+    });
+
+    it('queries both signals with the correct filters', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([{ nameEn: 'Cardiology' }]);
+      mockPrisma.orgPosition.findMany.mockResolvedValue([]);
+      mockPrisma.role.findFirst.mockResolvedValue(ADMIN_ROLE);
+      mockPrisma.userRole.findMany.mockResolvedValue([]);
+
+      await service.notifyTenantAdminsOfVacantHeadRoleMappings(ORG_A);
+
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organizationId: ORG_A, isHeadVacant: true } }),
+      );
+      expect(mockPrisma.orgPosition.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { organizationId: ORG_A, isUnitHeadPosition: true, roleId: null },
+        }),
+      );
+    });
+
+    it('is a no-op when neither signal has anything to report', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+      mockPrisma.orgPosition.findMany.mockResolvedValue([]);
+
+      await service.notifyTenantAdminsOfVacantHeadRoleMappings(ORG_A);
+
+      expect(mockPrisma.role.findFirst).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the tenant has no TENANT_ADMIN role', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([{ nameEn: 'Cardiology' }]);
+      mockPrisma.orgPosition.findMany.mockResolvedValue([]);
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      await service.notifyTenantAdminsOfVacantHeadRoleMappings(ORG_A);
+
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // Simulates real Prisma tenant scoping: each org's own vacant unit
+      // is only ever visible through its own organizationId filter.
+      mockPrisma.orgUnit.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(
+          where.organizationId === ORG_A ? [{ nameEn: 'Org A Unit' }] : [{ nameEn: 'Org B Unit' }],
+        ),
+      );
+      mockPrisma.orgPosition.findMany.mockResolvedValue([]);
+      mockPrisma.role.findFirst.mockResolvedValue(ADMIN_ROLE);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-a' }]);
+
+      await service.notifyTenantAdminsOfVacantHeadRoleMappings(ORG_A);
+
+      const call = mockNotificationService.create.mock.calls[0][0];
+      expect(call.bodyEn).toContain('Org A Unit');
+      expect(call.bodyEn).not.toContain('Org B Unit');
     });
   });
 

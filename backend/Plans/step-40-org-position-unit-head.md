@@ -1736,15 +1736,16 @@ reviewed — not this ticket's own acceptance criteria.
       `notifyTenantAdminsOfCoverageGap()`/
       `notifyTenantAdminsOfUnassignedStage()`'s exact shape (2.5) —
       Phase 6
-- [ ] **NOT BUILT — genuine gap, confirmed via grep (zero matches),
-      not stale-checklist noise**: `notifyTenantAdminsOfVacantHeadRoleMappings()`
-      — new method, identical three-part chain, surfacing both vacant
-      units and unmapped head-conferring positions together (2.9e).
-      Every other notification method this plan called for was built;
-      this specific one was not, across all 11 phases. Flagged in the
-      PR description as known-missing scope, not silently dropped —
-      candidate for a small, standalone follow-up ticket rather than
-      reopening this branch.
+- [x] `notifyTenantAdminsOfVacantHeadRoleMappings()` — new method on
+      `OrgPositionService`, matching 2.4's exact three-part chain
+      (`Role.findFirst(TENANT_ADMIN)` → `UserRole.findMany()` →
+      `NotificationService.create()` per admin), surfacing both vacant
+      units (`OrgUnit.isHeadVacant: true`) and unmapped head-conferring
+      positions (`OrgPosition.isUnitHeadPosition: true, roleId: null`)
+      together in one notification, not one filtered query — 2.9e —
+      Phase 12, closed after PR #37 was already open, found during
+      final reconciliation. 7 new tests including a dedicated tenant-
+      isolation test for the new query set.
 - [x] `InviteUserDto`: `positionId`/`primaryOrgUnitId` become required;
       conditional check that at least one active `OrgUnit` exists
       before enforcing `primaryOrgUnitId` (2.4) — Phase 2
@@ -2441,6 +2442,30 @@ it for any prior phase either.
 
 **Checkpoint**: reported to user. Branch ready for `/ready-to-pr`
 pending user confirmation.
+
+### Phase 12 — `notifyTenantAdminsOfVacantHeadRoleMappings()` (2.9e)
+
+Found during final PR reconciliation (`/ready-to-pr`'s own progress-
+tracker pass) as the one item from the full design that never shipped
+across Phases 0–11. Committed directly on top of the already-open
+PR #37, not a new branch.
+
+1. `feat(org-position): add notifyTenantAdminsOfVacantHeadRoleMappings() [ACC-40]`
+   — new method on `OrgPositionService`, matching 2.4's exact
+   three-part chain; surfaces `OrgUnit.isHeadVacant: true` and
+   `OrgPosition.isUnitHeadPosition: true, roleId: null` together, per
+   2.9e's own "two related but not strictly joined signals" framing;
+   7 tests including a dedicated tenant-isolation test for the new
+   query set (this session's standing rule for any new tenant-scoped
+   Prisma query).
+
+**Checkpoint**: `tsc --noEmit` clean (backend + frontend); backend
+`jest` 892/892 (was 885); tenant isolation gate 46/46 (was 45 — the
+new isolation test counted); real `npx nest start` boot confirms the
+new `NotificationService` constructor dependency on `OrgPositionService`
+resolves cleanly. Plan document's own checklist (Section 5) updated to
+mark 2.9e `[x]`. Pushed to the existing `feature/ACC-40-org-position-
+unit-head-plan` branch, landing on PR #37.
 
 ---
 
