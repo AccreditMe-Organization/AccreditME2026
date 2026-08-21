@@ -4,6 +4,7 @@ import { OrgUnitHeadService } from './org-unit-head.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
+import { RoleService } from '../roles/role.service';
 import { OrganizationService } from './organization.service';
 import { NotificationService } from '../notification/notification.service';
 
@@ -26,7 +27,7 @@ const mockPrisma = {
   orgUnit: { findFirst: jest.fn(), update: jest.fn() },
   orgPosition: { findFirst: jest.fn() },
   user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
-  orgUnitHeadEvent: { create: jest.fn() },
+  orgUnitHeadEvent: { create: jest.fn(), findFirst: jest.fn() },
 };
 const mockAuditLog = { log: jest.fn() };
 const mockUserService = {
@@ -34,6 +35,10 @@ const mockUserService = {
   syncHeadAuthorityRoleGrant: jest.fn(),
 };
 const mockOrganizationService = { refreshOrgUnitHeadVacancy: jest.fn() };
+const mockRoleService = {
+  grantRoleViaHeadAuthority: jest.fn(),
+  revokeRoleViaHeadAuthority: jest.fn(),
+};
 
 describe('OrgUnitHeadService', () => {
   let service: OrgUnitHeadService;
@@ -45,6 +50,8 @@ describe('OrgUnitHeadService', () => {
     mockPrisma.user.update.mockResolvedValue({});
     mockUserService.validatePositionAssignment.mockResolvedValue(undefined);
     mockOrganizationService.refreshOrgUnitHeadVacancy.mockResolvedValue(undefined);
+    mockRoleService.grantRoleViaHeadAuthority.mockResolvedValue(undefined);
+    mockRoleService.revokeRoleViaHeadAuthority.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -53,6 +60,7 @@ describe('OrgUnitHeadService', () => {
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: UserService, useValue: mockUserService },
         { provide: OrganizationService, useValue: mockOrganizationService },
+        { provide: RoleService, useValue: mockRoleService },
       ],
     }).compile();
 
@@ -654,6 +662,10 @@ describe('OrgUnitHeadService', () => {
       // Never touches User.positionId — the load-bearing distinction from
       // assignHead()'s actual position grant (2.6's own framing).
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      // ACC-40 Section 2.6.4 — a pure vacancy (no coveringForUserId) grants
+      // workflow-eligibility only, never a role — nothing identifies which
+      // position would even be relevant.
+      expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -664,6 +676,151 @@ describe('OrgUnitHeadService', () => {
       await expect(
         service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_B, 'actor-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    // ── coveringForUserId resolution chain (ACC-40 Section 2.6.4) ──────────
+
+    describe('coveringForUserId resolution chain', () => {
+      const PREDECESSOR_ID = 'predecessor-user';
+
+      it('case (a) — grants the role mapped to the predecessor\'s own CURRENT position, when still head-conferring and scoped to this unit (the absence case)', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+        mockPrisma.user.findFirst
+          .mockResolvedValueOnce(null) // no current real holder — vacant, proceeds
+          .mockResolvedValueOnce(ACTING_USER) // acting user found
+          .mockResolvedValueOnce({ positionId: HEAD_POSITION_ID }); // predecessor lookup — still scoped to this unit
+        mockPrisma.orgPosition.findFirst
+          .mockResolvedValueOnce({ isUnitHeadPosition: true }) // resolveCoveringPositionId's own inner check
+          .mockResolvedValueOnce({ isUnitHeadPosition: true, roleId: 'role-head' }); // caller's fresh re-verification
+
+        await service.assignActingHead(
+          UNIT_1,
+          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          ORG_A,
+          'admin-1',
+        );
+
+        expect(mockPrisma.orgUnitHeadEvent.findFirst).not.toHaveBeenCalled(); // never reaches case (b)
+        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
+          ACTING_USER.id, 'role-head', UNIT_1, ORG_A, 'admin-1',
+        );
+      });
+
+      it('case (b) — falls through to the predecessor\'s most recent OrgUnitHeadEvent for this unit when their current position no longer resolves (the departure case)', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+        mockPrisma.user.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(ACTING_USER)
+          .mockResolvedValueOnce({ positionId: null }); // predecessor no longer scoped to this unit / holds nothing
+        mockPrisma.orgUnitHeadEvent.findFirst.mockResolvedValue({ positionId: HEAD_POSITION_ID }); // most recent VACATED event
+        mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({ isUnitHeadPosition: true, roleId: 'role-head' });
+
+        await service.assignActingHead(
+          UNIT_1,
+          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          ORG_A,
+          'admin-1',
+        );
+
+        expect(mockPrisma.orgUnitHeadEvent.findFirst).toHaveBeenCalledWith({
+          where: { userId: PREDECESSOR_ID, orgUnitId: UNIT_1, organizationId: ORG_A, positionId: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          select: { positionId: true },
+        });
+        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
+          ACTING_USER.id, 'role-head', UNIT_1, ORG_A, 'admin-1',
+        );
+      });
+
+      it('case (c) — no grant when neither the predecessor\'s current position nor any historical event resolves anything, even though coveringForUserId was supplied', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+        mockPrisma.user.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(ACTING_USER)
+          .mockResolvedValueOnce({ positionId: null });
+        mockPrisma.orgUnitHeadEvent.findFirst.mockResolvedValue(null); // no history at all — a unit that's never had a Head
+
+        await service.assignActingHead(
+          UNIT_1,
+          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          ORG_A,
+          'admin-1',
+        );
+
+        expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+      });
+
+      it('does not grant when the resolved position is no longer head-conferring or has no roleId mapped — positions are mutable, re-verified fresh regardless of which case resolved the id', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+        mockPrisma.user.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(ACTING_USER)
+          .mockResolvedValueOnce({ positionId: HEAD_POSITION_ID });
+        mockPrisma.orgPosition.findFirst
+          .mockResolvedValueOnce({ isUnitHeadPosition: true }) // still head-conferring at the inner gating check
+          .mockResolvedValueOnce({ isUnitHeadPosition: true, roleId: null }); // but no role mapped — fresh re-check catches this
+
+        await service.assignActingHead(
+          UNIT_1,
+          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          ORG_A,
+          'admin-1',
+        );
+
+        expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
+      });
+
+      it('should NOT return records belonging to a different tenant', async () => {
+        // Both calls resolve the org unit (present under either tenant) —
+        // this test proves the RESOLUTION CHAIN's own queries are
+        // correctly org-scoped, distinct from the already-covered
+        // "org unit missing entirely" case above.
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+        mockPrisma.user.findFirst.mockImplementation(({ where }: any) => {
+          if (where.status === 'ACTIVE' && where.position) return Promise.resolve(null); // currentHolder — vacant either tenant
+          if (where.id === ACTING_USER.id) return Promise.resolve(ACTING_USER); // acting user
+          // resolveCoveringPositionId's predecessor lookup — org-scoped
+          return Promise.resolve(where.organizationId === ORG_A ? { positionId: null } : { positionId: null });
+        });
+        mockPrisma.orgUnitHeadEvent.findFirst.mockImplementation(({ where }: any) =>
+          Promise.resolve(where.organizationId === ORG_A ? { positionId: 'pos-a' } : { positionId: 'pos-b' }),
+        );
+        mockPrisma.orgPosition.findFirst.mockImplementation(({ where }: any) =>
+          Promise.resolve(
+            where.organizationId === ORG_A
+              ? { isUnitHeadPosition: true, roleId: 'role-a' }
+              : { isUnitHeadPosition: true, roleId: 'role-b' },
+          ),
+        );
+
+        await service.assignActingHead(
+          UNIT_1,
+          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          ORG_A,
+          'admin-1',
+        );
+        await service.assignActingHead(
+          UNIT_1,
+          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          ORG_B,
+          'admin-1',
+        );
+
+        expect(mockPrisma.orgUnitHeadEvent.findFirst).toHaveBeenNthCalledWith(1, {
+          where: { userId: PREDECESSOR_ID, orgUnitId: UNIT_1, organizationId: ORG_A, positionId: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          select: { positionId: true },
+        });
+        expect(mockPrisma.orgUnitHeadEvent.findFirst).toHaveBeenNthCalledWith(2, {
+          where: { userId: PREDECESSOR_ID, orgUnitId: UNIT_1, organizationId: ORG_B, positionId: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          select: { positionId: true },
+        });
+        // Correctly resolved a DIFFERENT role per tenant — proof the two
+        // calls are genuinely scoped independently, not sharing state.
+        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(1, ACTING_USER.id, 'role-a', UNIT_1, ORG_A, 'admin-1');
+        expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenNthCalledWith(2, ACTING_USER.id, 'role-b', UNIT_1, ORG_B, 'admin-1');
+      });
     });
   });
 
@@ -701,6 +858,14 @@ describe('OrgUnitHeadService', () => {
           approvedBy: 'admin-1',
         }),
       });
+
+      // ACC-40 Section 2.6.4/2.6.5 — unconditional revoke attempt.
+      // revokeRoleViaHeadAuthority() is itself the safe no-op when nothing
+      // was ever granted (see RoleService's own tests) — clearActingHead()
+      // doesn't need to know whether a grant happened.
+      expect(mockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith(
+        ACTING_USER.id, UNIT_1, ORG_A, 'admin-1',
+      );
     });
 
     it('should NOT return records belonging to a different tenant', async () => {
@@ -771,11 +936,16 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
       realMockAuditLog as unknown as AuditLogService,
       realMockNotificationService as unknown as NotificationService,
     );
+    const realMockRoleService = {
+      grantRoleViaHeadAuthority: jest.fn(),
+      revokeRoleViaHeadAuthority: jest.fn(),
+    };
     const realOrgUnitHeadService = new OrgUnitHeadService(
       realMockPrisma as unknown as PrismaService,
       realMockAuditLog as unknown as AuditLogService,
       realMockUserService as unknown as UserService,
       realOrganizationService,
+      realMockRoleService as unknown as RoleService,
     );
 
     await realOrgUnitHeadService.vacateHead(UNIT_1, ORG_A, 'actor-1');

@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
+import { RoleService } from '../roles/role.service';
 import { OrganizationService } from './organization.service';
 import { DeclareHandoverDto } from './dto/declare-handover.dto';
 import { AssignHeadDto } from './dto/assign-head.dto';
@@ -39,6 +40,16 @@ export class OrgUnitHeadService {
     // fired for the dedicated Head-management endpoints. Every method that
     // touches positionId below now calls it directly.
     private readonly organizationService: OrganizationService,
+    // ACC-40 Section 2.6.4/2.6.5 — RolesModule is @Global(), so this would
+    // resolve without an explicit import, but imported explicitly anyway
+    // in organization.module.ts for clarity/testability, same precedent as
+    // every other cross-module edge in this codebase touching a Global
+    // module. Acting Head's grant/revoke shape (a single grant-or-nothing
+    // at assign time, single revoke-only at clear time) doesn't fit
+    // UserService.syncHeadAuthorityRoleGrant()'s old->new pairing shape,
+    // so this calls RoleService directly rather than forcing it through
+    // that differently-shaped helper.
+    private readonly roleService: RoleService,
   ) {}
 
   // ACC-40 Section 2.2 — a read-only projection for UI consumption
@@ -567,6 +578,64 @@ export class OrgUnitHeadService {
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+
+    // ACC-40 Section 2.6.4/2.6.5 — role grant, only when a real
+    // predecessor is identifiable via coveringForUserId. A pure vacancy
+    // (no coveringForUserId, or the resolution chain below finds nothing)
+    // grants workflow-eligibility only, per resolveActingHeadForOrgUnit()'s
+    // own pool-inclusion behavior — no role grant, since nothing
+    // identifies which position would even be relevant.
+    if (dto.coveringForUserId) {
+      const resolvedPositionId = await this.resolveCoveringPositionId(dto.coveringForUserId, orgUnitId, organizationId);
+      if (resolvedPositionId) {
+        const position = await this.prisma.orgPosition.findFirst({
+          where: { id: resolvedPositionId, organizationId },
+          select: { isUnitHeadPosition: true, roleId: true },
+        });
+        if (position?.isUnitHeadPosition && position.roleId) {
+          await this.roleService.grantRoleViaHeadAuthority(actingUser.id, position.roleId, orgUnitId, organizationId, actorId);
+        }
+      }
+    }
+  }
+
+  // ACC-40 Section 2.6.4 — resolves which head-conferring position
+  // coveringForUserId's authority derives from, checking in order:
+  // (a) their own CURRENT positionId, if still an isUnitHeadPosition
+  //     position scoped to THIS unit (the absence case — they still
+  //     nominally hold it, just personally away);
+  // (b) else, their most recent OrgUnitHeadEvent for this unit that
+  //     actually recorded a position (almost always VACATED — the
+  //     departure case).
+  // Returns null if neither resolves — a pure vacancy from this
+  // predecessor's own perspective, even though coveringForUserId was
+  // supplied. The FINAL grant decision (isUnitHeadPosition/roleId) is
+  // re-checked fresh by the caller regardless of which case resolved the
+  // id — positions are mutable, so a stale historical positionId must not
+  // be trusted without re-verifying its current configuration.
+  private async resolveCoveringPositionId(
+    coveringForUserId: string,
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<string | null> {
+    const predecessor = await this.prisma.user.findFirst({
+      where: { id: coveringForUserId, organizationId, primaryOrgUnitId: orgUnitId },
+      select: { positionId: true },
+    });
+    if (predecessor?.positionId) {
+      const position = await this.prisma.orgPosition.findFirst({
+        where: { id: predecessor.positionId, organizationId },
+        select: { isUnitHeadPosition: true },
+      });
+      if (position?.isUnitHeadPosition) return predecessor.positionId;
+    }
+
+    const lastEvent = await this.prisma.orgUnitHeadEvent.findFirst({
+      where: { userId: coveringForUserId, orgUnitId, organizationId, positionId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: { positionId: true },
+    });
+    return lastEvent?.positionId ?? null;
   }
 
   // Ends Acting Head coverage — the unit reverts to whatever
@@ -607,6 +676,13 @@ export class OrgUnitHeadService {
     });
 
     await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+
+    // ACC-40 Section 2.6.4/2.6.5 — unconditional; revokeRoleViaHeadAuthority()
+    // is a safe no-op if assignActingHead() never actually granted anything
+    // (no coveringForUserId, or its resolution chain found nothing) — no
+    // need to re-derive whether a grant happened just to decide whether to
+    // call this.
+    await this.roleService.revokeRoleViaHeadAuthority(actingHeadUserId, orgUnitId, organizationId, actorId);
   }
 
   private async getOrgUnitOrThrow(id: string, organizationId: string) {
