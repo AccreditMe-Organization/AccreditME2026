@@ -61,7 +61,26 @@ Tier 3 — On-premises / private cloud (future)
 
 ### Frontend
 - Framework: Angular 18+ (standalone components)
-- UI components: PrimeNG (free MIT license)
+- UI components: PrimeNG (free MIT license) — one deliberate,
+  evidence-based exception: `OverlaySelectComponent`
+  (`frontend/src/app/shared/components/overlay-select/`, ACC-41)
+  replaces `p-select` on fields where PrimeNG's own
+  `ConnectedOverlayScrollHandler` scroll-chaining bug is reachable.
+  Confirmed root cause (verified against PrimeNG's own source,
+  `primeng-dom.mjs`): it closes the overlay on ANY scroll of ANY
+  ancestor found via `DomHandler.getScrollableParents()`, with no
+  supported way to disable or override that behavior — not a defect
+  fixable within PrimeNG, a structural property of how it's built.
+  `OverlaySelectComponent` is built on Angular CDK's `Overlay` +
+  `RepositionScrollStrategy` instead, which repositions on ancestor
+  scroll rather than closing (verified against
+  `@angular/cdk/overlay`'s own source) — structurally immune to this
+  bug class, not a workaround for it. This is a scoped exception for
+  this specific failure mode, not a general PrimeNG replacement —
+  `p-select` remains correct and preferred everywhere the bug isn't
+  reachable (short option lists, or overlay contexts without a
+  scrollable ancestor between the trigger and the document). Full
+  mechanism detail: SYSTEM-REFERENCE.md Section 10.6.
 - Styling: PrimeNG design tokens + Tailwind CSS
 - Global styles: One SCSS file for app shell only
 - State management: NgRx Signals
