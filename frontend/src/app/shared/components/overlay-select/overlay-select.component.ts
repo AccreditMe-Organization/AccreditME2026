@@ -16,6 +16,7 @@ import { Overlay, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';
 import { TemplatePortal } from '@angular/cdk/portal';
 import { CdkListbox, CdkOption, ListboxValueChangeEvent } from '@angular/cdk/listbox';
 import { CdkScrollable, ScrollDispatcher } from '@angular/cdk/scrolling';
+import { TranslatePipe } from '@ngx-translate/core';
 import { Subject } from 'rxjs';
 
 // Minimal object satisfying ScrollDispatcher.register()/deregister()'s real
@@ -122,7 +123,7 @@ function createManualScrollable(
 @Component({
   selector: 'app-overlay-select',
   standalone: true,
-  imports: [CdkListbox, CdkOption],
+  imports: [CdkListbox, CdkOption, TranslatePipe],
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
@@ -170,7 +171,9 @@ function createManualScrollable(
             {{ getOptionLabel(opt) }}
           </div>
         } @empty {
-          <div class="am-overlay-select-option am-overlay-select-option-empty">No options</div>
+          <div class="am-overlay-select-option am-overlay-select-option-empty">
+            {{ 'common.noResults' | translate }}
+          </div>
         }
       </div>
     </ng-template>
