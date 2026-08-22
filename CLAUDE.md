@@ -1672,6 +1672,36 @@ Prisma Studio.
   milestone, after Document Management, alongside the full
   visual/brand polish ticket. Distinct from the smaller, near-term
   Committee-specific RTL pass in the sequence below.
+- **`p-cascadeSelect` adopted in exactly one place, not consistently**
+  — `step-02-organization-structure.md`'s original founding plan
+  specified PrimeNG's `p-cascadeSelect` for hierarchy-aware org-unit
+  navigation. Verified directly against the code (not assumed): it
+  genuinely **was** adopted once — `org-unit-form.component.ts`'s own
+  `parentId` picker (the parent-unit selector used when creating or
+  editing an org unit from the tree) — but every other org-unit
+  picker built since uses a flat `p-select` fed by
+  `OrgUnitService.getFlat()` instead: `invite-user.component.ts`'s
+  `primaryOrgUnitId`, `user-profile.component.ts`'s
+  `primaryOrgUnitId` **and** ACC-40's new `actingOrgUnitId`.
+  (`position-form.component.ts` is **not** one of these — confirmed
+  via grep it has zero `orgUnitId` references today; ACC-40 Phase 1
+  removed `OrgPosition.orgUnitId` entirely as part of the org-wide
+  catalog redesign, so this screen has no org-unit picker of any kind
+  anymore.) Not a bug — every picker works correctly today — but a
+  real, confirmed UX/component-choice inconsistency against the
+  founding design: the one screen most directly about org-unit
+  hierarchy (declaring a unit's own parent) got the hierarchy-aware
+  widget, every screen since has defaulted to flat. Found during the
+  founding-plan comparison exercise alongside the `Committee.orgUnitId`
+  and User acting-as-unit gaps (both since resolved via ACC-40).
+  Before adopting more broadly: investigate the current PrimeNG
+  version's actual `p-cascadeSelect` capabilities and confirm which
+  screens genuinely benefit from hierarchy-aware navigation versus
+  which are fine as a flat list, matching the same
+  investigate-before-adopting discipline `p-listbox` received in
+  ACC-36. Connects to the broader, still-deferred Founding-Plan
+  Conformance Audit idea — this is one already-confirmed finding from
+  that effort, not the whole audit.
 
 ### Sequence to Meeting Management
 
