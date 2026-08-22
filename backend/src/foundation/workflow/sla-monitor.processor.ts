@@ -7,7 +7,13 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
+import { OrgUnitHeadService } from '../organization/org-unit-head.service';
+import { OrganizationService } from '../organization/organization.service';
 import { WorkflowService } from './workflow.service';
+
+// ACC-40 Section 2.5.1 — the 2-day interval between periodic
+// "still fully unresolved" reminders, named so it's easy to find/adjust.
+const HEAD_VACANCY_REMINDER_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
 
 interface EscalationRule {
   afterHours: number;
@@ -36,6 +42,16 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // notifyTenantAdminsOfUnassignedStage() rather than duplicating that
     // resolution logic here.
     private readonly workflowService: WorkflowService,
+    // ACC-40 Section 2.3 — automatic handover completion (Phase 5 commit 5)
+    // reuses OrgUnitHeadService.completeHandoverAutomatically() rather than
+    // duplicating that logic here, same precedent as workflowService above.
+    private readonly orgUnitHeadService: OrgUnitHeadService,
+    // ACC-40 Section 2.5.1 — sweepOrgUnitVacancies() reuses
+    // OrganizationService.resolveActingHeadForOrgUnit()/
+    // notifyTenantAdminsOfOrgUnitVacancy() rather than duplicating that
+    // resolution/notification logic here, same precedent as workflowService
+    // above.
+    private readonly organizationService: OrganizationService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -97,6 +113,126 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
 
     await this.sweepOverdueTasks(now);
     await this.sweepUnassignedStages();
+    await this.sweepExpiredActingOrgUnitAssignments(now);
+    await this.sweepDueHandovers(now);
+    await this.sweepOrgUnitVacancies(now);
+  }
+
+  // ACC-40 Section 2.3 — the automatic half of "what closes the window:
+  // recommend both, not a single mechanism" (the other being explicit
+  // early completion via OrgUnitHeadService.completeHandoverNow()).
+  // organizationId is read from each fetched OrgUnit row itself, not
+  // filtered by a single tenant upfront — same cross-tenant one-pass
+  // sweep shape as sweepOverdueTasks() above.
+  private async sweepDueHandovers(now: Date): Promise<void> {
+    const dueHandovers = await this.prisma.orgUnit.findMany({
+      where: { pendingHeadUserId: { not: null }, headHandoverEffectiveDate: { lte: now } },
+    });
+
+    for (const orgUnit of dueHandovers) {
+      await this.orgUnitHeadService.completeHandoverAutomatically(orgUnit, orgUnit.organizationId);
+    }
+  }
+
+  // ACC-40 Section 2.5.1 — drift-after-entry re-check, same shape as
+  // sweepUnassignedStages() above: refreshOrgUnitHeadVacancy()'s entry-time
+  // check only re-runs the escalation walk when the UNIT'S OWN direct
+  // holder count changes, so it can't catch an ancestor's coverage
+  // disappearing while THIS unit's own vacancy state never changes (e.g. a
+  // parent unit's Acting Head is cleared while a grandchild sits vacant the
+  // whole time). Only considers units already isHeadVacant: true — a unit
+  // that currently has its own direct holder is never fully-unresolved by
+  // definition, so re-walking it here would be wasted work.
+  private async sweepOrgUnitVacancies(now: Date): Promise<void> {
+    const vacantUnits = await this.prisma.orgUnit.findMany({ where: { isHeadVacant: true } });
+
+    for (const orgUnit of vacantUnits) {
+      const pool = await this.organizationService.resolveActingHeadForOrgUnit(orgUnit.id, orgUnit.organizationId);
+      const isNowFullyUnresolved = pool.length === 0;
+
+      // wasFullyUnresolved read from the row as fetched at the top of this
+      // sweep pass — the precise condition that prevents a duplicate
+      // notification when this sweep re-evaluates a unit the entry-time
+      // check already flagged and notified about minutes earlier.
+      const wasFullyUnresolved = orgUnit.isHeadFullyUnresolved;
+
+      if (wasFullyUnresolved === isNowFullyUnresolved) {
+        // No transition — still fully unresolved is the only case where
+        // there's more to do: check the 2-day reminder cadence.
+        if (isNowFullyUnresolved) {
+          await this.maybeSendVacancyReminder(orgUnit, now);
+        }
+        continue;
+      }
+
+      if (!isNowFullyUnresolved) {
+        // Recovered — an ancestor now covers this unit (e.g. its Acting
+        // Head was just (re)assigned). Silent, same convention as
+        // sweepUnassignedStages()'s own clear-on-recovery case.
+        await this.prisma.orgUnit.update({
+          where: { id: orgUnit.id },
+          data: { isHeadFullyUnresolved: false, headFullyUnresolvedLastRemindedAt: null },
+        });
+        continue;
+      }
+
+      // Newly fully unresolved (sweep-discovered, not caught at entry time)
+      // — notify immediately, same first-notification wording as
+      // refreshOrgUnitHeadVacancy()'s own entry-time transition.
+      await this.prisma.orgUnit.update({
+        where: { id: orgUnit.id },
+        data: { isHeadFullyUnresolved: true, headFullyUnresolvedLastRemindedAt: now },
+      });
+      await this.organizationService.notifyTenantAdminsOfOrgUnitVacancy(
+        orgUnit.organizationId,
+        orgUnit,
+        false,
+      );
+    }
+  }
+
+  private async maybeSendVacancyReminder(
+    orgUnit: { id: string; organizationId: string; nameEn: string; headVacantSince: Date | null; headFullyUnresolvedLastRemindedAt: Date | null },
+    now: Date,
+  ): Promise<void> {
+    const lastReminded = orgUnit.headFullyUnresolvedLastRemindedAt;
+    if (lastReminded && now.getTime() - lastReminded.getTime() < HEAD_VACANCY_REMINDER_INTERVAL_MS) {
+      return;
+    }
+
+    await this.prisma.orgUnit.update({
+      where: { id: orgUnit.id },
+      data: { headFullyUnresolvedLastRemindedAt: now },
+    });
+    await this.organizationService.notifyTenantAdminsOfOrgUnitVacancy(orgUnit.organizationId, orgUnit, true);
+  }
+
+  // ACC-40 Section 2.7 — the simplest sweep step this file adds: unlike
+  // sweepUnassignedStages()/sweepOverdueTasks() above, actingOrgUnitId
+  // feeds nothing in Head derivation (2.1/2.2/2.5) or vacancy detection —
+  // it's a pure scoping fact, so clearing it on expiry needs no follow-on
+  // work (no refreshOrgUnitHeadVacancy() call, no escalation re-check).
+  private async sweepExpiredActingOrgUnitAssignments(now: Date): Promise<void> {
+    const expired = await this.prisma.user.findMany({
+      where: { actingOrgUnitId: { not: null }, actingOrgUnitUntil: { lte: now } },
+    });
+
+    for (const user of expired) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { actingOrgUnitId: null, actingOrgUnitUntil: null },
+      });
+
+      // A nicety, not a required part of the core mechanism (plan Section 2.7).
+      await this.notificationService.create(
+        {
+          userId: user.id,
+          titleEn: 'Acting-unit assignment ended',
+          bodyEn: 'Your acting assignment to another org unit has ended.',
+        },
+        user.organizationId,
+      );
+    }
   }
 
   // ACC-28 Section 2.5.1 — drift-after-entry re-check. The entry-time check

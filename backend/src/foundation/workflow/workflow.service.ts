@@ -13,6 +13,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
 import { RoleService } from '../roles/role.service';
+import { OrganizationService } from '../organization/organization.service';
 import {
   WorkflowInstance as PrismaWorkflowInstance,
   WorkflowInstanceStage as PrismaWorkflowInstanceStage,
@@ -51,6 +52,13 @@ export class WorkflowService {
     private readonly notificationService: NotificationService,
     private readonly taskService: TaskService,
     private readonly roleService: RoleService,
+    // ACC-40 Section 2.5/2.6.2 — resolveAssigneeRaw()'s and
+    // resolveApproverPool()'s new ORG_UNIT_HEAD cases call
+    // OrganizationService.resolveActingHeadForOrgUnit() rather than
+    // duplicating that resolution logic here, same "domain service owns
+    // the query, WorkflowService calls into it" placement the plan's own
+    // 2.5 section confirms.
+    private readonly organizationService: OrganizationService,
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
   ) {}
 
@@ -225,13 +233,16 @@ export class WorkflowService {
     if (!fromStage) throw new NotFoundException('Current stage not found');
 
     // ASSIGNEE_POOL (ACC-28) — placed after fromStage resolves, unlike the
-    // three triggerCondition checks above, because resolveAssigneeRaw()
+    // three triggerCondition checks above, because resolveAssignee()
     // needs the full stage row, not just its id. Reuses the existing
     // assignee-resolution machinery rather than a new authorization
     // primitive — see backend/Plans/step-28-resource-scoped-roles.md
-    // Section 2.2.
+    // Section 2.2. Uses resolveAssignee() (OOO-aware), not the raw
+    // resolveAssigneeRaw() — fixed per ACC-40 Section 2.6.1: an
+    // out-of-office holder's acting user must be able to trigger this
+    // transition too, same as they'd receive the task/notification for it.
     if (transition.triggerCondition === 'ASSIGNEE_POOL') {
-      const pool = await this.resolveAssigneeRaw(fromStage, instance, organizationId);
+      const pool = await this.resolveAssignee(fromStage, instance, organizationId);
       if (!pool.includes(actorId)) {
         throw new ForbiddenException('You are not in the resolved assignee pool for this stage');
       }
@@ -255,12 +266,18 @@ export class WorkflowService {
         actorId,
         dto.comment,
         'APPROVED',
+        fromStage,
       );
     }
 
     // Multi-approver stage: naming a specific transitionId is itself the vote
     // — isApprovalPath maps it to APPROVED (advance) or RETURNED (send back).
     const decision = transition.isApprovalPath ? 'APPROVED' : 'RETURNED';
+
+    // ACC-40 Section 2.6.3 — stamped on both branches (create AND update)
+    // so a re-vote by the same actor always reflects their CURRENT
+    // delegation status, never a stale first-vote snapshot.
+    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
 
     await this.prisma.workflowApproval.upsert({
       where: {
@@ -269,13 +286,21 @@ export class WorkflowService {
           approverId: actorId,
         },
       },
-      update: { decision, comment: dto.comment ?? null, decidedAt: new Date() },
+      update: {
+        decision,
+        comment: dto.comment ?? null,
+        decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
+      },
       create: {
         workflowInstanceStageId: currentInstanceStage.id,
         approverId: actorId,
         decision,
         comment: dto.comment ?? null,
         decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
       },
     });
 
@@ -292,10 +317,11 @@ export class WorkflowService {
         actorId,
         dto.comment,
         'REJECTED',
+        fromStage,
       );
     }
 
-    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId);
+    const satisfied = await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance);
     if (!satisfied) {
       // Threshold not yet met — approval recorded, instance unchanged.
       return this.mapInstance(instance);
@@ -309,6 +335,7 @@ export class WorkflowService {
       actorId,
       dto.comment,
       'APPROVED',
+      fromStage,
     );
   }
 
@@ -331,31 +358,54 @@ export class WorkflowService {
     const stage = await this.prisma.workflowStage.findFirst({ where: { id: instanceStage.stageId } });
     if (!stage) throw new NotFoundException('Workflow stage not found');
 
+    // ACC-40 Section 2.6.2 — resolveApproverPool()'s ORG_UNIT_HEAD case
+    // needs the calling object's orgUnitId, read off the instance (see
+    // that case's own comment) — this method only had instanceStage in
+    // scope until now, so a real fetch is required here (unlike
+    // triggerTransition(), which already has instance loaded).
+    const instance = await this.prisma.workflowInstance.findFirst({
+      where: { id: instanceStage.workflowInstanceId },
+    });
+    if (!instance) throw new NotFoundException('Workflow instance not found');
+
     // Mirrors triggerTransition()'s ASSIGNEE_POOL check (pool.includes(actorId))
     // — reuses resolveApproverPool(), the same pool-resolution isApprovalThresholdMet()
     // already trusts for this exact stage, rather than inventing a new
     // authorization primitive. Only enforced when the pool resolves to
-    // something concrete (COMMITTEE/ROLE strategies, the only two
-    // resolveApproverPool() understands) — an unresolvable strategy on a
-    // multi-approver stage is a pre-existing, separately-tracked config-error
-    // case (see resolveApproverPool()'s own comment), not one this check
-    // newly blocks.
-    const approverPool = await this.resolveApproverPool(stage, organizationId);
+    // something concrete (COMMITTEE/ROLE/ORG_UNIT_HEAD strategies — the only
+    // three resolveApproverPool() understands) — an unresolvable strategy on
+    // a multi-approver stage is a pre-existing, separately-tracked
+    // config-error case (see resolveApproverPool()'s own comment), not one
+    // this check newly blocks.
+    const approverPool = await this.resolveApproverPool(stage, organizationId, instance);
     if (approverPool.length > 0 && !approverPool.includes(actorId)) {
       throw new ForbiddenException('You are not an eligible approver for this stage');
     }
+
+    // ACC-40 Section 2.6.3 — stamped on both branches, same reasoning as
+    // triggerTransition()'s own upsert: a re-submitted approval always
+    // reflects the actor's CURRENT delegation status.
+    const delegationStamp = await this.resolveDelegationStamp(actorId, stage, instance, organizationId);
 
     const approval = await this.prisma.workflowApproval.upsert({
       where: {
         workflowInstanceStageId_approverId: { workflowInstanceStageId: instanceStageId, approverId: actorId },
       },
-      update: { decision: dto.decision, comment: dto.comment ?? null, decidedAt: new Date() },
+      update: {
+        decision: dto.decision,
+        comment: dto.comment ?? null,
+        decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
+      },
       create: {
         workflowInstanceStageId: instanceStageId,
         approverId: actorId,
         decision: dto.decision,
         comment: dto.comment ?? null,
         decidedAt: new Date(),
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
       },
     });
 
@@ -368,7 +418,7 @@ export class WorkflowService {
       after: { decision: approval.decision },
     });
 
-    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto);
+    await this.maybeAdvanceAfterApproval(stage, instanceStage, organizationId, actorId, dto, instance);
 
     return this.mapApproval(approval);
   }
@@ -381,15 +431,15 @@ export class WorkflowService {
     organizationId: string,
     actorId: string,
     dto: SubmitApprovalDto,
+    // ACC-40 Section 2.6.2 — caller-supplied now (submitApproval() already
+    // fetches this for resolveApproverPool()'s ORG_UNIT_HEAD case), rather
+    // than this method re-fetching the same row a second time in the same
+    // request.
+    instance: PrismaWorkflowInstance,
   ): Promise<void> {
     // ABSTAINED never auto-routes — per module-designs.md, majority-abstained
     // requires Quality Officer escalation, not automatic advancement.
     if (dto.decision === 'ABSTAINED') return;
-
-    const instance = await this.prisma.workflowInstance.findUnique({
-      where: { id: instanceStage.workflowInstanceId },
-    });
-    if (!instance) return;
 
     const isApprovalDecision = dto.decision === 'APPROVED' || dto.decision === 'APPROVED_WITH_COMMENTS';
 
@@ -408,11 +458,12 @@ export class WorkflowService {
         actorId,
         dto.comment,
         'REJECTED',
+        stage,
       );
       return;
     }
 
-    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId);
+    const satisfied = await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance);
     if (!satisfied) return;
 
     const approveTransition = await this.prisma.workflowTransition.findFirst({
@@ -429,6 +480,7 @@ export class WorkflowService {
       actorId,
       dto.comment,
       'APPROVED',
+      stage,
     );
   }
 
@@ -436,6 +488,7 @@ export class WorkflowService {
     fromStage: PrismaWorkflowStage,
     currentInstanceStage: PrismaWorkflowInstanceStage,
     organizationId: string,
+    instance: PrismaWorkflowInstance,
   ): Promise<boolean> {
     const approvals = await this.prisma.workflowApproval.findMany({
       where: { workflowInstanceStageId: currentInstanceStage.id },
@@ -457,7 +510,7 @@ export class WorkflowService {
       return approvedCount > approvals.length / 2;
     }
 
-    const pool = await this.resolveApproverPool(fromStage, organizationId);
+    const pool = await this.resolveApproverPool(fromStage, organizationId, instance);
     const poolSize = pool.length || Math.max(approvals.length, 1);
     // SEQUENTIAL has no dedicated ordered-roster mechanism in the current
     // schema — treated as PARALLEL+ALL until a real sequence concept exists.
@@ -476,6 +529,12 @@ export class WorkflowService {
     actorId: string,
     comment: string | undefined,
     outcome: 'APPROVED' | 'REJECTED' | 'SKIPPED',
+    // ACC-40 Section 2.6.3 — the stage actorId was resolved eligible
+    // against (not toStage) — every caller already has this in scope
+    // (triggerTransition()'s own fromStage local, or
+    // maybeAdvanceAfterApproval()'s own stage parameter), so it's threaded
+    // through rather than re-derived here.
+    fromStage: PrismaWorkflowStage,
   ): Promise<IWorkflowInstance> {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) throw new NotFoundException('Target stage not found');
@@ -486,9 +545,17 @@ export class WorkflowService {
     });
 
     const slaDueAt = await this.computeSlaDueAt(toStage, organizationId);
+    const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
 
     const newInstanceStage = await this.prisma.workflowInstanceStage.create({
-      data: { workflowInstanceId: instance.id, stageId: toStage.id, slaDueAt, actorId },
+      data: {
+        workflowInstanceId: instance.id,
+        stageId: toStage.id,
+        slaDueAt,
+        actorId,
+        delegationReason: delegationStamp?.delegationReason ?? null,
+        delegationContextId: delegationStamp?.delegationContextId ?? null,
+      },
     });
 
     // ACC-28 Section 2.5 — same check as startInstance(), for the stage this
@@ -669,6 +736,21 @@ export class WorkflowService {
     const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
     const subjectLabel = await this.resolveObjectSubjectLabel(instance, organizationId);
 
+    // ACC-40 Section 2.6.3 — computed once, per assignee, at exactly the
+    // moment resolveAssignee() (already OOO-aware) has full, fresh
+    // knowledge of why each resolved user was included — the exact moment
+    // the plan calls for, not re-derived later at Task.complete() time.
+    // Only delegated assignees get an entry; a direct, undelegated
+    // assignee simply has none.
+    const assigneeDelegations = (
+      await Promise.all(
+        assigneeIds.map(async (userId) => {
+          const stamp = await this.resolveDelegationStamp(userId, toStage, instance, organizationId);
+          return stamp ? { userId, ...stamp } : null;
+        }),
+      )
+    ).filter((d): d is NonNullable<typeof d> => d !== null);
+
     const task = await this.taskService.create(
       {
         title: `${transition.labelEn} — ${subjectLabel}`,
@@ -677,6 +759,7 @@ export class WorkflowService {
         sourceStageId: toStage.id,
         workflowInstanceId: instance.id,
         assigneeUserIds: assigneeIds,
+        assigneeDelegations,
         priority: 'MEDIUM', // TODO(future step): derive from source object urgency, not a fixed default
       },
       organizationId,
@@ -834,17 +917,27 @@ export class WorkflowService {
         return stage.approvalMode === 'SINGLE' ? [userIds[0] as string] : userIds;
       }
 
-      case 'ORG_UNIT_HEAD':
-        // Stubbed — resolving the workflow object's own org unit requires the
-        // calling functional module to supply an orgUnitId, and no module
-        // calls startInstance()/triggerTransition() yet. Documented
-        // limitation, not an oversight — see Step 6 plan, Business Rules.
-        // Degrades gracefully to an empty pool (matching every other case in
-        // this switch, per this method's own "always returns an array" doc
-        // comment above) rather than throwing — an unconditional throw here
-        // would crash the entire transition for a tenant that configures
-        // this strategy, not just leave the stage unassigned.
-        return [];
+      case 'ORG_UNIT_HEAD': {
+        // ACC-40 Section 2.5 — real resolver wiring, but still degrades to
+        // an empty pool for every REAL caller today: no workflow-driven
+        // object (Committee, Meeting) has its own orgUnitId field yet
+        // (confirmed prerequisite gap, Section 2.5's own checklist note) —
+        // a real, separate schema addition on whichever functional module
+        // first consumes this strategy, not made by this ticket. Reads
+        // instance.orgUnitId defensively (a property the real
+        // WorkflowInstance Prisma model does not carry — no schema change
+        // here), so this is exactly as safe as the previous unconditional
+        // stub for every existing tenant/workflow, while being real,
+        // tested wiring for whichever module supplies the field next.
+        // TODO(ACC-40): once a real orgUnitId column is added to a
+        // consuming object's schema, REPLACE this cast with a properly-typed
+        // field reference (e.g. instance.orgUnitId directly, once the
+        // Prisma-generated WorkflowInstance type actually carries it) —
+        // don't just leave the cast in place and trust it keeps compiling.
+        const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
+        if (!orgUnitId) return [];
+        return this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId);
+      }
 
       case 'SELF': {
         const firstStage = await this.prisma.workflowInstanceStage.findFirst({
@@ -879,6 +972,111 @@ export class WorkflowService {
       default:
         return [];
     }
+  }
+
+  // ACC-40 Section 2.6.3 — the ACTING_HEAD half of the unified delegation
+  // stamp. A narrow, single-actor sibling to resolveAssigneeRaw()'s own
+  // ORG_UNIT_HEAD case and OrganizationService.resolveActingHeadForOrgUnit()
+  // — deliberately not a modification of either (pool resolution stays a
+  // flat string[], unchanged). Walks the SAME hierarchy shape, but asks a
+  // different, narrower question: not "who is eligible" but "is THIS
+  // specific actor eligible only because they're acting, not because they
+  // really hold the position." Returns the OrgUnit id they're acting FOR
+  // (the delegation context), or null if they're a real holder (not
+  // "acting") or not acting for anything found in the walk.
+  //
+  // Public (not private) so this phase's own tests can exercise it in
+  // isolation before Phase 9 commit 3 wires it into a real write site —
+  // same precedent as resolveActingHeadForOrgUnit() (Phase 6 commit 1).
+  async resolveActingHeadOrgUnitIdForUser(
+    actorId: string,
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<string | null> {
+    let current: string | null = orgUnitId;
+    while (current) {
+      const isRealHolder = await this.prisma.user.count({
+        where: {
+          id: actorId,
+          organizationId,
+          primaryOrgUnitId: current,
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true },
+        },
+      });
+      if (isRealHolder > 0) return null; // real position-holder — not "acting"
+
+      const unit: { actingHeadUserId: string | null; parentId: string | null } | null =
+        await this.prisma.orgUnit.findFirst({
+          where: { id: current, organizationId },
+          select: { actingHeadUserId: true, parentId: true },
+        });
+      if (!unit) return null;
+      if (unit.actingHeadUserId === actorId) return current; // the unit id they're acting FOR
+
+      current = unit.parentId;
+    }
+    return null;
+  }
+
+  // ACC-40 Section 2.6.3 — the OUT_OF_OFFICE_COVERAGE half. Constrained to
+  // rawPoolUserIds deliberately — actorId being *someone's* actingUserId
+  // tenant-wide is not relevant; only whether they're covering for a person
+  // who was actually part of *this* resolution's raw pool counts. Public
+  // for the same isolated-testing reason as the sibling above.
+  async resolveOutOfOfficeCoverageForUser(
+    actorId: string,
+    rawPoolUserIds: string[],
+    organizationId: string,
+  ): Promise<string | null> {
+    if (rawPoolUserIds.length === 0) return null;
+
+    const now = new Date();
+    const coveredFor = await this.prisma.user.findFirst({
+      where: {
+        id: { in: rawPoolUserIds },
+        organizationId,
+        actingUserId: actorId,
+        outOfOfficeFrom: { lte: now },
+        outOfOfficeTo: { gte: now },
+      },
+    });
+    return coveredFor?.id ?? null;
+  }
+
+  // ACC-40 Section 2.6.3 — the unified delegation-reason stamp, computed at
+  // the exact moment of writing actorId/approverId (or, per Phase 9 commit
+  // 4, each TaskAssignee row). ACTING_HEAD checked first,
+  // OUT_OF_OFFICE_COVERAGE second — a stated, deliberate precedence for the
+  // rare edge case where both could theoretically resolve (an actor who is
+  // both the acting head of a vacant unit and separately covering an
+  // absent ROLE-based colleague in the same raw pool). The stamp records
+  // one reason, not a set.
+  private async resolveDelegationStamp(
+    userId: string,
+    stage: PrismaWorkflowStage,
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<{ delegationReason: 'ACTING_HEAD' | 'OUT_OF_OFFICE_COVERAGE'; delegationContextId: string } | null> {
+    if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
+      // Same instance.orgUnitId defensive read as resolveAssigneeRaw()'s
+      // own ORG_UNIT_HEAD case — see that case's own comment.
+      const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
+      if (orgUnitId) {
+        const actingForOrgUnitId = await this.resolveActingHeadOrgUnitIdForUser(userId, orgUnitId, organizationId);
+        if (actingForOrgUnitId) {
+          return { delegationReason: 'ACTING_HEAD', delegationContextId: actingForOrgUnitId };
+        }
+      }
+    }
+
+    const rawPool = await this.resolveAssigneeRaw(stage, instance, organizationId);
+    const coveredForUserId = await this.resolveOutOfOfficeCoverageForUser(userId, rawPool, organizationId);
+    if (coveredForUserId) {
+      return { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: coveredForUserId };
+    }
+
+    return null;
   }
 
   // Absence and Departure Management, Pattern 1 (Acting Assignment):
@@ -971,7 +1169,11 @@ export class WorkflowService {
   // below (entry-time, this file) and from SlaMonitorProcessor's periodic
   // sweep (drift-after-entry re-check, plan Section 2.5.1) — the resolution
   // logic must stay identical between both call sites, so it lives in one
-  // place rather than being duplicated.
+  // place rather than being duplicated. Uses resolveAssignee() (OOO-aware),
+  // not the raw resolveAssigneeRaw() — fixed per ACC-40 Section 2.6.1: an
+  // out-of-office holder with no acting user set is a real, already-flagged
+  // coverage gap (notifyTenantAdminsOfCoverageGap()), but one WITH an acting
+  // user set must not be misreported as an unassigned/blocked stage.
   async resolveUnassignedBlockingTransitions(
     stage: PrismaWorkflowStage,
     instance: PrismaWorkflowInstance,
@@ -982,7 +1184,7 @@ export class WorkflowService {
     });
     if (outgoingTransitions.length === 0) return [];
 
-    const pool = await this.resolveAssigneeRaw(stage, instance, organizationId);
+    const pool = await this.resolveAssignee(stage, instance, organizationId);
     const blocking: PrismaWorkflowTransition[] = [];
 
     for (const transition of outgoingTransitions) {
@@ -1128,10 +1330,18 @@ export class WorkflowService {
   // Sizes the eligible-approver pool for PARALLEL/SEQUENTIAL threshold checks
   // — deliberately separate from resolveAssignee() above, which needs the
   // full instance (for SELF) and isn't meaningful for pool-sizing purposes.
+  // ACC-40 Section 2.6.1 — routes its result through applyOutOfOfficeRouting()
+  // before returning, same as resolveAssignee() does for resolveAssigneeRaw().
+  // Fixes both of this method's callers at once: submitApproval()'s
+  // eligibility gate and isApprovalThresholdMet()'s pool-sizing calculation —
+  // an out-of-office approver's acting user must be able to both cast the
+  // vote and count toward the threshold in their place.
   private async resolveApproverPool(
     stage: PrismaWorkflowStage,
     organizationId: string,
+    instance: PrismaWorkflowInstance,
   ): Promise<string[]> {
+    let rawPool: string[];
     if (stage.assigneeStrategy === 'COMMITTEE') {
       if (!stage.committeeId) return [];
       // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) — same
@@ -1149,17 +1359,35 @@ export class WorkflowService {
             : {}),
         },
       });
-      return members.map((m) => m.userId);
-    }
-    if (stage.assigneeStrategy === 'ROLE' && stage.assigneeRoleId) {
+      rawPool = members.map((m) => m.userId);
+    } else if (stage.assigneeStrategy === 'ROLE' && stage.assigneeRoleId) {
       const userRoles = await this.prisma.userRole.findMany({
         where: { roleId: stage.assigneeRoleId, user: { organizationId, status: 'ACTIVE' } },
       });
-      return userRoles.map((ur) => ur.userId);
+      rawPool = userRoles.map((ur) => ur.userId);
+    } else if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
+      // ACC-40 Section 2.6.2 — required prerequisite this investigation
+      // surfaced: without this case, submitApproval()'s eligibility gate
+      // and isApprovalThresholdMet()'s pool-sizing calculation are both
+      // complete no-ops for ORG_UNIT_HEAD-strategy stages, even after
+      // resolveAssigneeRaw() gains its own case, since this is a
+      // structurally separate method that case doesn't touch. Same
+      // instance.orgUnitId defensive read as resolveAssigneeRaw()'s case —
+      // degrades to an empty pool for every real caller today, for the
+      // identical reason (no workflow-driven object has this field yet).
+      // TODO(ACC-40): same note as resolveAssigneeRaw()'s ORG_UNIT_HEAD
+      // case — replace this cast with a properly-typed field reference
+      // once a real orgUnitId column exists, don't just trust the cast.
+      const orgUnitId = (instance as { orgUnitId?: string | null }).orgUnitId;
+      rawPool = orgUnitId
+        ? await this.organizationService.resolveActingHeadForOrgUnit(orgUnitId, organizationId)
+        : [];
+    } else {
+      // Any other assigneeStrategy on a multi-approver stage is a seed/config
+      // error — there is no well-defined pool to size a threshold against.
+      return [];
     }
-    // Any other assigneeStrategy on a multi-approver stage is a seed/config
-    // error — there is no well-defined pool to size a threshold against.
-    return [];
+    return this.applyOutOfOfficeRouting(rawPool, organizationId);
   }
 
   private async computeSlaDueAt(
@@ -1207,6 +1435,8 @@ export class WorkflowService {
       comment: approval.comment,
       decidedAt: approval.decidedAt,
       createdAt: approval.createdAt,
+      delegationReason: approval.delegationReason,
+      delegationContextId: approval.delegationContextId,
     };
   }
 }

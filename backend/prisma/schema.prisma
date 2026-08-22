@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +137,15 @@ enum WorkflowInstanceStageOutcome {
   SKIPPED
 }
 
+// ACC-40 Section 2.6.3 — one unified shape for both delegation reasons this
+// document defines, not two separate ad hoc fields. Neither
+// WorkflowInstanceStage/WorkflowApproval/TaskAssignee previously recorded
+// *why* an actor was eligible, only *who* acted.
+enum DelegationReason {
+  ACTING_HEAD // eligibility came from OrgUnit.actingHeadUserId, not real position-holding
+  OUT_OF_OFFICE_COVERAGE // eligibility came from substituting in for an absent user via User.actingUserId
+}
+
 enum TaskStatus {
   PENDING
   IN_PROGRESS
@@ -252,48 +261,48 @@ model Organization {
   maxStorageGb     Int              @default(10)
 
   // Encrypted provider config (JSON blob, encrypted at rest)
-  authConfig       String?
-  storageConfig    String?
-  aiConfig         String?
-  emailConfig      String?          // ADD (ACC-13) — same encrypted-JSON pattern, UI only for now (see CLAUDE.md's Email Provider section)
+  authConfig    String?
+  storageConfig String?
+  aiConfig      String?
+  emailConfig   String? // ADD (ACC-13) — same encrypted-JSON pattern, UI only for now (see CLAUDE.md's Email Provider section)
 
   // Bootstrap lifecycle — prevents double-provisioning of system defaults
-  isBootstrapped   Boolean          @default(false)
-  bootstrappedAt   DateTime?
+  isBootstrapped Boolean   @default(false)
+  bootstrappedAt DateTime?
 
   // Tenant-configurable settings blob — not encrypted (no secrets), e.g.
   // { taskSla: { CRITICAL, HIGH, MEDIUM, LOW } } (hours). Falls back to
   // code-level platform defaults when absent.
-  settings         Json?
+  settings Json?
 
   // ACC-13 additions
-  logo             String?          // S3 key — resolved to a signed URL at read time, never a direct path
-  isPlatformOrg    Boolean          @default(false)   // exactly one Organization row is ever true — see PlatformGuard
-  planId           String?          // FK to the new DB-driven Plan catalog — nullable: pre-ACC-13 tenants have none yet
-  planCatalog      Plan?            @relation(fields: [planId], references: [id])
+  logo          String? // S3 key — resolved to a signed URL at read time, never a direct path
+  isPlatformOrg Boolean @default(false) // exactly one Organization row is ever true — see PlatformGuard
+  planId        String? // FK to the new DB-driven Plan catalog — nullable: pre-ACC-13 tenants have none yet
+  planCatalog   Plan?   @relation(fields: [planId], references: [id])
 
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users            User[]
-  roles            Role[]
-  lookupValues      LookupValue[]
-  lookupCategories  LookupCategory[]
-  workflowTemplates WorkflowTemplate[]
+  users              User[]
+  roles              Role[]
+  lookupValues       LookupValue[]
+  lookupCategories   LookupCategory[]
+  workflowTemplates  WorkflowTemplate[]
   workflowInstances  WorkflowInstance[]
   workflowActionLogs WorkflowActionLog[]
-  workingCalendar  WorkingCalendar?
-  orgUnits         OrgUnit[]
-  orgPositions     OrgPosition[]
-  tasks            Task[]
-  taskEvidence     TaskEvidence[]
-  notifications    Notification[]
-  committees       Committee[]
-  meetings         Meeting[]
-  auditLogs        AuditLog[]
-  aiInteractionLogs AiInteractionLog[]
-  loginAttempts    LoginAttempt[]
-  refreshTokens    RefreshToken[]
+  workingCalendar    WorkingCalendar?
+  orgUnits           OrgUnit[]
+  orgPositions       OrgPosition[]
+  tasks              Task[]
+  taskEvidence       TaskEvidence[]
+  notifications      Notification[]
+  committees         Committee[]
+  meetings           Meeting[]
+  auditLogs          AuditLog[]
+  aiInteractionLogs  AiInteractionLog[]
+  loginAttempts      LoginAttempt[]
+  refreshTokens      RefreshToken[]
 
   @@index([slug])
   @@index([status])
@@ -314,18 +323,18 @@ model Plan {
   nameAr            String
   monthlyPrice      Decimal  @db.Decimal(10, 2)
   annualPrice       Decimal  @db.Decimal(10, 2)
-  maxFullUsers      Int?                            // null = unlimited (Enterprise)
-  maxStaff          Int?                            // null = unlimited
+  maxFullUsers      Int? // null = unlimited (Enterprise)
+  maxStaff          Int? // null = unlimited
   maxStorageGb      Int
   aiCreditsPerMonth Int
   isActive          Boolean  @default(true)
-  isPublic          Boolean  @default(true)          // false = custom/negotiated, hidden from self-service pricing
+  isPublic          Boolean  @default(true) // false = custom/negotiated, hidden from self-service pricing
   sortOrder         Int      @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  planModules       PlanModule[]
-  organizations     Organization[]
+  planModules   PlanModule[]
+  organizations Organization[]
 
   @@index([isActive])
   @@index([isPublic])
@@ -334,26 +343,26 @@ model Plan {
 model PlanModule {
   id          String           @id @default(cuid())
   planId      String
-  moduleKey   String                                 // free text by convention (e.g. "documents", "audit") — never a Prisma enum
+  moduleKey   String // free text by convention (e.g. "documents", "audit") — never a Prisma enum
   accessLevel PlanModuleAccess @default(NONE)
 
-  plan        Plan             @relation(fields: [planId], references: [id])
+  plan Plan @relation(fields: [planId], references: [id])
 
   @@unique([planId, moduleKey])
   @@index([planId])
 }
 
 model AiCreditPack {
-  id        String   @id @default(cuid())
-  name      String
-  nameAr    String?
-  credits   Int
-  price     Decimal  @db.Decimal(10, 2)
-  isActive  Boolean  @default(true)
-  availableTo String[]                                // Plan.id[] this pack can be purchased under; empty = all plans
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  nameAr      String?
+  credits     Int
+  price       Decimal  @db.Decimal(10, 2)
+  isActive    Boolean  @default(true)
+  availableTo String[] // Plan.id[] this pack can be purchased under; empty = all plans
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([isActive])
 }
@@ -372,15 +381,15 @@ model AiFeatureCost {
 // ---------------------------------------------------------------------------
 
 model User {
-  id               String       @id @default(cuid())
+  id               String     @id @default(cuid())
   organizationId   String
   email            String
   name             String
   avatarUrl        String?
-  status           UserStatus   @default(INVITED)
-  tokenVersion     Int          @default(0)
+  status           UserStatus @default(INVITED)
+  tokenVersion     Int        @default(0)
   language         String?
-  hijriDisplay     Boolean      @default(false)
+  hijriDisplay     Boolean    @default(false)
   tosAcceptedAt    DateTime?
   tosVersion       String?
   lastLoginAt      DateTime?
@@ -391,36 +400,50 @@ model User {
   outOfOfficeTo    DateTime?
   actingUserId     String?
 
+  // ACC-40 Section 2.7 — a recovered, seven-month-old dropped business rule
+  // (step-02-organization-structure.md Section 11). Pure scoping, confers
+  // no authority — fully independent of positionId/primaryOrgUnitId-driven
+  // Head derivation (2.1/2.2/2.5) and of OrgUnit.actingHeadUserId (2.6),
+  // by deliberate design, not oversight. See 2.7's own "THE KEY QUESTION".
+  actingOrgUnitId    String?
+  actingOrgUnitUntil DateTime?
+
   // Step 9 additions — see backend/Plans/step-09-user-management.md Section 2
-  authUserId          String?   @unique   // link to Better Auth's own identity row (AuthUser)
+  authUserId          String?   @unique // link to Better Auth's own identity row (AuthUser)
   managerId           String?
   invitationToken     String?   @unique
   invitationExpiresAt DateTime?
 
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  organization     Organization @relation(fields: [organizationId], references: [id])
-  userRoles        UserRole[]
-  workflowApprovals WorkflowApproval[]
-  tasksCreated     Task[]       @relation("TaskCreator")
-  taskAssignments  TaskAssignee[] @relation("TaskAssigneeUser")
-  taskAssignmentsMade TaskAssignee[] @relation("TaskAssigneeAssignedBy")
-  taskEvidenceUploaded TaskEvidence[]
-  notifications    Notification[]
-  committeeMembers CommitteeMember[]
+  organization              Organization               @relation(fields: [organizationId], references: [id])
+  userRoles                 UserRole[]
+  workflowApprovals         WorkflowApproval[]
+  tasksCreated              Task[]                     @relation("TaskCreator")
+  taskAssignments           TaskAssignee[]             @relation("TaskAssigneeUser")
+  taskAssignmentsMade       TaskAssignee[]             @relation("TaskAssigneeAssignedBy")
+  taskEvidenceUploaded      TaskEvidence[]
+  notifications             Notification[]
+  committeeMembers          CommitteeMember[]
   committeeMembershipEvents CommitteeMembershipEvent[]
-  meetings         Meeting[]    @relation("MeetingOrganizer")
-  auditLogs        AuditLog[]
-  aiInteractionLogs AiInteractionLog[]
-  position         OrgPosition? @relation(fields: [positionId], references: [id])
-  primaryOrgUnit   OrgUnit?     @relation(fields: [primaryOrgUnitId], references: [id])
-  actingUser       User?        @relation("UserActingUser", fields: [actingUserId], references: [id])
-  actingForUsers   User[]       @relation("UserActingUser")
-  authUser         AuthUser?    @relation(fields: [authUserId], references: [id])
-  manager          User?        @relation("UserManager", fields: [managerId], references: [id])
-  directReports    User[]       @relation("UserManager")
-  refreshTokens    RefreshToken[]
+  meetings                  Meeting[]                  @relation("MeetingOrganizer")
+  auditLogs                 AuditLog[]
+  aiInteractionLogs         AiInteractionLog[]
+  position                  OrgPosition?               @relation(fields: [positionId], references: [id])
+  primaryOrgUnit            OrgUnit?                   @relation(fields: [primaryOrgUnitId], references: [id])
+  actingOrgUnit             OrgUnit?                   @relation("UserActingOrgUnit", fields: [actingOrgUnitId], references: [id])
+  actingUser                User?                      @relation("UserActingUser", fields: [actingUserId], references: [id])
+  actingForUsers            User[]                     @relation("UserActingUser")
+  authUser                  AuthUser?                  @relation(fields: [authUserId], references: [id])
+  manager                   User?                      @relation("UserManager", fields: [managerId], references: [id])
+  directReports             User[]                     @relation("UserManager")
+  refreshTokens             RefreshToken[]
+  // ACC-40 Section 2.3 — back-relations for OrgUnit.pendingHeadUserId/
+  // actingHeadUserId and OrgUnitHeadEvent.userId.
+  pendingHeadForOrgUnits    OrgUnit[]                  @relation("OrgUnitPendingHead")
+  actingHeadForOrgUnits     OrgUnit[]                  @relation("OrgUnitActingHead")
+  orgUnitHeadEvents         OrgUnitHeadEvent[]         @relation("OrgUnitHeadEventUser")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -429,6 +452,7 @@ model User {
   @@index([status])
   @@index([positionId])
   @@index([primaryOrgUnitId])
+  @@index([actingOrgUnitId])
   @@index([managerId])
   @@index([invitationToken])
 }
@@ -438,21 +462,22 @@ model User {
 // ---------------------------------------------------------------------------
 
 model Role {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
   key            String?
   nameEn         String
   nameAr         String
   description    String?
-  isSystem       Boolean      @default(false)
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  isSystem       Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  userRoles      UserRole[]
-  rolePermissions RolePermission[]
+  organization        Organization     @relation(fields: [organizationId], references: [id])
+  userRoles           UserRole[]
+  rolePermissions     RolePermission[]
   reportingCommittees Committee[] // back-relation for Committee.reportingToRoleId (ACC-22)
+  mappedPositions     OrgPosition[] // back-relation for OrgPosition.roleId (ACC-40 Section 2.9)
 
   @@unique([organizationId, key])
   @@unique([organizationId, nameEn])
@@ -460,7 +485,7 @@ model Role {
 }
 
 model Permission {
-  id          String           @id @default(cuid())
+  id          String  @id @default(cuid())
   module      String
   action      String
   description String?
@@ -477,8 +502,27 @@ model UserRole {
   roleId    String
   createdAt DateTime @default(now())
 
-  user   User   @relation(fields: [userId], references: [id])
-  role   Role   @relation(fields: [roleId], references: [id])
+  // ACC-40 Section 2.6.5 — set only when this row was created by
+  // head-authority coverage (real position-holding or Acting Head), not an
+  // ordinary role assignment. Holds the OrgUnit id the authority is scoped
+  // to — the revoke key for every unit-scoped grant (real position-holding
+  // in a unit, and Acting Head, which is always unit-scoped by
+  // construction). Null for org-wide (primaryOrgUnitId: null) real
+  // position-holding grants, where grantedViaHeadPositionId below is the
+  // revoke key instead — never both null, never both set, on a marked row.
+  grantedViaHeadPositionOrgUnitId String?
+
+  // ACC-40 Section 2.6.5 (revised) — the OrgPosition id this grant derives
+  // from. Always populated on a marked row for audit value, but only ever
+  // used as the REVOKE key when grantedViaHeadPositionOrgUnitId above is
+  // null (the org-wide case) — a positionId is never null for a real
+  // grant, so it's unambiguous where the OrgUnit id can't safely be used
+  // (Prisma's equals:null would also match ordinary, independently-held
+  // rows in a deleteMany where-clause).
+  grantedViaHeadPositionId String?
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
 
   @@unique([userId, roleId])
   @@index([userId])
@@ -486,12 +530,12 @@ model UserRole {
 }
 
 model RolePermission {
-  id           String     @id @default(cuid())
+  id           String @id @default(cuid())
   roleId       String
   permissionId String
 
-  role         Role       @relation(fields: [roleId], references: [id])
-  permission   Permission @relation(fields: [permissionId], references: [id])
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
 
   @@unique([roleId, permissionId])
   @@index([roleId])
@@ -502,45 +546,45 @@ model RolePermission {
 // ---------------------------------------------------------------------------
 
 model LookupCategory {
-  id              String         @id @default(cuid())
+  id              String   @id @default(cuid())
   organizationId  String?
   key             String
   labelEn         String
   labelAr         String
-  isSystem        Boolean        @default(false)
-  isExtensible    Boolean        @default(true)
+  isSystem        Boolean  @default(false)
+  isExtensible    Boolean  @default(true)
   attributeSchema Json?
-  isActive        Boolean        @default(true)
-  sortOrder       Int            @default(0)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  organization    Organization?  @relation(fields: [organizationId], references: [id])
-  values          LookupValue[]
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  values       LookupValue[]
 
   @@unique([key, organizationId])
   @@index([organizationId])
 }
 
 model LookupValue {
-  id              String         @id @default(cuid())
+  id              String      @id @default(cuid())
   organizationId  String?
   categoryId      String
   key             String
   labelEn         String
   labelAr         String
-  layer           LookupLayer    @default(SYSTEM)
+  layer           LookupLayer @default(SYSTEM)
   attributes      Json?
-  isActive        Boolean        @default(true)
-  isHidden        Boolean        @default(false)
+  isActive        Boolean     @default(true)
+  isHidden        Boolean     @default(false)
   labelOverrideEn String?
   labelOverrideAr String?
-  sortOrder       Int            @default(0)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  sortOrder       Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
-  organization    Organization?  @relation(fields: [organizationId], references: [id])
-  category        LookupCategory @relation(fields: [categoryId], references: [id])
+  organization Organization?  @relation(fields: [organizationId], references: [id])
+  category     LookupCategory @relation(fields: [categoryId], references: [id])
 
   @@unique([categoryId, key, organizationId])
   @@index([organizationId])
@@ -553,29 +597,29 @@ model LookupValue {
 // ---------------------------------------------------------------------------
 
 model WorkingCalendar {
-  id               String         @id @default(cuid())
-  organizationId   String         @unique
-  timezone         String         @default("Asia/Riyadh")
-  workingDays      Int[]
-  workingHoursStart String        @default("08:00")
-  workingHoursEnd   String        @default("16:00")
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id                String   @id @default(cuid())
+  organizationId    String   @unique
+  timezone          String   @default("Asia/Riyadh")
+  workingDays       Int[]
+  workingHoursStart String   @default("08:00")
+  workingHoursEnd   String   @default("16:00")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  organization     Organization   @relation(fields: [organizationId], references: [id])
-  publicHolidays   PublicHoliday[]
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  publicHolidays PublicHoliday[]
 }
 
 model PublicHoliday {
-  id                String          @id @default(cuid())
+  id                String   @id @default(cuid())
   workingCalendarId String
   nameEn            String
   nameAr            String?
   date              DateTime
-  isRecurring       Boolean         @default(false)
-  createdAt         DateTime        @default(now())
+  isRecurring       Boolean  @default(false)
+  createdAt         DateTime @default(now())
 
-  workingCalendar   WorkingCalendar @relation(fields: [workingCalendarId], references: [id])
+  workingCalendar WorkingCalendar @relation(fields: [workingCalendarId], references: [id])
 
   @@index([workingCalendarId])
   @@index([date])
@@ -586,7 +630,7 @@ model PublicHoliday {
 // ---------------------------------------------------------------------------
 
 model OrgUnit {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String
   parentId       String?
   nameEn         String
@@ -594,41 +638,111 @@ model OrgUnit {
   code           String
   type           String?
   description    String?
-  isActive       Boolean      @default(true)
-  isCodeLocked   Boolean      @default(false)
-  sortOrder      Int          @default(0)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  isActive       Boolean  @default(true)
+  isCodeLocked   Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  parent         OrgUnit?     @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
-  children       OrgUnit[]    @relation("OrgUnitHierarchy")
-  positions      OrgPosition[]
-  users          User[]
+  // ACC-40 Section 2.3 — cache fields for the currently-open handover (if
+  // any). NOT the source of truth (the actual state is two real
+  // User.positionId assignments) — a cheap read for "is a handover in
+  // progress here" without re-deriving it from a position count each time.
+  pendingHeadUserId                 String?
+  headHandoverEffectiveDate         DateTime?
+  // ACC-40 Section 2.5 — cache of a position-holding query.
+  isHeadVacant                      Boolean   @default(false)
+  headVacantSince                   DateTime?
+  // ACC-40 Section 2.5.1 — isHeadVacant alone cannot serve as the
+  // sweepOrgUnitVacancies() wasFullyExhausted/isNowFullyExhausted
+  // comparison target (it captures only this unit's own vacancy, not
+  // whether ancestor escalation currently covers it) — mirrors
+  // WorkflowInstanceStage.isUnassigned's exact role, one level deeper.
+  // headFullyUnresolvedLastRemindedAt: set on every notification (first +
+  // every 2-day reminder), cleared entirely on recovery, never left stale.
+  isHeadFullyUnresolved             Boolean   @default(false)
+  headFullyUnresolvedLastRemindedAt DateTime?
+  // ACC-40 Section 2.6 — independent of position-holding entirely.
+  actingHeadUserId                  String?
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  parent       OrgUnit?           @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
+  children     OrgUnit[]          @relation("OrgUnitHierarchy")
+  users        User[]
+  actingUsers  User[]             @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
+  pendingHead  User?              @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
+  actingHead   User?              @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
+  headEvents   OrgUnitHeadEvent[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([parentId])
+  @@index([pendingHeadUserId])
+  @@index([actingHeadUserId])
 }
 
-model OrgPosition {
-  id             String       @id @default(cuid())
-  organizationId String
-  orgUnitId      String?
-  nameEn         String
-  nameAr         String?
-  grade          Int
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+// ACC-40 Section 2.3 — deliberately modeled after CommitteeMembershipEvent's
+// exact shape: action enum, effectiveDate distinct from createdAt,
+// reason/approvedBy both nullable. Same precedent, same reasoning: an
+// append-only ledger answering "who held this authority, when, and why."
+model OrgUnitHeadEvent {
+  id             String            @id @default(cuid())
+  organizationId String // denormalized from OrgUnit.organizationId, set once at creation
+  orgUnitId      String
+  userId         String // the person the event is about
+  positionId     String? // the specific isUnitHeadPosition position involved; null only for ACTING_* events
+  action         OrgUnitHeadAction
+  effectiveDate  DateTime
+  reason         String?
+  approvedBy     String? // userId — nullable, not every event needs approval
+  createdAt      DateTime          @default(now())
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  orgUnit        OrgUnit?     @relation(fields: [orgUnitId], references: [id])
-  users          User[]
+  orgUnit  OrgUnit      @relation(fields: [orgUnitId], references: [id])
+  user     User         @relation("OrgUnitHeadEventUser", fields: [userId], references: [id])
+  position OrgPosition? @relation(fields: [positionId], references: [id])
 
   @@index([organizationId])
   @@index([orgUnitId])
-  @@unique([organizationId, orgUnitId, nameEn])
+  @@index([userId])
+}
+
+enum OrgUnitHeadAction {
+  ASSIGNED // direct appointment to a head-conferring position, no handover — e.g. filling a vacancy
+  HANDOVER_DECLARED // incoming successor granted the same position, outgoing holder unchanged
+  HANDOVER_COMPLETED // outgoing holder's position cleared, incoming successor now sole holder
+  HANDOVER_CANCELLED // incoming successor's position grant reverted, outgoing holder unaffected
+  VACATED // head-conferring position cleared with no successor declared
+  ACTING_ASSIGNED // 2.6 — does not touch position-holding
+  ACTING_ENDED // 2.6 — does not touch position-holding
+}
+
+// ACC-40 — org-wide catalog (no longer per-OrgUnit): a position title like
+// "Department Manager" is one defined catalog entry, not a per-unit clone.
+// Whether it may be held simultaneously by more than one person, and
+// whether holding it confers Head authority, are both now expressed by
+// isSingleAssignee/isUnitHeadPosition rather than by orgUnitId scoping —
+// see backend/Plans/step-40-org-position-unit-head.md Section 2.1.
+model OrgPosition {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  nameEn             String
+  nameAr             String?
+  grade              Int
+  isSingleAssignee   Boolean  @default(false)
+  isUnitHeadPosition Boolean  @default(false)
+  roleId             String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  role         Role?              @relation(fields: [roleId], references: [id])
+  users        User[]
+  headEvents   OrgUnitHeadEvent[] // back-relation for OrgUnitHeadEvent.positionId (ACC-40 Section 2.3)
+
+  @@unique([organizationId, nameEn])
+  @@index([organizationId])
+  @@index([roleId])
 }
 
 // ---------------------------------------------------------------------------
@@ -636,26 +750,26 @@ model OrgPosition {
 // ---------------------------------------------------------------------------
 
 model WorkflowTemplate {
-  id             String              @id @default(cuid())
+  id             String             @id @default(cuid())
   organizationId String
   nameEn         String
   nameAr         String
   objectType     WorkflowObjectType
-  isDefault      Boolean             @default(false)
-  isActive       Boolean             @default(true)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  isDefault      Boolean            @default(false)
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
-  organization   Organization        @relation(fields: [organizationId], references: [id])
-  stages         WorkflowStage[]
-  instances      WorkflowInstance[]
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  stages       WorkflowStage[]
+  instances    WorkflowInstance[]
 
   @@index([organizationId])
   @@index([objectType])
 }
 
 model WorkflowStage {
-  id                 String                     @id @default(cuid())
+  id                 String  @id @default(cuid())
   workflowTemplateId String
   nameEn             String
   nameAr             String
@@ -663,16 +777,16 @@ model WorkflowStage {
   order              Int
   slaWorkingHours    Int?
   requiredPermission String?
-  isInitial          Boolean                    @default(false)
-  isFinal            Boolean                    @default(false)
+  isInitial          Boolean @default(false)
+  isFinal            Boolean @default(false)
 
-  approvalMode       WorkflowApprovalMode       @default(SINGLE)
-  parallelThreshold  WorkflowParallelThreshold?
-  committeeId        String?
+  approvalMode      WorkflowApprovalMode       @default(SINGLE)
+  parallelThreshold WorkflowParallelThreshold?
+  committeeId       String?
 
-  assigneeStrategy   WorkflowAssigneeStrategy   @default(ROLE)
-  assigneeUserId     String?
-  assigneeRoleId     String?
+  assigneeStrategy             WorkflowAssigneeStrategy @default(ROLE)
+  assigneeUserId               String?
+  assigneeRoleId               String?
   // Only meaningful when assigneeStrategy = COMMITTEE (ACC-28). Narrows
   // resolveAssigneeRaw()'s COMMITTEE case to members whose roleValueId
   // matches this lookup value (e.g. "chairman"). Null = every active
@@ -680,53 +794,53 @@ model WorkflowStage {
   // every existing seeded stage.
   assigneeCommitteeRoleValueId String?
 
-  escalationConfig   Json?
+  escalationConfig Json?
 
-  workflowTemplate   WorkflowTemplate           @relation(fields: [workflowTemplateId], references: [id])
-  transitionsFrom    WorkflowTransition[]       @relation("TransitionFrom")
-  transitionsTo      WorkflowTransition[]       @relation("TransitionTo")
-  instanceStages     WorkflowInstanceStage[]
+  workflowTemplate WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
+  transitionsFrom  WorkflowTransition[]    @relation("TransitionFrom")
+  transitionsTo    WorkflowTransition[]    @relation("TransitionTo")
+  instanceStages   WorkflowInstanceStage[]
 
   @@index([workflowTemplateId])
 }
 
 model WorkflowTransition {
-  id                 String                     @id @default(cuid())
+  id                 String                   @id @default(cuid())
   fromStageId        String
   toStageId          String
   labelEn            String
   labelAr            String
   requiredPermission String?
-  triggerCondition   WorkflowTriggerCondition   @default(ROLE_BASED)
+  triggerCondition   WorkflowTriggerCondition @default(ROLE_BASED)
   triggerUserId      String?
   triggerRoleId      String?
   validatorConfig    Json?
-  isApprovalPath     Boolean                    @default(false)
+  isApprovalPath     Boolean                  @default(false)
 
-  fromStage          WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
-  toStage            WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])
-  actions            WorkflowTransitionAction[]
+  fromStage WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
+  toStage   WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])
+  actions   WorkflowTransitionAction[]
 
   @@index([fromStageId])
   @@index([toStageId])
 }
 
 model WorkflowInstance {
-  id                 String                  @id @default(cuid())
+  id                 String             @id @default(cuid())
   organizationId     String
   workflowTemplateId String
   objectType         WorkflowObjectType
   objectId           String
-  status             WorkflowStatus          @default(PENDING)
+  status             WorkflowStatus     @default(PENDING)
   currentStageId     String?
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
-  organization       Organization            @relation(fields: [organizationId], references: [id])
-  workflowTemplate   WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
-  stages             WorkflowInstanceStage[]
-  tasks              Task[]
-  actionLogs         WorkflowActionLog[]
+  organization     Organization            @relation(fields: [organizationId], references: [id])
+  workflowTemplate WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
+  stages           WorkflowInstanceStage[]
+  tasks            Task[]
+  actionLogs       WorkflowActionLog[]
 
   @@index([organizationId])
   @@index([workflowTemplateId])
@@ -735,23 +849,29 @@ model WorkflowInstance {
 }
 
 model WorkflowInstanceStage {
-  id                 String                        @id @default(cuid())
-  workflowInstanceId String
-  stageId            String
-  enteredAt          DateTime                      @default(now())
-  exitedAt           DateTime?
-  slaDueAt           DateTime?
-  slaBreached        Boolean                       @default(false)
+  id                   String                       @id @default(cuid())
+  workflowInstanceId   String
+  stageId              String
+  enteredAt            DateTime                     @default(now())
+  exitedAt             DateTime?
+  slaDueAt             DateTime?
+  slaBreached          Boolean                      @default(false)
   escalatedRuleIndexes Int[]                        @default([])
-  outcome            WorkflowInstanceStageOutcome  @default(PENDING)
-  actorId            String?
-  comment            String?
-  isUnassigned       Boolean                       @default(false)
-  unassignedAt       DateTime?
+  outcome              WorkflowInstanceStageOutcome @default(PENDING)
+  actorId              String?
+  comment              String?
+  isUnassigned         Boolean                      @default(false)
+  unassignedAt         DateTime?
+  // ACC-40 Section 2.6.3 — why actorId was eligible, not just who acted.
+  // Null for the ordinary case (actorId is a direct, undelegated
+  // participant). delegationContextId: the OrgUnit id for ACTING_HEAD, the
+  // covered-for user's id for OUT_OF_OFFICE_COVERAGE.
+  delegationReason     DelegationReason?
+  delegationContextId  String?
 
-  workflowInstance   WorkflowInstance              @relation(fields: [workflowInstanceId], references: [id])
-  stage              WorkflowStage                 @relation(fields: [stageId], references: [id])
-  approvals          WorkflowApproval[]
+  workflowInstance WorkflowInstance   @relation(fields: [workflowInstanceId], references: [id])
+  stage            WorkflowStage      @relation(fields: [stageId], references: [id])
+  approvals        WorkflowApproval[]
 
   @@index([workflowInstanceId])
   @@index([stageId])
@@ -759,16 +879,19 @@ model WorkflowInstanceStage {
 }
 
 model WorkflowApproval {
-  id                      String                    @id @default(cuid())
+  id                      String                   @id @default(cuid())
   workflowInstanceStageId String
   approverId              String
-  decision                WorkflowApprovalDecision  @default(PENDING)
+  decision                WorkflowApprovalDecision @default(PENDING)
   comment                 String?
   decidedAt               DateTime?
-  createdAt               DateTime                  @default(now())
+  createdAt               DateTime                 @default(now())
+  // ACC-40 Section 2.6.3 — same shape as WorkflowInstanceStage's own pair.
+  delegationReason        DelegationReason?
+  delegationContextId     String?
 
-  workflowInstanceStage   WorkflowInstanceStage     @relation(fields: [workflowInstanceStageId], references: [id])
-  approver                User                      @relation(fields: [approverId], references: [id])
+  workflowInstanceStage WorkflowInstanceStage @relation(fields: [workflowInstanceStageId], references: [id])
+  approver              User                  @relation(fields: [approverId], references: [id])
 
   @@unique([workflowInstanceStageId, approverId])
   @@index([workflowInstanceStageId])
@@ -776,34 +899,34 @@ model WorkflowApproval {
 }
 
 model WorkflowTransitionAction {
-  id                   String              @id @default(cuid())
+  id                   String             @id @default(cuid())
   workflowTransitionId String
   actionType           WorkflowActionType
-  order                Int                 @default(0)
-  isEnabled            Boolean             @default(true)
+  order                Int                @default(0)
+  isEnabled            Boolean            @default(true)
   configJson           Json?
 
-  workflowTransition   WorkflowTransition  @relation(fields: [workflowTransitionId], references: [id])
-  actionLogs           WorkflowActionLog[]
+  workflowTransition WorkflowTransition  @relation(fields: [workflowTransitionId], references: [id])
+  actionLogs         WorkflowActionLog[]
 
   @@index([workflowTransitionId])
 }
 
 model WorkflowActionLog {
-  id                         String                    @id @default(cuid())
+  id                         String                  @id @default(cuid())
   organizationId             String
   workflowTransitionActionId String
   workflowInstanceId         String
   actionType                 WorkflowActionType
-  status                     WorkflowActionLogStatus   @default(SUCCESS)
-  attemptCount               Int                       @default(1)
+  status                     WorkflowActionLogStatus @default(SUCCESS)
+  attemptCount               Int                     @default(1)
   responseSummary            String?
   errorMessage               String?
-  executedAt                 DateTime                  @default(now())
+  executedAt                 DateTime                @default(now())
 
-  organization               Organization              @relation(fields: [organizationId], references: [id])
-  workflowTransitionAction   WorkflowTransitionAction  @relation(fields: [workflowTransitionActionId], references: [id])
-  workflowInstance           WorkflowInstance          @relation(fields: [workflowInstanceId], references: [id])
+  organization             Organization             @relation(fields: [organizationId], references: [id])
+  workflowTransitionAction WorkflowTransitionAction @relation(fields: [workflowTransitionActionId], references: [id])
+  workflowInstance         WorkflowInstance         @relation(fields: [workflowInstanceId], references: [id])
 
   @@index([organizationId])
   @@index([workflowTransitionActionId])
@@ -817,7 +940,7 @@ model WorkflowActionLog {
 // ---------------------------------------------------------------------------
 
 model Task {
-  id                   String                @id @default(cuid())
+  id                   String         @id @default(cuid())
   organizationId       String
   title                String
   description          String?
@@ -827,24 +950,24 @@ model Task {
   workflowInstanceId   String?
   meetingId            String?
   createdById          String
-  status               TaskStatus            @default(PENDING)
-  priority             TaskPriority          @default(MEDIUM)
+  status               TaskStatus     @default(PENDING)
+  priority             TaskPriority   @default(MEDIUM)
   dueAt                DateTime?
-  dueDateOverridden    Boolean               @default(false)
+  dueDateOverridden    Boolean        @default(false)
   slaBreachedAt        DateTime?
   completedAt          DateTime?
   completedById        String?
   escalationUserId     String?
   escalationAfterHours Int?
   escalatedAt          DateTime?
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
-  organization         Organization          @relation(fields: [organizationId], references: [id])
-  createdBy            User                  @relation("TaskCreator", fields: [createdById], references: [id])
-  workflowInstance      WorkflowInstance?     @relation(fields: [workflowInstanceId], references: [id])
-  assignees            TaskAssignee[]
-  evidence             TaskEvidence[]
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  createdBy        User              @relation("TaskCreator", fields: [createdById], references: [id])
+  workflowInstance WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
+  assignees        TaskAssignee[]
+  evidence         TaskEvidence[]
 
   @@index([organizationId])
   @@index([status])
@@ -854,16 +977,23 @@ model Task {
 }
 
 model TaskAssignee {
-  id           String    @id @default(cuid())
-  taskId       String
-  userId       String
-  assignedAt   DateTime  @default(now())
-  assignedById String
-  removedAt    DateTime?
+  id                  String            @id @default(cuid())
+  taskId              String
+  userId              String
+  assignedAt          DateTime          @default(now())
+  assignedById        String
+  removedAt           DateTime?
+  // ACC-40 Section 2.6.3 — stamped once, at the moment this row is created,
+  // by fireTransitionActions()'s CREATE_TASK handling — the exact moment
+  // resolveAssignee() has full, fresh knowledge of why each resolved user
+  // was included. Task.complete() needs no new fields — it reads this row
+  // directly (userId === completedById), never re-derives.
+  delegationReason    DelegationReason?
+  delegationContextId String?
 
-  task         Task      @relation(fields: [taskId], references: [id])
-  user         User      @relation("TaskAssigneeUser", fields: [userId], references: [id])
-  assignedBy   User      @relation("TaskAssigneeAssignedBy", fields: [assignedById], references: [id])
+  task       Task @relation(fields: [taskId], references: [id])
+  user       User @relation("TaskAssigneeUser", fields: [userId], references: [id])
+  assignedBy User @relation("TaskAssigneeAssignedBy", fields: [assignedById], references: [id])
 
   @@unique([taskId, userId])
   @@index([taskId])
@@ -871,7 +1001,7 @@ model TaskAssignee {
 }
 
 model TaskEvidence {
-  id             String              @id @default(cuid())
+  id             String               @id @default(cuid())
   organizationId String
   taskId         String
   type           TaskEvidenceType
@@ -886,11 +1016,11 @@ model TaskEvidence {
   refId          String?
   refDisplay     String?
   uploadedById   String
-  uploadedAt     DateTime            @default(now())
+  uploadedAt     DateTime             @default(now())
 
-  organization   Organization        @relation(fields: [organizationId], references: [id])
-  task           Task                @relation(fields: [taskId], references: [id])
-  uploadedBy     User                @relation(fields: [uploadedById], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  task         Task         @relation(fields: [taskId], references: [id])
+  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
 
   @@index([organizationId])
   @@index([taskId])
@@ -916,8 +1046,8 @@ model Notification {
   readAt         DateTime?
   createdAt      DateTime            @default(now())
 
-  organization   Organization        @relation(fields: [organizationId], references: [id])
-  user           User                @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
 
   @@index([organizationId])
   @@index([userId])
@@ -931,30 +1061,30 @@ model Notification {
 // ---------------------------------------------------------------------------
 
 model Committee {
-  id                         String    @id @default(cuid())
+  id                         String                    @id @default(cuid())
   organizationId             String
   nameEn                     String
   nameAr                     String
   typeValueId                String
   purpose                    String?
-  quorumCount                Int       @default(0)
+  quorumCount                Int                       @default(0)
   meetingFrequency           CommitteeMeetingFrequency @default(AS_NEEDED)
   parentCommitteeId          String?
-  termsOfReferenceDocumentId String?   // nullable, unpopulated until Document Management ships (ACC-22 Pending Discussion #1)
-  reportingToCommitteeId     String?   // mutually exclusive with reportingToRoleId, enforced at service layer
-  reportingToRoleId          String?   // mutually exclusive with reportingToCommitteeId, enforced at service layer
+  termsOfReferenceDocumentId String? // nullable, unpopulated until Document Management ships (ACC-22 Pending Discussion #1)
+  reportingToCommitteeId     String? // mutually exclusive with reportingToRoleId, enforced at service layer
+  reportingToRoleId          String? // mutually exclusive with reportingToCommitteeId, enforced at service layer
   formedAt                   DateTime?
   dissolvedAt                DateTime?
-  isActive                   Boolean   @default(true) // soft-deactivate flag, independent of workflow lifecycle stage
-  createdAt                  DateTime  @default(now())
-  updatedAt                  DateTime  @updatedAt
+  isActive                   Boolean                   @default(true) // soft-deactivate flag, independent of workflow lifecycle stage
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
 
-  organization         Organization      @relation(fields: [organizationId], references: [id])
-  parentCommittee      Committee?        @relation("SubCommittees", fields: [parentCommitteeId], references: [id])
-  subCommittees        Committee[]       @relation("SubCommittees")
-  reportingToCommittee Committee?        @relation("CommitteeReportingTo", fields: [reportingToCommitteeId], references: [id])
-  reportsToMe          Committee[]       @relation("CommitteeReportingTo")
-  reportingToRole      Role?             @relation(fields: [reportingToRoleId], references: [id])
+  organization         Organization               @relation(fields: [organizationId], references: [id])
+  parentCommittee      Committee?                 @relation("SubCommittees", fields: [parentCommitteeId], references: [id])
+  subCommittees        Committee[]                @relation("SubCommittees")
+  reportingToCommittee Committee?                 @relation("CommitteeReportingTo", fields: [reportingToCommitteeId], references: [id])
+  reportsToMe          Committee[]                @relation("CommitteeReportingTo")
+  reportingToRole      Role?                      @relation(fields: [reportingToRoleId], references: [id])
   members              CommitteeMember[]
   membershipEvents     CommitteeMembershipEvent[]
   meetings             Meeting[]
@@ -976,7 +1106,7 @@ enum CommitteeMeetingFrequency {
 
 model CommitteeMember {
   id             String    @id @default(cuid())
-  organizationId String    // denormalized from Committee.organizationId, set once at creation, never updated
+  organizationId String // denormalized from Committee.organizationId, set once at creation, never updated
   committeeId    String
   userId         String
   roleValueId    String
@@ -984,8 +1114,8 @@ model CommitteeMember {
   leftAt         DateTime?
   isActive       Boolean   @default(true) // derived STRICTLY from leftAt at the service layer (isActive = leftAt === null)
 
-  committee      Committee @relation(fields: [committeeId], references: [id])
-  user           User      @relation(fields: [userId], references: [id])
+  committee Committee @relation(fields: [committeeId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
 
   @@unique([committeeId, userId])
   @@index([organizationId])
@@ -994,19 +1124,19 @@ model CommitteeMember {
 }
 
 model CommitteeMembershipEvent {
-  id             String    @id @default(cuid())
-  organizationId String    // denormalized from Committee.organizationId, set once at creation
+  id             String                    @id @default(cuid())
+  organizationId String // denormalized from Committee.organizationId, set once at creation
   committeeId    String
   userId         String
   roleValueId    String
   action         CommitteeMembershipAction
   effectiveDate  DateTime
   reason         String?
-  approvedBy     String?   // userId — nullable, not every event needs approval
-  createdAt      DateTime  @default(now())
+  approvedBy     String? // userId — nullable, not every event needs approval
+  createdAt      DateTime                  @default(now())
 
-  committee      Committee @relation(fields: [committeeId], references: [id])
-  user           User      @relation(fields: [userId], references: [id])
+  committee Committee @relation(fields: [committeeId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
 
   @@index([organizationId])
   @@index([committeeId])
@@ -1024,25 +1154,25 @@ enum CommitteeMembershipAction {
 // ---------------------------------------------------------------------------
 
 model Meeting {
-  id             String          @id @default(cuid())
-  organizationId String
-  committeeId    String?
-  organizerId    String
-  title          String
-  typeValueId    String
-  scheduledAt    DateTime
-  location       String?
-  meetingUrl     String?
-  status         String          @default("DRAFT")
-  minutesText    String?
+  id                String    @id @default(cuid())
+  organizationId    String
+  committeeId       String?
+  organizerId       String
+  title             String
+  typeValueId       String
+  scheduledAt       DateTime
+  location          String?
+  meetingUrl        String?
+  status            String    @default("DRAFT")
+  minutesText       String?
   minutesApprovedAt DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  organization   Organization    @relation(fields: [organizationId], references: [id])
-  committee      Committee?      @relation(fields: [committeeId], references: [id])
-  organizer      User            @relation("MeetingOrganizer", fields: [organizerId], references: [id])
-  agendaItems    AgendaItem[]
+  organization Organization @relation(fields: [organizationId], references: [id])
+  committee    Committee?   @relation(fields: [committeeId], references: [id])
+  organizer    User         @relation("MeetingOrganizer", fields: [organizerId], references: [id])
+  agendaItems  AgendaItem[]
 
   @@index([organizationId])
   @@index([committeeId])
@@ -1050,7 +1180,7 @@ model Meeting {
 }
 
 model AgendaItem {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   meetingId   String
   title       String
   description String?
@@ -1058,7 +1188,7 @@ model AgendaItem {
   duration    Int?
   presenter   String?
 
-  meeting     Meeting  @relation(fields: [meetingId], references: [id])
+  meeting Meeting @relation(fields: [meetingId], references: [id])
 
   @@index([meetingId])
 }
@@ -1081,8 +1211,8 @@ model AuditLog {
   userAgent      String?
   createdAt      DateTime    @default(now())
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  actor          User?        @relation(fields: [actorId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  actor        User?        @relation(fields: [actorId], references: [id])
 
   @@index([organizationId])
   @@index([actorId])
@@ -1108,8 +1238,8 @@ model AiInteractionLog {
   success         Boolean
   createdAt       DateTime @default(now())
 
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  actor           User?        @relation(fields: [actorId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+  actor        User?        @relation(fields: [actorId], references: [id])
 
   @@index([organizationId])
   @@index([actorId])
@@ -1133,42 +1263,42 @@ model AiInteractionLog {
 // ---------------------------------------------------------------------------
 
 model AuthUser {
-  id               String    @id @default(cuid())
-  name             String              // required by Better Auth's base schema — mirrors User.name at creation, unused by AccreditMe otherwise
-  email            String    @unique   // "{organizationId}:{email}" — see above
-  emailVerified    Boolean   @default(false)
-  image            String?             // unused — part of Better Auth's base user schema
-  twoFactorEnabled Boolean   @default(false)   // added by the twoFactor plugin's schema merge
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id               String   @id @default(cuid())
+  name             String // required by Better Auth's base schema — mirrors User.name at creation, unused by AccreditMe otherwise
+  email            String   @unique // "{organizationId}:{email}" — see above
+  emailVerified    Boolean  @default(false)
+  image            String? // unused — part of Better Auth's base user schema
+  twoFactorEnabled Boolean  @default(false) // added by the twoFactor plugin's schema merge
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  appUser          User?
-  sessions         AuthSession[]
-  accounts         AuthAccount[]
-  twoFactor        AuthTwoFactor?
+  appUser   User?
+  sessions  AuthSession[]
+  accounts  AuthAccount[]
+  twoFactor AuthTwoFactor?
 }
 
 model AuthSession {
-  id         String   @id @default(cuid())
-  expiresAt  DateTime
-  token      String   @unique
-  ipAddress  String?
-  userAgent  String?
-  userId     String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user       AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
 
 model AuthAccount {
   id                    String    @id @default(cuid())
-  accountId             String              // == AuthUser.email for the credential provider
-  providerId            String              // "credential" — only provider enabled this step
+  accountId             String // == AuthUser.email for the credential provider
+  providerId            String // "credential" — only provider enabled this step
   userId                String
-  password              String?             // Argon2id hash for the credential provider (Commit 2)
+  password              String? // Argon2id hash for the credential provider (Commit 2)
   // OAuth-only fields below — unused while only the credential provider is
   // enabled, but part of Better Auth's base "account" schema unconditionally;
   // omitting them would break the adapter's generic read/write path.
@@ -1181,7 +1311,7 @@ model AuthAccount {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  user                  AuthUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -1198,15 +1328,15 @@ model AuthVerification {
 }
 
 model AuthTwoFactor {
-  id                      String   @id @default(cuid())
-  userId                  String   @unique
-  secret                  String             // encrypted at rest by the twoFactor plugin itself (XChaCha20-Poly1305, keyed from Better Auth's own `secret` config) — no custom encryption needed, see Section 12 Discussion 6
-  backupCodes             String             // also encrypted by the plugin (storeBackupCodes: "encrypted")
-  verified                Boolean  @default(true)
-  failedVerificationCount Int      @default(0)
+  id                      String    @id @default(cuid())
+  userId                  String    @unique
+  secret                  String // encrypted at rest by the twoFactor plugin itself (XChaCha20-Poly1305, keyed from Better Auth's own `secret` config) — no custom encryption needed, see Section 12 Discussion 6
+  backupCodes             String // also encrypted by the plugin (storeBackupCodes: "encrypted")
+  verified                Boolean   @default(true)
+  failedVerificationCount Int       @default(0)
   lockedUntil             DateTime?
 
-  user                    AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // ---------------------------------------------------------------------------
@@ -1218,14 +1348,14 @@ model AuthTwoFactor {
 model LoginAttempt {
   id             String   @id @default(cuid())
   organizationId String
-  email          String             // as typed — may not resolve to a real user
+  email          String // as typed — may not resolve to a real user
   success        Boolean
-  failureReason  String?            // "invalid_password" | "locked" | "no_such_user" | "mfa_failed"
+  failureReason  String? // "invalid_password" | "locked" | "no_such_user" | "mfa_failed"
   ipAddress      String?
   userAgent      String?
   createdAt      DateTime @default(now())
 
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId, email, createdAt])
   @@index([ipAddress])
@@ -1242,15 +1372,15 @@ model RefreshToken {
   id             String    @id @default(cuid())
   userId         String
   organizationId String
-  tokenHash      String    @unique   // SHA-256 hash of the raw token — never store it plain
+  tokenHash      String    @unique // SHA-256 hash of the raw token — never store it plain
   expiresAt      DateTime
   createdAt      DateTime  @default(now())
   revokedAt      DateTime?
-  deviceInfo     String?             // browser/device string, for security audit
+  deviceInfo     String? // browser/device string, for security audit
   ipAddress      String?
 
-  user           User         @relation(fields: [userId], references: [id])
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([userId])
   @@index([organizationId])

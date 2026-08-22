@@ -25,6 +25,9 @@ export interface IWorkflowInstanceStage {
   outcome: string; // WorkflowInstanceStageOutcome
   actorId: string | null;
   comment: string | null;
+  // ACC-40 Section 2.6.3
+  delegationReason: string | null; // DelegationReason
+  delegationContextId: string | null;
 }
 
 export interface IWorkflowApproval {
@@ -35,4 +38,7 @@ export interface IWorkflowApproval {
   comment: string | null;
   decidedAt: Date | null;
   createdAt: Date;
+  // ACC-40 Section 2.6.3
+  delegationReason: string | null; // DelegationReason
+  delegationContextId: string | null;
 }

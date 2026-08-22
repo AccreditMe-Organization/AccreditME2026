@@ -33,18 +33,24 @@ const PARALLEL_THRESHOLDS = [
   { label: 'ANY', value: 'ANY' },
 ];
 
-// ORG_UNIT_HEAD deliberately excluded — resolveAssigneeRaw() (backend)
-// degrades gracefully to an empty assignee pool for it rather than
-// crashing, but it has no real resolution logic yet (needs an orgUnitId
-// from a calling functional module that doesn't exist yet). Not offered
-// here until it's genuinely implemented, per SYSTEM-REFERENCE.md Section
-// 2.5 / Section 11 Tier 1.
+// ACC-40 Section 6/Phase 7 — ORG_UNIT_HEAD re-added now that both
+// resolveAssigneeRaw() and resolveApproverPool() (backend) have real
+// resolution logic wired to OrganizationService.resolveActingHeadForOrgUnit().
+// Still "wired, not yet reachable in practice" for every real tenant today:
+// no workflow-driven object (Committee, Meeting) has its own orgUnitId
+// field yet, so this strategy will resolve to an empty pool until a real
+// functional module supplies one — a tenant admin who selects it now
+// configures a stage that behaves exactly like today's stub, not a crash
+// or invalid state. Confirmed acceptable per the plan's own Non-Goals
+// restriction, same "wired then dormant" state ASSIGNEE_POOL itself sat in
+// for months before ACC-28 gave it real behavior.
 const ASSIGNEE_STRATEGIES = [
   { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
   { label: 'ROLE', value: 'ROLE' },
   { label: 'SELF', value: 'SELF' },
   { label: 'COMMITTEE', value: 'COMMITTEE' },
   { label: 'ROUND_ROBIN', value: 'ROUND_ROBIN' },
+  { label: 'ORG_UNIT_HEAD', value: 'ORG_UNIT_HEAD' },
 ];
 
 @Component({

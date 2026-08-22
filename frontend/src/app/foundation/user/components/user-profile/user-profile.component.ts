@@ -22,7 +22,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
 // profile page." This is that page.
 //
-// Admin-only fields (positionId, primaryOrgUnitId, managerId) are shown to
+// Admin-only fields (positionId, primaryOrgUnitId, managerId,
+// actingOrgUnitId, actingOrgUnitUntil — ACC-40 Section 2.7) are shown to
 // every viewer, not conditionally hidden — UserService.updateProfile()
 // already silently strips them server-side when a non-admin edits their own
 // profile (Section 12, Discussion 3), so submitting them as a self-editing
@@ -119,6 +120,28 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                 </div>
               </ng-template>
             </p-select>
+          </div>
+
+          <div class="flex gap-4">
+            <div class="flex flex-col gap-1 flex-1">
+              <label for="actingOrgUnitId" class="text-sm font-medium">
+                {{ 'user.actingOrgUnit' | translate }}
+              </label>
+              <p-select
+                inputId="actingOrgUnitId"
+                formControlName="actingOrgUnitId"
+                [options]="orgUnits()"
+                optionLabel="nameEn"
+                optionValue="id"
+                [showClear]="true"
+              />
+            </div>
+            <div class="flex flex-col gap-1 flex-1">
+              <label for="actingOrgUnitUntil" class="text-sm font-medium">
+                {{ 'user.actingOrgUnitUntil' | translate }}
+              </label>
+              <p-datepicker inputId="actingOrgUnitUntil" formControlName="actingOrgUnitUntil" />
+            </div>
           </div>
 
           <div class="flex justify-end">
@@ -321,6 +344,8 @@ export class UserProfileComponent implements OnInit {
     positionId: [null as string | null],
     primaryOrgUnitId: [null as string | null],
     managerId: [null as string | null],
+    actingOrgUnitId: [null as string | null],
+    actingOrgUnitUntil: [null as Date | null],
   });
 
   readonly oooForm = this.fb.group({
@@ -358,6 +383,8 @@ export class UserProfileComponent implements OnInit {
           positionId: u.positionId,
           primaryOrgUnitId: u.primaryOrgUnitId,
           managerId: u.managerId,
+          actingOrgUnitId: u.actingOrgUnitId,
+          actingOrgUnitUntil: u.actingOrgUnitUntil ? new Date(u.actingOrgUnitUntil) : null,
         });
         this.oooForm.patchValue({
           outOfOfficeFrom: u.outOfOfficeFrom ? new Date(u.outOfOfficeFrom) : null,
@@ -385,6 +412,8 @@ export class UserProfileComponent implements OnInit {
         positionId: value.positionId ?? undefined,
         primaryOrgUnitId: value.primaryOrgUnitId ?? undefined,
         managerId: value.managerId ?? undefined,
+        actingOrgUnitId: value.actingOrgUnitId ?? undefined,
+        actingOrgUnitUntil: value.actingOrgUnitUntil ? value.actingOrgUnitUntil.toISOString() : undefined,
       })
       .subscribe({
         next: (u) => {

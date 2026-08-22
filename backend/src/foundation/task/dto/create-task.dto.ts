@@ -1,3 +1,4 @@
+import { Type } from 'class-transformer';
 import {
   IsArray,
   IsIn,
@@ -8,7 +9,28 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+
+const DELEGATION_REASONS = ['ACTING_HEAD', 'OUT_OF_OFFICE_COVERAGE'] as const;
+
+// ACC-40 Section 2.6.3 — per-assignee delegation stamp, populated ONLY by
+// the workflow engine's own internal call (WorkflowService.executeCreateTask()),
+// never by the public controller/manual (tasks:create) path — a manually
+// created task's assignees are directly chosen by a human, no delegation
+// reasoning applies.
+export class TaskAssigneeDelegationDto {
+  @IsString()
+  @IsNotEmpty()
+  userId!: string;
+
+  @IsIn(DELEGATION_REASONS)
+  delegationReason!: (typeof DELEGATION_REASONS)[number];
+
+  @IsString()
+  @IsNotEmpty()
+  delegationContextId!: string;
+}
 
 const TASK_SOURCE_TYPES = [
   'MEETING',
@@ -66,6 +88,16 @@ export class CreateTaskDto {
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
   assigneeUserIds!: string[];
+
+  // ACC-40 Section 2.6.3 — optional, workflow-engine-only. Not every
+  // assigneeUserIds entry needs an entry here — only those resolved via
+  // delegation (ACTING_HEAD or OUT_OF_OFFICE_COVERAGE); a direct,
+  // undelegated assignee simply has no matching row.
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => TaskAssigneeDelegationDto)
+  assigneeDelegations?: TaskAssigneeDelegationDto[];
 
   @IsIn(TASK_PRIORITIES)
   @IsOptional()

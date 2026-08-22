@@ -1101,6 +1101,13 @@ report-scheduler    Scheduled automated report generation and email delivery
 4. 14-day free trial — no credit card required
 5. Welcome email sequence (day 1, 7, 13)
 ```
+Org unit / position / head-role setup (per
+backend/Plans/step-40-org-position-unit-head.md) has no home in this
+wizard yet — flagged, not designed here. The original note for this
+(step-02-organization-structure.md's Section 11, "Users: one primary
+unit + optional acting-as unit with expiry date — note for Step 9")
+was silently dropped when Step 9 was built; this line exists so the
+ACC-40 concepts don't suffer the same fate.
 
 ### Subdomain Routing
 - Each tenant gets {slug}.accreditme.com
@@ -1684,14 +1691,29 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
    unfinished Committee Management correctness, not separate new
    scope, and testing Committee (step 3 below) before closing this
    known gap doesn't validate a complete flow.
-2. **THEN — a new "Resource-Scoped Business Authority" ticket**
+2. **DONE — delivered as ACC-40, out of this list's original order**
    (Role-vs-OrgPosition for business-logic assignment, not
-   permissions) — not yet created. Meeting Management's own "chair or
-   organizer" concept was one of the original examples motivating
-   this. First required investigation before any design: does
-   Committee (or any future business object) carry an `orgUnitId` to
-   scope resolution against — without this, org-unit-scoped
-   assignment isn't reachable yet.
+   permissions; Meeting Management's own "chair or organizer" concept
+   was one of the original examples motivating this — this entry
+   previously described it as "not yet created," which stopped being
+   true once ACC-40 shipped). ACC-40 fully redesigned `OrgPosition`
+   (org-wide catalog, `isUnitHeadPosition`/`isSingleAssignee`,
+   position-to-role mapping) and gave the long-dormant `ORG_UNIT_HEAD`
+   workflow assignee strategy its first real implementation — derived
+   Head, deliberate handover, vacancy escalation, Acting Head coverage,
+   the unified delegation-reason stamp. Full detail: SYSTEM-REFERENCE.md
+   Section 5. **This item's own "first required investigation" was run
+   for real, not hypothetically**: confirmed via Phase 7 — no workflow-
+   driven object (`Committee`, `Meeting`) carries an `orgUnitId` field
+   yet, so `ORG_UNIT_HEAD` ships "wired, not yet reachable in
+   practice" (SYSTEM-REFERENCE.md Section 5.8) — org-unit-scoped
+   assignment is still not reachable by any real tenant today, exactly
+   as this item anticipated, just now backed by a real mechanism
+   instead of an unresolved question. Whichever business object first
+   needs org-unit-scoped assignment (Meeting's "chair/organizer" is
+   still the leading candidate) is the one that finally adds
+   `orgUnitId` and makes this reachable — not a new design ticket, an
+   application of what ACC-40 already built.
 3. **THEN — Committee Management's remaining production-readiness
    work**:
    - A live Quality Manager persona test — every test so far used
@@ -1726,6 +1748,20 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
      rotation logic, `SEQUENTIAL` approval mode's missing ordering —
      some may be load-bearing for Meeting, most are not; check
      per-item against Meeting's actual design).
+     **ACC-40 cross-reference**: when a Task detail view (or any
+     approval-history surface) finally gets built, `TaskAssignee` and
+     `WorkflowApproval` already carry real, fully-populated
+     `delegationReason`/`delegationContextId` fields (`ACTING_HEAD` |
+     `OUT_OF_OFFICE_COVERAGE` | `null`) — stamped end-to-end on the
+     backend since ACC-40 Phase 9, just never surfaced. Wire it in
+     directly rather than re-deriving anything: resolve the qualifier
+     from those two fields and render it next to the actor's name,
+     e.g. "Approved by Sarah — Acting Head of Cardiology" or
+     "Completed by Sarah — covering for Ahmad" (exact format specified
+     in `backend/Plans/step-40-org-position-unit-head.md` Section
+     2.6.3). This note exists so this doesn't get silently dropped the
+     way the original org-unit/position note was lost for seven months
+     before this same ticket had to recover it.
    - Design Meeting's Vote Record fields from scratch — the current
      `Meeting`/`AgendaItem` schema is a dormant scaffold only, and
      even that scaffold is incomplete relative to Meeting's own

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -17,11 +17,8 @@ export class OrgPositionController {
 
   @Get()
   @Permissions(POSITIONS_PERMISSIONS.VIEW)
-  listPositions(
-    @CurrentTenant() tenantId: string,
-    @Query('orgUnitId') orgUnitId?: string,
-  ): Promise<IOrgPosition[]> {
-    return this.orgPositionService.listPositions(tenantId, orgUnitId);
+  listPositions(@CurrentTenant() tenantId: string): Promise<IOrgPosition[]> {
+    return this.orgPositionService.listPositions(tenantId);
   }
 
   @Get(':id')
@@ -59,5 +56,16 @@ export class OrgPositionController {
     @CurrentUser() userId: string,
   ): Promise<void> {
     return this.orgPositionService.deactivatePosition(id, tenantId, userId);
+  }
+
+  @Post(':id/activate')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(POSITIONS_PERMISSIONS.MANAGE)
+  reactivatePosition(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<void> {
+    return this.orgPositionService.reactivatePosition(id, tenantId, userId);
   }
 }

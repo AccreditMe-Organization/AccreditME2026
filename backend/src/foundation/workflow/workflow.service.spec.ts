@@ -9,6 +9,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
 import { RoleService } from '../roles/role.service';
+import { OrganizationService } from '../organization/organization.service';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,16 @@ const COMMITTEE_STAGE = {
   approvalMode: 'COMMITTEE',
   assigneeStrategy: 'COMMITTEE',
   committeeId: 'committee-a',
+};
+
+// ACC-40 Section 2.6.2
+const ORG_UNIT_HEAD_STAGE = {
+  ...SINGLE_STAGE,
+  id: 'stage-org-unit-head',
+  isInitial: false,
+  approvalMode: 'PARALLEL',
+  parallelThreshold: 'ALL',
+  assigneeStrategy: 'ORG_UNIT_HEAD',
 };
 
 const TARGET_STAGE = {
@@ -169,8 +180,9 @@ const mockPrisma = {
   userRole: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   committee: { findFirst: jest.fn() },
   committeeMember: { findMany: jest.fn() },
-  user: { findMany: jest.fn(), findFirst: jest.fn() },
+  user: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
   role: { findFirst: jest.fn() },
+  orgUnit: { findFirst: jest.fn() },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -178,6 +190,7 @@ const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
 const mockTaskService = { create: jest.fn() };
 const mockRoleService = { getUserPermissions: jest.fn() };
+const mockOrganizationService = { resolveActingHeadForOrgUnit: jest.fn() };
 const mockQueue = { add: jest.fn() };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -202,6 +215,20 @@ describe('WorkflowService', () => {
       ),
     );
     mockTaskService.create.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
+    // ACC-40 Section 2.6.3 — defaults for the two new delegation-stamp
+    // resolvers: no real holder found (user.count: 0) and no OrgUnit found
+    // (orgUnit.findFirst: null) — resolveActingHeadOrgUnitIdForUser() falls
+    // through to null for every pre-existing test. Tests exercising these
+    // resolvers directly override per-case.
+    mockPrisma.user.count.mockResolvedValue(0);
+    mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+    // ACC-40 Section 2.6.2 — default: submitApproval() now fetches the
+    // WorkflowInstance itself (for resolveApproverPool()'s ORG_UNIT_HEAD
+    // case), previously only maybeAdvanceAfterApproval() did via
+    // findUnique(). Tests needing a specific instance state (e.g.
+    // currentStageId) override this per-case via findFirst, not findUnique
+    // — findUnique is no longer called anywhere in this path.
+    mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -212,6 +239,7 @@ describe('WorkflowService', () => {
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TaskService, useValue: mockTaskService },
         { provide: RoleService, useValue: mockRoleService },
+        { provide: OrganizationService, useValue: mockOrganizationService },
         { provide: getQueueToken('workflow-actions'), useValue: mockQueue },
       ],
     }).compile();
@@ -825,10 +853,13 @@ describe('WorkflowService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
-    // ACC-28 — ASSIGNEE_POOL reuses resolveAssigneeRaw() rather than a new
-    // query pattern; SINGLE_STAGE's assigneeStrategy is SELF, so the pool
-    // resolves to whoever started the instance (the first WorkflowInstanceStage's
-    // actorId — BASE_INSTANCE_STAGE.actorId is ACTOR).
+    // ACC-28 — ASSIGNEE_POOL reuses resolveAssignee() (OOO-aware, fixed
+    // ACC-40 Section 2.6.1) rather than a new query pattern; SINGLE_STAGE's
+    // assigneeStrategy is SELF, so the raw pool resolves to whoever started
+    // the instance (the first WorkflowInstanceStage's actorId —
+    // BASE_INSTANCE_STAGE.actorId is ACTOR). Explicit non-OOO user.findMany
+    // stub below (rather than relying on beforeEach's global default) makes
+    // this test's dependency on OOO-substitution's own query visible.
     it('throws ForbiddenException for ASSIGNEE_POOL when the actor is not in the resolved pool', async () => {
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(
         makeTransition({ triggerCondition: 'ASSIGNEE_POOL' }),
@@ -840,6 +871,9 @@ describe('WorkflowService', () => {
         ...BASE_INSTANCE_STAGE,
         actorId: 'someone-else',
       });
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'someone-else', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       await expect(
         service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
@@ -855,6 +889,36 @@ describe('WorkflowService', () => {
       // fetch (wants an active, non-exited entry — BASE_INSTANCE_STAGE
       // already has exitedAt: null).
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE); // actorId: ACTOR
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: ACTOR, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+
+      await expect(
+        service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
+      ).resolves.not.toThrow();
+    });
+
+    // ACC-40 Section 2.6.1 — the live defect this phase fixes: before, this
+    // exact scenario incorrectly threw ForbiddenException, because
+    // triggerTransition() checked the raw (non-OOO-substituted) pool.
+    it('allows ASSIGNEE_POOL when the actor is only in the pool via out-of-office substitution', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ triggerCondition: 'ASSIGNEE_POOL' }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue({
+        ...BASE_INSTANCE_STAGE,
+        actorId: 'holder-1',
+      });
+      const now = new Date();
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        {
+          id: 'holder-1',
+          outOfOfficeFrom: new Date(now.getTime() - 86400000),
+          outOfOfficeTo: new Date(now.getTime() + 86400000),
+          actingUserId: ACTOR,
+        },
+      ]);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
 
       await expect(
@@ -1155,6 +1219,14 @@ describe('WorkflowService', () => {
       );
       mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'member-1' }, { userId: 'member-2' }]);
       mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+      // ACC-40 Section 2.6.1 — resolveApproverPool() now routes through
+      // applyOutOfOfficeRouting(); explicit non-OOO stub makes this test's
+      // dependency on that query visible rather than relying on beforeEach's
+      // global default.
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'member-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        { id: 'member-2', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
 
@@ -1191,6 +1263,9 @@ describe('WorkflowService', () => {
       // Pool of 1 (the chairman only) with 1 APPROVED vote — threshold ALL met.
       mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'chairman-user' }]);
       mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'chairman-user', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       await service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
 
@@ -1288,6 +1363,34 @@ describe('WorkflowService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    // ACC-40 Section 2.6.2 — regression test for a real behavioral
+    // tightening this refactor introduced (found on re-review, not caught
+    // up front). Before: submitApproval() never fetched WorkflowInstance
+    // itself — workflowApproval.upsert() ran unconditionally, and only
+    // maybeAdvanceAfterApproval()'s OWN later findUnique() could discover
+    // a missing instance, silently no-op-ing (`if (!instance) return;`)
+    // AFTER the approval had already been recorded. After: submitApproval()
+    // fetches the instance itself, up front, and throws before any write
+    // if it's missing — a genuinely stricter, not merely relocated, check.
+    // In real operation this is unreachable — WorkflowInstanceStage.workflowInstanceId
+    // carries a real Prisma @relation, which Postgres enforces as a FK
+    // constraint, so a stage can never reference a nonexistent instance
+    // under normal referential integrity. Kept deliberately (fail loudly
+    // before writing anything, rather than silently half-succeeding) —
+    // see step-40-org-position-unit-head.md's Phase 7 section for the full
+    // writeup of why this was kept rather than reverted to match the old
+    // silent-partial-success behavior.
+    it('throws NotFoundException and writes nothing when the stage references a WorkflowInstance that no longer resolves', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+    });
+
     it('never auto-advances on ABSTAINED', async () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'ABSTAINED' }));
@@ -1310,7 +1413,7 @@ describe('WorkflowService', () => {
           { 'stage-parallel': PARALLEL_STAGE, 'stage-target': TARGET_STAGE }[where.id] ?? null,
         ),
       );
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
@@ -1333,7 +1436,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }, { userId: 'user-2' }, { userId: ACTOR }]);
@@ -1351,7 +1454,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
@@ -1369,7 +1472,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'RETURNED' }));
       mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
-      mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
         makeInstance({ currentStageId: 'stage-parallel' }),
       );
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
@@ -1391,6 +1494,12 @@ describe('WorkflowService', () => {
         );
         mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
         mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'someone-else' }]);
+        // ACC-40 Section 2.6.1 — resolveApproverPool() now routes through
+        // applyOutOfOfficeRouting(); explicit non-OOO stub makes this test's
+        // dependency on that query visible.
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          { id: 'someone-else', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        ]);
 
         await expect(
           service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
@@ -1404,6 +1513,9 @@ describe('WorkflowService', () => {
         );
         mockPrisma.workflowStage.findFirst.mockResolvedValue(COMMITTEE_STAGE);
         mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'someone-else' }]);
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          { id: 'someone-else', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        ]);
 
         await expect(
           service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
@@ -1417,8 +1529,40 @@ describe('WorkflowService', () => {
         );
         mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
         mockPrisma.userRole.findMany.mockResolvedValue([{ userId: ACTOR }]);
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          { id: ACTOR, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        ]);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
-        mockPrisma.workflowInstance.findUnique.mockResolvedValue(
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+          makeInstance({ currentStageId: 'stage-parallel' }),
+        );
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
+
+        await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+      });
+
+      // ACC-40 Section 2.6.1 — the live defect this phase fixes: before,
+      // this exact scenario incorrectly threw ForbiddenException, because
+      // resolveApproverPool() checked the raw (non-OOO-substituted) pool.
+      it('allows an actor who is only in the resolved ROLE approver pool via out-of-office substitution', async () => {
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+          makeInstanceStage({ stageId: 'stage-parallel' }),
+        );
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(PARALLEL_STAGE);
+        mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
+        const now = new Date();
+        mockPrisma.user.findMany.mockResolvedValueOnce([
+          {
+            id: 'holder-1',
+            outOfOfficeFrom: new Date(now.getTime() - 86400000),
+            outOfOfficeTo: new Date(now.getTime() + 86400000),
+            actingUserId: ACTOR,
+          },
+        ]);
+        mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(
           makeInstance({ currentStageId: 'stage-parallel' }),
         );
         mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
@@ -1432,6 +1576,8 @@ describe('WorkflowService', () => {
         // SINGLE_STAGE's assigneeStrategy is SELF — resolveApproverPool()
         // returns [] for anything that isn't COMMITTEE or ROLE (its own
         // documented "seed/config error" fallback), same as before this fix.
+        // Pool stays empty before ever reaching applyOutOfOfficeRouting(),
+        // so no user.findMany stub is needed here.
         mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
         mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
         mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
@@ -1502,14 +1648,14 @@ describe('WorkflowService', () => {
     });
   });
 
-  // ── ACC-33 item 6 — ORG_UNIT_HEAD degrades gracefully ──────────────────────
+  // ── ACC-33 item 6 / ACC-40 Section 2.5 — ORG_UNIT_HEAD ──────────────────────
 
-  describe('resolveAssigneeRaw — ORG_UNIT_HEAD (ACC-33 item 6)', () => {
-    it('resolves to an empty pool instead of throwing, for a stage using the ORG_UNIT_HEAD strategy', async () => {
+  describe('resolveAssigneeRaw — ORG_UNIT_HEAD (ACC-33 item 6 / ACC-40 Section 2.5)', () => {
+    it('resolves to an empty pool instead of throwing, for a stage using the ORG_UNIT_HEAD strategy when the instance carries no orgUnitId (every real caller today)', async () => {
       const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
       mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
-      mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE); // no orgUnitId field
       mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
 
       // The regression this guards: before this fix, resolveAssigneeRaw()
@@ -1527,6 +1673,470 @@ describe('WorkflowService', () => {
       expect(mockNotificationService.create).not.toHaveBeenCalledWith(
         expect.objectContaining({ titleEn: 'New workflow assignment' }),
         ORG_A,
+      );
+      // Never even attempts the resolver when there's no orgUnitId to
+      // resolve against.
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
+    });
+
+    // ACC-40 Section 2.5 — real wiring proof, using a synthetic/test-only
+    // orgUnitId on the calling instance object, per the plan's own
+    // confirmed prerequisite gap: no real workflow-driven object
+    // (Committee, Meeting) carries this field yet, so no real end-to-end
+    // consumer exists to test against. This proves the CASE itself is
+    // correctly wired to OrganizationService.resolveActingHeadForOrgUnit(),
+    // ready for whichever module supplies a real orgUnitId next.
+    it('calls resolveActingHeadForOrgUnit() with the instance-supplied orgUnitId and returns its resolved pool', async () => {
+      const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
+      const instanceWithOrgUnit = { ...BASE_INSTANCE, orgUnitId: 'unit-synthetic-1' };
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
+      mockPrisma.workflowInstance.create.mockResolvedValue(instanceWithOrgUnit);
+      mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['head-user-1']);
+
+      await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
+
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-synthetic-1', ORG_A);
+      // The resolved pool reached resolveAndNotifyInitialAssignee() — proof
+      // the case's return value actually flows through, not just that the
+      // resolver was called.
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ titleEn: 'New workflow assignment' }),
+        ORG_A,
+      );
+    });
+
+    it('resolves to an empty pool when resolveActingHeadForOrgUnit() itself returns an empty pool (full chain exhausted) — no throw, matches every other empty-pool case', async () => {
+      const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
+      const instanceWithOrgUnit = { ...BASE_INSTANCE, orgUnitId: 'unit-synthetic-1' };
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
+      mockPrisma.workflowInstance.create.mockResolvedValue(instanceWithOrgUnit);
+      mockPrisma.workflowInstanceStage.create.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
+
+      await expect(
+        service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR),
+      ).resolves.toBeDefined();
+
+      expect(mockNotificationService.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ titleEn: 'New workflow assignment' }),
+        ORG_A,
+      );
+    });
+  });
+
+  // ── ACC-40 Section 2.6.2 — resolveApproverPool()'s ORG_UNIT_HEAD case ──────
+  //
+  // Required prerequisite the plan's own investigation surfaced: without
+  // this case, submitApproval()'s eligibility gate is a complete no-op for
+  // ORG_UNIT_HEAD-strategy stages even after resolveAssigneeRaw() gains its
+  // own case, since resolveApproverPool() is a structurally separate
+  // method. Exercised through submitApproval() (the real, public entry
+  // point), same pattern as the other 'authorization (ACC-33 item 7)'
+  // tests above — with a synthetic/test-only orgUnitId on the instance,
+  // per the same confirmed prerequisite gap as resolveAssigneeRaw()'s case.
+
+  describe('resolveApproverPool — ORG_UNIT_HEAD (ACC-40 Section 2.6.2)', () => {
+    it('throws ForbiddenException when actor is not in the resolved ORG_UNIT_HEAD approver pool', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-org-unit-head' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(ORG_UNIT_HEAD_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+        makeInstance({ orgUnitId: 'unit-synthetic-1' } as never),
+      );
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['head-user-1']);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'head-user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
+
+      await expect(
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-synthetic-1', ORG_A);
+      expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+    });
+
+    it('allows an actor who IS in the resolved ORG_UNIT_HEAD approver pool', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-org-unit-head' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(ORG_UNIT_HEAD_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(
+        makeInstance({ orgUnitId: 'unit-synthetic-1' } as never),
+      );
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([ACTOR]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: ACTOR, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
+      mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
+
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+    });
+
+    it('does not gate — degrades to an empty pool — when the instance carries no orgUnitId (every real caller today), same stub-safe behavior as before', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-org-unit-head' }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(ORG_UNIT_HEAD_STAGE);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE); // no orgUnitId field
+      mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+    });
+  });
+
+  // ── ACC-40 Section 2.6.3 — the two delegation-stamp resolvers ───────────────
+  //
+  // Isolated tests, exercising each resolver directly — same precedent as
+  // resolveActingHeadForOrgUnit()'s own Phase 6 commit 1 tests, before
+  // Phase 9 commit 3 wires either into a real write site.
+
+  describe('resolveActingHeadOrgUnitIdForUser (ACC-40 Section 2.6.3)', () => {
+    it("returns null when the actor is a REAL position-holder at the starting unit — not \"acting\"", async () => {
+      mockPrisma.user.count.mockResolvedValue(1);
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBeNull();
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled(); // never even checks actingHeadUserId
+    });
+
+    it('returns the starting unit id when the actor is its actingHeadUserId', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: ACTOR, parentId: 'parent-1' });
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBe('unit-1');
+    });
+
+    it('walks up to the parent unit when the starting unit has neither a real holder nor this actor as its Acting Head', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1'
+            ? { actingHeadUserId: 'someone-else', parentId: 'parent-1' }
+            : { actingHeadUserId: ACTOR, parentId: null },
+        ),
+      );
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBe('parent-1');
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns null when the full chain is exhausted with no match anywhere', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1'
+            ? { actingHeadUserId: null, parentId: 'parent-1' }
+            : { actingHeadUserId: null, parentId: null },
+        ),
+      );
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null immediately when the starting unit does not exist in this tenant', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      const result = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+
+      expect(result).toBeNull();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? { actingHeadUserId: ACTOR, parentId: null } : null),
+      );
+
+      const resultA = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_A);
+      const resultB = await service.resolveActingHeadOrgUnitIdForUser(ACTOR, 'unit-1', ORG_B);
+
+      expect(resultA).toBe('unit-1');
+      expect(resultB).toBeNull();
+    });
+  });
+
+  describe('resolveOutOfOfficeCoverageForUser (ACC-40 Section 2.6.3)', () => {
+    it('returns the covered-for user id when the actor is their actingUserId and coverage is currently active', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
+
+      const result = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['absent-user', 'other-user'], ORG_A);
+
+      expect(result).toBe('absent-user');
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['absent-user', 'other-user'] },
+          organizationId: ORG_A,
+          actingUserId: ACTOR,
+          outOfOfficeFrom: { lte: expect.any(Date) },
+          outOfOfficeTo: { gte: expect.any(Date) },
+        },
+      });
+    });
+
+    it('returns null when nothing in the raw pool is currently covered by this actor', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      const result = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['other-user'], ORG_A);
+
+      expect(result).toBeNull();
+    });
+
+    it('is a no-op — no query at all — when the raw pool is empty', async () => {
+      const result = await service.resolveOutOfOfficeCoverageForUser(ACTOR, [], ORG_A);
+
+      expect(result).toBeNull();
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? { id: 'absent-user-a' } : { id: 'absent-user-b' }),
+      );
+
+      const resultA = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['absent-user-a'], ORG_A);
+      const resultB = await service.resolveOutOfOfficeCoverageForUser(ACTOR, ['absent-user-b'], ORG_B);
+
+      expect(resultA).toBe('absent-user-a');
+      expect(resultB).toBe('absent-user-b');
+      expect(mockPrisma.user.findFirst).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }));
+      expect(mockPrisma.user.findFirst).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }));
+    });
+  });
+
+  // ── ACC-40 Section 2.6.3 — the delegation stamp, end to end ─────────────────
+  //
+  // Not just "each resolver returns the right value in isolation" (already
+  // covered above) — these exercise the REAL public entry points
+  // (triggerTransition()/submitApproval()) and assert the actual WRITTEN
+  // row carries the correct delegationReason/delegationContextId. Per the
+  // user's explicit ask: both paths this phase makes reachable
+  // (OUT_OF_OFFICE_COVERAGE, already-shipped and now genuinely wired;
+  // ACTING_HEAD, wired but still dormant in production the same way Phase
+  // 7's ORG_UNIT_HEAD case is — no real orgUnitId exists on any object yet
+  // — proven here with the same synthetic/test-only orgUnitId approach
+  // established in Phase 7), plus the stated ACTING_HEAD-before-
+  // OUT_OF_OFFICE_COVERAGE precedence for the rare case both could apply.
+
+  describe('delegation stamp — end to end (ACC-40 Section 2.6.3)', () => {
+    it('stamps OUT_OF_OFFICE_COVERAGE on the newly-created WorkflowInstanceStage when the triggering actor is covering for an absent raw-pool member', async () => {
+      const roleStage = { ...SINGLE_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(roleStage);
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'absent-user' }]);
+      // resolveOutOfOfficeCoverageForUser()'s own query — the real proof
+      // this is a genuine write, not a mocked-away resolver call.
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.workflowInstanceStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            delegationReason: 'OUT_OF_OFFICE_COVERAGE',
+            delegationContextId: 'absent-user',
+          }),
+        }),
+      );
+    });
+
+    it('stamps ACTING_HEAD on the newly-created WorkflowInstanceStage when the triggering actor is the Acting Head of the relevant unit (synthetic orgUnitId, per Phase 7\'s own established testing approach)', async () => {
+      const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
+      const instanceWithOrgUnit = { ...BASE_INSTANCE, orgUnitId: 'unit-synthetic-1' };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(instanceWithOrgUnit);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.user.count.mockResolvedValue(0); // not a real holder
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: ACTOR, parentId: null });
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.workflowInstanceStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            delegationReason: 'ACTING_HEAD',
+            delegationContextId: 'unit-synthetic-1',
+          }),
+        }),
+      );
+    });
+
+    // The precedence rule, proven structurally — not just that the output
+    // is ACTING_HEAD, but that the OOO check is never even attempted once
+    // ACTING_HEAD resolves, matching "checked first" literally.
+    it('stamps ACTING_HEAD, not OUT_OF_OFFICE_COVERAGE, when the actor could theoretically resolve via both — the stated precedence, proven structurally', async () => {
+      const orgUnitHeadStage = { ...SINGLE_STAGE, assigneeStrategy: 'ORG_UNIT_HEAD' };
+      const instanceWithOrgUnit = { ...BASE_INSTANCE, orgUnitId: 'unit-synthetic-1' };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(instanceWithOrgUnit);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(orgUnitHeadStage);
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+
+      // ACTING_HEAD resolves: ACTOR genuinely is the acting head of unit-synthetic-1.
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: ACTOR, parentId: null });
+
+      // OUT_OF_OFFICE_COVERAGE would ALSO resolve, if it were ever reached:
+      // the raw ORG_UNIT_HEAD pool includes 'absent-user', who ACTOR is
+      // separately covering for.
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['absent-user']);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' }); // would satisfy resolveOutOfOfficeCoverageForUser() if called
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.workflowInstanceStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            delegationReason: 'ACTING_HEAD',
+            delegationContextId: 'unit-synthetic-1',
+          }),
+        }),
+      );
+      // Structural proof of precedence: the raw-pool/OOO path (which needs
+      // resolveActingHeadForOrgUnit() for its own ORG_UNIT_HEAD raw-pool
+      // resolution, and user.findFirst for the OOO match itself) is never
+      // reached at all once ACTING_HEAD resolves first.
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('stamps OUT_OF_OFFICE_COVERAGE on the WorkflowApproval written by submitApproval() — the other real write site, not just performTransition()\'s stage-create', async () => {
+      const roleStage = { ...SINGLE_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(roleStage);
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'absent-user' }]);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
+      // submitApproval()'s own eligibility gate (resolveApproverPool(),
+      // OOO-substituted) needs 'absent-user' -> ACTOR substitution too, or
+      // ACTOR is never in the pool at all and the call is rejected before
+      // ever reaching the delegation stamp.
+      mockPrisma.user.findMany.mockResolvedValue([
+        {
+          id: 'absent-user',
+          outOfOfficeFrom: new Date(Date.now() - 86400000),
+          outOfOfficeTo: new Date(Date.now() + 86400000),
+          actingUserId: ACTOR,
+        },
+      ]);
+
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            delegationReason: 'OUT_OF_OFFICE_COVERAGE',
+            delegationContextId: 'absent-user',
+          }),
+          update: expect.objectContaining({
+            delegationReason: 'OUT_OF_OFFICE_COVERAGE',
+            delegationContextId: 'absent-user',
+          }),
+        }),
+      );
+    });
+
+    it('stamps OUT_OF_OFFICE_COVERAGE on triggerTransition()\'s own multi-approver vote-casting upsert — a distinct write site from both performTransition() and submitApproval()', async () => {
+      const roleParallelStage = { ...PARALLEL_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-parallel' }));
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ fromStageId: 'stage-parallel', toStageId: 'stage-target', isApprovalPath: true }),
+      );
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(roleParallelStage);
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(
+        makeInstanceStage({ stageId: 'stage-parallel' }),
+      );
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'absent-user' }]);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            delegationReason: 'OUT_OF_OFFICE_COVERAGE',
+            delegationContextId: 'absent-user',
+          }),
+        }),
+      );
+    });
+
+    // Commit 4's own scope: proves the chain all the way from a real
+    // CREATE_TASK transition action through executeCreateTask()'s
+    // per-assignee resolveDelegationStamp() call to the exact dto passed
+    // into TaskService.create() — task.service.spec.ts's own "delegation
+    // stamping" tests separately prove that dto correctly becomes a
+    // stamped TaskAssignee row, so together the two specs cover the full
+    // path with no unverified link in between.
+    it('produces a correctly-stamped assigneeDelegations entry via a real CREATE_TASK transition action, end to end from executeCreateTask() into TaskService.create()', async () => {
+      const roleTargetStage = { ...TARGET_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve(({ 'stage-single': SINGLE_STAGE, 'stage-target': roleTargetStage } as Record<string, unknown>)[where.id] ?? null),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'absent-user' }]);
+      // Raw ROLE pool resolves to 'absent-user' — applyOutOfOfficeRouting()
+      // substitutes it to ACTOR before executeCreateTask() ever sees the
+      // resolved assigneeIds, so the task's real assignee is ACTOR, not
+      // 'absent-user'.
+      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(
+          where.id.in.map((id) =>
+            id === 'absent-user'
+              ? {
+                  id,
+                  outOfOfficeFrom: new Date(Date.now() - 86400000),
+                  outOfOfficeTo: new Date(Date.now() + 86400000),
+                  actingUserId: ACTOR,
+                }
+              : { id, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+          ),
+        ),
+      );
+      // resolveOutOfOfficeCoverageForUser()'s own query, run against the
+      // RAW pool (['absent-user']) inside resolveDelegationStamp() —
+      // independent of the substitution above.
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assigneeUserIds: [ACTOR],
+          assigneeDelegations: [
+            { userId: ACTOR, delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: 'absent-user' },
+          ],
+        }),
+        ORG_A,
+        ACTOR,
       );
     });
   });
@@ -1567,6 +2177,12 @@ describe('WorkflowService', () => {
     it('flags the transition when the pool is non-empty but nobody in it holds requiredPermission', async () => {
       mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+      // ACC-40 Section 2.6.1 — this method now routes through
+      // resolveAssignee() (OOO-aware); explicit non-OOO stub makes this
+      // test's dependency on that query visible.
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
       mockRoleService.getUserPermissions.mockResolvedValue(['documents:view']); // lacks committees:approve
 
       const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
@@ -1583,6 +2199,10 @@ describe('WorkflowService', () => {
       const parallelRoleStage = { ...ROLE_STAGE, approvalMode: 'PARALLEL' };
       mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }, { userId: 'user-2' }]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+        { id: 'user-2', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
       mockRoleService.getUserPermissions.mockImplementation((userId: string) =>
         Promise.resolve(userId === 'user-2' ? ['committees:approve'] : ['documents:view']),
       );
@@ -1597,11 +2217,39 @@ describe('WorkflowService', () => {
         makeTransition({ ...ASSIGNEE_POOL_TRANSITION, requiredPermission: null }),
       ]);
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        { id: 'user-1', outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
+      ]);
 
       const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
 
       expect(result).toEqual([]);
       expect(mockRoleService.getUserPermissions).not.toHaveBeenCalled();
+    });
+
+    // ACC-40 Section 2.6.1 — the live defect this phase fixes: before, this
+    // exact scenario incorrectly flagged the stage as blocked, because the
+    // raw pool (the out-of-office holder, who lacks the permission) was
+    // checked instead of the substituted acting user (who holds it).
+    it('does not flag the transition when the raw holder is out-of-office but their acting user holds requiredPermission', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([ASSIGNEE_POOL_TRANSITION]);
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
+      const now = new Date();
+      mockPrisma.user.findMany.mockResolvedValueOnce([
+        {
+          id: 'holder-1',
+          outOfOfficeFrom: new Date(now.getTime() - 86400000),
+          outOfOfficeTo: new Date(now.getTime() + 86400000),
+          actingUserId: 'acting-1',
+        },
+      ]);
+      mockRoleService.getUserPermissions.mockImplementation((userId: string) =>
+        Promise.resolve(userId === 'acting-1' ? ['committees:approve'] : []),
+      );
+
+      const result = await service.resolveUnassignedBlockingTransitions(ROLE_STAGE as never, BASE_INSTANCE as never, ORG_A);
+
+      expect(result).toEqual([]);
     });
   });
 

@@ -11,10 +11,12 @@ const USER_ID = 'user-test';
 const MOCK_POSITION: IOrgPosition = {
   id: 'position-1',
   organizationId: TENANT_ID,
-  orgUnitId: null,
   nameEn: 'Director',
   nameAr: 'مدير عام',
   grade: 10,
+  isSingleAssignee: false,
+  isUnitHeadPosition: false,
+  roleId: null,
   isActive: true,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
@@ -28,6 +30,7 @@ describe('OrgPositionController', () => {
     createPosition: jest.Mock;
     updatePosition: jest.Mock;
     deactivatePosition: jest.Mock;
+    reactivatePosition: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -37,6 +40,7 @@ describe('OrgPositionController', () => {
       createPosition: jest.fn().mockResolvedValue(MOCK_POSITION),
       updatePosition: jest.fn().mockResolvedValue(MOCK_POSITION),
       deactivatePosition: jest.fn().mockResolvedValue(undefined),
+      reactivatePosition: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -55,9 +59,9 @@ describe('OrgPositionController', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('listPositions delegates to the service', async () => {
-    const result = await controller.listPositions(TENANT_ID, 'unit-1');
+    const result = await controller.listPositions(TENANT_ID);
 
-    expect(service.listPositions).toHaveBeenCalledWith(TENANT_ID, 'unit-1');
+    expect(service.listPositions).toHaveBeenCalledWith(TENANT_ID);
     expect(result).toEqual([MOCK_POSITION]);
   });
 
@@ -88,5 +92,11 @@ describe('OrgPositionController', () => {
     await controller.deactivatePosition('position-1', TENANT_ID, USER_ID);
 
     expect(service.deactivatePosition).toHaveBeenCalledWith('position-1', TENANT_ID, USER_ID);
+  });
+
+  it('reactivatePosition delegates to the service with tenant and actor', async () => {
+    await controller.reactivatePosition('position-1', TENANT_ID, USER_ID);
+
+    expect(service.reactivatePosition).toHaveBeenCalledWith('position-1', TENANT_ID, USER_ID);
   });
 });

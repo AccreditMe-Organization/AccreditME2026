@@ -128,8 +128,13 @@ export class PlatformTenantService {
 
     await this.tenantService.bootstrap(org.id, actorId);
 
+    // ACC-40 Section 2.4 — positionId/primaryOrgUnitId are now required on
+    // invite(); bootstrap() guarantees a default position and root org
+    // unit exist by this point.
+    const defaultAssignment = await this.tenantService.resolveDefaultTenantAdminAssignment(org.id);
+
     const invitedUser = await this.userService.invite(
-      { email: dto.adminEmail, name: dto.adminName },
+      { email: dto.adminEmail, name: dto.adminName, ...defaultAssignment },
       org.id,
       actorId,
     );

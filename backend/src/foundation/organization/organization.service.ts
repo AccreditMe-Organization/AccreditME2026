@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { NotificationService } from '../notification/notification.service';
 import { IOrgUnit } from './interfaces/org-unit.interface';
 import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
@@ -15,6 +16,7 @@ export class OrganizationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async getTree(organizationId: string): Promise<IOrgUnit[]> {
@@ -39,6 +41,175 @@ export class OrganizationService {
     });
     if (!unit) throw new NotFoundException('Org unit not found');
     return this.toInterface(unit);
+  }
+
+  // ACC-40 Section 2.5 — a genuine resolver, not isInSameOrParentOrgUnit()
+  // reused directly: that method is a validator (given one already-known
+  // target, walk upward checking for equality); this one enumerates
+  // candidates at a unit and only walks to the parent when that unit's own
+  // candidate set is empty. Returns a pool (string[]), matching
+  // resolveAssigneeRaw()'s established convention, not a single nullable
+  // id. Placement confirmed here, not WorkflowService: this is a pure
+  // org-structure query (User/OrgUnit only, never WorkflowStage/
+  // WorkflowInstance) with two independent callers — plain vacancy
+  // detection (this file) and, later, the workflow engine's ORG_UNIT_HEAD
+  // assignee resolution (Phase 7) — WorkflowService calls into this
+  // service for it, not the reverse.
+  //
+  // No special-case logic for an in-progress handover: during a declared
+  // handover, the holders query below naturally returns both the outgoing
+  // and incoming users, because both genuinely hold the position at that
+  // moment (2.3). The pool is sized 1 in the normal case, 2 during a
+  // handover, by construction.
+  //
+  // position.isActive: true is a deliberate extension beyond this
+  // document's own original illustrative code for this method (which
+  // showed no isActive filter at all) — added because it's the only way
+  // OrgPositionService.deactivatePosition()'s refreshOrgUnitHeadVacancy()
+  // wiring (2.5.1, Phase 6 commit 2) has any real effect: deactivating a
+  // position never clears existing holders' positionId, so without this
+  // filter a deactivated position's holder would still count as "the
+  // Head" forever. Flagged here explicitly as a reasoned deviation, not a
+  // silent one.
+  async resolveActingHeadForOrgUnit(
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<string[]> {
+    let current: string | null = orgUnitId;
+    while (current) {
+      const holders = await this.prisma.user.findMany({
+        where: {
+          organizationId,
+          primaryOrgUnitId: current,
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true, isActive: true },
+        },
+        select: { id: true },
+      });
+      if (holders.length > 0) {
+        return holders.map((h) => h.id);
+      }
+
+      const unit: { actingHeadUserId: string | null; parentId: string | null } | null =
+        await this.prisma.orgUnit.findFirst({
+          where: { id: current, organizationId },
+          select: { actingHeadUserId: true, parentId: true },
+        });
+      if (!unit) return [];
+      if (unit.actingHeadUserId) return [unit.actingHeadUserId];
+
+      current = unit.parentId;
+    }
+    return [];
+  }
+
+  // ACC-40 Section 2.5 — entry-time check, mirroring
+  // checkAndFlagUnassignedStage()'s exact role: whenever a change could
+  // plausibly affect a unit's derived head-holder count, re-run the
+  // holder query, update isHeadVacant/headVacantSince, and — only on a
+  // genuine false→true transition — run the escalation walk once. Only a
+  // fully-exhausted result notifies Tenant Admins at this point; a
+  // partial result (an ancestor covers it) is silent, matching "partial
+  // vacancy never blocks or notifies." No-op (not a throw) when the unit
+  // doesn't exist — this is a background-consistency helper, not a
+  // user-facing action; a caller passing a stale/already-deleted id
+  // should not fail the surrounding mutation it's attached to.
+  async refreshOrgUnitHeadVacancy(orgUnitId: string, organizationId: string): Promise<void> {
+    const orgUnit = await this.prisma.orgUnit.findFirst({ where: { id: orgUnitId, organizationId } });
+    if (!orgUnit) return;
+
+    const directHolderCount = await this.prisma.user.count({
+      where: {
+        organizationId,
+        primaryOrgUnitId: orgUnitId,
+        status: 'ACTIVE',
+        position: { isUnitHeadPosition: true, isActive: true },
+      },
+    });
+
+    const isNowVacant = directHolderCount === 0 && !orgUnit.actingHeadUserId;
+    if (isNowVacant === orgUnit.isHeadVacant) return; // no transition — the sweep handles ongoing drift, not this entry-time check
+
+    if (!isNowVacant) {
+      // Recovered — silent, same convention as sweepUnassignedStages()'s
+      // own clear-on-recovery case.
+      await this.prisma.orgUnit.update({
+        where: { id: orgUnitId },
+        data: {
+          isHeadVacant: false,
+          headVacantSince: null,
+          isHeadFullyUnresolved: false,
+          headFullyUnresolvedLastRemindedAt: null,
+        },
+      });
+      return;
+    }
+
+    // Newly vacant — run the escalation walk exactly once.
+    const pool = await this.resolveActingHeadForOrgUnit(orgUnitId, organizationId);
+    const isFullyUnresolved = pool.length === 0;
+    const now = new Date();
+
+    await this.prisma.orgUnit.update({
+      where: { id: orgUnitId },
+      data: {
+        isHeadVacant: true,
+        headVacantSince: now,
+        isHeadFullyUnresolved: isFullyUnresolved,
+        headFullyUnresolvedLastRemindedAt: isFullyUnresolved ? now : null,
+      },
+    });
+
+    if (isFullyUnresolved) {
+      await this.notifyTenantAdminsOfOrgUnitVacancy(organizationId, { ...orgUnit, headVacantSince: now }, false);
+    }
+  }
+
+  // ACC-40 Section 2.5.1 — reuses notifyTenantAdminsOfCoverageGap()'s/
+  // notifyTenantAdminsOfUnassignedStage()'s exact query shape
+  // (Role.findFirst TENANT_ADMIN → UserRole.findMany → one
+  // NotificationService.create() per admin), not a new mechanism. Called
+  // from both refreshOrgUnitHeadVacancy() above (the first notification,
+  // on the entry-time false→true transition) and
+  // SlaMonitorProcessor.sweepOrgUnitVacancies() (Phase 6 commit 3, both
+  // the sweep-discovered first notification and the periodic reminder) —
+  // isReminder selects between the two wordings, the reminder stating the
+  // actual elapsed duration from headVacantSince rather than a generic
+  // repeat.
+  async notifyTenantAdminsOfOrgUnitVacancy(
+    organizationId: string,
+    orgUnit: { id: string; nameEn: string; headVacantSince: Date | null },
+    isReminder: boolean,
+  ): Promise<void> {
+    const adminRole = await this.prisma.role.findFirst({ where: { organizationId, key: 'TENANT_ADMIN' } });
+    if (!adminRole) return;
+
+    const adminUserRoles = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+    });
+
+    const elapsedDays = orgUnit.headVacantSince
+      ? Math.floor((Date.now() - orgUnit.headVacantSince.getTime()) / (24 * 60 * 60 * 1000))
+      : 0;
+
+    const bodyEn = isReminder
+      ? `"${orgUnit.nameEn}" has been unresolved for ${elapsedDays} day(s) — nobody can act as its Head, including via escalation to a parent unit.`
+      : `"${orgUnit.nameEn}" has no Head and no one can act on its behalf, including via escalation to a parent unit. Assign a Head or configure Acting Head coverage.`;
+
+    for (const userRole of adminUserRoles) {
+      await this.notificationService.create(
+        {
+          userId: userRole.userId,
+          titleEn: isReminder
+            ? 'Reminder: org unit still has no resolvable Head'
+            : 'Org unit has no resolvable Head',
+          bodyEn,
+          objectType: 'OrgUnit',
+          objectId: orgUnit.id,
+        },
+        organizationId,
+      );
+    }
   }
 
   async create(

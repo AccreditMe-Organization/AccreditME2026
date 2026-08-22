@@ -183,6 +183,60 @@ describe('TaskService', () => {
     });
   });
 
+  describe('create — delegation stamping (ACC-40 Section 2.6.3)', () => {
+    it('stamps delegationReason/delegationContextId only on the TaskAssignee row named in assigneeDelegations, null for everyone else', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }, { id: USER_B }]);
+      mockPrisma.task.create.mockResolvedValue(BASE_TASK);
+
+      await service.create(
+        {
+          title: 'Task',
+          sourceType: 'DOCUMENT',
+          sourceId: 'doc-1',
+          assigneeUserIds: [USER_A, USER_B],
+          assigneeDelegations: [
+            { userId: USER_A, delegationReason: 'ACTING_HEAD', delegationContextId: 'unit-1' },
+          ],
+        },
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.task.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            assignees: {
+              create: [
+                { userId: USER_A, assignedById: ACTOR, delegationReason: 'ACTING_HEAD', delegationContextId: 'unit-1' },
+                { userId: USER_B, assignedById: ACTOR, delegationReason: null, delegationContextId: null },
+              ],
+            },
+          }),
+        }),
+      );
+    });
+
+    it('stamps null for every assignee when assigneeDelegations is not provided at all (manual tasks:create path)', async () => {
+      mockPrisma.task.create.mockResolvedValue(BASE_TASK);
+
+      await service.create(
+        { title: 'Task', sourceType: 'DOCUMENT', sourceId: 'doc-1', assigneeUserIds: [USER_A] },
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.task.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            assignees: {
+              create: [{ userId: USER_A, assignedById: ACTOR, delegationReason: null, delegationContextId: null }],
+            },
+          }),
+        }),
+      );
+    });
+  });
+
   describe('getMyTasks', () => {
     it('only returns tasks where the calling user has an active TaskAssignee row', async () => {
       mockPrisma.task.findMany.mockResolvedValue([BASE_TASK]);

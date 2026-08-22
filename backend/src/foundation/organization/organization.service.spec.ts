@@ -3,6 +3,7 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { OrganizationService } from './organization.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { NotificationService } from '../notification/notification.service';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,12 @@ const BASE_UNIT = {
   isActive: true,
   isCodeLocked: false,
   sortOrder: 0,
+  // ACC-40 Section 2.5.1
+  isHeadVacant: false,
+  headVacantSince: null as Date | null,
+  actingHeadUserId: null as string | null,
+  isHeadFullyUnresolved: false,
+  headFullyUnresolvedLastRemindedAt: null as Date | null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -42,10 +49,18 @@ const mockPrisma = {
   },
   user: {
     count: jest.fn(),
+    findMany: jest.fn(),
+  },
+  role: {
+    findFirst: jest.fn(),
+  },
+  userRole: {
+    findMany: jest.fn(),
   },
 };
 
 const mockAuditLog = { log: jest.fn() };
+const mockNotificationService = { create: jest.fn() };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +75,7 @@ describe('OrganizationService', () => {
         OrganizationService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -291,6 +307,329 @@ describe('OrganizationService', () => {
       await expect(service.findById('unit-1', ORG_B)).rejects.toThrow(NotFoundException);
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
         where: { id: 'unit-1', organizationId: ORG_B },
+      });
+    });
+  });
+
+  // ── resolveActingHeadForOrgUnit (ACC-40 Section 2.5) ────────────────────────
+  //
+  // The resolver everything downstream depends on — Phase 6's own
+  // checkpoint requires isolated confidence in this method before it's
+  // wired into anything else. Covers all 4 cases the plan's own test
+  // checklist names, verbatim.
+
+  describe('resolveActingHeadForOrgUnit', () => {
+    it("returns the unit's own holder directly, without ever checking actingHeadUserId or walking to the parent", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'holder-1' }]);
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['holder-1']);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          primaryOrgUnitId: 'unit-1',
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true, isActive: true },
+        },
+        select: { id: true },
+      });
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+    });
+
+    // ACC-40 Section 2.3 — now reachable per Phase 5's own handover
+    // mechanism: during a declared handover, both the outgoing and
+    // incoming users genuinely hold the position at once. The resolver
+    // needs no special-case logic for this — it's the same query,
+    // returning 2 rows instead of 1 by construction.
+    it("returns BOTH holders during a declared handover — the 2-holder case, no special-casing needed", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'outgoing-holder' }, { id: 'incoming-successor' }]);
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['outgoing-holder', 'incoming-successor']);
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("falls through to the unit's own Acting Head when vacant, without walking to the parent", async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]); // unit-1 has no direct holder
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ actingHeadUserId: 'acting-1', parentId: 'parent-1' });
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['acting-1']);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(1); // never reaches parent-1
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it("escalates to the parent's holder when the unit is vacant with no Acting Head of its own", async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.primaryOrgUnitId === 'unit-1' ? [] : [{ id: 'parent-holder' }]),
+      );
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1' ? { actingHeadUserId: null, parentId: 'parent-1' } : null,
+        ),
+      );
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual(['parent-holder']);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(2);
+      // Confirms the walk actually reached the parent, not a coincidence.
+      expect(mockPrisma.user.findMany).toHaveBeenNthCalledWith(2, {
+        where: {
+          organizationId: ORG_A,
+          primaryOrgUnitId: 'parent-1',
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true, isActive: true },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('returns an empty pool when the full chain is exhausted — vacant at every level, no Acting Head anywhere, walk reaches the root', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]); // vacant at every level
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.id === 'unit-1'
+            ? { actingHeadUserId: null, parentId: 'parent-1' }
+            : { actingHeadUserId: null, parentId: null }, // parent-1: root, chain ends here
+        ),
+      );
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual([]);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledTimes(2); // unit-1, then parent-1 — walk stops there
+    });
+
+    it('returns an empty pool immediately when the starting unit does not exist in this tenant', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      const result = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? [{ id: 'holder-a' }] : [{ id: 'leaked-holder' }]),
+      );
+
+      const resultA = await service.resolveActingHeadForOrgUnit('unit-1', ORG_A);
+      const resultB = await service.resolveActingHeadForOrgUnit('unit-1', ORG_B);
+
+      expect(resultA).toEqual(['holder-a']);
+      expect(resultB).toEqual(['leaked-holder']); // scoped correctly to ORG_B, not a leak from ORG_A
+      expect(mockPrisma.user.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }));
+      expect(mockPrisma.user.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }));
+    });
+  });
+
+  // ── refreshOrgUnitHeadVacancy (ACC-40 Section 2.5.1) ────────────────────────
+  //
+  // Entry-time check: only a genuine isHeadVacant transition writes/notifies.
+  // No-op when nothing changed — the sweep (Phase 6 commit 3) owns ongoing
+  // drift and reminder cadence, not this method.
+
+  describe('refreshOrgUnitHeadVacancy', () => {
+    const VACANCY_UNIT = makeUnit({
+      isHeadVacant: false,
+      headVacantSince: null,
+      isHeadFullyUnresolved: false,
+      headFullyUnresolvedLastRemindedAt: null,
+      actingHeadUserId: null as string | null,
+    });
+
+    it('is a no-op when the unit does not exist in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
+
+      expect(mockPrisma.user.count).not.toHaveBeenCalled();
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when there is no transition — still held, was not vacant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(VACANCY_UNIT); // isHeadVacant: false
+      mockPrisma.user.count.mockResolvedValue(1); // still has a direct holder
+
+      await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
+
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when there is no transition — still vacant, was already vacant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...VACANCY_UNIT, isHeadVacant: true });
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
+
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findMany).not.toHaveBeenCalled(); // resolver never runs
+    });
+
+    it('clears all 4 vacancy fields on a true→false recovery transition, silently', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({
+        ...VACANCY_UNIT,
+        isHeadVacant: true,
+        headVacantSince: new Date('2026-08-01'),
+        isHeadFullyUnresolved: true,
+        headFullyUnresolvedLastRemindedAt: new Date('2026-08-01'),
+      });
+      mockPrisma.user.count.mockResolvedValue(1); // newly filled
+
+      await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: 'unit-1' },
+        data: {
+          isHeadVacant: false,
+          headVacantSince: null,
+          isHeadFullyUnresolved: false,
+          headFullyUnresolvedLastRemindedAt: null,
+        },
+      });
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('on a false→true transition with ancestor coverage (partial), sets isHeadFullyUnresolved false and stays silent', async () => {
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
+        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: 'parent-1' }); // resolver: unit-1 walk step — never reaches a 3rd call, since parent-1 has a direct holder
+      mockPrisma.user.count.mockResolvedValue(0); // no direct holder on unit-1
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.primaryOrgUnitId === 'unit-1' ? [] : [{ id: 'parent-holder' }]),
+      );
+
+      await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: 'unit-1' },
+        data: {
+          isHeadVacant: true,
+          headVacantSince: expect.any(Date),
+          isHeadFullyUnresolved: false,
+          headFullyUnresolvedLastRemindedAt: null,
+        },
+      });
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('on a false→true transition fully exhausted, sets isHeadFullyUnresolved true, stamps the reminder timestamp, and notifies Tenant Admins immediately', async () => {
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
+        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: null }); // resolver: root, chain ends
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.user.findMany.mockResolvedValue([]); // vacant everywhere
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-1' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+      await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
+
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
+        where: { id: 'unit-1' },
+        data: {
+          isHeadVacant: true,
+          headVacantSince: expect.any(Date),
+          isHeadFullyUnresolved: true,
+          headFullyUnresolvedLastRemindedAt: expect.any(Date),
+        },
+      });
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(1);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'admin-1',
+          titleEn: 'Org unit has no resolvable Head',
+          objectType: 'OrgUnit',
+          objectId: 'unit-1',
+        }),
+        ORG_A,
+      );
+    });
+  });
+
+  // ── notifyTenantAdminsOfOrgUnitVacancy (ACC-40 Section 2.5.1) ────────────────
+
+  describe('notifyTenantAdminsOfOrgUnitVacancy', () => {
+    it('is a no-op when the tenant has no TENANT_ADMIN role', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      await service.notifyTenantAdminsOfOrgUnitVacancy(
+        ORG_A,
+        { id: 'unit-1', nameEn: 'ICU', headVacantSince: new Date() },
+        false,
+      );
+
+      expect(mockPrisma.userRole.findMany).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('notifies every active Tenant Admin, using the first-notification wording when isReminder is false', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-1' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }]);
+
+      await service.notifyTenantAdminsOfOrgUnitVacancy(
+        ORG_A,
+        { id: 'unit-1', nameEn: 'ICU', headVacantSince: new Date() },
+        false,
+      );
+
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-1', titleEn: 'Org unit has no resolvable Head' }),
+        ORG_A,
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-2', titleEn: 'Org unit has no resolvable Head' }),
+        ORG_A,
+      );
+    });
+
+    it('states the actual elapsed duration computed from headVacantSince when isReminder is true', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-1' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+      const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+
+      await service.notifyTenantAdminsOfOrgUnitVacancy(
+        ORG_A,
+        { id: 'unit-1', nameEn: 'ICU', headVacantSince: sixDaysAgo },
+        true,
+      );
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          titleEn: 'Reminder: org unit still has no resolvable Head',
+          bodyEn: expect.stringContaining('has been unresolved for 6 day(s)'),
+        }),
+        ORG_A,
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.role.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? { id: 'admin-role-a' } : { id: 'admin-role-b' }),
+      );
+      mockPrisma.userRole.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.roleId === 'admin-role-a' ? [{ userId: 'admin-a' }] : [{ userId: 'leaked-admin' }],
+        ),
+      );
+
+      await service.notifyTenantAdminsOfOrgUnitVacancy(ORG_A, { id: 'unit-1', nameEn: 'ICU', headVacantSince: null }, false);
+      await service.notifyTenantAdminsOfOrgUnitVacancy(ORG_B, { id: 'unit-1', nameEn: 'ICU', headVacantSince: null }, false);
+
+      expect(mockPrisma.role.findFirst).toHaveBeenNthCalledWith(1, { where: { organizationId: ORG_A, key: 'TENANT_ADMIN' } });
+      expect(mockPrisma.role.findFirst).toHaveBeenNthCalledWith(2, { where: { organizationId: ORG_B, key: 'TENANT_ADMIN' } });
+      expect(mockPrisma.userRole.findMany).toHaveBeenNthCalledWith(1, {
+        where: { roleId: 'admin-role-a', user: { organizationId: ORG_A, status: 'ACTIVE' } },
+      });
+      expect(mockPrisma.userRole.findMany).toHaveBeenNthCalledWith(2, {
+        where: { roleId: 'admin-role-b', user: { organizationId: ORG_B, status: 'ACTIVE' } },
       });
     });
   });

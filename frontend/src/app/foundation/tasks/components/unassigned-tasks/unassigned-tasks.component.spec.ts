@@ -50,6 +50,8 @@ const USER_A: IUserDto = {
   outOfOfficeFrom: null,
   outOfOfficeTo: null,
   actingUserId: null,
+  actingOrgUnitId: null,
+  actingOrgUnitUntil: null,
   lastLoginAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',

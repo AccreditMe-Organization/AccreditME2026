@@ -33,7 +33,7 @@ describe('PlatformTenantService', () => {
   let service: PlatformTenantService;
   let mockPrisma: any;
   let mockAuditLog: { log: jest.Mock };
-  let mockTenantService: { bootstrap: jest.Mock };
+  let mockTenantService: { bootstrap: jest.Mock; resolveDefaultTenantAdminAssignment: jest.Mock };
   let mockUserService: { invite: jest.Mock };
   let mockRoleService: { assignRoleToUser: jest.Mock };
 
@@ -47,7 +47,12 @@ describe('PlatformTenantService', () => {
       userRole: { findFirst: jest.fn() },
     };
     mockAuditLog = { log: jest.fn() };
-    mockTenantService = { bootstrap: jest.fn().mockResolvedValue(undefined) };
+    mockTenantService = {
+      bootstrap: jest.fn().mockResolvedValue(undefined),
+      resolveDefaultTenantAdminAssignment: jest
+        .fn()
+        .mockResolvedValue({ positionId: 'pos-director', primaryOrgUnitId: 'unit-root' }),
+    };
     mockUserService = { invite: jest.fn() };
     mockRoleService = { assignRoleToUser: jest.fn().mockResolvedValue(undefined) };
 
@@ -132,8 +137,14 @@ describe('PlatformTenantService', () => {
         data: { name: 'Acme', slug: 'acme', country: 'SA', planId: null },
       });
       expect(mockTenantService.bootstrap).toHaveBeenCalledWith(TENANT_ID, ACTOR_ID);
+      expect(mockTenantService.resolveDefaultTenantAdminAssignment).toHaveBeenCalledWith(TENANT_ID);
       expect(mockUserService.invite).toHaveBeenCalledWith(
-        { email: 'admin@acme.com', name: 'Acme Admin' },
+        {
+          email: 'admin@acme.com',
+          name: 'Acme Admin',
+          positionId: 'pos-director',
+          primaryOrgUnitId: 'unit-root',
+        },
         TENANT_ID,
         ACTOR_ID,
       );

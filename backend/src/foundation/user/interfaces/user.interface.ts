@@ -12,6 +12,8 @@ export interface IUser {
   outOfOfficeFrom: Date | null;
   outOfOfficeTo: Date | null;
   actingUserId: string | null;
+  actingOrgUnitId: string | null;
+  actingOrgUnitUntil: Date | null;
   lastLoginAt: Date | null;
   createdAt: Date;
   updatedAt: Date;

@@ -17,6 +17,8 @@ export interface IUserDto {
   outOfOfficeFrom: string | null;
   outOfOfficeTo: string | null;
   actingUserId: string | null;
+  actingOrgUnitId: string | null;
+  actingOrgUnitUntil: string | null;
   lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +38,8 @@ export interface UpdateUserProfileDto {
   positionId?: string;
   primaryOrgUnitId?: string;
   managerId?: string;
+  actingOrgUnitId?: string;
+  actingOrgUnitUntil?: string;
 }
 
 export interface UpdateOutOfOfficeDto {
