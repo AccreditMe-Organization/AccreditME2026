@@ -8,6 +8,13 @@ import { DatePickerModule } from 'primeng/datepicker';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TaskService } from '../../services/task.service';
+// ACC-41 — OverlaySelectComponent replaces p-select here: this field sits in
+// a raw p-dialog (not EditDialogComponent), the second confirmed DOM context
+// where PrimeNG's own scroll-chaining bug is reachable, and the option list
+// here is a plain string[] (exercises the primitive-array fallback in
+// getOptionLabel()/getOptionValue()). See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 const SOURCE_TYPES = [
   'MEETING',
@@ -36,6 +43,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     DatePickerModule,
     ButtonModule,
     MessageModule,
+    OverlaySelectComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -56,7 +64,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
           <label for="sourceType" class="text-sm font-medium">
             {{ 'task.sourceType' | translate }} <span class="text-red-500">*</span>
           </label>
-          <p-select inputId="sourceType" formControlName="sourceType" [options]="sourceTypes" />
+          <app-overlay-select formControlName="sourceType" [options]="sourceTypes" />
         </div>
         <div class="flex flex-col gap-1 flex-1">
           <label for="sourceId" class="text-sm font-medium">

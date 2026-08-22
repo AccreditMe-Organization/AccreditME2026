@@ -3,11 +3,15 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { ButtonModule } from 'primeng/button';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
+// ACC-41 — OverlaySelectComponent replaces p-select here: this field lives
+// inside EditDialogComponent, one of the DOM contexts where PrimeNG's own
+// scroll-chaining bug is reachable. See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 @Component({
   selector: 'app-position-form',
@@ -17,9 +21,9 @@ import { RoleService, RoleDto } from '../../../roles/services/role.service';
     TranslatePipe,
     InputTextModule,
     InputNumberModule,
-    SelectModule,
     CheckboxModule,
     ButtonModule,
+    OverlaySelectComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -72,8 +76,7 @@ import { RoleService, RoleDto } from '../../../roles/services/role.service';
 
       <div class="flex flex-col gap-1">
         <label for="roleId" class="text-sm font-medium">{{ 'orgPosition.mappedRole' | translate }}</label>
-        <p-select
-          inputId="roleId"
+        <app-overlay-select
           formControlName="roleId"
           [options]="assignableRoles()"
           optionLabel="nameEn"
