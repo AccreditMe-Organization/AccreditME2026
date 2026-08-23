@@ -94,8 +94,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
 
       <div class="flex flex-col gap-1">
         <label for="parentCommitteeId" class="text-sm font-medium">{{ 'committee.parentCommittee' | translate }}</label>
-        <p-select
-          inputId="parentCommitteeId"
+        <app-overlay-select
           formControlName="parentCommitteeId"
           [options]="parentOptions()"
           [optionLabel]="nameLabelField()"
