@@ -1882,6 +1882,16 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   `AiFeatureCost`/`AiCreditPack` billing machinery is fully built but
   structurally unreachable since no feature triggers the
   credit-deduction flow.
+- **List-page filtering is inconsistent/missing across the app** —
+  flagged by Ahmad after ACC-40 removed OrgPosition's org-unit filter
+  (a necessary removal, since positions became org-wide with nothing
+  left to filter by). Worth a proper, dedicated investigation once
+  picked up: inventory every list screen in the app, confirm which
+  already have real filtering (status, date range, etc.) and which
+  have none, and design what's actually useful per screen rather than
+  a single generic filter pattern applied uniformly everywhere. Not
+  scoped or sized yet — this note exists so the idea isn't lost, not
+  as a commitment to a specific approach.
 - **Field alignment/spacing inconsistency, `committee-form`'s Quorum
   and Meeting Frequency fields** — Ahmad flagged a visual
   misalignment between the two during ACC-42 testing. Not fixed as
@@ -1889,7 +1899,9 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   migration. Worth folding into a broader responsiveness/alignment
   audit across the app once one is picked up, not a one-off fix in
   isolation. Not scoped or sized yet — recorded here so it isn't
-  lost before that audit exists.
+  lost before that audit exists. Grouped here with the list-page-
+  filtering note above — both are the same category (a future,
+  broader UI-consistency audit), not two unrelated findings.
 
 ---
 
