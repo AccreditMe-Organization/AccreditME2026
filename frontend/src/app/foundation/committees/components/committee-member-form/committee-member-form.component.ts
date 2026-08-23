@@ -1,7 +1,6 @@
 import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
-import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import {
@@ -22,7 +21,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 @Component({
   selector: 'app-committee-member-form',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, SelectModule, InputTextModule, ButtonModule, OverlaySelectComponent],
+  imports: [ReactiveFormsModule, TranslatePipe, InputTextModule, ButtonModule, OverlaySelectComponent],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
       @if (!member()) {
@@ -62,8 +61,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
           {{ 'committee.memberRole' | translate }}
           <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="roleValueId"
+        <app-overlay-select
           formControlName="roleValueId"
           [options]="memberRoles()"
           [optionLabel]="roleLabelField()"
