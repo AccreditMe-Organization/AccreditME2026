@@ -178,13 +178,11 @@ const ASSIGNEE_STRATEGIES = [
           <label for="assigneeRoleId" class="font-medium text-sm">
             {{ 'workflow.assigneeRole' | translate }}
           </label>
-          <p-select
-            inputId="assigneeRoleId"
+          <app-overlay-select
             formControlName="assigneeRoleId"
             [options]="roles()"
             optionLabel="nameEn"
             optionValue="id"
-            styleClass="w-full"
           />
         </div>
       }
@@ -194,14 +192,12 @@ const ASSIGNEE_STRATEGIES = [
           <label for="assigneeCommitteeRoleValueId" class="font-medium text-sm">
             {{ 'workflow.assigneeCommitteeRole' | translate }}
           </label>
-          <p-select
-            inputId="assigneeCommitteeRoleValueId"
+          <app-overlay-select
             formControlName="assigneeCommitteeRoleValueId"
             [options]="committeeRoles()"
             [optionLabel]="committeeRoleLabelField()"
             optionValue="id"
             [showClear]="true"
-            styleClass="w-full"
           />
           <small class="text-[var(--am-text-secondary)]">
             {{ 'workflow.assigneeCommitteeRoleHint' | translate }}
