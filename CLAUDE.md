@@ -1899,7 +1899,9 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   migration. Worth folding into a broader responsiveness/alignment
   audit across the app once one is picked up, not a one-off fix in
   isolation. Not scoped or sized yet — recorded here so it isn't
-  lost before that audit exists.
+  lost before that audit exists. Grouped here with the list-page-
+  filtering note above — both are the same category (a future,
+  broader UI-consistency audit), not two unrelated findings.
 
 ---
 
