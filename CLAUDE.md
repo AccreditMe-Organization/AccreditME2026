@@ -1721,6 +1721,27 @@ Prisma Studio.
   ACC-36. Connects to the broader, still-deferred Founding-Plan
   Conformance Audit idea — this is one already-confirmed finding from
   that effort, not the whole audit.
+- **Task creation has no real, business-appropriate home today.**
+  `TaskListComponent` was deliberately designed, from its own original
+  build, as an embeddable list meant to live inside a future business
+  object's detail page (its own header comment says so explicitly) —
+  not a standalone destination. It currently ships as a temporary,
+  nav-unlinked standalone route (`/tasks/all`) as a stopgap. Confirmed
+  during ACC-41 testing: this stopgap has a real, currently-dormant
+  defect — its list silently shows "No tasks" regardless of actual
+  data, since the route supplies no `sourceType`/`sourceId` and the
+  component's own guard clause returns early without ever querying.
+  Task CREATION itself (the "New Task" button/form) works correctly
+  and is fully decoupled from this — creating a task always succeeds,
+  it just never appears in this specific broken list afterward.
+  Do NOT add a nav link to `/tasks/all` as a quick fix — this would
+  make the misleading empty-list defect easier to find, not fix it.
+  The real fix is a deliberate design pass: decide where task creation
+  and task lists genuinely belong from a business standpoint (most
+  likely embedded in Committee's detail page today, the only fully-
+  built business module, following `TaskListComponent`'s own original
+  intended pattern) once that's properly scoped — not a navigation
+  patch.
 
 ### Sequence to Meeting Management
 
