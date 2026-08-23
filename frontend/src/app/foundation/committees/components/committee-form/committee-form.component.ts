@@ -4,7 +4,6 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { SelectModule } from 'primeng/select';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { ButtonModule } from 'primeng/button';
 import {
@@ -33,7 +32,6 @@ type ReportingToMode = 'none' | 'committee' | 'role';
     InputTextModule,
     TextareaModule,
     InputNumberModule,
-    SelectModule,
     SelectButtonModule,
     ButtonModule,
     OverlaySelectComponent,
@@ -119,7 +117,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
         </p-selectButton>
 
         @if (reportingToMode === 'committee') {
-          <p-select
+          <app-overlay-select
             formControlName="reportingToCommitteeId"
             [options]="parentOptions()"
             [optionLabel]="nameLabelField()"
@@ -129,7 +127,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
         }
 
         @if (reportingToMode === 'role') {
-          <p-select
+          <app-overlay-select
             formControlName="reportingToRoleId"
             [options]="roles()"
             optionLabel="nameEn"
