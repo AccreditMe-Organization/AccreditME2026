@@ -1742,6 +1742,26 @@ Prisma Studio.
   built business module, following `TaskListComponent`'s own original
   intended pattern) once that's properly scoped — not a navigation
   patch.
+- **`OverlaySelectComponent` has no filter-search capability**
+  (ACC-42) — `committee-member-form.userId` lost `p-select`'s
+  `[filter]="true" filterBy="name,email"` (a visible search box, not
+  the same thing as CDK's own prefix-only typeahead) when migrated,
+  deliberately, not as an oversight. Confirmed one-field scope via a
+  full grep of the entire frontend (the only other `filter`-using
+  picker, `unassigned-tasks`' Reassign field, is a `p-listbox`, never
+  in scope). Confirmed genuinely harder than every other
+  `OverlaySelectComponent` capability, not just more work: PrimeNG's
+  own filter keeps real DOM focus in the filter input and
+  re-implements keyboard nav independently, because CDK's
+  `ActiveDescendantKeyManager` assumes focus stays on the listbox
+  itself — replicating PrimeNG's actual UX means fighting that
+  machinery, not composing it, unlike scroll-chaining, hierarchy mode,
+  and item-template support, which all reuse it directly. Full
+  investigation and decision: `backend/Plans/step-42-overlay-select-migration.md`
+  Section 2.5. Revisit only if a future field genuinely needs real
+  filter-search (not just a longer option list) — typeahead alone was
+  judged sufficient for `committee-member-form.userId`'s own bounded
+  list, not necessarily for every future case.
 
 ### Sequence to Meeting Management
 
