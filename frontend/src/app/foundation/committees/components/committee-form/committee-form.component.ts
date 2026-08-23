@@ -83,8 +83,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
 
         <div class="flex flex-col gap-1">
           <label for="meetingFrequency" class="text-sm font-medium">{{ 'committee.meetingFrequency' | translate }}</label>
-          <p-select
-            inputId="meetingFrequency"
+          <app-overlay-select
             formControlName="meetingFrequency"
             [options]="frequencyOptions"
             optionLabel="label"
