@@ -1882,6 +1882,14 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   `AiFeatureCost`/`AiCreditPack` billing machinery is fully built but
   structurally unreachable since no feature triggers the
   credit-deduction flow.
+- **Field alignment/spacing inconsistency, `committee-form`'s Quorum
+  and Meeting Frequency fields** — Ahmad flagged a visual
+  misalignment between the two during ACC-42 testing. Not fixed as
+  part of ACC-42 — unrelated to that ticket's own scroll-chaining
+  migration. Worth folding into a broader responsiveness/alignment
+  audit across the app once one is picked up, not a one-off fix in
+  isolation. Not scoped or sized yet — recorded here so it isn't
+  lost before that audit exists.
 
 ---
 
