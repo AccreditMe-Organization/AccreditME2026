@@ -16,6 +16,10 @@ import {
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
 import { LanguageService } from '../../../../core/services/language.service';
+// ACC-42 Phase 3 — OverlaySelectComponent replaces p-select on this field:
+// EditDialogComponent context. See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 type ReportingToMode = 'none' | 'committee' | 'role';
 
@@ -32,6 +36,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
     SelectModule,
     SelectButtonModule,
     ButtonModule,
+    OverlaySelectComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -56,8 +61,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
           {{ 'committee.type' | translate }}
           <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="typeValueId"
+        <app-overlay-select
           formControlName="typeValueId"
           [options]="committeeTypes()"
           [optionLabel]="typeLabelField()"
