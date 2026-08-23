@@ -6,11 +6,13 @@ import {
   TemplateRef,
   ViewChild,
   ViewContainerRef,
+  computed,
   forwardRef,
   inject,
   input,
   signal,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { NG_VALUE_ACCESSOR, ControlValueAccessor } from '@angular/forms';
 import { Overlay, OverlayRef, ScrollStrategy } from '@angular/cdk/overlay';
 import { TemplatePortal } from '@angular/cdk/portal';
@@ -35,6 +37,34 @@ interface ManualScrollable {
 
 function asScrollable(manual: ManualScrollable): CdkScrollable {
   return manual as unknown as CdkScrollable;
+}
+
+// ACC-42 Phase 1 — hierarchy mode. A flattened, depth-annotated row list
+// rendered inside the SAME single CdkListbox/Overlay already proven in
+// ACC-41 — deliberately not PrimeNG's cascading flyout-panel UX, which
+// would need one Overlay+ScrollDispatcher registration per open panel
+// (multiplying the exact bug class this component exists to eliminate).
+// Every node, branch or leaf, is individually selectable and gets its own
+// row — see backend/Plans/step-42-overlay-select-migration.md §1.3.
+interface FlattenedOption {
+  node: unknown;
+  depth: number;
+  isGroup: boolean;
+}
+
+function flattenHierarchy(
+  options: unknown[],
+  childrenField: string,
+  depth = 0,
+): FlattenedOption[] {
+  return options.flatMap((node) => {
+    const children = (node as Record<string, unknown>)[childrenField] as unknown[] | undefined;
+    const isGroup = !!children?.length;
+    return [
+      { node, depth, isGroup },
+      ...(isGroup ? flattenHierarchy(children!, childrenField, depth + 1) : []),
+    ];
+  });
 }
 
 const SCROLLABLE_OVERFLOW = /(auto|scroll)/;
@@ -123,7 +153,7 @@ function createManualScrollable(
 @Component({
   selector: 'app-overlay-select',
   standalone: true,
-  imports: [CdkListbox, CdkOption, TranslatePipe],
+  imports: [CdkListbox, CdkOption, NgTemplateOutlet, TranslatePipe],
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
@@ -166,9 +196,19 @@ function createManualScrollable(
         [cdkListboxValue]="value === null || value === undefined ? [] : [value]"
         (cdkListboxValueChange)="onListboxChange($event)"
       >
-        @for (opt of options(); track getOptionValue(opt)) {
-          <div cdkOption [cdkOption]="getOptionValue(opt)" class="am-overlay-select-option">
-            {{ getOptionLabel(opt) }}
+        @for (flat of flattenedOptions(); track getOptionValue(flat.node)) {
+          <div
+            cdkOption
+            [cdkOption]="getOptionValue(flat.node)"
+            [cdkOptionTypeaheadLabel]="getOptionLabel(flat.node, flat.isGroup)"
+            class="am-overlay-select-option"
+            [style.paddingInlineStart.rem]="0.75 + flat.depth * 1"
+          >
+            @if (itemTemplate(); as tpl) {
+              <ng-container *ngTemplateOutlet="tpl; context: { $implicit: flat.node }" />
+            } @else {
+              {{ getOptionLabel(flat.node, flat.isGroup) }}
+            }
           </div>
         } @empty {
           <div class="am-overlay-select-option am-overlay-select-option-empty">
@@ -316,6 +356,38 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   readonly placeholder = input<string>('');
   readonly showClear = input<boolean>(false);
 
+  // ACC-42 Phase 1 — hierarchy mode, mirrors p-cascadeSelect's own input
+  // names exactly (see plan §1.2) so org-unit-form's existing
+  // cascadeOptions()/buildCascadeOptions() tree-shape needs zero changes,
+  // only the template tag swaps. Hierarchical mode is inferred from
+  // whether optionGroupChildren is set — flat mode (every consumer today)
+  // is completely unaffected, since flattenedOptions() below degrades to
+  // a depth-0 wrapping of options() when it's unset.
+  readonly optionGroupLabel = input<string | undefined>(undefined);
+  readonly optionGroupChildren = input<string | undefined>(undefined);
+
+  // ACC-42 Phase 2 — custom option rendering (plan §2.3). CdkOption is a
+  // plain directive, not a component, so it has no content-projection
+  // mechanism of its own to extend — this component already fully
+  // controls each row's markup in the @for loop above, so projection is
+  // just an ngTemplateOutlet swapped in when set. Independent of
+  // hierarchy mode: works identically whether flattenedOptions() came
+  // from a flat list or a flattened tree. cdkOptionTypeaheadLabel (bound
+  // in the template) is bound separately to the plain computed label —
+  // required because CdkOption.getLabel() falls back to
+  // element.textContent when unset, which would concatenate a two-line
+  // custom template's text nodes with no separator and corrupt typeahead
+  // matching (verified directly against listbox.mjs, not assumed).
+  readonly itemTemplate = input<TemplateRef<{ $implicit: unknown }> | undefined>(undefined);
+
+  readonly flattenedOptions = computed<FlattenedOption[]>(() => {
+    const childrenField = this.optionGroupChildren();
+    if (!childrenField) {
+      return this.options().map((node) => ({ node, depth: 0, isGroup: false }));
+    }
+    return flattenHierarchy(this.options(), childrenField);
+  });
+
   readonly isOpen = signal(false);
   readonly disabled = signal(false);
   readonly triggerWidth = signal(0);
@@ -325,10 +397,19 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   private onTouched: () => void = () => {};
   private overlayRef: OverlayRef | null = null;
 
+  // ACC-42 Phase 1 — searches flattenedOptions(), not options() directly.
+  // A REAL bug the naive top-level-only search would have hit: a selected
+  // node's value can sit several optionGroupChildren levels deep in
+  // hierarchy mode and would never be found by a shallow .find() over the
+  // raw nested options() tree. In flat mode flattenedOptions() is just a
+  // depth-0 wrapping of options(), so this is behaviorally identical to
+  // the old top-level search for every existing (flat-mode) consumer.
   get selectedLabel(): () => string {
     return () => {
-      const match = this.options().find((opt) => this.getOptionValue(opt) === this.value);
-      return match ? this.getOptionLabel(match) : '';
+      const match = this.flattenedOptions().find(
+        (flat) => this.getOptionValue(flat.node) === this.value,
+      );
+      return match ? this.getOptionLabel(match.node, match.isGroup) : '';
     };
   }
 
@@ -337,9 +418,17 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // optionLabel/optionValue aren't meaningful property lookups on it —
   // only object-array options (e.g. position-form's RoleDto[]) go through
   // the property-lookup path.
-  getOptionLabel(opt: unknown): string {
+  //
+  // isGroup selects optionGroupLabel() over optionLabel() when set — real
+  // semantic behavior matching p-cascadeSelect's own naming, not a
+  // decorative unused input: a branch node's own label field can differ
+  // from a leaf's (even though org-unit-form's buildCascadeOptions() today
+  // happens to use "label" for both, matching the API is what lets a
+  // future consumer with a genuinely different shape work unmodified).
+  getOptionLabel(opt: unknown, isGroup = false): string {
     if (opt === null || typeof opt !== 'object') return String(opt);
-    return String((opt as Record<string, unknown>)[this.optionLabel()] ?? '');
+    const field = (isGroup && this.optionGroupLabel()) || this.optionLabel();
+    return String((opt as Record<string, unknown>)[field] ?? '');
   }
 
   getOptionValue(opt: unknown): unknown {
