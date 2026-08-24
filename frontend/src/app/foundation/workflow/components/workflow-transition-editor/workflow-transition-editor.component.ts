@@ -163,24 +163,22 @@ const TRIGGER_CONDITIONS = [
 
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-            <p-select
+            <app-overlay-select
               formControlName="triggerCondition"
               [options]="triggerConditions"
               optionLabel="label"
               optionValue="value"
-              styleClass="w-full"
             />
           </div>
 
           @if (addForm.controls.triggerCondition.value === 'ROLE_BASED') {
             <div class="flex flex-col gap-1">
               <label class="font-medium text-sm">{{ 'workflow.assigneeRole' | translate }}</label>
-              <p-select
+              <app-overlay-select
                 formControlName="triggerRoleId"
                 [options]="roles()"
                 optionLabel="nameEn"
                 optionValue="id"
-                styleClass="w-full"
               />
             </div>
           }
