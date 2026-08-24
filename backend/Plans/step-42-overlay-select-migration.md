@@ -647,6 +647,50 @@ as its own explicit, separate checkpoint within Phase 6:
 This checkpoint is in addition to, not a replacement for, Phase 6's
 own per-field hands-on hardware pass under §5.2's hard requirement.
 
+### 5.5 Phase 5 checkpoint — `ngModel` binding path, first real proof
+
+Every field migrated in Phases 1–4 binds via `formControlName`
+(reactive forms). Group C introduces the first two consumers that
+bind via plain `[(ngModel)]` instead —
+`user-role-assignment.component.ts`'s role picker and
+`calendar-config.component.ts`'s `timezone`, both pre-existing
+template-driven fields, not something this migration is converting.
+
+`OverlaySelectComponent` implements `ControlValueAccessor`, and
+Angular's `ngModel` directive consumes any `ControlValueAccessor`
+identically to `formControlName` — so this is expected to work by
+construction. That expectation is exactly the kind this plan has
+twice already refused to accept silently (§1.1's hierarchy mechanism,
+§2.1/§2.2's item-template question) — an interface being implemented
+correctly is not the same as it being exercised correctly by a real
+`ngModel` consumer with change detection, form reset, and two-way
+sync all in play.
+
+Whichever of the two fields is migrated first (`user-role-assignment`
+per the current Group C draft ordering) carries this as an explicit
+exit criterion, same weight as item-template's and hierarchy mode's
+own "first real proof" checkpoints — not folded silently into that
+field's ordinary per-field hands-on pass:
+
+1. Selecting a value updates the bound property (`selectedRoleId` /
+   `timezone`) — confirmed via the existing "Assign" button / save
+   action actually using the newly-selected value, not just the
+   dropdown visually showing a selection.
+2. Programmatic resets of the bound property (`user-role-assignment`
+   sets `selectedRoleId = null` after a successful assign;
+   `calendar-config` sets `this.timezone = cal.timezone` on load via
+   `applyCalendar()`) correctly re-sync the component's displayed
+   selection — the classic gap class for a hand-rolled
+   `ControlValueAccessor`'s `writeValue()` under external, non-form
+   value changes.
+3. Standard scroll-chaining + keyboard-nav checks, same as every
+   other field.
+
+The second `ngModel` field does not need to re-prove the mechanism
+from scratch, but still gets its own full per-field pass per §5.2 —
+this section closes the "does the binding path itself work" question
+once, not the "does this specific field work" question twice.
+
 ---
 
 ## 6. Re-verification Steps — explicit, not carried over
