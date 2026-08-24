@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
-import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { DividerModule } from 'primeng/divider';
 import {
@@ -13,6 +12,13 @@ import {
   AiHolidaySuggestion,
 } from '../../services/working-calendar.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
+// routed-page-under-<main> context; also re-verification target #2 (plan
+// §6) — ACC-38's earlier "PASS" tested a mechanism since confirmed to give
+// zero real protection, not this field's actual safety. See CLAUDE.md's
+// PrimeNG-components-only exception note and overlay-select.component.ts
+// for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 const GCC_DAYS = [0, 1, 2, 3, 4];
 const WESTERN_DAYS = [1, 2, 3, 4, 5];
@@ -57,7 +63,7 @@ interface SuggestionState extends AiHolidaySuggestion {
     RouterLink,
     TranslatePipe,
     ButtonModule,
-    SelectModule,
+    OverlaySelectComponent,
     DatePickerModule,
     DividerModule,
   ],
@@ -142,12 +148,11 @@ interface SuggestionState extends AiHolidaySuggestion {
       <!-- Timezone -->
       <section class="flex flex-col gap-3">
         <h3 class="font-medium">{{ 'workingCalendar.timezone' | translate }}</h3>
-        <p-select
+        <app-overlay-select
           [(ngModel)]="timezone"
           [options]="timezones"
           optionLabel="label"
           optionValue="value"
-          styleClass="w-full"
         />
       </section>
 
