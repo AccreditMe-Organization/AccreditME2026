@@ -173,21 +173,20 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 
           <div class="flex flex-col gap-1">
             <label for="actingUserId" class="text-sm font-medium">{{ 'user.actingUser' | translate }}</label>
-            <p-select
-              inputId="actingUserId"
+            <app-overlay-select
               formControlName="actingUserId"
               [options]="otherUsers()"
               optionLabel="name"
               optionValue="id"
               [showClear]="true"
-            >
-              <ng-template #item let-otherUser>
-                <div class="flex flex-col">
-                  <span>{{ otherUser.name }}</span>
-                  <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
-                </div>
-              </ng-template>
-            </p-select>
+              [itemTemplate]="actingUserItemTpl"
+            />
+            <ng-template #actingUserItemTpl let-otherUser>
+              <div class="flex flex-col">
+                <span>{{ otherUser.name }}</span>
+                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
+              </div>
+            </ng-template>
           </div>
 
           <div class="flex justify-end">
