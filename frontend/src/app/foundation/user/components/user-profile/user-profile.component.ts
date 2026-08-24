@@ -17,6 +17,10 @@ import { UserRoleAssignmentComponent } from '../../../roles/components/user-role
 import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
+// routed-page-under-<main> context. See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
@@ -36,6 +40,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TranslatePipe,
     InputTextModule,
     SelectModule,
+    OverlaySelectComponent,
     DatePickerModule,
     ButtonModule,
     MessageModule,
@@ -79,8 +84,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
           <div class="flex flex-col gap-1">
             <label for="positionId" class="text-sm font-medium">{{ 'user.position' | translate }}</label>
-            <p-select
-              inputId="positionId"
+            <app-overlay-select
               formControlName="positionId"
               [options]="positions()"
               optionLabel="nameEn"
