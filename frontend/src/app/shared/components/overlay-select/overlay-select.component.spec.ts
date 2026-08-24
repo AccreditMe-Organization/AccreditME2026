@@ -1,5 +1,5 @@
 import { Component, ElementRef, TemplateRef, ViewChild } from '@angular/core';
-import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { OverlayContainer } from '@angular/cdk/overlay';
@@ -167,6 +167,24 @@ class PickableUserHostComponent {
   @ViewChild('itemTpl', { static: true }) itemTpl!: TemplateRef<unknown>;
   options = PICKABLE_USERS;
   control = new FormControl<string | null>(null);
+}
+
+// ACC-42 Phase 5 §5.5 — the first two real consumers (user-role-assignment,
+// calendar-config) bind via plain [(ngModel)], not formControlName/
+// [formControl]. Every other host component above uses ReactiveFormsModule;
+// this one deliberately does not, to prove NgModel's own
+// ControlValueAccessor wiring end-to-end rather than assuming it from the
+// interface being implemented (plan §5.5).
+@Component({
+  standalone: true,
+  imports: [OverlaySelectComponent, FormsModule],
+  template: `
+    <app-overlay-select [options]="options" optionLabel="nameEn" optionValue="id" [(ngModel)]="value" />
+  `,
+})
+class NgModelHostComponent {
+  options = ROLE_OPTIONS;
+  value: string | null = null;
 }
 
 describe('OverlaySelectComponent', () => {
@@ -681,5 +699,61 @@ describe('OverlaySelectComponent', () => {
       fixture.detectChanges();
       expect(fixture.componentInstance.control.value).toBe('DOCUMENT');
     });
+  });
+
+  // ACC-42 Phase 5 §5.5 exit criterion — first real proof of the ngModel
+  // binding path (user-role-assignment, calendar-config), not assumed from
+  // ControlValueAccessor being implemented. Two distinct directions:
+  // component→template (selecting an option updates the bound property) and
+  // the classic hand-rolled-CVA gap class, template←external (a
+  // programmatic, non-UI-driven change to the bound property — exactly what
+  // user-role-assignment.onAssign() does when it resets selectedRoleId to
+  // null after a successful assign — must still reach writeValue() and
+  // re-render the displayed selection).
+  describe('ngModel binding path (plan §5.5 — first real proof, not assumed)', () => {
+    it('selecting an option via the real DOM updates the ngModel-bound property', () => {
+      const fixture = TestBed.createComponent(NgModelHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      (document.querySelectorAll('.am-overlay-select-option')[1] as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.value).toBe('r2');
+    });
+
+    it(
+      'an external (non-UI) write to the bound property re-syncs the displayed selection via writeValue()',
+      fakeAsync(() => {
+        const fixture = TestBed.createComponent(NgModelHostComponent);
+        fixture.componentInstance.value = 'r1';
+        fixture.detectChanges();
+        // NgModel's model→view sync (NgModel._updateValue()) is itself
+        // wrapped in a resolved-Promise microtask, not applied synchronously
+        // within the triggering detectChanges() — standard NgModel behavior
+        // (avoids ExpressionChangedAfterItHasBeenCheckedError), not specific
+        // to OverlaySelectComponent. tick() flushes it; a real running app
+        // sees this resolve on the next microtask/render pass regardless.
+        tick();
+        fixture.detectChanges();
+
+        const label = () => fixture.debugElement.query(By.css('.am-overlay-select-label')).nativeElement.textContent.trim();
+        expect(label()).toBe('Quality Manager');
+
+        // Simulates user-role-assignment's own onAssign() success handler:
+        // `this.selectedRoleId = null` set directly on the component, not
+        // through any form API or UI interaction — the exact path a
+        // hand-rolled writeValue() can silently fail to react to if NgModel's
+        // own change-detection wiring isn't genuinely exercised.
+        fixture.componentInstance.value = null;
+        fixture.detectChanges();
+        tick();
+        fixture.detectChanges();
+
+        expect(label()).toBe('');
+        expect(fixture.debugElement.query(By.css('.am-overlay-select-placeholder'))).not.toBeNull();
+      }),
+    );
   });
 });
