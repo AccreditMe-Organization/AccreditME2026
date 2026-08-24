@@ -9,6 +9,10 @@ import { UserService } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on this field:
+// raw p-dialog context. See CLAUDE.md's PrimeNG-components-only exception
+// note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 @Component({
   selector: 'app-invite-user',
@@ -20,6 +24,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     SelectModule,
     ButtonModule,
     MessageModule,
+    OverlaySelectComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -45,8 +50,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         <label for="positionId" class="text-sm font-medium">
           {{ 'user.position' | translate }} <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="positionId"
+        <app-overlay-select
           formControlName="positionId"
           [options]="positions()"
           optionLabel="nameEn"
