@@ -8,7 +8,6 @@ import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
-import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
@@ -48,7 +47,6 @@ const TRIGGER_CONDITIONS = [
     DialogModule,
     InputTextModule,
     TextareaModule,
-    SelectModule,
     CheckboxModule,
     MessageModule,
     WorkflowActionConfiguratorComponent,
@@ -254,12 +252,11 @@ const TRIGGER_CONDITIONS = [
 
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-            <p-select
+            <app-overlay-select
               formControlName="triggerCondition"
               [options]="triggerConditions"
               optionLabel="label"
               optionValue="value"
-              styleClass="w-full"
             />
           </div>
 
