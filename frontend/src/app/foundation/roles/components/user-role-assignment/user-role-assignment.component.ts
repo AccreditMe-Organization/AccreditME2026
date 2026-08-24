@@ -1,17 +1,22 @@
 import { Component, Input, OnChanges, inject, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
-import { SelectModule } from 'primeng/select';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import { FormsModule } from '@angular/forms';
 import { RoleService, RoleDto } from '../../services/role.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
+// routed-page-under-<main> context, and the first real consumer binding via
+// [(ngModel)] rather than formControlName (plan §5.5). See CLAUDE.md's
+// PrimeNG-components-only exception note and overlay-select.component.ts
+// for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 @Component({
   selector: 'app-user-role-assignment',
   standalone: true,
-  imports: [FormsModule, TranslatePipe, ButtonModule, SelectModule, TooltipModule],
+  imports: [FormsModule, TranslatePipe, ButtonModule, OverlaySelectComponent, TooltipModule],
   template: `
     <div class="flex flex-col gap-4">
       <h3 class="font-semibold text-sm">{{ 'roles.assignedUsers' | translate }}</h3>
@@ -40,7 +45,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </ul>
 
       <div class="flex items-center gap-3">
-        <p-select
+        <app-overlay-select
           [options]="assignableRoles()"
           optionLabel="nameEn"
           optionValue="id"
