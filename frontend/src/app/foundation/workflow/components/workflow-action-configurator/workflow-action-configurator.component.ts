@@ -19,6 +19,13 @@ import {
   CreateWorkflowTransitionActionDto,
 } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on this field:
+// raw p-dialog context, and specifically the one nested-p-dialog case in
+// the whole migration (this component's own dialog renders inside
+// workflow-transition-editor's "Configure Actions" p-dialog). See
+// CLAUDE.md's PrimeNG-components-only exception note and
+// overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 const ACTION_TYPES = [
   { label: 'CREATE_TASK', value: 'CREATE_TASK' },
@@ -46,6 +53,7 @@ const ACTION_TYPES = [
     InputNumberModule,
     SelectModule,
     CheckboxModule,
+    OverlaySelectComponent,
   ],
   template: `
     <div class="flex flex-col gap-3">
@@ -131,12 +139,11 @@ const ACTION_TYPES = [
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.actionType' | translate }} <span class="text-red-500">*</span></label>
-            <p-select
+            <app-overlay-select
               formControlName="actionType"
               [options]="actionTypes"
               optionLabel="label"
               optionValue="value"
-              styleClass="w-full"
             />
           </div>
 
