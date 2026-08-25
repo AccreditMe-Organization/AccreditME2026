@@ -135,12 +135,13 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
               <label for="actingOrgUnitId" class="text-sm font-medium">
                 {{ 'user.actingOrgUnit' | translate }}
               </label>
-              <p-select
-                inputId="actingOrgUnitId"
+              <app-overlay-select
                 formControlName="actingOrgUnitId"
-                [options]="orgUnits()"
-                optionLabel="nameEn"
-                optionValue="id"
+                [options]="orgUnitCascadeOptions()"
+                optionLabel="label"
+                optionValue="value"
+                optionGroupLabel="label"
+                optionGroupChildren="items"
                 [showClear]="true"
               />
             </div>
