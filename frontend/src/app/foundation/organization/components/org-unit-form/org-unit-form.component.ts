@@ -12,15 +12,9 @@ import {
   OrgUnitDto,
   CreateOrgUnitDto,
   UpdateOrgUnitDto,
-  orgUnitDisplayName,
+  buildOrgUnitCascadeOptions,
 } from '../../services/org-unit.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-
-interface CascadeOption {
-  label: string;
-  value: string;
-  items?: CascadeOption[];
-}
 
 @Component({
   selector: 'app-org-unit-form',
@@ -156,9 +150,12 @@ export class OrgUnitFormComponent implements OnInit {
 
   private readonly flatUnits = signal<OrgUnitDto[]>([]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- p-cascadeSelect's
+  // own `options` input type doesn't accept OrgUnitCascadeOption[]; this cast is
+  // pre-existing (unrelated to this extraction) and goes away entirely once
+  // p-cascadeSelect is removed in the very next commit.
   readonly cascadeOptions = computed<any[]>(() =>
-    this.buildCascadeOptions(this.flatUnits(), this.unit()?.id ?? null, null),
+    buildOrgUnitCascadeOptions(this.flatUnits(), this.unit()?.id ?? null, null),
   );
 
   readonly form = this.fb.group({
@@ -243,22 +240,5 @@ export class OrgUnitFormComponent implements OnInit {
         this.saving.set(false);
       },
     });
-  }
-
-  private buildCascadeOptions(
-    all: OrgUnitDto[],
-    excludeId: string | null,
-    parentId: string | null,
-  ): CascadeOption[] {
-    return all
-      .filter((u) => u.parentId === parentId && u.id !== excludeId && u.isActive)
-      .map((u) => {
-        const items = this.buildCascadeOptions(all, excludeId, u.id);
-        return {
-          label: orgUnitDisplayName(u),
-          value: u.id,
-          ...(items.length ? { items } : {}),
-        };
-      });
   }
 }
