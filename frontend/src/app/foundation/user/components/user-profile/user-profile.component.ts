@@ -12,7 +12,11 @@ import { TagModule } from 'primeng/tag';
 import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
-import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
+import {
+  OrgUnitService,
+  OrgUnitDto,
+  buildOrgUnitCascadeOptions,
+} from '../../../organization/services/org-unit.service';
 import { UserRoleAssignmentComponent } from '../../../roles/components/user-role-assignment/user-role-assignment.component';
 import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
@@ -97,12 +101,13 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
             <label for="primaryOrgUnitId" class="text-sm font-medium">
               {{ 'user.primaryOrgUnit' | translate }}
             </label>
-            <p-select
-              inputId="primaryOrgUnitId"
+            <app-overlay-select
               formControlName="primaryOrgUnitId"
-              [options]="orgUnits()"
-              optionLabel="nameEn"
-              optionValue="id"
+              [options]="orgUnitCascadeOptions()"
+              optionLabel="label"
+              optionValue="value"
+              optionGroupLabel="label"
+              optionGroupChildren="items"
               [showClear]="true"
             />
           </div>
@@ -320,6 +325,12 @@ export class UserProfileComponent implements OnInit {
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly otherUsers = signal<{ id: string; name: string; primaryOrgUnitId: string | null }[]>([]);
+
+  // ACC-42 Phase 6 — no excludeId: a user isn't itself an org unit, so
+  // there's no self/descendant relationship to exclude (unlike org-unit-
+  // form's own parentId picker). Shared by both primaryOrgUnitId and
+  // actingOrgUnitId — same tenant org-unit tree, no reason to duplicate.
+  readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
 
   // MFA management only ever acts on the logged-in user (AuthController's
   // mfa/* endpoints resolve the actor from the JWT via @CurrentUser(), not
