@@ -4,7 +4,6 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
-import { CascadeSelectModule } from 'primeng/cascadeselect';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { TooltipModule } from 'primeng/tooltip';
 import {
@@ -15,6 +14,13 @@ import {
   buildOrgUnitCascadeOptions,
 } from '../../services/org-unit.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 6 — OverlaySelectComponent replaces p-cascadeSelect on this
+// field: the first hierarchy-mode consumer (optionGroupLabel/
+// optionGroupChildren mirror p-cascadeSelect's own input names exactly, see
+// overlay-select.component.ts §1.2). Real-data checkpoint (plan §5.4)
+// applies here specifically — verified against this tenant's live
+// buildOrgUnitCascadeOptions() output, not a fixture.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 @Component({
   selector: 'app-org-unit-form',
@@ -25,7 +31,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     ButtonModule,
     InputTextModule,
     TextareaModule,
-    CascadeSelectModule,
+    OverlaySelectComponent,
     InputNumberModule,
     TooltipModule,
   ],
@@ -80,7 +86,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         <label class="font-medium text-sm">
           {{ 'organization.parentUnit' | translate }}
         </label>
-        <p-cascadeSelect
+        <app-overlay-select
           formControlName="parentId"
           [options]="cascadeOptions()"
           optionLabel="label"
@@ -88,7 +94,6 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           optionGroupLabel="label"
           optionGroupChildren="items"
           [placeholder]="'organization.parentUnit' | translate"
-          styleClass="w-full"
         />
       </div>
 
@@ -150,11 +155,7 @@ export class OrgUnitFormComponent implements OnInit {
 
   private readonly flatUnits = signal<OrgUnitDto[]>([]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- p-cascadeSelect's
-  // own `options` input type doesn't accept OrgUnitCascadeOption[]; this cast is
-  // pre-existing (unrelated to this extraction) and goes away entirely once
-  // p-cascadeSelect is removed in the very next commit.
-  readonly cascadeOptions = computed<any[]>(() =>
+  readonly cascadeOptions = computed(() =>
     buildOrgUnitCascadeOptions(this.flatUnits(), this.unit()?.id ?? null, null),
   );
 
