@@ -6,7 +6,6 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { LookupService, LookupCategoryDto, LookupValueDto } from '../../services/lookup.service';
 import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form.component';
@@ -24,7 +23,6 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     ButtonModule,
     TagModule,
     TooltipModule,
-    DialogModule,
     InputTextModule,
     LookupValueFormComponent,
     EditDialogComponent,
@@ -182,13 +180,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       />
 
       <!-- Override label dialog -->
-      <p-dialog
-        [visible]="showOverrideDialog()"
-        (visibleChange)="showOverrideDialog.set($event)"
-        [header]="'lookup.overrideLabelTitle' | translate"
-        [modal]="true"
-        [style]="{ width: '480px' }"
-      >
+      <ng-template #overrideFormTpl>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">
@@ -221,13 +213,20 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             />
           </div>
         </div>
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [(visible)]="showOverrideDialog"
+        [header]="'lookup.overrideLabelTitle' | translate"
+        [content]="overrideFormTpl"
+        width="480px"
+      />
 
     </div>
   `,
 })
 export class LookupValueListComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+  @ViewChild('overrideFormTpl', { read: TemplateRef, static: true }) overrideFormTpl!: TemplateRef<unknown>;
 
   private readonly lookupService = inject(LookupService);
   private readonly router = inject(Router);
