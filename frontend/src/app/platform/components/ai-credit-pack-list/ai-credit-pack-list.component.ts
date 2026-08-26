@@ -1,18 +1,25 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IAiCreditPack } from '../../services/plan.service';
+// ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
+// Unlike every other item in this ticket, this screen is genuinely
+// create-only: only openAdd() exists, no edit affordance in the table row
+// template at all. This migration has nothing to verify pre-fill-wise —
+// there was never a second-open-shows-stale-data risk to begin with. Pure
+// architectural consistency with SYSTEM-REFERENCE.md Section 10.5's
+// required pattern, not a bug-adjacent fix like the others in this ticket.
+import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit-dialog.component';
 
 @Component({
   selector: 'app-ai-credit-pack-list',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, DialogModule, MessageModule],
+  imports: [ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, MessageModule, EditDialogComponent],
   template: `
     <div class="flex flex-col gap-4">
       <div class="flex items-center justify-between">
@@ -46,7 +53,7 @@ import { PlanService, IAiCreditPack } from '../../services/plan.service';
         </ng-template>
       </p-table>
 
-      <p-dialog [visible]="showAddDialog()" (visibleChange)="showAddDialog.set($event)" [header]="'platform.addAiCreditPack' | translate" [modal]="true" [style]="{ width: '420px' }">
+      <ng-template #formTpl>
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <label for="name" class="text-sm font-medium">{{ 'platform.packName' | translate }}</label>
@@ -64,11 +71,19 @@ import { PlanService, IAiCreditPack } from '../../services/plan.service';
             <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
           </div>
         </form>
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [(visible)]="showAddDialog"
+        [header]="'platform.addAiCreditPack' | translate"
+        [content]="formTpl"
+        width="420px"
+      />
     </div>
   `,
 })
 export class AiCreditPackListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly fb = inject(FormBuilder);
   private readonly planService = inject(PlanService);
 
