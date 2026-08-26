@@ -1757,6 +1757,25 @@ Prisma Studio.
   filter-search (not just a longer option list) — typeahead alone was
   judged sufficient for `committee-member-form.userId`'s own bounded
   list, not necessarily for every future case.
+- **Remaining plain `p-select` fields (`approvalMode`,
+  `parallelThreshold`, `user-profile.language`) have a SEPARATE,
+  newly-found positioning bug distinct from ACC-41/42's
+  scroll-chaining fix** — PrimeNG's own overlay-flip logic fails to
+  reposition the panel above its trigger when opened near the bottom
+  of a viewport under CSS zoom specifically (confirmed NOT a general
+  small-window issue — PrimeNG flips correctly at extreme window
+  sizes at 1x zoom; the failure is specific to fractional,
+  zoom-scaled pixel coordinates). Confirmed live: `approvalMode`'s
+  4th option (COMMITTEE) rendered 15.9px past the viewport edge at
+  1.5x zoom, genuinely unreachable, no scroll path to it. Direct A/B
+  comparison in the same dialog, same conditions:
+  `OverlaySelectComponent` (ACC-42's replacement) correctly flipped
+  and fully displayed a 6-option field in an even more cramped
+  position — CDK's `RepositionScrollStrategy` handles this correctly
+  where PrimeNG does not. This is a real, independent justification
+  for migrating these remaining fields, unrelated to scroll-chaining
+  (they genuinely never needed that fix) — worth its own small,
+  scoped ticket.
 
 ### Sequence to Meeting Management
 
