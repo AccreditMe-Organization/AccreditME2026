@@ -12,11 +12,19 @@ import { TagModule } from 'primeng/tag';
 import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
-import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
+import {
+  OrgUnitService,
+  OrgUnitDto,
+  buildOrgUnitCascadeOptions,
+} from '../../../organization/services/org-unit.service';
 import { UserRoleAssignmentComponent } from '../../../roles/components/user-role-assignment/user-role-assignment.component';
 import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
+// routed-page-under-<main> context. See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
@@ -36,6 +44,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TranslatePipe,
     InputTextModule,
     SelectModule,
+    OverlaySelectComponent,
     DatePickerModule,
     ButtonModule,
     MessageModule,
@@ -79,8 +88,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
           <div class="flex flex-col gap-1">
             <label for="positionId" class="text-sm font-medium">{{ 'user.position' | translate }}</label>
-            <p-select
-              inputId="positionId"
+            <app-overlay-select
               formControlName="positionId"
               [options]="positions()"
               optionLabel="nameEn"
@@ -93,33 +101,33 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             <label for="primaryOrgUnitId" class="text-sm font-medium">
               {{ 'user.primaryOrgUnit' | translate }}
             </label>
-            <p-select
-              inputId="primaryOrgUnitId"
+            <app-overlay-select
               formControlName="primaryOrgUnitId"
-              [options]="orgUnits()"
-              optionLabel="nameEn"
-              optionValue="id"
+              [options]="orgUnitCascadeOptions()"
+              optionLabel="label"
+              optionValue="value"
+              optionGroupLabel="label"
+              optionGroupChildren="items"
               [showClear]="true"
             />
           </div>
 
           <div class="flex flex-col gap-1">
             <label for="managerId" class="text-sm font-medium">{{ 'user.manager' | translate }}</label>
-            <p-select
-              inputId="managerId"
+            <app-overlay-select
               formControlName="managerId"
               [options]="otherUsers()"
               optionLabel="name"
               optionValue="id"
               [showClear]="true"
-            >
-              <ng-template #item let-otherUser>
-                <div class="flex flex-col">
-                  <span>{{ otherUser.name }}</span>
-                  <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
-                </div>
-              </ng-template>
-            </p-select>
+              [itemTemplate]="managerItemTpl"
+            />
+            <ng-template #managerItemTpl let-otherUser>
+              <div class="flex flex-col">
+                <span>{{ otherUser.name }}</span>
+                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
+              </div>
+            </ng-template>
           </div>
 
           <div class="flex gap-4">
@@ -127,12 +135,13 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
               <label for="actingOrgUnitId" class="text-sm font-medium">
                 {{ 'user.actingOrgUnit' | translate }}
               </label>
-              <p-select
-                inputId="actingOrgUnitId"
+              <app-overlay-select
                 formControlName="actingOrgUnitId"
-                [options]="orgUnits()"
-                optionLabel="nameEn"
-                optionValue="id"
+                [options]="orgUnitCascadeOptions()"
+                optionLabel="label"
+                optionValue="value"
+                optionGroupLabel="label"
+                optionGroupChildren="items"
                 [showClear]="true"
               />
             </div>
@@ -170,21 +179,20 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
           <div class="flex flex-col gap-1">
             <label for="actingUserId" class="text-sm font-medium">{{ 'user.actingUser' | translate }}</label>
-            <p-select
-              inputId="actingUserId"
+            <app-overlay-select
               formControlName="actingUserId"
               [options]="otherUsers()"
               optionLabel="name"
               optionValue="id"
               [showClear]="true"
-            >
-              <ng-template #item let-otherUser>
-                <div class="flex flex-col">
-                  <span>{{ otherUser.name }}</span>
-                  <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
-                </div>
-              </ng-template>
-            </p-select>
+              [itemTemplate]="actingUserItemTpl"
+            />
+            <ng-template #actingUserItemTpl let-otherUser>
+              <div class="flex flex-col">
+                <span>{{ otherUser.name }}</span>
+                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
+              </div>
+            </ng-template>
           </div>
 
           <div class="flex justify-end">
@@ -318,6 +326,12 @@ export class UserProfileComponent implements OnInit {
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly otherUsers = signal<{ id: string; name: string; primaryOrgUnitId: string | null }[]>([]);
+
+  // ACC-42 Phase 6 — no excludeId: a user isn't itself an org unit, so
+  // there's no self/descendant relationship to exclude (unlike org-unit-
+  // form's own parentId picker). Shared by both primaryOrgUnitId and
+  // actingOrgUnitId — same tenant org-unit tree, no reason to duplicate.
+  readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
 
   // MFA management only ever acts on the logged-in user (AuthController's
   // mfa/* endpoints resolve the actor from the JWT via @CurrentUser(), not

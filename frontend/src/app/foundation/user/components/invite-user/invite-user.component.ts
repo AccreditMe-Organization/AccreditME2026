@@ -2,13 +2,22 @@ import { Component, OnInit, computed, inject, output, signal } from '@angular/co
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
-import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { UserService } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
-import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
+import {
+  OrgUnitService,
+  OrgUnitDto,
+  buildOrgUnitCascadeOptions,
+} from '../../../organization/services/org-unit.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 4/6 — OverlaySelectComponent replaces p-select on these
+// fields: raw p-dialog context; primaryOrgUnitId additionally gains real
+// hierarchy display for the first time (Phase 6, optionGroupLabel/
+// optionGroupChildren). See CLAUDE.md's PrimeNG-components-only exception
+// note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 @Component({
   selector: 'app-invite-user',
@@ -17,9 +26,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     ReactiveFormsModule,
     TranslatePipe,
     InputTextModule,
-    SelectModule,
     ButtonModule,
     MessageModule,
+    OverlaySelectComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -45,8 +54,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         <label for="positionId" class="text-sm font-medium">
           {{ 'user.position' | translate }} <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="positionId"
+        <app-overlay-select
           formControlName="positionId"
           [options]="positions()"
           optionLabel="nameEn"
@@ -62,33 +70,33 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             <span class="text-red-500">*</span>
           }
         </label>
-        <p-select
-          inputId="primaryOrgUnitId"
+        <app-overlay-select
           formControlName="primaryOrgUnitId"
-          [options]="orgUnits()"
-          optionLabel="nameEn"
-          optionValue="id"
+          [options]="orgUnitCascadeOptions()"
+          optionLabel="label"
+          optionValue="value"
+          optionGroupLabel="label"
+          optionGroupChildren="items"
           [showClear]="true"
         />
       </div>
 
       <div class="flex flex-col gap-1">
         <label for="managerId" class="text-sm font-medium">{{ 'user.manager' | translate }}</label>
-        <p-select
-          inputId="managerId"
+        <app-overlay-select
           formControlName="managerId"
           [options]="managers()"
           optionLabel="name"
           optionValue="id"
           [showClear]="true"
-        >
-          <ng-template #item let-manager>
-            <div class="flex flex-col">
-              <span>{{ manager.name }}</span>
-              <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(manager.primaryOrgUnitId) }}</span>
-            </div>
-          </ng-template>
-        </p-select>
+          [itemTemplate]="managerItemTpl"
+        />
+        <ng-template #managerItemTpl let-manager>
+          <div class="flex flex-col">
+            <span>{{ manager.name }}</span>
+            <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(manager.primaryOrgUnitId) }}</span>
+          </div>
+        </ng-template>
       </div>
 
       <div class="flex justify-end gap-2 pt-2">
@@ -123,6 +131,11 @@ export class InviteUserComponent implements OnInit {
   // check exactly: required once the tenant has at least one active
   // OrgUnit, not a blanket rule (a brand-new tenant has none yet).
   readonly primaryOrgUnitRequired = computed(() => this.orgUnits().some((u) => u.isActive));
+
+  // ACC-42 Phase 6 — no excludeId: a new user isn't itself an org unit, so
+  // there's no self/descendant relationship to exclude (unlike org-unit-
+  // form's own parentId picker).
+  readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
 
   readonly form = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(255)]],

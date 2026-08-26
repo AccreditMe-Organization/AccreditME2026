@@ -1,8 +1,9 @@
-import { Component, ElementRef, ViewChild } from '@angular/core';
-import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { Component, ElementRef, TemplateRef, ViewChild } from '@angular/core';
+import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { OverlayContainer } from '@angular/cdk/overlay';
+import { CdkOption } from '@angular/cdk/listbox';
 import { OverlaySelectComponent } from './overlay-select.component';
 
 interface RoleOption {
@@ -72,6 +73,118 @@ class ScrollAncestorHostComponent {
 
 function getTrigger(fixture: ComponentFixture<unknown>): HTMLElement {
   return fixture.debugElement.query(By.css('.am-overlay-select-trigger')).nativeElement as HTMLElement;
+}
+
+// ACC-42 Phase 1 — a genuine 3-level tree, not just 2, matching
+// org-unit-form's own buildCascadeOptions() shape ({label, value, items?}).
+// Deliberately deeper than the demo tenant's current ~4-unit, 2-level real
+// data (plan §1.5) so the flattening/keyboard-nav/selectedLabel() tests
+// below exercise a realistic worst case, not the shallowest possible one.
+interface TreeOption {
+  label: string;
+  value: string;
+  items?: TreeOption[];
+}
+
+const TREE_OPTIONS: TreeOption[] = [
+  {
+    label: 'Org 1',
+    value: 'o1',
+    items: [
+      {
+        label: 'Dept A',
+        value: 'o1a',
+        items: [
+          { label: 'Team A1', value: 'o1a1' },
+          { label: 'Team A2', value: 'o1a2' },
+        ],
+      },
+      { label: 'Dept B', value: 'o1b' },
+    ],
+  },
+  { label: 'Org 2', value: 'o2' },
+];
+
+@Component({
+  standalone: true,
+  imports: [OverlaySelectComponent, ReactiveFormsModule],
+  template: `
+    <app-overlay-select
+      [options]="options"
+      optionLabel="label"
+      optionValue="value"
+      optionGroupLabel="label"
+      optionGroupChildren="items"
+      [formControl]="control"
+    />
+  `,
+})
+class HierarchyOptionsHostComponent {
+  options = TREE_OPTIONS;
+  control = new FormControl<string | null>(null);
+}
+
+// ACC-42 Phase 2 — shape mirrors every one of the 4 real affected fields'
+// own data exactly (otherUsers()/pickableUsers()/managers(): {id, name,
+// primaryOrgUnitId}-like), with the same two-line name+org-unit
+// <ng-template #item> pattern all 4 currently use via p-select. One shared
+// fixture — the underlying mechanism under test is genuinely identical
+// across all 4 real fields — but each field gets its own named test below
+// (plan §2.4's own requirement), not one generic test standing in for all
+// four.
+interface PickableUser {
+  id: string;
+  name: string;
+  orgUnit: string;
+}
+
+const PICKABLE_USERS: PickableUser[] = [
+  { id: 'u1', name: 'Ahmad Al-Najjar', orgUnit: 'Quality Department' },
+  { id: 'u2', name: 'Sarah Ibrahim', orgUnit: 'Radiology' },
+  { id: 'u3', name: 'Reem Al-Fahad', orgUnit: 'Human Resources' },
+];
+
+@Component({
+  standalone: true,
+  imports: [OverlaySelectComponent, ReactiveFormsModule],
+  template: `
+    <app-overlay-select
+      [options]="options"
+      optionLabel="name"
+      optionValue="id"
+      [itemTemplate]="itemTpl"
+      [formControl]="control"
+    />
+    <ng-template #itemTpl let-user>
+      <div class="flex flex-col">
+        <span>{{ user.name }}</span>
+        <span class="text-xs">{{ user.orgUnit }}</span>
+      </div>
+    </ng-template>
+  `,
+})
+class PickableUserHostComponent {
+  @ViewChild('itemTpl', { static: true }) itemTpl!: TemplateRef<unknown>;
+  options = PICKABLE_USERS;
+  control = new FormControl<string | null>(null);
+}
+
+// ACC-42 Phase 5 §5.5 — the first two real consumers (user-role-assignment,
+// calendar-config) bind via plain [(ngModel)], not formControlName/
+// [formControl]. Every other host component above uses ReactiveFormsModule;
+// this one deliberately does not, to prove NgModel's own
+// ControlValueAccessor wiring end-to-end rather than assuming it from the
+// interface being implemented (plan §5.5).
+@Component({
+  standalone: true,
+  imports: [OverlaySelectComponent, FormsModule],
+  template: `
+    <app-overlay-select [options]="options" optionLabel="nameEn" optionValue="id" [(ngModel)]="value" />
+  `,
+})
+class NgModelHostComponent {
+  options = ROLE_OPTIONS;
+  value: string | null = null;
 }
 
 describe('OverlaySelectComponent', () => {
@@ -357,5 +470,290 @@ describe('OverlaySelectComponent', () => {
       fixture.detectChanges();
       expect(fixture.componentInstance.control.value).toBe('AUDIT');
     });
+  });
+
+  // ACC-42 Phase 1 exit criteria (plan §1.5) — hierarchy mode, verified
+  // against a genuine 3-level tree, not the shallowest possible case.
+  describe('hierarchy mode (ACC-42 Phase 1 — optionGroupLabel/optionGroupChildren)', () => {
+    it('flattens a 3-level tree into the correct depth-ordered, indented list', () => {
+      const fixture = TestBed.createComponent(HierarchyOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const rows = Array.from(document.querySelectorAll('.am-overlay-select-option'));
+      expect(rows.map((el) => el.textContent?.trim())).toEqual([
+        'Org 1',
+        'Dept A',
+        'Team A1',
+        'Team A2',
+        'Dept B',
+        'Org 2',
+      ]);
+
+      // depth-based indentation — paddingInlineStart = 0.75rem + depth*1rem
+      const depths = [0, 1, 2, 2, 1, 0];
+      rows.forEach((el, i) => {
+        const expectedRem = 0.75 + depths[i] * 1;
+        expect((el as HTMLElement).style.paddingInlineStart).toBe(`${expectedRem}rem`);
+      });
+    });
+
+    it('every node is individually selectable regardless of depth or branch/leaf status', () => {
+      const fixture = TestBed.createComponent(HierarchyOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      // "Dept A" (index 1) is a branch node (has items) — must still be
+      // directly selectable, matching p-cascadeSelect's current actual
+      // behavior for org-unit-form (pick any unit at any level as parent,
+      // not "drill down to a leaf only").
+      (document.querySelectorAll('.am-overlay-select-option')[1] as HTMLElement).click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.control.value).toBe('o1a');
+    });
+
+    it("selectedLabel() resolves a value nested at depth 2, not just top-level", () => {
+      const fixture = TestBed.createComponent(HierarchyOptionsHostComponent);
+      fixture.componentInstance.control.setValue('o1a1');
+      fixture.detectChanges();
+
+      const label = fixture.debugElement.query(By.css('.am-overlay-select-label'))
+        .nativeElement as HTMLElement;
+      expect(label.textContent?.trim()).toBe('Team A1');
+    });
+
+    it('keyboard nav (ArrowDown) moves through the flattened list in the same visual order rendered', () => {
+      const fixture = TestBed.createComponent(HierarchyOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      const activeText = () => panel.querySelector('.cdk-option-active')?.textContent?.trim();
+
+      const expectedOrder = ['Dept A', 'Team A1', 'Team A2', 'Dept B', 'Org 2'];
+      for (const expected of expectedOrder) {
+        keydown(panel, 'ArrowDown', DOWN_ARROW);
+        fixture.detectChanges();
+        expect(activeText()).toBe(expected);
+      }
+    });
+
+    it('Enter selects a non-top-level node correctly and updates the bound FormControl', () => {
+      const fixture = TestBed.createComponent(HierarchyOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      // Org 1 -> Dept A -> Team A1 (2 ArrowDowns from the initial top item)
+      keydown(panel, 'ArrowDown', DOWN_ARROW);
+      keydown(panel, 'ArrowDown', DOWN_ARROW);
+      fixture.detectChanges();
+      keydown(panel, 'Enter', ENTER);
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.control.value).toBe('o1a1');
+      expect(document.querySelector('.am-overlay-select-panel')).toBeNull();
+    });
+  });
+
+  // ACC-42 Phase 2 exit criteria (plan §2.4). Two review-round additions:
+  // 1) an explicit regression check that the two ACC-41 fields
+  //    (task-form.sourceType, position-form.roleId — no itemTemplate set)
+  //    are genuinely undisturbed by adding the itemTemplate code path, not
+  //    inferred from "suite is green"; 2) one specific, named typeahead
+  //    test per affected field, not one generic case standing in for all
+  //    four.
+  describe('item-template projection (ACC-42 Phase 2 — itemTemplate + cdkOptionTypeaheadLabel)', () => {
+    it('renders a custom itemTemplate instead of the plain label, and click-selection still resolves the correct optionValue', () => {
+      const fixture = TestBed.createComponent(PickableUserHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const firstRow = document.querySelector('.am-overlay-select-option') as HTMLElement;
+      // Proves projection genuinely happened, not just that the input was
+      // accepted: the custom template's own two-line structure is present.
+      expect(firstRow.textContent?.trim()).toBe('Ahmad Al-NajjarQuality Department');
+      expect(firstRow.querySelectorAll('span').length).toBe(2);
+
+      (document.querySelectorAll('.am-overlay-select-option')[1] as HTMLElement).click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.control.value).toBe('u2');
+    });
+
+    it('binds cdkOptionTypeaheadLabel to the plain name — not the two-line custom template\'s concatenated textContent', () => {
+      const fixture = TestBed.createComponent(PickableUserHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const optionDebugEls = fixture.debugElement.queryAll(By.directive(CdkOption));
+      const labels = optionDebugEls.map((el) => el.injector.get(CdkOption).typeaheadLabel);
+      // Direct proof the fix is wired, not inferred from behavior alone:
+      // if unbound, typeaheadLabel would be null (CdkOption's own default),
+      // and typeahead would fall back to the corrupted concatenated
+      // textContent instead.
+      expect(labels).toEqual(['Ahmad Al-Najjar', 'Sarah Ibrahim', 'Reem Al-Fahad']);
+    });
+
+    // Named per field, per plan §2.4 — same shared mechanism/fixture, but
+    // each stands alone as evidence for that specific real field, not one
+    // generic case covering all four (matching this whole plan's own
+    // "passing on one field is not evidence for an untested one" standard,
+    // §5.2).
+    it('invite-user.managerId: typing a letter jumps to the matching NAME, not broken by the org-unit subtitle', fakeAsync(() => {
+      const fixture = TestBed.createComponent(PickableUserHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      keydown(panel, 's', 83); // "Sarah Ibrahim"
+      fixture.detectChanges();
+      tick(250);
+      fixture.detectChanges();
+      expect(panel.querySelector('.cdk-option-active')?.textContent?.trim()).toBe('Sarah IbrahimRadiology');
+    }));
+
+    it('committee-member-form.userId: typing a letter jumps to the matching NAME, not broken by the org-unit subtitle', fakeAsync(() => {
+      const fixture = TestBed.createComponent(PickableUserHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      keydown(panel, 'r', 82); // "Reem Al-Fahad"
+      fixture.detectChanges();
+      tick(250);
+      fixture.detectChanges();
+      expect(panel.querySelector('.cdk-option-active')?.textContent?.trim()).toBe('Reem Al-FahadHuman Resources');
+    }));
+
+    it('user-profile.managerId: typing a letter jumps to the matching NAME, not broken by the org-unit subtitle', fakeAsync(() => {
+      const fixture = TestBed.createComponent(PickableUserHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      keydown(panel, 'a', 65); // "Ahmad Al-Najjar"
+      fixture.detectChanges();
+      tick(250);
+      fixture.detectChanges();
+      expect(panel.querySelector('.cdk-option-active')?.textContent?.trim()).toBe('Ahmad Al-NajjarQuality Department');
+    }));
+
+    it('user-profile.actingUserId: typing a letter jumps to the matching NAME, not broken by the org-unit subtitle', fakeAsync(() => {
+      const fixture = TestBed.createComponent(PickableUserHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      keydown(panel, 's', 83); // "Sarah Ibrahim"
+      fixture.detectChanges();
+      tick(250);
+      fixture.detectChanges();
+      expect(panel.querySelector('.cdk-option-active')?.textContent?.trim()).toBe('Sarah IbrahimRadiology');
+    }));
+  });
+
+  // Regression exit criterion (plan §2.4, added after review): the two
+  // fields already migrated in ACC-41 — no itemTemplate set at all — must
+  // still render and behave exactly as before adding the itemTemplate code
+  // path. Dedicated, named tests distinct from the general option-shapes
+  // coverage above, so this specific guarantee is traceable on its own.
+  describe('item-template regression — the two ACC-41 fields remain undisturbed (plan §2.4)', () => {
+    it('position-form.roleId shape (object array, no itemTemplate): renders the exact plain label, unchanged', () => {
+      const fixture = TestBed.createComponent(ObjectOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const labels = Array.from(document.querySelectorAll('.am-overlay-select-option')).map((el) =>
+        el.textContent?.trim(),
+      );
+      expect(labels).toEqual(['Quality Manager', 'Auditor', 'Reviewer']);
+
+      (document.querySelectorAll('.am-overlay-select-option')[0] as HTMLElement).click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.control.value).toBe('r1');
+    });
+
+    it('task-form.sourceType shape (primitive array, no itemTemplate): renders the exact plain label, unchanged', () => {
+      const fixture = TestBed.createComponent(PrimitiveOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      const labels = Array.from(document.querySelectorAll('.am-overlay-select-option')).map((el) =>
+        el.textContent?.trim(),
+      );
+      expect(labels).toEqual(SOURCE_TYPES);
+
+      (document.querySelectorAll('.am-overlay-select-option')[1] as HTMLElement).click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.control.value).toBe('DOCUMENT');
+    });
+  });
+
+  // ACC-42 Phase 5 §5.5 exit criterion — first real proof of the ngModel
+  // binding path (user-role-assignment, calendar-config), not assumed from
+  // ControlValueAccessor being implemented. Two distinct directions:
+  // component→template (selecting an option updates the bound property) and
+  // the classic hand-rolled-CVA gap class, template←external (a
+  // programmatic, non-UI-driven change to the bound property — exactly what
+  // user-role-assignment.onAssign() does when it resets selectedRoleId to
+  // null after a successful assign — must still reach writeValue() and
+  // re-render the displayed selection).
+  describe('ngModel binding path (plan §5.5 — first real proof, not assumed)', () => {
+    it('selecting an option via the real DOM updates the ngModel-bound property', () => {
+      const fixture = TestBed.createComponent(NgModelHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+
+      (document.querySelectorAll('.am-overlay-select-option')[1] as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.value).toBe('r2');
+    });
+
+    it(
+      'an external (non-UI) write to the bound property re-syncs the displayed selection via writeValue()',
+      fakeAsync(() => {
+        const fixture = TestBed.createComponent(NgModelHostComponent);
+        fixture.componentInstance.value = 'r1';
+        fixture.detectChanges();
+        // NgModel's model→view sync (NgModel._updateValue()) is itself
+        // wrapped in a resolved-Promise microtask, not applied synchronously
+        // within the triggering detectChanges() — standard NgModel behavior
+        // (avoids ExpressionChangedAfterItHasBeenCheckedError), not specific
+        // to OverlaySelectComponent. tick() flushes it; a real running app
+        // sees this resolve on the next microtask/render pass regardless.
+        tick();
+        fixture.detectChanges();
+
+        const label = () => fixture.debugElement.query(By.css('.am-overlay-select-label')).nativeElement.textContent.trim();
+        expect(label()).toBe('Quality Manager');
+
+        // Simulates user-role-assignment's own onAssign() success handler:
+        // `this.selectedRoleId = null` set directly on the component, not
+        // through any form API or UI interaction — the exact path a
+        // hand-rolled writeValue() can silently fail to react to if NgModel's
+        // own change-detection wiring isn't genuinely exercised.
+        fixture.componentInstance.value = null;
+        fixture.detectChanges();
+        tick();
+        fixture.detectChanges();
+
+        expect(label()).toBe('');
+        expect(fixture.debugElement.query(By.css('.am-overlay-select-placeholder'))).not.toBeNull();
+      }),
+    );
   });
 });

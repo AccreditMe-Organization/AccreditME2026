@@ -1,11 +1,14 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
-import { SelectModule } from 'primeng/select';
 import { TextareaModule } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TenantService } from '../../../tenant/services/tenant.service';
+// ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
+// routed-page-under-<main> context. See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 const PROVIDER_OPTIONS = [
   { label: 'Resend (cloud default)', value: 'resend' },
@@ -23,7 +26,7 @@ const PROVIDER_OPTIONS = [
 @Component({
   selector: 'app-email-provider-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, SelectModule, TextareaModule, ButtonModule, MessageModule],
+  imports: [ReactiveFormsModule, TranslatePipe, OverlaySelectComponent, TextareaModule, ButtonModule, MessageModule],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
       <h2 class="text-xl font-semibold">{{ 'adminSettings.emailProvider' | translate }}</h2>
@@ -39,7 +42,7 @@ const PROVIDER_OPTIONS = [
       <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
         <div class="flex flex-col gap-1">
           <label for="emailProvider" class="text-sm font-medium">{{ 'adminSettings.provider' | translate }}</label>
-          <p-select inputId="emailProvider" formControlName="emailProvider" [options]="providerOptions" optionLabel="label" optionValue="value" />
+          <app-overlay-select formControlName="emailProvider" [options]="providerOptions" optionLabel="label" optionValue="value" />
         </div>
         <div class="flex flex-col gap-1">
           <label for="config" class="text-sm font-medium">{{ 'adminSettings.providerConfig' | translate }}</label>

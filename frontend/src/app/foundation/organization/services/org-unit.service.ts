@@ -44,6 +44,38 @@ export function orgUnitDisplayName(unit: { nameEn: string; nameAr: string | null
   return unit.nameAr ? `${unit.nameEn} (${unit.nameAr})` : unit.nameEn;
 }
 
+// ACC-42 Phase 6 — shared hierarchy-tree builder for every OrgUnit picker
+// migrating to OverlaySelectComponent's hierarchy mode (optionGroupLabel/
+// optionGroupChildren, see overlay-select.component.ts). Extracted from
+// org-unit-form.component.ts's own private buildCascadeOptions() (its
+// exact, already-proven logic, unchanged) rather than left as 4 near-
+// duplicate copies across org-unit-form/invite-user/user-profile's 3
+// pickers — only org-unit-form has a genuine excludeId need (a unit can't
+// become its own ancestor); the other 3 consumers pass null, since a user
+// isn't an org unit and has no self/descendant relationship to exclude.
+export interface OrgUnitCascadeOption {
+  label: string;
+  value: string;
+  items?: OrgUnitCascadeOption[];
+}
+
+export function buildOrgUnitCascadeOptions(
+  all: OrgUnitDto[],
+  excludeId: string | null,
+  parentId: string | null,
+): OrgUnitCascadeOption[] {
+  return all
+    .filter((u) => u.parentId === parentId && u.id !== excludeId && u.isActive)
+    .map((u) => {
+      const items = buildOrgUnitCascadeOptions(all, excludeId, u.id);
+      return {
+        label: orgUnitDisplayName(u),
+        value: u.id,
+        ...(items.length ? { items } : {}),
+      };
+    });
+}
+
 @Injectable({ providedIn: 'root' })
 export class OrgUnitService {
   private readonly http = inject(HttpClient);

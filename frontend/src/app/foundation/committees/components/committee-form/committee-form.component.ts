@@ -4,7 +4,6 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { SelectModule } from 'primeng/select';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { ButtonModule } from 'primeng/button';
 import {
@@ -16,6 +15,10 @@ import {
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
 import { LanguageService } from '../../../../core/services/language.service';
+// ACC-42 Phase 3 — OverlaySelectComponent replaces p-select on this field:
+// EditDialogComponent context. See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 type ReportingToMode = 'none' | 'committee' | 'role';
 
@@ -29,9 +32,9 @@ type ReportingToMode = 'none' | 'committee' | 'role';
     InputTextModule,
     TextareaModule,
     InputNumberModule,
-    SelectModule,
     SelectButtonModule,
     ButtonModule,
+    OverlaySelectComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -56,8 +59,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
           {{ 'committee.type' | translate }}
           <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="typeValueId"
+        <app-overlay-select
           formControlName="typeValueId"
           [options]="committeeTypes()"
           [optionLabel]="typeLabelField()"
@@ -79,8 +81,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
 
         <div class="flex flex-col gap-1">
           <label for="meetingFrequency" class="text-sm font-medium">{{ 'committee.meetingFrequency' | translate }}</label>
-          <p-select
-            inputId="meetingFrequency"
+          <app-overlay-select
             formControlName="meetingFrequency"
             [options]="frequencyOptions"
             optionLabel="label"
@@ -91,8 +92,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
 
       <div class="flex flex-col gap-1">
         <label for="parentCommitteeId" class="text-sm font-medium">{{ 'committee.parentCommittee' | translate }}</label>
-        <p-select
-          inputId="parentCommitteeId"
+        <app-overlay-select
           formControlName="parentCommitteeId"
           [options]="parentOptions()"
           [optionLabel]="nameLabelField()"
@@ -117,7 +117,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
         </p-selectButton>
 
         @if (reportingToMode === 'committee') {
-          <p-select
+          <app-overlay-select
             formControlName="reportingToCommitteeId"
             [options]="parentOptions()"
             [optionLabel]="nameLabelField()"
@@ -127,7 +127,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
         }
 
         @if (reportingToMode === 'role') {
-          <p-select
+          <app-overlay-select
             formControlName="reportingToRoleId"
             [options]="roles()"
             optionLabel="nameEn"

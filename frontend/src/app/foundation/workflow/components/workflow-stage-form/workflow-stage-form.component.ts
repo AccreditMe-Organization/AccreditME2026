@@ -19,6 +19,11 @@ import { RoleService, RoleDto } from '../../../roles/services/role.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 3 — OverlaySelectComponent replaces p-select on this field:
+// EditDialogComponent context, 6 options, qualifies per ACC-41/42's
+// established 5+ threshold. See CLAUDE.md's PrimeNG-components-only
+// exception note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 const APPROVAL_MODES = [
   { label: 'SINGLE', value: 'SINGLE' },
@@ -66,6 +71,7 @@ const ASSIGNEE_STRATEGIES = [
     SelectModule,
     CheckboxModule,
     MessageModule,
+    OverlaySelectComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -159,13 +165,11 @@ const ASSIGNEE_STRATEGIES = [
         <label for="assigneeStrategy" class="font-medium text-sm">
           {{ 'workflow.assigneeStrategy' | translate }} <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="assigneeStrategy"
+        <app-overlay-select
           formControlName="assigneeStrategy"
           [options]="assigneeStrategies"
           optionLabel="label"
           optionValue="value"
-          styleClass="w-full"
         />
       </div>
 
@@ -174,13 +178,11 @@ const ASSIGNEE_STRATEGIES = [
           <label for="assigneeRoleId" class="font-medium text-sm">
             {{ 'workflow.assigneeRole' | translate }}
           </label>
-          <p-select
-            inputId="assigneeRoleId"
+          <app-overlay-select
             formControlName="assigneeRoleId"
             [options]="roles()"
             optionLabel="nameEn"
             optionValue="id"
-            styleClass="w-full"
           />
         </div>
       }
@@ -190,14 +192,12 @@ const ASSIGNEE_STRATEGIES = [
           <label for="assigneeCommitteeRoleValueId" class="font-medium text-sm">
             {{ 'workflow.assigneeCommitteeRole' | translate }}
           </label>
-          <p-select
-            inputId="assigneeCommitteeRoleValueId"
+          <app-overlay-select
             formControlName="assigneeCommitteeRoleValueId"
             [options]="committeeRoles()"
             [optionLabel]="committeeRoleLabelField()"
             optionValue="id"
             [showClear]="true"
-            styleClass="w-full"
           />
           <small class="text-[var(--am-text-secondary)]">
             {{ 'workflow.assigneeCommitteeRoleHint' | translate }}

@@ -8,7 +8,6 @@ import { TooltipModule } from 'primeng/tooltip';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
-import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
@@ -22,6 +21,10 @@ import {
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
 import { WorkflowActionConfiguratorComponent } from '../workflow-action-configurator/workflow-action-configurator.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on these fields:
+// raw p-dialog context. See CLAUDE.md's PrimeNG-components-only exception
+// note and overlay-select.component.ts for the full mechanism.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 const TRIGGER_CONDITIONS = [
   { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
@@ -44,10 +47,10 @@ const TRIGGER_CONDITIONS = [
     DialogModule,
     InputTextModule,
     TextareaModule,
-    SelectModule,
     CheckboxModule,
     MessageModule,
     WorkflowActionConfiguratorComponent,
+    OverlaySelectComponent,
   ],
   template: `
     <div class="flex flex-col gap-3">
@@ -138,12 +141,11 @@ const TRIGGER_CONDITIONS = [
         <form [formGroup]="addForm" (ngSubmit)="onSubmitAdd()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.toStage' | translate }} <span class="text-red-500">*</span></label>
-            <p-select
+            <app-overlay-select
               formControlName="toStageId"
               [options]="availableStages"
               optionLabel="nameEn"
               optionValue="id"
-              styleClass="w-full"
             />
           </div>
 
@@ -159,24 +161,22 @@ const TRIGGER_CONDITIONS = [
 
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-            <p-select
+            <app-overlay-select
               formControlName="triggerCondition"
               [options]="triggerConditions"
               optionLabel="label"
               optionValue="value"
-              styleClass="w-full"
             />
           </div>
 
           @if (addForm.controls.triggerCondition.value === 'ROLE_BASED') {
             <div class="flex flex-col gap-1">
               <label class="font-medium text-sm">{{ 'workflow.assigneeRole' | translate }}</label>
-              <p-select
+              <app-overlay-select
                 formControlName="triggerRoleId"
                 [options]="roles()"
                 optionLabel="nameEn"
                 optionValue="id"
-                styleClass="w-full"
               />
             </div>
           }
@@ -252,12 +252,11 @@ const TRIGGER_CONDITIONS = [
 
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-            <p-select
+            <app-overlay-select
               formControlName="triggerCondition"
               [options]="triggerConditions"
               optionLabel="label"
               optionValue="value"
-              styleClass="w-full"
             />
           </div>
 

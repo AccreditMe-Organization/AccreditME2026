@@ -1,7 +1,6 @@
 import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
-import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import {
@@ -13,11 +12,16 @@ import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-u
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-42 Phase 3 — OverlaySelectComponent replaces p-select on this field:
+// EditDialogComponent context, proves item-template projection (Phase 2)
+// end-to-end for the first time in a real consumer. See CLAUDE.md's
+// PrimeNG-components-only exception note and overlay-select.component.ts.
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 @Component({
   selector: 'app-committee-member-form',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, SelectModule, InputTextModule, ButtonModule],
+  imports: [ReactiveFormsModule, TranslatePipe, InputTextModule, ButtonModule, OverlaySelectComponent],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
       @if (!member()) {
@@ -26,23 +30,29 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             {{ 'committee.member' | translate }}
             <span class="text-red-500">*</span>
           </label>
-          <p-select
-            inputId="userId"
+          <!-- ACC-42 §2.5 — no filter-search here (p-select's old
+               [filter]="true" filterBy="name,email" is gone): confirmed
+               genuinely harder than every other OverlaySelectComponent
+               capability, since CDK's own listbox keyboard machinery
+               assumes real focus stays on the listbox, not an external
+               filter input. Deliberate, documented trade-off — typeahead
+               alone (Phase 2) judged sufficient for this bounded list.
+               See CLAUDE.md's Open/Deferred Items + the plan doc's own
+               §2.5 before reintroducing filter here. -->
+          <app-overlay-select
             formControlName="userId"
             [options]="pickableUsers()"
             optionLabel="name"
             optionValue="id"
-            [filter]="true"
-            filterBy="name,email"
+            [itemTemplate]="memberItemTpl"
             [placeholder]="'committee.selectMember' | translate"
-          >
-            <ng-template #item let-pickableUser>
-              <div class="flex flex-col">
-                <span>{{ pickableUser.name }}</span>
-                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(pickableUser.primaryOrgUnitId) }}</span>
-              </div>
-            </ng-template>
-          </p-select>
+          />
+          <ng-template #memberItemTpl let-pickableUser>
+            <div class="flex flex-col">
+              <span>{{ pickableUser.name }}</span>
+              <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(pickableUser.primaryOrgUnitId) }}</span>
+            </div>
+          </ng-template>
         </div>
       }
 
@@ -51,8 +61,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           {{ 'committee.memberRole' | translate }}
           <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="roleValueId"
+        <app-overlay-select
           formControlName="roleValueId"
           [options]="memberRoles()"
           [optionLabel]="roleLabelField()"

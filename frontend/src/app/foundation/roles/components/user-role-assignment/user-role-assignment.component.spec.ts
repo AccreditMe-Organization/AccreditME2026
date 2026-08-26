@@ -4,7 +4,8 @@
 // optionValue="id"), and (2) an array-shaped validation error message must
 // never reach the error signal as anything but a string — that's what
 // rendered as "[object Object]" before the fix.
-import { TestBed, ComponentFixture } from '@angular/core/testing';
+import { TestBed, ComponentFixture, fakeAsync, tick } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
@@ -88,4 +89,40 @@ describe('UserRoleAssignmentComponent (ACC-26)', () => {
     expect(component.error()).toBe('roleId must be a string');
     expect(typeof component.error()).toBe('string');
   });
+
+  // ACC-42 Phase 5 §5.5 exit criterion, verified in the real consumer (not
+  // just the generic proof in overlay-select.component.spec.ts): onAssign()'s
+  // own success handler sets `this.selectedRoleId = null` directly — an
+  // external, non-UI write to the ngModel-bound property — and the real
+  // OverlaySelectComponent's displayed label must reflect that reset.
+  it(
+    "resets the OverlaySelectComponent's displayed selection after a successful assign (§5.5 external-reset exit criterion)",
+    fakeAsync(() => {
+      component.selectedRoleId = ROLE_A.id;
+      fixture.detectChanges();
+      tick();
+      fixture.detectChanges();
+
+      const label = () =>
+        fixture.debugElement.query(By.css('.am-overlay-select-label')).nativeElement.textContent.trim();
+      expect(label()).toBe('Quality Officer');
+
+      component.onAssign();
+      httpMock.expectOne(`${environment.apiUrl}/users/user-1/roles`).flush(null, { status: 204, statusText: 'No Content' });
+      httpMock.expectOne(`${environment.apiUrl}/users/user-1/roles`).flush([]);
+      httpMock.expectOne(`${environment.apiUrl}/roles`).flush([ROLE_A]);
+      fixture.detectChanges();
+      tick();
+      fixture.detectChanges();
+
+      expect(component.selectedRoleId).toBeNull();
+      // The label span renders `selectedLabel() || placeholder()` — with a
+      // placeholder configured (as this field does), a cleared selection
+      // shows the placeholder text in the same span, not empty text; the
+      // placeholder-styling class is the correct signal that it's genuinely
+      // cleared rather than still showing a stale selection.
+      expect(label()).toBe('roles.assignRole');
+      expect(fixture.debugElement.query(By.css('.am-overlay-select-placeholder'))).not.toBeNull();
+    }),
+  );
 });
