@@ -239,13 +239,7 @@ const TRIGGER_CONDITIONS = [
       />
 
       <!-- Edit Transition -->
-      <p-dialog
-        [visible]="showEditDialog()"
-        (visibleChange)="showEditDialog.set($event)"
-        [header]="'workflow.editTransition' | translate"
-        [modal]="true"
-        [style]="{ width: '560px' }"
-      >
+      <ng-template #editFormTpl>
         <p class="text-sm text-[var(--am-text-secondary)] mb-2">
           {{ 'workflow.transitionEndpointsLocked' | translate }}
         </p>
@@ -307,7 +301,13 @@ const TRIGGER_CONDITIONS = [
             />
           </div>
         </form>
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [(visible)]="showEditDialog"
+        [header]="'workflow.editTransition' | translate"
+        [content]="editFormTpl"
+        width="560px"
+      />
 
       <!-- Configure Actions -->
       <p-dialog
@@ -336,6 +336,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   @Output() changed = new EventEmitter<void>();
 
   @ViewChild('addFormTpl', { read: TemplateRef, static: true }) addFormTpl!: TemplateRef<unknown>;
+  @ViewChild('editFormTpl', { read: TemplateRef, static: true }) editFormTpl!: TemplateRef<unknown>;
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly roleService = inject(RoleService);
