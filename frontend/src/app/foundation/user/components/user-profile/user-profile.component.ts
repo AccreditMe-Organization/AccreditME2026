@@ -3,7 +3,6 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
-import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
@@ -21,9 +20,14 @@ import { UserRoleAssignmentComponent } from '../../../roles/components/user-role
 import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
-// ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
-// routed-page-under-<main> context. See CLAUDE.md's PrimeNG-components-only
-// exception note and overlay-select.component.ts for the full mechanism.
+// ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on most fields
+// in this file: routed-page-under-<main> context. `language` (2 options)
+// stayed on p-select at the time — below the scroll-chaining threshold —
+// but was migrated separately afterward once a different bug was found:
+// PrimeNG's own overlay-flip logic fails to reposition above the trigger
+// under CSS zoom specifically, confirmed live elsewhere in the app.
+// OverlaySelectComponent's CDK-based positioning doesn't share this bug —
+// see CLAUDE.md's Open/Deferred Items for the full investigation.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
@@ -43,7 +47,6 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
     ReactiveFormsModule,
     TranslatePipe,
     InputTextModule,
-    SelectModule,
     OverlaySelectComponent,
     DatePickerModule,
     ButtonModule,
@@ -77,8 +80,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 
           <div class="flex flex-col gap-1">
             <label for="language" class="text-sm font-medium">{{ 'user.language' | translate }}</label>
-            <p-select
-              inputId="language"
+            <app-overlay-select
               formControlName="language"
               [options]="[{ label: 'English', value: 'en' }, { label: 'العربية', value: 'ar' }]"
               optionLabel="label"
