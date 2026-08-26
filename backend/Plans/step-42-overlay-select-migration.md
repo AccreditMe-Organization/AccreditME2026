@@ -733,3 +733,84 @@ passing.
 - `my-tasks.component.ts`'s `p-selectButton` and
   `plan-form.component.ts`'s `accessLevel` remain explicitly out of
   scope (not vulnerable / below threshold, per the inventory).
+
+---
+
+## 8. Completion Checklist
+
+Added at PR time, not written in advance — reflects what was actually
+built across every phase, checked against real commits and real test
+runs, not the original plan's intentions. "Code done" and "hands-on
+done" are tracked separately below: hands-on hardware verification is
+Ahmad's own step, external to any commit, and this checklist does not
+claim it complete where it hasn't happened yet.
+
+### Code / commits — complete
+
+- [x] Phase 1 — hierarchy mode built (`optionGroupLabel`/
+      `optionGroupChildren`, `flattenHierarchy()`,
+      `selectedLabel()` searching the flattened list), committed
+      tests (3-level fixture tree, keyboard nav, Enter selection).
+- [x] Phase 2 — item-template projection built (`itemTemplate` input,
+      `ngTemplateOutlet`, `[cdkOptionTypeaheadLabel]` fix), committed
+      tests (general shape coverage + the 2 ACC-41 regression tests +
+      4 named per-field typeahead tests).
+- [x] Phase 3 — Group B, 10 flat-mode fields, 8 commits.
+      `committee-member-form.userId`'s filter-search gap investigated,
+      documented (plan §2.5, inline code comment, CLAUDE.md), and
+      accepted as a deliberate trade-off.
+- [x] Phase 4 — Group A, 6 flat-mode fields, 6 commits. Includes the
+      one genuinely nested-`p-dialog` case
+      (`workflow-action-configurator` inside
+      `workflow-transition-editor`).
+- [x] Phase 5 — Group C, 6 flat-mode fields, 6 commits + 1 preliminary
+      commit proving the `ngModel` binding path (§5.5) with real tests
+      (generic proof in `overlay-select.component.spec.ts` + a
+      real-consumer proof in `user-role-assignment.component.spec.ts`)
+      before either real `ngModel` consumer shipped.
+- [x] Phase 6 — 4 hierarchy-mode fields, 5 commits (1 pure-refactor
+      extraction of `buildOrgUnitCascadeOptions()`/
+      `OrgUnitCascadeOption` into `org-unit.service.ts`, shared by all
+      4 consumers, + 4 field migrations). `org-unit-form.parentId`
+      sequenced first, closing §5.4's real-data checkpoint.
+- [x] All 26 fields migrated — 28 total `OverlaySelectComponent`
+      consumers counting ACC-41's original 2. Zero `p-cascadeSelect`
+      usage remains anywhere in the codebase. Zero `<p-select>`
+      remains on any of the 26 migrated fields (verified by direct
+      grep at PR time) — every remaining `<p-select>` instance
+      (`workflow-stage-form.approvalMode`/`parallelThreshold`,
+      `user-profile.language`) is confirmed below the 5-option
+      threshold, correctly out of scope.
+- [x] `tsc --noEmit` clean on `tsconfig.app.json` and
+      `tsconfig.spec.json` at HEAD.
+- [x] Full test suite passing at HEAD (88/88) — re-run after every
+      single commit across all 6 phases, not just at phase-end (a
+      standing rule after one early phase skipped this per-commit,
+      once, and was corrected for the remainder of the migration).
+- [x] Docs closeout: CLAUDE.md's `OverlaySelectComponent` description
+      rewritten from "one deliberate exception" to the now-adopted
+      required pattern (28 consumers, hierarchy mode, item-template,
+      `ngModel`, the filter-search gap); stale `Section 10.6` →
+      `10.7` cross-reference fixed; the obsolete `p-cascadeSelect`
+      "inconsistency" Open/Deferred Items note replaced with a short
+      resolved-note. SYSTEM-REFERENCE.md Section 10.7 extended with
+      §10.7.1–§10.7.5 (full ACC-42 summary, hierarchy mode,
+      item-template, `ngModel`, filter-search) — no longer frozen at
+      ACC-41's 2-consumer state.
+
+### Hands-on hardware verification — Ahmad, external, pending
+
+- [ ] Phase 3's 10 fields (full individual pass).
+- [ ] Phase 4's 6 fields, including the nested-dialog-specific check
+      on `workflow-action-configurator.actionType`.
+- [ ] Phase 5's 6 fields, including re-verification target #2
+      (`calendar-config.timezone`).
+- [ ] Phase 6's 4 fields, including `org-unit-form.parentId`'s §5.4
+      real-data checkpoint and re-verification target #1
+      (`user-profile.actingOrgUnitId`).
+
+This PR is not gated on the above hands-on items — same practice as
+every phase this migration followed, where code merges once its own
+phase's commits are in and automated verification is green, with
+hands-on hardware confirmation tracked as its own follow-up rather
+than blocking the branch.
