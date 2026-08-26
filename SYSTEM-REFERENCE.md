@@ -2625,7 +2625,7 @@ code rather than restating the decision log.
   generic and ready for reuse; nothing has reused it yet because
   nothing else needs to yet.
 
-### 10.7 `OverlaySelectComponent` — the CDK Overlay Exception to PrimeNG (ACC-41)
+### 10.7 `OverlaySelectComponent` — the CDK Overlay Exception to PrimeNG (ACC-41, extended ACC-42)
 
 `frontend/src/app/shared/components/overlay-select/overlay-select.component.ts`.
 The one deliberate exception to "UI components: PrimeNG" (CLAUDE.md
@@ -2732,32 +2732,143 @@ when the lookup wouldn't resolve to anything meaningful (e.g.
 `task-form`'s plain `sourceTypes: string[]`) — matches `p-select`'s own
 real default behavior for primitive arrays, not a new convention.
 
-**Confirmed consumers (2, both migrated ACC-41)**: `position-form`'s
-Mapped Role picker (5 options, `EditDialogComponent` context — the
-exact field that exposed Section 10.5's `onWheel()` gap) and
-`task-form`'s Source Type picker (`sourceTypes: string[]`, a raw
-`p-dialog` context, not `EditDialogComponent` — confirms the fix works
-across both known DOM shapes). Committed test suite
-(`overlay-select.component.spec.ts`) covers: no `.cdk-overlay-container`
-DOM growth across repeated open/close cycles, staying open on a
-genuine registered-ancestor `scroll` event, full keyboard nav
-(arrows/Home/End/Enter/typeahead — typeahead verified with
-`fakeAsync`/`tick`, since CDK's own `Typeahead` debounces keystrokes
-200ms before matching, confirmed via its source), Escape isolation
-against a simulated parent `document`-level listener, and both option
-shapes.
+**ACC-41 baseline consumers (2)**: `position-form`'s Mapped Role
+picker (5 options, `EditDialogComponent` context — the exact field
+that exposed Section 10.5's `onWheel()` gap) and `task-form`'s Source
+Type picker (`sourceTypes: string[]`, a raw `p-dialog` context, not
+`EditDialogComponent` — confirms the fix works across both known DOM
+shapes). Committed test suite (`overlay-select.component.spec.ts`)
+covers: no `.cdk-overlay-container` DOM growth across repeated
+open/close cycles, staying open on a genuine registered-ancestor
+`scroll` event, full keyboard nav (arrows/Home/End/Enter/typeahead —
+typeahead verified with `fakeAsync`/`tick`, since CDK's own
+`Typeahead` debounces keystrokes 200ms before matching, confirmed via
+its source), Escape isolation against a simulated parent
+`document`-level listener, and both option shapes.
 
-**Deliberately NOT migrated (separate, deferred scope, ACC-41's own
-inventory)**: the other 7 identified `p-select` fields with
-enough options to need internal scroll inside an
-`EditDialogComponent`/raw-`p-dialog` context —
-`workflow-stage-form` (assigneeStrategy), `org-unit-head-panel` (3
-dynamic pickers), `committee-member-form` (2 dynamic pickers),
-`committee-form` (Meeting Frequency), `invite-user` (3 dynamic
-pickers), `workflow-action-configurator`, `workflow-transition-editor`.
-Migrating these is a follow-up ticket's scope, not a silent
-continuation of ACC-41 — this section should be updated when that
-happens, not treated as already covering them.
+#### 10.7.1 ACC-42 — full migration, 26 additional consumers (28 total)
+
+ACC-41 deliberately scoped down to proving the mechanism on 2 fields;
+ACC-42 completed the migration for every remaining `p-select`/
+`p-cascadeSelect` field with 5+ options across the whole app, in 6
+phases plus 2 gating capability phases built first. Full inventory,
+phase-by-phase breakdown, and every design decision's reasoning:
+`backend/Plans/step-42-overlay-select-migration.md` (kept as the
+durable record — not re-duplicated here). Summary:
+
+- **Phase 1 — hierarchy mode** (§10.7.2 below), built and proven
+  against a fixture before any real consumer.
+- **Phase 2 — item-template projection** (§10.7.3 below), same
+  discipline.
+- **Phase 3 (Group B, `EditDialogComponent`, 10 fields) → Phase 4
+  (Group A, raw `p-dialog`, 6 fields) → Phase 5 (Group C, routed
+  pages, 6 fields) → Phase 6 (hierarchy-mode fields, 4 fields)** —
+  order deliberately revised mid-plan after the original "Group A is
+  lowest risk" claim didn't survive verification (PrimeNG's
+  `overlayAppendTo` defaults to `'self'`, so Group A's raw `p-dialog`
+  shares Group C's own ancestor-chain shape, and Group A contains the
+  one genuinely nested `p-dialog`-inside-`p-dialog` case in the whole
+  inventory — `workflow-action-configurator` inside
+  `workflow-transition-editor`'s own dialog).
+- **Every phase gated identically**: `tsc` clean, full suite passing
+  (re-run after every single commit, not just at phase-end — a
+  standing rule after an early phase skipped this per-field, once, and
+  was corrected), then a full per-field hands-on hardware pass
+  (scroll-chaining, keyboard nav, select-and-save) — a representative
+  sample never closes a phase, per the standing rule this bug class
+  has followed since ACC-36 (passing on one field is not evidence for
+  an untested one).
+- **Two re-verification targets** (`user-profile.actingOrgUnitId`,
+  `calendar-config.timezone`) — both previously marked "PASS" under
+  ACC-38's `onWheel()` boundary-guard mechanism, since confirmed
+  (this section, above) structurally incapable of catching this bug
+  class at all. Re-tested from scratch under the real component, not
+  carried over from that disproven mechanism.
+
+#### 10.7.2 Hierarchy mode (`optionGroupLabel`/`optionGroupChildren`)
+
+Mirrors `p-cascadeSelect`'s own input names exactly, so an existing
+tree-shaped options builder (e.g. `buildOrgUnitCascadeOptions()`,
+extracted from `org-unit-form.component.ts`'s own private method into
+`org-unit.service.ts` during ACC-42 so all 4 hierarchy consumers share
+one implementation instead of 4 near-duplicate copies) needs zero
+changes, only the template tag swaps. Deliberately renders as a single
+flattened, depth-indented list inside the same `CdkListbox`/`Overlay`
+already proven in ACC-41 — NOT PrimeNG's cascading flyout-panel UX,
+which would need one `Overlay`+`ScrollDispatcher` registration per open
+panel, multiplying the exact bug class this component exists to
+eliminate. `flattenHierarchy()` recursively produces a
+`{node, depth, isGroup}[]` list; `selectedLabel()` searches this
+flattened list (not just top-level `options()`), since a selected
+node's value can sit several `optionGroupChildren` levels deep.
+
+Consumers (4, all ACC-42 Phase 6, `excludeId` only meaningful for the
+one self-referencing case): `org-unit-form.parentId` (the one field
+`p-cascadeSelect` was ever adopted for — real-data checkpoint run
+against this tenant's live `buildOrgUnitCascadeOptions()` output, not
+a fixture, before the swap was considered done), `invite-user.
+primaryOrgUnitId`, `user-profile.primaryOrgUnitId`, `user-profile.
+actingOrgUnitId` (re-verification target above) — the latter 3 pass
+`excludeId: null` since a user isn't an org unit and has no
+self/descendant relationship to exclude, unlike a unit picking its
+own parent.
+
+#### 10.7.3 Item-template projection (`itemTemplate`)
+
+`CdkOption` is a plain directive, not a component, so it has no
+content-projection mechanism of its own — `OverlaySelectComponent`
+already fully controls each row's markup in its `@for` loop, so
+projection is an `ngTemplateOutlet` swapped in when `itemTemplate` is
+set. Verified NOT reducible to a simpler computed-label-function API:
+checked directly against ACC-37's own ticket text and the real shipped
+markup's two-tier typography (name + a secondary org-unit line) before
+building full projection. `[cdkOptionTypeaheadLabel]` is bound
+separately to the plain computed label — required because
+`CdkOption.getLabel()` falls back to concatenated `element.textContent`
+when unset, which would merge a two-line custom template's text nodes
+with no separator and corrupt typeahead matching (verified directly
+against `listbox.mjs`, not assumed).
+
+4 consumers, all rendering `{name, secondary org-unit line}`:
+`invite-user.managerId`, `committee-member-form.userId` (the first
+real-consumer proof, ACC-42 Phase 3), `user-profile.managerId`,
+`user-profile.actingUserId`.
+
+#### 10.7.4 `ngModel` binding support
+
+Every field through ACC-42 Phase 4 bound via `formControlName`
+(reactive forms). `OverlaySelectComponent` implements
+`ControlValueAccessor`, which Angular's `NgModel` directive consumes
+identically to `formControlName` — but that expectation was proven
+with a real test before either of the 2 real `[(ngModel)]` consumers
+(`user-role-assignment`'s role picker, `calendar-config.timezone`)
+shipped, not assumed from the interface being implemented. One
+genuine, non-component-specific finding surfaced while writing that
+proof: `NgModel`'s own model→view sync (`NgModel._updateValue()`) is
+wrapped in a resolved-Promise microtask, so a value set on the bound
+property is not reflected in the rendered selection within the same
+synchronous change-detection pass — standard Angular behavior (avoids
+`ExpressionChangedAfterItHasBeenCheckedError`), requires `tick()` in
+tests, not a defect in this component.
+
+#### 10.7.5 Filter-search — deliberately NOT built
+
+`committee-member-form.userId` lost `p-select`'s
+`[filter]="true" filterBy="name,email"` (a visible search input) on
+migration — typeahead (jump-to-option-on-keypress) is the only
+find-as-you-type mechanism `OverlaySelectComponent` has. Investigated,
+not assumed either direction: PrimeNG's own filter keeps real DOM
+focus in a separate `<input>` and re-implements keyboard navigation
+independently (`onFilterKeyDown` in `primeng-select.mjs`), because
+CDK's `ActiveDescendantKeyManager` assumes focus stays on the listbox
+itself throughout. Replicating PrimeNG's actual UX means fighting that
+machinery, not composing it with it — genuinely harder than hierarchy
+mode or item-template, both of which reuse `ActiveDescendantKeyManager`
+directly. Confirmed via a full grep of all 26 ACC-42 fields: no other
+field used `[filter]="true"` — this is a one-field, scoped, documented
+trade-off, not a silent gap. Revisit only if a future field genuinely
+needs real filter-search on a long, growing list — typeahead alone was
+judged sufficient for this field's own bounded list.
 
 ---
 

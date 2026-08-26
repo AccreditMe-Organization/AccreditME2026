@@ -62,25 +62,39 @@ Tier 3 — On-premises / private cloud (future)
 ### Frontend
 - Framework: Angular 18+ (standalone components)
 - UI components: PrimeNG (free MIT license) — one deliberate,
-  evidence-based exception: `OverlaySelectComponent`
-  (`frontend/src/app/shared/components/overlay-select/`, ACC-41)
-  replaces `p-select` on fields where PrimeNG's own
-  `ConnectedOverlayScrollHandler` scroll-chaining bug is reachable.
-  Confirmed root cause (verified against PrimeNG's own source,
-  `primeng-dom.mjs`): it closes the overlay on ANY scroll of ANY
-  ancestor found via `DomHandler.getScrollableParents()`, with no
-  supported way to disable or override that behavior — not a defect
-  fixable within PrimeNG, a structural property of how it's built.
+  evidence-based exception, now the REQUIRED pattern rather than a
+  narrow one-off: `OverlaySelectComponent`
+  (`frontend/src/app/shared/components/overlay-select/`, ACC-41,
+  substantially extended by ACC-42) replaces `p-select`/
+  `p-cascadeSelect` on any field where PrimeNG's own
+  `ConnectedOverlayScrollHandler` scroll-chaining bug is reachable —
+  in practice, every dropdown with 5+ options anywhere in the app,
+  across all three DOM contexts (raw `p-dialog`, `EditDialogComponent`,
+  routed pages under `AppShellComponent`'s `<main>`). Confirmed root
+  cause (verified against PrimeNG's own source, `primeng-dom.mjs`): it
+  closes the overlay on ANY scroll of ANY ancestor found via
+  `DomHandler.getScrollableParents()`, with no supported way to
+  disable or override that behavior — not a defect fixable within
+  PrimeNG, a structural property of how it's built.
   `OverlaySelectComponent` is built on Angular CDK's `Overlay` +
   `RepositionScrollStrategy` instead, which repositions on ancestor
   scroll rather than closing (verified against
   `@angular/cdk/overlay`'s own source) — structurally immune to this
   bug class, not a workaround for it. This is a scoped exception for
   this specific failure mode, not a general PrimeNG replacement —
-  `p-select` remains correct and preferred everywhere the bug isn't
-  reachable (short option lists, or overlay contexts without a
-  scrollable ancestor between the trigger and the document). Full
-  mechanism detail: SYSTEM-REFERENCE.md Section 10.6.
+  `p-select` remains correct and preferred only for fields genuinely
+  below the 5-option threshold, where scroll-chaining can't be
+  reached regardless of DOM context. Also supports hierarchy mode
+  (`optionGroupLabel`/`optionGroupChildren`, mirroring
+  `p-cascadeSelect`'s own naming — required for any OrgUnit-style
+  tree picker), custom item-template projection (`itemTemplate`, for
+  option rows needing more than a plain label), and binds via either
+  `formControlName`/`[formControl]` or plain `[(ngModel)]`. Known,
+  deliberate gap: no filter-search box (typeahead only) — see
+  SYSTEM-REFERENCE.md Section 10.7 for why that one is a real,
+  confirmed-harder capability, not an oversight. Full mechanism
+  detail, capability list, and complete consumer inventory (28 total):
+  SYSTEM-REFERENCE.md Section 10.7.
 - Styling: PrimeNG design tokens + Tailwind CSS
 - Global styles: One SCSS file for app shell only
 - State management: NgRx Signals
@@ -1691,36 +1705,17 @@ Prisma Studio.
   milestone, after Document Management, alongside the full
   visual/brand polish ticket. Distinct from the smaller, near-term
   Committee-specific RTL pass in the sequence below.
-- **`p-cascadeSelect` adopted in exactly one place, not consistently**
-  — `step-02-organization-structure.md`'s original founding plan
-  specified PrimeNG's `p-cascadeSelect` for hierarchy-aware org-unit
-  navigation. Verified directly against the code (not assumed): it
-  genuinely **was** adopted once — `org-unit-form.component.ts`'s own
-  `parentId` picker (the parent-unit selector used when creating or
-  editing an org unit from the tree) — but every other org-unit
-  picker built since uses a flat `p-select` fed by
-  `OrgUnitService.getFlat()` instead: `invite-user.component.ts`'s
-  `primaryOrgUnitId`, `user-profile.component.ts`'s
-  `primaryOrgUnitId` **and** ACC-40's new `actingOrgUnitId`.
-  (`position-form.component.ts` is **not** one of these — confirmed
-  via grep it has zero `orgUnitId` references today; ACC-40 Phase 1
-  removed `OrgPosition.orgUnitId` entirely as part of the org-wide
-  catalog redesign, so this screen has no org-unit picker of any kind
-  anymore.) Not a bug — every picker works correctly today — but a
-  real, confirmed UX/component-choice inconsistency against the
-  founding design: the one screen most directly about org-unit
-  hierarchy (declaring a unit's own parent) got the hierarchy-aware
-  widget, every screen since has defaulted to flat. Found during the
-  founding-plan comparison exercise alongside the `Committee.orgUnitId`
-  and User acting-as-unit gaps (both since resolved via ACC-40).
-  Before adopting more broadly: investigate the current PrimeNG
-  version's actual `p-cascadeSelect` capabilities and confirm which
-  screens genuinely benefit from hierarchy-aware navigation versus
-  which are fine as a flat list, matching the same
-  investigate-before-adopting discipline `p-listbox` received in
-  ACC-36. Connects to the broader, still-deferred Founding-Plan
-  Conformance Audit idea — this is one already-confirmed finding from
-  that effort, not the whole audit.
+- **RESOLVED (ACC-42)** — **`p-cascadeSelect` adopted in exactly one
+  place, not consistently** — was: `org-unit-form.component.ts`'s
+  `parentId` got the hierarchy-aware `p-cascadeSelect` widget while
+  every other org-unit picker (`invite-user.primaryOrgUnitId`,
+  `user-profile.primaryOrgUnitId`/`actingOrgUnitId`) used a flat
+  `p-select`. Now: all 4 use `OverlaySelectComponent`'s hierarchy mode
+  uniformly — `p-cascadeSelect` removed from the codebase entirely,
+  and the 3 previously-flat pickers gained real tree display for the
+  first time via a shared `buildOrgUnitCascadeOptions()` helper
+  (`org-unit.service.ts`). No longer an inconsistency to track. Full
+  detail: SYSTEM-REFERENCE.md Section 10.7.
 - **Task creation has no real, business-appropriate home today.**
   `TaskListComponent` was deliberately designed, from its own original
   build, as an embeddable list meant to live inside a future business
