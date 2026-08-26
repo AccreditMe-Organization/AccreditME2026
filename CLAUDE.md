@@ -1776,6 +1776,27 @@ Prisma Studio.
   for migrating these remaining fields, unrelated to scroll-chaining
   (they genuinely never needed that fix) — worth its own small,
   scoped ticket.
+  **Correction, epistemic status downgraded (found during the same
+  investigation's own follow-up)**: the original finding above was
+  investigated using `document.body.style.zoom` injected via
+  `page.evaluate()` — confirmed via follow-up investigation to NOT
+  represent genuine browser zoom (creates a real coordinate-space
+  mismatch: `window.innerHeight` stays unzoomed while the zoomed
+  subtree's own written pixel values get double-scaled). This means
+  the original reproduction, and the conclusion that
+  `OverlaySelectComponent` fixes it, both rest on a flawed test
+  methodology, not confirmed real-browser behavior. The 3-field
+  migration (`approvalMode`/`parallelThreshold`/`user-profile.language`)
+  still stands on its own architectural-consistency merits and
+  Ahmad's own manual re-test reports it working correctly — but the
+  specific claim that this fixes a zoom-positioning bug is NOT
+  confirmed and should not be asserted as settled. **Standing rule
+  going forward**: any future zoom-related reproduction MUST use
+  genuine browser zoom (Ctrl+scroll, real OS display scaling, or
+  Playwright's actual device-scale-factor emulation) — never
+  `document.body.style.zoom` injection, which is proven to produce
+  false results in both directions (both the original false-positive
+  bug AND the false-positive "still broken after migration" report).
 
 ### Sequence to Meeting Management
 
