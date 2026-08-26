@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -6,7 +6,6 @@ import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
-import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
@@ -20,12 +19,21 @@ import {
 } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on this field:
-// raw p-dialog context, and specifically the one nested-p-dialog case in
-// the whole migration (this component's own dialog renders inside
-// workflow-transition-editor's "Configure Actions" p-dialog). See
+// this component's own dialog renders inside workflow-transition-editor's
+// "Configure Actions" p-dialog (still a nested case after ACC-39 below,
+// since that outer dialog isn't part of ACC-39's own scope). See
 // CLAUDE.md's PrimeNG-components-only exception note and
 // overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+// ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
+// This screen has a genuine edit flow (openAdd()/openEdit() both present),
+// but was already immune to ACC-29's pre-fill bug: the form is inline in
+// this same component (no separate *-form.component.ts with its own
+// ngOnInit()-based pre-fill), and both open paths call this.form.reset()
+// imperatively, re-running fresh on every click regardless of mount count.
+// This migration is architectural consistency with SYSTEM-REFERENCE.md
+// Section 10.5's required pattern, not a bug fix.
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 const ACTION_TYPES = [
   { label: 'CREATE_TASK', value: 'CREATE_TASK' },
@@ -47,13 +55,13 @@ const ACTION_TYPES = [
     ButtonModule,
     TagModule,
     TooltipModule,
-    DialogModule,
     InputTextModule,
     TextareaModule,
     InputNumberModule,
     SelectModule,
     CheckboxModule,
     OverlaySelectComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col gap-3">
@@ -129,13 +137,7 @@ const ACTION_TYPES = [
         </ng-template>
       </p-table>
 
-      <p-dialog
-        [visible]="showFormDialog()"
-        (visibleChange)="showFormDialog.set($event)"
-        [header]="(editingAction() ? 'workflow.editStage' : 'workflow.addAction') | translate"
-        [modal]="true"
-        [style]="{ width: '520px' }"
-      >
+      <ng-template #formTpl>
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.actionType' | translate }} <span class="text-red-500">*</span></label>
@@ -190,7 +192,13 @@ const ACTION_TYPES = [
             />
           </div>
         </form>
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [(visible)]="showFormDialog"
+        [header]="(editingAction() ? 'workflow.editStage' : 'workflow.addAction') | translate"
+        [content]="formTpl"
+        width="520px"
+      />
 
     </div>
   `,
@@ -199,6 +207,8 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
   @Input() transitionId!: string;
   @Input() actions: WorkflowTransitionActionDto[] = [];
   @Output() changed = new EventEmitter<void>();
+
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly fb = inject(FormBuilder);
