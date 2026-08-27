@@ -1757,6 +1757,46 @@ Prisma Studio.
   filter-search (not just a longer option list) — typeahead alone was
   judged sufficient for `committee-member-form.userId`'s own bounded
   list, not necessarily for every future case.
+- **`OverlaySelectComponent` positioning — single unreproduced
+  sighting, not a confirmed bug, not a confirmed non-issue.** A
+  single, real sighting of `OverlaySelectComponent`'s positioning
+  panel appearing clipped/off-screen was observed once, on the
+  genuinely migrated component (confirmed via DOM inspection), at
+  Ahmad's real environment (100% zoom, no OS display scaling,
+  devicePixelRatio 1, 1589x945 viewport, maximized Chrome). Extensive
+  follow-up testing — at Ahmad's exact reported dimensions, at
+  multiple other sizes, forcing both above- and below-trigger
+  placement, across two different fields, using both scripted and
+  real mouse-driven clicks — could not reproduce it again, ever,
+  under any controlled condition. Ahmad's own fresh manual retest,
+  performed after the original sighting, also could not reproduce
+  it. The underlying CDK positioning mechanism
+  (`FlexibleConnectedPositionStrategy`) is confirmed correct in every
+  deterministic test run — computed and rendered position match to
+  the pixel in every case tested. Most likely explanation: a stale
+  cached asset (JS bundle or CSS) briefly served immediately after
+  this session's rapid sequence of deployments, producing a one-off
+  visual glitch that a hard refresh resolved — confirmed consistent
+  with Ahmad's own account (he performed a hard refresh between the
+  original sighting and his successful retest, and has not seen it
+  recur since). Not a defect in CDK's positioning logic itself, which
+  remains confirmed correct in every deterministic, cache-clean test
+  performed. Not treated
+  as a known open bug requiring a fix — no reproducible failure
+  exists to fix. Flagged here for visibility only, in case it recurs
+  with a genuinely reproducible trigger in the future, at which point
+  this note should be revisited with real, fresh investigation rather
+  than assumed already understood.
+  (Earlier draft history, superseded by the status above: this note
+  originally claimed a confirmed PrimeNG-vs-CDK zoom-positioning bug,
+  then was corrected to flag that the reproduction method —
+  `document.body.style.zoom` via `page.evaluate()` — does not
+  represent genuine browser zoom. The **standing rule** from that
+  correction still holds regardless of this note's own final status:
+  any future zoom-related reproduction MUST use genuine browser zoom
+  — Ctrl+scroll, real OS display scaling, or Playwright's actual
+  device-scale-factor emulation — never `document.body.style.zoom`
+  injection.)
 
 ### Sequence to Meeting Management
 
