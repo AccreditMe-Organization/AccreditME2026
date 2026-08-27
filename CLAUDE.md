@@ -1773,9 +1773,15 @@ Prisma Studio.
   it. The underlying CDK positioning mechanism
   (`FlexibleConnectedPositionStrategy`) is confirmed correct in every
   deterministic test run — computed and rendered position match to
-  the pixel in every case tested. Most likely explanation: a one-off
-  rendering/animation-timing artifact captured at the exact instant
-  of a screenshot, not a persistent positioning defect. Not treated
+  the pixel in every case tested. Most likely explanation: a stale
+  cached asset (JS bundle or CSS) briefly served immediately after
+  this session's rapid sequence of deployments, producing a one-off
+  visual glitch that a hard refresh resolved — confirmed consistent
+  with Ahmad's own account (he performed a hard refresh between the
+  original sighting and his successful retest, and has not seen it
+  recur since). Not a defect in CDK's positioning logic itself, which
+  remains confirmed correct in every deterministic, cache-clean test
+  performed. Not treated
   as a known open bug requiring a fix — no reproducible failure
   exists to fix. Flagged here for visibility only, in case it recurs
   with a genuinely reproducible trigger in the future, at which point
