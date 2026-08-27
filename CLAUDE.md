@@ -1757,46 +1757,40 @@ Prisma Studio.
   filter-search (not just a longer option list) — typeahead alone was
   judged sufficient for `committee-member-form.userId`'s own bounded
   list, not necessarily for every future case.
-- **Remaining plain `p-select` fields (`approvalMode`,
-  `parallelThreshold`, `user-profile.language`) have a SEPARATE,
-  newly-found positioning bug distinct from ACC-41/42's
-  scroll-chaining fix** — PrimeNG's own overlay-flip logic fails to
-  reposition the panel above its trigger when opened near the bottom
-  of a viewport under CSS zoom specifically (confirmed NOT a general
-  small-window issue — PrimeNG flips correctly at extreme window
-  sizes at 1x zoom; the failure is specific to fractional,
-  zoom-scaled pixel coordinates). Confirmed live: `approvalMode`'s
-  4th option (COMMITTEE) rendered 15.9px past the viewport edge at
-  1.5x zoom, genuinely unreachable, no scroll path to it. Direct A/B
-  comparison in the same dialog, same conditions:
-  `OverlaySelectComponent` (ACC-42's replacement) correctly flipped
-  and fully displayed a 6-option field in an even more cramped
-  position — CDK's `RepositionScrollStrategy` handles this correctly
-  where PrimeNG does not. This is a real, independent justification
-  for migrating these remaining fields, unrelated to scroll-chaining
-  (they genuinely never needed that fix) — worth its own small,
-  scoped ticket.
-  **Correction, epistemic status downgraded (found during the same
-  investigation's own follow-up)**: the original finding above was
-  investigated using `document.body.style.zoom` injected via
-  `page.evaluate()` — confirmed via follow-up investigation to NOT
-  represent genuine browser zoom (creates a real coordinate-space
-  mismatch: `window.innerHeight` stays unzoomed while the zoomed
-  subtree's own written pixel values get double-scaled). This means
-  the original reproduction, and the conclusion that
-  `OverlaySelectComponent` fixes it, both rest on a flawed test
-  methodology, not confirmed real-browser behavior. The 3-field
-  migration (`approvalMode`/`parallelThreshold`/`user-profile.language`)
-  still stands on its own architectural-consistency merits and
-  Ahmad's own manual re-test reports it working correctly — but the
-  specific claim that this fixes a zoom-positioning bug is NOT
-  confirmed and should not be asserted as settled. **Standing rule
-  going forward**: any future zoom-related reproduction MUST use
-  genuine browser zoom (Ctrl+scroll, real OS display scaling, or
-  Playwright's actual device-scale-factor emulation) — never
-  `document.body.style.zoom` injection, which is proven to produce
-  false results in both directions (both the original false-positive
-  bug AND the false-positive "still broken after migration" report).
+- **`OverlaySelectComponent` positioning — single unreproduced
+  sighting, not a confirmed bug, not a confirmed non-issue.** A
+  single, real sighting of `OverlaySelectComponent`'s positioning
+  panel appearing clipped/off-screen was observed once, on the
+  genuinely migrated component (confirmed via DOM inspection), at
+  Ahmad's real environment (100% zoom, no OS display scaling,
+  devicePixelRatio 1, 1589x945 viewport, maximized Chrome). Extensive
+  follow-up testing — at Ahmad's exact reported dimensions, at
+  multiple other sizes, forcing both above- and below-trigger
+  placement, across two different fields, using both scripted and
+  real mouse-driven clicks — could not reproduce it again, ever,
+  under any controlled condition. Ahmad's own fresh manual retest,
+  performed after the original sighting, also could not reproduce
+  it. The underlying CDK positioning mechanism
+  (`FlexibleConnectedPositionStrategy`) is confirmed correct in every
+  deterministic test run — computed and rendered position match to
+  the pixel in every case tested. Most likely explanation: a one-off
+  rendering/animation-timing artifact captured at the exact instant
+  of a screenshot, not a persistent positioning defect. Not treated
+  as a known open bug requiring a fix — no reproducible failure
+  exists to fix. Flagged here for visibility only, in case it recurs
+  with a genuinely reproducible trigger in the future, at which point
+  this note should be revisited with real, fresh investigation rather
+  than assumed already understood.
+  (Earlier draft history, superseded by the status above: this note
+  originally claimed a confirmed PrimeNG-vs-CDK zoom-positioning bug,
+  then was corrected to flag that the reproduction method —
+  `document.body.style.zoom` via `page.evaluate()` — does not
+  represent genuine browser zoom. The **standing rule** from that
+  correction still holds regardless of this note's own final status:
+  any future zoom-related reproduction MUST use genuine browser zoom
+  — Ctrl+scroll, real OS display scaling, or Playwright's actual
+  device-scale-factor emulation — never `document.body.style.zoom`
+  injection.)
 
 ### Sequence to Meeting Management
 
