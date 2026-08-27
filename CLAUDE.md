@@ -1737,6 +1737,16 @@ Prisma Studio.
   built business module, following `TaskListComponent`'s own original
   intended pattern) once that's properly scoped — not a navigation
   patch.
+- **Platform Admin has no real navigation structure** — confirmed
+  while testing ACC-39: `ai-feature-costs` and `ai-credit-packs` are
+  only reachable by typing their URLs directly after a platform-admin
+  login; `sidebar.component.ts` shows platform admins exactly one link
+  ("Super Admin" to `/platform`), with no sub-navigation, tab bar, or
+  layout component to hold links to either screen. Same class of gap
+  as ACC-35 (Working Calendar) and the task-creation navigation note
+  above, but likely broader — worth a real investigation into whether
+  Platform Admin has OTHER unreachable screens beyond these two before
+  scoping a fix, rather than patching just these two in isolation.
 - **`OverlaySelectComponent` has no filter-search capability**
   (ACC-42) — `committee-member-form.userId` lost `p-select`'s
   `[filter]="true" filterBy="name,email"` (a visible search box, not
