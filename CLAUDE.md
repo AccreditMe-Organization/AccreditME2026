@@ -1975,6 +1975,15 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   lost before that audit exists. Grouped here with the list-page-
   filtering note above — both are the same category (a future,
   broader UI-consistency audit), not two unrelated findings.
+  **Second, independent sighting (ACC-39 testing pass)**: the same
+  Quorum/Meeting Frequency misalignment on the Edit Committee page
+  was observed again, separately, during this later testing session
+  — not a one-off rendering glitch from the original ACC-42 sighting,
+  but a reproducible pattern seen twice independently. Strengthens
+  the case that this is a real, systemic issue worth the planned
+  broader audit rather than something that could have been transient.
+  Still not scoped or fixed here — no code change attempted, still
+  deferred to that same future audit.
 
 ---
 
