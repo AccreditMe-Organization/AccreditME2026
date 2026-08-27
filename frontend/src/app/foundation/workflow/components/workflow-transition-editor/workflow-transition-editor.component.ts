@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, inject, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnChanges, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -25,6 +25,15 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // raw p-dialog context. See CLAUDE.md's PrimeNG-components-only exception
 // note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+// ACC-39 — EditDialogComponent replaces the raw p-dialog + manual @if on
+// the Add and Edit Transition dialogs specifically (2 separate migrations,
+// not combined — separate FormGroups, separate reset() calls, no shared
+// state). The "Configure Actions" dialog below stays a raw p-dialog —
+// outside ACC-39's own scope. Add is create-only (architectural
+// consistency only); Edit has a genuine edit flow but was already immune
+// to ACC-29's bug (editForm.reset() runs imperatively in openEdit(), no
+// separate *-form.component.ts involved).
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 const TRIGGER_CONDITIONS = [
   { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
@@ -51,6 +60,7 @@ const TRIGGER_CONDITIONS = [
     MessageModule,
     WorkflowActionConfiguratorComponent,
     OverlaySelectComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col gap-3">
@@ -131,13 +141,7 @@ const TRIGGER_CONDITIONS = [
       </p-table>
 
       <!-- Add Transition -->
-      <p-dialog
-        [visible]="showAddDialog()"
-        (visibleChange)="showAddDialog.set($event)"
-        [header]="'workflow.addTransition' | translate"
-        [modal]="true"
-        [style]="{ width: '560px' }"
-      >
+      <ng-template #addFormTpl>
         <form [formGroup]="addForm" (ngSubmit)="onSubmitAdd()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.toStage' | translate }} <span class="text-red-500">*</span></label>
@@ -226,16 +230,16 @@ const TRIGGER_CONDITIONS = [
             />
           </div>
         </form>
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [(visible)]="showAddDialog"
+        [header]="'workflow.addTransition' | translate"
+        [content]="addFormTpl"
+        width="560px"
+      />
 
       <!-- Edit Transition -->
-      <p-dialog
-        [visible]="showEditDialog()"
-        (visibleChange)="showEditDialog.set($event)"
-        [header]="'workflow.editTransition' | translate"
-        [modal]="true"
-        [style]="{ width: '560px' }"
-      >
+      <ng-template #editFormTpl>
         <p class="text-sm text-[var(--am-text-secondary)] mb-2">
           {{ 'workflow.transitionEndpointsLocked' | translate }}
         </p>
@@ -297,7 +301,13 @@ const TRIGGER_CONDITIONS = [
             />
           </div>
         </form>
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [(visible)]="showEditDialog"
+        [header]="'workflow.editTransition' | translate"
+        [content]="editFormTpl"
+        width="560px"
+      />
 
       <!-- Configure Actions -->
       <p-dialog
@@ -324,6 +334,9 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   @Input() transitions: WorkflowTransitionDto[] = [];
   @Input() availableStages: WorkflowStageDto[] = [];
   @Output() changed = new EventEmitter<void>();
+
+  @ViewChild('addFormTpl', { read: TemplateRef, static: true }) addFormTpl!: TemplateRef<unknown>;
+  @ViewChild('editFormTpl', { read: TemplateRef, static: true }) editFormTpl!: TemplateRef<unknown>;
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly roleService = inject(RoleService);

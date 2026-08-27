@@ -6,7 +6,6 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { SelectModule } from 'primeng/select';
 import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
 import {
@@ -23,6 +22,14 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // EditDialogComponent context, 6 options, qualifies per ACC-41/42's
 // established 5+ threshold. See CLAUDE.md's PrimeNG-components-only
 // exception note and overlay-select.component.ts for the full mechanism.
+//
+// approvalMode/parallelThreshold below were originally left on p-select
+// (below the 5-option scroll-chaining threshold), but migrated separately
+// after a DIFFERENT bug was found: PrimeNG's own overlay-flip logic fails
+// to reposition above the trigger under CSS zoom specifically, confirmed
+// live (COMMITTEE rendered 15.9px past the viewport edge at 1.5x zoom).
+// OverlaySelectComponent's CDK-based positioning does not share this bug —
+// see CLAUDE.md's Open/Deferred Items for the full investigation.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 const APPROVAL_MODES = [
@@ -68,7 +75,6 @@ const ASSIGNEE_STRATEGIES = [
     InputTextModule,
     TextareaModule,
     InputNumberModule,
-    SelectModule,
     CheckboxModule,
     MessageModule,
     OverlaySelectComponent,
@@ -128,13 +134,11 @@ const ASSIGNEE_STRATEGIES = [
         <label for="approvalMode" class="font-medium text-sm">
           {{ 'workflow.approvalMode' | translate }} <span class="text-red-500">*</span>
         </label>
-        <p-select
-          inputId="approvalMode"
+        <app-overlay-select
           formControlName="approvalMode"
           [options]="approvalModes"
           optionLabel="label"
           optionValue="value"
-          styleClass="w-full"
         />
       </div>
 
@@ -143,13 +147,11 @@ const ASSIGNEE_STRATEGIES = [
           <label for="parallelThreshold" class="font-medium text-sm">
             {{ 'workflow.parallelThreshold' | translate }}
           </label>
-          <p-select
-            inputId="parallelThreshold"
+          <app-overlay-select
             formControlName="parallelThreshold"
             [options]="parallelThresholds"
             optionLabel="label"
             optionValue="value"
-            styleClass="w-full"
           />
         </div>
       }

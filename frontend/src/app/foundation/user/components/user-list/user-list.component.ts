@@ -1,17 +1,22 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
-import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { InviteUserComponent } from '../invite-user/invite-user.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+// ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
+// invite-user is create-only (no edit flow), so this is architectural
+// consistency with the required pattern going forward (SYSTEM-REFERENCE.md
+// Section 10.5), not a bug fix — the old @if(inviteVisible()) wrapping
+// <app-invite-user> directly was already immune to ACC-29's pre-fill bug.
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 @Component({
   selector: 'app-user-list',
@@ -22,8 +27,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     TableModule,
     ButtonModule,
     TagModule,
-    DialogModule,
     InviteUserComponent,
+    EditDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -87,19 +92,19 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
       </p-table>
     </div>
 
-    <p-dialog
+    <ng-template #inviteTpl>
+      <app-invite-user (saved)="onInviteSaved()" (cancelled)="inviteVisible.set(false)" />
+    </ng-template>
+    <app-edit-dialog
       [(visible)]="inviteVisible"
       [header]="'user.invite' | translate"
-      [modal]="true"
-      styleClass="w-full max-w-lg"
-    >
-      @if (inviteVisible()) {
-        <app-invite-user (saved)="onInviteSaved()" (cancelled)="inviteVisible.set(false)" />
-      }
-    </p-dialog>
+      [content]="inviteTpl"
+    />
   `,
 })
 export class UserListComponent implements OnInit {
+  @ViewChild('inviteTpl', { read: TemplateRef, static: true }) inviteTpl!: TemplateRef<unknown>;
+
   private readonly userService = inject(UserService);
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly orgUnitService = inject(OrgUnitService);

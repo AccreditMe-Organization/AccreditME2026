@@ -2539,23 +2539,46 @@ confirmed empirically before any production code was written.
   dialog* specifically should default to `p-listbox` unless a
   collapsed dropdown is a real requirement.
 
-**Confirmed consumers (8 screens migrated ACC-29 Phases 2–3, one more
-added ACC-36)**: `workflow-stage-list` (stage edit), `lookup-value-list`
-(value add/edit — its separate override-label dialog, Section 6.6, is
-untouched and correctly stays a plain `p-dialog`: it binds directly to
-the parent list's own `overrideForm` object via `[(ngModel)]`, not a
-`*-form.component.ts` with its own lifecycle, so it was never subject
-to this bug), `public-holiday-list`, `role-list`, `position-list`,
-`committee-list` (add-only), `committee-detail` (both its
-committee-edit and add/edit-member dialogs), `org-unit-tree`, and
-`unassigned-tasks` (its Reassign dialog — built ACC-34 as a standalone
-`p-dialog` bypassing this component entirely, migrated ACC-36 after
-that gap was found to be the precondition for the scroll-chaining bug
-above).
-`task-list`/`task-form` is **not** a consumer — confirmed create-only,
-no edit-via-dialog flow exists there at all, so it was never subject
-to the bug this component exists to fix and still hand-rolls its own
-single-purpose add dialog.
+**Confirmed consumers — 17 screens total.** 9 migrated ACC-29
+Phases 2–3/ACC-36 (the original pre-fill-bug fix): `workflow-stage-list`
+(stage edit), `lookup-value-list` (value add/edit), `public-holiday-list`,
+`role-list`, `position-list`, `committee-list` (add-only),
+`committee-detail` (both its committee-edit and add/edit-member
+dialogs), `org-unit-tree`, and `unassigned-tasks` (its Reassign dialog —
+built ACC-34 as a standalone `p-dialog` bypassing this component
+entirely, migrated ACC-36 after that gap was found to be the
+precondition for the scroll-chaining bug above).
+
+**8 more migrated ACC-39** — architectural-consistency work, not a bug
+fix (see below for why): `user-list` (its `invite-user` dialog),
+`task-list` (its `task-form` dialog), `workflow-action-configurator`
+(own inline form), `workflow-transition-editor` (both its Add and Edit
+Transition dialogs — its separate "Configure Actions" dialog,
+wrapping `workflow-action-configurator`, deliberately stays a raw
+`p-dialog`, outside ACC-39's scope), `ai-feature-cost-list`,
+`ai-credit-pack-list`, and `lookup-value-list`'s own separate
+override-label mini-dialog (Section 6.6 — previously excluded here as
+"correctly stays a plain `p-dialog`... never subject to this bug"; that
+technical reasoning was accurate, but ACC-39 migrated it anyway for
+consistency with the required-pattern note below, not because the
+reasoning was found wrong).
+
+**ACC-39's own investigation, applying the exact ACC-29 diagnostic to
+all 8 candidates, found zero live defects before migrating them**:
+`invite-user`, `task-form`, `workflow-transition-editor`'s Add dialog,
+and `ai-credit-pack-list` are create-only (nothing to pre-fill, never
+exposed); `workflow-action-configurator`, `workflow-transition-editor`'s
+Edit dialog, `ai-feature-cost-list`, and `lookup-value-list`'s override
+dialog all have genuine edit flows but were already immune — each
+pre-fills via an imperative `form.reset()`/direct assignment inside its
+own click handler on an always-mounted, inline form (no separate
+`*-form.component.ts` child with a one-shot `ngOnInit()`), the opposite
+of the vulnerable shape ACC-29 fixed. Combined with ACC-38 already
+extending scroll-chaining protection to every picker in these screens
+transitively via `app-shell`'s `<main>` regardless of dialog wrapper,
+ACC-39 shipped as pure adoption of the "required pattern going
+forward" note below — not a fix for a live bug on any of these 8
+screens.
 
 **Required pattern going forward** — every future module's own
 add/edit dialog (starting with Meeting Management, the next module in

@@ -1651,9 +1651,17 @@ Prisma Studio.
   documentation-read) that content projection (`<ng-content>` + a
   wrapper's own `@if`) does NOT recreate a projected child component
   on reopen — only `TemplateRef` + `ngTemplateOutlet` does. All 8
-  existing create/edit screens migrated (4 were confirmed-broken by
-  the content-projection bug, 4 were "accidentally correct" by luck
-  of parent wiring, not by using a safe pattern). Includes a built-in
+  screens that existed at ACC-29's own point in time were migrated
+  then (4 were confirmed-broken by the content-projection bug, 4 were
+  "accidentally correct" by luck of parent wiring, not by using a safe
+  pattern). **That "8" is a point-in-time count, not a permanent
+  invariant** — it went stale as new screens were added afterward
+  without following the pattern (a gap ACC-39 later found and closed).
+  Current total, re-verified directly against the code, not assumed:
+  17 consumers (the original 8 + 1 from ACC-36 + 8 from ACC-39, the
+  latter migrated for architectural consistency, not a live bug —
+  every one of those 8 was independently confirmed already immune).
+  Full current list: SYSTEM-REFERENCE.md Section 10.5. Includes a built-in
   scroll-discoverability affordance (a bottom-edge cue when dialog
   content exceeds visible height) and a fix for a known upstream
   PrimeNG overlay bug (primefaces/primeng#14519) where scroll-chaining

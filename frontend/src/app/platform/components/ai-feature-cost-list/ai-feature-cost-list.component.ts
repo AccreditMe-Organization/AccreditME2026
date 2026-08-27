@@ -1,18 +1,24 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { DialogModule } from 'primeng/dialog';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IAiFeatureCost } from '../../services/plan.service';
+// ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
+// Genuine edit flow (openAdd()/openEdit() both present), but already
+// immune to ACC-29's bug: inline form (no separate *-form.component.ts),
+// this.form.reset() runs imperatively on every openAdd()/openEdit() call.
+// Architectural consistency with SYSTEM-REFERENCE.md Section 10.5's
+// required pattern, not a bug fix.
+import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit-dialog.component';
 
 @Component({
   selector: 'app-ai-feature-cost-list',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, DialogModule, MessageModule],
+  imports: [ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, MessageModule, EditDialogComponent],
   template: `
     <div class="flex flex-col gap-4">
       <div class="flex items-center justify-between">
@@ -48,7 +54,7 @@ import { PlanService, IAiFeatureCost } from '../../services/plan.service';
         </ng-template>
       </p-table>
 
-      <p-dialog [visible]="showDialog()" (visibleChange)="showDialog.set($event)" [header]="'platform.addAiFeatureCost' | translate" [modal]="true" [style]="{ width: '420px' }">
+      <ng-template #formTpl>
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <label for="featureKey" class="text-sm font-medium">{{ 'platform.featureKey' | translate }}</label>
@@ -66,11 +72,19 @@ import { PlanService, IAiFeatureCost } from '../../services/plan.service';
             <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
           </div>
         </form>
-      </p-dialog>
+      </ng-template>
+      <app-edit-dialog
+        [(visible)]="showDialog"
+        [header]="'platform.addAiFeatureCost' | translate"
+        [content]="formTpl"
+        width="420px"
+      />
     </div>
   `,
 })
 export class AiFeatureCostListComponent implements OnInit {
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+
   private readonly fb = inject(FormBuilder);
   private readonly planService = inject(PlanService);
 
