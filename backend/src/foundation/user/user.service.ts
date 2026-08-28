@@ -65,6 +65,25 @@ export class UserService {
     return user;
   }
 
+  // ACC-43 — the HTTP-facing self-or-view entry point for GET /users/:id.
+  // Deliberately NOT folded into getById() itself: getById() is reused
+  // internally (updateProfile()/updateOutOfOffice()/deactivate() below,
+  // auth.controller.ts) as a trusted, unguarded tenant-scoped lookup — those
+  // call sites must never gain an unrelated permission check. Same
+  // isSelf-bypasses-the-permission-check shape as updateProfile()'s isAdmin
+  // check above, mirrored for view rather than write.
+  async getByIdForViewer(
+    id: string,
+    organizationId: string,
+    actorId: string,
+    actorPermissions: string[],
+  ): Promise<IUser> {
+    const isSelf = actorId === id;
+    const canView = actorPermissions.includes('users:view');
+    if (!isSelf && !canView) throw new ForbiddenException();
+    return this.getById(id, organizationId);
+  }
+
   // Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —
   // uploads blocked, no data corruption" pattern, applied here to seats.
   async invite(dto: InviteUserDto, organizationId: string, actorId: string): Promise<IUser> {

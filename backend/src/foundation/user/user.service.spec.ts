@@ -133,6 +133,25 @@ describe('UserService', () => {
     });
   });
 
+  describe('getByIdForViewer', () => {
+    it('allows self-view with zero permissions (ACC-43)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+      const result = await service.getByIdForViewer('u1', ORG_A, 'u1', []);
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A });
+    });
+
+    it('rejects viewing another user without users:view', async () => {
+      await expect(service.getByIdForViewer('u1', ORG_A, 'u2', [])).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('allows viewing another user with users:view', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+      const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
+      expect(result).toEqual({ id: 'u1', organizationId: ORG_A });
+    });
+  });
+
   describe('invite', () => {
     it('creates an INVITED user, sends an email notification, and logs the audit trail', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({

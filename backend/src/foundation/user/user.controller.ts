@@ -30,10 +30,24 @@ export class UserController {
     return this.userService.listUsers(tenantId, { status, orgUnitId, search });
   }
 
+  // ACC-43 — no @Permissions() decorator here on purpose, same reasoning
+  // as updateProfile()/updateOutOfOffice() below: viewing your OWN profile
+  // must never require users:view — every authenticated user already
+  // self-edits this same record (name/language/MFA/out-of-office) with no
+  // permission requirement at all, so gating the READ behind an admin-tier
+  // permission was a genuine inconsistency, not a deliberate restriction.
+  // The self-or-view check happens inside UserService.getByIdForViewer(),
+  // not via the decorator — listUsers() above is unaffected and still
+  // requires users:view, since browsing the full roster is a different,
+  // genuinely admin-tier capability.
   @Get(':id')
-  @Permissions(USERS_PERMISSIONS.VIEW)
-  getById(@Param('id') id: string, @CurrentTenant() tenantId: string): Promise<IUser> {
-    return this.userService.getById(id, tenantId);
+  getById(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IUser> {
+    return this.userService.getByIdForViewer(id, tenantId, actorId, actorPermissions);
   }
 
   @Post('invite')
