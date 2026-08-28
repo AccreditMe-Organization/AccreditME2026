@@ -322,6 +322,7 @@
     "mappedRole": "الدور المرتبط",
     "mappedRolePlaceholder": "لا يوجد",
     "mappedRoleHint": "يُمنح تلقائياً لمن يشغل هذا المسمى، أو ينوب عنه، طوال مدة الشغل.",
+    "vacantRoleWarning": "لن يمنح هذا المسمى أي دور لشاغله حتى تربطه بدور.",
     "isActive": "نشط",
     "deactivate": "إلغاء التفعيل",
     "noPositions": "لا توجد مسميات وظيفية بعد.",

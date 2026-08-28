@@ -322,6 +322,7 @@
     "mappedRole": "Mapped Role",
     "mappedRolePlaceholder": "None",
     "mappedRoleHint": "Automatically granted to whoever holds, or acts in, this position — while held.",
+    "vacantRoleWarning": "This position won't grant any role to its holder until you map one.",
     "isActive": "Active",
     "deactivate": "Deactivate",
     "noPositions": "No positions defined yet.",

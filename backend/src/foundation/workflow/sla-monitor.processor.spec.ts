@@ -52,6 +52,7 @@ const mockPrisma = {
   userRole: { findMany: jest.fn() },
   user: { findMany: jest.fn(), update: jest.fn() },
   orgUnit: { findMany: jest.fn(), update: jest.fn() },
+  orgPosition: { findMany: jest.fn() },
 };
 
 // Always-open working-hours calendar — avoids clock-dependent flakiness in
@@ -79,7 +80,10 @@ const makeBreachedInstanceStage = (overrides: Record<string, unknown> = {}) => (
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { getOrCreate: jest.fn(), listHolidays: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
-const mockOrgPositionService = { validateEscalationTarget: jest.fn() };
+const mockOrgPositionService = {
+  validateEscalationTarget: jest.fn(),
+  notifyTenantAdminsOfVacantHeadRoleMappings: jest.fn(),
+};
 const mockWorkflowService = {
   resolveUnassignedBlockingTransitions: jest.fn(),
   resolveUnreachableTriggerConditionTransitions: jest.fn(),
@@ -110,6 +114,10 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // where clause so the two sweeps' queries don't leak into each other.
     mockPrisma.orgUnit.findMany.mockResolvedValue([]);
     mockPrisma.orgUnit.update.mockResolvedValue({});
+    // ACC-43 — default: no unmapped head-conferring positions, so
+    // sweepVacantHeadRoleMappings() is a no-op for every pre-existing
+    // test. Tests exercising it override this per-case.
+    mockPrisma.orgPosition.findMany.mockResolvedValue([]);
     mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
     // Default: no breached stages / no open stages, so tests that don't
     // care about sweepUnassignedStages()/the top-of-process() breach loop
@@ -763,6 +771,75 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-2', 'org-b-id');
       expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledTimes(1);
       expect(mockOrganizationService.notifyTenantAdminsOfOrgUnitVacancy).toHaveBeenCalledWith(ORG_A, VACANT_UNIT, false);
+    });
+  });
+
+  // ACC-43 — wires OrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings()
+  // (2.9e) into this sweep. That method existed and was unit-tested (in its
+  // own spec) since ACC-40 Phase 12 but was never called from anywhere in
+  // the running app until this ticket — found during ACC-43's live
+  // verification pass. These tests cover the sweep's own wiring (which
+  // tenants it decides to call the method for), not the method's internal
+  // notification logic, which is already covered by org-position.service.spec.ts.
+  //
+  // orgUnit.findMany's `where: { isHeadVacant: true }` shape is shared with
+  // sweepOrgUnitVacancies() above, so these mocks distinguish the two calls
+  // by the presence of `select`/`distinct` (only this sweep's query uses
+  // them) rather than by `where` alone.
+  describe('sweepVacantHeadRoleMappings (ACC-43 / 2.9e)', () => {
+    function mockVacantUnitOrgs(rows: { organizationId: string }[]) {
+      mockPrisma.orgUnit.findMany.mockImplementation(({ where, select }: any) =>
+        Promise.resolve(where?.isHeadVacant !== undefined && select ? rows : []),
+      );
+    }
+
+    function mockUnmappedPositionOrgs(rows: { organizationId: string }[]) {
+      mockPrisma.orgPosition.findMany.mockResolvedValue(rows);
+    }
+
+    it('is a no-op when there are no vacant units and no unmapped head-conferring positions', async () => {
+      await runProcess();
+
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).not.toHaveBeenCalled();
+    });
+
+    it('calls the method for a tenant with an unmapped head-conferring position, even with no vacant units', async () => {
+      mockUnmappedPositionOrgs([{ organizationId: ORG_A }]);
+
+      await runProcess();
+
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledTimes(1);
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledWith(ORG_A);
+    });
+
+    it('calls the method for a tenant with a vacant unit, even with no unmapped positions', async () => {
+      mockVacantUnitOrgs([{ organizationId: ORG_A }]);
+
+      await runProcess();
+
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledTimes(1);
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledWith(ORG_A);
+    });
+
+    it('calls the method exactly once for a tenant flagged by both signals — deduplicated, not called twice', async () => {
+      mockVacantUnitOrgs([{ organizationId: ORG_A }]);
+      mockUnmappedPositionOrgs([{ organizationId: ORG_A }]);
+
+      await runProcess();
+
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledTimes(1);
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledWith(ORG_A);
+    });
+
+    it('should NOT return records belonging to a different tenant — calls each flagged tenant separately, scoped to its own organizationId', async () => {
+      mockVacantUnitOrgs([{ organizationId: ORG_A }]);
+      mockUnmappedPositionOrgs([{ organizationId: 'org-b-id' }]);
+
+      await runProcess();
+
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledTimes(2);
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledWith(ORG_A);
+      expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledWith('org-b-id');
     });
   });
 });

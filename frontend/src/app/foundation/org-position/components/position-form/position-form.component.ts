@@ -5,6 +5,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
 import { ButtonModule } from 'primeng/button';
+import { MessageModule } from 'primeng/message';
 import { OrgPositionService, IOrgPositionDto } from '../../services/org-position.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
 // ACC-41 — OverlaySelectComponent replaces p-select here: this field lives
@@ -23,6 +24,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
     InputNumberModule,
     CheckboxModule,
     ButtonModule,
+    MessageModule,
     OverlaySelectComponent,
   ],
   template: `
@@ -87,6 +89,10 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
         <small class="text-[var(--am-text-secondary)]">{{ 'orgPosition.mappedRoleHint' | translate }}</small>
       </div>
 
+      @if (showVacantRoleWarning()) {
+        <p-message severity="warn" [text]="'orgPosition.vacantRoleWarning' | translate" />
+      }
+
       <div class="flex justify-end gap-2 pt-2">
         <p-button
           [label]="'common.cancel' | translate"
@@ -106,11 +112,24 @@ export class PositionFormComponent implements OnInit {
   private readonly roleService = inject(RoleService);
 
   readonly position = input<IOrgPositionDto | null>(null);
-  readonly saved = output<void>();
+  // ACC-43 — carries the saved position and whether the vacant-role
+  // warning applies, so the parent dialog can stay open long enough for
+  // the user to actually see it (an inline warning inside a dialog that
+  // closes the instant the request succeeds would never be visible
+  // otherwise). The saved position itself matters for the create flow
+  // specifically: if the dialog stays open post-create and the parent
+  // didn't switch this component from create-mode to edit-mode, a second
+  // Save click would call create() again instead of update() — a real
+  // duplicate-position bug, not a hypothetical one.
+  readonly saved = output<{ position: IOrgPositionDto; hadVacantRoleWarning: boolean }>();
   readonly cancelled = output<void>();
 
   readonly saving = signal(false);
   readonly allRoles = signal<RoleDto[]>([]);
+  // ACC-43 — non-blocking nudge (step-40-org-position-unit-head.md's own
+  // "won't grant any role until you map one" design). Never blocks the
+  // save itself — set alongside the request, not instead of it.
+  readonly showVacantRoleWarning = signal(false);
 
   // ACC-40 Section 2.9c — hard-excludes PLATFORM_ADMIN/TENANT_ADMIN from this
   // one picker, same reasoning and same shape as UserRoleAssignmentComponent's
@@ -155,6 +174,18 @@ export class PositionFormComponent implements OnInit {
         this.form.patchValue({ isUnitHeadPosition: false });
       }
     });
+
+    // ACC-43 — clears a previously-shown warning as soon as it no longer
+    // applies (role mapped, or Head-Conferring unchecked), rather than
+    // leaving a stale warning visible until the next save attempt.
+    this.form.get('roleId')!.valueChanges.subscribe(() => this.refreshVacantRoleWarning());
+    this.form.get('isUnitHeadPosition')!.valueChanges.subscribe(() => this.refreshVacantRoleWarning());
+  }
+
+  private refreshVacantRoleWarning(): void {
+    if (!this.showVacantRoleWarning()) return;
+    const { isUnitHeadPosition, roleId } = this.form.value;
+    if (!isUnitHeadPosition || roleId) this.showVacantRoleWarning.set(false);
   }
 
   ngOnInit(): void {
@@ -169,6 +200,10 @@ export class PositionFormComponent implements OnInit {
     this.saving.set(true);
 
     const value = this.form.getRawValue();
+    // ACC-43 — non-blocking: set alongside the request below, never in
+    // place of it.
+    this.showVacantRoleWarning.set(!!value.isUnitHeadPosition && !value.roleId);
+
     const dto = {
       nameEn: value.nameEn!,
       nameAr: value.nameAr || undefined,
@@ -184,9 +219,9 @@ export class PositionFormComponent implements OnInit {
       : this.orgPositionService.create(dto);
 
     request.subscribe({
-      next: () => {
+      next: (saved) => {
         this.saving.set(false);
-        this.saved.emit();
+        this.saved.emit({ position: saved, hadVacantRoleWarning: this.showVacantRoleWarning() });
       },
       error: () => this.saving.set(false),
     });
