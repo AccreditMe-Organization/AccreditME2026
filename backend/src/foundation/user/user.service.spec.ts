@@ -328,6 +328,57 @@ describe('UserService', () => {
 
       expect(mockRoleService.grantRoleViaHeadAuthority).not.toHaveBeenCalled();
     });
+
+    // ACC-43 — refreshOrgUnitHeadVacancy() wiring. Mirrors updateProfile()'s
+    // own coverage above: invite() is the other write path that can set
+    // primaryOrgUnitId, and was previously missing this call entirely, so a
+    // brand-new invite into a Head-vacant unit was never picked up until
+    // some unrelated later profile update happened to touch that unit.
+
+    it('refreshes org-unit-head vacancy for the assigned unit when invite() sets primaryOrgUnitId', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(typeof where.status === 'object' ? 1 : 0),
+      );
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.count.mockResolvedValue(1);
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+        id: 'pos-1', isSingleAssignee: false, isUnitHeadPosition: false, roleId: null,
+      });
+      mockPrisma.user.create.mockResolvedValue({
+        id: 'new-user', organizationId: ORG_A, status: 'INVITED', positionId: 'pos-1', primaryOrgUnitId: 'unit-1',
+      });
+
+      await service.invite(
+        { email: 'new@example.com', name: 'New User', positionId: 'pos-1', primaryOrgUnitId: 'unit-1' },
+        ORG_A,
+        'actor-1',
+      );
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledTimes(1);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-1', ORG_A);
+    });
+
+    it('does not refresh org-unit-head vacancy when invite() sets no primaryOrgUnitId', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.count.mockResolvedValue(0); // brand-new tenant, no active OrgUnit yet
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+        id: 'pos-1', isSingleAssignee: false, isUnitHeadPosition: false, roleId: null,
+      });
+      mockPrisma.user.create.mockResolvedValue({
+        id: 'new-user', organizationId: ORG_A, status: 'INVITED', positionId: 'pos-1', primaryOrgUnitId: null,
+      });
+
+      await service.invite(
+        { email: 'new@example.com', name: 'New User', positionId: 'pos-1' },
+        ORG_A,
+        'actor-1',
+      );
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+    });
   });
 
   // ── syncHeadAuthorityRoleGrant (ACC-40 Section 2.6.4/2.6.5) ─────────────────

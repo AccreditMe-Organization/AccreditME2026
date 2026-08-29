@@ -188,6 +188,20 @@ export class UserService {
       actorId,
     );
 
+    // ACC-43 — mirrors updateProfile()'s own vacancy refresh (Section
+    // 2.5.1 above): invite() is the other write path that can set
+    // primaryOrgUnitId, and was missing this call entirely, so a brand-new
+    // invite into a Head-vacant unit never got picked up until some later,
+    // unrelated profile update happened to touch that unit. The invited
+    // user is INVITED, not ACTIVE, so refreshOrgUnitHeadVacancy()'s own
+    // ACTIVE-only holder count correctly still reports the unit vacant
+    // here — this call doesn't change what counts as covering, it just
+    // makes that correct evaluation actually run at invite time instead of
+    // silently never running.
+    if (dto.primaryOrgUnitId) {
+      await this.organizationService.refreshOrgUnitHeadVacancy(dto.primaryOrgUnitId, organizationId);
+    }
+
     return user;
   }
 
