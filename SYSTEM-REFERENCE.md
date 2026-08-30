@@ -1469,7 +1469,30 @@ only once the tenant has at least one active `OrgUnit`.
 - **`reactivatePosition()`** (`:167`) — **new in ACC-40, closes the
   Tier 2 gap this section previously documented** (deactivate-with-no-
   reactivate asymmetry vs. `Role`). Mirrors `RoleService.reactivateRole()`
-  exactly.
+  exactly. Only ever touches `isActive` (a plain
+  `update({ data: { isActive: true } })`) — `grade`/`isSingleAssignee`/
+  `isUnitHeadPosition`/`roleId` are untouched across a deactivate/
+  reactivate cycle, live-verified during ACC-43. Had a real, working
+  backend endpoint (`POST /org-positions/:id/activate`) and frontend
+  service method with **zero UI entry point** until ACC-43 wired a
+  Reactivate button into `position-list.component.ts` — confirmed via
+  the same live-verification pass, closed in the same ticket.
+- **`UserService.validatePositionAssignment()`** (`user.service.ts:423`)
+  — as of ACC-43, rejects with `ConflictException` when the target
+  position's `isActive` is `false`, checked before the existing
+  single-assignee-cap (5.2 above) and cross-position Head-uniqueness
+  checks. This was a real, live-confirmed gap, not a hypothetical one:
+  neither `invite()` nor `updateProfile()` checked it before, so
+  `deactivatePosition()` never actually stopped a deactivated position
+  from being handed to someone new — confirmed via a direct API call
+  that succeeded (201) pre-fix. No `isDeclaredHandoverBypass` exemption
+  (5.4) — a handover is only ever declared against a position that
+  already has a real, active holder, so this can never legitimately
+  fire during one. `invite-user.component.ts`'s picker was fixed
+  alongside it (`assignablePositions()`, a computed `isActive` filter
+  on top of `listPositions()`'s still-unfiltered raw result — the same
+  client-side convention already used for role pickers elsewhere,
+  e.g. `user-role-assignment.component.ts`).
 
 ### 5.3 "Who Is This Unit's Head" — Derived, Never Stored
 
@@ -1555,8 +1578,12 @@ no special-casing anywhere else in the system.
 `OrganizationService.refreshOrgUnitHeadVacancy()` (`:117`) — the
 entry-time check, called from every Head-management method above, from
 `OrgPositionService.deactivatePosition()`, and from
-`UserService.updateProfile()`/`deactivate()` whenever they touch a
-user's `positionId`/`primaryOrgUnitId`. Re-runs the direct-holder count;
+`UserService.updateProfile()`/`deactivate()`/**`invite()`** (ACC-43 —
+`invite()` was the one write path that sets `primaryOrgUnitId` without
+triggering this call; a brand-new invite into a Head-vacant unit was
+never picked up until some later, unrelated profile update happened to
+touch that unit) whenever they touch a user's
+`positionId`/`primaryOrgUnitId`. Re-runs the direct-holder count;
 on a genuine `false→true` vacancy transition, runs 5.3's escalation
 walk exactly once and sets `isHeadVacant`/`headVacantSince`/
 `isHeadFullyUnresolved`. Only a **fully-exhausted** result (escalation
@@ -1694,6 +1721,21 @@ also match ordinary, independently-held rows). An independent grant
 (a role assigned through the ordinary Roles UI, not through this
 mechanism) is never overwritten or relabeled — a later revoke via this
 mechanism correctly leaves it untouched.
+
+A Head-Conferring position with no mapped `roleId` previously saved
+silently — no warning, no way for a tenant admin to ever learn a
+position they intended to grant a role granted none. Two fixes, ACC-43:
+`position-form.component.ts` shows a non-blocking inline warning when
+`isUnitHeadPosition && !roleId` (save is never blocked, matching the
+plan's own design); and `OrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings()`
+(`org-position.service.ts:208`) — which existed and was unit-tested
+since ACC-40 Phase 12 but was never called from anywhere in the running
+app — is now wired into `SlaMonitorProcessor`'s existing 15-minute
+sweep (`sweepVacantHeadRoleMappings()`, `sla-monitor.processor.ts:211`).
+The sweep reports two related-but-not-joined signals together per
+tenant: `OrgUnit` rows currently `isHeadVacant: true`, and
+`isUnitHeadPosition: true` positions currently `roleId: null` — same
+admin-notification chain as every other method in this section.
 
 ### 5.11 Mandatory `positionId`/`primaryOrgUnitId` and Existing-Tenant Remediation
 
@@ -3368,7 +3410,17 @@ here.
 ### 12.6 Permission Model
 
 ```
-users:view       — UserController: listUsers, getById
+users:view       — UserController: listUsers. NOT getById as of ACC-43
+                   (was a real inconsistency: every authenticated user
+                   already self-edits this same record — name/language/
+                   MFA/out-of-office — with no permission requirement
+                   at all, but reading their OWN profile required an
+                   admin-tier permission). getById carries no
+                   @Permissions() decorator; the self-or-view check
+                   moved INTO UserService.getByIdForViewer()
+                   (isSelf || actorPermissions.includes('users:view')),
+                   same shape as the users:manage self-vs-admin gate
+                   below, mirrored for view instead of write.
 users:invite     — UserController: invite
 users:manage     — checked INSIDE UserService for updateProfile/
                    updateOutOfOffice's self-vs-admin gate (12.3) — not
