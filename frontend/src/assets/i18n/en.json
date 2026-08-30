@@ -325,6 +325,7 @@
     "vacantRoleWarning": "This position won't grant any role to its holder until you map one.",
     "isActive": "Active",
     "deactivate": "Deactivate",
+    "reactivate": "Reactivate",
     "noPositions": "No positions defined yet.",
     "systemBadge": "Default",
     "customBadge": "Custom",

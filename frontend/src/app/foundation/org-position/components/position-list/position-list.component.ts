@@ -97,6 +97,15 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                     [pTooltip]="'orgPosition.deactivate' | translate"
                     (onClick)="onDeactivate(position)"
                   />
+                } @else {
+                  <p-button
+                    icon="pi pi-check-circle"
+                    [text]="true"
+                    size="small"
+                    severity="success"
+                    [pTooltip]="'orgPosition.reactivate' | translate"
+                    (onClick)="onReactivate(position)"
+                  />
                 }
               </div>
             </td>
@@ -181,6 +190,19 @@ export class PositionListComponent implements OnInit {
             this.error.set(extractErrorMessage(err, 'Deactivate failed')),
         });
       },
+    });
+  }
+
+  // ACC-43 — the backend endpoint (org-position.service.ts's
+  // reactivatePosition(), wired at POST /org-positions/:id/activate) and
+  // this frontend service method already existed; this button was the
+  // only missing piece. No confirmation dialog — matches
+  // tenant-list.component.ts's own onReactivate(), since reactivating is
+  // non-destructive, unlike deactivate above.
+  onReactivate(position: IOrgPositionDto): void {
+    this.orgPositionService.reactivate(position.id).subscribe({
+      next: () => this.loadPositions(),
+      error: (err: unknown) => this.error.set(extractErrorMessage(err, 'Reactivate failed')),
     });
   }
 

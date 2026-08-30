@@ -325,6 +325,7 @@
     "vacantRoleWarning": "لن يمنح هذا المسمى أي دور لشاغله حتى تربطه بدور.",
     "isActive": "نشط",
     "deactivate": "إلغاء التفعيل",
+    "reactivate": "إعادة التفعيل",
     "noPositions": "لا توجد مسميات وظيفية بعد.",
     "systemBadge": "افتراضي",
     "customBadge": "مخصص",
