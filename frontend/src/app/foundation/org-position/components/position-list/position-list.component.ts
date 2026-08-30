@@ -97,6 +97,15 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                     [pTooltip]="'orgPosition.deactivate' | translate"
                     (onClick)="onDeactivate(position)"
                   />
+                } @else {
+                  <p-button
+                    icon="pi pi-check-circle"
+                    [text]="true"
+                    size="small"
+                    severity="success"
+                    [pTooltip]="'orgPosition.reactivate' | translate"
+                    (onClick)="onReactivate(position)"
+                  />
                 }
               </div>
             </td>
@@ -116,7 +125,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     <ng-template #formTpl>
       <app-position-form
         [position]="editingPosition()"
-        (saved)="onSaved()"
+        (saved)="onSaved($event)"
         (cancelled)="formVisible.set(false)"
       />
     </ng-template>
@@ -153,8 +162,18 @@ export class PositionListComponent implements OnInit {
     this.formVisible.set(true);
   }
 
-  onSaved(): void {
-    this.formVisible.set(false);
+  // ACC-43 — the dialog stays open when the vacant-role warning fires, so
+  // the user actually sees it, rather than closing the instant the save
+  // succeeds. The list still refreshes underneath either way — the save
+  // itself is never blocked. Switches to edit-mode against the
+  // just-saved position so that a create left open doesn't turn a second
+  // Save click into a duplicate create.
+  onSaved(result: { position: IOrgPositionDto; hadVacantRoleWarning: boolean }): void {
+    if (result.hadVacantRoleWarning) {
+      this.editingPosition.set(result.position);
+    } else {
+      this.formVisible.set(false);
+    }
     this.loadPositions();
   }
 
@@ -171,6 +190,19 @@ export class PositionListComponent implements OnInit {
             this.error.set(extractErrorMessage(err, 'Deactivate failed')),
         });
       },
+    });
+  }
+
+  // ACC-43 — the backend endpoint (org-position.service.ts's
+  // reactivatePosition(), wired at POST /org-positions/:id/activate) and
+  // this frontend service method already existed; this button was the
+  // only missing piece. No confirmation dialog — matches
+  // tenant-list.component.ts's own onReactivate(), since reactivating is
+  // non-destructive, unlike deactivate above.
+  onReactivate(position: IOrgPositionDto): void {
+    this.orgPositionService.reactivate(position.id).subscribe({
+      next: () => this.loadPositions(),
+      error: (err: unknown) => this.error.set(extractErrorMessage(err, 'Reactivate failed')),
     });
   }
 

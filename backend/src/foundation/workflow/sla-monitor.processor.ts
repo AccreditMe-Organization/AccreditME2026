@@ -116,6 +116,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     await this.sweepExpiredActingOrgUnitAssignments(now);
     await this.sweepDueHandovers(now);
     await this.sweepOrgUnitVacancies(now);
+    await this.sweepVacantHeadRoleMappings();
   }
 
   // ACC-40 Section 2.3 — the automatic half of "what closes the window:
@@ -205,6 +206,38 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       data: { headFullyUnresolvedLastRemindedAt: now },
     });
     await this.organizationService.notifyTenantAdminsOfOrgUnitVacancy(orgUnit.organizationId, orgUnit, true);
+  }
+
+  // ACC-43 — wires OrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings()
+  // (2.9e) into this existing sweep. That method existed and was unit-tested
+  // since ACC-40 Phase 12 but was never called from anywhere in the running
+  // app — found during ACC-43's live verification pass. Reuses the existing
+  // method rather than duplicating its query/notification logic, same
+  // precedent as sweepDueHandovers()/sweepOrgUnitVacancies() above. Two
+  // lightweight distinct-organizationId queries up front, rather than
+  // calling the (no-op-if-nothing-to-report) method once per tenant
+  // regardless — avoids paying its full query cost for every tenant with
+  // nothing to report, every 15 minutes.
+  private async sweepVacantHeadRoleMappings(): Promise<void> {
+    const vacantUnitOrgs = await this.prisma.orgUnit.findMany({
+      where: { isHeadVacant: true },
+      select: { organizationId: true },
+      distinct: ['organizationId'],
+    });
+    const unmappedPositionOrgs = await this.prisma.orgPosition.findMany({
+      where: { isUnitHeadPosition: true, roleId: null },
+      select: { organizationId: true },
+      distinct: ['organizationId'],
+    });
+
+    const organizationIds = new Set([
+      ...vacantUnitOrgs.map((u) => u.organizationId),
+      ...unmappedPositionOrgs.map((p) => p.organizationId),
+    ]);
+
+    for (const organizationId of organizationIds) {
+      await this.orgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings(organizationId);
+    }
   }
 
   // ACC-40 Section 2.7 — the simplest sweep step this file adds: unlike

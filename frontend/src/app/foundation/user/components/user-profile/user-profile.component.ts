@@ -19,6 +19,7 @@ import {
 import { UserRoleAssignmentComponent } from '../../../roles/components/user-role-assignment/user-role-assignment.component';
 import { AuthService, MfaSetupResult } from '../../../../core/services/auth.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on most fields
 // in this file: routed-page-under-<main> context. `language` (2 options)
@@ -36,10 +37,12 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 //
 // Admin-only fields (positionId, primaryOrgUnitId, managerId,
 // actingOrgUnitId, actingOrgUnitUntil — ACC-40 Section 2.7) are shown to
-// every viewer, not conditionally hidden — UserService.updateProfile()
-// already silently strips them server-side when a non-admin edits their own
-// profile (Section 12, Discussion 3), so submitting them as a self-editing
-// non-admin is a harmless no-op rather than a rejected request.
+// every viewer but disabled (ACC-43) unless the viewer holds users:manage —
+// the same permission UserService.updateProfile() already checks
+// server-side (Section 12, Discussion 3). Disabling here is a UX fix only,
+// not the real enforcement: the server still silently strips these fields
+// for a non-admin regardless of what the disabled frontend control sends,
+// so this can't be bypassed by re-enabling the control client-side.
 @Component({
   selector: 'app-user-profile',
   standalone: true,
@@ -314,6 +317,7 @@ export class UserProfileComponent implements OnInit {
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly authService = inject(AuthService);
   private readonly languageService = inject(LanguageService);
+  private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translateService = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
@@ -334,6 +338,13 @@ export class UserProfileComponent implements OnInit {
   // form's own parentId picker). Shared by both primaryOrgUnitId and
   // actingOrgUnitId — same tenant org-unit tree, no reason to duplicate.
   readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
+
+  // ACC-43 — UX-only mirror of UserService.updateProfile()'s own
+  // users:manage gate (user.service.ts:237). Disabling these 5 controls
+  // client-side doesn't replace that server-side check; it just stops a
+  // non-admin from typing into a field the server has always silently
+  // ignored, without any way for a client-side re-enable to bypass it.
+  readonly canEditAdminFields = computed(() => this.navigationAccessService.hasPermission('users:manage'));
 
   // MFA management only ever acts on the logged-in user (AuthController's
   // mfa/* endpoints resolve the actor from the JWT via @CurrentUser(), not
@@ -382,6 +393,16 @@ export class UserProfileComponent implements OnInit {
         ),
     });
     this.loadUser();
+
+    // ACC-43 — one-time check, not a reactive effect: permissions are
+    // loaded once at app-init (NavigationAccessService.loadAccess()) and
+    // don't change mid-session without a re-login, same assumption every
+    // other hasPermission() consumer in the app already relies on.
+    if (!this.canEditAdminFields()) {
+      for (const field of ['positionId', 'primaryOrgUnitId', 'managerId', 'actingOrgUnitId', 'actingOrgUnitUntil']) {
+        this.profileForm.get(field)!.disable();
+      }
+    }
   }
 
   orgUnitName(orgUnitId: string | null): string {

@@ -551,6 +551,37 @@ describe('OrganizationService', () => {
         ORG_A,
       );
     });
+
+    // ACC-43 — an INVITED head-conferring holder does NOT count as covering
+    // a unit, matching the same principle already established for
+    // out-of-office coverage: holding a position isn't the same as being
+    // able to act. Asserts the direct-holder query itself filters by
+    // status: 'ACTIVE' — a user who has never accepted their invitation
+    // must not silently mask a genuinely vacant unit.
+    it('filters the direct-holder count by status: ACTIVE — an INVITED holder still counts the unit as vacant', async () => {
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(VACANCY_UNIT) // the unit itself
+        .mockResolvedValueOnce({ actingHeadUserId: null, parentId: null }); // resolver: root, chain ends
+      mockPrisma.user.count.mockResolvedValue(0); // the ACTIVE-only filter excludes the INVITED holder
+      mockPrisma.user.findMany.mockResolvedValue([]); // vacant everywhere
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-1' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
+
+      await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
+
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: ORG_A,
+            primaryOrgUnitId: 'unit-1',
+            status: 'ACTIVE',
+          }),
+        }),
+      );
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ isHeadVacant: true }) }),
+      );
+    });
   });
 
   // ── notifyTenantAdminsOfOrgUnitVacancy (ACC-40 Section 2.5.1) ────────────────

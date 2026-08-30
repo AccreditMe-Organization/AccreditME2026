@@ -65,6 +65,25 @@ export class UserService {
     return user;
   }
 
+  // ACC-43 — the HTTP-facing self-or-view entry point for GET /users/:id.
+  // Deliberately NOT folded into getById() itself: getById() is reused
+  // internally (updateProfile()/updateOutOfOffice()/deactivate() below,
+  // auth.controller.ts) as a trusted, unguarded tenant-scoped lookup — those
+  // call sites must never gain an unrelated permission check. Same
+  // isSelf-bypasses-the-permission-check shape as updateProfile()'s isAdmin
+  // check above, mirrored for view rather than write.
+  async getByIdForViewer(
+    id: string,
+    organizationId: string,
+    actorId: string,
+    actorPermissions: string[],
+  ): Promise<IUser> {
+    const isSelf = actorId === id;
+    const canView = actorPermissions.includes('users:view');
+    if (!isSelf && !canView) throw new ForbiddenException();
+    return this.getById(id, organizationId);
+  }
+
   // Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —
   // uploads blocked, no data corruption" pattern, applied here to seats.
   async invite(dto: InviteUserDto, organizationId: string, actorId: string): Promise<IUser> {
@@ -168,6 +187,20 @@ export class UserService {
       organizationId,
       actorId,
     );
+
+    // ACC-43 — mirrors updateProfile()'s own vacancy refresh (Section
+    // 2.5.1 above): invite() is the other write path that can set
+    // primaryOrgUnitId, and was missing this call entirely, so a brand-new
+    // invite into a Head-vacant unit never got picked up until some later,
+    // unrelated profile update happened to touch that unit. The invited
+    // user is INVITED, not ACTIVE, so refreshOrgUnitHeadVacancy()'s own
+    // ACTIVE-only holder count correctly still reports the unit vacant
+    // here — this call doesn't change what counts as covering, it just
+    // makes that correct evaluation actually run at invite time instead of
+    // silently never running.
+    if (dto.primaryOrgUnitId) {
+      await this.organizationService.refreshOrgUnitHeadVacancy(dto.primaryOrgUnitId, organizationId);
+    }
 
     return user;
   }
@@ -398,6 +431,19 @@ export class UserService {
       where: { id: targetPositionId, organizationId },
     });
     if (!position) throw new NotFoundException('Position not found in this organization');
+
+    // ACC-43 — a deactivated position was previously assignable to anyone,
+    // via both invite() and updateProfile(): deactivatePosition() only
+    // ever flips isActive (existing holders keep their own positionId
+    // untouched, per resolveActingHeadForOrgUnit()'s own isActive-filter
+    // comment), but nothing here checked it, so "deactivate" never
+    // actually stopped new assignment. No isDeclaredHandoverBypass
+    // exemption — a handover is only ever declared against a position
+    // that already has a real, currently-active holder, so this can never
+    // legitimately fire during one.
+    if (!position.isActive) {
+      throw new ConflictException('This position is inactive and cannot be assigned');
+    }
 
     await this.validateSingleAssigneeCap(
       position,

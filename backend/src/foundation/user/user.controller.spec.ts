@@ -12,6 +12,7 @@ describe('UserController', () => {
   let service: {
     listUsers: jest.Mock;
     getById: jest.Mock;
+    getByIdForViewer: jest.Mock;
     invite: jest.Mock;
     updateProfile: jest.Mock;
     updateOutOfOffice: jest.Mock;
@@ -25,6 +26,7 @@ describe('UserController', () => {
     service = {
       listUsers: jest.fn().mockResolvedValue([]),
       getById: jest.fn().mockResolvedValue({ id: USER_ID }),
+      getByIdForViewer: jest.fn().mockResolvedValue({ id: USER_ID }),
       invite: jest.fn().mockResolvedValue({ id: 'new-user' }),
       updateProfile: jest.fn().mockResolvedValue({ id: USER_ID }),
       updateOutOfOffice: jest.fn().mockResolvedValue({ id: USER_ID }),
@@ -58,9 +60,9 @@ describe('UserController', () => {
     });
   });
 
-  it('getById delegates to UserService.getById', async () => {
-    await controller.getById(USER_ID, TENANT_ID);
-    expect(service.getById).toHaveBeenCalledWith(USER_ID, TENANT_ID);
+  it('getById delegates to UserService.getByIdForViewer with actor context', async () => {
+    await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+    expect(service.getByIdForViewer).toHaveBeenCalledWith(USER_ID, TENANT_ID, USER_ID, ['users:view']);
   });
 
   it('invite delegates to UserService.invite', async () => {
