@@ -56,7 +56,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
         </label>
         <app-overlay-select
           formControlName="positionId"
-          [options]="positions()"
+          [options]="assignablePositions()"
           optionLabel="nameEn"
           optionValue="id"
           [showClear]="true"
@@ -131,6 +131,14 @@ export class InviteUserComponent implements OnInit {
   // check exactly: required once the tenant has at least one active
   // OrgUnit, not a blanket rule (a brand-new tenant has none yet).
   readonly primaryOrgUnitRequired = computed(() => this.orgUnits().some((u) => u.isActive));
+
+  // ACC-43 — excludes inactive positions from the picker, matching the
+  // established client-side isActive-filter convention already used for
+  // role pickers (user-role-assignment.component.ts, position-form.
+  // component.ts's own assignableRoles getter). listPositions() itself
+  // stays unfiltered — position-list.component.ts's own admin table
+  // still needs to show inactive positions.
+  readonly assignablePositions = computed(() => this.positions().filter((p) => p.isActive));
 
   // ACC-42 Phase 6 — no excludeId: a new user isn't itself an org unit, so
   // there's no self/descendant relationship to exclude (unlike org-unit-

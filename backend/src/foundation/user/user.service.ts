@@ -432,6 +432,19 @@ export class UserService {
     });
     if (!position) throw new NotFoundException('Position not found in this organization');
 
+    // ACC-43 — a deactivated position was previously assignable to anyone,
+    // via both invite() and updateProfile(): deactivatePosition() only
+    // ever flips isActive (existing holders keep their own positionId
+    // untouched, per resolveActingHeadForOrgUnit()'s own isActive-filter
+    // comment), but nothing here checked it, so "deactivate" never
+    // actually stopped new assignment. No isDeclaredHandoverBypass
+    // exemption — a handover is only ever declared against a position
+    // that already has a real, currently-active holder, so this can never
+    // legitimately fire during one.
+    if (!position.isActive) {
+      throw new ConflictException('This position is inactive and cannot be assigned');
+    }
+
     await this.validateSingleAssigneeCap(
       position,
       targetPrimaryOrgUnitId,
