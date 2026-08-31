@@ -863,6 +863,9 @@ incidents:view              incidents:report          incidents:investigate
 incidents:approve_plan      incidents:close
 meetings:view               meetings:manage           meetings:record_minutes
 meetings:approve_minutes
+committees:view              committees:manage          committees:approve
+committees:create            committees:edit_details    committees:add_member
+committees:remove_member     committees:change_member_role
 tasks:view                  tasks:create              tasks:reassign
 tasks:complete              tasks:manage
 org:view                    org:manage
@@ -1632,7 +1635,20 @@ Prisma Studio.
   person doing the real work. Roles holding `committees:manage` are
   granted all 8 permission strings directly at seed time (existing
   tenants backfilled) — there is no runtime "does manage imply this"
-  logic anywhere.
+  logic anywhere. **This is now the REQUIRED pattern for every future
+  module's own CRUD permission model** (ACC-44 — previously only
+  described as what Committee itself does, an undocumented gap):
+  richer, action-specific permission strings per module rather than a
+  single flat `{module}:manage`, with an umbrella `{module}:manage`
+  seeded to also hold every one of that module's specific strings
+  directly (never computed/implied at runtime) — matching
+  `OverlaySelectComponent`'s and `EditDialogComponent`'s own "now the
+  REQUIRED pattern" status elsewhere in this file. A per-instance
+  dynamic authority check (e.g. "are you literally this record's
+  owner/chairman") is NOT part of this required pattern — Committee's
+  own attempt at one was designed, built, then deliberately rejected
+  for the reason above, and that reasoning applies to any future
+  module considering the same shortcut.
 - **`WorkflowInstanceStage.isUnassigned`/`.unassignedAt`** (ACC-28,
   extended ACC-33) detects when a stage's next required transition
   has NO eligible actor — checked at stage-entry time and re-swept
