@@ -776,7 +776,6 @@ model WorkflowStage {
   description        String?
   order              Int
   slaWorkingHours    Int?
-  requiredPermission String?
   isInitial          Boolean @default(false)
   isFinal            Boolean @default(false)
 

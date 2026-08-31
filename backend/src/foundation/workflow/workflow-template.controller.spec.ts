@@ -32,7 +32,6 @@ const MOCK_STAGE: IWorkflowStage = {
   description: null,
   order: 10,
   slaWorkingHours: null,
-  requiredPermission: null,
   isInitial: true,
   isFinal: false,
   approvalMode: 'SINGLE',

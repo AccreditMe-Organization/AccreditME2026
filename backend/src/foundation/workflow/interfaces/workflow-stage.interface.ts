@@ -8,7 +8,6 @@ export interface IWorkflowStage {
   description: string | null;
   order: number;
   slaWorkingHours: number | null;
-  requiredPermission: string | null;
   isInitial: boolean;
   isFinal: boolean;
   approvalMode: string; // WorkflowApprovalMode

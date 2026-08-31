@@ -24,7 +24,6 @@ export interface WorkflowStageDto {
   description: string | null;
   order: number;
   slaWorkingHours: number | null;
-  requiredPermission: string | null;
   isInitial: boolean;
   isFinal: boolean;
   approvalMode: string;
@@ -86,7 +85,6 @@ export interface CreateWorkflowStageDto {
   description?: string;
   order: number;
   slaWorkingHours?: number;
-  requiredPermission?: string;
   isInitial?: boolean;
   isFinal?: boolean;
   approvalMode: string;

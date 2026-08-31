@@ -413,7 +413,12 @@ describe('OrgPositionService', () => {
       expect(mockPrisma.orgPosition.update).not.toHaveBeenCalled();
     });
 
-    it('throws NotFoundException for a cross-tenant position', async () => {
+    // ACC-44 — renamed to the exact CI isolation-gate string
+    // ("should NOT return records belonging to a different tenant").
+    // Same logic as before (a cross-tenant position id resolves to
+    // nothing and throws) — this test was always correct, just invisible
+    // to CI's --testNamePattern gate under its old name.
+    it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.orgPosition.findFirst.mockResolvedValue(null);
 
       await expect(service.reactivatePosition('position-1', ORG_B, 'actor-1')).rejects.toThrow(

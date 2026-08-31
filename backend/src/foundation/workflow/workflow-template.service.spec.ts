@@ -31,7 +31,6 @@ const BASE_STAGE = {
   description: null as string | null,
   order: 10,
   slaWorkingHours: null as number | null,
-  requiredPermission: null as string | null,
   isInitial: true,
   isFinal: false,
   approvalMode: 'SINGLE',

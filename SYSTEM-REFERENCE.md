@@ -399,7 +399,6 @@ model WorkflowStage {
   nameEn, nameAr     String
   order              Int
   slaWorkingHours    Int?
-  requiredPermission String?
   isInitial          Boolean                    @default(false)
   isFinal            Boolean                    @default(false)
 
@@ -431,7 +430,35 @@ model WorkflowTransition {
   validatorConfig    Json?
   isApprovalPath     Boolean                    @default(false)
 }
+```
 
+**ACC-44 — `WorkflowStage` used to carry its own `requiredPermission`
+field too (a sibling of the one still above on `WorkflowTransition`),
+removed via a real migration.** Confirmed dead by direct code audit
+before removal, not assumed: never set by any of the 8 seeded
+workflow templates (every seed `requiredPermission` lives on a
+transition object, never a stage object — `workflow.seed.ts`'s own
+`stages: [...]` arrays never included it), never exposed by any
+stage-editing frontend UI (`workflow-transition-editor.component.ts`
+has two real `requiredPermission` inputs, for create and edit — no
+equivalent ever existed for a stage), and never read anywhere in the
+runtime engine (every real enforcement check below — 2.4's
+`triggerTransition()` gating trace, `checkAndFlagUnassignedStage()`,
+`resolveApproverPool()` — reads `transition.requiredPermission`
+exclusively). Not just unused: **structurally, a stage-level
+permission doesn't fit this engine's own authorization model** —
+several seeded stages have multiple outgoing transitions that
+legitimately require *different* permissions (e.g. Committee's
+`terms_review` stage: "Approve Committee" needs
+`committees:approve`, "Revise Terms" needs `committees:manage`), so a
+single per-stage value could never have expressed what the real
+per-transition values already do correctly. Kept as-is would have
+been the same shape that made `tasks:manage` dangerous pre-ACC-33 — a
+real-looking permission string, settable via the raw API, silently
+doing nothing. See CLAUDE.md's ACC-44 entry for the removal decision
+itself.
+
+```prisma
 model WorkflowInstance {
   id                 String                  @id @default(cuid())
   organizationId     String

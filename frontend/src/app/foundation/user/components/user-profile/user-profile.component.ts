@@ -428,6 +428,20 @@ export class UserProfileComponent implements OnInit {
           outOfOfficeTo: u.outOfOfficeTo ? new Date(u.outOfOfficeTo) : null,
           actingUserId: u.actingUserId,
         });
+        // ACC-44 — UserService.updateOutOfOffice()'s real gate is
+        // isSelf || users:manage (user.service.ts:547), not users:manage
+        // alone like the 5-field admin block above — a non-admin can set
+        // their OWN out-of-office, just not someone else's. Checked here,
+        // inside loadUser()'s own success callback, not the synchronous
+        // top of ngOnInit() like the 5-field block: isOwnProfile() reads
+        // this.user(), which is still null until this callback runs.
+        // Same UX-only framing as canEditAdminFields() itself — the
+        // server-side ForbiddenException remains the real enforcement;
+        // this only stops a non-admin from filling in a form they can't
+        // actually save, instead of hitting a 403 after the fact.
+        if (!this.isOwnProfile() && !this.canEditAdminFields()) {
+          this.oooForm.disable();
+        }
         if (this.isOwnProfile()) {
           this.loadMfaStatus();
         }
