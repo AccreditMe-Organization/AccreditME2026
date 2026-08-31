@@ -35,6 +35,60 @@ export interface ListUsersFilters {
   search?: string;
 }
 
+// ACC-45 — the single, shared "strip internal-only fields" mapper for User
+// rows crossing the HTTP response boundary. getById()/listUsers()/invite()/
+// getByIdForViewer() below are all declared to return IUser but, before this
+// fix, actually returned the full, unfiltered Prisma User row —
+// invitationToken (a plaintext, unhashed credential AuthService.
+// acceptInvitation() matches by direct equality — see auth.service.ts),
+// invitationExpiresAt, authUserId (the internal Better Auth join key),
+// tokenVersion, lastLoginIp, and other fields never meant to leave the
+// server included. IUser's own field list was a documented-but-never-
+// enforced contract: TypeScript's structural typing allows a wider runtime
+// object to satisfy a narrower declared return type, so every one of those
+// methods compiled cleanly the whole time while silently lying about the
+// real response shape — declaring `Promise<IUser>` never actually stripped
+// anything at runtime.
+//
+// Deliberately NOT baked into getById()/listUsers()/invite()/updateProfile()/
+// updateOutOfOffice() themselves — unlike RoleService's own mapRole(), which
+// IS called from inside every RoleService method. getById() specifically is
+// reused internally by updateProfile()/updateOutOfOffice()/deactivate()/
+// getByIdForViewer() (confirmed via a full call-site audit before this
+// change: none of them currently read the excluded fields off the object
+// getById() returns, but the design stays defensive against a future one
+// that does, per the same reasoning WorkflowStage.requiredPermission's
+// ACC-44 removal write-up used for "don't guess, verify" — see CLAUDE.md's
+// ACC-44 section). Call this explicitly at every call site that actually
+// serializes a User onto an HTTP response — all 5 now covered:
+// UserController's listUsers()/getById()/invite()/updateProfile()/
+// updateOutOfOffice(). updateProfile()/updateOutOfOffice() were found to
+// have the identical leak shape (both return the raw prisma.user.update()
+// result untouched) in the same audit that found the original 3 — fixed
+// together in one pass rather than split across tickets.
+export function toSafeUser(user: IUser): IUser {
+  return {
+    id: user.id,
+    organizationId: user.organizationId,
+    email: user.email,
+    name: user.name,
+    avatarUrl: user.avatarUrl,
+    status: user.status,
+    language: user.language,
+    positionId: user.positionId,
+    primaryOrgUnitId: user.primaryOrgUnitId,
+    managerId: user.managerId,
+    outOfOfficeFrom: user.outOfOfficeFrom,
+    outOfOfficeTo: user.outOfOfficeTo,
+    actingUserId: user.actingUserId,
+    actingOrgUnitId: user.actingOrgUnitId,
+    actingOrgUnitUntil: user.actingOrgUnitUntil,
+    lastLoginAt: user.lastLoginAt,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
 @Injectable()
 export class UserService {
   constructor(

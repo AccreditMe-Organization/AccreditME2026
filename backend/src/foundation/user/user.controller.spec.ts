@@ -103,4 +103,95 @@ describe('UserController', () => {
     await controller.removeRoleFromUser(USER_ID, 'role-1', TENANT_ID, 'admin-1');
     expect(service.removeRoleFromUser).toHaveBeenCalledWith(USER_ID, 'role-1', TENANT_ID, 'admin-1');
   });
+
+  // ACC-45 — regression coverage for the toSafeUser() mapping wired into
+  // listUsers()/getById()/invite(). The service mock is deliberately given
+  // the FULL, unfiltered row shape (including invitationToken and other
+  // internal-only fields UserService's real Prisma calls actually return)
+  // so these tests exercise the real toSafeUser() mapping, not a mock —
+  // if the controller stopped calling it, these would fail.
+  describe('sensitive-field stripping (ACC-45)', () => {
+    const RAW_USER_WITH_SECRETS = {
+      id: USER_ID,
+      organizationId: TENANT_ID,
+      email: 'a@example.com',
+      name: 'A',
+      avatarUrl: null,
+      status: 'ACTIVE',
+      language: 'en',
+      positionId: null,
+      primaryOrgUnitId: null,
+      managerId: null,
+      outOfOfficeFrom: null,
+      outOfOfficeTo: null,
+      actingUserId: null,
+      actingOrgUnitId: null,
+      actingOrgUnitUntil: null,
+      lastLoginAt: null,
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+      // Internal-only — must never reach the HTTP response.
+      invitationToken: 'raw-invitation-secret',
+      invitationExpiresAt: new Date('2026-01-08'),
+      authUserId: 'auth-user-1',
+      tokenVersion: 3,
+      lastLoginIp: '203.0.113.5',
+      hijriDisplay: false,
+      tosAcceptedAt: null,
+      tosVersion: null,
+    };
+
+    const SENSITIVE_FIELDS = [
+      'invitationToken',
+      'invitationExpiresAt',
+      'authUserId',
+      'tokenVersion',
+      'lastLoginIp',
+      'hijriDisplay',
+      'tosAcceptedAt',
+      'tosVersion',
+    ] as const;
+
+    it('listUsers strips invitationToken and every other internal-only field from each returned user', async () => {
+      service.listUsers.mockResolvedValue([RAW_USER_WITH_SECRETS]);
+      const result = await controller.listUsers(TENANT_ID);
+      const [mapped] = result;
+      for (const field of SENSITIVE_FIELDS) expect(mapped).not.toHaveProperty(field);
+      expect(mapped?.id).toBe(USER_ID);
+      expect(mapped?.email).toBe('a@example.com');
+    });
+
+    it('getById strips invitationToken and every other internal-only field', async () => {
+      service.getByIdForViewer.mockResolvedValue(RAW_USER_WITH_SECRETS);
+      const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+      for (const field of SENSITIVE_FIELDS) expect(result).not.toHaveProperty(field);
+      expect(result.id).toBe(USER_ID);
+    });
+
+    it('invite strips invitationToken and every other internal-only field', async () => {
+      service.invite.mockResolvedValue(RAW_USER_WITH_SECRETS);
+      const dto = { email: 'a@example.com', name: 'A', positionId: 'pos-1' };
+      const result = await controller.invite(dto, TENANT_ID, USER_ID);
+      for (const field of SENSITIVE_FIELDS) expect(result).not.toHaveProperty(field);
+      // Belt-and-suspenders: confirm the raw secret value isn't reachable
+      // anywhere in the serialized response, not just absent under its own key.
+      expect(JSON.stringify(result)).not.toContain('raw-invitation-secret');
+    });
+
+    it('updateProfile strips invitationToken and every other internal-only field', async () => {
+      service.updateProfile.mockResolvedValue(RAW_USER_WITH_SECRETS);
+      const dto = { name: 'New Name' };
+      const result = await controller.updateProfile(USER_ID, dto, TENANT_ID, USER_ID, ['users:manage']);
+      for (const field of SENSITIVE_FIELDS) expect(result).not.toHaveProperty(field);
+      expect(result.id).toBe(USER_ID);
+    });
+
+    it('updateOutOfOffice strips invitationToken and every other internal-only field', async () => {
+      service.updateOutOfOffice.mockResolvedValue(RAW_USER_WITH_SECRETS);
+      const dto = { actingUserId: 'acting-1' };
+      const result = await controller.updateOutOfOffice(USER_ID, dto, TENANT_ID, USER_ID, []);
+      for (const field of SENSITIVE_FIELDS) expect(result).not.toHaveProperty(field);
+      expect(result.id).toBe(USER_ID);
+    });
+  });
 });

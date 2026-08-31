@@ -6,7 +6,7 @@ import { USERS_PERMISSIONS, ROLES_PERMISSIONS } from '../../common/constants/per
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
-import { UserService } from './user.service';
+import { UserService, toSafeUser } from './user.service';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
@@ -21,13 +21,17 @@ export class UserController {
 
   @Get()
   @Permissions(USERS_PERMISSIONS.VIEW)
-  listUsers(
+  async listUsers(
     @CurrentTenant() tenantId: string,
     @Query('status') status?: string,
     @Query('orgUnitId') orgUnitId?: string,
     @Query('search') search?: string,
   ): Promise<IUser[]> {
-    return this.userService.listUsers(tenantId, { status, orgUnitId, search });
+    // ACC-45 — mapped via toSafeUser() at this HTTP boundary; see its own
+    // comment in user.service.ts for why this isn't baked into
+    // UserService.listUsers() itself.
+    const users = await this.userService.listUsers(tenantId, { status, orgUnitId, search });
+    return users.map(toSafeUser);
   }
 
   // ACC-43 — no @Permissions() decorator here on purpose, same reasoning
@@ -41,48 +45,61 @@ export class UserController {
   // requires users:view, since browsing the full roster is a different,
   // genuinely admin-tier capability.
   @Get(':id')
-  getById(
+  async getById(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IUser> {
-    return this.userService.getByIdForViewer(id, tenantId, actorId, actorPermissions);
+    // ACC-45 — see listUsers() above.
+    const user = await this.userService.getByIdForViewer(id, tenantId, actorId, actorPermissions);
+    return toSafeUser(user);
   }
 
   @Post('invite')
   @Permissions(USERS_PERMISSIONS.INVITE)
-  invite(
+  async invite(
     @Body() dto: InviteUserDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
   ): Promise<IUser> {
-    return this.userService.invite(dto, tenantId, actorId);
+    // ACC-45 — see listUsers() above. This is the endpoint the ticket was
+    // originally filed against: invite()'s response previously included
+    // the raw invitationToken needed to activate the invited account.
+    const user = await this.userService.invite(dto, tenantId, actorId);
+    return toSafeUser(user);
   }
 
   // No @Permissions() decorator here on purpose — self-service edits are
   // allowed without users:manage. The self-or-admin check happens inside
   // UserService (Section 12, Discussion 3), not via the decorator.
   @Patch(':id/profile')
-  updateProfile(
+  async updateProfile(
     @Param('id') id: string,
     @Body() dto: UpdateUserProfileDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IUser> {
-    return this.userService.updateProfile(id, dto, tenantId, actorId, actorPermissions);
+    // ACC-45 — see listUsers() above. Confirmed, during the original ACC-45
+    // audit, to have the same leak shape as invite()/listUsers()/getById()
+    // (returns the raw prisma.user.update() result) — fixed here in the
+    // same pass rather than left as a follow-up.
+    const user = await this.userService.updateProfile(id, dto, tenantId, actorId, actorPermissions);
+    return toSafeUser(user);
   }
 
   @Patch(':id/out-of-office')
-  updateOutOfOffice(
+  async updateOutOfOffice(
     @Param('id') id: string,
     @Body() dto: UpdateOutOfOfficeDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IUser> {
-    return this.userService.updateOutOfOffice(id, dto, tenantId, actorId, actorPermissions);
+    // ACC-45 — see updateProfile() above.
+    const user = await this.userService.updateOutOfOffice(id, dto, tenantId, actorId, actorPermissions);
+    return toSafeUser(user);
   }
 
   @Post(':id/deactivate')

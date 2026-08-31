@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { UserService } from './user.service';
+import { UserService, toSafeUser } from './user.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
@@ -1496,6 +1496,73 @@ describe('UserService', () => {
     it('removeRoleFromUser delegates to RoleService', async () => {
       await service.removeRoleFromUser('user-1', 'role-1', ORG_A, 'admin-1');
       expect(mockRoleService.removeRoleFromUser).toHaveBeenCalledWith('user-1', 'role-1', ORG_A, 'admin-1');
+    });
+  });
+
+  // ACC-45 — direct unit coverage of the mapper itself, independent of the
+  // controller-level regression tests in user.controller.spec.ts. Pins the
+  // exact IUser key set toSafeUser() produces, so an accidental future
+  // addition of a sensitive field to the returned object (or removal of a
+  // legitimate one) is caught here even if nobody thinks to update the
+  // controller spec's own fixture.
+  describe('toSafeUser (ACC-45)', () => {
+    it('returns exactly IUser\'s field set, dropping every other property on the raw row', () => {
+      const rawUserRow = {
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A',
+        avatarUrl: null,
+        status: 'ACTIVE',
+        language: 'en',
+        positionId: null,
+        primaryOrgUnitId: null,
+        managerId: null,
+        outOfOfficeFrom: null,
+        outOfOfficeTo: null,
+        actingUserId: null,
+        actingOrgUnitId: null,
+        actingOrgUnitUntil: null,
+        lastLoginAt: null,
+        createdAt: new Date('2026-01-01'),
+        updatedAt: new Date('2026-01-01'),
+        // Internal-only fields present on the real Prisma row — must be dropped.
+        invitationToken: 'raw-secret',
+        invitationExpiresAt: new Date('2026-01-08'),
+        authUserId: 'auth-1',
+        tokenVersion: 5,
+        lastLoginIp: '203.0.113.5',
+        hijriDisplay: true,
+        tosAcceptedAt: new Date('2026-01-01'),
+        tosVersion: 'v1',
+      } as unknown as import('./interfaces/user.interface').IUser;
+
+      const safe = toSafeUser(rawUserRow);
+
+      expect(Object.keys(safe).sort()).toEqual(
+        [
+          'id',
+          'organizationId',
+          'email',
+          'name',
+          'avatarUrl',
+          'status',
+          'language',
+          'positionId',
+          'primaryOrgUnitId',
+          'managerId',
+          'outOfOfficeFrom',
+          'outOfOfficeTo',
+          'actingUserId',
+          'actingOrgUnitId',
+          'actingOrgUnitUntil',
+          'lastLoginAt',
+          'createdAt',
+          'updatedAt',
+        ].sort(),
+      );
+      expect(safe).not.toHaveProperty('invitationToken');
+      expect(safe).not.toHaveProperty('authUserId');
     });
   });
 });

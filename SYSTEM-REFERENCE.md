@@ -3482,3 +3482,40 @@ from the start (per Section 11's standing rule):
 Committee Management's member-picker components, the same
 cross-module-picker shape already seen for `OrgUnitService.getFlat()`
 (Section 7.6) and `RoleService.listRoles()` (Section 1.6).
+
+### 12.8 Response Shaping — `toSafeUser()` (ACC-45)
+
+Until ACC-45, every one of the 5 `UserController` methods in the table
+above returned its `UserService` result straight through, unfiltered.
+`IUser` (`interfaces/user.interface.ts`) is declared as the return type
+of `getById()`/`listUsers()`/`invite()`/`getByIdForViewer()`/
+`updateProfile()`/`updateOutOfOffice()`, but every one of those methods
+actually returns the full Prisma `User` row underneath — TypeScript's
+structural typing allows a wider runtime object to satisfy a narrower
+declared type, so this compiled cleanly the whole time while silently
+returning more than `IUser` claims. In practice this meant
+`invitationToken` (12.1, 12.3 — the plaintext, unhashed credential
+`acceptInvitation()` matches by direct equality, 12.4) was included in
+`POST /users/invite`'s JSON response, alongside
+`invitationExpiresAt`/`authUserId`/`tokenVersion`/`lastLoginIp` on all
+5 endpoints.
+
+`toSafeUser(user: IUser): IUser` (`user.service.ts`) is a single shared
+mapper that reconstructs the response from exactly `IUser`'s declared
+field list, discarding everything else at runtime regardless of what
+extra properties the input object actually carries. Called at all 5
+`UserController` methods listed in 12.7's table — **not** inside the
+`UserService` methods themselves, unlike `RoleService.mapRole()`
+(Section 1.4), which IS called from inside every `RoleService` method.
+The difference: `getById()` is reused internally by `updateProfile()`/
+`updateOutOfOffice()`/`deactivate()`/`getByIdForViewer()` (12.3), and a
+future one of those methods might need a currently-excluded field off
+the full row — mapping only at the controller boundary keeps every
+internal caller on the full, trusted object, confirmed via a full
+call-site audit that none of them currently reads an excluded field.
+
+`platform-tenant.service.ts`'s internal call to `invite()` (tenant
+provisioning, creating the first `TENANT_ADMIN`) was never a leak path
+either way — it only reads `.id` off the result and returns an
+unrelated `getTenantDetail()` shape, confirmed by reading the call
+site directly, not assumed.
