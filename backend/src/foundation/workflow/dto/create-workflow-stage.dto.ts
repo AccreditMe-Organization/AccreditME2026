@@ -46,10 +46,6 @@ export class CreateWorkflowStageDto {
   @Min(0)
   slaWorkingHours?: number;
 
-  @IsString()
-  @IsOptional()
-  requiredPermission?: string;
-
   @IsBoolean()
   @IsOptional()
   isInitial?: boolean;

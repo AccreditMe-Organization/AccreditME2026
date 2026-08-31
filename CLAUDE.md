@@ -1715,7 +1715,40 @@ Prisma Studio.
   exact literal string is invisible to CI even though it passes
   locally. This is now a known, recurring failure class, not fully
   eliminated — worth checking for on any future PR touching
-  tenant-scoped queries.
+  tenant-scoped queries. **Recurred again, ACC-44**: a deliberate
+  audit of every tenant-scoped query added ACC-40 through ACC-43
+  found 4 more instances — `OrgPositionService.reactivatePosition()`,
+  `OrganizationService.refreshOrgUnitHeadVacancy()`, and
+  `SlaMonitorProcessor.sweepDueHandovers()` each had a real, correct
+  cross-tenant test under the wrong name (renamed, logic unchanged);
+  `SlaMonitorProcessor.sweepExpiredActingOrgUnitAssignments()` had no
+  cross-tenant test at all (added a genuine new one). Confirms this
+  is a standing risk on every PR touching tenant-scoped queries, not
+  a one-time cleanup — no further systemic fix attempted, still
+  worth checking by hand each time.
+
+## Key Architecture Decisions (ACC-44)
+
+- **`WorkflowStage.requiredPermission` removed from the schema —
+  confirmed genuinely dead, not merely unused.** Existed alongside
+  `WorkflowTransition.requiredPermission` (the real, actively-enforced
+  field — checked in `triggerTransition()`, `checkAndFlagUnassignedStage()`,
+  `resolveApproverPool()`) but was never set by any of the 8 seeded
+  workflow templates, never exposed by any stage-editing frontend UI
+  (only the transition editor ever had a `requiredPermission` input),
+  and never read anywhere in the runtime engine. Removed rather than
+  wired up: several seeded stages have multiple outgoing transitions
+  that legitimately require *different* permissions (Committee's
+  `terms_review` stage alone needs both `committees:approve` and
+  `committees:manage` on its two different outgoing transitions), so
+  a single stage-level permission value could never have expressed
+  what the real per-transition values already do correctly — not
+  just an oversight nobody got to, but a field that didn't fit this
+  engine's own authorization model. Same shape as `tasks:manage`
+  pre-ACC-33: a real-looking permission string, settable via the raw
+  API, silently doing nothing — closed via a real migration
+  (`prisma migrate dev`), not left as dead schema. Full audit trail:
+  SYSTEM-REFERENCE.md Section 2.1.
 
 ## Open / Deferred Items
 
