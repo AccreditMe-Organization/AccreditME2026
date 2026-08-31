@@ -444,7 +444,12 @@ describe('OrganizationService', () => {
       actingHeadUserId: null as string | null,
     });
 
-    it('is a no-op when the unit does not exist in this tenant', async () => {
+    // ACC-44 — renamed to the exact CI isolation-gate string ("should NOT
+    // return records belonging to a different tenant"). Same logic as
+    // before (a cross-tenant unit id resolves to nothing, so the method
+    // is a correct no-op) — this test was always correct, just invisible
+    // to CI's --testNamePattern gate under its old name.
+    it('should NOT return records belonging to a different tenant', async () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
 
       await service.refreshOrgUnitHeadVacancy('unit-1', ORG_A);
