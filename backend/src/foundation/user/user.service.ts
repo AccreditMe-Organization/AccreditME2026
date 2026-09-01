@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
@@ -13,6 +14,15 @@ import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
 import { OrganizationService } from '../organization/organization.service';
+// ACC-46 Section 2.4 — a genuine two-way provider cycle: OrgUnitHeadService
+// already @Inject(forwardRef(() => UserService)) (declareHandover()'s
+// validatePositionAssignment() bypass, ACC-40 Section 2.3), and this new
+// edge is the reverse direction of the exact same pair — forwardRef()
+// needed on both sides, not just one. Module-level wiring already safe:
+// UserModule already forwardRef(() => OrganizationModule), which already
+// exports OrgUnitHeadService — same edge this file already uses for
+// OrganizationService itself, no new module-level circularity.
+import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
@@ -99,6 +109,8 @@ export class UserService {
     private readonly taskService: TaskService,
     private readonly organizationService: OrganizationService,
     @Inject(AUTH_PROVIDER) private readonly authProvider: AuthProvider,
+    @Inject(forwardRef(() => OrgUnitHeadService))
+    private readonly orgUnitHeadService: OrgUnitHeadService,
   ) {}
 
   async listUsers(organizationId: string, filters?: ListUsersFilters): Promise<IUser[]> {
@@ -173,6 +185,47 @@ export class UserService {
       if (activeOrgUnitCount > 0) {
         throw new BadRequestException(
           'primaryOrgUnitId is required once this organization has at least one active org unit',
+        );
+      }
+    }
+
+    // ACC-46 Section 2.3/2.4 — both new rules below derive from the same
+    // two lookups, computed once. isInviteeTheUnitsOwnHead is the shared
+    // escape valve both rules rely on: inviting someone AS the target
+    // unit's own head-conferring position is how a headless unit stops
+    // being headless, and the root unit's own Head is exempt from needing
+    // a manager (top of the hierarchy, no parent to report to) — neither
+    // is a violation of the rule it would otherwise trip.
+    const targetPosition = await this.prisma.orgPosition.findFirst({
+      where: { id: dto.positionId, organizationId },
+    });
+    const targetOrgUnit = dto.primaryOrgUnitId
+      ? await this.prisma.orgUnit.findFirst({ where: { id: dto.primaryOrgUnitId, organizationId } })
+      : null;
+    const isInviteeTheUnitsOwnHead = !!targetPosition?.isUnitHeadPosition;
+    const isRootUnitHeadInvite = isInviteeTheUnitsOwnHead && !!targetOrgUnit && targetOrgUnit.parentId === null;
+
+    // ACC-46 Section 2.3 — managerId is required for every invite except
+    // the person being invited as the root unit's own Head. Conditional,
+    // not a blanket-required DTO decorator, same shape as
+    // primaryOrgUnitId above (invite-user.dto.ts's own comment explains
+    // why a bare @IsNotEmpty() there would reject the exemption case
+    // before this check ever runs).
+    if (!dto.managerId && !isRootUnitHeadInvite) {
+      throw new BadRequestException('managerId is required for every invite except the root unit\'s own Head');
+    }
+
+    // ACC-46 Section 2.4 — hard block: cannot invite anyone into a unit
+    // with no direct Head and no Acting Head. Escalation coverage from a
+    // parent unit does NOT count — this rule only ever looks at the
+    // target unit itself. isInviteeTheUnitsOwnHead is the escape valve:
+    // filling the vacancy is not a violation of the rule that exists to
+    // prevent leaving it unfilled.
+    if (dto.primaryOrgUnitId) {
+      const hasHead = await this.orgUnitHeadService.hasDirectOrActingHead(dto.primaryOrgUnitId, organizationId);
+      if (!hasHead && !isInviteeTheUnitsOwnHead) {
+        throw new ConflictException(
+          'This org unit currently has no Head or Acting Head — assign one before inviting new staff into it',
         );
       }
     }

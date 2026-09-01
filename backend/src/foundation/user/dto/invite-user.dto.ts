@@ -24,6 +24,13 @@ export class InviteUserDto {
   @IsOptional()
   primaryOrgUnitId?: string;
 
+  // ACC-46 Section 2.3 — required for every invite EXCEPT the person being
+  // invited as the root unit's own Head (no parent to report to). NOT a
+  // blanket-required decorator — same shape as primaryOrgUnitId above: a
+  // bare @IsNotEmpty() here would reject the exemption case at the DTO
+  // layer before UserService.invite() ever gets to apply it. The exemption
+  // is conditional on positionId/primaryOrgUnitId's own resolved values,
+  // so the actual required-ness is enforced there instead.
   @IsString()
   @IsOptional()
   managerId?: string;
