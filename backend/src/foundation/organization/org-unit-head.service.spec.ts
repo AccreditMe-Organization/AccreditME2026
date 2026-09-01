@@ -26,7 +26,7 @@ const ACTING_USER = { id: 'acting-user', organizationId: ORG_A, status: 'ACTIVE'
 const mockPrisma = {
   orgUnit: { findFirst: jest.fn(), update: jest.fn() },
   orgPosition: { findFirst: jest.fn() },
-  user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+  user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   orgUnitHeadEvent: { create: jest.fn(), findFirst: jest.fn() },
 };
 const mockAuditLog = { log: jest.fn() };
@@ -120,6 +120,48 @@ describe('OrgUnitHeadService', () => {
       );
 
       await expect(service.getHeadStatus(UNIT_1, ORG_B)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ACC-46 Section 2.4 — the live (never-cached) boolean UserService.
+  // invite()'s hard invite-block rule reads.
+  describe('hasDirectOrActingHead', () => {
+    it('throws NotFoundException when the org unit does not exist in this tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns true when a direct ACTIVE holder of a head-conferring position exists', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.count.mockResolvedValue(1);
+
+      await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).resolves.toBe(true);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith({
+        where: { organizationId: ORG_A, primaryOrgUnitId: UNIT_1, status: 'ACTIVE', position: { isUnitHeadPosition: true } },
+      });
+    });
+
+    it('returns true when there is no direct holder but an Acting Head is declared', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: ACTING_USER.id });
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).resolves.toBe(true);
+    });
+
+    it('returns false when there is neither a direct holder nor an Acting Head — genuinely headless', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await expect(service.hasDirectOrActingHead(UNIT_1, ORG_A)).resolves.toBe(false);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? BASE_ORG_UNIT : null),
+      );
+
+      await expect(service.hasDirectOrActingHead(UNIT_1, ORG_B)).rejects.toThrow(NotFoundException);
     });
   });
 
