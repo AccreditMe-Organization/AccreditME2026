@@ -106,6 +106,34 @@ describe('OrgPositionService', () => {
         expect(call[0].data.organizationId).not.toBe(ORG_B);
       }
     });
+
+    // ACC-46 Section 2.5 — Director seeds as head-conferring/single-assignee
+    // (the one deliberate exception to "never a seed default"); every other
+    // seeded position is unaffected, still both false, matching pre-ACC-46
+    // behavior exactly.
+    it('seeds Director as isUnitHeadPosition/isSingleAssignee: true, every other position as false', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(null);
+      mockPrisma.orgPosition.create.mockResolvedValue(BASE_POSITION);
+
+      await service.seedDefaultPositions(ORG_A);
+
+      const directorCall = mockPrisma.orgPosition.create.mock.calls.find(
+        (call: any) => call[0].data.nameEn === 'Director',
+      );
+      expect(directorCall[0].data).toEqual(
+        expect.objectContaining({ isUnitHeadPosition: true, isSingleAssignee: true }),
+      );
+
+      const otherCalls = mockPrisma.orgPosition.create.mock.calls.filter(
+        (call: any) => call[0].data.nameEn !== 'Director',
+      );
+      expect(otherCalls).toHaveLength(9);
+      for (const call of otherCalls) {
+        expect(call[0].data).toEqual(
+          expect.objectContaining({ isUnitHeadPosition: false, isSingleAssignee: false }),
+        );
+      }
+    });
   });
 
   describe('listPositions', () => {

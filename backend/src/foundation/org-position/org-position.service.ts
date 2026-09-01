@@ -35,6 +35,15 @@ export class OrgPositionService {
           nameEn: position.nameEn,
           nameAr: position.nameAr,
           grade: position.grade,
+          // ACC-46 Section 2.5 — both set from the same seed flag, never
+          // independently: isUnitHeadPosition: true requires
+          // isSingleAssignee: true (schema-enforced pairing,
+          // validateHeadFlagPairing()), which this direct prisma.create()
+          // call bypasses entirely (it doesn't go through
+          // createPosition()) — the seed data has to satisfy the
+          // invariant itself.
+          isUnitHeadPosition: position.isUnitHeadPosition ?? false,
+          isSingleAssignee: position.isUnitHeadPosition ?? false,
         },
       });
     }
