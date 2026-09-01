@@ -312,6 +312,43 @@ export class UserService {
     }
   }
 
+  // ACC-46 Section 2.1 — fires when AuthService.acceptInvitation()'s own
+  // Layer 2 check (validatePositionAssignment(), re-run at the moment of
+  // activation) rejects a second invitee whose position/unit was already
+  // claimed by a different accepted invitation in the meantime. The token
+  // is deliberately preserved (not burned like the generic invalid/expired
+  // case) — the conflict may resolve on its own, so the person can retry
+  // the same link later. Reuses the exact Role.findFirst({key:
+  // 'TENANT_ADMIN'}) -> UserRole.findMany() -> NotificationService.create()
+  // chain already established by notifyTenantAdminsOfIncompleteProfiles()
+  // above (and workflow.service.ts's own notifyTenantAdminsOfX() methods).
+  async notifyTenantAdminsOfInviteAcceptanceConflict(
+    invitedUserName: string,
+    organizationId: string,
+  ): Promise<void> {
+    const adminRole = await this.prisma.role.findFirst({
+      where: { organizationId, key: 'TENANT_ADMIN' },
+    });
+    if (!adminRole) return;
+
+    const adminUserRoles = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+    });
+
+    for (const userRole of adminUserRoles) {
+      await this.notificationService.create(
+        {
+          userId: userRole.userId,
+          titleEn: 'Invitation acceptance blocked — position conflict',
+          titleAr: 'تعذّر قبول الدعوة — تعارض في المسمى الوظيفي',
+          bodyEn: `${invitedUserName} tried to accept their invitation, but the position/org unit is already held by another active user. Review and reassign one of the two pending invitations.`,
+          bodyAr: `حاول ${invitedUserName} قبول دعوته، لكن المسمى الوظيفي/الوحدة التنظيمية مشغولة بالفعل من قبل مستخدم نشط آخر. راجع الدعوتين المعلّقتين وأعد تعيين إحداهما.`,
+        },
+        organizationId,
+      );
+    }
+  }
+
   async updateProfile(
     id: string,
     dto: UpdateUserProfileDto,
@@ -537,12 +574,19 @@ export class UserService {
     // ordinary positions).
     if (isDeclaredHandoverBypass) return;
 
+    // ACC-46 Section 2.1 — counts INVITED alongside ACTIVE. Confirmed live
+    // (reproduced against a running dev server, not just reasoned about):
+    // two sequential invites to the same single-assignee position, made
+    // before either invitee accepts, both previously passed this check —
+    // an INVITED row was invisible to it, since invite() creates the new
+    // user at status INVITED, never ACTIVE. Layer 2 (acceptInvitation(),
+    // auth.service.ts) is the defense-in-depth half of this same fix.
     const existingHolders = await this.prisma.user.count({
       where: {
         organizationId,
         positionId: position.id,
         primaryOrgUnitId: targetPrimaryOrgUnitId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'INVITED'] },
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
       },
     });
@@ -575,11 +619,13 @@ export class UserService {
     if (!position.isUnitHeadPosition) return;
     if (isDeclaredHandoverBypass) return;
 
+    // ACC-46 Section 2.1 — same INVITED-status fix as
+    // validateSingleAssigneeCap() above, same reasoning.
     const anyHeadHolders = await this.prisma.user.count({
       where: {
         organizationId,
         primaryOrgUnitId: targetPrimaryOrgUnitId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'INVITED'] },
         position: { isUnitHeadPosition: true },
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
       },

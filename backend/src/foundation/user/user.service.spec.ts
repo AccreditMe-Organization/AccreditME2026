@@ -305,15 +305,18 @@ describe('UserService', () => {
     // ACC-40 Section 2.6.4/2.6.5
     it('grants the mapped role when the assigned position is head-conferring with a roleId — fires regardless of INVITED status', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
-      // Discriminates the seat-limit count (where.status: { in: [...] })
-      // from validatePositionAssignment()'s own internal single-assignee/
-      // unit-head-uniqueness holder counts (where.status: 'ACTIVE') —
-      // both go through the same mockPrisma.user.count mock, and a flat
-      // mockResolvedValue(1) here would incorrectly make the position
-      // look already-held, throwing ConflictException before this test
-      // ever reaches the grant it's trying to prove.
+      // Discriminates the seat-limit count (no positionId/position in its
+      // where clause) from validatePositionAssignment()'s own internal
+      // single-assignee/unit-head-uniqueness holder counts (always one or
+      // the other) — both go through the same mockPrisma.user.count mock,
+      // and a flat mockResolvedValue(1) here would incorrectly make the
+      // position look already-held, throwing ConflictException before this
+      // test ever reaches the grant it's trying to prove. ACC-46 — status
+      // is object-shaped ({in: [...]}) on every one of these count() calls
+      // now, not just the seat-limit query, so that alone no longer
+      // distinguishes them.
       mockPrisma.user.count.mockImplementation(({ where }: any) =>
-        Promise.resolve(typeof where.status === 'object' ? 1 : 0),
+        Promise.resolve(where.positionId || where.position ? 0 : 1),
       );
       mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.orgUnit.count.mockResolvedValue(1);
@@ -341,8 +344,12 @@ describe('UserService', () => {
 
     it('does not attempt a grant when the assigned position confers no role (roleId null)', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      // ACC-46 — status is now object-shaped ({in: [...]}) on every one of
+      // these count() calls, not just the seat-limit query, so that alone
+      // no longer distinguishes them. positionId/position does: only the
+      // seat-limit query has neither.
       mockPrisma.user.count.mockImplementation(({ where }: any) =>
-        Promise.resolve(typeof where.status === 'object' ? 1 : 0),
+        Promise.resolve(where.positionId || where.position ? 0 : 1),
       );
       mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.orgUnit.count.mockResolvedValue(1);
@@ -653,6 +660,55 @@ describe('UserService', () => {
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    });
+
+    // ACC-46 Section 2.1 — the live-reproduced race condition this fix
+    // closes: two sequential invites to the same single-assignee position,
+    // made before either invitee accepts (both status INVITED, never
+    // ACTIVE), previously both passed validateSingleAssigneeCap()'s count
+    // query since it only ever counted ACTIVE holders.
+    it('counts an INVITED holder, not just ACTIVE, closing the double-invite race', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(SINGLE_ASSIGNEE_POSITION);
+      mockPrisma.user.count.mockResolvedValue(1); // the first invitee's own still-INVITED row
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: { in: ['ACTIVE', 'INVITED'] } }) }),
+      );
+    });
+
+    // Same fix, the other validator — validateUnitHeadUniqueness() catches
+    // the cross-position case (a DIFFERENT head-conferring position already
+    // held, INVITED, in the same unit), same INVITED-status gap.
+    it('validateUnitHeadUniqueness() also counts an INVITED holder of a different head-conferring position', async () => {
+      const otherHeadPosition = { id: 'pos-head-other', isSingleAssignee: true, isUnitHeadPosition: true, isActive: true };
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce(otherHeadPosition);
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        // validateSingleAssigneeCap's own count is positionId-scoped — no
+        // existing holder of THIS exact position. validateUnitHeadUniqueness's
+        // count has no positionId at all, only position.isUnitHeadPosition —
+        // an INVITED holder of a different head position exists there.
+        Promise.resolve(where.positionId ? 0 : 1),
+      );
+
+      await expect(
+        service.invite(
+          { email: 'new@example.com', name: 'New User', positionId: 'pos-head-other', primaryOrgUnitId: 'unit-1' },
+          ORG_A,
+          'actor-1',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: { in: ['ACTIVE', 'INVITED'] }, position: { isUnitHeadPosition: true } }),
+        }),
+      );
     });
 
     // ACC-40 Section 2.1's own "excludeUserId, not isNoOpReassignment"
@@ -998,6 +1054,56 @@ describe('UserService', () => {
       await service.notifyTenantAdminsOfIncompleteProfiles(ORG_A);
 
       expect(mockPrisma.orgUnit.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+  });
+
+  // ACC-46 Section 2.1 — fired from AuthService.acceptInvitation()'s own
+  // Layer 2 rejection. Same chain shape as notifyTenantAdminsOfIncompleteProfiles()
+  // above, deliberately mirrored, not reinvented.
+  describe('notifyTenantAdminsOfInviteAcceptanceConflict', () => {
+    it('notifies every active TENANT_ADMIN, naming the invited user', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }]);
+
+      await service.notifyTenantAdminsOfInviteAcceptanceConflict('A User', ORG_A);
+
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: ORG_A, key: 'TENANT_ADMIN' },
+      });
+      expect(mockNotification.create).toHaveBeenCalledTimes(2);
+      expect(mockNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-1', titleEn: expect.stringContaining('conflict') }),
+        ORG_A,
+      );
+      expect(mockNotification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-2', bodyEn: expect.stringContaining('A User') }),
+        ORG_A,
+      );
+    });
+
+    it('does nothing when no TENANT_ADMIN role exists for the tenant', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+
+      await service.notifyTenantAdminsOfInviteAcceptanceConflict('A User', ORG_A);
+
+      expect(mockPrisma.userRole.findMany).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.role.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? { id: 'role-admin-a' } : { id: 'role-admin-b' }),
+      );
+      mockPrisma.userRole.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.roleId === 'role-admin-a' ? [] : [{ userId: 'leaked-admin' }]),
+      );
+
+      await service.notifyTenantAdminsOfInviteAcceptanceConflict('A User', ORG_A);
+
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
       );
       expect(mockNotification.create).not.toHaveBeenCalled();

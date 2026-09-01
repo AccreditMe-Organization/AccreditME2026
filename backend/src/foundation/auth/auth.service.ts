@@ -15,6 +15,7 @@
 
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -29,6 +30,11 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { createBetterAuthInstance } from '../../providers/auth/better-auth.config';
 import { LoginAttemptService } from './login-attempt.service';
+// ACC-46 Section 2.1 — plain (non-forwardRef) import: AuthModule already
+// imports UserModule directly (auth.module.ts's own comment confirms
+// UserModule does not import AuthModule back), the same edge
+// AuthController already uses. No new circularity.
+import { UserService } from '../user/user.service';
 import { LoginDto } from './dto/login.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
@@ -103,6 +109,7 @@ export class AuthService {
     private readonly auditLog: AuditLogService,
     private readonly notificationService: NotificationService,
     private readonly loginAttemptService: LoginAttemptService,
+    private readonly userService: UserService,
   ) {
     this.auth = createBetterAuthInstance(this.prisma, this.notificationService);
   }
@@ -411,6 +418,36 @@ export class AuthService {
     }
 
     const namespacedEmail = AuthService.namespacedEmail(user.organizationId, user.email);
+
+    // ACC-46 Section 2.1, Layer 2 — defense in depth on top of Layer 1
+    // (validateSingleAssigneeCap()/validateUnitHeadUniqueness() now
+    // counting INVITED alongside ACTIVE). Closes the narrower race Layer 1
+    // alone can't: two invites whose validatePositionAssignment() calls
+    // both read the conflict count before either row commits. Placed
+    // BEFORE signUpEmail() deliberately — a rejection here must have zero
+    // side effects: no Better Auth account created, the User row
+    // untouched (still INVITED, token intact, preserved for retry rather
+    // than burned like the generic invalid/expired case above, since the
+    // conflict may resolve on its own). excludeUserId: user.id is what
+    // makes this safe to call unconditionally on every acceptance, not
+    // just the racing ones — the accepting user's own INVITED row (now
+    // counted per Layer 1) is excluded from its own conflict check, so an
+    // ordinary, uncontested acceptance still passes.
+    if (user.positionId) {
+      try {
+        await this.userService.validatePositionAssignment(
+          user.positionId,
+          user.primaryOrgUnitId,
+          user.organizationId,
+          user.id,
+        );
+      } catch {
+        await this.userService.notifyTenantAdminsOfInviteAcceptanceConflict(user.name, user.organizationId);
+        throw new ConflictException(
+          'This position is no longer available in this org unit — contact your administrator',
+        );
+      }
+    }
 
     // Unlike login() (Section 8's deliberate anti-enumeration behavior —
     // always the same generic "Invalid credentials" regardless of the real
