@@ -4,10 +4,11 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
+import { CardComponent } from '../../../../shared/components/card/card.component';
 import { TenantService, ITaskSlaSettings } from '../../../tenant/services/tenant.service';
 
-// ACC-46 Section 2.7.c/2.7.d — one row per TaskPriority, three numeric
-// columns per row. LOW->CRITICAL row order matches task-form.component.ts's
+// ACC-46 Section 2.7.c/2.7.d — one card per TaskPriority, three numeric
+// fields per card. LOW->CRITICAL order matches task-form.component.ts's
 // own PRIORITIES ordering, not the interface's own CRITICAL-first property
 // order (that's just declaration order, not a UI convention).
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
@@ -15,9 +16,9 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 @Component({
   selector: 'app-task-sla-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, InputNumberModule, ButtonModule, MessageModule],
+  imports: [ReactiveFormsModule, TranslatePipe, InputNumberModule, ButtonModule, MessageModule, CardComponent],
   template: `
-    <div class="flex flex-col gap-4 max-w-3xl">
+    <div class="flex flex-col gap-4">
       <h2 class="text-xl font-semibold">{{ 'adminSettings.taskSla' | translate }}</h2>
       <p class="text-sm text-[var(--am-text-secondary)]">{{ 'adminSettings.taskSlaNote' | translate }}</p>
 
@@ -29,33 +30,26 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
       }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-left text-[var(--am-text-secondary)]">
-                <th class="pb-2 pe-4 font-medium">{{ 'task.priority.title' | translate }}</th>
-                <th class="pb-2 pe-4 font-medium">{{ 'adminSettings.dueAfterHours' | translate }}</th>
-                <th class="pb-2 pe-4 font-medium">{{ 'adminSettings.managerEscalationAfterHours' | translate }}</th>
-                <th class="pb-2 font-medium">{{ 'adminSettings.headEscalationAfterHours' | translate }}</th>
-              </tr>
-            </thead>
-            <tbody [formGroup]="form">
-              @for (priority of priorities; track priority) {
-                <tr [formGroupName]="priority">
-                  <td class="py-2 pe-4 font-medium">{{ ('task.priority.' + priority.toLowerCase()) | translate }}</td>
-                  <td class="py-2 pe-4">
-                    <p-inputNumber formControlName="dueAfterHours" [min]="1" [showButtons]="true" />
-                  </td>
-                  <td class="py-2 pe-4">
-                    <p-inputNumber formControlName="managerEscalationAfterHours" [min]="0" [showButtons]="true" />
-                  </td>
-                  <td class="py-2">
-                    <p-inputNumber formControlName="headEscalationAfterHours" [min]="0" [showButtons]="true" />
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" [formGroup]="form">
+          @for (priority of priorities; track priority) {
+            <app-card [formGroupName]="priority">
+              <div class="flex flex-col gap-3">
+                <h3 class="font-medium">{{ ('task.priority.' + priority.toLowerCase()) | translate }}</h3>
+                <div class="flex flex-col gap-1">
+                  <label class="text-sm text-[var(--am-text-secondary)]">{{ 'adminSettings.dueAfterHours' | translate }}</label>
+                  <p-inputNumber formControlName="dueAfterHours" [min]="1" [showButtons]="true" styleClass="w-full" inputStyleClass="w-full" />
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="text-sm text-[var(--am-text-secondary)]">{{ 'adminSettings.managerEscalationAfterHours' | translate }}</label>
+                  <p-inputNumber formControlName="managerEscalationAfterHours" [min]="0" [showButtons]="true" styleClass="w-full" inputStyleClass="w-full" />
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="text-sm text-[var(--am-text-secondary)]">{{ 'adminSettings.headEscalationAfterHours' | translate }}</label>
+                  <p-inputNumber formControlName="headEscalationAfterHours" [min]="0" [showButtons]="true" styleClass="w-full" inputStyleClass="w-full" />
+                </div>
+              </div>
+            </app-card>
+          }
         </div>
         <div class="flex justify-end">
           <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
