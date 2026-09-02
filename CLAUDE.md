@@ -1757,6 +1757,12 @@ Prisma Studio.
   deliver until this is configured. Infrastructure task, not a code
   fix, needs doing before any real customer relies on email-based
   flows.
+- **`angular-component` skill's templates are stale against current
+  project conventions** — `@if` not `*ngIf`, standalone `TranslatePipe`
+  imports, `EditDialogComponent`/`OverlaySelectComponent` not
+  referenced as required patterns despite this file marking both
+  required. Found during ACC-46's skill audit. Worth updating whenever
+  next touched, not urgent.
 - **Full RTL visual audit** — deferred, see the i18n / RTL Foundation
   note in Build Sequence above. Positioned right before the demo
   milestone, after Document Management, alongside the full
