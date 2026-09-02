@@ -286,6 +286,148 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-46 Section 2.6.b Step 3
+  describe('validateTransferReplacement', () => {
+    const DEPARTING_USER = {
+      id: 'u1',
+      organizationId: ORG_A,
+      positionId: 'pos-1',
+      primaryOrgUnitId: 'unit-source',
+    };
+
+    beforeEach(() => {
+      // getById() (departing user) is always the first user.findFirst call
+      // in this method; the replacement lookup is the second. Sequenced
+      // via mockResolvedValueOnce so each test only needs to override the
+      // replacement result.
+      mockPrisma.user.findFirst.mockResolvedValueOnce(DEPARTING_USER);
+    });
+
+    it('throws ConflictException when no active replacement exists in the departing user\'s own unit', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.validateTransferReplacement('u1', { replacementUserId: 'r1' }, ORG_A),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('queries the replacement scoped to the departing user\'s own primaryOrgUnitId, ACTIVE only', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'r1', primaryOrgUnitId: 'unit-source' });
+
+      await service.validateTransferReplacement('u1', { replacementUserId: 'r1' }, ORG_A);
+
+      expect(mockPrisma.user.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          id: 'r1',
+          organizationId: ORG_A,
+          status: 'ACTIVE',
+          primaryOrgUnitId: 'unit-source',
+        },
+      });
+    });
+
+    it('succeeds when a valid replacement exists and the position assignment check passes', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'r1', primaryOrgUnitId: 'unit-source' });
+
+      await expect(
+        service.validateTransferReplacement('u1', { replacementUserId: 'r1' }, ORG_A),
+      ).resolves.toBeUndefined();
+    });
+
+    it('propagates validatePositionAssignment()\'s own ConflictException when the replacement cannot legitimately inherit the position', async () => {
+      mockPrisma.user.findFirst.mockResolvedValueOnce({ id: 'r1', primaryOrgUnitId: 'unit-source' });
+      // Single-assignee position already held by someone else in the unit
+      // (excludeUserId is the departing user, 'u1' — a DIFFERENT holder
+      // still trips the cap).
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-1',
+        isActive: true,
+        isSingleAssignee: true,
+        isUnitHeadPosition: false,
+      });
+      mockPrisma.user.count.mockResolvedValue(1);
+
+      await expect(
+        service.validateTransferReplacement('u1', { replacementUserId: 'r1' }, ORG_A),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // Overrides the beforeEach's queued departing-user resolution —
+      // simulates the departing user genuinely belonging to ORG_B, so the
+      // tenant-scoped getById() call resolves to null under ORG_A.
+      mockPrisma.user.findFirst.mockReset();
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(
+          [{ id: 'u1', organizationId: ORG_B }].find(
+            (u) => u.id === where.id && u.organizationId === where.organizationId,
+          ) ?? null,
+        ),
+      );
+
+      await expect(
+        service.validateTransferReplacement('u1', { replacementUserId: 'r1' }, ORG_A),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ACC-46 Section 2.6.b Step 4
+  describe('validateTransferPosition', () => {
+    it('throws NotFoundException when the transferred user does not exist in this tenant', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.validateTransferPosition('u1', { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' }, ORG_A),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('resolves successfully when the position assignment check passes', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+
+      await expect(
+        service.validateTransferPosition('u1', { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' }, ORG_A),
+      ).resolves.toBeUndefined();
+    });
+
+    it('passes the transferred user\'s own id as excludeUserId to validatePositionAssignment', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+      const spy = jest.spyOn(service, 'validatePositionAssignment');
+
+      await service.validateTransferPosition('u1', { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' }, ORG_A);
+
+      expect(spy).toHaveBeenCalledWith('pos-1', 'unit-dest', ORG_A, 'u1');
+    });
+
+    it('propagates validatePositionAssignment()\'s own ConflictException — the multi-user race window this gate exists to close', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-1',
+        isActive: true,
+        isSingleAssignee: true,
+        isUnitHeadPosition: false,
+      });
+      mockPrisma.user.count.mockResolvedValue(1);
+
+      await expect(
+        service.validateTransferPosition('u1', { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' }, ORG_A),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(
+          [{ id: 'u1', organizationId: ORG_B }].find(
+            (u) => u.id === where.id && u.organizationId === where.organizationId,
+          ) ?? null,
+        ),
+      );
+
+      await expect(
+        service.validateTransferPosition('u1', { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' }, ORG_A),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('invite', () => {
     it('creates an INVITED user, sends an email notification, and logs the audit trail', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({

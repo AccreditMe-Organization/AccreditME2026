@@ -34,6 +34,8 @@ import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
+import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
+import { ValidateTransferPositionDto } from './dto/validate-transfer-position.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
@@ -196,6 +198,67 @@ export class UserService {
       availablePositions,
       currentDestinationHead: headStatus.holders[0] ?? null,
     };
+  }
+
+  // ACC-46 Section 2.6.b Step 3 — the live gate fired before the wizard
+  // advances past the conditional replacement step (shown only when
+  // getTransferContext() reported hasActiveDirectReports). One combined
+  // existence/status/unit-match check with one combined message (2.6.e's
+  // own error table) — deliberately not split into separate "not found"
+  // vs "wrong unit" errors the way assignHead()'s own precedent does it,
+  // since this endpoint's job is a single yes/no gate, not diagnosing
+  // exactly which condition failed.
+  async validateTransferReplacement(
+    userId: string,
+    dto: ValidateTransferReplacementDto,
+    organizationId: string,
+  ): Promise<void> {
+    const user = await this.getById(userId, organizationId);
+
+    const replacement = await this.prisma.user.findFirst({
+      where: {
+        id: dto.replacementUserId,
+        organizationId,
+        status: 'ACTIVE',
+        primaryOrgUnitId: user.primaryOrgUnitId,
+      },
+    });
+    if (!replacement) {
+      throw new ConflictException(
+        "The replacement must be an active user already belonging to the departing person's current org unit",
+      );
+    }
+
+    // ACC-40 Phase 2 made positionId unconditionally required for every
+    // real invite() — this guard exists for type-safety and defense in
+    // depth (IUser.positionId is typed string | null), not because a
+    // legitimate departing user is expected to lack one.
+    if (!user.positionId || !user.primaryOrgUnitId) {
+      throw new ConflictException('The departing user has no current position or org unit to hand over');
+    }
+
+    // Confirms the replacement can legitimately inherit the departing
+    // person's current position. excludeUserId: the departing person's own
+    // row — they're vacating this exact position, so their own current
+    // holding of it must not count against the replacement taking it over.
+    await this.validatePositionAssignment(user.positionId, user.primaryOrgUnitId, organizationId, user.id);
+  }
+
+  // ACC-46 Section 2.6.b Step 4 — the live gate fired before the wizard
+  // advances past the (always-shown, for every transfer) destination
+  // position step. This is the step with genuine multi-user race
+  // exposure — getTransferContext()'s own availablePositions list is a
+  // snapshot; another admin could assign the same single-assignee
+  // position to someone else in the meantime. This explicit
+  // re-validation, right before the wizard advances, is what closes that
+  // window — not merely trusting the earlier snapshot.
+  async validateTransferPosition(
+    userId: string,
+    dto: ValidateTransferPositionDto,
+    organizationId: string,
+  ): Promise<void> {
+    await this.getById(userId, organizationId);
+    await this.validatePositionAssignment(dto.newPositionId, dto.destinationOrgUnitId, organizationId, userId);
   }
 
   // Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —

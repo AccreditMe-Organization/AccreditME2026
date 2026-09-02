@@ -14,6 +14,8 @@ describe('UserController', () => {
     getById: jest.Mock;
     getByIdForViewer: jest.Mock;
     getTransferContext: jest.Mock;
+    validateTransferReplacement: jest.Mock;
+    validateTransferPosition: jest.Mock;
     invite: jest.Mock;
     updateProfile: jest.Mock;
     updateOutOfOffice: jest.Mock;
@@ -33,6 +35,8 @@ describe('UserController', () => {
         availablePositions: [],
         currentDestinationHead: null,
       }),
+      validateTransferReplacement: jest.fn().mockResolvedValue(undefined),
+      validateTransferPosition: jest.fn().mockResolvedValue(undefined),
       invite: jest.fn().mockResolvedValue({ id: 'new-user' }),
       updateProfile: jest.fn().mockResolvedValue({ id: USER_ID }),
       updateOutOfOffice: jest.fn().mockResolvedValue({ id: USER_ID }),
@@ -75,6 +79,19 @@ describe('UserController', () => {
   it('getTransferContext delegates to UserService.getTransferContext', async () => {
     await controller.getTransferContext(USER_ID, 'unit-dest', TENANT_ID);
     expect(service.getTransferContext).toHaveBeenCalledWith(USER_ID, 'unit-dest', TENANT_ID);
+  });
+
+  // ACC-46 Section 2.6.b Steps 3/4
+  it('validateTransferReplacement delegates to UserService.validateTransferReplacement', async () => {
+    const dto = { replacementUserId: 'r1' };
+    await controller.validateTransferReplacement(USER_ID, dto, TENANT_ID);
+    expect(service.validateTransferReplacement).toHaveBeenCalledWith(USER_ID, dto, TENANT_ID);
+  });
+
+  it('validateTransferPosition delegates to UserService.validateTransferPosition', async () => {
+    const dto = { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' };
+    await controller.validateTransferPosition(USER_ID, dto, TENANT_ID);
+    expect(service.validateTransferPosition).toHaveBeenCalledWith(USER_ID, dto, TENANT_ID);
   });
 
   it('invite delegates to UserService.invite', async () => {

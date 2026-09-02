@@ -8,6 +8,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { UserService, toSafeUser } from './user.service';
 import { InviteUserDto } from './dto/invite-user.dto';
+import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
+import { ValidateTransferPositionDto } from './dto/validate-transfer-position.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
@@ -115,6 +117,36 @@ export class UserController {
     @CurrentTenant() tenantId: string,
   ): Promise<ITransferContext> {
     return this.userService.getTransferContext(id, destinationOrgUnitId, tenantId);
+  }
+
+  // ACC-46 Section 2.6.b Step 3 — live gate before the wizard advances
+  // past the conditional replacement step. 204 on success (a pure
+  // pass/fail check, no body needed), or the specific ConflictException
+  // thrown by UserService.validateTransferReplacement()/
+  // validatePositionAssignment().
+  @Post(':id/transfer/validate-replacement')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(USERS_PERMISSIONS.TRANSFER)
+  validateTransferReplacement(
+    @Param('id') id: string,
+    @Body() dto: ValidateTransferReplacementDto,
+    @CurrentTenant() tenantId: string,
+  ): Promise<void> {
+    return this.userService.validateTransferReplacement(id, dto, tenantId);
+  }
+
+  // ACC-46 Section 2.6.b Step 4 — live gate before the wizard advances
+  // past the (always-shown) destination position step. 204 on success, or
+  // the specific ConflictException validatePositionAssignment() throws.
+  @Post(':id/transfer/validate-position')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(USERS_PERMISSIONS.TRANSFER)
+  validateTransferPosition(
+    @Param('id') id: string,
+    @Body() dto: ValidateTransferPositionDto,
+    @CurrentTenant() tenantId: string,
+  ): Promise<void> {
+    return this.userService.validateTransferPosition(id, dto, tenantId);
   }
 
   @Post(':id/deactivate')
