@@ -23,6 +23,15 @@ import { OrganizationService } from '../organization/organization.service';
 // exports OrgUnitHeadService — same edge this file already uses for
 // OrganizationService itself, no new module-level circularity.
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
+// ACC-46 Section 2.6.a/b — OrgPositionModule doesn't import UserModule
+// anywhere, so this edge alone would be one-way, but it transitively closes
+// a cycle through OrganizationModule (OrgPositionModule -> forwardRef
+// OrganizationModule -> forwardRef UserModule, an existing edge) — this new
+// UserModule -> OrgPositionModule edge needs forwardRef() too, same
+// discipline as every other module edge in this codebase touching that
+// same TenantModule/OrganizationModule graph. Verified via a real
+// start:dev boot, not just tsc/jest.
+import { OrgPositionService } from '../org-position/org-position.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
@@ -30,6 +39,7 @@ import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IUser } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
+import { ITransferContext } from './interfaces/transfer-context.interface';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -111,6 +121,11 @@ export class UserService {
     @Inject(AUTH_PROVIDER) private readonly authProvider: AuthProvider,
     @Inject(forwardRef(() => OrgUnitHeadService))
     private readonly orgUnitHeadService: OrgUnitHeadService,
+    // ACC-46 Section 2.6.a — a one-way provider dependency (OrgPositionService
+    // has no dependency back on UserService), so no @Inject(forwardRef())
+    // needed at the constructor-injection level — only the module-level
+    // import edge above needs it.
+    private readonly orgPositionService: OrgPositionService,
   ) {}
 
   async listUsers(organizationId: string, filters?: ListUsersFilters): Promise<IUser[]> {
@@ -148,6 +163,39 @@ export class UserService {
     const canView = actorPermissions.includes('users:view');
     if (!isSelf && !canView) throw new ForbiddenException();
     return this.getById(id, organizationId);
+  }
+
+  // ACC-46 Section 2.6.b Step 2 — automatic context load, not a user
+  // action: drives which subsequent wizard steps are shown, pre-fills the
+  // position picker with only genuinely available choices, and pre-fills
+  // the manager step's default. getById() validates userId exists in this
+  // tenant first (throws NotFoundException otherwise); getHeadStatus()
+  // below independently validates destinationOrgUnitId the same way — run
+  // first among the three lookups so an invalid destination fails fast
+  // rather than after the (wasted) direct-reports/positions queries.
+  async getTransferContext(
+    userId: string,
+    destinationOrgUnitId: string,
+    organizationId: string,
+  ): Promise<ITransferContext> {
+    await this.getById(userId, organizationId);
+    const headStatus = await this.orgUnitHeadService.getHeadStatus(destinationOrgUnitId, organizationId);
+
+    const hasActiveDirectReports =
+      (await this.prisma.user.count({
+        where: { managerId: userId, organizationId, status: 'ACTIVE' },
+      })) > 0;
+    const availablePositions = await this.orgPositionService.listAvailablePositionsForUser(
+      userId,
+      destinationOrgUnitId,
+      organizationId,
+    );
+
+    return {
+      hasActiveDirectReports,
+      availablePositions,
+      currentDestinationHead: headStatus.holders[0] ?? null,
+    };
   }
 
   // Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —

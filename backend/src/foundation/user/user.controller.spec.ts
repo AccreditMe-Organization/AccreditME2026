@@ -13,6 +13,7 @@ describe('UserController', () => {
     listUsers: jest.Mock;
     getById: jest.Mock;
     getByIdForViewer: jest.Mock;
+    getTransferContext: jest.Mock;
     invite: jest.Mock;
     updateProfile: jest.Mock;
     updateOutOfOffice: jest.Mock;
@@ -27,6 +28,11 @@ describe('UserController', () => {
       listUsers: jest.fn().mockResolvedValue([]),
       getById: jest.fn().mockResolvedValue({ id: USER_ID }),
       getByIdForViewer: jest.fn().mockResolvedValue({ id: USER_ID }),
+      getTransferContext: jest.fn().mockResolvedValue({
+        hasActiveDirectReports: false,
+        availablePositions: [],
+        currentDestinationHead: null,
+      }),
       invite: jest.fn().mockResolvedValue({ id: 'new-user' }),
       updateProfile: jest.fn().mockResolvedValue({ id: USER_ID }),
       updateOutOfOffice: jest.fn().mockResolvedValue({ id: USER_ID }),
@@ -63,6 +69,12 @@ describe('UserController', () => {
   it('getById delegates to UserService.getByIdForViewer with actor context', async () => {
     await controller.getById(USER_ID, TENANT_ID, USER_ID, ['users:view']);
     expect(service.getByIdForViewer).toHaveBeenCalledWith(USER_ID, TENANT_ID, USER_ID, ['users:view']);
+  });
+
+  // ACC-46 Section 2.6.b Step 2
+  it('getTransferContext delegates to UserService.getTransferContext', async () => {
+    await controller.getTransferContext(USER_ID, 'unit-dest', TENANT_ID);
+    expect(service.getTransferContext).toHaveBeenCalledWith(USER_ID, 'unit-dest', TENANT_ID);
   });
 
   it('invite delegates to UserService.invite', async () => {

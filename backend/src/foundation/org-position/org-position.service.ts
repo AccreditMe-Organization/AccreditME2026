@@ -196,6 +196,43 @@ export class OrgPositionService {
     });
   }
 
+  // ACC-46 Section 2.6.a — "which positions can this specific person hold
+  // in this specific unit," generalized beyond head-conferring positions:
+  // an ORDINARY single-assignee position (not head-conferring) needs the
+  // identical exclusion logic, which a head-only design would miss.
+  // Filters on isSingleAssignee (not isUnitHeadPosition) — correctly
+  // covers both cases in one query; ordinary multi-assignee positions
+  // always pass through untouched. candidateUserId is excluded from the
+  // "already holds it" set — a person doesn't block themselves from a
+  // position they may already hold (e.g. re-confirming their own current
+  // position as part of a transfer that changes only their unit).
+  async listAvailablePositionsForUser(
+    candidateUserId: string,
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<IOrgPosition[]> {
+    const allPositions = await this.prisma.orgPosition.findMany({
+      where: { organizationId, isActive: true },
+    });
+    const heldSingleAssigneePositionIds = new Set(
+      (
+        await this.prisma.user.findMany({
+          where: {
+            organizationId,
+            primaryOrgUnitId: orgUnitId,
+            status: { in: ['ACTIVE', 'INVITED'] }, // matches 2.1's INVITED-status fix
+            position: { isSingleAssignee: true },
+            id: { not: candidateUserId },
+          },
+          select: { positionId: true },
+        })
+      ).map((u) => u.positionId),
+    );
+    return allPositions.filter(
+      (p) => !p.isSingleAssignee || !heldSingleAssigneePositionIds.has(p.id),
+    );
+  }
+
   // ACC-40 Section 2.9e — remediation report, matching 2.4's exact
   // three-part chain (Role.findFirst(TENANT_ADMIN) -> UserRole.findMany()
   // -> NotificationService.create() per admin), same "a report, not a

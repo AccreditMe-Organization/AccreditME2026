@@ -8,6 +8,7 @@ import { TaskService } from '../task/task.service';
 import { OrganizationService } from '../organization/organization.service';
 import { AuthProvider } from '../../providers/auth/auth.provider';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
+import { OrgPositionService } from '../org-position/org-position.service';
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
@@ -27,7 +28,8 @@ describe('UserService', () => {
   let mockAuthProvider: { invalidateUserSessions: jest.Mock; validateToken: jest.Mock };
   let mockTaskService: { reassignAllForUser: jest.Mock };
   let mockOrganizationService: { refreshOrgUnitHeadVacancy: jest.Mock };
-  let mockOrgUnitHeadService: { hasDirectOrActingHead: jest.Mock };
+  let mockOrgUnitHeadService: { hasDirectOrActingHead: jest.Mock; getHeadStatus: jest.Mock };
+  let mockOrgPositionService: { listAvailablePositionsForUser: jest.Mock };
 
   beforeEach(() => {
     mockPrisma = {
@@ -89,6 +91,17 @@ describe('UserService', () => {
     // convention as mockPrisma.orgPosition.findFirst above.
     mockOrgUnitHeadService = {
       hasDirectOrActingHead: jest.fn().mockResolvedValue(true),
+      getHeadStatus: jest.fn().mockResolvedValue({
+        holders: [],
+        pendingHeadUserId: null,
+        headHandoverEffectiveDate: null,
+        actingHeadUserId: null,
+      }),
+    };
+    // ACC-46 Section 2.6.a — no-op default (empty list) unless a
+    // getTransferContext() test explicitly overrides it.
+    mockOrgPositionService = {
+      listAvailablePositionsForUser: jest.fn().mockResolvedValue([]),
     };
 
     service = new UserService(
@@ -100,6 +113,7 @@ describe('UserService', () => {
       mockOrganizationService as unknown as OrganizationService,
       mockAuthProvider as unknown as AuthProvider,
       mockOrgUnitHeadService as unknown as OrgUnitHeadService,
+      mockOrgPositionService as unknown as OrgPositionService,
     );
   });
 
@@ -168,6 +182,107 @@ describe('UserService', () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
       expect(result).toEqual({ id: 'u1', organizationId: ORG_A });
+    });
+  });
+
+  // ACC-46 Section 2.6.b Step 2
+  describe('getTransferContext', () => {
+    beforeEach(() => {
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
+    });
+
+    it('throws NotFoundException when the transferred user does not exist in this tenant', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      await expect(service.getTransferContext('u1', 'unit-dest', ORG_A)).rejects.toThrow(NotFoundException);
+    });
+
+    it('propagates getHeadStatus()\'s own NotFoundException for an invalid destination unit, before running the other lookups', async () => {
+      mockOrgUnitHeadService.getHeadStatus.mockRejectedValue(new NotFoundException('Org unit not found'));
+
+      await expect(service.getTransferContext('u1', 'bad-unit', ORG_A)).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.count).not.toHaveBeenCalled();
+      expect(mockOrgPositionService.listAvailablePositionsForUser).not.toHaveBeenCalled();
+    });
+
+    it('reports hasActiveDirectReports: true when the user has at least one ACTIVE direct report', async () => {
+      mockPrisma.user.count.mockResolvedValue(2);
+
+      const result = await service.getTransferContext('u1', 'unit-dest', ORG_A);
+
+      expect(result.hasActiveDirectReports).toBe(true);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith({
+        where: { managerId: 'u1', organizationId: ORG_A, status: 'ACTIVE' },
+      });
+    });
+
+    it('reports hasActiveDirectReports: false when the user has no ACTIVE direct reports', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      const result = await service.getTransferContext('u1', 'unit-dest', ORG_A);
+
+      expect(result.hasActiveDirectReports).toBe(false);
+    });
+
+    it('passes availablePositions straight through from OrgPositionService', async () => {
+      const positions = [{ id: 'pos-1' }];
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockOrgPositionService.listAvailablePositionsForUser.mockResolvedValue(positions);
+
+      const result = await service.getTransferContext('u1', 'unit-dest', ORG_A);
+
+      expect(result.availablePositions).toBe(positions);
+      expect(mockOrgPositionService.listAvailablePositionsForUser).toHaveBeenCalledWith(
+        'u1',
+        'unit-dest',
+        ORG_A,
+      );
+    });
+
+    it('resolves currentDestinationHead from the first holder in getHeadStatus()', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockOrgUnitHeadService.getHeadStatus.mockResolvedValue({
+        holders: [{ id: 'head-1', name: 'Head Person', positionId: 'pos-head' }],
+        pendingHeadUserId: null,
+        headHandoverEffectiveDate: null,
+        actingHeadUserId: null,
+      });
+
+      const result = await service.getTransferContext('u1', 'unit-dest', ORG_A);
+
+      expect(result.currentDestinationHead).toEqual({
+        id: 'head-1',
+        name: 'Head Person',
+        positionId: 'pos-head',
+      });
+    });
+
+    it('resolves currentDestinationHead to null when the destination unit has no holders', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockOrgUnitHeadService.getHeadStatus.mockResolvedValue({
+        holders: [],
+        pendingHeadUserId: null,
+        headHandoverEffectiveDate: null,
+        actingHeadUserId: null,
+      });
+
+      const result = await service.getTransferContext('u1', 'unit-dest', ORG_A);
+
+      expect(result.currentDestinationHead).toBeNull();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // getById()'s own tenant-scoped where clause is the enforcement
+      // point — a real user existing under ORG_B correctly resolves to no
+      // match when getTransferContext() is called under ORG_A.
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(
+          [{ id: 'u1', organizationId: ORG_B }].find(
+            (u) => u.id === where.id && u.organizationId === where.organizationId,
+          ) ?? null,
+        ),
+      );
+
+      await expect(service.getTransferContext('u1', 'unit-dest', ORG_A)).rejects.toThrow(NotFoundException);
     });
   });
 

@@ -13,6 +13,7 @@ import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IUser } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
+import { ITransferContext } from './interfaces/transfer-context.interface';
 
 @Controller('users')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -100,6 +101,20 @@ export class UserController {
     // ACC-45 — see updateProfile() above.
     const user = await this.userService.updateOutOfOffice(id, dto, tenantId, actorId, actorPermissions);
     return toSafeUser(user);
+  }
+
+  // ACC-46 Section 2.6.b Step 2 — gated by users:transfer (not users:view):
+  // this is wizard-specific pre-submission context (available positions,
+  // current destination head), not a general viewing capability — only
+  // someone who can actually perform a transfer needs it.
+  @Get(':id/transfer/context')
+  @Permissions(USERS_PERMISSIONS.TRANSFER)
+  getTransferContext(
+    @Param('id') id: string,
+    @Query('destinationOrgUnitId') destinationOrgUnitId: string,
+    @CurrentTenant() tenantId: string,
+  ): Promise<ITransferContext> {
+    return this.userService.getTransferContext(id, destinationOrgUnitId, tenantId);
   }
 
   @Post(':id/deactivate')

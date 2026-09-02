@@ -700,4 +700,79 @@ describe('OrgPositionService', () => {
       );
     });
   });
+
+  // ACC-46 Section 2.6.a
+  describe('listAvailablePositionsForUser', () => {
+    const ORDINARY_MULTI = { ...BASE_POSITION, id: 'pos-ordinary-multi', isSingleAssignee: false };
+    const ORDINARY_SINGLE = { ...BASE_POSITION, id: 'pos-ordinary-single', isSingleAssignee: true };
+    const HEAD_POSITION = {
+      ...BASE_POSITION,
+      id: 'pos-head',
+      isSingleAssignee: true,
+      isUnitHeadPosition: true,
+    };
+
+    it('includes every multi-assignee position regardless of who holds it', async () => {
+      mockPrisma.orgPosition.findMany.mockResolvedValue([ORDINARY_MULTI]);
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      const result = await service.listAvailablePositionsForUser('candidate-1', 'unit-1', ORG_A);
+
+      expect(result).toEqual([ORDINARY_MULTI]);
+    });
+
+    it('excludes a single-assignee position already held by someone else in the unit', async () => {
+      mockPrisma.orgPosition.findMany.mockResolvedValue([ORDINARY_SINGLE, HEAD_POSITION]);
+      mockPrisma.user.findMany.mockResolvedValue([{ positionId: ORDINARY_SINGLE.id }]);
+
+      const result = await service.listAvailablePositionsForUser('candidate-1', 'unit-1', ORG_A);
+
+      expect(result).toEqual([HEAD_POSITION]);
+    });
+
+    it('excludes a vacant head-conferring position holder from blocking (isUnitHeadPosition covered via isSingleAssignee)', async () => {
+      mockPrisma.orgPosition.findMany.mockResolvedValue([HEAD_POSITION]);
+      mockPrisma.user.findMany.mockResolvedValue([{ positionId: HEAD_POSITION.id }]);
+
+      const result = await service.listAvailablePositionsForUser('candidate-1', 'unit-1', ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    it('does not exclude a position based on the candidate holding it themselves — excludeUserId honored', async () => {
+      mockPrisma.orgPosition.findMany.mockResolvedValue([ORDINARY_SINGLE]);
+      // The candidate's own id is excluded server-side via the query's own
+      // id: { not: candidateUserId } filter — asserted here via the actual
+      // call args, since the mock can't itself enforce that exclusion.
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id?.not === 'candidate-1' ? [] : [{ positionId: ORDINARY_SINGLE.id }]),
+      );
+
+      const result = await service.listAvailablePositionsForUser('candidate-1', 'unit-1', ORG_A);
+
+      expect(result).toEqual([ORDINARY_SINGLE]);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: ORG_A,
+            primaryOrgUnitId: 'unit-1',
+            status: { in: ['ACTIVE', 'INVITED'] },
+            id: { not: 'candidate-1' },
+          }),
+        }),
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.orgPosition.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? [ORDINARY_MULTI] : [{ ...ORDINARY_MULTI, id: 'leaked' }]),
+      );
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      const result = await service.listAvailablePositionsForUser('candidate-1', 'unit-1', ORG_A);
+
+      expect(result).toEqual([ORDINARY_MULTI]);
+      expect(result.find((p) => p.id === 'leaked')).toBeUndefined();
+    });
+  });
 });
