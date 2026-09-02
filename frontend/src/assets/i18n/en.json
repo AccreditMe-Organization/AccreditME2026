@@ -425,11 +425,11 @@
     "transfer": {
       "action": "Transfer",
       "title": "Transfer User",
-      "stepDestination": "Destination Unit",
+      "stepDestination": "Destination",
       "stepReplacement": "Replacement",
       "stepPosition": "Position",
       "stepManager": "Manager",
-      "stepReview": "Review & Confirm",
+      "stepReview": "Review",
       "destinationOrgUnit": "Destination Org Unit",
       "replacementLabel": "Replacement",
       "replacementHint": "This user has active direct reports — select who will take them over in the source unit.",

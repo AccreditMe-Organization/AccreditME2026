@@ -28,12 +28,21 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // this component owns every piece of domain logic on top — gating
 // advancement behind the live-gate HTTP calls, the conditional
 // Replacement step, and the promotion branch's read-only derived manager
-// text vs. the ordinary editable picker. Step numbers are fixed
-// identifiers (1 Destination, 2 Replacement, 3 Position, 4 Manager,
-// 5 Review), not a dense auto-incrementing sequence — Step 2 is simply
-// skipped by our own navigation logic when not applicable, since we call
-// activateCallback(targetStep) ourselves rather than relying on the
-// stepper's own "next" concept.
+// text vs. the ordinary editable picker. We call activateCallback(targetStep)
+// ourselves rather than relying on the stepper's own "next" concept.
+//
+// Step numbering: confirmed against PrimeNG's own source
+// (primeng-stepper.mjs) that p-step's number badge is literally
+// `{{ value() }}` — value is both the display number and the identifier
+// correlating a p-step to its p-step-panel, with no separate "position in
+// rendered list" concept to fall back on. Binding fixed literals here
+// (Destination=1, Replacement=2, Position=3, Manager=4, Review=5) meant
+// the user saw a gap (1,3,4,5) whenever Replacement was conditionally
+// absent — found live during Playwright verification. Fixed via
+// stepValues() below: Position/Manager/Review's own identifiers shift
+// down by one whenever Replacement isn't shown, so the visible sequence
+// is always contiguous. Destination (always 1) and Replacement (always 2,
+// when present) never need to shift.
 //
 // Plan's own Step 2 (context load) is not a separate visible step here —
 // it's the automatic fetch that gates advancing out of Step 1, exactly as
@@ -63,11 +72,11 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
           <p-step-list>
             <p-step [value]="1">{{ 'user.transfer.stepDestination' | translate }}</p-step>
             @if (transferContext()?.hasActiveDirectReports) {
-              <p-step [value]="2">{{ 'user.transfer.stepReplacement' | translate }}</p-step>
+              <p-step [value]="stepValues().replacement">{{ 'user.transfer.stepReplacement' | translate }}</p-step>
             }
-            <p-step [value]="3">{{ 'user.transfer.stepPosition' | translate }}</p-step>
-            <p-step [value]="4">{{ 'user.transfer.stepManager' | translate }}</p-step>
-            <p-step [value]="5">{{ 'user.transfer.stepReview' | translate }}</p-step>
+            <p-step [value]="stepValues().position">{{ 'user.transfer.stepPosition' | translate }}</p-step>
+            <p-step [value]="stepValues().manager">{{ 'user.transfer.stepManager' | translate }}</p-step>
+            <p-step [value]="stepValues().review">{{ 'user.transfer.stepReview' | translate }}</p-step>
           </p-step-list>
 
           <p-step-panels>
@@ -102,7 +111,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 
             <!-- Step 2 — Replacement (conditional) -->
             @if (transferContext()?.hasActiveDirectReports) {
-              <p-step-panel [value]="2">
+              <p-step-panel [value]="stepValues().replacement">
                 <ng-template #content let-activateCallback="activateCallback">
                   <div class="flex flex-col gap-4 py-3">
                     <p class="text-sm text-[var(--am-text-secondary)]">{{ 'user.transfer.replacementHint' | translate }}</p>
@@ -127,7 +136,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
             }
 
             <!-- Step 3 — Destination Position -->
-            <p-step-panel [value]="3">
+            <p-step-panel [value]="stepValues().position">
               <ng-template #content let-activateCallback="activateCallback">
                 <div class="flex flex-col gap-4 py-3">
                   <div class="flex flex-col gap-1">
@@ -146,7 +155,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
                       [label]="'common.back' | translate"
                       severity="secondary"
                       [text]="true"
-                      (onClick)="activateCallback(transferContext()?.hasActiveDirectReports ? 2 : 1)"
+                      (onClick)="activateCallback(transferContext()?.hasActiveDirectReports ? stepValues().replacement : 1)"
                     />
                     <p-button
                       [label]="'common.next' | translate"
@@ -160,7 +169,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
             </p-step-panel>
 
             <!-- Step 4 — Manager -->
-            <p-step-panel [value]="4">
+            <p-step-panel [value]="stepValues().manager">
               <ng-template #content let-activateCallback="activateCallback">
                 <div class="flex flex-col gap-4 py-3">
                   @if (isPromotion()) {
@@ -184,7 +193,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
                     </div>
                   }
                   <div class="flex justify-between pt-2">
-                    <p-button [label]="'common.back' | translate" severity="secondary" [text]="true" (onClick)="activateCallback(3)" />
+                    <p-button [label]="'common.back' | translate" severity="secondary" [text]="true" (onClick)="activateCallback(stepValues().position)" />
                     <p-button [label]="'common.next' | translate" (onClick)="goFromManager(activateCallback)" />
                   </div>
                 </div>
@@ -192,7 +201,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
             </p-step-panel>
 
             <!-- Step 5 — Review & Confirm -->
-            <p-step-panel [value]="5">
+            <p-step-panel [value]="stepValues().review">
               <ng-template #content let-activateCallback="activateCallback">
                 <div class="flex flex-col gap-3 py-3">
                   @if (reviewSummary(); as summary) {
@@ -224,7 +233,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
                     />
                   }
                   <div class="flex justify-between pt-2">
-                    <p-button [label]="'common.back' | translate" severity="secondary" [text]="true" (onClick)="activateCallback(4)" [disabled]="submitting()" />
+                    <p-button [label]="'common.back' | translate" severity="secondary" [text]="true" (onClick)="activateCallback(stepValues().manager)" [disabled]="submitting()" />
                     <p-button [label]="'common.submit' | translate" [loading]="submitting()" (onClick)="submit()" />
                   </div>
                 </div>
@@ -261,6 +270,22 @@ export class TransferUserWizardComponent implements OnInit {
   readonly submitResult = signal<{ promotionCompleted: boolean; message: string } | null>(null);
 
   readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
+
+  // Step 2 (Replacement) is conditionally rendered — PrimeNG's p-step
+  // displays exactly the [value] it's bound to as its number badge
+  // (confirmed against primeng-stepper.mjs: no separate "position in
+  // rendered list" concept exists, value IS the display number, same
+  // identifier used to correlate p-step <-> p-step-panel). Binding fixed
+  // literals (1,3,4,5) meant the user saw a gap whenever Step 2 was
+  // hidden. This computed keeps a single source of truth: Position/
+  // Manager/Review shift down by one whenever Replacement is absent, so
+  // the displayed sequence is always contiguous (1,2,3,4 or 1,2,3,4,5).
+  // Safe as computed() (unlike isPromotion/reviewSummary above) because
+  // it only reads transferContext(), a real tracked signal dependency.
+  readonly stepValues = computed(() => {
+    const offset = this.transferContext()?.hasActiveDirectReports ? 0 : -1;
+    return { destination: 1, replacement: 2, position: 3 + offset, manager: 4 + offset, review: 5 + offset };
+  });
 
   // Derived from the selected position's own isUnitHeadPosition flag —
   // picking a head-conferring position *is* what makes this a promotion
@@ -325,9 +350,9 @@ export class TransferUserWizardComponent implements OnInit {
         this.transferContext.set(ctx);
         if (ctx.hasActiveDirectReports) {
           this.loadSourceUnitCandidates();
-          activateCallback(2);
+          activateCallback(this.stepValues().replacement);
         } else {
-          activateCallback(3);
+          activateCallback(this.stepValues().position);
         }
       },
       error: (err: unknown) => {
@@ -350,7 +375,7 @@ export class TransferUserWizardComponent implements OnInit {
     this.userService.validateTransferReplacement(this.userId(), { replacementUserId }).subscribe({
       next: () => {
         this.loading.set(false);
-        activateCallback(3);
+        activateCallback(this.stepValues().position);
       },
       error: (err: unknown) => {
         this.loading.set(false);
@@ -389,7 +414,7 @@ export class TransferUserWizardComponent implements OnInit {
           const headId = this.transferContext()?.currentDestinationHead?.id ?? null;
           this.form.controls.newManagerId.setValue(headId);
         }
-        activateCallback(4);
+        activateCallback(this.stepValues().manager);
       },
       error: (err: unknown) => {
         this.loading.set(false);
@@ -423,7 +448,7 @@ export class TransferUserWizardComponent implements OnInit {
         : (this.destinationManagerCandidates().find((c) => c.id === newManagerId)?.name ?? '—'),
     });
 
-    activateCallback(5);
+    activateCallback(this.stepValues().review);
   }
 
   submit(): void {
