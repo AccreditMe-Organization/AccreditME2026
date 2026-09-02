@@ -244,6 +244,44 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
       }
     </form>
   `,
+  // Stacked badge-over-label step layout, replacing the earlier
+  // shortened-labels-only fix for the 5-step (Replacement-present) case,
+  // which still overflowed the dialog by 116px even after shortening
+  // (measured live, not estimated). PrimeNG's p-step renders
+  // .p-step-number and .p-step-title as sibling <span>s inside
+  // .p-step-header with no custom "content" template needed — the
+  // default template already has the DOM shape this needs; only the
+  // layout (row -> column) and the title's wrap behavior need to change.
+  // ::ng-deep is required, not a shortcut avoided elsewhere: confirmed
+  // against primeng-stepper.mjs that every stepper sub-component
+  // (Step, StepList, StepPanel, ...) uses ViewEncapsulation.None, so
+  // .p-step-header/.p-step-title carry no Angular _ngcontent attribute
+  // for a plain scoped selector to match. `:host ::ng-deep` is the
+  // correct, still-scoped way to reach them: the compiled selector
+  // requires an ancestor carrying *this* component's own _ngcontent
+  // attribute, so it only ever applies inside this component's own
+  // rendered instances — confirmed via grep that p-stepper/p-step is
+  // used nowhere else in the frontend, and structurally guaranteed to
+  // stay that way even if that changes later (a stepper rendered by any
+  // other component has a different host, hence a different attribute,
+  // hence never matches this selector).
+  styles: [
+    `
+      :host ::ng-deep .p-step-header {
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 4px;
+      }
+      :host ::ng-deep .p-step-title {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        text-align: center;
+        line-height: 1.2;
+      }
+    `,
+  ],
 })
 export class TransferUserWizardComponent implements OnInit {
   readonly userId = input.required<string>();
