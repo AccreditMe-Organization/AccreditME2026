@@ -607,6 +607,50 @@ ACC-45's now-established response-shaping discipline for every
 `User`-returning endpoint — `promotionCompleted`/`promotionError` pass
 through unchanged alongside it.
 
+#### 2.6.b.1 — UI Shell Decision (raised and closed during commit 8
+implementation, not in the original design pass)
+
+**DECIDED**: the wizard's outer shell is a thin wrapper around
+PrimeNG's own `p-stepper` component family (`p-stepper`/`p-step-list`/
+`p-step`/`p-step-panels`/`p-step-panel`), confirmed present in this
+project's installed `primeng@21.1.9` — not `EditDialogComponent`, and
+not a fully custom stepper built from scratch.
+
+**Why not `EditDialogComponent`**: it's this codebase's own REQUIRED
+pattern for create/edit dialogs (ACC-29, CLAUDE.md), but its footer
+assumes exactly one submit action — a wizard needs back/next/submit-
+on-last-step, plus a conditional step (2.6.b Step 3), plus branch-
+dependent content for Step 5 (editable picker vs. read-only derived
+text for a promotion), none of which fit a single-form-submit shape
+without fighting the component's own design at every turn. Reusing it
+here would be reuse in name only.
+
+**Why not fully custom**: confirmed, by reading PrimeNG's own type
+definitions (`primeng/types/primeng-stepper.d.ts`), that `p-stepper`
+already owns exactly the right slice — step indicators, active-step
+state tracking (a bindable `value` model), and content-panel show/hide
+— while deliberately leaving navigation itself to the consumer (no
+built-in Next/Back chrome; each `StepPanel`'s content template
+receives an `activateCallback` the consumer calls). This is the same
+shape of relationship `OverlaySelectComponent` already has with CDK's
+`Overlay` + `RepositionScrollStrategy` (SYSTEM-REFERENCE.md Section
+10.7) — PrimeNG/CDK owns the primitive, this codebase's own component
+owns 100% of the domain-specific behavior on top. Concretely, this
+means:
+- The wizard's own Next/Back button handlers gate advancement behind
+  the live-gate HTTP calls (validate-replacement/validate-position)
+  before calling `activateCallback` — the stepper has no opinion about
+  this, it's ordinary component logic.
+- Step 3 is conditionally projected (`@if (hasActiveDirectReports)`
+  around its `<p-step>`/`<p-step-panel>` pair) — `Step`/`StepPanel` are
+  plain projected content, no special stepper API needed to skip a
+  step. Since the wizard's own navigation logic already decides what
+  "next" resolves to, skipping a hidden step's value there is ordinary
+  application logic, not a stepper concern.
+- Step 5's branch-dependent content (editable manager picker vs.
+  derived read-only text) is a plain `@if (isPromotion) {…} @else {…}`
+  inside that one panel's own content template.
+
 #### 2.6.c — Execution Order
 
 **Verified before finalizing this plan — `assignHead()` is NOT
