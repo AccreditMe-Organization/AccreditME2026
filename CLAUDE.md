@@ -2039,6 +2039,19 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   broader audit rather than something that could have been transient.
   Still not scoped or fixed here — no code change attempted, still
   deferred to that same future audit.
+- **Full frontend design-consistency audit needed** — flagged by
+  Ahmad after finding Task SLA settings was the only screen in the
+  entire app using a raw `<table>` + manual `overflow-x-auto` instead
+  of the established patterns (found during ACC-46). This is broader
+  than the existing field-alignment and list-filtering notes above:
+  revisit whether this project has a complete, written set of
+  frontend design rules, verify every real screen actually follows
+  them (not just spot-checked), and specifically check code
+  comments/documentation for any deliberate, DOCUMENTED exceptions to
+  those rules versus undocumented one-off deviations like this one
+  turned out to be. Not scoped or sized yet — this is a full audit,
+  not a single fix, grouped here with the other future UI-consistency
+  items but distinctly larger in scope than either.
 
 ---
 
