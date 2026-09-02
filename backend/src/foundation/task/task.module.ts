@@ -13,6 +13,10 @@ import { TaskService } from './task.service';
 // NotificationModule import isn't strictly required for DI (it's @Global()),
 // added anyway for explicitness/testability — same precedent as
 // WorkflowModule's own import of it in Step 7.
+//
+// TenantModule's forwardRef (already present, previously dormant/unused) is
+// now load-bearing — ACC-46 Section 2.7.d — TaskService.computeSlaDueAt()
+// injects TenantService to read Organization.settings.taskSla for real.
 @Module({
   imports: [
     PrismaModule,

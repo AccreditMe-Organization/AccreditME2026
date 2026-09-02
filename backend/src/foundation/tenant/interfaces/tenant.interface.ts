@@ -48,3 +48,21 @@ export interface IEmailConfig {
   emailProvider: 'resend' | 'smtp' | 'office365' | 'sendgrid' | 'ses' | null;
   config: Record<string, unknown> | null;
 }
+
+// ACC-46 Section 2.7.c — stored at Organization.settings.taskSla. Two
+// tenant-configurable grace periods per priority, both allowed to be 0
+// (immediate): managerEscalationAfterHours counts from Task.dueAt,
+// headEscalationAfterHours is an ADDITIONAL grace period counted from when
+// the Manager tier fires, not from dueAt again.
+export interface ITaskSlaTier {
+  dueAfterHours: number;
+  managerEscalationAfterHours: number;
+  headEscalationAfterHours: number;
+}
+
+export interface ITaskSlaSettings {
+  LOW: ITaskSlaTier;
+  MEDIUM: ITaskSlaTier;
+  HIGH: ITaskSlaTier;
+  CRITICAL: ITaskSlaTier;
+}

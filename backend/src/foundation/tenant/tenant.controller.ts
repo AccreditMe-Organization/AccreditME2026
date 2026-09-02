@@ -18,7 +18,8 @@ import { TenantService } from './tenant.service';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
-import { ITenant, ITenantConfig, IEmailConfig } from './interfaces/tenant.interface';
+import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
+import { ITenant, ITenantConfig, IEmailConfig, ITaskSlaSettings } from './interfaces/tenant.interface';
 
 @Controller('tenant')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -71,6 +72,22 @@ export class TenantController {
     @CurrentUser() userId: string,
   ): Promise<void> {
     return this.tenantService.updateAiOverageSetting(tenantId, dto, userId);
+  }
+
+  @Get('task-sla')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  getTaskSla(@CurrentTenant() tenantId: string): Promise<ITaskSlaSettings> {
+    return this.tenantService.getTaskSla(tenantId);
+  }
+
+  @Patch('task-sla')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  updateTaskSla(
+    @Body() dto: UpdateTaskSlaDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<void> {
+    return this.tenantService.updateTaskSla(tenantId, dto, userId);
   }
 
   @Post('bootstrap')

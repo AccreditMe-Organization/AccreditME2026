@@ -10,6 +10,7 @@ import { RoleService } from '../roles/role.service';
 import { WorkflowTemplateService } from '../workflow/workflow-template.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '../../../generated/prisma/client';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import {
   decryptTenantConfig,
@@ -19,7 +20,26 @@ import {
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
-import { ITenant, ITenantConfig, IEmailConfig } from './interfaces/tenant.interface';
+import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
+import { ITenant, ITenantConfig, IEmailConfig, ITaskSlaSettings } from './interfaces/tenant.interface';
+
+// ACC-46 Section 2.7.d — replaces TaskService's own old
+// DEFAULT_TASK_SLA_HOURS/FALLBACK_SLA_HOURS pair (a flat hours-per-priority
+// map with no escalation concept at all) with the fuller three-field-per-
+// tier shape. dueAfterHours values match the previous hardcoded hours
+// exactly — no behavior change for a tenant that never visits the new
+// settings page. managerEscalationAfterHours/headEscalationAfterHours are
+// new grace periods with no prior equivalent; the values below are a
+// reasonable starting point (roughly half of dueAfterHours for the
+// Manager tier, dueAfterHours again for the Head tier), not a fixed
+// product decision — a tenant admin can change every field via the new
+// settings page.
+const DEFAULT_TASK_SLA_SETTINGS: ITaskSlaSettings = {
+  CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
+  HIGH: { dueAfterHours: 16, managerEscalationAfterHours: 8, headEscalationAfterHours: 16 },
+  MEDIUM: { dueAfterHours: 40, managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
+  LOW: { dueAfterHours: 80, managerEscalationAfterHours: 48, headEscalationAfterHours: 96 },
+};
 
 @Injectable()
 export class TenantService {
@@ -237,6 +257,39 @@ export class TenantService {
     });
   }
 
+  // ACC-46 Section 2.7.d — read-side fallback covers an absent key
+  // functionally forever; bootstrap() also writes DEFAULT_TASK_SLA_SETTINGS
+  // for real at tenant creation so the settings page always has a genuine
+  // saved row to display, not just a runtime default.
+  async getTaskSla(id: string): Promise<ITaskSlaSettings> {
+    const org = await this.prisma.organization.findUnique({ where: { id } });
+    if (!org) throw new NotFoundException('Tenant not found');
+
+    const settings = (org.settings as { taskSla?: ITaskSlaSettings } | null) ?? {};
+    return settings.taskSla ?? DEFAULT_TASK_SLA_SETTINGS;
+  }
+
+  async updateTaskSla(id: string, dto: UpdateTaskSlaDto, actorId: string): Promise<void> {
+    const org = await this.prisma.organization.findUnique({ where: { id } });
+    if (!org) throw new NotFoundException('Tenant not found');
+
+    const settings = (org.settings as Record<string, unknown> | null) ?? {};
+
+    await this.prisma.organization.update({
+      where: { id },
+      data: { settings: { ...settings, taskSla: dto } as unknown as Prisma.InputJsonValue },
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: id,
+      actorId,
+      tenantId: id,
+      metadata: { event: 'task_sla_updated' },
+    });
+  }
+
   async bootstrap(id: string, actorId: string): Promise<void> {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
@@ -266,11 +319,19 @@ export class TenantService {
     await this.lookupService.seedSystemData();
     await this.roleService.seedSystemRoles(id);
     await this.workflowTemplateService.seedDefaultWorkflows(id);
-    // TODO(Step 8 — Tasks): register default task SLA settings
+
+    // ACC-46 Section 2.7.d — not strictly required for correctness
+    // (getTaskSla()'s own fallback covers an absent key forever), but means
+    // the settings page always has a real saved row from day one.
+    const existingSettings = (org.settings as Record<string, unknown> | null) ?? {};
 
     await this.prisma.organization.update({
       where: { id },
-      data: { isBootstrapped: true, bootstrappedAt: new Date() },
+      data: {
+        isBootstrapped: true,
+        bootstrappedAt: new Date(),
+        settings: { ...existingSettings, taskSla: DEFAULT_TASK_SLA_SETTINGS } as unknown as Prisma.InputJsonValue,
+      },
     });
 
     await this.auditLog.log({

@@ -7,6 +7,7 @@ import { LookupService } from '../lookup/lookup.service';
 import { RoleService } from '../roles/role.service';
 import { WorkflowTemplateService } from '../workflow/workflow-template.service';
 import { OrgPositionService } from '../org-position/org-position.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // Valid 64-char hex string → 32 bytes, satisfies constructor guard
 const MOCK_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -211,10 +212,19 @@ describe('TenantService', () => {
       // long (a test that mocks a dependency but never asserts on it proves
       // nothing about whether the real call happens).
       expect(workflowTemplateService.seedDefaultWorkflows).toHaveBeenCalledWith('org-a');
+      // ACC-46 Section 2.7.d — bootstrap() now also writes a real
+      // taskSla row, not left to getTaskSla()'s runtime fallback alone.
       expect(prisma.organization.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'org-a' },
-          data: expect.objectContaining({ isBootstrapped: true }),
+          data: expect.objectContaining({
+            isBootstrapped: true,
+            settings: expect.objectContaining({
+              taskSla: expect.objectContaining({
+                CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
+              }),
+            }),
+          }),
         }),
       );
       expect(auditLog.log).toHaveBeenCalledWith(
@@ -413,6 +423,101 @@ describe('TenantService', () => {
       await expect(
         service.updateAiOverageSetting('missing', { overageEnabled: true }, 'user-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── getTaskSla / updateTaskSla (ACC-46 Section 2.7.d) ───────────────────────
+
+  const CUSTOM_SLA = {
+    LOW: { dueAfterHours: 80, managerEscalationAfterHours: 48, headEscalationAfterHours: 96 },
+    MEDIUM: { dueAfterHours: 40, managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
+    HIGH: { dueAfterHours: 12, managerEscalationAfterHours: 6, headEscalationAfterHours: 12 },
+    CRITICAL: { dueAfterHours: 2, managerEscalationAfterHours: 1, headEscalationAfterHours: 2 },
+  };
+
+  describe('getTaskSla', () => {
+    it('returns the stored settings when present', async () => {
+      prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, settings: { taskSla: CUSTOM_SLA } });
+
+      const result = await service.getTaskSla('org-a');
+
+      expect(result).toEqual(CUSTOM_SLA);
+    });
+
+    it('falls back to the platform default when settings.taskSla is absent', async () => {
+      prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, settings: null });
+
+      const result = await service.getTaskSla('org-a');
+
+      expect(result.CRITICAL.dueAfterHours).toBe(4);
+      expect(result.LOW.dueAfterHours).toBe(80);
+    });
+
+    it('throws NotFoundException when tenant does not exist', async () => {
+      prisma.organization.findUnique.mockResolvedValue(null);
+      await expect(service.getTaskSla('missing')).rejects.toThrow(NotFoundException);
+    });
+
+    itEnforcesTenantIsolation('getTaskSla reads only the requested tenant\'s own settings', async () => {
+      const settingsByOrg: Record<string, { taskSla: typeof CUSTOM_SLA }> = {
+        'org-a': { taskSla: CUSTOM_SLA },
+      };
+      prisma.organization.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
+          settingsByOrg[where.id] ? { ...ORG_A, id: where.id, settings: settingsByOrg[where.id] } : null,
+        ),
+      );
+
+      const resultA = await service.getTaskSla('org-a');
+      expect(resultA).toEqual(CUSTOM_SLA);
+
+      // org-b has no stored settings of its own — must never see org-a's.
+      await expect(service.getTaskSla('org-b')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('updateTaskSla', () => {
+    it('writes the full settings.taskSla object and logs an audit entry, without touching other settings keys', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        ...ORG_A,
+        settings: { ai: { monthlyCredits: 500 } },
+      });
+      prisma.organization.update.mockResolvedValue({ ...ORG_A });
+
+      await service.updateTaskSla('org-a', CUSTOM_SLA, 'user-1');
+
+      expect(prisma.organization.update).toHaveBeenCalledWith({
+        where: { id: 'org-a' },
+        data: { settings: { ai: { monthlyCredits: 500 }, taskSla: CUSTOM_SLA } },
+      });
+      expect(auditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE',
+          objectType: 'Organization',
+          objectId: 'org-a',
+          actorId: 'user-1',
+          tenantId: 'org-a',
+        }),
+      );
+    });
+
+    it('throws NotFoundException when tenant does not exist', async () => {
+      prisma.organization.findUnique.mockResolvedValue(null);
+      await expect(service.updateTaskSla('missing', CUSTOM_SLA, 'user-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    itEnforcesTenantIsolation('updateTaskSla only ever writes the requested tenant\'s own row', async () => {
+      prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, id: 'org-a', settings: null });
+      prisma.organization.update.mockResolvedValue({ ...ORG_A });
+
+      await service.updateTaskSla('org-a', CUSTOM_SLA, 'user-1');
+
+      expect(prisma.organization.findUnique).toHaveBeenCalledWith({ where: { id: 'org-a' } });
+      expect(prisma.organization.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'org-a' } }),
+      );
     });
   });
 });

@@ -1,25 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
-import { TaskStatus, TaskSourceType } from '../../../generated/prisma/client';
+import { TenantService } from '../tenant/tenant.service';
+import { TaskStatus, TaskSourceType, TaskPriority } from '../../../generated/prisma/client';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { ITask } from './interfaces/task.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
-
-// Platform default SLA hours per priority — used when Organization.settings
-// .taskSla is absent. Tenant admins override via Organization.settings.
-const DEFAULT_TASK_SLA_HOURS: Record<string, number> = {
-  CRITICAL: 4,
-  HIGH: 16,
-  MEDIUM: 40,
-  LOW: 80,
-};
-const FALLBACK_SLA_HOURS = 40;
 
 interface GetTasksOptions {
   status?: TaskStatus;
@@ -32,6 +23,8 @@ export class TaskService {
     private readonly auditLog: AuditLogService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
+    @Inject(forwardRef(() => TenantService))
+    private readonly tenantService: TenantService,
   ) {}
 
   async create(dto: CreateTaskDto, organizationId: string, actorId: string): Promise<ITask> {
@@ -388,14 +381,13 @@ export class TaskService {
     return evidence;
   }
 
-  // Priority SLA from Organization.settings.taskSla (tenant-configurable),
-  // falling back to platform defaults when absent. Never a module's own date
-  // math — always through WorkingCalendarService.
-  private async computeSlaDueAt(priority: string, organizationId: string): Promise<Date> {
-    const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
-    const settings = org?.settings as { taskSla?: Record<string, number> } | null;
-    const hours =
-      settings?.taskSla?.[priority] ?? DEFAULT_TASK_SLA_HOURS[priority] ?? FALLBACK_SLA_HOURS;
+  // Priority SLA from Organization.settings.taskSla (ACC-46 Section 2.7.c —
+  // tenant-configurable, via TenantService.getTaskSla(), which itself falls
+  // back to DEFAULT_TASK_SLA_SETTINGS when absent). Never a module's own
+  // date math — always through WorkingCalendarService.
+  private async computeSlaDueAt(priority: TaskPriority, organizationId: string): Promise<Date> {
+    const slaConfig = await this.tenantService.getTaskSla(organizationId);
+    const hours = slaConfig[priority].dueAfterHours;
 
     const deadline = await this.workingCalendar.calculateDeadline(DateTime.now(), hours, organizationId);
     return deadline.toJSDate();
