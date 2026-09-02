@@ -757,7 +757,12 @@ model UserTransferEvent {
   isPromotion           Boolean  @default(false)
   promotionAttempted    Boolean  @default(false)
   effectiveDate         DateTime @default(now())
-  approvedBy            String // actorId — always required here (unlike OrgUnitHeadEvent.approvedBy, nullable there); a transfer always has an acting admin
+  // actorId — always required (a transfer always has an acting admin).
+  // Deliberately NOT named approvedBy (unlike OrgUnitHeadEvent.approvedBy,
+  // nullable there) — this redesign never included a formal approval/
+  // review step; a transfer is a direct, single-actor action performed by
+  // a Tenant Admin, so this records who executed it, not who approved it.
+  performedBy           String
   createdAt             DateTime @default(now())
 
   organization       Organization @relation(fields: [organizationId], references: [id])
