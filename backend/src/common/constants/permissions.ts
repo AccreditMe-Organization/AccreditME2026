@@ -18,6 +18,13 @@ export const USERS_PERMISSIONS = {
   // account suspension" is a distinct, higher-stakes action than editing a
   // profile field (Step 9, Commit 7).
   DEACTIVATE: 'users:deactivate',
+  // ACC-46 Section 2.6.g — a new, action-specific string rather than
+  // overloading MANAGE, matching ACC-44's now-required richer-permission
+  // pattern for module CRUD (see CLAUDE.md's Committee CRUD note). The
+  // transfer wizard moves a person's unit/position/manager together and can
+  // trigger a promotion — deliberately gated separately from ordinary
+  // profile edits.
+  TRANSFER:   'users:transfer',
 } as const;
 
 export const ROLES_PERMISSIONS = {
