@@ -939,28 +939,39 @@ model WorkflowActionLog {
 // ---------------------------------------------------------------------------
 
 model Task {
-  id                   String         @id @default(cuid())
-  organizationId       String
-  title                String
-  description          String?
-  sourceType           TaskSourceType
-  sourceId             String
-  sourceStageId        String?
-  workflowInstanceId   String?
-  meetingId            String?
-  createdById          String
-  status               TaskStatus     @default(PENDING)
-  priority             TaskPriority   @default(MEDIUM)
-  dueAt                DateTime?
-  dueDateOverridden    Boolean        @default(false)
-  slaBreachedAt        DateTime?
-  completedAt          DateTime?
-  completedById        String?
-  escalationUserId     String?
-  escalationAfterHours Int?
-  escalatedAt          DateTime?
-  createdAt            DateTime       @default(now())
-  updatedAt            DateTime       @updatedAt
+  id                 String         @id @default(cuid())
+  organizationId     String
+  title              String
+  description        String?
+  sourceType         TaskSourceType
+  sourceId           String
+  sourceStageId      String?
+  workflowInstanceId String?
+  meetingId          String?
+  createdById        String
+  status             TaskStatus     @default(PENDING)
+  priority           TaskPriority   @default(MEDIUM)
+  dueAt              DateTime?
+  dueDateOverridden  Boolean        @default(false)
+  slaBreachedAt      DateTime?
+  completedAt        DateTime?
+  completedById      String?
+  // ACC-46 Section 2.7.b — escalationUserId/escalationAfterHours/escalatedAt
+  // removed via real migration, not left as dead/repurposed columns
+  // (ACC-44's own precedent for a confirmed-dead field): both were
+  // @IsOptional() on CreateTaskDto with zero real callers ever setting
+  // them (confirmed via full frontend grep), and even a hand-crafted API
+  // call setting them correctly could never actually fire escalation —
+  // SlaMonitorProcessor.sweepOverdueTasks()'s own query excluded status
+  // OVERDUE, so a task was evaluated exactly once, before enough hours
+  // could plausibly have elapsed, then permanently skipped forever after.
+  // Replaced by two system-only timestamps, written only by
+  // SlaMonitorProcessor, never by any caller — the "no human choice
+  // anywhere" redesign (2.7.b/2.7.c) extends to the schema itself.
+  managerEscalatedAt DateTime?
+  headEscalatedAt    DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   organization     Organization      @relation(fields: [organizationId], references: [id])
   createdBy        User              @relation("TaskCreator", fields: [createdById], references: [id])

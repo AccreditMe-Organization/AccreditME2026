@@ -26,9 +26,8 @@ const MOCK_TASK: ITask = {
   slaBreachedAt: null,
   completedAt: null,
   completedById: null,
-  escalationUserId: null,
-  escalationAfterHours: null,
-  escalatedAt: null,
+  managerEscalatedAt: null,
+  headEscalatedAt: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };

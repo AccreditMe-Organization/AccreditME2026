@@ -326,13 +326,29 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // repeatable job rather than registering a new queue, per CLAUDE.md's
   // Background Jobs list having exactly one SLA-sweep entry, not one per
   // entity type (see Step 8 plan, Section 3/Commit 7).
+  //
+  // ACC-46 Section 2.7 — deliberate interim state, not the finished
+  // redesign. The old escalation-firing logic here (task.escalationUserId/
+  // escalationAfterHours/escalatedAt, fireTaskEscalation()) is removed in
+  // the same commit as the schema fields it read, since the two can't be
+  // split across commits without leaving the build non-compiling. The new
+  // tier-based replacement (2.7.e) needs Organization.settings.taskSla
+  // (Commit 2a) and OrgPositionService's new resolver methods (Commit 3),
+  // neither of which exists yet — so for the span of this commit through
+  // Commit 3, this sweep only flips overdue tasks to OVERDUE and fires no
+  // escalation at all. Not a functional regression: the old logic's own
+  // query already excluded status OVERDUE, so a task was evaluated exactly
+  // once, before enough hours could plausibly have elapsed, then
+  // permanently skipped forever after — escalation never actually fired
+  // for any real tenant under the old code either (Finding 2). Commit 4
+  // reintroduces real firing, together with the query fix that makes it
+  // actually reachable.
   private async sweepOverdueTasks(now: Date): Promise<void> {
     const overdueTasks = await this.prisma.task.findMany({
       where: {
         dueAt: { lt: now },
         status: { notIn: ['COMPLETED', 'CANCELLED', 'OVERDUE', 'UNASSIGNED'] },
       },
-      include: { assignees: { where: { removedAt: null } } },
     });
 
     for (const task of overdueTasks) {
@@ -340,63 +356,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         where: { id: task.id },
         data: { status: 'OVERDUE', slaBreachedAt: now },
       });
-
-      if (!task.escalationUserId || !task.escalationAfterHours || task.escalatedAt || !task.dueAt) {
-        continue;
-      }
-
-      const hoursSinceDue = DateTime.fromJSDate(now).diff(DateTime.fromJSDate(task.dueAt), 'hours').hours;
-      if (hoursSinceDue < task.escalationAfterHours) continue;
-
-      if (!(await this.isWithinWorkingHours(task.organizationId))) continue;
-
-      await this.fireTaskEscalation(task.organizationId, task.id, task.escalationUserId, task.assignees.map((a) => a.userId));
     }
-  }
-
-  private async fireTaskEscalation(
-    organizationId: string,
-    taskId: string,
-    escalationUserId: string,
-    assigneeIds: string[],
-  ): Promise<void> {
-    try {
-      await this.orgPositionService.validateEscalationTarget(assigneeIds, escalationUserId, organizationId);
-    } catch (err) {
-      // Never silently escalate to an invalid target — log and skip.
-      await this.auditLog.log({
-        tenantId: organizationId,
-        action: 'UPDATE',
-        objectType: 'Task',
-        objectId: taskId,
-        metadata: {
-          escalationSkipped: true,
-          reason: err instanceof Error ? err.message : 'Invalid escalation target',
-        },
-      });
-      return;
-    }
-
-    await this.notificationService.create(
-      {
-        userId: escalationUserId,
-        titleEn: 'Task SLA breach escalation',
-        bodyEn: `A task has breached its SLA and has been escalated to you.`,
-        objectType: 'Task',
-        objectId: taskId,
-      },
-      organizationId,
-    );
-
-    await this.prisma.task.update({ where: { id: taskId }, data: { escalatedAt: new Date() } });
-
-    await this.auditLog.log({
-      tenantId: organizationId,
-      action: 'UPDATE',
-      objectType: 'Task',
-      objectId: taskId,
-      metadata: { escalatedTo: escalationUserId },
-    });
   }
 
   private async fireEscalation(
