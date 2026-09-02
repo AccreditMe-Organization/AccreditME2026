@@ -87,9 +87,23 @@ jobs:
   # Stage 3 — Frontend
   # ─────────────────────────────────────────────
   frontend:
-    name: Frontend — Lint, Type Check, Build
+    # ACC-47 — renamed from "Frontend — Lint, Type Check, Build": this job
+    # has never actually linted (no ESLint config/script exists anywhere
+    # in the frontend), so the old name was inaccurate on its own terms
+    # even before the missing-test-step gap. No lint infrastructure exists
+    # to wire up cheaply here — adding real linting is a separate, much
+    # larger undertaking (choosing rules, likely fixing/suppressing a
+    # first wave of violations across the whole codebase) that deserves
+    # its own ticket, not a silent scope-add to this one. Renamed instead
+    # to state plainly what this job actually does.
+    name: Frontend — Type Check, Test, Build
     runs-on: ubuntu-latest
     needs: validate-repo
+    # ACC-47 — hard backstop: a genuine Chrome-launch hang in CI should
+    # fail in minutes, not consume the default multi-hour job timeout.
+    # karma.conf.js's own captureTimeout/browserDisconnectTimeout/
+    # browserNoActivityTimeout should fire well before this does.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -100,8 +114,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
+      # ACC-47 — pinned Chrome version rather than trusting whatever
+      # happens to be preinstalled on the ubuntu-latest runner image
+      # (which drifts across runner image updates).
+      - name: Set up Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
       - name: TypeScript check
         run: npx tsc --noEmit
+        working-directory: frontend
+      # ACC-47 — the actual gap this ticket exists to close: this frontend
+      # job never ran any test-runner step before, at any point in this
+      # repo's history (confirmed via full commit-history audit, not a
+      # regression). ChromeHeadlessCI (karma.conf.js) adds --no-sandbox
+      # etc. for the containerized runner. Placed before the build step,
+      # matching the backend job's own tsc -> test -> (expensive step)
+      # ordering — fail fast on a test failure before spending time on a
+      # full production build.
+      - name: Run unit tests
+        run: npx ng test --watch=false --browsers=ChromeHeadlessCI
         working-directory: frontend
       - name: Build Angular app
         run: npm run build
