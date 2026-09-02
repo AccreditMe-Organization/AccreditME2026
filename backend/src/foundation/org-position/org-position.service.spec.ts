@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { OrganizationService } from '../organization/organization.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -633,6 +634,153 @@ describe('OrgPositionService', () => {
 
       expect(result).toEqual([ORDINARY_MULTI]);
       expect(result.find((p) => p.id === 'leaked')).toBeUndefined();
+    });
+  });
+
+  // ACC-46 Section 2.7.e — replaces validateEscalationTarget()'s own old
+  // test block (deleted in Commit 1). Resolvers, not validators: no
+  // caller-supplied target to validate anymore, only real targets to
+  // resolve fresh at firing time.
+  describe('resolveManagerEscalationTargets', () => {
+    it('returns every distinct manager across all assignees, deduplicated (PD#8)', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'u1', managerId: 'm1' },
+        { id: 'u2', managerId: 'm1' }, // shares u1's manager — must notify once, not twice
+        { id: 'u3', managerId: 'm2' },
+      ]);
+
+      const result = await service.resolveManagerEscalationTargets(['u1', 'u2', 'u3'], ORG_A);
+
+      expect(result).toEqual(['m1', 'm2']);
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['u1', 'u2', 'u3'] }, organizationId: ORG_A, status: 'ACTIVE' },
+      });
+    });
+
+    it('returns an empty array, does not throw, when no assignee has a manager', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'u1', managerId: null },
+        { id: 'u2', managerId: null },
+      ]);
+
+      const result = await service.resolveManagerEscalationTargets(['u1', 'u2'], ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    it('returns an empty array, does not throw, when no assignee resolves at all (e.g. all inactive)', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      const result = await service.resolveManagerEscalationTargets(['u1'], ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    itEnforcesTenantIsolation('resolveManagerEscalationTargets only resolves managers within the requested tenant', async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.organizationId === ORG_A
+            ? [{ id: 'u1', managerId: 'manager-a' }]
+            : [{ id: 'u1', managerId: 'leaked-manager' }],
+        ),
+      );
+
+      const result = await service.resolveManagerEscalationTargets(['u1'], ORG_A);
+
+      expect(result).toEqual(['manager-a']);
+      expect(result).not.toContain('leaked-manager');
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+    });
+  });
+
+  describe('resolveHeadEscalationTargets', () => {
+    it('returns the direct Head-conferring-position holder for the assignee\'s org unit', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', primaryOrgUnitId: 'unit-1' }]);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'head-1' });
+
+      const result = await service.resolveHeadEscalationTargets(['u1'], ORG_A);
+
+      expect(result).toEqual(['head-1']);
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled(); // short-circuited — no fallback needed
+    });
+
+    it('falls back to OrgUnit.actingHeadUserId when no direct holder exists (PD#9)', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', primaryOrgUnitId: 'unit-1' }]);
+      mockPrisma.user.findFirst.mockResolvedValue(null); // no direct holder
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-1', actingHeadUserId: 'acting-1' });
+
+      const result = await service.resolveHeadEscalationTargets(['u1'], ORG_A);
+
+      expect(result).toEqual(['acting-1']);
+    });
+
+    it('returns an empty array, does not throw, when neither a direct holder nor an Acting Head exists', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', primaryOrgUnitId: 'unit-1' }]);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-1', actingHeadUserId: null });
+
+      const result = await service.resolveHeadEscalationTargets(['u1'], ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    it('returns an empty array, does not throw, when no assignee has a primary org unit', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', primaryOrgUnitId: null }]);
+
+      const result = await service.resolveHeadEscalationTargets(['u1'], ORG_A);
+
+      expect(result).toEqual([]);
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates when two assignees in different org units resolve to the same Head (PD#8)', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'u1', primaryOrgUnitId: 'unit-1' },
+        { id: 'u2', primaryOrgUnitId: 'unit-2' },
+      ]);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'head-1' }); // same person heads both units
+
+      const result = await service.resolveHeadEscalationTargets(['u1', 'u2'], ORG_A);
+
+      expect(result).toEqual(['head-1']);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(2); // once per distinct org unit
+    });
+
+    it('deduplicates the assignees\' own org units before resolving — two assignees in the same unit query it once', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'u1', primaryOrgUnitId: 'unit-1' },
+        { id: 'u2', primaryOrgUnitId: 'unit-1' },
+      ]);
+      mockPrisma.user.findFirst.mockResolvedValue({ id: 'head-1' });
+
+      const result = await service.resolveHeadEscalationTargets(['u1', 'u2'], ORG_A);
+
+      expect(result).toEqual(['head-1']);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1); // one distinct org unit, not two
+    });
+
+    itEnforcesTenantIsolation('resolveHeadEscalationTargets only resolves Heads within the requested tenant', async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.organizationId === ORG_A ? [{ id: 'u1', primaryOrgUnitId: 'unit-1' }] : [],
+        ),
+      );
+      mockPrisma.user.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.organizationId === ORG_A ? { id: 'head-a' } : { id: 'leaked-head' },
+        ),
+      );
+
+      const result = await service.resolveHeadEscalationTargets(['u1'], ORG_A);
+
+      expect(result).toEqual(['head-a']);
+      expect(result).not.toContain('leaked-head');
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
     });
   });
 });

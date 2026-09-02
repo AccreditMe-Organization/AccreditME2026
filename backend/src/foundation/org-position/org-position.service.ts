@@ -333,4 +333,64 @@ export class OrgPositionService {
       );
     }
   }
+
+  // ACC-46 Section 2.7.e — replaces validateEscalationTarget() entirely
+  // (deleted in this ticket's Commit 1). Resolvers, not validators: escalation
+  // targets are now fully automatic (2.7.b — no human picks a target), so
+  // there is nothing left to validate against a caller-supplied id, only
+  // something to resolve fresh at firing time. Resolved live on every sweep
+  // — never precomputed or stored on the Task row (2.7.e) — since a Manager
+  // can change between task creation and the task actually going overdue.
+  //
+  // PD#8, decided: returns EVERY distinct target across all assignees, not
+  // just the first one in array order — silently dropping part of a task's
+  // accountability chain because of array position was judged inconsistent
+  // with this being a compliance-oriented product.
+  async resolveManagerEscalationTargets(
+    assigneeIds: string[],
+    organizationId: string,
+  ): Promise<string[]> {
+    const assignees = await this.prisma.user.findMany({
+      where: { id: { in: assigneeIds }, organizationId, status: 'ACTIVE' },
+    });
+    const managerIds = assignees.map((a) => a.managerId).filter((id): id is string => !!id);
+    return [...new Set(managerIds)]; // dedup — two assignees sharing one manager notify that manager once, not twice
+  }
+
+  // PD#9, decided: the Head tier DOES count Acting Head coverage, not only a
+  // direct Head-conferring-position holder — falls back to
+  // OrgUnit.actingHeadUserId when no direct holder exists, mirroring
+  // assignHead()'s own holders[0]?.id ?? actingHeadUserId pattern (2.6.d). A
+  // vacancy genuinely covered by an Acting Head should still receive
+  // escalation, not be silently skipped.
+  async resolveHeadEscalationTargets(
+    assigneeIds: string[],
+    organizationId: string,
+  ): Promise<string[]> {
+    const assignees = await this.prisma.user.findMany({
+      where: { id: { in: assigneeIds }, organizationId, status: 'ACTIVE' },
+    });
+    const orgUnitIds = [
+      ...new Set(assignees.map((a) => a.primaryOrgUnitId).filter((id): id is string => !!id)),
+    ];
+
+    const targets = new Set<string>();
+    for (const orgUnitId of orgUnitIds) {
+      const directHolder = await this.prisma.user.findFirst({
+        where: {
+          organizationId,
+          primaryOrgUnitId: orgUnitId,
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true },
+        },
+      });
+      if (directHolder) {
+        targets.add(directHolder.id);
+        continue;
+      }
+      const orgUnit = await this.prisma.orgUnit.findFirst({ where: { id: orgUnitId, organizationId } });
+      if (orgUnit?.actingHeadUserId) targets.add(orgUnit.actingHeadUserId);
+    }
+    return [...targets]; // one distinct unit could still resolve to the same person as another via Acting Head coverage — Set already dedups that too
+  }
 }
