@@ -8,6 +8,7 @@ import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { PasswordModule } from 'primeng/password';
 import { TagModule } from 'primeng/tag';
+import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
@@ -30,6 +31,12 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // OverlaySelectComponent's CDK-based positioning doesn't share this bug —
 // see CLAUDE.md's Open/Deferred Items for the full investigation.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+// ACC-46 Section 2.6.b — pure content, no dialog of its own; wrapped in a
+// raw p-dialog directly in this template, same convention as
+// workflow-transition-editor.component.ts's own "Configure Actions"
+// dialog (see the wizard's own header comment / plan Section 2.6.b.1 for
+// why not EditDialogComponent).
+import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
@@ -56,7 +63,9 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
     MessageModule,
     PasswordModule,
     TagModule,
+    DialogModule,
     UserRoleAssignmentComponent,
+    TransferUserWizardComponent,
   ],
   template: `
     <div class="flex flex-col gap-6 p-6 max-w-2xl">
@@ -68,7 +77,12 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
       }
 
       @if (user(); as u) {
-        <h2 class="text-xl font-semibold">{{ u.name }}</h2>
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold">{{ u.name }}</h2>
+          @if (canTransfer()) {
+            <p-button [label]="'user.transfer.action' | translate" severity="secondary" (onClick)="transferDialogVisible.set(true)" />
+          }
+        </div>
 
         <form [formGroup]="profileForm" (ngSubmit)="onSubmitProfile()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
@@ -306,6 +320,22 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
         <hr />
 
         <app-user-role-assignment [userId]="u.id" />
+
+        <p-dialog
+          [visible]="transferDialogVisible()"
+          (visibleChange)="transferDialogVisible.set($event)"
+          [header]="'user.transfer.title' | translate"
+          [modal]="true"
+          [style]="{ width: '640px' }"
+        >
+          @if (transferDialogVisible()) {
+            <app-transfer-user-wizard
+              [userId]="u.id"
+              (saved)="onTransferSaved()"
+              (cancelled)="transferDialogVisible.set(false)"
+            />
+          }
+        </p-dialog>
       }
     </div>
   `,
@@ -329,6 +359,11 @@ export class UserProfileComponent implements OnInit {
   readonly savedMessage = signal<string | null>(null);
   readonly savingProfile = signal(false);
   readonly savingOoo = signal(false);
+  // ACC-46 Section 2.6.g — gated by users:transfer, not users:manage; a
+  // transfer moves unit/position/manager together and can trigger a
+  // promotion, deliberately gated separately from ordinary profile edits.
+  readonly canTransfer = computed(() => this.navigationAccessService.hasPermission('users:transfer'));
+  readonly transferDialogVisible = signal(false);
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly otherUsers = signal<{ id: string; name: string; primaryOrgUnitId: string | null }[]>([]);
@@ -408,6 +443,15 @@ export class UserProfileComponent implements OnInit {
   orgUnitName(orgUnitId: string | null): string {
     if (!orgUnitId) return '—';
     return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
+  }
+
+  // ACC-46 — the transferred person's own unit/position/manager just
+  // changed; re-fetch this page's own state rather than trying to
+  // reconcile the wizard's own local result shape into this component's
+  // profileForm fields.
+  onTransferSaved(): void {
+    this.transferDialogVisible.set(false);
+    this.loadUser();
   }
 
   private loadUser(): void {
