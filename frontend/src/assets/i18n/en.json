@@ -563,6 +563,11 @@
     "emailProviderNote": "UI only for now — email is still sent via the platform default provider until this setting is fully wired up.",
     "provider": "Provider",
     "providerConfig": "Provider Configuration (JSON)",
-    "errorInvalidJson": "Invalid JSON in provider configuration."
+    "errorInvalidJson": "Invalid JSON in provider configuration.",
+    "taskSla": "Task SLA & Escalation",
+    "taskSlaNote": "Configure how long a task stays open before it's due, and how long it stays overdue before escalating — first to the assignee's manager, then to their unit head.",
+    "dueAfterHours": "Due After (hours)",
+    "managerEscalationAfterHours": "Manager Escalation (hours after due)",
+    "headEscalationAfterHours": "Head Escalation (hours after manager)"
   }
 }
