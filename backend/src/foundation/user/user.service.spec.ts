@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-  NotImplementedException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserService, toSafeUser } from './user.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -34,7 +28,11 @@ describe('UserService', () => {
   let mockAuthProvider: { invalidateUserSessions: jest.Mock; validateToken: jest.Mock };
   let mockTaskService: { reassignAllForUser: jest.Mock };
   let mockOrganizationService: { refreshOrgUnitHeadVacancy: jest.Mock };
-  let mockOrgUnitHeadService: { hasDirectOrActingHead: jest.Mock; getHeadStatus: jest.Mock };
+  let mockOrgUnitHeadService: {
+    hasDirectOrActingHead: jest.Mock;
+    getHeadStatus: jest.Mock;
+    assignHead: jest.Mock;
+  };
   let mockOrgPositionService: { listAvailablePositionsForUser: jest.Mock };
 
   beforeEach(() => {
@@ -110,6 +108,10 @@ describe('UserService', () => {
         headHandoverEffectiveDate: null,
         actingHeadUserId: null,
       }),
+      // ACC-46 Section 2.6.c step 11 — no-op default (real assignHead()
+      // does its own DB writes internally; transferUser() only cares
+      // about resolve-vs-reject).
+      assignHead: jest.fn().mockResolvedValue(undefined),
     };
     // ACC-46 Section 2.6.a — no-op default (empty list) unless a
     // getTransferContext() test explicitly overrides it.
@@ -530,20 +532,6 @@ describe('UserService', () => {
       await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
     });
 
-    it('throws NotImplementedException for a promotion (head-conferring position) — deferred to commit 6', async () => {
-      mockPrisma.orgPosition.findFirst.mockResolvedValue({
-        id: 'pos-new',
-        isSingleAssignee: true,
-        isUnitHeadPosition: true,
-        isActive: true,
-      });
-
-      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(
-        NotImplementedException,
-      );
-      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
-    });
-
     it('throws BadRequestException when the user has active direct reports and no replacement is provided', async () => {
       mockPrisma.user.count.mockResolvedValue(2);
 
@@ -620,6 +608,199 @@ describe('UserService', () => {
       );
 
       await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
+    });
+
+    // ACC-46 Section 2.6.d/2.6.c steps 11–13 — promotion branch, tested at
+    // the mocked-assignHead() level (transferUser()'s OWN logic: manager
+    // resolution, the split-transaction call, partial-failure handling,
+    // event write timing). The role-grant fix itself — proving assignHead()
+    // actually grants the correct role, not just that positionId changed —
+    // is a separate, dedicated integration-style test below (real
+    // OrgUnitHeadService, not mocked), since a mock can't prove its own
+    // internals are correct.
+    describe('promotion branch', () => {
+      const HEAD_POSITION = { id: 'pos-new', isSingleAssignee: true, isUnitHeadPosition: true, isActive: true };
+      const ROOT_UNIT = { id: 'unit-dest', organizationId: ORG_A, parentId: null };
+      const CHILD_UNIT = { id: 'unit-dest', organizationId: ORG_A, parentId: 'unit-parent' };
+
+      beforeEach(() => {
+        mockPrisma.orgPosition.findFirst.mockResolvedValue(HEAD_POSITION);
+      });
+
+      it('resolves managerId to null for a root-unit destination — the root exemption', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+
+        const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(result.promotionCompleted).toBe(true);
+        expect(mockOrgUnitHeadService.assignHead).toHaveBeenCalledWith(
+          'unit-dest',
+          { userId: 'u1', positionId: 'pos-new' },
+          ORG_A,
+          'admin-1',
+        );
+        expect(mockPrisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'u1' },
+          data: { primaryOrgUnitId: 'unit-dest', managerId: null },
+        });
+      });
+
+      it('resolves managerId from the parent unit\'s direct Head', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(CHILD_UNIT);
+        mockOrgUnitHeadService.hasDirectOrActingHead.mockResolvedValue(true);
+        mockOrgUnitHeadService.getHeadStatus.mockResolvedValue({
+          holders: [{ id: 'parent-head-1', name: 'Parent Head', positionId: 'pos-parent' }],
+          pendingHeadUserId: null,
+          headHandoverEffectiveDate: null,
+          actingHeadUserId: null,
+        });
+
+        await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(mockPrisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'u1' },
+          data: { primaryOrgUnitId: 'unit-dest', managerId: 'parent-head-1' },
+        });
+      });
+
+      it('resolves managerId from the parent unit\'s Acting Head when there is no direct holder', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(CHILD_UNIT);
+        mockOrgUnitHeadService.hasDirectOrActingHead.mockResolvedValue(true);
+        mockOrgUnitHeadService.getHeadStatus.mockResolvedValue({
+          holders: [],
+          pendingHeadUserId: null,
+          headHandoverEffectiveDate: null,
+          actingHeadUserId: 'acting-parent-1',
+        });
+
+        await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(mockPrisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'u1' },
+          data: { primaryOrgUnitId: 'unit-dest', managerId: 'acting-parent-1' },
+        });
+      });
+
+      it('throws ConflictException when the parent unit has no Head or Acting Head — single-level only, no walking to grandparent', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(CHILD_UNIT);
+        mockOrgUnitHeadService.hasDirectOrActingHead.mockResolvedValue(false);
+
+        await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
+        expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+        expect(mockOrgUnitHeadService.assignHead).not.toHaveBeenCalled();
+      });
+
+      it('silently ignores a caller-supplied newManagerId for a promotion — derived, never a caller choice', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+
+        await service.transferUser('u1', { ...HAPPY_DTO, newManagerId: 'bogus-id' }, ORG_A, 'admin-1');
+
+        expect(mockPrisma.user.update).toHaveBeenCalledWith({
+          where: { id: 'u1' },
+          data: { primaryOrgUnitId: 'unit-dest', managerId: null },
+        });
+      });
+
+      it('omits positionId from transaction #1\'s own update — left entirely to assignHead() itself (the verified fix)', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+
+        await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        const call = mockPrisma.user.update.mock.calls.find((c: any[]) => c[0].where.id === 'u1');
+        expect(call![0].data).not.toHaveProperty('positionId');
+      });
+
+      it('defers the UserTransferEvent write until after assignHead() resolves, outside transaction #1', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+
+        await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        // Not written inside tx (mockPrisma itself, since $transaction's
+        // mock invokes the callback with mockPrisma) with isPromotion:
+        // true prematurely — only the confirmed-outcome write, called
+        // once total.
+        expect(mockPrisma.userTransferEvent.create).toHaveBeenCalledTimes(1);
+        expect(mockPrisma.userTransferEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ isPromotion: true, promotionAttempted: true }),
+        });
+      });
+
+      it('surfaces a post-commit assignHead() failure as promotionCompleted: false, not a thrown exception — the transfer itself already succeeded', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+        mockOrgUnitHeadService.assignHead.mockRejectedValue(new ConflictException('destination position no longer vacant'));
+
+        const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(result.promotionCompleted).toBe(false);
+        expect(result.promotionError).toBe('destination position no longer vacant');
+        expect(result.user).toBeDefined(); // the core transfer's own result is still returned
+      });
+
+      it('writes a distinct AuditLogService entry (transferPromotionFailed: true) on assignHead() failure', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+        mockOrgUnitHeadService.assignHead.mockRejectedValue(new ConflictException('destination position no longer vacant'));
+
+        await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(mockAuditLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({
+              transferPromotionFailed: true,
+              reason: 'destination position no longer vacant',
+              destinationOrgUnitId: 'unit-dest',
+            }),
+          }),
+        );
+      });
+
+      it('records isPromotion: false, promotionAttempted: true in UserTransferEvent when assignHead() fails — confirmed outcome, not intent', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+        mockOrgUnitHeadService.assignHead.mockRejectedValue(new ConflictException('destination position no longer vacant'));
+
+        await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(mockPrisma.userTransferEvent.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ isPromotion: false, promotionAttempted: true }),
+        });
+      });
+
+      it('skips the destination unit\'s own vacancy refresh — assignHead() already does it there', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+
+        await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-source', ORG_A);
+        expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalledWith('unit-dest', ORG_A);
+      });
+
+      // Found during live verification (not anticipated by the plan text
+      // itself): transaction #1's own result is captured BEFORE
+      // assignHead() runs, so naively returning it on success would echo a
+      // stale positionId — the DB was already correct, the HTTP response
+      // wasn't. Re-fetched fresh only on confirmed success.
+      it('re-fetches the user after a successful assignHead(), so result.user is not stale', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+        const freshRow = { id: 'u1', positionId: 'pos-new', primaryOrgUnitId: 'unit-dest' };
+        mockPrisma.user.findFirst.mockImplementation(byId({ u1: freshRow, m1: MANAGER, r1: REPLACEMENT }));
+
+        const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        expect(result.user).toBe(freshRow);
+      });
+
+      it('does NOT re-fetch when assignHead() fails — returns transaction #1\'s own (accurate) result', async () => {
+        mockPrisma.orgUnit.findFirst.mockResolvedValue(ROOT_UNIT);
+        mockOrgUnitHeadService.assignHead.mockRejectedValue(new ConflictException('destination position no longer vacant'));
+
+        const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+        // Exactly one user.findFirst call total — step 1's own departing-user
+        // load. No extra re-fetch call on the failure path.
+        expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1);
+        // Transaction #1's own result — positionId never touched there for
+        // a promotion (still the departing person's true prior value).
+        expect(result.user).toMatchObject({ positionId: 'pos-old' });
+      });
     });
   });
 
@@ -2299,5 +2480,138 @@ describe('UserService', () => {
       expect(safe).not.toHaveProperty('invitationToken');
       expect(safe).not.toHaveProperty('authUserId');
     });
+  });
+});
+
+// ACC-46 Section 2.6.c — the specific bug this plan found and closed:
+// assignHead() derives its own "old position" via a fresh internal query,
+// not a parameter — if transferUser()'s own transaction had pre-set
+// positionId before calling it, that fresh fetch would read old === new
+// and syncHeadAuthorityRoleGrant() would silently no-op, leaving the
+// promoted person holding the position WITHOUT the role it maps to. A unit
+// test asserting positionId alone would have passed even with that bug —
+// same shape as vacateHead()'s own "end-to-end wiring" test above (real
+// OrgUnitHeadService + real UserService, cross-calling each other for
+// real, only Prisma/RoleService/NotificationService mocked at the bottom).
+describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)', () => {
+  it('grants the new position\'s role AND revokes the old position\'s role — not just moves positionId', async () => {
+    const OLD_POSITION = { id: 'pos-old-head', organizationId: ORG_A, isUnitHeadPosition: true, isSingleAssignee: true, isActive: true, roleId: 'role-old' };
+    const NEW_POSITION = { id: 'pos-new-head', organizationId: ORG_A, isUnitHeadPosition: true, isSingleAssignee: true, isActive: true, roleId: 'role-new' };
+    const orgUnits: Record<string, any> = {
+      'unit-source': { id: 'unit-source', organizationId: ORG_A, parentId: 'unit-root', pendingHeadUserId: null, actingHeadUserId: null },
+      'unit-dest': { id: 'unit-dest', organizationId: ORG_A, parentId: 'unit-root', pendingHeadUserId: null, actingHeadUserId: null },
+      'unit-root': { id: 'unit-root', organizationId: ORG_A, parentId: null, actingHeadUserId: 'root-head-1' },
+    };
+    // A real, mutable "row" — update() writes to it, findFirst() reads it
+    // back, so assignHead()'s own fresh internal fetch genuinely sees
+    // whatever transferUser()'s own transaction actually committed, not a
+    // value this test hands it directly.
+    let userRow: any = {
+      id: 'u1',
+      organizationId: ORG_A,
+      status: 'ACTIVE',
+      positionId: 'pos-old-head',
+      primaryOrgUnitId: 'unit-source',
+    };
+
+    const realMockPrisma: any = {
+      user: {
+        findFirst: jest.fn(() => Promise.resolve(userRow)),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+        update: jest.fn(({ data }: { data: Record<string, unknown> }) => {
+          userRow = { ...userRow, ...data };
+          return Promise.resolve(userRow);
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      orgPosition: {
+        findFirst: jest.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve(where.id === 'pos-old-head' ? OLD_POSITION : where.id === 'pos-new-head' ? NEW_POSITION : null),
+        ),
+      },
+      orgUnit: {
+        findFirst: jest.fn(({ where }: { where: { id: string } }) => Promise.resolve(orgUnits[where.id] ?? null)),
+      },
+      userTransferEvent: { create: jest.fn().mockResolvedValue({}) },
+      orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
+      role: { findFirst: jest.fn().mockResolvedValue(null) },
+      userRole: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    realMockPrisma['$transaction'] = jest.fn((callback: (tx: unknown) => unknown) => callback(realMockPrisma));
+
+    const realMockAuditLog = { log: jest.fn() };
+    const realMockNotification = { create: jest.fn() };
+    const realMockTaskService = { reassignAllForUser: jest.fn() };
+    const realMockAuthProvider = { invalidateUserSessions: jest.fn(), validateToken: jest.fn() };
+    const realMockOrgPositionService = { listAvailablePositionsForUser: jest.fn() };
+    const realMockOrganizationService = { refreshOrgUnitHeadVacancy: jest.fn().mockResolvedValue(undefined) };
+    // The one thing actually under test: does the real role-grant chain
+    // get called with the TRUE old/new positions?
+    const realMockRoleService = {
+      grantRoleViaHeadAuthority: jest.fn().mockResolvedValue(undefined),
+      revokeRoleViaHeadAuthority: jest.fn().mockResolvedValue(undefined),
+      getUserRoles: jest.fn(),
+      assignRoleToUser: jest.fn(),
+      removeRoleFromUser: jest.fn(),
+    };
+
+    // Circular pair — constructed with a placeholder, patched after both
+    // exist, same trick this codebase's own existing "real OrgUnitHeadService"
+    // test (vacateHead() -> refreshOrgUnitHeadVacancy() wiring, above) uses
+    // for a real OrganizationService instead.
+    const realUserService = new UserService(
+      realMockPrisma as unknown as PrismaService,
+      realMockAuditLog as unknown as AuditLogService,
+      realMockNotification as unknown as NotificationService,
+      realMockRoleService as unknown as RoleService,
+      realMockTaskService as unknown as TaskService,
+      realMockOrganizationService as unknown as OrganizationService,
+      realMockAuthProvider as unknown as AuthProvider,
+      {} as OrgUnitHeadService, // placeholder, patched below
+      realMockOrgPositionService as unknown as OrgPositionService,
+    );
+    const realOrgUnitHeadService = new OrgUnitHeadService(
+      realMockPrisma as unknown as PrismaService,
+      realMockAuditLog as unknown as AuditLogService,
+      realUserService,
+      realMockOrganizationService as unknown as OrganizationService,
+      realMockRoleService as unknown as RoleService,
+    );
+    (realUserService as unknown as { orgUnitHeadService: OrgUnitHeadService }).orgUnitHeadService =
+      realOrgUnitHeadService;
+
+    const result = await realUserService.transferUser(
+      'u1',
+      { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-new-head' },
+      ORG_A,
+      'admin-1',
+    );
+
+    expect(result.promotionCompleted).toBe(true);
+
+    // positionId alone — NOT sufficient on its own (this is exactly what
+    // would have passed even with the original bug), but confirmed anyway.
+    expect(userRow.positionId).toBe('pos-new-head');
+    expect(userRow.primaryOrgUnitId).toBe('unit-dest');
+
+    // The actual proof: assignHead()'s own fresh internal fetch saw the
+    // TRUE prior position ('pos-old-head', not already overwritten to
+    // 'pos-new-head'), so the role grant fires for real on both sides.
+    expect(realMockRoleService.revokeRoleViaHeadAuthority).toHaveBeenCalledWith(
+      'u1',
+      'unit-dest',
+      'pos-old-head',
+      ORG_A,
+      'admin-1',
+    );
+    expect(realMockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
+      'u1',
+      'role-new',
+      'pos-new-head',
+      'unit-dest',
+      ORG_A,
+      'admin-1',
+    );
   });
 });

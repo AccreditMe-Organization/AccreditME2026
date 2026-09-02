@@ -6,7 +6,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  NotImplementedException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -267,16 +266,9 @@ export class UserService {
   // ACC-46 Section 2.6.b Step 6 / 2.6.c — the final submit. Full
   // re-validation runs again fresh here, never trusting the wizard's own
   // step gates (validate-replacement/validate-position) as sole
-  // authority.
-  //
-  // Non-promotion branch only in this commit — commit 6 adds the
-  // promotion branch (2.6.d's manager derivation, the split-transaction
-  // assignHead() delegation and partial-failure handling per 2.6.c
-  // steps 11/12). Deliberately not reachable yet: isPromotion is derived
-  // exactly as Step 4 does (newPosition.isUnitHeadPosition), and a true
-  // result throws NotImplementedException rather than silently doing the
-  // wrong thing or half-completing a promotion this commit can't finish
-  // correctly.
+  // authority. Both branches — ordinary transfer and promotion — live in
+  // this one method; they share steps 1–3 and 5–9 and only diverge at
+  // specific, individually-flagged points below.
   async transferUser(
     userId: string,
     dto: TransferUserDto,
@@ -298,13 +290,10 @@ export class UserService {
       where: { id: dto.newPositionId, organizationId },
     });
     if (!newPosition) throw new NotFoundException('Position not found in this organization');
+    // Whether this transfer is a promotion is derived, not caller-declared
+    // — picking a head-conferring position *is* what makes it a
+    // promotion (2.6.b Step 4).
     const isPromotion = newPosition.isUnitHeadPosition;
-
-    if (isPromotion) {
-      throw new NotImplementedException(
-        'Promotion transfers are not yet available — landing in a follow-up commit',
-      );
-    }
 
     // Step 2 — re-run Step 3's replacement check, if present; otherwise
     // re-run the Case B requiredness check (2.6.e's own table row).
@@ -348,23 +337,71 @@ export class UserService {
     // themselves).
     await this.validatePositionAssignment(dto.newPositionId, dto.destinationOrgUnitId, organizationId, user.id);
 
-    // Step 4 — re-run Step 5's manager resolution. Non-promotion branch:
-    // required, and must be an active user already in the destination
-    // unit (fixed in this pass, per 2.6.b Step 5 — the original design
-    // only checked destination-unit membership, not status).
-    if (!dto.newManagerId) {
-      throw new BadRequestException('newManagerId is required for an ordinary (non-promotion) transfer');
-    }
-    const manager = await this.prisma.user.findFirst({
-      where: {
-        id: dto.newManagerId,
-        organizationId,
-        status: 'ACTIVE',
-        primaryOrgUnitId: dto.destinationOrgUnitId,
-      },
-    });
-    if (!manager) {
-      throw new ConflictException('newManagerId must be an active user belonging to the destination org unit');
+    // Step 4 — re-run Step 5's manager resolution.
+    let resolvedNewManagerId: string | null;
+    if (isPromotion) {
+      // 2.6.d — derived, never a caller choice. Any caller-supplied
+      // newManagerId is silently ignored, matching updateProfile()'s own
+      // established "admin-only fields silently excluded, not rejected"
+      // convention for a field that doesn't apply in this mode.
+      const destinationUnit = await this.prisma.orgUnit.findFirst({
+        where: { id: dto.destinationOrgUnitId, organizationId },
+      });
+      if (!destinationUnit) throw new NotFoundException('Destination org unit not found in this organization');
+
+      if (destinationUnit.parentId === null) {
+        // Root exemption — no manager at all. Root's own head-conferring
+        // position being currently vacant is already guaranteed by this
+        // point: Step 3's validatePositionAssignment() above would have
+        // thrown if it weren't.
+        resolvedNewManagerId = null;
+      } else {
+        // DECIDED — "recursively" means single-level only: the immediate
+        // parent must have its own direct-or-acting Head, or the
+        // promotion is hard-blocked. No walking further up to
+        // grandparent — consistent with 2.4's own "parent escalation
+        // coverage does not count" principle applied one level up.
+        const parentHasHead = await this.orgUnitHeadService.hasDirectOrActingHead(
+          destinationUnit.parentId,
+          organizationId,
+        );
+        if (!parentHasHead) {
+          throw new ConflictException(
+            "Cannot promote into this unit — its parent unit has no Head or Acting Head of its own yet",
+          );
+        }
+        const parentHeadStatus = await this.orgUnitHeadService.getHeadStatus(
+          destinationUnit.parentId,
+          organizationId,
+        );
+        const parentManagerId = parentHeadStatus.holders[0]?.id ?? parentHeadStatus.actingHeadUserId;
+        // Defensive — hasDirectOrActingHead() just confirmed one of these
+        // must be truthy; should be unreachable in practice.
+        if (!parentManagerId) {
+          throw new ConflictException("Could not resolve the parent unit's current Head or Acting Head");
+        }
+        resolvedNewManagerId = parentManagerId;
+      }
+    } else {
+      // Non-promotion: required, and must be an active user already in
+      // the destination unit (fixed in this pass, per 2.6.b Step 5 — the
+      // original design only checked destination-unit membership, not
+      // status).
+      if (!dto.newManagerId) {
+        throw new BadRequestException('newManagerId is required for an ordinary (non-promotion) transfer');
+      }
+      const manager = await this.prisma.user.findFirst({
+        where: {
+          id: dto.newManagerId,
+          organizationId,
+          status: 'ACTIVE',
+          primaryOrgUnitId: dto.destinationOrgUnitId,
+        },
+      });
+      if (!manager) {
+        throw new ConflictException('newManagerId must be an active user belonging to the destination org unit');
+      }
+      resolvedNewManagerId = dto.newManagerId;
     }
 
     const sourceOrgUnitId = user.primaryOrgUnitId;
@@ -372,9 +409,9 @@ export class UserService {
 
     // Steps 5–10 — transaction #1. Only genuine, atomic-together row
     // writes live inside tx: the Case B cascade, the transferred person's
-    // own update, and the UserTransferEvent write. Side-effecting calls
-    // that read/write through the plain injected PrismaService
-    // (refreshOrgUnitHeadVacancy(), syncHeadAuthorityRoleGrant(),
+    // own update, and (non-promotion only) the UserTransferEvent write.
+    // Side-effecting calls that read/write through the plain injected
+    // PrismaService (refreshOrgUnitHeadVacancy(), syncHeadAuthorityRoleGrant(),
     // AuditLogService.log()) run after commit, matching this codebase's
     // own established "side-effecting calls stay outside the transaction"
     // convention (2.6.h).
@@ -391,47 +428,60 @@ export class UserService {
         });
       }
 
-      // Step 6 — update the transferred person. positionId always set
-      // here — the isPromotion !== true guard above means this branch
-      // only ever runs for a non-promotion transfer.
+      // Step 6 — update the transferred person. positionId included ONLY
+      // when NOT a promotion — verified during plan review that
+      // assignHead() (step 11 below) is NOT safe to call after this
+      // pre-sets positionId: it derives its own "old position" via a
+      // fresh internal query, and would read old === new, silently
+      // no-opping the role grant. For a promotion, positionId is left
+      // entirely to assignHead() itself.
       const updated = await tx.user.update({
         where: { id: user.id },
         data: {
           primaryOrgUnitId: dto.destinationOrgUnitId,
-          managerId: dto.newManagerId,
-          positionId: dto.newPositionId,
+          managerId: resolvedNewManagerId,
+          ...(isPromotion ? {} : { positionId: dto.newPositionId }),
         },
       });
 
-      // Step 10 — UserTransferEvent, non-promotion branch: written here,
-      // fully atomic with the rest of the transfer (2.6.c/2.6.f).
-      await tx.userTransferEvent.create({
-        data: {
-          organizationId,
-          userId: user.id,
-          sourceOrgUnitId,
-          destinationOrgUnitId: dto.destinationOrgUnitId,
-          sourcePositionId,
-          destinationPositionId: dto.newPositionId,
-          replacementUserId: replacement?.id ?? null,
-          newManagerId: dto.newManagerId,
-          isPromotion: false,
-          promotionAttempted: false,
-          performedBy: actorId,
-        },
-      });
+      // Step 10 — UserTransferEvent. Non-promotion: written here, fully
+      // atomic with the rest of the transfer (2.6.c/2.6.f). Promotion:
+      // skipped here — "what actually happened" is only known once
+      // assignHead() (step 11) resolves; deferred to step 12, after this
+      // transaction has already committed.
+      if (!isPromotion) {
+        await tx.userTransferEvent.create({
+          data: {
+            organizationId,
+            userId: user.id,
+            sourceOrgUnitId,
+            destinationOrgUnitId: dto.destinationOrgUnitId,
+            sourcePositionId,
+            destinationPositionId: dto.newPositionId,
+            replacementUserId: replacement?.id ?? null,
+            newManagerId: resolvedNewManagerId,
+            isPromotion: false,
+            promotionAttempted: false,
+            performedBy: actorId,
+          },
+        });
+      }
 
       return updated;
     });
 
     // Step 7 — refresh vacancy for both source and destination units.
-    for (const orgUnitId of new Set([sourceOrgUnitId, dto.destinationOrgUnitId])) {
+    // Destination skipped when isPromotion — assignHead() (step 11)
+    // already does it there.
+    const unitsToRefresh = isPromotion ? [sourceOrgUnitId] : [sourceOrgUnitId, dto.destinationOrgUnitId];
+    for (const orgUnitId of new Set(unitsToRefresh)) {
       await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
     }
 
     // Step 5 (continued) — role-grant sync for the replacement, old: their
     // own previous position/unit -> new: the departing person's old
-    // position, source unit.
+    // position, source unit. Unaffected by isPromotion — Case B is
+    // orthogonal to whether the departing person is being promoted.
     if (replacement) {
       await this.syncHeadAuthorityRoleGrant(
         replacement.id,
@@ -445,18 +495,24 @@ export class UserService {
     }
 
     // Step 8 — role-grant sync for the transferred person themselves,
-    // old: their previous position/unit -> new: the destination position/unit.
-    await this.syncHeadAuthorityRoleGrant(
-      user.id,
-      sourcePositionId,
-      sourceOrgUnitId,
-      dto.newPositionId,
-      dto.destinationOrgUnitId,
-      organizationId,
-      actorId,
-    );
+    // old: their previous position/unit -> new: the destination
+    // position/unit. Skipped when isPromotion — assignHead() (step 11)
+    // already covers this too.
+    if (!isPromotion) {
+      await this.syncHeadAuthorityRoleGrant(
+        user.id,
+        sourcePositionId,
+        sourceOrgUnitId,
+        dto.newPositionId,
+        dto.destinationOrgUnitId,
+        organizationId,
+        actorId,
+      );
+    }
 
     // Step 9 — audit log, describing what this transaction itself did.
+    // Accurate regardless of what a later promotion attempt does or
+    // doesn't achieve, so it fires unconditionally.
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
@@ -467,7 +523,89 @@ export class UserService {
       after: updatedUser as unknown as Record<string, unknown>,
     });
 
-    return { user: updatedUser, promotionCompleted: true };
+    if (!isPromotion) {
+      return { user: updatedUser, promotionCompleted: true };
+    }
+
+    // Step 11 — promotion only, OUTSIDE transaction #1, as its own
+    // separate, already-internally-atomic unit of work. Delegates to the
+    // EXISTING OrgUnitHeadService.assignHead() for everything
+    // Head-specific — it already validates isUnitHeadPosition, requires
+    // the target to already belong to the unit (true by this point —
+    // transaction #1 already committed primaryOrgUnitId), calls
+    // validatePositionAssignment() again (harmless — already passed in
+    // step 3; this codebase's own established redundant-but-safe
+    // pattern), sets positionId itself, writes its own OrgUnitHeadEvent,
+    // refreshes destination-unit vacancy, and syncs the role grant —
+    // correctly this time, per the fix above. transferUser()'s own job
+    // for this branch narrows to moving the unit and resolving the
+    // manager (steps 1–9) — not reimplementing any of assignHead()'s
+    // steps, and not racing it either.
+    let promotionCompleted: boolean;
+    let promotionError: string | undefined;
+    // Found during live verification: the transaction-#1 result
+    // (updatedUser) is captured BEFORE assignHead() runs, so on success it
+    // would otherwise echo a stale positionId — the DB itself was already
+    // correct, but the HTTP response wasn't. Re-assigned only on confirmed
+    // success, so a failure still returns the (accurate, non-stale)
+    // transaction-#1 result — assignHead() never wrote anything in that case.
+    let finalUser = updatedUser;
+    try {
+      await this.orgUnitHeadService.assignHead(
+        dto.destinationOrgUnitId,
+        { userId: user.id, positionId: dto.newPositionId },
+        organizationId,
+        actorId,
+      );
+      promotionCompleted = true;
+      finalUser = await this.prisma.user.findFirst({ where: { id: user.id, organizationId } }) ?? updatedUser;
+    } catch (err) {
+      // Not re-thrown to the caller as a hard failure — every other
+      // error row in 2.6.e rejects with nothing having changed; this one
+      // is categorically different, since the core transfer itself
+      // already succeeded (2.6.h's own accepted, explicitly-stated
+      // tradeoff). No automatic retry — a single attempt, surfaced to a
+      // human, matching this plan's "never silently escalate/assign to
+      // nothing" discipline elsewhere.
+      promotionCompleted = false;
+      promotionError = err instanceof Error ? err.message : String(err);
+
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'UPDATE',
+        objectType: 'User',
+        objectId: user.id,
+        metadata: {
+          transferPromotionFailed: true,
+          reason: promotionError,
+          destinationOrgUnitId: dto.destinationOrgUnitId,
+        },
+      });
+    }
+
+    // Step 12 — UserTransferEvent, promotion branch: written only now,
+    // after assignHead() has resolved either way — isPromotion records
+    // CONFIRMED outcome (true only on genuine success), promotionAttempted
+    // is always true here regardless of outcome.
+    await this.prisma.userTransferEvent.create({
+      data: {
+        organizationId,
+        userId: user.id,
+        sourceOrgUnitId,
+        destinationOrgUnitId: dto.destinationOrgUnitId,
+        sourcePositionId,
+        destinationPositionId: dto.newPositionId,
+        replacementUserId: replacement?.id ?? null,
+        newManagerId: resolvedNewManagerId,
+        isPromotion: promotionCompleted,
+        promotionAttempted: true,
+        performedBy: actorId,
+      },
+    });
+
+    // Step 13
+    return { user: finalUser, promotionCompleted, promotionError };
   }
 
   // Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —
