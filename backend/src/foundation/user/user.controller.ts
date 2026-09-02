@@ -10,12 +10,14 @@ import { UserService, toSafeUser } from './user.service';
 import { InviteUserDto } from './dto/invite-user.dto';
 import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
 import { ValidateTransferPositionDto } from './dto/validate-transfer-position.dto';
+import { TransferUserDto } from './dto/transfer-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IUser } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
+import { ITransferResult } from './interfaces/transfer-result.interface';
 
 @Controller('users')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -147,6 +149,25 @@ export class UserController {
     @CurrentTenant() tenantId: string,
   ): Promise<void> {
     return this.userService.validateTransferPosition(id, dto, tenantId);
+  }
+
+  // ACC-46 Section 2.6.b Step 6 — the final submit. 200, not the default
+  // 201, matching this codebase's own precedent for action-style POST
+  // endpoints on an existing resource (OrgUnitHeadController.assignHead()).
+  // result.user mapped through toSafeUser() before returning — see
+  // listUsers() above; promotionCompleted/promotionError pass through
+  // unchanged alongside it.
+  @Post(':id/transfer')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(USERS_PERMISSIONS.TRANSFER)
+  async transferUser(
+    @Param('id') id: string,
+    @Body() dto: TransferUserDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<ITransferResult> {
+    const result = await this.userService.transferUser(id, dto, tenantId, actorId);
+    return { ...result, user: toSafeUser(result.user) };
   }
 
   @Post(':id/deactivate')

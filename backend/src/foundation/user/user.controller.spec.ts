@@ -16,6 +16,7 @@ describe('UserController', () => {
     getTransferContext: jest.Mock;
     validateTransferReplacement: jest.Mock;
     validateTransferPosition: jest.Mock;
+    transferUser: jest.Mock;
     invite: jest.Mock;
     updateProfile: jest.Mock;
     updateOutOfOffice: jest.Mock;
@@ -37,6 +38,7 @@ describe('UserController', () => {
       }),
       validateTransferReplacement: jest.fn().mockResolvedValue(undefined),
       validateTransferPosition: jest.fn().mockResolvedValue(undefined),
+      transferUser: jest.fn().mockResolvedValue({ user: { id: USER_ID }, promotionCompleted: true }),
       invite: jest.fn().mockResolvedValue({ id: 'new-user' }),
       updateProfile: jest.fn().mockResolvedValue({ id: USER_ID }),
       updateOutOfOffice: jest.fn().mockResolvedValue({ id: USER_ID }),
@@ -92,6 +94,15 @@ describe('UserController', () => {
     const dto = { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' };
     await controller.validateTransferPosition(USER_ID, dto, TENANT_ID);
     expect(service.validateTransferPosition).toHaveBeenCalledWith(USER_ID, dto, TENANT_ID);
+  });
+
+  // ACC-46 Section 2.6.b Step 6
+  it('transferUser delegates to UserService.transferUser and maps result.user through toSafeUser()', async () => {
+    const dto = { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1', newManagerId: 'm1' };
+    const result = await controller.transferUser(USER_ID, dto, TENANT_ID, 'admin-1');
+    expect(service.transferUser).toHaveBeenCalledWith(USER_ID, dto, TENANT_ID, 'admin-1');
+    expect(result.promotionCompleted).toBe(true);
+    expect(result.user).toEqual({ id: USER_ID });
   });
 
   it('invite delegates to UserService.invite', async () => {
@@ -221,6 +232,18 @@ describe('UserController', () => {
       const result = await controller.updateOutOfOffice(USER_ID, dto, TENANT_ID, USER_ID, []);
       for (const field of SENSITIVE_FIELDS) expect(result).not.toHaveProperty(field);
       expect(result.id).toBe(USER_ID);
+    });
+
+    // ACC-46 — transferUser() widened the return shape to ITransferResult
+    // (Section 2.6.b), but result.user must get the identical toSafeUser()
+    // treatment as every other User-returning endpoint above.
+    it('transferUser strips invitationToken and every other internal-only field from result.user', async () => {
+      service.transferUser.mockResolvedValue({ user: RAW_USER_WITH_SECRETS, promotionCompleted: true });
+      const dto = { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1', newManagerId: 'm1' };
+      const result = await controller.transferUser(USER_ID, dto, TENANT_ID, 'admin-1');
+      for (const field of SENSITIVE_FIELDS) expect(result.user).not.toHaveProperty(field);
+      expect(result.user.id).toBe(USER_ID);
+      expect(result.promotionCompleted).toBe(true);
     });
   });
 });

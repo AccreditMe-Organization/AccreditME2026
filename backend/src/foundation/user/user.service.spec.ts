@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+  NotImplementedException,
+} from '@nestjs/common';
 import { UserService, toSafeUser } from './user.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -38,8 +44,14 @@ describe('UserService', () => {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         count: jest.fn(),
       },
+      // ACC-46 Section 2.6.c — a real prisma.$transaction(async (tx) => ...)
+      // call, mocked by invoking the callback with mockPrisma itself, so
+      // tx.user.update()/tx.userTransferEvent.create() inside it route to
+      // the same mocks tests already assert against.
+      userTransferEvent: { create: jest.fn() },
       organization: { findUnique: jest.fn() },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       userRole: { findMany: jest.fn().mockResolvedValue([]) },
@@ -66,6 +78,7 @@ describe('UserService', () => {
         }),
       },
     };
+    mockPrisma.$transaction = jest.fn((callback: (tx: unknown) => unknown) => callback(mockPrisma));
     mockAuditLog = { log: jest.fn() };
     mockNotification = { create: jest.fn().mockResolvedValue({}) };
     mockRoleService = {
@@ -425,6 +438,188 @@ describe('UserService', () => {
       await expect(
         service.validateTransferPosition('u1', { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-1' }, ORG_A),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ACC-46 Section 2.6.b Step 6 / 2.6.c — non-promotion branch only in
+  // this commit (commit 6 adds the promotion branch).
+  describe('transferUser', () => {
+    const DEPARTING_USER = {
+      id: 'u1',
+      organizationId: ORG_A,
+      status: 'ACTIVE',
+      positionId: 'pos-old',
+      primaryOrgUnitId: 'unit-source',
+    };
+    const MANAGER = { id: 'm1', organizationId: ORG_A, status: 'ACTIVE', primaryOrgUnitId: 'unit-dest' };
+    const REPLACEMENT = {
+      id: 'r1',
+      organizationId: ORG_A,
+      status: 'ACTIVE',
+      primaryOrgUnitId: 'unit-source',
+      positionId: 'pos-repl-old',
+    };
+    const HAPPY_DTO = { destinationOrgUnitId: 'unit-dest', newPositionId: 'pos-new', newManagerId: 'm1' };
+
+    // Discriminates by where.id — step 1's departing-user load, step 2's
+    // replacement lookup, and step 4's manager lookup all go through this
+    // same mock, distinguished by which id they query for.
+    const byId = (rows: Record<string, unknown>) => ({ where }: { where: { id: string } }) =>
+      Promise.resolve(rows[where.id] ?? null);
+
+    beforeEach(() => {
+      mockPrisma.user.findFirst.mockImplementation(
+        byId({ u1: DEPARTING_USER, m1: MANAGER, r1: REPLACEMENT }),
+      );
+      mockPrisma.user.count.mockResolvedValue(0); // no active direct reports by default
+      mockPrisma.user.update.mockImplementation(({ where, data }: { where: { id: string }; data: unknown }) =>
+        Promise.resolve({ ...DEPARTING_USER, id: where.id, ...(data as object) }),
+      );
+    });
+
+    it('performs an ordinary (non-promotion, no-subordinates) transfer end to end', async () => {
+      const result = await service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1');
+
+      expect(result.promotionCompleted).toBe(true);
+      expect(result.user).toMatchObject({
+        primaryOrgUnitId: 'unit-dest',
+        managerId: 'm1',
+        positionId: 'pos-new',
+      });
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockPrisma.userTransferEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_A,
+          userId: 'u1',
+          sourceOrgUnitId: 'unit-source',
+          destinationOrgUnitId: 'unit-dest',
+          sourcePositionId: 'pos-old',
+          destinationPositionId: 'pos-new',
+          replacementUserId: null,
+          newManagerId: 'm1',
+          isPromotion: false,
+          promotionAttempted: false,
+          performedBy: 'admin-1',
+        }),
+      });
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-source', ORG_A);
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith('unit-dest', ORG_A);
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'UPDATE', objectType: 'User', objectId: 'u1', actorId: 'admin-1' }),
+      );
+    });
+
+    it('throws NotFoundException when the transferred user does not exist or is not ACTIVE', async () => {
+      mockPrisma.user.findFirst.mockImplementation(byId({ m1: MANAGER, r1: REPLACEMENT }));
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when the departing user has no current org unit', async () => {
+      mockPrisma.user.findFirst.mockImplementation(
+        byId({ u1: { ...DEPARTING_USER, primaryOrgUnitId: null }, m1: MANAGER }),
+      );
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('throws NotFoundException when the destination position does not exist', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(null);
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotImplementedException for a promotion (head-conferring position) — deferred to commit 6', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-new',
+        isSingleAssignee: true,
+        isUnitHeadPosition: true,
+        isActive: true,
+      });
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(
+        NotImplementedException,
+      );
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when the user has active direct reports and no replacement is provided', async () => {
+      mockPrisma.user.count.mockResolvedValue(2);
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when replacementUserId does not resolve to an active user in the source unit', async () => {
+      mockPrisma.user.findFirst.mockImplementation(byId({ u1: DEPARTING_USER, m1: MANAGER }));
+
+      await expect(
+        service.transferUser('u1', { ...HAPPY_DTO, replacementUserId: 'r1' }, ORG_A, 'admin-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('cascades active direct reports to the replacement and updates the replacement\'s own position', async () => {
+      mockPrisma.user.count.mockResolvedValue(2); // has active direct reports
+
+      await service.transferUser('u1', { ...HAPPY_DTO, replacementUserId: 'r1' }, ORG_A, 'admin-1');
+
+      expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+        where: { managerId: 'u1', organizationId: ORG_A, status: 'ACTIVE' },
+        data: { managerId: 'r1' },
+      });
+      expect(mockPrisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: { positionId: 'pos-old' },
+      });
+      expect(mockPrisma.userTransferEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ replacementUserId: 'r1' }),
+      });
+      // Role-grant sync for the replacement: old (their own prior
+      // position/unit) -> new (the departing person's old position/unit).
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled(); // ordinary positions — no-op both sides
+    });
+
+    it('throws BadRequestException when newManagerId is omitted for a non-promotion transfer', async () => {
+      const { newManagerId, ...dtoWithoutManager } = HAPPY_DTO;
+      void newManagerId;
+
+      await expect(service.transferUser('u1', dtoWithoutManager, ORG_A, 'admin-1')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('throws ConflictException when newManagerId does not resolve to an active user in the destination unit', async () => {
+      mockPrisma.user.findFirst.mockImplementation(byId({ u1: DEPARTING_USER, r1: REPLACEMENT }));
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('propagates validatePositionAssignment()\'s own ConflictException for the destination position — the race window this re-validation closes', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-new',
+        isActive: true,
+        isSingleAssignee: true,
+        isUnitHeadPosition: false,
+      });
+      mockPrisma.user.count.mockImplementation(({ where }: { where: Record<string, unknown> }) =>
+        Promise.resolve(where['managerId'] ? 0 : 1), // direct-reports count: 0; single-assignee cap count: 1
+      );
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(
+          [{ ...DEPARTING_USER, organizationId: ORG_B }].find(
+            (u) => u.id === where.id && u.organizationId === where.organizationId,
+          ) ?? null,
+        ),
+      );
+
+      await expect(service.transferUser('u1', HAPPY_DTO, ORG_A, 'admin-1')).rejects.toThrow(NotFoundException);
     });
   });
 
