@@ -21,8 +21,11 @@ export interface ITaskDto {
   slaBreachedAt: string | null;
   completedAt: string | null;
   completedById: string | null;
-  escalationUserId: string | null;
-  escalationAfterHours: number | null;
+  // ACC-46 Section 2.7.b — managerEscalatedAt/headEscalatedAt replace the
+  // old escalationUserId/escalationAfterHours; written only by
+  // SlaMonitorProcessor, never by any caller.
+  managerEscalatedAt: string | null;
+  headEscalatedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,8 +41,6 @@ export interface CreateTaskDto {
   assigneeUserIds: string[];
   priority?: string;
   dueDate?: string;
-  escalationUserId?: string;
-  escalationAfterHours?: number;
 }
 
 export interface ReassignTaskDto {

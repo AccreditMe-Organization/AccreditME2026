@@ -16,9 +16,11 @@ export interface ITask {
   slaBreachedAt: Date | null;
   completedAt: Date | null;
   completedById: string | null;
-  escalationUserId: string | null;
-  escalationAfterHours: number | null;
-  escalatedAt: Date | null;
+  // ACC-46 Section 2.7.b — managerEscalatedAt/headEscalatedAt replace the
+  // old escalationUserId/escalationAfterHours/escalatedAt trio; written
+  // only by SlaMonitorProcessor, never by any caller.
+  managerEscalatedAt: Date | null;
+  headEscalatedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

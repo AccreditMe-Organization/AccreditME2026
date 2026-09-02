@@ -304,50 +304,6 @@ export class OrgPositionService {
     }
   }
 
-  // THE CORE METHOD — used by TaskService (and, in later steps, Committees/
-  // Meetings/Documents/CAPA/Audits per the Step 8 plan's Section 7).
-  async validateEscalationTarget(
-    assigneeIds: string[],
-    escalationUserId: string,
-    organizationId: string,
-  ): Promise<void> {
-    const assignees = await this.prisma.user.findMany({
-      where: { id: { in: assigneeIds }, organizationId },
-      include: { position: true },
-    });
-
-    const maxAssigneeGrade = Math.max(0, ...assignees.map((a) => a.position?.grade ?? 0));
-    const assigneeOrgUnitIds = assignees
-      .map((a) => a.primaryOrgUnitId)
-      .filter((id): id is string => !!id);
-
-    const target = await this.prisma.user.findFirst({
-      where: { id: escalationUserId, organizationId },
-      include: { position: true },
-    });
-    if (!target) {
-      throw new BadRequestException('Escalation target not found in this organization');
-    }
-
-    const targetGrade = target.position?.grade ?? 0;
-    if (targetGrade < maxAssigneeGrade) {
-      throw new BadRequestException(
-        'Escalation target must have equal or higher grade than the assignee',
-      );
-    }
-
-    const inSameOrParentUnit = await this.isInSameOrParentOrgUnit(
-      target.primaryOrgUnitId,
-      assigneeOrgUnitIds,
-      organizationId,
-    );
-    if (!inSameOrParentUnit) {
-      throw new BadRequestException(
-        'Escalation target must be in the same or parent org unit as the assignee',
-      );
-    }
-  }
-
   // ACC-40 Section 2.1 — a head-conferring position that permits multiple
   // simultaneous holders would recreate the exact ambiguity ("who is the
   // head of this unit") this whole design exists to remove. Validated
@@ -376,30 +332,5 @@ export class OrgPositionService {
         'PLATFORM_ADMIN and TENANT_ADMIN cannot be mapped to an org position',
       );
     }
-  }
-
-  // Traverses OrgUnit.parentId upward from targetOrgUnitId. True if it equals
-  // any assigneeOrgUnitId or any of their ancestors.
-  private async isInSameOrParentOrgUnit(
-    targetOrgUnitId: string | null,
-    assigneeOrgUnitIds: string[],
-    organizationId: string,
-  ): Promise<boolean> {
-    if (!targetOrgUnitId) return false; // no primaryOrgUnitId — fails the check unconditionally
-    if (assigneeOrgUnitIds.length === 0) return true; // no assignee has an org unit — nothing to violate
-
-    for (const assigneeOrgUnitId of assigneeOrgUnitIds) {
-      let current: string | null = assigneeOrgUnitId;
-      while (current) {
-        if (current === targetOrgUnitId) return true;
-        const unit: { parentId: string | null } | null = await this.prisma.orgUnit.findFirst({
-          where: { id: current, organizationId },
-          select: { parentId: true },
-        });
-        current = unit?.parentId ?? null;
-      }
-    }
-
-    return false;
   }
 }

@@ -81,7 +81,6 @@ const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { getOrCreate: jest.fn(), listHolidays: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
 const mockOrgPositionService = {
-  validateEscalationTarget: jest.fn(),
   notifyTenantAdminsOfVacantHeadRoleMappings: jest.fn(),
 };
 const mockWorkflowService = {
@@ -368,18 +367,18 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     });
   });
 
-  // ── Task overdue escalation (ACC-33 item 8) — pre-existing, previously ──────
-  // untested logic (fireTaskEscalation, via process()'s sweepOverdueTasks())
+  // ── Task overdue sweep — deliberate interim state (ACC-46 Section 2.7) ──────
+  // The old escalation-firing tests (fireTaskEscalation, via a
+  // validateEscalationTarget target) are removed here, in the same commit
+  // as the production logic they covered — see sla-monitor.processor.ts's
+  // own comment on sweepOverdueTasks() for why. Commit 4 reintroduces full
+  // tier-based coverage once the new resolvers/settings exist.
 
-  describe('Task overdue escalation', () => {
+  describe('Task overdue sweep', () => {
     const BASE_OVERDUE_TASK = {
       id: 'task-1',
       organizationId: ORG_A,
       dueAt: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5h overdue
-      escalationUserId: null as string | null,
-      escalationAfterHours: null as number | null,
-      escalatedAt: null as Date | null,
-      assignees: [] as { userId: string }[],
     };
 
     const runWithOverdueTask = (task: typeof BASE_OVERDUE_TASK) => {
@@ -388,98 +387,13 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       return runProcess();
     };
 
-    it('marks an overdue task OVERDUE with no escalation attempt when no escalationUserId is set', async () => {
+    it('marks an overdue task OVERDUE, no escalation attempt (interim state — no firing logic exists yet)', async () => {
       await runWithOverdueTask(BASE_OVERDUE_TASK);
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
         data: { status: 'OVERDUE', slaBreachedAt: expect.any(Date) },
       });
-      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
-      expect(mockNotificationService.create).not.toHaveBeenCalled();
-    });
-
-    it('escalates to a valid escalationUserId once escalationAfterHours has elapsed, during working hours', async () => {
-      const task = {
-        ...BASE_OVERDUE_TASK,
-        escalationUserId: 'escalation-target',
-        escalationAfterHours: 4,
-        assignees: [{ userId: 'assignee-1' }],
-      };
-      mockOrgPositionService.validateEscalationTarget.mockResolvedValue(undefined);
-
-      await runWithOverdueTask(task);
-
-      expect(mockOrgPositionService.validateEscalationTarget).toHaveBeenCalledWith(
-        ['assignee-1'],
-        'escalation-target',
-        ORG_A,
-      );
-      expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'escalation-target', titleEn: 'Task SLA breach escalation' }),
-        ORG_A,
-      );
-      expect(mockPrisma.task.update).toHaveBeenCalledWith({
-        where: { id: 'task-1' },
-        data: { escalatedAt: expect.any(Date) },
-      });
-      expect(mockAuditLog.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: ORG_A,
-          objectType: 'Task',
-          objectId: 'task-1',
-          metadata: { escalatedTo: 'escalation-target' },
-        }),
-      );
-    });
-
-    it('skips escalation gracefully (never notifies an invalid target) when validateEscalationTarget rejects, and logs the skip', async () => {
-      const task = {
-        ...BASE_OVERDUE_TASK,
-        escalationUserId: 'deactivated-user',
-        escalationAfterHours: 4,
-        assignees: [{ userId: 'assignee-1' }],
-      };
-      mockOrgPositionService.validateEscalationTarget.mockRejectedValue(new Error('User is not active'));
-
-      await runWithOverdueTask(task);
-
-      expect(mockNotificationService.create).not.toHaveBeenCalled();
-      expect(mockAuditLog.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: ORG_A,
-          objectType: 'Task',
-          objectId: 'task-1',
-          metadata: expect.objectContaining({ escalationSkipped: true, reason: 'User is not active' }),
-        }),
-      );
-    });
-
-    it('does not escalate when escalationAfterHours has not yet elapsed', async () => {
-      const task = {
-        ...BASE_OVERDUE_TASK,
-        dueAt: new Date(Date.now() - 1 * 60 * 60 * 1000), // only 1h overdue
-        escalationUserId: 'escalation-target',
-        escalationAfterHours: 4,
-      };
-
-      await runWithOverdueTask(task);
-
-      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
-      expect(mockNotificationService.create).not.toHaveBeenCalled();
-    });
-
-    it('does not escalate outside working hours', async () => {
-      mockWorkingCalendar.getOrCreate.mockResolvedValue({ ...ALWAYS_OPEN_CALENDAR, workingDays: [] });
-      const task = {
-        ...BASE_OVERDUE_TASK,
-        escalationUserId: 'escalation-target',
-        escalationAfterHours: 4,
-      };
-
-      await runWithOverdueTask(task);
-
-      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
       expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
   });
@@ -538,7 +452,6 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockWorkflowService.resolveUnassignedBlockingTransitions).not.toHaveBeenCalled();
       expect(mockWorkflowService.resolveUnreachableTriggerConditionTransitions).not.toHaveBeenCalled();
       expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).not.toHaveBeenCalled();
-      expect(mockOrgPositionService.validateEscalationTarget).not.toHaveBeenCalled();
       expect(mockPrisma.userRole.findMany).not.toHaveBeenCalled();
       // Exactly one notification — the direct "assignment ended" message to
       // the affected user themself, no admin fan-out of any kind.

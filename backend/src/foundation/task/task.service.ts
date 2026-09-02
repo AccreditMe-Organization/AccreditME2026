@@ -4,7 +4,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
-import { OrgPositionService } from '../org-position/org-position.service';
 import { TaskStatus, TaskSourceType } from '../../../generated/prisma/client';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
@@ -33,18 +32,9 @@ export class TaskService {
     private readonly auditLog: AuditLogService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
-    private readonly orgPositionService: OrgPositionService,
   ) {}
 
   async create(dto: CreateTaskDto, organizationId: string, actorId: string): Promise<ITask> {
-    if (dto.escalationUserId) {
-      await this.orgPositionService.validateEscalationTarget(
-        dto.assigneeUserIds,
-        dto.escalationUserId,
-        organizationId,
-      );
-    }
-
     const dueAt = dto.dueDate
       ? new Date(dto.dueDate)
       : await this.computeSlaDueAt(dto.priority ?? 'MEDIUM', organizationId);
@@ -75,8 +65,6 @@ export class TaskService {
         status: isUnassigned ? 'UNASSIGNED' : 'PENDING',
         dueAt,
         dueDateOverridden: !!dto.dueDate,
-        escalationUserId: dto.escalationUserId ?? null,
-        escalationAfterHours: dto.escalationAfterHours ?? null,
         assignees: isUnassigned
           ? undefined
           : {

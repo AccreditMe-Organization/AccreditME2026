@@ -6,7 +6,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
-import { OrgPositionService } from '../org-position/org-position.service';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -32,8 +31,8 @@ const BASE_TASK = {
   slaBreachedAt: null,
   completedAt: null,
   completedById: null,
-  escalationUserId: null,
-  escalationAfterHours: null,
+  managerEscalatedAt: null,
+  headEscalatedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   assignees: [{ id: 'ta-1', taskId: 'task-1', userId: USER_A, assignedAt: new Date(), assignedById: ACTOR, removedAt: null }],
@@ -72,7 +71,6 @@ const mockPrisma = {
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
-const mockOrgPositionService = { validateEscalationTarget: jest.fn() };
 
 describe('TaskService', () => {
   let service: TaskService;
@@ -90,7 +88,6 @@ describe('TaskService', () => {
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
-        { provide: OrgPositionService, useValue: mockOrgPositionService },
       ],
     }).compile();
 
@@ -141,29 +138,6 @@ describe('TaskService', () => {
       );
       expect(mockNotificationService.create).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'admin-1' }),
-        ORG_A,
-      );
-    });
-
-    it('validates the escalation pair via OrgPositionService when escalationUserId is set', async () => {
-      mockPrisma.task.create.mockResolvedValue(BASE_TASK);
-
-      await service.create(
-        {
-          title: 'Task',
-          sourceType: 'DOCUMENT',
-          sourceId: 'doc-1',
-          assigneeUserIds: [USER_A],
-          escalationUserId: 'escalation-1',
-          escalationAfterHours: 24,
-        },
-        ORG_A,
-        ACTOR,
-      );
-
-      expect(mockOrgPositionService.validateEscalationTarget).toHaveBeenCalledWith(
-        [USER_A],
-        'escalation-1',
         ORG_A,
       );
     });
