@@ -116,7 +116,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
           (onClick)="cancelled.emit()"
           [disabled]="saving()"
         />
-        <p-button [label]="'user.invite' | translate" type="submit" [loading]="saving()" />
+        <p-button [label]="'user.invite' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
       </div>
     </form>
   `,
