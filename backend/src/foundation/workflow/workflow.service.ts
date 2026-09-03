@@ -751,6 +751,15 @@ export class WorkflowService {
       )
     ).filter((d): d is NonNullable<typeof d> => d !== null);
 
+    // ACC-46 Section 2.7.f — reuses this same private computeSlaDueAt(),
+    // the exact computation already feeding WorkflowInstanceStage.slaDueAt,
+    // rather than duplicating the WorkingCalendarService.calculateDeadline()
+    // call a second time. Returns null when toStage.slaWorkingHours is
+    // unset, so dueDate stays undefined and the task falls through to
+    // TaskService's own existing priority-based default — zero behavior
+    // change for any stage that hasn't configured an SLA.
+    const dueAt = await this.computeSlaDueAt(toStage, organizationId);
+
     const task = await this.taskService.create(
       {
         title: `${transition.labelEn} — ${subjectLabel}`,
@@ -761,6 +770,7 @@ export class WorkflowService {
         assigneeUserIds: assigneeIds,
         assigneeDelegations,
         priority: 'MEDIUM', // TODO(future step): derive from source object urgency, not a fixed default
+        dueDate: dueAt?.toISOString(),
       },
       organizationId,
       actorId,
