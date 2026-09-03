@@ -303,6 +303,7 @@ model Organization {
   aiInteractionLogs  AiInteractionLog[]
   loginAttempts      LoginAttempt[]
   refreshTokens      RefreshToken[]
+  userTransferEvents UserTransferEvent[] // ACC-46 Section 2.6.f
 
   @@index([slug])
   @@index([status])
@@ -417,33 +418,40 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  organization              Organization               @relation(fields: [organizationId], references: [id])
-  userRoles                 UserRole[]
-  workflowApprovals         WorkflowApproval[]
-  tasksCreated              Task[]                     @relation("TaskCreator")
-  taskAssignments           TaskAssignee[]             @relation("TaskAssigneeUser")
-  taskAssignmentsMade       TaskAssignee[]             @relation("TaskAssigneeAssignedBy")
-  taskEvidenceUploaded      TaskEvidence[]
-  notifications             Notification[]
-  committeeMembers          CommitteeMember[]
-  committeeMembershipEvents CommitteeMembershipEvent[]
-  meetings                  Meeting[]                  @relation("MeetingOrganizer")
-  auditLogs                 AuditLog[]
-  aiInteractionLogs         AiInteractionLog[]
-  position                  OrgPosition?               @relation(fields: [positionId], references: [id])
-  primaryOrgUnit            OrgUnit?                   @relation(fields: [primaryOrgUnitId], references: [id])
-  actingOrgUnit             OrgUnit?                   @relation("UserActingOrgUnit", fields: [actingOrgUnitId], references: [id])
-  actingUser                User?                      @relation("UserActingUser", fields: [actingUserId], references: [id])
-  actingForUsers            User[]                     @relation("UserActingUser")
-  authUser                  AuthUser?                  @relation(fields: [authUserId], references: [id])
-  manager                   User?                      @relation("UserManager", fields: [managerId], references: [id])
-  directReports             User[]                     @relation("UserManager")
-  refreshTokens             RefreshToken[]
+  organization                    Organization               @relation(fields: [organizationId], references: [id])
+  userRoles                       UserRole[]
+  workflowApprovals               WorkflowApproval[]
+  tasksCreated                    Task[]                     @relation("TaskCreator")
+  taskAssignments                 TaskAssignee[]             @relation("TaskAssigneeUser")
+  taskAssignmentsMade             TaskAssignee[]             @relation("TaskAssigneeAssignedBy")
+  taskEvidenceUploaded            TaskEvidence[]
+  notifications                   Notification[]
+  committeeMembers                CommitteeMember[]
+  committeeMembershipEvents       CommitteeMembershipEvent[]
+  meetings                        Meeting[]                  @relation("MeetingOrganizer")
+  auditLogs                       AuditLog[]
+  aiInteractionLogs               AiInteractionLog[]
+  position                        OrgPosition?               @relation(fields: [positionId], references: [id])
+  primaryOrgUnit                  OrgUnit?                   @relation(fields: [primaryOrgUnitId], references: [id])
+  actingOrgUnit                   OrgUnit?                   @relation("UserActingOrgUnit", fields: [actingOrgUnitId], references: [id])
+  actingUser                      User?                      @relation("UserActingUser", fields: [actingUserId], references: [id])
+  actingForUsers                  User[]                     @relation("UserActingUser")
+  authUser                        AuthUser?                  @relation(fields: [authUserId], references: [id])
+  manager                         User?                      @relation("UserManager", fields: [managerId], references: [id])
+  directReports                   User[]                     @relation("UserManager")
+  refreshTokens                   RefreshToken[]
   // ACC-40 Section 2.3 — back-relations for OrgUnit.pendingHeadUserId/
   // actingHeadUserId and OrgUnitHeadEvent.userId.
-  pendingHeadForOrgUnits    OrgUnit[]                  @relation("OrgUnitPendingHead")
-  actingHeadForOrgUnits     OrgUnit[]                  @relation("OrgUnitActingHead")
-  orgUnitHeadEvents         OrgUnitHeadEvent[]         @relation("OrgUnitHeadEventUser")
+  pendingHeadForOrgUnits          OrgUnit[]                  @relation("OrgUnitPendingHead")
+  actingHeadForOrgUnits           OrgUnit[]                  @relation("OrgUnitActingHead")
+  orgUnitHeadEvents               OrgUnitHeadEvent[]         @relation("OrgUnitHeadEventUser")
+  // ACC-46 Section 2.6.f — back-relations for UserTransferEvent's three
+  // distinct User FKs (the transferred person, an optional succession
+  // replacement, an optional new manager — all on the same model, so each
+  // needs its own named relation).
+  userTransferEventsAsUser        UserTransferEvent[]        @relation("UserTransferEventUser")
+  userTransferEventsAsReplacement UserTransferEvent[]        @relation("UserTransferEventReplacement")
+  userTransferEventsAsNewManager  UserTransferEvent[]        @relation("UserTransferEventNewManager")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -665,14 +673,18 @@ model OrgUnit {
   // ACC-40 Section 2.6 — independent of position-holding entirely.
   actingHeadUserId                  String?
 
-  organization Organization       @relation(fields: [organizationId], references: [id])
-  parent       OrgUnit?           @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
-  children     OrgUnit[]          @relation("OrgUnitHierarchy")
-  users        User[]
-  actingUsers  User[]             @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
-  pendingHead  User?              @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
-  actingHead   User?              @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
-  headEvents   OrgUnitHeadEvent[]
+  organization                    Organization        @relation(fields: [organizationId], references: [id])
+  parent                          OrgUnit?            @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
+  children                        OrgUnit[]           @relation("OrgUnitHierarchy")
+  users                           User[]
+  actingUsers                     User[]              @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
+  pendingHead                     User?               @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
+  actingHead                      User?               @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
+  headEvents                      OrgUnitHeadEvent[]
+  // ACC-46 Section 2.6.f — back-relations for UserTransferEvent's two
+  // distinct OrgUnit FKs (source and destination of a transfer).
+  userTransferEventsAsSource      UserTransferEvent[] @relation("UserTransferEventSourceUnit")
+  userTransferEventsAsDestination UserTransferEvent[] @relation("UserTransferEventDestinationUnit")
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -714,6 +726,56 @@ enum OrgUnitHeadAction {
   VACATED // head-conferring position cleared with no successor declared
   ACTING_ASSIGNED // 2.6 — does not touch position-holding
   ACTING_ENDED // 2.6 — does not touch position-holding
+}
+
+// ACC-46 Section 2.6.f — a transfer (unit + position + manager changing
+// together, sometimes a promotion) is a distinct business event deserving
+// its own queryable history — not scattered across generic AuditLog rows or
+// folded into OrgUnitHeadEvent's narrower purpose. Coexists with, doesn't
+// replace, the mandatory AuditLogService.log() call and, for a promotion,
+// assignHead()'s own OrgUnitHeadEvent write — all three fire for a
+// promotion-variant transfer, each capturing a different, valid angle.
+//
+// Write timing (2.6.c): for a non-promotion transfer, written inside the
+// same transaction as the rest of the transfer. For a promotion, written
+// only after the assignHead() attempt has resolved (success or failure) —
+// isPromotion records CONFIRMED outcome, never intent, so a failed
+// promotion attempt never leaves a factually wrong row behind.
+model UserTransferEvent {
+  id                    String   @id @default(cuid())
+  organizationId        String // denormalized, same precedent as OrgUnitHeadEvent
+  userId                String // the transferred person
+  sourceOrgUnitId       String
+  destinationOrgUnitId  String
+  sourcePositionId      String? // not a relation — informational only, matches OrgUnitHeadEvent.positionId's own optionality
+  destinationPositionId String?
+  replacementUserId     String? // set only for a succession (Case B) transfer
+  newManagerId          String? // null for the root-promotion exemption
+  // CONFIRMED outcome — true only once assignHead() has actually succeeded,
+  // never written optimistically. promotionAttempted distinguishes
+  // "attempted, failed" from "never a promotion" in query results.
+  isPromotion           Boolean  @default(false)
+  promotionAttempted    Boolean  @default(false)
+  effectiveDate         DateTime @default(now())
+  // actorId — always required (a transfer always has an acting admin).
+  // Deliberately NOT named approvedBy (unlike OrgUnitHeadEvent.approvedBy,
+  // nullable there) — this redesign never included a formal approval/
+  // review step; a transfer is a direct, single-actor action performed by
+  // a Tenant Admin, so this records who executed it, not who approved it.
+  performedBy           String
+  createdAt             DateTime @default(now())
+
+  organization       Organization @relation(fields: [organizationId], references: [id])
+  user               User         @relation("UserTransferEventUser", fields: [userId], references: [id])
+  replacement        User?        @relation("UserTransferEventReplacement", fields: [replacementUserId], references: [id])
+  newManager         User?        @relation("UserTransferEventNewManager", fields: [newManagerId], references: [id])
+  sourceOrgUnit      OrgUnit      @relation("UserTransferEventSourceUnit", fields: [sourceOrgUnitId], references: [id])
+  destinationOrgUnit OrgUnit      @relation("UserTransferEventDestinationUnit", fields: [destinationOrgUnitId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([sourceOrgUnitId])
+  @@index([destinationOrgUnitId])
 }
 
 // ACC-40 — org-wide catalog (no longer per-OrgUnit): a position title like

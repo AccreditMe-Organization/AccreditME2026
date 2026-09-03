@@ -509,6 +509,63 @@ describe('WorkflowService', () => {
       );
     });
 
+    // ACC-46 Section 2.7.f — workflow-created tasks now honor
+    // stage.slaWorkingHours for dueDate, reusing the exact same private
+    // computeSlaDueAt() already feeding WorkflowInstanceStage.slaDueAt
+    // (see the 'startInstance' describe block's own equivalent test above)
+    // rather than duplicating WorkingCalendarService.calculateDeadline().
+    describe('CREATE_TASK dueDate — honors stage.slaWorkingHours (ACC-46 Section 2.7.f)', () => {
+      it('passes a computed dueDate to TaskService.create() when the target stage has slaWorkingHours configured', async () => {
+        const stageWithSla = { ...TARGET_STAGE, slaWorkingHours: 16 };
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': stageWithSla });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([]);
+        const deadline = DateTime.fromJSDate(new Date('2026-02-01T00:00:00Z'));
+        mockWorkingCalendar.calculateDeadline.mockResolvedValue(deadline);
+
+        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockWorkingCalendar.calculateDeadline).toHaveBeenCalledWith(expect.any(DateTime), 16, ORG_A);
+        expect(mockTaskService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ dueDate: deadline.toJSDate().toISOString() }),
+          ORG_A,
+          ACTOR,
+        );
+      });
+
+      // Regression guard for the plan's own stated requirement: "zero
+      // behavior change for any stage that hasn't configured an SLA" —
+      // TARGET_STAGE's own slaWorkingHours is null by default (see its
+      // fixture above), so every pre-existing CREATE_TASK test already
+      // exercises this path implicitly; this test asserts it directly.
+      it('leaves dueDate undefined when the target stage has no slaWorkingHours configured', async () => {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        ]);
+        mockPrisma.userRole.findMany.mockResolvedValue([]);
+
+        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+        expect(mockWorkingCalendar.calculateDeadline).not.toHaveBeenCalled();
+        expect(mockTaskService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ dueDate: undefined }),
+          ORG_A,
+          ACTOR,
+        );
+      });
+    });
+
     // ACC-34 — executeCreateTask()'s title previously read
     // `${transition.labelEn} — ${instance.objectType}` (e.g. "Submit for
     // Approval — COMMITTEE"), with no name resolution at all.

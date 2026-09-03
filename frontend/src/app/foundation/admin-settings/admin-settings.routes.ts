@@ -29,4 +29,11 @@ export const ADMIN_SETTINGS_ROUTES: Routes = [
         (m) => m.AiSettingsComponent,
       ),
   },
+  {
+    path: 'task-sla',
+    loadComponent: () =>
+      import('./components/task-sla-settings/task-sla-settings.component').then(
+        (m) => m.TaskSlaSettingsComponent,
+      ),
+  },
 ];

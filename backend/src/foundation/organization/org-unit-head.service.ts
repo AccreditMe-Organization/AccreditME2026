@@ -79,6 +79,26 @@ export class OrgUnitHeadService {
     };
   }
 
+  // ACC-46 Section 2.4 — the boolean UserService.invite()'s hard
+  // invite-block rule needs ("does this unit have its own direct or
+  // acting Head, ignoring parent-unit escalation coverage entirely").
+  // Deliberately NOT the cached OrgUnit.isHeadVacant field —
+  // OrganizationService.create() never calls refreshOrgUnitHeadVacancy()
+  // on a brand-new unit, and isHeadVacant defaults false at the schema
+  // level, so a genuinely headless freshly-created unit would read as
+  // "has a head" via that cache. Computes the identical condition live,
+  // every call, same shape as getHeadStatus()'s own holders query above
+  // but count-only — a genuinely separate, cheaper query for the
+  // boolean-only case, not a refactor of getHeadStatus() itself (its own
+  // callers still need the fuller holders/name/positionId select).
+  async hasDirectOrActingHead(orgUnitId: string, organizationId: string): Promise<boolean> {
+    const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+    const directHolderCount = await this.prisma.user.count({
+      where: { organizationId, primaryOrgUnitId: orgUnitId, status: 'ACTIVE', position: { isUnitHeadPosition: true } },
+    });
+    return directHolderCount > 0 || !!orgUnit.actingHeadUserId;
+  }
+
   async declareHandover(
     orgUnitId: string,
     dto: DeclareHandoverDto,

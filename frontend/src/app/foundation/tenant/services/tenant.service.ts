@@ -28,6 +28,21 @@ export interface IEmailConfig {
   config: Record<string, unknown> | null;
 }
 
+// ACC-46 Section 2.7.c — mirrors the backend's ITaskSlaTier/ITaskSlaSettings
+// exactly (backend/src/foundation/tenant/interfaces/tenant.interface.ts).
+export interface ITaskSlaTier {
+  dueAfterHours: number;
+  managerEscalationAfterHours: number;
+  headEscalationAfterHours: number;
+}
+
+export interface ITaskSlaSettings {
+  LOW: ITaskSlaTier;
+  MEDIUM: ITaskSlaTier;
+  HIGH: ITaskSlaTier;
+  CRITICAL: ITaskSlaTier;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TenantService {
   private readonly http = inject(HttpClient);
@@ -54,5 +69,13 @@ export class TenantService {
   // Platform Admin via the Super Admin Portal.
   updateAiOverageSetting(overageEnabled: boolean): Observable<void> {
     return this.http.patch<void>(`${this.baseUrl}/ai-settings`, { overageEnabled });
+  }
+
+  getTaskSla(): Observable<ITaskSlaSettings> {
+    return this.http.get<ITaskSlaSettings>(`${this.baseUrl}/task-sla`);
+  }
+
+  updateTaskSla(dto: ITaskSlaSettings): Observable<void> {
+    return this.http.patch<void>(`${this.baseUrl}/task-sla`, dto);
   }
 }

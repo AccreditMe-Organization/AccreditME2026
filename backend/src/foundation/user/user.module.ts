@@ -4,6 +4,7 @@ import { TenantModule } from '../tenant/tenant.module';
 import { TaskModule } from '../task/task.module';
 import { RolesModule } from '../roles/roles.module';
 import { OrganizationModule } from '../organization/organization.module';
+import { OrgPositionModule } from '../org-position/org-position.module';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 
@@ -32,6 +33,14 @@ import { UserService } from './user.service';
     forwardRef(() => TaskModule),
     RolesModule,
     forwardRef(() => OrganizationModule),
+    // ACC-46 Section 2.6.a — getTransferContext() needs
+    // OrgPositionService.listAvailablePositionsForUser(). OrgPositionModule
+    // doesn't import UserModule directly, but transitively closes a cycle
+    // through OrganizationModule (OrgPositionModule -> forwardRef
+    // OrganizationModule -> forwardRef UserModule) — forwardRef() needed
+    // here too, same discipline as every other edge in this codebase
+    // touching that graph. Verified via a real start:dev boot.
+    forwardRef(() => OrgPositionModule),
   ],
   controllers: [UserController],
   providers: [UserService],

@@ -1,9 +1,10 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { LoginAttemptService } from './login-attempt.service';
+import { UserService } from '../user/user.service';
 
 // Explicit factory — a bare jest.mock(path) auto-mock still requires Jest to
 // load the real module first to infer its shape, which pulls in
@@ -71,6 +72,7 @@ describe('AuthService', () => {
   let mockAuditLog: { log: jest.Mock };
   let mockNotification: { create: jest.Mock };
   let mockLoginAttemptService: { record: jest.Mock; isLocked: jest.Mock; isNewIp: jest.Mock };
+  let mockUserService: { validatePositionAssignment: jest.Mock; notifyTenantAdminsOfInviteAcceptanceConflict: jest.Mock };
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = 'test-jwt-secret';
@@ -94,12 +96,20 @@ describe('AuthService', () => {
       isLocked: jest.fn().mockResolvedValue(false),
       isNewIp: jest.fn().mockReturnValue(false),
     };
+    // ACC-46 Section 2.1, Layer 2 — validatePositionAssignment() resolves
+    // (passes) by default; individual tests override with mockRejectedValue
+    // to exercise the conflict path.
+    mockUserService = {
+      validatePositionAssignment: jest.fn().mockResolvedValue(undefined),
+      notifyTenantAdminsOfInviteAcceptanceConflict: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new AuthService(
       mockPrisma as unknown as PrismaService,
       mockAuditLog as unknown as AuditLogService,
       mockNotification as unknown as NotificationService,
       mockLoginAttemptService as unknown as LoginAttemptService,
+      mockUserService as unknown as UserService,
     );
   });
 
@@ -432,6 +442,79 @@ describe('AuthService', () => {
           invitationExpiresAt: null,
         },
       });
+    });
+
+    // ACC-46 Section 2.1, Layer 2 — defense in depth on top of Layer 1
+    // (user.service.spec.ts's own INVITED-status count fix). Not skipped
+    // just because a positionId is present and passes — this proves the
+    // check doesn't silently break the ordinary, uncontested path.
+    it('calls validatePositionAssignment() and still succeeds when it passes', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        positionId: 'pos-1',
+        primaryOrgUnitId: 'unit-1',
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
+      mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
+
+      await service.acceptInvitation({ token: 'valid-token', password: 'newpassword123' });
+
+      expect(mockUserService.validatePositionAssignment).toHaveBeenCalledWith(
+        'pos-1', 'unit-1', ORG_A, 'user-1',
+      );
+      expect(mockAuthApi.signUpEmail).toHaveBeenCalled();
+    });
+
+    it('does not call validatePositionAssignment() when the invited user has no positionId', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        positionId: null,
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
+      mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
+
+      await service.acceptInvitation({ token: 'valid-token', password: 'newpassword123' });
+
+      expect(mockUserService.validatePositionAssignment).not.toHaveBeenCalled();
+    });
+
+    // The actual conflict path — closes the narrower race Layer 1 alone
+    // can't (two validatePositionAssignment() calls both reading the
+    // conflict count before either row commits). Confirms every claim from
+    // the plan: rejected with ConflictException, zero side effects (no
+    // Better Auth account created, invitationToken left untouched — not
+    // burned like the generic invalid/expired case), and tenant admins
+    // notified.
+    it('rejects with ConflictException, creates no Better Auth account, preserves the token, and notifies tenant admins when the position is no longer available', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        positionId: 'pos-1',
+        primaryOrgUnitId: 'unit-1',
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
+      mockUserService.validatePositionAssignment.mockRejectedValue(
+        new ConflictException('This position already has an active holder in this org unit'),
+      );
+
+      await expect(
+        service.acceptInvitation({ token: 'valid-token', password: 'newpassword123' }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(mockAuthApi.signUpEmail).not.toHaveBeenCalled();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockUserService.notifyTenantAdminsOfInviteAcceptanceConflict).toHaveBeenCalledWith('A User', ORG_A);
     });
 
     it('throws BadRequestException for an unknown token', async () => {

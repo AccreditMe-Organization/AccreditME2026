@@ -28,6 +28,13 @@ const MOCK_TENANT = {
   updatedAt: new Date('2026-01-01'),
 };
 
+const MOCK_TASK_SLA = {
+  LOW: { dueAfterHours: 80, managerEscalationAfterHours: 48, headEscalationAfterHours: 96 },
+  MEDIUM: { dueAfterHours: 40, managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
+  HIGH: { dueAfterHours: 16, managerEscalationAfterHours: 8, headEscalationAfterHours: 16 },
+  CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
+};
+
 describe('TenantController', () => {
   let controller: TenantController;
   let service: {
@@ -38,6 +45,8 @@ describe('TenantController', () => {
     getEmailConfig: jest.Mock;
     updateEmailConfig: jest.Mock;
     updateAiOverageSetting: jest.Mock;
+    getTaskSla: jest.Mock;
+    updateTaskSla: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -56,6 +65,8 @@ describe('TenantController', () => {
       getEmailConfig: jest.fn().mockResolvedValue({ emailProvider: null, config: null }),
       updateEmailConfig: jest.fn().mockResolvedValue(undefined),
       updateAiOverageSetting: jest.fn().mockResolvedValue(undefined),
+      getTaskSla: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
+      updateTaskSla: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -136,6 +147,25 @@ describe('TenantController', () => {
       expect(service.updateAiOverageSetting).toHaveBeenCalledWith(
         MOCK_TENANT_ID,
         dto,
+        MOCK_USER_ID,
+      );
+    });
+  });
+
+  describe('getTaskSla', () => {
+    it('calls getTaskSla with tenantId', async () => {
+      const result = await controller.getTaskSla(MOCK_TENANT_ID);
+      expect(service.getTaskSla).toHaveBeenCalledWith(MOCK_TENANT_ID);
+      expect(result).toEqual(MOCK_TASK_SLA);
+    });
+  });
+
+  describe('updateTaskSla', () => {
+    it('calls updateTaskSla with tenantId, dto, and userId', async () => {
+      await controller.updateTaskSla(MOCK_TASK_SLA, MOCK_TENANT_ID, MOCK_USER_ID);
+      expect(service.updateTaskSla).toHaveBeenCalledWith(
+        MOCK_TENANT_ID,
+        MOCK_TASK_SLA,
         MOCK_USER_ID,
       );
     });

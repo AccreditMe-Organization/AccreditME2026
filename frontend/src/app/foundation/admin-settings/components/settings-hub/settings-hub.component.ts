@@ -36,12 +36,14 @@ const EXISTING_SETTINGS_CARDS: SettingsCard[] = [
 
 // Backend permission per page, confirmed against tenant.controller.ts:
 // organization-profile reads GET /tenant (TENANT_PERMISSIONS.VIEW);
-// email-provider and ai-settings both read/write MANAGE_CONFIG-gated
-// endpoints (GET/PATCH /tenant/email-config, PATCH /tenant/ai-settings).
+// email-provider, ai-settings, and task-sla all read/write
+// MANAGE_CONFIG-gated endpoints (GET/PATCH /tenant/email-config,
+// PATCH /tenant/ai-settings, GET/PATCH /tenant/task-sla).
 const NEW_SETTINGS_CARDS: SettingsCard[] = [
   { labelKey: 'adminSettings.organizationProfile', icon: 'pi pi-id-card', route: '/admin-settings/organization-profile', requiredPermission: 'tenant:view' },
   { labelKey: 'adminSettings.emailProvider', icon: 'pi pi-envelope', route: '/admin-settings/email-provider', requiredPermission: 'tenant:manage_config' },
   { labelKey: 'adminSettings.aiSettings', icon: 'pi pi-microchip-ai', route: '/admin-settings/ai-settings', requiredPermission: 'tenant:manage_config' },
+  { labelKey: 'adminSettings.taskSla', icon: 'pi pi-clock', route: '/admin-settings/task-sla', requiredPermission: 'tenant:manage_config' },
 ];
 
 @Component({

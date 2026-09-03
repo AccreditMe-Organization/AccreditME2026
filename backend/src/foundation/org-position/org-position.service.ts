@@ -35,6 +35,15 @@ export class OrgPositionService {
           nameEn: position.nameEn,
           nameAr: position.nameAr,
           grade: position.grade,
+          // ACC-46 Section 2.5 — both set from the same seed flag, never
+          // independently: isUnitHeadPosition: true requires
+          // isSingleAssignee: true (schema-enforced pairing,
+          // validateHeadFlagPairing()), which this direct prisma.create()
+          // call bypasses entirely (it doesn't go through
+          // createPosition()) — the seed data has to satisfy the
+          // invariant itself.
+          isUnitHeadPosition: position.isUnitHeadPosition ?? false,
+          isSingleAssignee: position.isUnitHeadPosition ?? false,
         },
       });
     }
@@ -187,6 +196,95 @@ export class OrgPositionService {
     });
   }
 
+  // ACC-46 (post-review fix) — the shared cross-position, INVITED-inclusive
+  // existence check both the write side (UserService.validateUnitHeadUniqueness())
+  // and the read side (listAvailablePositionsForUser() below) must run
+  // identically, extracted here specifically so the two can't drift apart
+  // again the way they already did once: a tenant could flag more than one
+  // distinct OrgPosition as isUnitHeadPosition: true (e.g. "Department
+  // Head" and "Acting Department Chief" both independently head-conferring)
+  // — this checks whether ANY of them already has a holder in this unit,
+  // not just the one specific position being considered.
+  // excludeUserId mirrors validateUnitHeadUniqueness()'s own parameter
+  // exactly: when set, that user's own row doesn't count against them —
+  // re-confirming/re-selecting a position for the person who already
+  // holds a head-conferring position in this same unit is not itself a
+  // conflict. Public (not private) so both OrgPositionService's own
+  // listAvailablePositionsForUser() and UserService (already holding an
+  // injected OrgPositionService) can call it.
+  async hasAnyHeadConferringHolder(
+    orgUnitId: string | null,
+    organizationId: string,
+    excludeUserId: string | null,
+  ): Promise<boolean> {
+    const anyHeadHolders = await this.prisma.user.count({
+      where: {
+        organizationId,
+        primaryOrgUnitId: orgUnitId,
+        status: { in: ['ACTIVE', 'INVITED'] },
+        position: { isUnitHeadPosition: true },
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      },
+    });
+    return anyHeadHolders >= 1;
+  }
+
+  // ACC-46 Section 2.6.a — "which positions can this specific person hold
+  // in this specific unit," generalized beyond head-conferring positions:
+  // an ORDINARY single-assignee position (not head-conferring) needs the
+  // identical exclusion logic, which a head-only design would miss.
+  // Filters on isSingleAssignee (not isUnitHeadPosition) — correctly
+  // covers both cases in one query; ordinary multi-assignee positions
+  // always pass through untouched. candidateUserId is excluded from the
+  // "already holds it" set — a person doesn't block themselves from a
+  // position they may already hold (e.g. re-confirming their own current
+  // position as part of a transfer that changes only their unit).
+  //
+  // Post-review fix — a real, confirmed gap, not just message wording:
+  // this method previously only excluded the SPECIFIC position a unit's
+  // existing holder occupies (heldSingleAssigneePositionIds below), never
+  // checking whether a DIFFERENT head-conferring position already has a
+  // holder in this same unit — the exact cross-position case
+  // validateUnitHeadUniqueness() has always enforced at write time. A
+  // transfer wizard could offer a head-conferring position here that was
+  // then unconditionally rejected on submit. Now runs the identical
+  // hasAnyHeadConferringHolder() check above, so a head-conferring
+  // position is excluded whenever ANY head-conferring position already
+  // has a holder in this unit — not only the one being evaluated.
+  async listAvailablePositionsForUser(
+    candidateUserId: string,
+    orgUnitId: string,
+    organizationId: string,
+  ): Promise<IOrgPosition[]> {
+    const allPositions = await this.prisma.orgPosition.findMany({
+      where: { organizationId, isActive: true },
+    });
+    const heldSingleAssigneePositionIds = new Set(
+      (
+        await this.prisma.user.findMany({
+          where: {
+            organizationId,
+            primaryOrgUnitId: orgUnitId,
+            status: { in: ['ACTIVE', 'INVITED'] }, // matches 2.1's INVITED-status fix
+            position: { isSingleAssignee: true },
+            id: { not: candidateUserId },
+          },
+          select: { positionId: true },
+        })
+      ).map((u) => u.positionId),
+    );
+    const hasAnyHeadHolder = await this.hasAnyHeadConferringHolder(
+      orgUnitId,
+      organizationId,
+      candidateUserId,
+    );
+    return allPositions.filter((p) => {
+      const blockedBySamePositionHolder = p.isSingleAssignee && heldSingleAssigneePositionIds.has(p.id);
+      const blockedByAnotherHeadHolder = p.isUnitHeadPosition && hasAnyHeadHolder;
+      return !blockedBySamePositionHolder && !blockedByAnotherHeadHolder;
+    });
+  }
+
   // ACC-40 Section 2.9e — remediation report, matching 2.4's exact
   // three-part chain (Role.findFirst(TENANT_ADMIN) -> UserRole.findMany()
   // -> NotificationService.create() per admin), same "a report, not a
@@ -286,5 +384,65 @@ export class OrgPositionService {
         'PLATFORM_ADMIN and TENANT_ADMIN cannot be mapped to an org position',
       );
     }
+  }
+
+  // ACC-46 Section 2.7.e — replaces validateEscalationTarget() entirely
+  // (deleted in this ticket's Commit 1). Resolvers, not validators: escalation
+  // targets are now fully automatic (2.7.b — no human picks a target), so
+  // there is nothing left to validate against a caller-supplied id, only
+  // something to resolve fresh at firing time. Resolved live on every sweep
+  // — never precomputed or stored on the Task row (2.7.e) — since a Manager
+  // can change between task creation and the task actually going overdue.
+  //
+  // PD#8, decided: returns EVERY distinct target across all assignees, not
+  // just the first one in array order — silently dropping part of a task's
+  // accountability chain because of array position was judged inconsistent
+  // with this being a compliance-oriented product.
+  async resolveManagerEscalationTargets(
+    assigneeIds: string[],
+    organizationId: string,
+  ): Promise<string[]> {
+    const assignees = await this.prisma.user.findMany({
+      where: { id: { in: assigneeIds }, organizationId, status: 'ACTIVE' },
+    });
+    const managerIds = assignees.map((a) => a.managerId).filter((id): id is string => !!id);
+    return [...new Set(managerIds)]; // dedup — two assignees sharing one manager notify that manager once, not twice
+  }
+
+  // PD#9, decided: the Head tier DOES count Acting Head coverage, not only a
+  // direct Head-conferring-position holder — falls back to
+  // OrgUnit.actingHeadUserId when no direct holder exists, mirroring
+  // assignHead()'s own holders[0]?.id ?? actingHeadUserId pattern (2.6.d). A
+  // vacancy genuinely covered by an Acting Head should still receive
+  // escalation, not be silently skipped.
+  async resolveHeadEscalationTargets(
+    assigneeIds: string[],
+    organizationId: string,
+  ): Promise<string[]> {
+    const assignees = await this.prisma.user.findMany({
+      where: { id: { in: assigneeIds }, organizationId, status: 'ACTIVE' },
+    });
+    const orgUnitIds = [
+      ...new Set(assignees.map((a) => a.primaryOrgUnitId).filter((id): id is string => !!id)),
+    ];
+
+    const targets = new Set<string>();
+    for (const orgUnitId of orgUnitIds) {
+      const directHolder = await this.prisma.user.findFirst({
+        where: {
+          organizationId,
+          primaryOrgUnitId: orgUnitId,
+          status: 'ACTIVE',
+          position: { isUnitHeadPosition: true },
+        },
+      });
+      if (directHolder) {
+        targets.add(directHolder.id);
+        continue;
+      }
+      const orgUnit = await this.prisma.orgUnit.findFirst({ where: { id: orgUnitId, organizationId } });
+      if (orgUnit?.actingHeadUserId) targets.add(orgUnit.actingHeadUserId);
+    }
+    return [...targets]; // one distinct unit could still resolve to the same person as another via Acting Head coverage — Set already dedups that too
   }
 }

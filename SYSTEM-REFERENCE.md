@@ -1075,69 +1075,169 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 
 ### 3.3 SLA Computation
 
-`computeSlaDueAt()` — reads `Organization.settings.taskSla` (tenant
-override) per `priority`, falling back to platform defaults
-(`CRITICAL: 4h, HIGH: 16h, MEDIUM: 40h, LOW: 80h`), then calls
-`WorkingCalendarService.calculateDeadline()` — never its own date math,
-consistent with CLAUDE.md's rule.
+`TaskService.computeSlaDueAt(priority, organizationId)`
+(`task.service.ts:388`) calls `TenantService.getTaskSla(organizationId)`
+for the tenant's real, per-`TaskPriority` tiered settings, then
+`hours = slaConfig[priority].dueAfterHours`, then
+`WorkingCalendarService.calculateDeadline()` — never its own date
+math, consistent with CLAUDE.md's rule. This replaces an earlier,
+now-gone interim version (a direct `organization.findUnique()` call
+plus hardcoded `DEFAULT_TASK_SLA_HOURS`/`FALLBACK_SLA_HOURS`
+constants living in `task.service.ts` itself) that existed only for
+the span between ACC-46's Commit 1 (dead-field removal) and Commit 2a
+(this real wiring) — confirmed gone via a full grep, no trace left.
 
-### 3.4 Escalation — `OrgPositionService.validateEscalationTarget()`
+**`Organization.settings.taskSla` is a real, live-written key now**
+(ACC-46 Section 2.7.d) — the settings-UI half of the "confirmed never
+written by any code path" gap this same ticket's own Context section
+named. `TenantService.getTaskSla(id)` (`tenant.service.ts:264`) reads
+it, falling back to a module-level `DEFAULT_TASK_SLA_SETTINGS`
+constant (`:37`) when the key is absent — covers an absent key
+functionally forever, but `TenantService.bootstrap()` also writes
+`DEFAULT_TASK_SLA_SETTINGS` for real at tenant-creation time (`:333`),
+so the settings page always has a genuine saved row to display, not
+just a runtime fallback. `updateTaskSla(id, dto, actorId)`
+(`:272`) does a non-clobbering merge write
+(`{ ...existingSettings, taskSla: dto }`) and audit-logs
+`{ event: 'task_sla_updated' }`.
 
-Called from **two** distinct points, not one:
+Shape — `ITaskSlaSettings` (`tenant/interfaces/tenant.interface.ts`):
+one `ITaskSlaTier` (`{ dueAfterHours, managerEscalationAfterHours,
+headEscalationAfterHours }`) per `TaskPriority`
+(`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`). `dueAfterHours` feeds this
+section's own computation above; the other two fields feed Section
+3.4.1's escalation-tier thresholds.
 
-1. **At task creation** (`TaskService.create()`) — validates an
-   explicitly-supplied `escalationUserId` up front; an invalid target
-   blocks task creation.
-2. **At SLA-breach-escalation-fire time**
-   (`SlaMonitorProcessor.fireTaskEscalation()`, 3.4.1 below) — re-
-   validates the *same* target again, right before actually escalating.
-   This is a genuine double-check, not redundant: an escalation target
-   valid at task-creation time could become invalid later (grade
-   change, org-unit reassignment, deactivation) before the SLA
-   actually breaches — the second check catches that. If it fails at
-   fire-time, escalation is skipped (not silently — an audit log entry
-   with `escalationSkipped: true` and the failure reason is written),
-   the task is not escalated to an invalid target.
+Exposed via `GET`/`PATCH /tenant/task-sla`
+(`tenant.controller.ts`, `TENANT_PERMISSIONS.MANAGE_CONFIG`),
+mirroring `email-provider`/`ai-settings`'s own established shape
+exactly — confirmed the same pattern, not a new one. Frontend:
+`TaskSlaSettingsComponent`
+(`admin-settings/components/task-sla-settings/`) — a card-per-priority
+responsive grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`), each
+card a labeled `p-inputNumber` triple per tier. Notably **not** a
+`p-table` despite this file living in an admin-settings area full of
+list screens — a real, found-and-fixed layout bug (raw `<table>` +
+manual `overflow-x-auto`, the only screen in the app doing this)
+during its own build is why; see CLAUDE.md's Open/Deferred Items for
+the resulting "full frontend design-consistency audit needed" note
+this prompted.
 
-**Exact logic** (`org-position.service.ts:154–194`): loads every
-assignee's `User.position` (nullable), takes
-`maxAssigneeGrade = Math.max(0, ...assignees.map(a => a.position?.grade ?? 0))`
-(an assignee with no position counts as grade 0 — least restrictive).
-Loads the target's own position; **rejects if `targetGrade < maxAssigneeGrade`**
-(target must be equal-or-senior). Then `isInSameOrParentOrgUnit()`
-walks `OrgUnit.parentId` upward from **each** assignee's
-`primaryOrgUnitId`, checking whether the target's own
-`primaryOrgUnitId` equals any of them or their ancestors — **rejects
-if the target has no `primaryOrgUnitId` at all**, even if the grade
-check passed. If no assignee has an org unit, this half of the check
-passes unconditionally (nothing to violate).
+### 3.4 Escalation Target Resolution — `OrgPositionService`'s Two Resolvers (ACC-46)
+
+**`validateEscalationTarget()` no longer exists — deleted entirely**
+(ACC-46 Commit 1, alongside the three schema fields it read:
+`Task.escalationUserId`/`escalationAfterHours`/`escalatedAt`).
+Confirmed via grep: zero remaining references anywhere in the
+codebase. The whole "human picks a target, then the system validates
+it" design this method embodied is gone — escalation is now fully
+automatic, no human ever chooses a target anywhere in the flow
+(design decision, not an oversight: see the plan doc's own Section
+2.7.b, "Fully Automatic, No Human Choice, Anywhere").
+
+Replaced by two resolvers on `OrgPositionService`
+(`org-position.service.ts`) — resolvers, not validators, since there
+is no caller-supplied id left to validate against, only a real target
+to resolve fresh at firing time:
+
+- **`resolveManagerEscalationTargets(assigneeIds, organizationId)`**
+  (`:349`) — loads every `ACTIVE` assignee, collects `User.managerId`,
+  returns the distinct set (`[...new Set(...)]`). **PD#8, decided**:
+  every distinct manager across all assignees, not just the first in
+  array order — silently dropping part of a task's accountability
+  chain by array position was judged inconsistent with a
+  compliance-oriented product.
+- **`resolveHeadEscalationTargets(assigneeIds, organizationId)`**
+  (`:366`) — loads every `ACTIVE` assignee's distinct
+  `primaryOrgUnitId`, and for each unit: the direct
+  `isUnitHeadPosition: true` holder if one exists, else
+  (**PD#9, decided**) `OrgUnit.actingHeadUserId` — Acting Head
+  coverage counts, mirroring `assignHead()`'s own
+  `holders[0]?.id ?? actingHeadUserId` pattern (Section 5.6). Neither
+  holder nor Acting Head present for a given unit means no target for
+  that unit, not a thrown error — an empty result overall is a real,
+  unremarkable state (Section 3.4.1 below), handled by a skip, never
+  an exception.
+
+Both resolve fresh on every sweep call, never precomputed or cached
+on the `Task` row — a Manager can change between task creation and
+the task actually going overdue, and the resolved target must reflect
+that reality at firing time, not a stale snapshot from creation time.
 
 ### 3.4.1 SLA Monitor / Escalation Firing (`sla-monitor.processor.ts`)
 
-**Structural note worth stating plainly**: this file lives in
+**Structural note, unchanged from before**: this file lives in
 `backend/src/foundation/workflow/`, not `backend/src/foundation/task/`,
-even though roughly half its job (`sweepOverdueTasks()`,
-`fireTaskEscalation()`) is Task-specific. This is deliberate, per its
-own code comment — it reuses the existing 15-minute repeatable
-`sla-monitor` BullMQ job (originally built for `WorkflowInstanceStage`
-SLA breaches) rather than registering a second queue, matching
-CLAUDE.md's Background Jobs list having exactly one SLA-sweep entry,
-not one per entity type. A reader looking for Task escalation logic
-inside `foundation/task/` will not find it there.
+reusing the existing 15-minute `sla-monitor` BullMQ job rather than
+registering a second queue — see CLAUDE.md's Background Jobs list.
 
-`sweepOverdueTasks()` runs every 15 minutes (same job as
-`WorkflowInstanceStage` SLA checks, see Section 2): finds every `Task`
-past `dueAt` not already `COMPLETED`/`CANCELLED`/`OVERDUE`/`UNASSIGNED`,
-flips it to `OVERDUE` + stamps `slaBreachedAt`. If the task has both
-`escalationUserId` and `escalationAfterHours` set, has **not** already
-been escalated (`escalatedAt` null), and enough hours have passed since
-`dueAt`, calls `fireTaskEscalation()` — but only if
-`isWithinWorkingHours()` for the tenant's own calendar (CLAUDE.md:
-"Escalation triggers only fire during working hours" — genuinely
-enforced, not aspirational; re-implemented inline since no dedicated
-"is now within working hours" method exists on
-`WorkingCalendarService`, only `calculateDeadline()`'s internal logic,
-which this duplicates rather than shares).
+**Fixes a real, structural bug (Finding 2, ACC-46) that meant
+escalation could never fire, for any task, under any configuration,
+under the old code** — confirmed as the direct cause of a live
+production-adjacent incident, ACC-48 (see CLAUDE.md's Open/Deferred
+Items). The old query excluded `status: 'OVERDUE'`, so a task was
+evaluated exactly once — the instant it first went overdue, before
+enough hours could plausibly have elapsed for any threshold — then
+permanently skipped forever after. `sweepOverdueTasks()`
+(`sla-monitor.processor.ts:361`) now queries
+`status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED'] }` —
+`OVERDUE` no longer excluded — so an overdue task stays eligible for
+re-evaluation on every subsequent sweep until both escalation tiers
+have fired.
+
+For each overdue task: flips `status: 'OVERDUE'` + stamps
+`slaBreachedAt` (only if not already `OVERDUE` — no redundant
+re-write on a task already flipped by an earlier sweep), then reads
+the tenant's real `ITaskSlaTier` for the task's own `priority`
+(Section 3.3) and computes `hoursSinceDue`. Two-tier, strictly
+sequential, if/else-if — **no fall-through**:
+
+- `!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours`
+  → Manager tier fires. Takes priority unconditionally over the Head
+  tier in the same sweep pass, even if `hoursSinceDue` has already
+  also crossed the cumulative Head threshold — the Head tier is never
+  even considered until the Manager tier has genuinely fired on some
+  earlier sweep.
+- else `task.managerEscalatedAt && !task.headEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours + tier.headEscalationAfterHours`
+  → Head tier fires. Cumulative from `dueAt`, not from when the
+  Manager tier fired — `headEscalationAfterHours` is "hours after
+  manager," but the threshold it's compared against is the running
+  total since due, matching the settings UI's own field label.
+
+`fireTaskEscalation(task, tier)` (`:406`) calls the matching resolver
+from Section 3.4 above, notifies **every** resolved target (PD#8) via
+`NotificationService.create()`, stamps exactly one of
+`managerEscalatedAt`/`headEscalatedAt` (one write per tier regardless
+of how many people were notified — these fields record "has this
+tier fired," not "who received it"; the full target list lives in the
+audit log's own `metadata.escalatedTo` instead), and always
+audit-logs (`{ escalatedTo, tier }` on a real fire, or
+`{ escalationSkipped: true, tier, reason }` when the resolver returns
+an empty array — a skip, not a thrown error, matching Section 3.4's
+own framing of an unresolvable target as a real, unremarkable state).
+
+Working-hours gating is unchanged from the pre-ACC-46 mechanism:
+`isWithinWorkingHours()` (`:508`, re-implements the day/hour/holiday
+check inline since no dedicated method exists on
+`WorkingCalendarService`) wraps both tiers' firing — CLAUDE.md's
+"Escalation triggers only fire during working hours," still genuinely
+enforced. The status-flip to `OVERDUE` is unconditional regardless of
+working hours; only the escalation notify/stamp/audit-log steps are
+gated.
+
+**No per-step error isolation in the surrounding `process()` method —
+a real, confirmed gap, not closed by this work.** `process()` runs
+`sweepOverdueTasks()` and five other sweep steps
+(`sweepUnassignedStages()`, `sweepExpiredActingOrgUnitAssignments()`,
+`sweepDueHandovers()`, `sweepOrgUnitVacancies()`,
+`sweepVacantHeadRoleMappings()`) as sequential unguarded `await`
+calls with no try/catch anywhere in the function body. This is
+exactly what turned ACC-48's specific column-mismatch bug into a
+14.5-hour outage of all six mechanisms at once, tenant-wide — a
+single failing step still aborts the entire chain for that cycle, and
+there is no structural reason this can't recur from an unrelated bug
+in any of the other five. Tracked as its own ticket (ACC-49), not
+attempted here.
 
 ### 3.5 Out-of-Office Routing — A Real Limitation
 
@@ -1479,6 +1579,22 @@ only once the tenant has at least one active `OrgUnit`.
   one tenant, called from `TenantService.bootstrap()`. Idempotent via
   `findFirst` + conditional `create`, same Prisma compound-unique
   generated-type workaround as before ACC-40.
+- **`seedDefaultPositions()` seeds `Director` as
+  `isUnitHeadPosition: true`/`isSingleAssignee: true`** (ACC-46
+  Section 2.5) — the one deliberate exception to "head-conferring
+  status is never a seed default." Makes the tenant's first admin
+  (`resolveDefaultTenantAdminAssignment()` picks `Director` by name
+  for exactly this reason) the root unit's real Head from bootstrap
+  onward, satisfying the new "cannot invite into a headless unit"
+  rule (Section 12.3 below) immediately, with no manual configuration
+  step. `roleId` stays unset here — deliberately: the tenant admin
+  already gets `TENANT_ADMIN` via a direct role assignment
+  (`PlatformTenantService.createTenant()`), never through the
+  head-authority grant chain (Section 5.10), so no `roleId` is needed
+  for this to work correctly. Seeding bypasses `createPosition()`'s
+  own `validateHeadFlagPairing()` (calls `prisma.orgPosition.create()`
+  directly) — the seed data itself satisfies the invariant, confirmed
+  via `org-position.seed.ts`'s own header comment.
 - **`listPositions()`** (`:41`) — every position for the tenant, no
   `orgUnitId` parameter anymore (there is nothing left to scope by).
 - **`createPosition()`/`updatePosition()`** (`:56`/`:90`) — validate
@@ -1784,18 +1900,19 @@ section. The actual fix happens through the already-wired
 `user-profile.component.ts` edit form — no new UI needed for the fix
 itself.
 
-### 5.12 `validateEscalationTarget()` — Unchanged, Cross-Referenced to Section 3.4
+### 5.12 Escalation — Superseded, No Longer Cross-References `validateEscalationTarget()`
 
-ACC-40 did not touch task-escalation logic at all.
-`OrgPositionService.validateEscalationTarget()` (`:187`) still gates
-who a task's SLA-breach escalation target may be, using
-`position.grade` (unaffected by the `isSingleAssignee`/
-`isUnitHeadPosition` additions) and `primaryOrgUnitId` hierarchy — full
-mechanics in Section 3.4. Confirmed via grep, still the only real
-consumer of `OrgPositionService` outside its own controller — the code
-comment's forward-looking "Committees/Meetings/Documents/CAPA/Audits"
-list remains entirely unrealized, and `CommitteeMember.roleValueId`
-and `OrgPosition` remain two disconnected concepts.
+**This section's own prior premise is now false.** It previously
+stated "ACC-40 did not touch task-escalation logic at all" and
+described `OrgPositionService.validateEscalationTarget()` gating
+escalation targets by `position.grade` and `primaryOrgUnitId`
+hierarchy. That method was deleted entirely by ACC-46 (Section 3.4
+above) — grade/org-unit-hierarchy gating is gone, replaced by fully
+automatic Manager-then-Head resolution with no caller-supplied target
+at all. Section 3.4/3.4.1 above are now the only source of truth for
+task escalation; this section is retained only as a pointer so a
+reader following the old cross-reference lands somewhere useful,
+rather than removed outright.
 
 ### 5.13 Permission Model
 
@@ -3330,16 +3447,27 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
 
 ### 12.3 `UserService` Methods
 
-- **`invite()`** — enforces `Organization.maxUsers` (the seat-limit
-  half of CLAUDE.md's Plan model) by counting `ACTIVE`+`INVITED` users
-  together before allowing a new invite — `ConflictException` at the
-  limit, matching CLAUDE.md's "Hard limits at 100%... no data
-  corruption" pattern. Generates a 24-byte hex `invitationToken`, 7-day
-  TTL (`INVITATION_TTL_MS`). Sends the invitation as an `EMAIL`-channel
-  notification containing the raw accept-invitation URL with the token
-  as a query param — the token itself is the only credential; anyone
-  with the link can accept it (expected, matches the pattern of any
-  email-based invitation flow).
+- **`invite()`** — enforces `Organization.maxUsers` (unchanged from
+  before). Generates the 24-byte hex `invitationToken`, 7-day TTL,
+  sends the `EMAIL`-channel notification (unchanged).
+  **`managerId` is now mandatory** (ACC-46 Section 2.3) for every
+  invite except one exemption: `isRootUnitHeadInvite` — the invitee
+  is being invited *as* the target unit's own head-conferring
+  position, **and** that unit is the root (`parentId === null`), so
+  there is no manager for them to report to. `isInviteeTheUnitsOwnHead`
+  (`= !!targetPosition?.isUnitHeadPosition`) is the shared escape
+  valve both this rule and the next one rely on — filling a headless
+  unit's own vacancy is how a headless unit stops being headless, not
+  a violation of the rule that exists to prevent leaving it that way.
+  **Hard invite-block** (ACC-46 Section 2.4): when `primaryOrgUnitId`
+  is set, `OrgUnitHeadService.hasDirectOrActingHead()` (Section 5.5)
+  must return true, or the invite is rejected outright — cannot
+  invite staff into a unit with no direct Head and no Acting Head.
+  Escalation coverage from a parent unit does **not** count; this
+  rule only ever looks at the target unit itself. `isInviteeTheUnitsOwnHead`
+  exempts the invite that would fill the vacancy. Both checks derive
+  from the same two lookups (`targetPosition`/`targetOrgUnit`),
+  computed once, not twice.
 - **`updateProfile()`** — the self-vs-admin split confirmed directly:
   `isSelf = actorId === id`, `isAdmin = actorPermissions.includes('users:manage')`,
   rejects if neither. Admin-only fields (`positionId`,
@@ -3349,6 +3477,20 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
   building the `data` object conditionally. A non-admin submitting a
   `positionId` change in their own profile edit gets a `200` with the
   field quietly ignored, not a `403` telling them why it didn't apply.
+  **The vacancy-refresh/role-grant-sync guard below this block was
+  widened** (ACC-46 Section 2.2, closing a real, narrower gap): now
+  fires on `dto.positionId !== undefined || dto.primaryOrgUnitId !== undefined`,
+  not only `positionId` — an admin moving someone's `primaryOrgUnitId`
+  alone, with `positionId` left untouched, previously skipped both the
+  head-vacancy refresh and the role-grant sync entirely.
+- **`notifyTenantAdminsOfInviteAcceptanceConflict()`** (ACC-46 Section
+  2.1) — fires when `AuthService.acceptInvitation()`'s own Layer 2
+  check (Section 12.4 below) rejects a second invitee whose
+  position/unit was already claimed by a different accepted
+  invitation in the meantime. Same
+  `Role.findFirst('TENANT_ADMIN') → UserRole.findMany() →
+  NotificationService.create()` chain already established by
+  `notifyTenantAdminsOfIncompleteProfiles()` immediately above it.
 - **`updateOutOfOffice()`** — same self-vs-admin gate. Validates
   `actingUserId` (if given) resolves to an `ACTIVE` user in the same
   tenant before accepting it — this is the write side of Absence
@@ -3387,8 +3529,27 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
 Looks up the user by `invitationToken`, rejects generically ("Invalid
 or expired invitation") if missing or past `invitationExpiresAt` —
 **deliberately generic, code comment states why**: never reveal whether
-a token was ever valid, standard anti-enumeration practice. On success:
-calls Better Auth's `signUpEmail()` with the namespaced email (12.1.1),
+a token was ever valid, standard anti-enumeration practice.
+
+**Layer 2 of the INVITED-status race-condition fix** (ACC-46 Section
+2.1 — Layer 1 is Section 12.3's `validateSingleAssigneeCap()`/
+`validateUnitHeadUniqueness()` now counting `INVITED` alongside
+`ACTIVE`). Confirmed live, not just reasoned about: two sequential
+invites to the same single-assignee position, made before either
+invitee accepted, both previously passed the old ACTIVE-only check —
+an `INVITED` row was invisible to it. Layer 1 alone still can't close
+the narrower window where both invites' own validation reads happen
+before either row commits; Layer 2 re-runs
+`UserService.validatePositionAssignment()` here, immediately before
+`signUpEmail()`, as defense in depth. A rejection here has zero side
+effects — no Better Auth account created, the `User` row untouched
+(still `INVITED`, token **preserved**, not burned like the generic
+invalid/expired case, since the conflict may resolve on its own and
+the person can retry the same link later) — and calls
+`notifyTenantAdminsOfInviteAcceptanceConflict()` (Section 12.3) before
+throwing.
+
+On success: calls Better Auth's `signUpEmail()` with the namespaced email (12.1.1),
 links the resulting `AuthUser.id` as `User.authUserId`, flips
 `status: ACTIVE`, clears the token/expiry. **The ACC-25 fix, confirmed
 directly in the code comment**: unlike `login()` (which always returns
@@ -3460,6 +3621,9 @@ users:deactivate — UserController: deactivate. Deliberately separate
                    account suspension": a distinct, higher-stakes
                    action from editing a profile field, not folded
                    into the general management permission.
+users:transfer   — UserController: getTransferContext,
+                   validateTransferReplacement, validateTransferPosition,
+                   transferUser (all four — ACC-46, Section 12.9)
 ```
 
 ### 12.7 Frontend Consumption (Static Check)
@@ -3519,3 +3683,107 @@ provisioning, creating the first `TENANT_ADMIN`) was never a leak path
 either way — it only reads `.id` off the result and returns an
 unrelated `getTenantDetail()` shape, confirmed by reading the call
 site directly, not assumed.
+
+### 12.9 User Transfer Wizard (ACC-46)
+
+A new capability — moving an already-`ACTIVE` user to a different org
+unit and/or position, with three variants sharing one backend method
+and one frontend wizard. New model: `UserTransferEvent`
+(`schema.prisma`) — `organizationId` (denormalized, same precedent as
+`OrgUnitHeadEvent`), `userId`, `sourceOrgUnitId`/`destinationOrgUnitId`,
+`sourcePositionId`/`destinationPositionId` (informational only, not
+relations), `replacementUserId`/`newManagerId` (nullable),
+`isPromotion`/`promotionAttempted` (booleans — see below),
+`effectiveDate`, `performedBy` (always required — a transfer is a
+direct, single-actor action, deliberately not named `approvedBy` the
+way `OrgUnitHeadEvent`'s nullable field is, since this redesign never
+included a formal approval step).
+
+**Three variants, one method** — `UserService.transferUser()`
+(`user.service.ts:272`):
+
+- **Ordinary transfer** — `newManagerId` required, must resolve to an
+  `ACTIVE` user already in the destination unit.
+- **Succession (Case B)** — fires whenever the departing person has
+  active direct reports (`managerId: userId, status: 'ACTIVE'`
+  count > 0): `replacementUserId` becomes required, and inside the
+  transaction every one of those direct reports' `managerId` is
+  cascaded to the replacement (`updateMany`), and the replacement
+  inherits the departing person's own `positionId`.
+- **Promotion** — derived, never caller-declared: picking a
+  head-conferring (`isUnitHeadPosition: true`) `newPositionId` *is*
+  what makes a transfer a promotion. `newManagerId` is silently
+  ignored if supplied (matches `updateProfile()`'s own established
+  "admin-only fields silently excluded, not rejected" convention for
+  an inapplicable field). The new manager is derived instead: `null`
+  for the root unit (no parent to report to — the position's own
+  vacancy there is already guaranteed by the position-assignment
+  check that ran moments earlier), otherwise the immediate parent's
+  own Head or Acting Head — **single-level only**, no walking further
+  up to a grandparent if the immediate parent is itself headless
+  (mirrors Section 2.4/5.5's own "escalation coverage from further up
+  does not count" principle, applied one level up). Hard-blocked
+  (`ConflictException`) if the immediate parent has neither.
+
+**Two-transaction design, a deliberate, explicitly-accepted tradeoff**:
+transaction #1 (Steps 5–10 internally) does the Case B cascade, the
+transferred person's own row update, and — for non-promotion only —
+the `UserTransferEvent` write, all atomically together. For a
+promotion, `positionId` is deliberately left untouched by transaction
+#1 (verified during plan review: pre-setting it would make
+`assignHead()`'s own internal "what was the old position" query read
+old === new, silently no-opping its role grant) — `assignHead()`
+(Section 5.4) runs as its own, separately-atomic unit of work
+**after** transaction #1 commits, doing everything Head-specific
+itself (sets `positionId`, writes `OrgUnitHeadEvent`, refreshes
+vacancy, syncs the role grant). If `assignHead()` throws, the failure
+is **not** re-thrown as a hard failure to the caller — the core
+transfer already committed successfully, a categorically different
+situation from every other rejection path in this flow, which leaves
+nothing changed. `ITransferResult` (`{ user, promotionCompleted,
+promotionError? }`) surfaces this distinctly rather than looking like
+total failure or being silently swallowed into an ordinary success.
+The `UserTransferEvent` row for a promotion attempt is written only
+**after** `assignHead()` resolves either way — `isPromotion` records
+the CONFIRMED outcome (true only on genuine success, never written
+optimistically), `promotionAttempted` is always true regardless.
+
+**Live-validation flow, three pre-submit endpoints plus the final
+submit** — all gated `users:transfer` (Section 12.6), all live,
+re-checked-at-submit-time gates, never trusted as sole authority:
+
+- `GET /users/:id/transfer/context` → `getTransferContext()` —
+  automatic on destination-unit selection, not a user action. Returns
+  `hasActiveDirectReports` (gates whether the Replacement step shows
+  at all), `availablePositions` (reuses
+  `OrgPositionService.listAvailablePositionsForUser()`, Section
+  5.2's own "which positions can this person hold in this unit"
+  method), `currentDestinationHead`.
+- `POST /users/:id/transfer/validate-replacement` →
+  `validateTransferReplacement()` — the replacement must be `ACTIVE`
+  and already in the departing person's **current** (source) unit.
+- `POST /users/:id/transfer/validate-position` →
+  `validateTransferPosition()` — re-validates against
+  `UserService.validatePositionAssignment()` (Section 5.2/12.3) right
+  before the wizard advances; this is the step with genuine
+  multi-admin race exposure (`getTransferContext()`'s own
+  `availablePositions` list is a snapshot; a different admin could
+  assign the same single-assignee position to someone else in the
+  meantime) — the live re-check closes that window.
+- `POST /users/:id/transfer` → `transferUser()` — the final submit,
+  full re-validation runs again fresh, never trusting the wizard's
+  own earlier step gates as sole authority.
+
+**Frontend** — `TransferUserWizardComponent`
+(`user/components/transfer-user-wizard/`), a thin wrapper around
+PrimeNG's `p-stepper` family (not `EditDialogComponent`, not a fully
+custom stepper — confirmed via the component's own header comment
+this was a deliberate choice, not a default). Up to 5 visible steps
+(Destination Unit → Replacement [conditional, shown only when
+`hasActiveDirectReports`] → Position → Manager → Review), driven by a
+`stepValues()` computed mapping rather than fixed numeric step values
+— confirmed against PrimeNG's own source (`primeng-stepper.mjs`) that
+a `p-step`'s number badge is literally its declared `[value]`, so the
+Replacement step's conditional presence shifts every step after it.
+Reuses `OverlaySelectComponent` (Section 10.7) for its pickers, not
+`p-select`. Entry point: `user-profile.component.ts`.

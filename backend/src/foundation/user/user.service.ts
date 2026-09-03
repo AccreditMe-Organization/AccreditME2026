@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
@@ -13,13 +14,36 @@ import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
 import { OrganizationService } from '../organization/organization.service';
+// ACC-46 Section 2.4 — a genuine two-way provider cycle: OrgUnitHeadService
+// already @Inject(forwardRef(() => UserService)) (declareHandover()'s
+// validatePositionAssignment() bypass, ACC-40 Section 2.3), and this new
+// edge is the reverse direction of the exact same pair — forwardRef()
+// needed on both sides, not just one. Module-level wiring already safe:
+// UserModule already forwardRef(() => OrganizationModule), which already
+// exports OrgUnitHeadService — same edge this file already uses for
+// OrganizationService itself, no new module-level circularity.
+import { OrgUnitHeadService } from '../organization/org-unit-head.service';
+// ACC-46 Section 2.6.a/b — OrgPositionModule doesn't import UserModule
+// anywhere, so this edge alone would be one-way, but it transitively closes
+// a cycle through OrganizationModule (OrgPositionModule -> forwardRef
+// OrganizationModule -> forwardRef UserModule, an existing edge) — this new
+// UserModule -> OrgPositionModule edge needs forwardRef() too, same
+// discipline as every other module edge in this codebase touching that
+// same TenantModule/OrganizationModule graph. Verified via a real
+// start:dev boot, not just tsc/jest.
+import { OrgPositionService } from '../org-position/org-position.service';
 import { AUTH_PROVIDER, AuthProvider } from '../../providers/auth/auth.provider';
 import { InviteUserDto } from './dto/invite-user.dto';
+import { ValidateTransferReplacementDto } from './dto/validate-transfer-replacement.dto';
+import { ValidateTransferPositionDto } from './dto/validate-transfer-position.dto';
+import { TransferUserDto } from './dto/transfer-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IUser } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
+import { ITransferContext } from './interfaces/transfer-context.interface';
+import { ITransferResult } from './interfaces/transfer-result.interface';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -99,6 +123,13 @@ export class UserService {
     private readonly taskService: TaskService,
     private readonly organizationService: OrganizationService,
     @Inject(AUTH_PROVIDER) private readonly authProvider: AuthProvider,
+    @Inject(forwardRef(() => OrgUnitHeadService))
+    private readonly orgUnitHeadService: OrgUnitHeadService,
+    // ACC-46 Section 2.6.a — a one-way provider dependency (OrgPositionService
+    // has no dependency back on UserService), so no @Inject(forwardRef())
+    // needed at the constructor-injection level — only the module-level
+    // import edge above needs it.
+    private readonly orgPositionService: OrgPositionService,
   ) {}
 
   async listUsers(organizationId: string, filters?: ListUsersFilters): Promise<IUser[]> {
@@ -138,6 +169,445 @@ export class UserService {
     return this.getById(id, organizationId);
   }
 
+  // ACC-46 Section 2.6.b Step 2 — automatic context load, not a user
+  // action: drives which subsequent wizard steps are shown, pre-fills the
+  // position picker with only genuinely available choices, and pre-fills
+  // the manager step's default. getById() validates userId exists in this
+  // tenant first (throws NotFoundException otherwise); getHeadStatus()
+  // below independently validates destinationOrgUnitId the same way — run
+  // first among the three lookups so an invalid destination fails fast
+  // rather than after the (wasted) direct-reports/positions queries.
+  async getTransferContext(
+    userId: string,
+    destinationOrgUnitId: string,
+    organizationId: string,
+  ): Promise<ITransferContext> {
+    await this.getById(userId, organizationId);
+    const headStatus = await this.orgUnitHeadService.getHeadStatus(destinationOrgUnitId, organizationId);
+
+    const hasActiveDirectReports =
+      (await this.prisma.user.count({
+        where: { managerId: userId, organizationId, status: 'ACTIVE' },
+      })) > 0;
+    const availablePositions = await this.orgPositionService.listAvailablePositionsForUser(
+      userId,
+      destinationOrgUnitId,
+      organizationId,
+    );
+
+    return {
+      hasActiveDirectReports,
+      availablePositions,
+      currentDestinationHead: headStatus.holders[0] ?? null,
+    };
+  }
+
+  // ACC-46 Section 2.6.b Step 3 — the live gate fired before the wizard
+  // advances past the conditional replacement step (shown only when
+  // getTransferContext() reported hasActiveDirectReports). One combined
+  // existence/status/unit-match check with one combined message (2.6.e's
+  // own error table) — deliberately not split into separate "not found"
+  // vs "wrong unit" errors the way assignHead()'s own precedent does it,
+  // since this endpoint's job is a single yes/no gate, not diagnosing
+  // exactly which condition failed.
+  async validateTransferReplacement(
+    userId: string,
+    dto: ValidateTransferReplacementDto,
+    organizationId: string,
+  ): Promise<void> {
+    const user = await this.getById(userId, organizationId);
+
+    const replacement = await this.prisma.user.findFirst({
+      where: {
+        id: dto.replacementUserId,
+        organizationId,
+        status: 'ACTIVE',
+        primaryOrgUnitId: user.primaryOrgUnitId,
+      },
+    });
+    if (!replacement) {
+      throw new ConflictException(
+        "The replacement must be an active user already belonging to the departing person's current org unit",
+      );
+    }
+
+    // ACC-40 Phase 2 made positionId unconditionally required for every
+    // real invite() — this guard exists for type-safety and defense in
+    // depth (IUser.positionId is typed string | null), not because a
+    // legitimate departing user is expected to lack one.
+    if (!user.positionId || !user.primaryOrgUnitId) {
+      throw new ConflictException('The departing user has no current position or org unit to hand over');
+    }
+
+    // Confirms the replacement can legitimately inherit the departing
+    // person's current position. excludeUserId: the departing person's own
+    // row — they're vacating this exact position, so their own current
+    // holding of it must not count against the replacement taking it over.
+    await this.validatePositionAssignment(user.positionId, user.primaryOrgUnitId, organizationId, user.id);
+  }
+
+  // ACC-46 Section 2.6.b Step 4 — the live gate fired before the wizard
+  // advances past the (always-shown, for every transfer) destination
+  // position step. This is the step with genuine multi-user race
+  // exposure — getTransferContext()'s own availablePositions list is a
+  // snapshot; another admin could assign the same single-assignee
+  // position to someone else in the meantime. This explicit
+  // re-validation, right before the wizard advances, is what closes that
+  // window — not merely trusting the earlier snapshot.
+  async validateTransferPosition(
+    userId: string,
+    dto: ValidateTransferPositionDto,
+    organizationId: string,
+  ): Promise<void> {
+    await this.getById(userId, organizationId);
+    await this.validatePositionAssignment(dto.newPositionId, dto.destinationOrgUnitId, organizationId, userId);
+  }
+
+  // ACC-46 Section 2.6.b Step 6 / 2.6.c — the final submit. Full
+  // re-validation runs again fresh here, never trusting the wizard's own
+  // step gates (validate-replacement/validate-position) as sole
+  // authority. Both branches — ordinary transfer and promotion — live in
+  // this one method; they share steps 1–3 and 5–9 and only diverge at
+  // specific, individually-flagged points below.
+  async transferUser(
+    userId: string,
+    dto: TransferUserDto,
+    organizationId: string,
+    actorId: string,
+  ): Promise<ITransferResult> {
+    // Step 1 — load + confirm ACTIVE. An INVITED or INACTIVE user is out
+    // of scope: updateProfile() already covers pre-acceptance edits, and a
+    // departed user has no business being transferred.
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, organizationId, status: 'ACTIVE' },
+    });
+    if (!user) throw new NotFoundException('User not found or not active in this tenant');
+    if (!user.primaryOrgUnitId) {
+      throw new ConflictException('This user has no current org unit to transfer from');
+    }
+
+    const newPosition = await this.prisma.orgPosition.findFirst({
+      where: { id: dto.newPositionId, organizationId },
+    });
+    if (!newPosition) throw new NotFoundException('Position not found in this organization');
+    // Whether this transfer is a promotion is derived, not caller-declared
+    // — picking a head-conferring position *is* what makes it a
+    // promotion (2.6.b Step 4).
+    const isPromotion = newPosition.isUnitHeadPosition;
+
+    // Step 2 — re-run Step 3's replacement check, if present; otherwise
+    // re-run the Case B requiredness check (2.6.e's own table row).
+    let replacement: { id: string; positionId: string | null; primaryOrgUnitId: string | null } | null = null;
+    if (dto.replacementUserId) {
+      replacement = await this.prisma.user.findFirst({
+        where: {
+          id: dto.replacementUserId,
+          organizationId,
+          status: 'ACTIVE',
+          primaryOrgUnitId: user.primaryOrgUnitId,
+        },
+      });
+      if (!replacement) {
+        throw new ConflictException(
+          "The replacement must be an active user already belonging to the departing person's current org unit",
+        );
+      }
+      if (!user.positionId) {
+        throw new ConflictException('The departing user has no current position to hand over');
+      }
+      // excludeUserId: the departing person's own row — they're vacating
+      // this exact position, so their own current holding of it must not
+      // count against the replacement taking it over.
+      await this.validatePositionAssignment(user.positionId, user.primaryOrgUnitId, organizationId, user.id);
+    } else {
+      const hasActiveDirectReports =
+        (await this.prisma.user.count({
+          where: { managerId: user.id, organizationId, status: 'ACTIVE' },
+        })) > 0;
+      if (hasActiveDirectReports) {
+        throw new BadRequestException(
+          'This user has active direct reports — a replacement from the source unit is required',
+        );
+      }
+    }
+
+    // Step 3 — re-run Step 4's position check. excludeUserId: the
+    // transferred person's own id (they will hold this position after the
+    // transfer — their own future occupancy must not count against
+    // themselves).
+    await this.validatePositionAssignment(dto.newPositionId, dto.destinationOrgUnitId, organizationId, user.id);
+
+    // Step 4 — re-run Step 5's manager resolution.
+    let resolvedNewManagerId: string | null;
+    if (isPromotion) {
+      // 2.6.d — derived, never a caller choice. Any caller-supplied
+      // newManagerId is silently ignored, matching updateProfile()'s own
+      // established "admin-only fields silently excluded, not rejected"
+      // convention for a field that doesn't apply in this mode.
+      const destinationUnit = await this.prisma.orgUnit.findFirst({
+        where: { id: dto.destinationOrgUnitId, organizationId },
+      });
+      if (!destinationUnit) throw new NotFoundException('Destination org unit not found in this organization');
+
+      if (destinationUnit.parentId === null) {
+        // Root exemption — no manager at all. Root's own head-conferring
+        // position being currently vacant is already guaranteed by this
+        // point: Step 3's validatePositionAssignment() above would have
+        // thrown if it weren't.
+        resolvedNewManagerId = null;
+      } else {
+        // DECIDED — "recursively" means single-level only: the immediate
+        // parent must have its own direct-or-acting Head, or the
+        // promotion is hard-blocked. No walking further up to
+        // grandparent — consistent with 2.4's own "parent escalation
+        // coverage does not count" principle applied one level up.
+        const parentHasHead = await this.orgUnitHeadService.hasDirectOrActingHead(
+          destinationUnit.parentId,
+          organizationId,
+        );
+        if (!parentHasHead) {
+          throw new ConflictException(
+            "Cannot promote into this unit — its parent unit has no Head or Acting Head of its own yet",
+          );
+        }
+        const parentHeadStatus = await this.orgUnitHeadService.getHeadStatus(
+          destinationUnit.parentId,
+          organizationId,
+        );
+        const parentManagerId = parentHeadStatus.holders[0]?.id ?? parentHeadStatus.actingHeadUserId;
+        // Defensive — hasDirectOrActingHead() just confirmed one of these
+        // must be truthy; should be unreachable in practice.
+        if (!parentManagerId) {
+          throw new ConflictException("Could not resolve the parent unit's current Head or Acting Head");
+        }
+        resolvedNewManagerId = parentManagerId;
+      }
+    } else {
+      // Non-promotion: required, and must be an active user already in
+      // the destination unit (fixed in this pass, per 2.6.b Step 5 — the
+      // original design only checked destination-unit membership, not
+      // status).
+      if (!dto.newManagerId) {
+        throw new BadRequestException('newManagerId is required for an ordinary (non-promotion) transfer');
+      }
+      const manager = await this.prisma.user.findFirst({
+        where: {
+          id: dto.newManagerId,
+          organizationId,
+          status: 'ACTIVE',
+          primaryOrgUnitId: dto.destinationOrgUnitId,
+        },
+      });
+      if (!manager) {
+        throw new ConflictException('newManagerId must be an active user belonging to the destination org unit');
+      }
+      resolvedNewManagerId = dto.newManagerId;
+    }
+
+    const sourceOrgUnitId = user.primaryOrgUnitId;
+    const sourcePositionId = user.positionId;
+
+    // Steps 5–10 — transaction #1. Only genuine, atomic-together row
+    // writes live inside tx: the Case B cascade, the transferred person's
+    // own update, and (non-promotion only) the UserTransferEvent write.
+    // Side-effecting calls that read/write through the plain injected
+    // PrismaService (refreshOrgUnitHeadVacancy(), syncHeadAuthorityRoleGrant(),
+    // AuditLogService.log()) run after commit, matching this codebase's
+    // own established "side-effecting calls stay outside the transaction"
+    // convention (2.6.h).
+    const updatedUser = await this.prisma.$transaction(async (tx) => {
+      // Step 5 — Case B cascade.
+      if (replacement) {
+        await tx.user.updateMany({
+          where: { managerId: user.id, organizationId, status: 'ACTIVE' },
+          data: { managerId: replacement.id },
+        });
+        await tx.user.update({
+          where: { id: replacement.id },
+          data: { positionId: sourcePositionId },
+        });
+      }
+
+      // Step 6 — update the transferred person. positionId included ONLY
+      // when NOT a promotion — verified during plan review that
+      // assignHead() (step 11 below) is NOT safe to call after this
+      // pre-sets positionId: it derives its own "old position" via a
+      // fresh internal query, and would read old === new, silently
+      // no-opping the role grant. For a promotion, positionId is left
+      // entirely to assignHead() itself.
+      const updated = await tx.user.update({
+        where: { id: user.id },
+        data: {
+          primaryOrgUnitId: dto.destinationOrgUnitId,
+          managerId: resolvedNewManagerId,
+          ...(isPromotion ? {} : { positionId: dto.newPositionId }),
+        },
+      });
+
+      // Step 10 — UserTransferEvent. Non-promotion: written here, fully
+      // atomic with the rest of the transfer (2.6.c/2.6.f). Promotion:
+      // skipped here — "what actually happened" is only known once
+      // assignHead() (step 11) resolves; deferred to step 12, after this
+      // transaction has already committed.
+      if (!isPromotion) {
+        await tx.userTransferEvent.create({
+          data: {
+            organizationId,
+            userId: user.id,
+            sourceOrgUnitId,
+            destinationOrgUnitId: dto.destinationOrgUnitId,
+            sourcePositionId,
+            destinationPositionId: dto.newPositionId,
+            replacementUserId: replacement?.id ?? null,
+            newManagerId: resolvedNewManagerId,
+            isPromotion: false,
+            promotionAttempted: false,
+            performedBy: actorId,
+          },
+        });
+      }
+
+      return updated;
+    });
+
+    // Step 7 — refresh vacancy for both source and destination units.
+    // Destination skipped when isPromotion — assignHead() (step 11)
+    // already does it there.
+    const unitsToRefresh = isPromotion ? [sourceOrgUnitId] : [sourceOrgUnitId, dto.destinationOrgUnitId];
+    for (const orgUnitId of new Set(unitsToRefresh)) {
+      await this.organizationService.refreshOrgUnitHeadVacancy(orgUnitId, organizationId);
+    }
+
+    // Step 5 (continued) — role-grant sync for the replacement, old: their
+    // own previous position/unit -> new: the departing person's old
+    // position, source unit. Unaffected by isPromotion — Case B is
+    // orthogonal to whether the departing person is being promoted.
+    if (replacement) {
+      await this.syncHeadAuthorityRoleGrant(
+        replacement.id,
+        replacement.positionId,
+        replacement.primaryOrgUnitId,
+        sourcePositionId,
+        sourceOrgUnitId,
+        organizationId,
+        actorId,
+      );
+    }
+
+    // Step 8 — role-grant sync for the transferred person themselves,
+    // old: their previous position/unit -> new: the destination
+    // position/unit. Skipped when isPromotion — assignHead() (step 11)
+    // already covers this too.
+    if (!isPromotion) {
+      await this.syncHeadAuthorityRoleGrant(
+        user.id,
+        sourcePositionId,
+        sourceOrgUnitId,
+        dto.newPositionId,
+        dto.destinationOrgUnitId,
+        organizationId,
+        actorId,
+      );
+    }
+
+    // Step 9 — audit log, describing what this transaction itself did.
+    // Accurate regardless of what a later promotion attempt does or
+    // doesn't achieve, so it fires unconditionally.
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'User',
+      objectId: user.id,
+      before: user as unknown as Record<string, unknown>,
+      after: updatedUser as unknown as Record<string, unknown>,
+    });
+
+    if (!isPromotion) {
+      return { user: updatedUser, promotionCompleted: true };
+    }
+
+    // Step 11 — promotion only, OUTSIDE transaction #1, as its own
+    // separate, already-internally-atomic unit of work. Delegates to the
+    // EXISTING OrgUnitHeadService.assignHead() for everything
+    // Head-specific — it already validates isUnitHeadPosition, requires
+    // the target to already belong to the unit (true by this point —
+    // transaction #1 already committed primaryOrgUnitId), calls
+    // validatePositionAssignment() again (harmless — already passed in
+    // step 3; this codebase's own established redundant-but-safe
+    // pattern), sets positionId itself, writes its own OrgUnitHeadEvent,
+    // refreshes destination-unit vacancy, and syncs the role grant —
+    // correctly this time, per the fix above. transferUser()'s own job
+    // for this branch narrows to moving the unit and resolving the
+    // manager (steps 1–9) — not reimplementing any of assignHead()'s
+    // steps, and not racing it either.
+    let promotionCompleted: boolean;
+    let promotionError: string | undefined;
+    // Found during live verification: the transaction-#1 result
+    // (updatedUser) is captured BEFORE assignHead() runs, so on success it
+    // would otherwise echo a stale positionId — the DB itself was already
+    // correct, but the HTTP response wasn't. Re-assigned only on confirmed
+    // success, so a failure still returns the (accurate, non-stale)
+    // transaction-#1 result — assignHead() never wrote anything in that case.
+    let finalUser = updatedUser;
+    try {
+      await this.orgUnitHeadService.assignHead(
+        dto.destinationOrgUnitId,
+        { userId: user.id, positionId: dto.newPositionId },
+        organizationId,
+        actorId,
+      );
+      promotionCompleted = true;
+      finalUser = await this.prisma.user.findFirst({ where: { id: user.id, organizationId } }) ?? updatedUser;
+    } catch (err) {
+      // Not re-thrown to the caller as a hard failure — every other
+      // error row in 2.6.e rejects with nothing having changed; this one
+      // is categorically different, since the core transfer itself
+      // already succeeded (2.6.h's own accepted, explicitly-stated
+      // tradeoff). No automatic retry — a single attempt, surfaced to a
+      // human, matching this plan's "never silently escalate/assign to
+      // nothing" discipline elsewhere.
+      promotionCompleted = false;
+      promotionError = err instanceof Error ? err.message : String(err);
+
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'UPDATE',
+        objectType: 'User',
+        objectId: user.id,
+        metadata: {
+          transferPromotionFailed: true,
+          reason: promotionError,
+          destinationOrgUnitId: dto.destinationOrgUnitId,
+        },
+      });
+    }
+
+    // Step 12 — UserTransferEvent, promotion branch: written only now,
+    // after assignHead() has resolved either way — isPromotion records
+    // CONFIRMED outcome (true only on genuine success), promotionAttempted
+    // is always true here regardless of outcome.
+    await this.prisma.userTransferEvent.create({
+      data: {
+        organizationId,
+        userId: user.id,
+        sourceOrgUnitId,
+        destinationOrgUnitId: dto.destinationOrgUnitId,
+        sourcePositionId,
+        destinationPositionId: dto.newPositionId,
+        replacementUserId: replacement?.id ?? null,
+        newManagerId: resolvedNewManagerId,
+        isPromotion: promotionCompleted,
+        promotionAttempted: true,
+        performedBy: actorId,
+      },
+    });
+
+    // Step 13
+    return { user: finalUser, promotionCompleted, promotionError };
+  }
+
   // Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —
   // uploads blocked, no data corruption" pattern, applied here to seats.
   async invite(dto: InviteUserDto, organizationId: string, actorId: string): Promise<IUser> {
@@ -173,6 +643,47 @@ export class UserService {
       if (activeOrgUnitCount > 0) {
         throw new BadRequestException(
           'primaryOrgUnitId is required once this organization has at least one active org unit',
+        );
+      }
+    }
+
+    // ACC-46 Section 2.3/2.4 — both new rules below derive from the same
+    // two lookups, computed once. isInviteeTheUnitsOwnHead is the shared
+    // escape valve both rules rely on: inviting someone AS the target
+    // unit's own head-conferring position is how a headless unit stops
+    // being headless, and the root unit's own Head is exempt from needing
+    // a manager (top of the hierarchy, no parent to report to) — neither
+    // is a violation of the rule it would otherwise trip.
+    const targetPosition = await this.prisma.orgPosition.findFirst({
+      where: { id: dto.positionId, organizationId },
+    });
+    const targetOrgUnit = dto.primaryOrgUnitId
+      ? await this.prisma.orgUnit.findFirst({ where: { id: dto.primaryOrgUnitId, organizationId } })
+      : null;
+    const isInviteeTheUnitsOwnHead = !!targetPosition?.isUnitHeadPosition;
+    const isRootUnitHeadInvite = isInviteeTheUnitsOwnHead && !!targetOrgUnit && targetOrgUnit.parentId === null;
+
+    // ACC-46 Section 2.3 — managerId is required for every invite except
+    // the person being invited as the root unit's own Head. Conditional,
+    // not a blanket-required DTO decorator, same shape as
+    // primaryOrgUnitId above (invite-user.dto.ts's own comment explains
+    // why a bare @IsNotEmpty() there would reject the exemption case
+    // before this check ever runs).
+    if (!dto.managerId && !isRootUnitHeadInvite) {
+      throw new BadRequestException('managerId is required for every invite except the root unit\'s own Head');
+    }
+
+    // ACC-46 Section 2.4 — hard block: cannot invite anyone into a unit
+    // with no direct Head and no Acting Head. Escalation coverage from a
+    // parent unit does NOT count — this rule only ever looks at the
+    // target unit itself. isInviteeTheUnitsOwnHead is the escape valve:
+    // filling the vacancy is not a violation of the rule that exists to
+    // prevent leaving it unfilled.
+    if (dto.primaryOrgUnitId) {
+      const hasHead = await this.orgUnitHeadService.hasDirectOrActingHead(dto.primaryOrgUnitId, organizationId);
+      if (!hasHead && !isInviteeTheUnitsOwnHead) {
+        throw new ConflictException(
+          'This org unit currently has no Head or Acting Head — assign one before inviting new staff into it',
         );
       }
     }
@@ -306,6 +817,43 @@ export class UserService {
           titleAr: `${incompleteUsers.length} مستخدم نشط ينقصه المسمى الوظيفي أو الوحدة التنظيمية`,
           bodyEn: `${incompleteUsers.length} active user(s) in your organization have no assigned position and/or org unit. Update each user's profile to complete their record.`,
           bodyAr: `يوجد ${incompleteUsers.length} مستخدم نشط في مؤسستك بلا مسمى وظيفي و/أو وحدة تنظيمية. حدّث ملف كل مستخدم لإكمال بياناته.`,
+        },
+        organizationId,
+      );
+    }
+  }
+
+  // ACC-46 Section 2.1 — fires when AuthService.acceptInvitation()'s own
+  // Layer 2 check (validatePositionAssignment(), re-run at the moment of
+  // activation) rejects a second invitee whose position/unit was already
+  // claimed by a different accepted invitation in the meantime. The token
+  // is deliberately preserved (not burned like the generic invalid/expired
+  // case) — the conflict may resolve on its own, so the person can retry
+  // the same link later. Reuses the exact Role.findFirst({key:
+  // 'TENANT_ADMIN'}) -> UserRole.findMany() -> NotificationService.create()
+  // chain already established by notifyTenantAdminsOfIncompleteProfiles()
+  // above (and workflow.service.ts's own notifyTenantAdminsOfX() methods).
+  async notifyTenantAdminsOfInviteAcceptanceConflict(
+    invitedUserName: string,
+    organizationId: string,
+  ): Promise<void> {
+    const adminRole = await this.prisma.role.findFirst({
+      where: { organizationId, key: 'TENANT_ADMIN' },
+    });
+    if (!adminRole) return;
+
+    const adminUserRoles = await this.prisma.userRole.findMany({
+      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
+    });
+
+    for (const userRole of adminUserRoles) {
+      await this.notificationService.create(
+        {
+          userId: userRole.userId,
+          titleEn: 'Invitation acceptance blocked — position conflict',
+          titleAr: 'تعذّر قبول الدعوة — تعارض في المسمى الوظيفي',
+          bodyEn: `${invitedUserName} tried to accept their invitation, but the position/org unit is already held by another active user. Review and reassign one of the two pending invitations.`,
+          bodyAr: `حاول ${invitedUserName} قبول دعوته، لكن المسمى الوظيفي/الوحدة التنظيمية مشغولة بالفعل من قبل مستخدم نشط آخر. راجع الدعوتين المعلّقتين وأعد تعيين إحداهما.`,
         },
         organizationId,
       );
@@ -537,12 +1085,19 @@ export class UserService {
     // ordinary positions).
     if (isDeclaredHandoverBypass) return;
 
+    // ACC-46 Section 2.1 — counts INVITED alongside ACTIVE. Confirmed live
+    // (reproduced against a running dev server, not just reasoned about):
+    // two sequential invites to the same single-assignee position, made
+    // before either invitee accepts, both previously passed this check —
+    // an INVITED row was invisible to it, since invite() creates the new
+    // user at status INVITED, never ACTIVE. Layer 2 (acceptInvitation(),
+    // auth.service.ts) is the defense-in-depth half of this same fix.
     const existingHolders = await this.prisma.user.count({
       where: {
         organizationId,
         positionId: position.id,
         primaryOrgUnitId: targetPrimaryOrgUnitId,
-        status: 'ACTIVE',
+        status: { in: ['ACTIVE', 'INVITED'] },
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
       },
     });
@@ -565,6 +1120,14 @@ export class UserService {
   // guarantees isUnitHeadPosition: true implies isSingleAssignee: true —
   // this check exists BECAUSE that per-position guarantee alone isn't
   // enough across DIFFERENT positions).
+  // Post-review fix — the actual existence check moved to
+  // OrgPositionService.hasAnyHeadConferringHolder(), specifically so this
+  // (the write-side enforcement) and listAvailablePositionsForUser() (the
+  // read-side picker filter) can no longer drift apart the way they
+  // already did once: the read side used to run a narrower, same-position-
+  // only check, so the wizard could offer a head-conferring position this
+  // method would then unconditionally reject. Both now call the one
+  // shared method.
   private async validateUnitHeadUniqueness(
     position: { id: string; isUnitHeadPosition: boolean },
     targetPrimaryOrgUnitId: string | null,
@@ -575,16 +1138,12 @@ export class UserService {
     if (!position.isUnitHeadPosition) return;
     if (isDeclaredHandoverBypass) return;
 
-    const anyHeadHolders = await this.prisma.user.count({
-      where: {
-        organizationId,
-        primaryOrgUnitId: targetPrimaryOrgUnitId,
-        status: 'ACTIVE',
-        position: { isUnitHeadPosition: true },
-        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-      },
-    });
-    if (anyHeadHolders >= 1) {
+    const hasAnyHeadHolder = await this.orgPositionService.hasAnyHeadConferringHolder(
+      targetPrimaryOrgUnitId,
+      organizationId,
+      excludeUserId,
+    );
+    if (hasAnyHeadHolder) {
       throw new ConflictException('This org unit already has an active Head-position holder');
     }
   }

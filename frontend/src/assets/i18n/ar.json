@@ -20,7 +20,10 @@
     "active": "نشط",
     "inactive": "غير نشط",
     "yes": "نعم",
-    "no": "لا"
+    "no": "لا",
+    "back": "رجوع",
+    "next": "التالي",
+    "close": "إغلاق"
   },
   "nav": {
     "dashboard": "لوحة التحكم",
@@ -419,6 +422,37 @@
     "errorLoad": "فشل تحميل المستخدم.",
     "errorSave": "فشل حفظ التغييرات.",
     "errorInvite": "فشل إرسال الدعوة.",
+    "transfer": {
+      "action": "نقل",
+      "title": "نقل مستخدم",
+      "stepDestination": "الوجهة",
+      "stepReplacement": "البديل",
+      "stepPosition": "الوظيفة",
+      "stepManager": "المدير",
+      "stepReview": "المراجعة",
+      "destinationOrgUnit": "الوحدة التنظيمية المستقبلة",
+      "replacementLabel": "البديل",
+      "replacementHint": "لدى هذا المستخدم مرؤوسين مباشرين نشطين — اختر من سيتولى مسؤوليتهم في الوحدة الحالية.",
+      "replacementRequired": "البديل مطلوب.",
+      "newPosition": "المسمى الوظيفي الجديد",
+      "newManager": "المدير الجديد",
+      "managerRequired": "المدير المباشر مطلوب.",
+      "rootPromotionNoManager": "لا يوجد مدير مباشر — هذا هو رئيس المؤسسة الأعلى.",
+      "derivedManager": "سيكون تابعًا لـ {{name}}، رئيس {{unit}}.",
+      "derivedManagerActing": "سيكون تابعًا لـ {{name}} (رئيس بالإنابة لـ {{unit}}).",
+      "reviewDestinationUnit": "الوحدة المستقبلة",
+      "reviewPosition": "المسمى الوظيفي",
+      "reviewManager": "المدير المباشر",
+      "reviewReplacement": "البديل",
+      "reviewPromotionNote": "هذه ترقية — سيصبح {{name}} رئيسًا لـ {{unit}}.",
+      "transferSuccess": "تم نقل {{name}} بنجاح إلى {{unit}}.",
+      "promotionSuccess": "تم نقل {{name}} وترقيته بنجاح ليصبح رئيسًا لـ {{unit}}.",
+      "promotionPartialFailure": "تم نقل {{name}} بنجاح إلى {{unit}}، لكن تعذّرت ترقيته إلى رئيس: {{error}}. استخدم 'تعيين رئيس' في صفحة الوحدة التنظيمية لإتمام الترقية.",
+      "errorContext": "فشل تحميل بيانات النقل للوحدة المختارة.",
+      "errorReplacement": "فشل التحقق من صحة البديل.",
+      "errorPosition": "فشل التحقق من صحة المسمى الوظيفي المختار.",
+      "errorSubmit": "فشل إتمام عملية النقل."
+    },
     "status": {
       "title": "الحالة",
       "active": "نشط",
@@ -529,6 +563,11 @@
     "emailProviderNote": "واجهة فقط في الوقت الحالي — لا يزال البريد يُرسل عبر المزوّد الافتراضي للمنصة حتى يتم تفعيل هذا الإعداد بالكامل.",
     "provider": "المزوّد",
     "providerConfig": "إعدادات المزوّد (JSON)",
-    "errorInvalidJson": "صيغة JSON غير صالحة في إعدادات المزوّد."
+    "errorInvalidJson": "صيغة JSON غير صالحة في إعدادات المزوّد.",
+    "taskSla": "مهلة المهام والتصعيد",
+    "taskSlaNote": "حدد المدة التي تبقى فيها المهمة مفتوحة قبل موعد استحقاقها، والمدة التي تبقى فيها متأخرة قبل تصعيدها — أولاً إلى مدير المكلّف بها، ثم إلى رئيس وحدته.",
+    "dueAfterHours": "الاستحقاق بعد (ساعات)",
+    "managerEscalationAfterHours": "تصعيد إلى المدير (ساعات بعد الاستحقاق)",
+    "headEscalationAfterHours": "تصعيد إلى الرئيس (ساعات بعد المدير)"
   }
 }

@@ -20,7 +20,10 @@
     "active": "Active",
     "inactive": "Inactive",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "back": "Back",
+    "next": "Next",
+    "close": "Close"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -419,6 +422,37 @@
     "errorLoad": "Failed to load user.",
     "errorSave": "Failed to save changes.",
     "errorInvite": "Failed to send invitation.",
+    "transfer": {
+      "action": "Transfer",
+      "title": "Transfer User",
+      "stepDestination": "Destination",
+      "stepReplacement": "Replacement",
+      "stepPosition": "Position",
+      "stepManager": "Manager",
+      "stepReview": "Review",
+      "destinationOrgUnit": "Destination Org Unit",
+      "replacementLabel": "Replacement",
+      "replacementHint": "This user has active direct reports — select who will take them over in the source unit.",
+      "replacementRequired": "A replacement is required.",
+      "newPosition": "New Position",
+      "newManager": "New Manager",
+      "managerRequired": "A manager is required.",
+      "rootPromotionNoManager": "No manager — this is the organization's root Head.",
+      "derivedManager": "Will report to {{name}}, Head of {{unit}}.",
+      "derivedManagerActing": "Will report to {{name}} (Acting Head of {{unit}}).",
+      "reviewDestinationUnit": "Destination Unit",
+      "reviewPosition": "Position",
+      "reviewManager": "Manager",
+      "reviewReplacement": "Replacement",
+      "reviewPromotionNote": "This is a promotion — {{name}} will become Head of {{unit}}.",
+      "transferSuccess": "{{name}} was successfully transferred to {{unit}}.",
+      "promotionSuccess": "{{name}} was successfully transferred and promoted to Head of {{unit}}.",
+      "promotionPartialFailure": "{{name}} was successfully transferred to {{unit}}, but could not be promoted to Head: {{error}}. Use 'Assign Head' on the org unit's own page to complete the promotion.",
+      "errorContext": "Failed to load transfer context for the selected unit.",
+      "errorReplacement": "Failed to validate the replacement.",
+      "errorPosition": "Failed to validate the selected position.",
+      "errorSubmit": "Failed to complete the transfer."
+    },
     "status": {
       "title": "Status",
       "active": "Active",
@@ -529,6 +563,11 @@
     "emailProviderNote": "UI only for now — email is still sent via the platform default provider until this setting is fully wired up.",
     "provider": "Provider",
     "providerConfig": "Provider Configuration (JSON)",
-    "errorInvalidJson": "Invalid JSON in provider configuration."
+    "errorInvalidJson": "Invalid JSON in provider configuration.",
+    "taskSla": "Task SLA & Escalation",
+    "taskSlaNote": "Configure how long a task stays open before it's due, and how long it stays overdue before escalating — first to the assignee's manager, then to their unit head.",
+    "dueAfterHours": "Due After (hours)",
+    "managerEscalationAfterHours": "Manager Escalation (hours after due)",
+    "headEscalationAfterHours": "Head Escalation (hours after manager)"
   }
 }

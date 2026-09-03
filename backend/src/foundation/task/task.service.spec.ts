@@ -6,6 +6,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
+import { TenantService } from '../tenant/tenant.service';
+import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -54,9 +56,6 @@ const mockPrisma = {
   taskEvidence: {
     create: jest.fn(),
   },
-  organization: {
-    findUnique: jest.fn(),
-  },
   user: {
     findMany: jest.fn(),
   },
@@ -71,6 +70,17 @@ const mockPrisma = {
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
+const mockTenantService = { getTaskSla: jest.fn() };
+
+// ACC-46 Section 2.7.c — a plausible, complete ITaskSlaSettings fixture;
+// only dueAfterHours matters to computeSlaDueAt(), the escalation fields
+// are exercised in sla-monitor.processor.spec.ts instead.
+const DEFAULT_SLA: ITaskSlaSettings = {
+  CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
+  HIGH: { dueAfterHours: 16, managerEscalationAfterHours: 8, headEscalationAfterHours: 16 },
+  MEDIUM: { dueAfterHours: 40, managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
+  LOW: { dueAfterHours: 80, managerEscalationAfterHours: 48, headEscalationAfterHours: 96 },
+};
 
 describe('TaskService', () => {
   let service: TaskService;
@@ -78,7 +88,7 @@ describe('TaskService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockWorkingCalendar.calculateDeadline.mockResolvedValue(DateTime.fromISO('2026-02-01T12:00:00Z'));
-    mockPrisma.organization.findUnique.mockResolvedValue({ settings: null });
+    mockTenantService.getTaskSla.mockResolvedValue(DEFAULT_SLA);
     mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }]);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -88,6 +98,7 @@ describe('TaskService', () => {
         { provide: AuditLogService, useValue: mockAuditLog },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: TenantService, useValue: mockTenantService },
       ],
     }).compile();
 
@@ -95,8 +106,16 @@ describe('TaskService', () => {
   });
 
   describe('create', () => {
-    it('computes dueAt from Organization.settings.taskSla[priority] when no explicit due date given', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ settings: { taskSla: { HIGH: 8 } } });
+    // ACC-46 Section 2.7.c — computeSlaDueAt() now reads dueAfterHours via
+    // TenantService.getTaskSla() instead of parsing Organization.settings
+    // itself; getTaskSla()'s own fallback-to-platform-defaults behavior is
+    // TenantService's responsibility, tested in tenant.service.spec.ts, not
+    // duplicated here.
+    it("computes dueAt from TenantService.getTaskSla()'s tier for the task's priority when no explicit due date given", async () => {
+      mockTenantService.getTaskSla.mockResolvedValue({
+        ...DEFAULT_SLA,
+        HIGH: { dueAfterHours: 8, managerEscalationAfterHours: 4, headEscalationAfterHours: 8 },
+      });
       mockPrisma.task.create.mockResolvedValue(BASE_TASK);
 
       await service.create(
@@ -105,11 +124,11 @@ describe('TaskService', () => {
         ACTOR,
       );
 
+      expect(mockTenantService.getTaskSla).toHaveBeenCalledWith(ORG_A);
       expect(mockWorkingCalendar.calculateDeadline).toHaveBeenCalledWith(expect.any(DateTime), 8, ORG_A);
     });
 
-    it('respects platform defaults when settings.taskSla is absent', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ settings: null });
+    it("indexes the resolved settings by the task's own priority, not a fixed tier", async () => {
       mockPrisma.task.create.mockResolvedValue(BASE_TASK);
 
       await service.create(
