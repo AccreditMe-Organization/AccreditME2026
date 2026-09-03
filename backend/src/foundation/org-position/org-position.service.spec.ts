@@ -39,6 +39,7 @@ const mockPrisma = {
   user: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
+    count: jest.fn(),
   },
   role: {
     findFirst: jest.fn(),
@@ -60,6 +61,11 @@ describe('OrgPositionService', () => {
     // Safe default for deactivatePosition()'s own holder lookup — tests
     // exercising that lookup specifically override this per-case.
     mockPrisma.user.findMany.mockResolvedValue([]);
+    // Post-review fix — hasAnyHeadConferringHolder()'s own count query,
+    // now called unconditionally by listAvailablePositionsForUser() for
+    // every head-conferring position in the catalog. Safe no-op default
+    // (no conflicting holder) unless a test explicitly overrides it.
+    mockPrisma.user.count.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -634,6 +640,115 @@ describe('OrgPositionService', () => {
 
       expect(result).toEqual([ORDINARY_MULTI]);
       expect(result.find((p) => p.id === 'leaked')).toBeUndefined();
+    });
+
+    // Post-review fix (found via Batch2 Child Unit's real, live-reproduced
+    // stale data) — this is the actual bug this fix closes. Previously this
+    // method only ever excluded the exact position a same-unit holder held;
+    // a DIFFERENT head-conferring position's holder never blocked anything
+    // here, even though validateUnitHeadUniqueness() (the write-side check)
+    // has always rejected exactly this cross-position case. The wizard
+    // could — and, on Batch2 Child Unit, did — offer 4 distinct head-
+    // conferring positions as "available" when only one could ever actually
+    // be assigned.
+    const HEAD_POSITION_A = { ...BASE_POSITION, id: 'pos-head-a', isSingleAssignee: true, isUnitHeadPosition: true };
+    const HEAD_POSITION_B = { ...BASE_POSITION, id: 'pos-head-b', isSingleAssignee: true, isUnitHeadPosition: true };
+
+    it('excludes ALL head-conferring positions when a DIFFERENT head-conferring position is already held in the unit', async () => {
+      mockPrisma.orgPosition.findMany.mockResolvedValue([HEAD_POSITION_A, HEAD_POSITION_B]);
+      // Neither position's own same-position holder query finds anything —
+      // the old, narrower check alone would have offered both.
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      // Someone (not the candidate) already holds a head-conferring
+      // position elsewhere in this unit.
+      mockPrisma.user.count.mockResolvedValue(1);
+
+      const result = await service.listAvailablePositionsForUser('candidate-1', 'unit-1', ORG_A);
+
+      expect(result).toEqual([]);
+    });
+
+    it('does not block the candidate from re-selecting a head-conferring position they already hold themselves — self-exclusion honored', async () => {
+      mockPrisma.orgPosition.findMany.mockResolvedValue([HEAD_POSITION_A]);
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      // Matches validateUnitHeadUniqueness()'s own write-side behavior:
+      // excludeUserId is applied, so the candidate's own existing holding
+      // never counts against their own re-assignment.
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id?.not === 'candidate-1' ? 0 : 1),
+      );
+
+      const result = await service.listAvailablePositionsForUser('candidate-1', 'unit-1', ORG_A);
+
+      expect(result).toEqual([HEAD_POSITION_A]);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: { not: 'candidate-1' } }) }),
+      );
+    });
+  });
+
+  // Post-review fix — the shared cross-position, INVITED-inclusive
+  // existence check extracted from UserService.validateUnitHeadUniqueness()
+  // specifically so the write-side check and listAvailablePositionsForUser()
+  // (the read-side picker filter, tested above) can no longer drift apart.
+  describe('hasAnyHeadConferringHolder', () => {
+    it('returns true when any ACTIVE or INVITED holder of a head-conferring position exists in the unit', async () => {
+      mockPrisma.user.count.mockResolvedValue(1);
+
+      const result = await service.hasAnyHeadConferringHolder('unit-1', ORG_A, null);
+
+      expect(result).toBe(true);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          primaryOrgUnitId: 'unit-1',
+          status: { in: ['ACTIVE', 'INVITED'] },
+          position: { isUnitHeadPosition: true },
+        },
+      });
+    });
+
+    it('returns false when no head-conferring holder exists', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      const result = await service.hasAnyHeadConferringHolder('unit-1', ORG_A, null);
+
+      expect(result).toBe(false);
+    });
+
+    it('excludes excludeUserId from the count — a candidate who is themselves the current holder is not counted against their own re-assignment', async () => {
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.id?.not === 'user-1' ? 0 : 1),
+      );
+
+      const result = await service.hasAnyHeadConferringHolder('unit-1', ORG_A, 'user-1');
+
+      expect(result).toBe(false);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: { not: 'user-1' } }) }),
+      );
+    });
+
+    it('applies no id filter at all when excludeUserId is null — nothing to exclude (invite()\'s own case, no existing user yet)', async () => {
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.hasAnyHeadConferringHolder('unit-1', ORG_A, null);
+
+      const call = mockPrisma.user.count.mock.calls[0][0];
+      expect(call.where.id).toBeUndefined();
+    });
+
+    itEnforcesTenantIsolation('hasAnyHeadConferringHolder only counts holders within the requested tenant', async () => {
+      mockPrisma.user.count.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.organizationId === ORG_A ? 0 : 1),
+      );
+
+      const result = await service.hasAnyHeadConferringHolder('unit-1', ORG_A, null);
+
+      expect(result).toBe(false);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
     });
   });
 

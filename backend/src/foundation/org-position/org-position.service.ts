@@ -196,6 +196,39 @@ export class OrgPositionService {
     });
   }
 
+  // ACC-46 (post-review fix) — the shared cross-position, INVITED-inclusive
+  // existence check both the write side (UserService.validateUnitHeadUniqueness())
+  // and the read side (listAvailablePositionsForUser() below) must run
+  // identically, extracted here specifically so the two can't drift apart
+  // again the way they already did once: a tenant could flag more than one
+  // distinct OrgPosition as isUnitHeadPosition: true (e.g. "Department
+  // Head" and "Acting Department Chief" both independently head-conferring)
+  // — this checks whether ANY of them already has a holder in this unit,
+  // not just the one specific position being considered.
+  // excludeUserId mirrors validateUnitHeadUniqueness()'s own parameter
+  // exactly: when set, that user's own row doesn't count against them —
+  // re-confirming/re-selecting a position for the person who already
+  // holds a head-conferring position in this same unit is not itself a
+  // conflict. Public (not private) so both OrgPositionService's own
+  // listAvailablePositionsForUser() and UserService (already holding an
+  // injected OrgPositionService) can call it.
+  async hasAnyHeadConferringHolder(
+    orgUnitId: string | null,
+    organizationId: string,
+    excludeUserId: string | null,
+  ): Promise<boolean> {
+    const anyHeadHolders = await this.prisma.user.count({
+      where: {
+        organizationId,
+        primaryOrgUnitId: orgUnitId,
+        status: { in: ['ACTIVE', 'INVITED'] },
+        position: { isUnitHeadPosition: true },
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      },
+    });
+    return anyHeadHolders >= 1;
+  }
+
   // ACC-46 Section 2.6.a — "which positions can this specific person hold
   // in this specific unit," generalized beyond head-conferring positions:
   // an ORDINARY single-assignee position (not head-conferring) needs the
@@ -206,6 +239,18 @@ export class OrgPositionService {
   // "already holds it" set — a person doesn't block themselves from a
   // position they may already hold (e.g. re-confirming their own current
   // position as part of a transfer that changes only their unit).
+  //
+  // Post-review fix — a real, confirmed gap, not just message wording:
+  // this method previously only excluded the SPECIFIC position a unit's
+  // existing holder occupies (heldSingleAssigneePositionIds below), never
+  // checking whether a DIFFERENT head-conferring position already has a
+  // holder in this same unit — the exact cross-position case
+  // validateUnitHeadUniqueness() has always enforced at write time. A
+  // transfer wizard could offer a head-conferring position here that was
+  // then unconditionally rejected on submit. Now runs the identical
+  // hasAnyHeadConferringHolder() check above, so a head-conferring
+  // position is excluded whenever ANY head-conferring position already
+  // has a holder in this unit — not only the one being evaluated.
   async listAvailablePositionsForUser(
     candidateUserId: string,
     orgUnitId: string,
@@ -228,9 +273,16 @@ export class OrgPositionService {
         })
       ).map((u) => u.positionId),
     );
-    return allPositions.filter(
-      (p) => !p.isSingleAssignee || !heldSingleAssigneePositionIds.has(p.id),
+    const hasAnyHeadHolder = await this.hasAnyHeadConferringHolder(
+      orgUnitId,
+      organizationId,
+      candidateUserId,
     );
+    return allPositions.filter((p) => {
+      const blockedBySamePositionHolder = p.isSingleAssignee && heldSingleAssigneePositionIds.has(p.id);
+      const blockedByAnotherHeadHolder = p.isUnitHeadPosition && hasAnyHeadHolder;
+      return !blockedBySamePositionHolder && !blockedByAnotherHeadHolder;
+    });
   }
 
   // ACC-40 Section 2.9e — remediation report, matching 2.4's exact

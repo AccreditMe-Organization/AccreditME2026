@@ -1120,6 +1120,14 @@ export class UserService {
   // guarantees isUnitHeadPosition: true implies isSingleAssignee: true —
   // this check exists BECAUSE that per-position guarantee alone isn't
   // enough across DIFFERENT positions).
+  // Post-review fix — the actual existence check moved to
+  // OrgPositionService.hasAnyHeadConferringHolder(), specifically so this
+  // (the write-side enforcement) and listAvailablePositionsForUser() (the
+  // read-side picker filter) can no longer drift apart the way they
+  // already did once: the read side used to run a narrower, same-position-
+  // only check, so the wizard could offer a head-conferring position this
+  // method would then unconditionally reject. Both now call the one
+  // shared method.
   private async validateUnitHeadUniqueness(
     position: { id: string; isUnitHeadPosition: boolean },
     targetPrimaryOrgUnitId: string | null,
@@ -1130,18 +1138,12 @@ export class UserService {
     if (!position.isUnitHeadPosition) return;
     if (isDeclaredHandoverBypass) return;
 
-    // ACC-46 Section 2.1 — same INVITED-status fix as
-    // validateSingleAssigneeCap() above, same reasoning.
-    const anyHeadHolders = await this.prisma.user.count({
-      where: {
-        organizationId,
-        primaryOrgUnitId: targetPrimaryOrgUnitId,
-        status: { in: ['ACTIVE', 'INVITED'] },
-        position: { isUnitHeadPosition: true },
-        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-      },
-    });
-    if (anyHeadHolders >= 1) {
+    const hasAnyHeadHolder = await this.orgPositionService.hasAnyHeadConferringHolder(
+      targetPrimaryOrgUnitId,
+      organizationId,
+      excludeUserId,
+    );
+    if (hasAnyHeadHolder) {
       throw new ConflictException('This org unit already has an active Head-position holder');
     }
   }
