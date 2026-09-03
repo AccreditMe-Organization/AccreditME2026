@@ -2068,6 +2068,14 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   migration only gets applied once its corresponding code is merged,
   never before. Not decided or scoped here — this note exists so the
   question isn't lost before that decision gets made.
+- **No form in this app has a per-field inline error-message pattern**
+  (confirmed via full grep, zero matches) — every form relies solely
+  on a disabled submit button as its only invalid-state feedback.
+  Worth a deliberate future decision on whether specific, per-field
+  error text should become a real, established pattern (matching the
+  same rigor `EditDialogComponent`/`OverlaySelectComponent` got
+  before being made required) — found while fixing `invite-user`'s
+  missing feedback during ACC-46 review, not scoped or decided here.
 
 ---
 
