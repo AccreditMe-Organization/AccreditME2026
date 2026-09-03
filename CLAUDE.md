@@ -1879,41 +1879,28 @@ E2E suite — all folded into the ordered sequence below instead).
 SYSTEM-REFERENCE.md's Tier 1 findings (10 items) are CLOSED via
 ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
 
-1. **NEXT — the unassigned-task-feedback ticket** (about to be
-   created): actor-facing feedback when a transition results in an
-   unassigned task, committee-name resolution in generic task/
-   notification titles, `WorkflowActionLog.status` not distinguishing
-   a real success from a created-but-unassigned outcome, and a new
-   tenant-wide "Unassigned Tasks" view wired to the already-built-but-
-   frontend-orphaned `reassign()` endpoint. Sequenced first — this is
-   unfinished Committee Management correctness, not separate new
-   scope, and testing Committee (step 3 below) before closing this
-   known gap doesn't validate a complete flow.
-2. **DONE — delivered as ACC-40, out of this list's original order**
-   (Role-vs-OrgPosition for business-logic assignment, not
-   permissions; Meeting Management's own "chair or organizer" concept
-   was one of the original examples motivating this — this entry
-   previously described it as "not yet created," which stopped being
-   true once ACC-40 shipped). ACC-40 fully redesigned `OrgPosition`
-   (org-wide catalog, `isUnitHeadPosition`/`isSingleAssignee`,
-   position-to-role mapping) and gave the long-dormant `ORG_UNIT_HEAD`
-   workflow assignee strategy its first real implementation — derived
-   Head, deliberate handover, vacancy escalation, Acting Head coverage,
-   the unified delegation-reason stamp. Full detail: SYSTEM-REFERENCE.md
-   Section 5. **This item's own "first required investigation" was run
-   for real, not hypothetically**: confirmed via Phase 7 — no workflow-
-   driven object (`Committee`, `Meeting`) carries an `orgUnitId` field
-   yet, so `ORG_UNIT_HEAD` ships "wired, not yet reachable in
-   practice" (SYSTEM-REFERENCE.md Section 5.8) — org-unit-scoped
-   assignment is still not reachable by any real tenant today, exactly
-   as this item anticipated, just now backed by a real mechanism
-   instead of an unresolved question. Whichever business object first
-   needs org-unit-scoped assignment (Meeting's "chair/organizer" is
-   still the leading candidate) is the one that finally adds
-   `orgUnitId` and makes this reachable — not a new design ticket, an
-   application of what ACC-40 already built.
-3. **THEN — Committee Management's remaining production-readiness
-   work**:
+**Items 1–4 below are structural work — a hard prerequisite.** No
+functional module work (Committee's own remaining items, the coverage
+audit, Meeting Management) begins until all four are actually
+complete, not just the currently-in-review ones.
+
+1. **DONE — Invitation-activation shortcut.** Confirmed working
+   (dev-only — no email infrastructure needed for it to function).
+2. **DONE — Manager vs. Unit-Head / escalation redesign (ACC-46).**
+   Currently in final review before merge (PR #53 to `dev`) — the full
+   `OrgPosition` redesign (org-wide catalog, `isUnitHeadPosition`/
+   `isSingleAssignee`, position-to-role mapping, the `ORG_UNIT_HEAD`
+   workflow assignee strategy's first real implementation, the
+   Manager-then-Head task escalation rework, the User Transfer
+   Wizard). Full detail: SYSTEM-REFERENCE.md Section 5 and Section
+   12.9.
+3. **NOT STARTED — remove `Role`/`ROLE_BASED` from workflow assignee/
+   trigger strategies, replace with `OrgPosition`-based assignment.**
+4. **NOT STARTED — new seed data reflecting the final structural
+   shape**, once items 1–3 above are actually settled.
+
+5. **THEN, once all four structural items above are done — Committee
+   Management's remaining production-readiness work**:
    - A live Quality Manager persona test — every test so far used
      Tenant Admin, which holds every permission and never proves
      permission-gating actually works for a realistic non-admin user.
@@ -1925,20 +1912,20 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
      principle already established for Committee's own CRUD
      permissions; any tenant-created custom role must get a
      correctly-adapted dashboard automatically, with no special-
-     casing required. The Unassigned Tasks view (built in step 1
-     above) is a likely future widget candidate here, not necessarily
-     a permanently separate screen.
+     casing required. The Unassigned Tasks view (ACC-34) is a likely
+     future widget candidate here, not necessarily a permanently
+     separate screen.
    - An Arabic/RTL pass on Committee's own ~5 screens specifically —
      NOT the full app-wide RTL audit above, which stays deferred to
      the pre-demo milestone.
-4. **THEN, once all of the above are done — the backend-vs-frontend
+6. **THEN, once all of the above are done — the backend-vs-frontend
    coverage audit**, re-scoped smaller than originally planned:
    SYSTEM-REFERENCE.md's static Frontend Consumption checks across
    all 12 sections already answered most of "does a UI path exist";
    remaining value is the LIVE, persona-driven half using Playwright
    MCP. Followed by the permanent, CI-integrated Playwright E2E
    suite, informed by the audit's findings.
-5. **ONLY THEN — Meeting Management planning begins.** Its own plan
+7. **ONLY THEN — Meeting Management planning begins.** Its own plan
    MUST, as a mandatory step:
    - Check SYSTEM-REFERENCE.md's remaining Tier 2/3 items for real
      dependencies — not decided blind now (e.g. Task's missing
