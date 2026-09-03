@@ -2,13 +2,11 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsIn,
-  IsInt,
   IsISO8601,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
-  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -106,13 +104,4 @@ export class CreateTaskDto {
   @IsISO8601()
   @IsOptional()
   dueDate?: string;
-
-  @IsString()
-  @IsOptional()
-  escalationUserId?: string;
-
-  @IsInt()
-  @IsOptional()
-  @Min(1)
-  escalationAfterHours?: number;
 }

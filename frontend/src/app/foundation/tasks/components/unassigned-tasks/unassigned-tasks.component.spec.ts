@@ -30,8 +30,8 @@ const UNASSIGNED_TASK: ITaskDto = {
   slaBreachedAt: null,
   completedAt: null,
   completedById: null,
-  escalationUserId: null,
-  escalationAfterHours: null,
+  managerEscalatedAt: null,
+  headEscalatedAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };

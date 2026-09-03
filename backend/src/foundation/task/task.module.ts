@@ -1,7 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { WorkingCalendarModule } from '../working-calendar/working-calendar.module';
-import { OrgPositionModule } from '../org-position/org-position.module';
 import { NotificationModule } from '../notification/notification.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TaskController } from './task.controller';
@@ -18,7 +17,6 @@ import { TaskService } from './task.service';
   imports: [
     PrismaModule,
     WorkingCalendarModule,
-    OrgPositionModule,
     NotificationModule,
     forwardRef(() => TenantModule),
   ],
