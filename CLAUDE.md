@@ -2052,6 +2052,22 @@ ACC-33 — tracked in SYSTEM-REFERENCE.md itself, not repeated here.
   turned out to be. Not scoped or sized yet — this is a full audit,
   not a single fix, grouped here with the other future UI-consistency
   items but distinctly larger in scope than either.
+- **Schema migrations from unmerged feature branches must not be
+  applied directly to the shared dev database that a live Railway
+  deployment depends on** — confirmed as the root cause of ACC-48's
+  14.5-hour production sweep outage (SlaMonitorProcessor silently
+  disabled on the deployed dev instance, tenant-wide, including the
+  real Demo Organization). ACC-46's Commit 1 migration was run
+  directly against the shared dev Supabase database before any
+  corresponding code was merged to `dev` — the deployed instance kept
+  running old code that still queried the now-dropped columns, and
+  `SlaMonitorProcessor.process()` having no per-step error isolation
+  (ACC-49) turned one crashing query into a total sweep outage.
+  Needs a real decision, not a one-off fix: either genuinely separate
+  dev/staging databases per environment, or a documented rule that a
+  migration only gets applied once its corresponding code is merged,
+  never before. Not decided or scoped here — this note exists so the
+  question isn't lost before that decision gets made.
 
 ---
 
