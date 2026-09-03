@@ -95,7 +95,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
           (onClick)="cancelled.emit()"
           [disabled]="saving()"
         />
-        <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" />
+        <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
       </div>
     </form>
   `,
