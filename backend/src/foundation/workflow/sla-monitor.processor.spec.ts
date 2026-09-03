@@ -8,7 +8,9 @@ import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrganizationService } from '../organization/organization.service';
+import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
+import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
 
 // Originally scoped narrowly to ACC-28 Section 2.5.1's new
 // sweepUnassignedStages() — the pre-existing SLA-breach escalation
@@ -82,7 +84,24 @@ const mockWorkingCalendar = { getOrCreate: jest.fn(), listHolidays: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
 const mockOrgPositionService = {
   notifyTenantAdminsOfVacantHeadRoleMappings: jest.fn(),
+  // ACC-46 Section 2.7.e, Commit 4 — the real tier-based escalation firing
+  // logic's own two resolvers (unit-tested for real in
+  // org-position.service.spec.ts, Commit 3). Mocked here purely as wiring
+  // — these tests prove the sweep calls them correctly and acts on their
+  // result, not the resolvers' own internal dedup/Acting-Head logic.
+  resolveManagerEscalationTargets: jest.fn(),
+  resolveHeadEscalationTargets: jest.fn(),
 };
+// ACC-46 Section 2.7.e, Commit 4 — real tenant-configured tiers, matching
+// TenantService's own DEFAULT_TASK_SLA_SETTINGS shape (Commit 2a) so these
+// tests exercise realistic threshold values, not arbitrary numbers.
+const TASK_SLA_SETTINGS: ITaskSlaSettings = {
+  LOW: { dueAfterHours: 80, managerEscalationAfterHours: 48, headEscalationAfterHours: 96 },
+  MEDIUM: { dueAfterHours: 40, managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
+  HIGH: { dueAfterHours: 16, managerEscalationAfterHours: 8, headEscalationAfterHours: 16 },
+  CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
+};
+const mockTenantService = { getTaskSla: jest.fn() };
 const mockWorkflowService = {
   resolveUnassignedBlockingTransitions: jest.fn(),
   resolveUnreachableTriggerConditionTransitions: jest.fn(),
@@ -118,6 +137,11 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // test. Tests exercising it override this per-case.
     mockPrisma.orgPosition.findMany.mockResolvedValue([]);
     mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue([]);
+    // ACC-46 Section 2.7.e, Commit 4 — safe default so a test that doesn't
+    // care about Task SLA specifics doesn't crash if sweepOverdueTasks()
+    // happens to run against a non-empty fixture. Tests exercising tiered
+    // thresholds directly override this per-case.
+    mockTenantService.getTaskSla.mockResolvedValue(TASK_SLA_SETTINGS);
     // Default: no breached stages / no open stages, so tests that don't
     // care about sweepUnassignedStages()/the top-of-process() breach loop
     // (e.g. the new sweepOrgUnitVacancies tests below) aren't broken by a
@@ -144,6 +168,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         { provide: WorkflowService, useValue: mockWorkflowService },
         { provide: OrgUnitHeadService, useValue: mockOrgUnitHeadService },
         { provide: OrganizationService, useValue: mockOrganizationService },
+        { provide: TenantService, useValue: mockTenantService },
         { provide: getQueueToken('sla-monitor'), useValue: mockQueue },
       ],
     }).compile();
@@ -367,33 +392,278 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     });
   });
 
-  // ── Task overdue sweep — deliberate interim state (ACC-46 Section 2.7) ──────
-  // The old escalation-firing tests (fireTaskEscalation, via a
-  // validateEscalationTarget target) are removed here, in the same commit
-  // as the production logic they covered — see sla-monitor.processor.ts's
-  // own comment on sweepOverdueTasks() for why. Commit 4 reintroduces full
-  // tier-based coverage once the new resolvers/settings exist.
+  // ── Task overdue sweep — real, finished redesign (ACC-46 Section 2.7.e, ────
+  // Commit 4). Replaces the interim describe block that existed for the
+  // span of Commit 1 through Commit 3 (see sla-monitor.processor.ts's own
+  // comment on sweepOverdueTasks() for why that gap existed).
 
-  describe('Task overdue sweep', () => {
-    const BASE_OVERDUE_TASK = {
+  describe('Task overdue sweep (ACC-46 Section 2.7.e)', () => {
+    // 5h overdue by default — past CRITICAL's manager threshold (2h) but
+    // short of its cumulative Head threshold (2h + 4h = 6h).
+    const makeOverdueTask = (overrides: Record<string, unknown> = {}) => ({
       id: 'task-1',
       organizationId: ORG_A,
-      dueAt: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5h overdue
-    };
+      status: 'PENDING' as const,
+      priority: 'CRITICAL' as const,
+      dueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+      managerEscalatedAt: null as Date | null,
+      headEscalatedAt: null as Date | null,
+      assignees: [{ userId: 'assignee-1', removedAt: null }],
+      ...overrides,
+    });
 
-    const runWithOverdueTask = (task: typeof BASE_OVERDUE_TASK) => {
+    const runWithOverdueTask = (task: ReturnType<typeof makeOverdueTask>) => {
       mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]); // no-op both branches
       mockPrisma.task.findMany.mockResolvedValueOnce([task]);
       return runProcess();
     };
 
-    it('marks an overdue task OVERDUE, no escalation attempt (interim state — no firing logic exists yet)', async () => {
-      await runWithOverdueTask(BASE_OVERDUE_TASK);
+    // Pins Finding 2's actual fix at the query level — the exact bug that
+    // started this whole investigation. Under the old query
+    // (status: { notIn: [..., 'OVERDUE', ...] }), a task became invisible
+    // to this sweep forever, the instant it first went overdue — before
+    // enough hours could plausibly have elapsed for any tier to fire.
+    it('the sweep query no longer excludes OVERDUE tasks (Finding 2\'s fix)', async () => {
+      await runProcess();
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
+        where: {
+          dueAt: { lt: expect.any(Date) },
+          status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED'] },
+        },
+        include: { assignees: { where: { removedAt: null } } },
+      });
+    });
+
+    // The direct behavioral regression test the structural test above
+    // proves is reachable: the SAME task, re-evaluated on a SECOND, later
+    // sweep after already having gone OVERDUE and had its Manager tier
+    // fire on the first sweep. Under the old code this second sweep could
+    // never happen — the task was permanently excluded the moment it
+    // became OVERDUE on sweep 1.
+    it('a task remains eligible for re-evaluation across multiple sweeps — direct regression test for the original bug', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+      const task = makeOverdueTask(); // 5h overdue, PENDING
+
+      await runWithOverdueTask(task);
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
         data: { status: 'OVERDUE', slaBreachedAt: expect.any(Date) },
       });
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { managerEscalatedAt: expect.any(Date) },
+      });
+
+      // Fresh call-count slate for sweep 2 — the task's own evolved state
+      // below (already OVERDUE, managerEscalatedAt already set, further
+      // time elapsed) is what proves re-eligibility, not leftover call
+      // history from sweep 1.
+      jest.clearAllMocks();
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
+      mockWorkingCalendar.getOrCreate.mockResolvedValue(ALWAYS_OPEN_CALENDAR);
+      mockWorkingCalendar.listHolidays.mockResolvedValue([]);
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+      mockPrisma.orgPosition.findMany.mockResolvedValue([]);
+      mockTenantService.getTaskSla.mockResolvedValue(TASK_SLA_SETTINGS);
+      mockOrgPositionService.resolveHeadEscalationTargets.mockResolvedValue(['head-1']);
+
+      const sweptAgainTask = makeOverdueTask({
+        status: 'OVERDUE', // already flipped by sweep 1
+        managerEscalatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // fired by sweep 1
+        dueAt: new Date(Date.now() - 7 * 60 * 60 * 1000), // now past the 6h cumulative Head threshold
+      });
+      mockPrisma.task.findMany.mockResolvedValueOnce([sweptAgainTask]);
+
+      await runProcess();
+
+      // Not re-flipped to OVERDUE a second time — the `status !== 'OVERDUE'`
+      // guard correctly recognizes it's already there.
+      expect(mockPrisma.task.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'OVERDUE' }) }),
+      );
+      // But the Head tier DOES fire — proving the task was genuinely
+      // re-evaluated on this second sweep, not silently dropped.
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { headEscalatedAt: expect.any(Date) },
+      });
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'head-1' }),
+        ORG_A,
+      );
+    });
+
+    it('fires the Manager tier once its threshold has elapsed, notifying every resolved target and stamping managerEscalatedAt', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+      const task = makeOverdueTask();
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.resolveManagerEscalationTargets).toHaveBeenCalledWith(
+        ['assignee-1'],
+        ORG_A,
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: 'manager-1',
+          titleEn: 'Task SLA breach escalation',
+          bodyEn: 'A task has breached its SLA and has been escalated to you.',
+          objectType: 'Task',
+          objectId: 'task-1',
+        },
+        ORG_A,
+      );
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { managerEscalatedAt: expect.any(Date) },
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith({
+        tenantId: ORG_A,
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: 'task-1',
+        metadata: { escalatedTo: ['manager-1'], tier: 'MANAGER' },
+      });
+    });
+
+    // No-fall-through, part 1: even once enough time has passed for BOTH
+    // thresholds cumulatively, the Manager tier still takes priority (the
+    // if/else-if structure) — the Head tier is never even considered in
+    // the same sweep the Manager tier is unfired.
+    it('does not fire the Head tier when the Manager tier has not fired yet, even once the cumulative Head threshold has already elapsed (no fall-through)', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+      const task = makeOverdueTask({ dueAt: new Date(Date.now() - 20 * 60 * 60 * 1000) }); // 20h overdue — far past both thresholds
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.resolveHeadEscalationTargets).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { managerEscalatedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.task.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ headEscalatedAt: expect.any(Date) }) }),
+      );
+    });
+
+    // No-fall-through, part 2: once the Manager tier HAS fired, the Head
+    // tier still waits for its own additional grace period — reaching the
+    // Manager threshold is not itself sufficient.
+    it('does not fire the Head tier before its own additional grace period has elapsed, even after the Manager tier has fired', async () => {
+      const task = makeOverdueTask({
+        status: 'OVERDUE',
+        managerEscalatedAt: new Date(Date.now() - 60 * 60 * 1000), // fired on a prior sweep
+        dueAt: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4h overdue — past manager(2h), short of cumulative(6h)
+      });
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
+      expect(mockOrgPositionService.resolveHeadEscalationTargets).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      // Already OVERDUE, nothing fired — no update call of any kind.
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    it('fires the Head tier once the Manager tier has fired AND its own additional grace period has elapsed', async () => {
+      mockOrgPositionService.resolveHeadEscalationTargets.mockResolvedValue(['head-1']);
+      const task = makeOverdueTask({
+        status: 'OVERDUE',
+        managerEscalatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        dueAt: new Date(Date.now() - 7 * 60 * 60 * 1000), // 7h overdue — past the 6h cumulative threshold
+      });
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
+      expect(mockOrgPositionService.resolveHeadEscalationTargets).toHaveBeenCalledWith(['assignee-1'], ORG_A);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'head-1' }),
+        ORG_A,
+      );
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { headEscalatedAt: expect.any(Date) },
+      });
+    });
+
+    it('passes every active assignee to the resolver and notifies every distinct target it resolves — multi-assignee dedup proven end-to-end through the real sweep', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1', 'manager-2']);
+      const task = makeOverdueTask({
+        assignees: [
+          { userId: 'assignee-1', removedAt: null },
+          { userId: 'assignee-2', removedAt: null },
+        ],
+      });
+
+      await runWithOverdueTask(task);
+
+      expect(mockOrgPositionService.resolveManagerEscalationTargets).toHaveBeenCalledWith(
+        ['assignee-1', 'assignee-2'],
+        ORG_A,
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'manager-1' }), ORG_A);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'manager-2' }), ORG_A);
+    });
+
+    it('fires escalation to an Acting Head resolved by the Head-tier resolver — Acting Head coverage (PD#9) proven end-to-end through the real sweep', async () => {
+      mockOrgPositionService.resolveHeadEscalationTargets.mockResolvedValue(['acting-head-1']);
+      const task = makeOverdueTask({
+        status: 'OVERDUE',
+        managerEscalatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+        dueAt: new Date(Date.now() - 7 * 60 * 60 * 1000),
+      });
+
+      await runWithOverdueTask(task);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'acting-head-1' }),
+        ORG_A,
+      );
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { headEscalatedAt: expect.any(Date) },
+      });
+    });
+
+    it('audit-logs a skip, does not throw, when no Manager is resolvable for any assignee', async () => {
+      mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue([]);
+      const task = makeOverdueTask();
+
+      await expect(runWithOverdueTask(task)).resolves.not.toThrow();
+
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).toHaveBeenCalledWith({
+        tenantId: ORG_A,
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: 'task-1',
+        metadata: {
+          escalationSkipped: true,
+          tier: 'MANAGER',
+          reason: "No manager resolvable for any of this task's assignees",
+        },
+      });
+      expect(mockPrisma.task.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ managerEscalatedAt: expect.any(Date) }) }),
+      );
+    });
+
+    it('does not fire escalation outside working hours, but still flips status to OVERDUE', async () => {
+      mockWorkingCalendar.getOrCreate.mockResolvedValue({ ...ALWAYS_OPEN_CALENDAR, workingDays: [] });
+      const task = makeOverdueTask();
+
+      await runWithOverdueTask(task);
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { status: 'OVERDUE', slaBreachedAt: expect.any(Date) },
+      });
+      expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
       expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
   });

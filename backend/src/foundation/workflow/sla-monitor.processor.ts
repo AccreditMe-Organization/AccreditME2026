@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit, forwardRef } from '@nestjs/common';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { DateTime } from 'luxon';
@@ -9,7 +9,12 @@ import { NotificationService } from '../notification/notification.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrganizationService } from '../organization/organization.service';
+import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
+import {
+  Task as PrismaTask,
+  TaskAssignee as PrismaTaskAssignee,
+} from '../../../generated/prisma/client';
 
 // ACC-40 Section 2.5.1 — the 2-day interval between periodic
 // "still fully unresolved" reminders, named so it's easy to find/adjust.
@@ -52,6 +57,14 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // resolution/notification logic here, same precedent as workflowService
     // above.
     private readonly organizationService: OrganizationService,
+    // ACC-46 Section 2.7.e — needed for the real tier-based escalation
+    // firing logic (Commit 4): each sweep reads the tenant's own
+    // Organization.settings.taskSla thresholds fresh, never a stale cached
+    // value. Same forwardRef precedent as TaskService's own edge (Commit
+    // 2a) — TenantModule is already forwardRef()-imported into this module
+    // (above), this is just the provider-level injection to match.
+    @Inject(forwardRef(() => TenantService))
+    private readonly tenantService: TenantService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -327,36 +340,127 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // Background Jobs list having exactly one SLA-sweep entry, not one per
   // entity type (see Step 8 plan, Section 3/Commit 7).
   //
-  // ACC-46 Section 2.7 — deliberate interim state, not the finished
-  // redesign. The old escalation-firing logic here (task.escalationUserId/
-  // escalationAfterHours/escalatedAt, fireTaskEscalation()) is removed in
-  // the same commit as the schema fields it read, since the two can't be
-  // split across commits without leaving the build non-compiling. The new
-  // tier-based replacement (2.7.e) needs Organization.settings.taskSla
-  // (Commit 2a) and OrgPositionService's new resolver methods (Commit 3),
-  // neither of which exists yet — so for the span of this commit through
-  // Commit 3, this sweep only flips overdue tasks to OVERDUE and fires no
-  // escalation at all. Not a functional regression: the old logic's own
-  // query already excluded status OVERDUE, so a task was evaluated exactly
-  // once, before enough hours could plausibly have elapsed, then
-  // permanently skipped forever after — escalation never actually fired
-  // for any real tenant under the old code either (Finding 2). Commit 4
-  // reintroduces real firing, together with the query fix that makes it
-  // actually reachable.
+  // ACC-46 Section 2.7.e, Commit 4 — the real, finished redesign. Fixes
+  // Finding 2 directly: 'OVERDUE' is no longer excluded from this query, so
+  // an overdue task remains eligible for re-evaluation on every subsequent
+  // sweep until both escalation tiers have fired, instead of being
+  // evaluated exactly once (at the moment it first goes overdue, before
+  // enough hours could plausibly have elapsed) and then permanently
+  // skipped forever after — the structural bug that meant escalation could
+  // never fire for any task, under any configuration, under the old code.
+  //
+  // Resolution happens fresh at firing time, every sweep, never precomputed
+  // or stored on the Task row — a Manager could change between task
+  // creation and the task actually going overdue, and the resolved target
+  // must reflect reality at the moment of firing, not a stale snapshot.
+  //
+  // Each tier strictly waits for its own configured threshold — no
+  // fall-through to the Head tier just because the Manager tier had
+  // nothing to resolve for this particular task (the `else if` below only
+  // considers the Head tier once the Manager tier has actually fired).
   private async sweepOverdueTasks(now: Date): Promise<void> {
     const overdueTasks = await this.prisma.task.findMany({
       where: {
         dueAt: { lt: now },
-        status: { notIn: ['COMPLETED', 'CANCELLED', 'OVERDUE', 'UNASSIGNED'] },
+        status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED'] }, // 'OVERDUE' no longer excluded — Finding 2's fix
       },
+      include: { assignees: { where: { removedAt: null } } },
     });
 
     for (const task of overdueTasks) {
-      await this.prisma.task.update({
-        where: { id: task.id },
-        data: { status: 'OVERDUE', slaBreachedAt: now },
-      });
+      if (task.status !== 'OVERDUE') {
+        await this.prisma.task.update({
+          where: { id: task.id },
+          data: { status: 'OVERDUE', slaBreachedAt: now },
+        });
+      }
+
+      const slaConfig = await this.tenantService.getTaskSla(task.organizationId);
+      const tier = slaConfig[task.priority];
+      const hoursSinceDue = DateTime.fromJSDate(now).diff(
+        DateTime.fromJSDate(task.dueAt!),
+        'hours',
+      ).hours;
+
+      if (!task.managerEscalatedAt && hoursSinceDue >= tier.managerEscalationAfterHours) {
+        if (await this.isWithinWorkingHours(task.organizationId)) {
+          await this.fireTaskEscalation(task, 'MANAGER');
+        }
+      } else if (
+        task.managerEscalatedAt &&
+        !task.headEscalatedAt &&
+        hoursSinceDue >= tier.managerEscalationAfterHours + tier.headEscalationAfterHours
+      ) {
+        if (await this.isWithinWorkingHours(task.organizationId)) {
+          await this.fireTaskEscalation(task, 'HEAD');
+        }
+      }
     }
+  }
+
+  // ACC-46 Section 2.7.e — replaces the old task.escalationUserId-driven
+  // firing logic entirely (removed in Commit 1 alongside the schema fields
+  // it read). Fully automatic resolution via Commit 3's resolver methods —
+  // no human picks a target anywhere in this flow (2.7.b) — notifying
+  // EVERY resolved target (PD#8), not just one.
+  private async fireTaskEscalation(
+    task: PrismaTask & { assignees: PrismaTaskAssignee[] },
+    tier: 'MANAGER' | 'HEAD',
+  ): Promise<void> {
+    const assigneeIds = task.assignees.map((a) => a.userId);
+    const targets =
+      tier === 'MANAGER'
+        ? await this.orgPositionService.resolveManagerEscalationTargets(assigneeIds, task.organizationId)
+        : await this.orgPositionService.resolveHeadEscalationTargets(assigneeIds, task.organizationId);
+
+    if (targets.length === 0) {
+      // Skipped, not thrown — a task with no resolvable Manager/Head (e.g.
+      // an assignee with no managerId set, or an org unit with neither a
+      // direct Head holder nor an Acting Head) is a real, unremarkable
+      // state, not an error condition. Audit-logged so it's visible, not
+      // silent.
+      await this.auditLog.log({
+        tenantId: task.organizationId,
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: task.id,
+        metadata: {
+          escalationSkipped: true,
+          tier,
+          reason: `No ${tier === 'MANAGER' ? 'manager' : 'unit Head'} resolvable for any of this task's assignees`,
+        },
+      });
+      return;
+    }
+
+    for (const targetUserId of targets) {
+      await this.notificationService.create(
+        {
+          userId: targetUserId,
+          titleEn: 'Task SLA breach escalation',
+          bodyEn: 'A task has breached its SLA and has been escalated to you.',
+          objectType: 'Task',
+          objectId: task.id,
+        },
+        task.organizationId,
+      );
+    }
+
+    // One timestamp write per tier regardless of how many people were
+    // notified — managerEscalatedAt/headEscalatedAt record "has this tier
+    // already fired," not "who received it"; escalatedTo in the audit
+    // log's metadata carries the full list for that.
+    await this.prisma.task.update({
+      where: { id: task.id },
+      data: tier === 'MANAGER' ? { managerEscalatedAt: new Date() } : { headEscalatedAt: new Date() },
+    });
+    await this.auditLog.log({
+      tenantId: task.organizationId,
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: task.id,
+      metadata: { escalatedTo: targets, tier },
+    });
   }
 
   private async fireEscalation(
