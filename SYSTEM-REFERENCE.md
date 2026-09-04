@@ -944,9 +944,41 @@ misconfiguration).
   explicit `wasUnassigned === false && isNowUnassigned === true`
   transition — skips the write entirely when nothing changed. This is
   what prevents a duplicate notification when the sweep re-evaluates a
-  stage the entry-time check already flagged minutes earlier, and keeps
-  recovery (e.g. a new Chairman appointed) silent — the row updates,
-  nobody is paged.
+  stage the entry-time check already flagged minutes earlier.
+- **Recovery behavior — corrected as of ACC-51.** The `true → false`
+  clear-on-recovery case is still silent **for Tenant Admins**
+  (deliberately: nobody should be paged about a problem that just
+  fixed itself), but it is no longer silent overall. It now resolves
+  the pool that just became reachable and calls
+  `TaskService.attachAssigneesToUnassignedStageTasks()` (3.2), which
+  attaches those assignees to the still-`UNASSIGNED` task, flips it to
+  `PENDING`, and notifies each of them. Before ACC-51 the recovery
+  branch did nothing but clear the flag, which left the task created
+  at stage-entry time permanently inert: invisible to `getMyTasks()`
+  (no `TaskAssignee` rows), rejected by `complete()` for the same
+  reason, and excluded from `sweepOverdueTasks()` by its `UNASSIGNED`
+  status (3.4.1) — so no automated signal of any kind would ever reach
+  anyone again. A still-empty pool recovers nothing, which is a real
+  case rather than a guard: a stage can recover because a blocking
+  transition's `requiredPermission` became satisfiable while the pool
+  itself never changed.
+  **Known limitation, tracked as ACC-52:** because the guard above
+  short-circuits on `wasUnassigned === isNowUnassigned`, this recovery
+  fires **exactly once**, on the flag transition itself. If any worker
+  consumes that transition without acting on it — a stale deployment,
+  a competing worker (see CLAUDE.md's shared dev database/Redis note),
+  or a crash between the flag write and the recovery call, which are
+  separate non-atomic steps — the task is orphaned permanently, with
+  nothing to pick it up later.
+- **`sweepOrgUnitVacancies()` deliberately did NOT get the same
+  treatment** (ACC-51, checked rather than assumed symmetric): there
+  is no orphaned-Task problem on that path. `Task` has no org-unit
+  field and `TaskSourceType` has no `ORG_UNIT` value; neither the
+  organization nor org-position module touches tasks at all; and a
+  head vacancy's real workflow consequence (an `ORG_UNIT_HEAD`-strategy
+  stage resolving an empty pool) is already covered by this same
+  sweep, which re-resolves live via `resolveActingHeadForOrgUnit()`
+  rather than reading the `isHeadVacant` cache.
 - **Deliberately synchronous** at entry-time, consistent with
   `resolveAssigneeRaw()` already running inline for `CREATE_TASK`/
   `SEND_NOTIFICATION` elsewhere in this same file — BullMQ is reserved
@@ -1066,6 +1098,42 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   the caller) is given, reassigns to them; otherwise, if no other active
   assignee remains on that task, flags it `UNASSIGNED`. Every change
   audit-logged individually with `metadata: { event: 'departure_reassignment' }`.
+- **`attachAssigneesToUnassignedStageTasks()`** (ACC-51) — the recovery
+  half of the unassigned-task lifecycle, called from exactly one place:
+  `SlaMonitorProcessor.sweepUnassignedStages()`'s clear-on-recovery
+  branch (2.13). For every still-`UNASSIGNED` task on the recovered
+  `(workflowInstanceId, sourceStageId)` pair: attaches the
+  newly-resolved assignees, flips the task to `PENDING`, audit-logs
+  with `metadata: { event: 'unassigned_stage_recovery' }`, and notifies
+  each assignee reusing `create()`'s own *"New task assigned"* wording
+  (correct here — the pool was empty at creation time, so for these
+  recipients it genuinely is a first assignment). Returns the count of
+  tasks that actually left `UNASSIGNED`. Notable specifics, each
+  load-bearing rather than incidental:
+  - **Attaching assignees is the point, not the notification.**
+    `complete()` rejects any caller without an active `TaskAssignee`
+    row and `sweepOverdueTasks()` excludes `UNASSIGNED` outright
+    (3.4.1), so a notification alone would point someone at work they
+    could neither complete nor ever be reminded about again.
+  - **`assignedById` is set to the task's own `createdById`** — a
+    sweep has no human actor, and unlike `AuditLog.actorId` (nullable,
+    and omitted by every `SlaMonitorProcessor` audit entry)
+    `TaskAssignee.assignedById` is a required FK.
+  - **Reactivates an existing removed `TaskAssignee` row in place**
+    rather than creating a second one, matching ACC-32's
+    `CommitteeMember` precedent — `@@unique([taskId, userId])` has no
+    partial exemption. Reachable on a repeat recovery, and on a task
+    left `UNASSIGNED` by `reassignAllForUser()` with removed rows
+    still attached.
+  - **Deliberately not `reassign()`** — evaluated first and rejected
+    for five concrete reasons documented in full at the method
+    (required human `reason`, hardcoded `DELEGATE` audit action,
+    "reassigned to you" wording, required `actorId`, and a
+    `removedAt`-stamp-then-recreate sequence that would violate the
+    unique constraint on a repeat recovery). That last one is a real
+    **pre-existing latent bug in `reassign()` itself** (reachable
+    manually too: reassign A → B → A) — not fixed by ACC-51, not
+    inherited by it, and not currently tracked by its own ticket.
 - **`addEvidence()`** — `INTERNAL_REFERENCE` evidence sets
   `refDisplay: dto.refId` verbatim (the raw id, not a resolved display
   name) — code comment states plainly: *"no functional module exists
