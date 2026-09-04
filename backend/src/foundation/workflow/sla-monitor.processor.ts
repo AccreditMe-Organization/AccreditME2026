@@ -339,35 +339,57 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       // isNowUnassigned is also true, no state change, no re-notify).
       const wasUnassigned = instanceStage.isUnassigned;
       const isNowUnassigned = blocking.length > 0;
-      if (wasUnassigned === isNowUnassigned) continue;
 
-      await this.prisma.workflowInstanceStage.update({
-        where: { id: instanceStage.id },
-        data: { isUnassigned: isNowUnassigned, unassignedAt: isNowUnassigned ? new Date() : null },
-      });
-
-      // Only the false→true transition pages an admin — the symmetric
-      // clear-on-recovery case (a new Chairman appointed) stays silent FOR
-      // ADMINS, per plan Section 2.5.1. That half of the original reasoning
-      // still holds and is deliberately unchanged: nobody should be paged
-      // about a problem that just fixed itself.
+      // ── ACC-52: two concerns, deliberately no longer sharing one guard ──
       //
-      // ACC-51 — but that same silence was also swallowing the ASSIGNEE's
-      // own first notification, which is a materially different thing: the
-      // newly-eligible assignee was never eligible before this moment, so
-      // nothing had ever told them anything, by any mechanism. Worse, the
-      // Task that CREATE_TASK wrote at stage-entry time is still sitting at
-      // status UNASSIGNED with zero TaskAssignee rows — invisible to
-      // getMyTasks(), rejected by complete(), and excluded outright from
-      // sweepOverdueTasks(), so it had no route back to a human at all.
-      if (isNowUnassigned) {
-        await this.workflowService.notifyTenantAdminsOfUnassignedStage(
-          organizationId,
-          instanceStage.workflowInstance,
-          instanceStage.stage,
-          blocking,
-        );
-      } else {
+      // These used to be gated together by a single
+      // `if (wasUnassigned === isNowUnassigned) continue;`, which made BOTH
+      // fire exactly once, on a flag transition. That is right for the flag
+      // and the admin page, and wrong for task recovery: if anything
+      // consumed or interrupted that single moment — a competing worker, or
+      // a crash between the flag write and the recovery call, which are
+      // separate non-atomic steps — the orphaned UNASSIGNED task was never
+      // recovered again, permanently, with nothing left to pick it up
+      // (sweepOverdueTasks() excludes UNASSIGNED outright).
+      //
+      // Concern 1 — flag state + admin notification. STILL strictly
+      // transition-gated, byte-for-byte the same behavior as before: the row
+      // is only written when the value actually changes, and only a
+      // false→true transition pages an admin. Repeat sweeps of an
+      // already-flagged stage still write nothing and notify nobody, which
+      // is exactly what the original guard existed to protect.
+      if (wasUnassigned !== isNowUnassigned) {
+        await this.prisma.workflowInstanceStage.update({
+          where: { id: instanceStage.id },
+          data: { isUnassigned: isNowUnassigned, unassignedAt: isNowUnassigned ? new Date() : null },
+        });
+
+        if (isNowUnassigned) {
+          await this.workflowService.notifyTenantAdminsOfUnassignedStage(
+            organizationId,
+            instanceStage.workflowInstance,
+            instanceStage.stage,
+            blocking,
+          );
+        }
+      }
+
+      // Concern 2 — task recovery. Now keyed on the stage's ACTUAL current
+      // state ("this stage is not blocked") rather than on a one-time
+      // transition, so a missed or consumed transition self-heals on the
+      // next sweep instead of orphaning the task forever. Idempotent by
+      // construction: recoverUnassignedStageTasks() below checks for a real
+      // orphan first and does nothing at all when there isn't one, so a
+      // healthy stage costs one indexed count per sweep and never
+      // re-notifies anyone.
+      //
+      // Recovery on recovery's own merits, not the admin page's: the
+      // clear-on-recovery case remains silent FOR ADMINS (nobody should be
+      // paged about a problem that just fixed itself) while the assignee —
+      // who was never eligible until this moment, and whose task is
+      // otherwise invisible to getMyTasks() and rejected by complete() —
+      // finally hears about it.
+      if (!isNowUnassigned) {
         await this.recoverUnassignedStageTasks(instanceStage, organizationId);
       }
     }
@@ -382,6 +404,29 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // recover because its blocking transition's requiredPermission became
   // satisfiable, without the pool itself changing at all. Nothing to attach,
   // nothing to notify — return quietly rather than logging noise.
+  //
+  // ACC-52 — now called for every open, non-blocked stage on every sweep
+  // rather than once per flag transition, which makes the ORDER of the two
+  // checks below load-bearing rather than stylistic:
+  //   1. hasUnassignedStageTasks() — one indexed count, and on a healthy
+  //      tenant it returns false, so the vast majority of sweeps stop here.
+  //   2. resolveAssigneeForStage() — only then, because pool resolution is
+  //      the expensive half (role/committee lookups, org-unit parent walks,
+  //      then out-of-office routing per resolved user).
+  // Resolving the pool first would impose that cost on every open stage,
+  // every 15 minutes, overwhelmingly to discover there was nothing to do.
+  //
+  // Worth stating plainly, because it is a genuine behavior expansion beyond
+  // "recover a missed transition": this also re-attaches a task that reached
+  // UNASSIGNED by some OTHER route on a stage whose pool is healthy — e.g.
+  // reassignAllForUser() orphaning it during a departure, or reassign()
+  // landing on zero eligible assignees. That is the intended, desirable
+  // reading of idempotence here: an orphaned task on a stage with an
+  // eligible pool is a defect regardless of which path produced it, and
+  // neither of those routes represents a human deliberately choosing to
+  // leave work unassigned (ReassignTaskDto requires at least one assignee;
+  // reaching UNASSIGNED there means every supplied user turned out
+  // ineligible — a failure outcome, not an intent).
   private async recoverUnassignedStageTasks(
     instanceStage: {
       stage: PrismaWorkflowStage;
@@ -389,6 +434,13 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     },
     organizationId: string,
   ): Promise<void> {
+    const hasOrphan = await this.taskService.hasUnassignedStageTasks(
+      instanceStage.workflowInstance.id,
+      instanceStage.stage.id,
+      organizationId,
+    );
+    if (!hasOrphan) return;
+
     const pool = await this.workflowService.resolveAssigneeForStage(
       instanceStage.stage,
       instanceStage.workflowInstance,
