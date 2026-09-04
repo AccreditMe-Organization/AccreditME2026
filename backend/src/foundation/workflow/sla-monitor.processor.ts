@@ -192,6 +192,22 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         // Recovered — an ancestor now covers this unit (e.g. its Acting
         // Head was just (re)assigned). Silent, same convention as
         // sweepUnassignedStages()'s own clear-on-recovery case.
+        //
+        // ACC-51 — deliberately NOT given that sweep's new assignee-facing
+        // recovery treatment. Checked rather than assumed symmetric, and the
+        // two genuinely differ: there is no orphaned-Task problem here to
+        // solve. Verified three ways — (i) Task has no org-unit field and
+        // TaskSourceType has no ORG_UNIT value, so a task can never be
+        // "about" an org unit; (ii) neither the organization nor
+        // org-position module ever calls TaskService or touches prisma.task
+        // at all; (iii) the real workflow consequence of a head vacancy — an
+        // ORG_UNIT_HEAD-strategy stage resolving an empty pool — is already
+        // fully covered by sweepUnassignedStages() above, which re-resolves
+        // live through resolveActingHeadForOrgUnit() rather than reading the
+        // isHeadVacant cache, so it observes this same recovery within the
+        // same sweep pass regardless of the order these two run in. Adding a
+        // parallel notification here would either duplicate that one or
+        // announce work that does not exist.
         await this.prisma.orgUnit.update({
           where: { id: orgUnit.id },
           data: { isHeadFullyUnresolved: false, headFullyUnresolvedLastRemindedAt: null },
