@@ -1887,13 +1887,18 @@ complete, not just the currently-in-review ones.
 1. **DONE — Invitation-activation shortcut.** Confirmed working
    (dev-only — no email infrastructure needed for it to function).
 2. **DONE — Manager vs. Unit-Head / escalation redesign (ACC-46).**
-   Currently in final review before merge (PR #53 to `dev`) — the full
+   Merged to `dev` via PR #53 (squash `2061305`) — the full
    `OrgPosition` redesign (org-wide catalog, `isUnitHeadPosition`/
    `isSingleAssignee`, position-to-role mapping, the `ORG_UNIT_HEAD`
    workflow assignee strategy's first real implementation, the
    Manager-then-Head task escalation rework, the User Transfer
    Wizard). Full detail: SYSTEM-REFERENCE.md Section 5 and Section
    12.9.
+   This is also what settled the long-open "does `managerId` do
+   anything?" question: it now has a real functional consumer
+   (`OrgPositionService.resolveManagerEscalationTargets()` reads it,
+   and `SlaMonitorProcessor` calls that for the Manager escalation
+   tier), where before ACC-46 it was display-only and read by nothing.
 3. **NOT STARTED — remove `Role`/`ROLE_BASED` from workflow assignee/
    trigger strategies, replace with `OrgPosition`-based assignment.**
 4. **NOT STARTED — new seed data reflecting the final structural
@@ -2097,6 +2102,36 @@ complete, not just the currently-in-review ones.
   same rigor `EditDialogComponent`/`OverlaySelectComponent` got
   before being made required) — found while fixing `invite-user`'s
   missing feedback during ACC-46 review, not scoped or decided here.
+- **Bulk user import (CSV/Excel)** — flagged by Ahmad as a real,
+  separate feature: for organizations with 100+ users, inviting one
+  by one is impractical. Imported users should be created ACTIVE
+  directly (no invitation/confirmation step). Real scope, not a small
+  addition: needs a defined file format/template, validation against
+  existing positions/org units/managers/roles (all must already exist
+  and be correctly referenced), and a decision on partial-failure
+  handling (reject the whole batch vs. skip-and-report malformed
+  rows). Needs its own investigation and plan before building.
+  Placement: NOT Phase 2 (Monetization) or Phase 3 (Advanced
+  Features) — this is operational tooling, not a monetization or
+  advanced feature. Belongs in the unlabeled build sequence that
+  precedes both named phases, sequenced late: after "Sequence to
+  Meeting Management" items 5 (Committee production-readiness) and 6
+  (the coverage audit) — real testing with a handful of users has to
+  come first — and before item 7 (Meeting Management). Becomes
+  genuinely valuable once the product is close to real-customer-scale
+  testing/demo, not before.
+- **Vacancy notification could distinguish "genuinely nobody
+  assigned" from "assigned but not yet activated"** — confirmed
+  during ACC-43 that vacancy detection correctly requires ACTIVE
+  status (an invited head-conferring holder does NOT count as
+  covering a unit, matching the same principle already established
+  for out-of-office coverage: holding a position isn't the same as
+  being able to act). Still true in the current code —
+  `resolveActingHeadForOrgUnit()` filters on `status: 'ACTIVE'`.
+  Worth a future UX refinement: the first notification could be
+  softer/different when the cause is "holder hasn't activated yet"
+  vs. a genuine empty assignment — not built now, this is a polish
+  idea, not a defect.
 
 ---
 
