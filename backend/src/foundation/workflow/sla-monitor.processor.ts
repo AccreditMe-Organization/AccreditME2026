@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleInit, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, forwardRef } from '@nestjs/common';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { DateTime } from 'luxon';
@@ -38,6 +38,15 @@ interface EscalationRule {
 @Injectable()
 @Processor('sla-monitor')
 export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
+  // ACC-49 — first Nest Logger in this codebase (grep-confirmed: no other
+  // `new Logger(` exists, and Winston/Sentry are still unwired, carrying only
+  // a TODO in http-exception.filter.ts). Used rather than inventing a
+  // mechanism because a cross-tenant sweep failure has no single tenant to
+  // attribute it to, which rules out AuditLogService — every entry there
+  // requires a tenantId. Whenever Winston does land, this is the seam it
+  // replaces.
+  private readonly logger = new Logger(SlaMonitorProcessor.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
@@ -90,9 +99,83 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     );
   }
 
+  // ACC-49 — every step is fault-isolated from every other. Previously these
+  // ran as bare sequential awaits, so one throwing killed the whole chain for
+  // that cycle: ACC-48 was exactly this, where sweepOverdueTasks() crashing on
+  // columns dropped by a prematurely-applied migration silently disabled all
+  // SIX other steps, every 15 minutes, for ~14.5 hours, across every tenant on
+  // the shared database.
+  //
+  // Isolation is safe here because the steps are genuinely independent —
+  // verified, not assumed: all seven return Promise<void>, none consumes
+  // another's return value, and each re-reads live state at its own start
+  // (the only shared input is `now`, passed by value). A step failing is
+  // therefore indistinguishable, to every later step, from that step simply
+  // having had nothing due yet — a state each already tolerates by
+  // construction, since they all re-run every 15 minutes.
+  //
+  // The job still FAILS if any step failed (aggregate rethrow at the end).
+  // That is deliberate: a job reporting success while a step is broken would
+  // trade ACC-48's blast radius for an equally bad blind spot, and BullMQ's
+  // failed-job list is the exact place ACC-48's own failures were eventually
+  // found. Costless here because the sla-monitor queue is registered with no
+  // defaultJobOptions (unlike workflow-actions/email-delivery), so BullMQ's
+  // default attempts: 1 applies — a failure never retries, it just stays
+  // visible until the next scheduled run 15 minutes later.
   async process(_job: Job): Promise<void> {
     const now = new Date();
+    const failedSteps: string[] = [];
 
+    await this.runIsolatedStep('breachedStageEscalations', failedSteps, () =>
+      this.sweepBreachedStageEscalations(now),
+    );
+    await this.runIsolatedStep('sweepOverdueTasks', failedSteps, () => this.sweepOverdueTasks(now));
+    await this.runIsolatedStep('sweepUnassignedStages', failedSteps, () => this.sweepUnassignedStages());
+    await this.runIsolatedStep('sweepExpiredActingOrgUnitAssignments', failedSteps, () =>
+      this.sweepExpiredActingOrgUnitAssignments(now),
+    );
+    await this.runIsolatedStep('sweepDueHandovers', failedSteps, () => this.sweepDueHandovers(now));
+    await this.runIsolatedStep('sweepOrgUnitVacancies', failedSteps, () => this.sweepOrgUnitVacancies(now));
+    await this.runIsolatedStep('sweepVacantHeadRoleMappings', failedSteps, () =>
+      this.sweepVacantHeadRoleMappings(),
+    );
+
+    // Every step has now run regardless of what failed. Surfacing the failure
+    // to BullMQ is the last act, never a short-circuit.
+    if (failedSteps.length > 0) {
+      throw new Error(
+        `SLA monitor sweep completed with ${failedSteps.length} failed step(s): ${failedSteps.join(', ')}. ` +
+          'Every other step still ran — see the per-step error logs above for each failure.',
+      );
+    }
+  }
+
+  // Runs one sweep step, absorbing any throw so the remaining steps still run.
+  // Logs at error level with the step name, because "which step" is the single
+  // most useful diagnostic fact and is exactly what the aggregate error at the
+  // end cannot carry per-failure (stack traces belong with their own step).
+  private async runIsolatedStep(
+    stepName: string,
+    failedSteps: string[],
+    step: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await step();
+    } catch (err) {
+      failedSteps.push(stepName);
+      this.logger.error(
+        `SLA monitor step "${stepName}" failed — continuing with the remaining steps. ` +
+          `${err instanceof Error ? err.message : 'Unknown error'}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+    }
+  }
+
+  // Extracted verbatim from the old inline body of process() (ACC-49) so it
+  // can be isolated like every other step — it was the most exposed of all,
+  // running first and unguarded, so anything it threw pre-empted all six
+  // sweeps behind it.
+  private async sweepBreachedStageEscalations(now: Date): Promise<void> {
     const breachedStages = await this.prisma.workflowInstanceStage.findMany({
       where: { exitedAt: null, slaDueAt: { lt: now }, slaBreached: false },
       include: { workflowInstance: true, stage: true },
@@ -132,13 +215,6 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         },
       });
     }
-
-    await this.sweepOverdueTasks(now);
-    await this.sweepUnassignedStages();
-    await this.sweepExpiredActingOrgUnitAssignments(now);
-    await this.sweepDueHandovers(now);
-    await this.sweepOrgUnitVacancies(now);
-    await this.sweepVacantHeadRoleMappings();
   }
 
   // ACC-40 Section 2.3 — the automatic half of "what closes the window:
