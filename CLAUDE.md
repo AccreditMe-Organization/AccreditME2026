@@ -1887,13 +1887,18 @@ complete, not just the currently-in-review ones.
 1. **DONE — Invitation-activation shortcut.** Confirmed working
    (dev-only — no email infrastructure needed for it to function).
 2. **DONE — Manager vs. Unit-Head / escalation redesign (ACC-46).**
-   Currently in final review before merge (PR #53 to `dev`) — the full
+   Merged to `dev` via PR #53 (squash `2061305`) — the full
    `OrgPosition` redesign (org-wide catalog, `isUnitHeadPosition`/
    `isSingleAssignee`, position-to-role mapping, the `ORG_UNIT_HEAD`
    workflow assignee strategy's first real implementation, the
    Manager-then-Head task escalation rework, the User Transfer
    Wizard). Full detail: SYSTEM-REFERENCE.md Section 5 and Section
    12.9.
+   This is also what settled the long-open "does `managerId` do
+   anything?" question: it now has a real functional consumer
+   (`OrgPositionService.resolveManagerEscalationTargets()` reads it,
+   and `SlaMonitorProcessor` calls that for the Manager escalation
+   tier), where before ACC-46 it was display-only and read by nothing.
 3. **NOT STARTED — remove `Role`/`ROLE_BASED` from workflow assignee/
    trigger strategies, replace with `OrgPosition`-based assignment.**
 4. **NOT STARTED — new seed data reflecting the final structural
