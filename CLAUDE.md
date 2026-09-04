@@ -2097,6 +2097,36 @@ complete, not just the currently-in-review ones.
   same rigor `EditDialogComponent`/`OverlaySelectComponent` got
   before being made required) — found while fixing `invite-user`'s
   missing feedback during ACC-46 review, not scoped or decided here.
+- **Bulk user import (CSV/Excel)** — flagged by Ahmad as a real,
+  separate feature: for organizations with 100+ users, inviting one
+  by one is impractical. Imported users should be created ACTIVE
+  directly (no invitation/confirmation step). Real scope, not a small
+  addition: needs a defined file format/template, validation against
+  existing positions/org units/managers/roles (all must already exist
+  and be correctly referenced), and a decision on partial-failure
+  handling (reject the whole batch vs. skip-and-report malformed
+  rows). Needs its own investigation and plan before building.
+  Placement: NOT Phase 2 (Monetization) or Phase 3 (Advanced
+  Features) — this is operational tooling, not a monetization or
+  advanced feature. Belongs in the unlabeled build sequence that
+  precedes both named phases, sequenced late: after "Sequence to
+  Meeting Management" items 5 (Committee production-readiness) and 6
+  (the coverage audit) — real testing with a handful of users has to
+  come first — and before item 7 (Meeting Management). Becomes
+  genuinely valuable once the product is close to real-customer-scale
+  testing/demo, not before.
+- **Vacancy notification could distinguish "genuinely nobody
+  assigned" from "assigned but not yet activated"** — confirmed
+  during ACC-43 that vacancy detection correctly requires ACTIVE
+  status (an invited head-conferring holder does NOT count as
+  covering a unit, matching the same principle already established
+  for out-of-office coverage: holding a position isn't the same as
+  being able to act). Still true in the current code —
+  `resolveActingHeadForOrgUnit()` filters on `status: 'ACTIVE'`.
+  Worth a future UX refinement: the first notification could be
+  softer/different when the cause is "holder hasn't activated yet"
+  vs. a genuine empty assignment — not built now, this is a polish
+  idea, not a defect.
 
 ---
 
