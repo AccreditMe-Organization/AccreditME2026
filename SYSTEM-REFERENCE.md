@@ -962,14 +962,40 @@ misconfiguration).
   case rather than a guard: a stage can recover because a blocking
   transition's `requiredPermission` became satisfiable while the pool
   itself never changed.
-  **Known limitation, tracked as ACC-52:** because the guard above
-  short-circuits on `wasUnassigned === isNowUnassigned`, this recovery
-  fires **exactly once**, on the flag transition itself. If any worker
-  consumes that transition without acting on it — a stale deployment,
-  a competing worker (see CLAUDE.md's shared dev database/Redis note),
-  or a crash between the flag write and the recovery call, which are
-  separate non-atomic steps — the task is orphaned permanently, with
-  nothing to pick it up later.
+  **Idempotent as of ACC-52** — and this is the load-bearing detail if
+  you are reading the guard above and wondering how the two coexist.
+  The flag write and the admin notification are still strictly gated on
+  `wasUnassigned !== isNowUnassigned`, unchanged; **task recovery is
+  not**. It is keyed on the stage's actual current state — `if
+  (!isNowUnassigned)` — so it runs on every sweep for every open,
+  non-blocked stage, not once per transition. Before ACC-52 all three
+  shared the single `wasUnassigned === isNowUnassigned` short-circuit,
+  which meant that if anything consumed or interrupted that one moment
+  — a stale deployment, a competing worker (see CLAUDE.md's shared dev
+  database/Redis note), or a crash landing between the flag write and
+  the recovery call, which are separate non-atomic steps — the task
+  was orphaned permanently, with nothing left to pick it up.
+  Idempotence is by construction rather than by a dedup flag:
+  `attachAssigneesToUnassignedStageTasks()` (3.2) queries only
+  `UNASSIGNED` tasks and returns 0 with no writes and no notifications
+  when there are none, so repeat sweeps of a healthy stage cost one
+  indexed count and notify nobody. `recoverUnassignedStageTasks()`
+  checks `TaskService.hasUnassignedStageTasks()` **before** resolving
+  the assignee pool — that ordering is deliberate, not stylistic: pool
+  resolution is the expensive half (role/committee lookups, org-unit
+  parent walks, out-of-office routing per user), and on a healthy
+  tenant the pre-check answers "nothing to do" first.
+  One genuine behavior expansion worth knowing: because recovery keys
+  off real state rather than a transition, it also re-attaches a task
+  that reached `UNASSIGNED` by some *other* route on a stage whose
+  pool is healthy — e.g. `reassignAllForUser()` orphaning it during a
+  departure, or `reassign()` landing on zero eligible assignees.
+  Intended: an orphaned task on a stage with an eligible pool is a
+  defect whichever path produced it, and neither route represents a
+  human choosing to leave work unassigned (`ReassignTaskDto` requires
+  at least one assignee, so reaching `UNASSIGNED` there means every
+  supplied user turned out ineligible — a failure outcome, not an
+  intent).
 - **`sweepOrgUnitVacancies()` deliberately did NOT get the same
   treatment** (ACC-51, checked rather than assumed symmetric): there
   is no orphaned-Task problem on that path. `Task` has no org-unit
@@ -1098,11 +1124,16 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   the caller) is given, reassigns to them; otherwise, if no other active
   assignee remains on that task, flags it `UNASSIGNED`. Every change
   audit-logged individually with `metadata: { event: 'departure_reassignment' }`.
-- **`attachAssigneesToUnassignedStageTasks()`** (ACC-51) — the recovery
-  half of the unassigned-task lifecycle, called from exactly one place:
-  `SlaMonitorProcessor.sweepUnassignedStages()`'s clear-on-recovery
-  branch (2.13). For every still-`UNASSIGNED` task on the recovered
-  `(workflowInstanceId, sourceStageId)` pair: attaches the
+- **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
+  idempotent ACC-52) — the recovery half of the unassigned-task
+  lifecycle, called from exactly one place:
+  `SlaMonitorProcessor.sweepUnassignedStages()`'s not-blocked branch
+  (2.13 — originally the clear-on-recovery *transition*, widened by
+  ACC-52 to the stage's actual current state, which is what makes a
+  missed transition self-heal). Returns 0 with no writes and no
+  notifications when nothing is orphaned, which is the property that
+  makes calling it on every sweep safe. For every still-`UNASSIGNED`
+  task on the `(workflowInstanceId, sourceStageId)` pair: attaches the
   newly-resolved assignees, flips the task to `PENDING`, audit-logs
   with `metadata: { event: 'unassigned_stage_recovery' }`, and notifies
   each assignee reusing `create()`'s own *"New task assigned"* wording
@@ -1134,6 +1165,17 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
     **pre-existing latent bug in `reassign()` itself** (reachable
     manually too: reassign A → B → A) — not fixed by ACC-51, not
     inherited by it, and not currently tracked by its own ticket.
+- **`hasUnassignedStageTasks()`** (ACC-52) — a `count > 0` existence
+  check for orphaned `UNASSIGNED` tasks on a given
+  `(workflowInstanceId, sourceStageId)` pair, tenant-scoped like every
+  other query here. Exists purely so `SlaMonitorProcessor`'s now-
+  idempotent recovery (2.13) can skip assignee-pool resolution — the
+  expensive half — on the overwhelmingly common path where nothing is
+  orphaned. Deliberately a `count` rather than a `findMany`: the caller
+  only branches on existence, and the rows are re-read with their
+  assignees inside `attachAssigneesToUnassignedStageTasks()`'s own
+  transaction, so reading twice is correct rather than wasteful (a row
+  read here and acted on later would be a stale snapshot).
 - **`addEvidence()`** — `INTERNAL_REFERENCE` evidence sets
   `refDisplay: dto.refId` verbatim (the raw id, not a resolved display
   name) — code comment states plainly: *"no functional module exists

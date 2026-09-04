@@ -377,6 +377,11 @@ export class TaskService {
   // Returns the number of tasks that genuinely transitioned out of
   // UNASSIGNED, so the caller can log/assert on real effect rather than on
   // "the method ran".
+  //
+  // ACC-52 — safe to call on every sweep, not only on a flag transition:
+  // when nothing is orphaned the `tasks.length === 0` early return below
+  // makes this a no-op with no writes and no notifications. That property is
+  // what lets the caller drop its one-shot guard.
   async attachAssigneesToUnassignedStageTasks(
     workflowInstanceId: string,
     sourceStageId: string,
@@ -475,6 +480,31 @@ export class TaskService {
     }
 
     return recoveredCount;
+  }
+
+  // ACC-52 — the cheap pre-check that makes idempotent recovery affordable.
+  // Recovery now runs on every sweep for every open, non-blocked stage
+  // (rather than only on a one-time flag transition), so the caller needs a
+  // way to answer "is there anything orphaned here at all?" WITHOUT paying
+  // for assignee-pool resolution first — that resolution is the expensive
+  // half (role/committee lookups, org-unit parent walks, then out-of-office
+  // routing per resolved user), and on a healthy tenant the answer is almost
+  // always "nothing to do".
+  //
+  // Deliberately a `count`, not a `findMany` — the caller only branches on
+  // existence, and the rows themselves are re-read (with their assignees)
+  // by attachAssigneesToUnassignedStageTasks() inside its own transaction
+  // anyway. Reading them twice is correct rather than wasteful: a row read
+  // here and acted on later would be a stale snapshot.
+  async hasUnassignedStageTasks(
+    workflowInstanceId: string,
+    sourceStageId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    const orphanCount = await this.prisma.task.count({
+      where: { organizationId, workflowInstanceId, sourceStageId, status: 'UNASSIGNED' },
+    });
+    return orphanCount > 0;
   }
 
   async addEvidence(

@@ -114,7 +114,13 @@ const mockWorkflowService = {
 };
 // ACC-51 — recovery hands the resolved pool to TaskService, which owns the
 // actual assignment/notification logic (tested in task.service.spec.ts).
-const mockTaskService = { attachAssigneesToUnassignedStageTasks: jest.fn() };
+const mockTaskService = {
+  attachAssigneesToUnassignedStageTasks: jest.fn(),
+  // ACC-52 — the cheap orphan pre-check recovery now runs first. Safe no-op
+  // default (nothing orphaned) in beforeEach, so pre-existing tests are
+  // unaffected by recovery now being reached on every non-blocked stage.
+  hasUnassignedStageTasks: jest.fn(),
+};
 const mockOrgUnitHeadService = { completeHandoverAutomatically: jest.fn() };
 const mockOrganizationService = {
   resolveActingHeadForOrgUnit: jest.fn(),
@@ -169,6 +175,9 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // recovery branch. Recovery tests override both per-case.
     mockWorkflowService.resolveAssigneeForStage.mockResolvedValue([]);
     mockTaskService.attachAssigneesToUnassignedStageTasks.mockResolvedValue(0);
+    // ACC-52 — default: nothing orphaned, so recovery short-circuits before
+    // pool resolution. Recovery tests override this per-case.
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(false);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -234,6 +243,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
     mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]); // now resolvable
     mockWorkflowService.resolveAssigneeForStage.mockResolvedValue(['user-newly-eligible']);
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // an orphan really exists
 
     await runProcess();
 
@@ -255,11 +265,119 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
     mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]);
     mockWorkflowService.resolveAssigneeForStage.mockResolvedValue(['user-newly-eligible']);
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // an orphan really exists
 
     await runProcess();
 
     expect(mockTaskService.attachAssigneesToUnassignedStageTasks).toHaveBeenCalled();
     expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).not.toHaveBeenCalled();
+  });
+
+  // ── ACC-52: recovery is idempotent, admin dedup is not weakened ────────
+  //
+  // (a) The core bug: recovery used to fire only on the flag transition, so
+  // if anything consumed or interrupted that single moment the task was
+  // orphaned permanently. This is that exact scenario — the flag already
+  // reads false (a competing worker cleared it, or a crash landed between
+  // the flag write and the recovery call), so there is NO transition left
+  // for a transition-gated recovery to key off.
+  it('recovers a task whose recovery transition was already consumed — no flag transition left to key off', async () => {
+    const stage = makeOpenInstanceStage({ isUnassigned: false }); // flag already cleared by someone else
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]); // not blocked
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // but the task is still orphaned
+    mockWorkflowService.resolveAssigneeForStage.mockResolvedValue(['user-newly-eligible']);
+
+    await runProcess();
+
+    expect(mockTaskService.attachAssigneesToUnassignedStageTasks).toHaveBeenCalledWith(
+      'instance-1',
+      'stage-1',
+      ['user-newly-eligible'],
+      ORG_A,
+    );
+    // No flag transition occurred, so the row must not be rewritten either.
+    expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps recovering across repeated sweeps until the orphan is actually gone', async () => {
+    const stage = makeOpenInstanceStage({ isUnassigned: false });
+    mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]);
+    mockWorkflowService.resolveAssigneeForStage.mockResolvedValue(['user-newly-eligible']);
+
+    // Sweep 1 — still orphaned, so recovery runs.
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true);
+    await runProcess();
+    expect(mockTaskService.attachAssigneesToUnassignedStageTasks).toHaveBeenCalledTimes(1);
+
+    // Sweep 2 — now recovered, so it must go quiet rather than re-notify.
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(false);
+    await runProcess();
+    expect(mockTaskService.attachAssigneesToUnassignedStageTasks).toHaveBeenCalledTimes(1); // still 1
+  });
+
+  it('short-circuits before assignee-pool resolution when nothing is orphaned — the per-sweep cost guard', async () => {
+    const stage = makeOpenInstanceStage({ isUnassigned: false });
+    mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+    mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue([]);
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(false);
+
+    await runProcess();
+
+    expect(mockWorkflowService.resolveAssigneeForStage).not.toHaveBeenCalled();
+    expect(mockTaskService.attachAssigneesToUnassignedStageTasks).not.toHaveBeenCalled();
+  });
+
+  // (b) The behavior the original one-shot guard existed to protect. Making
+  // recovery idempotent must not make admin notification idempotent too.
+  it('does NOT re-notify Tenant Admins on repeat sweeps of an already-flagged stage', async () => {
+    const stage = makeOpenInstanceStage({ isUnassigned: true, unassignedAt: new Date('2026-01-01') });
+    mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue(BLOCKING_TRANSITION);
+
+    // Three consecutive sweeps, still blocked the whole time.
+    for (let i = 0; i < 3; i++) {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+      await runProcess();
+    }
+
+    expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).not.toHaveBeenCalled();
+    expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
+  });
+
+  it('notifies Tenant Admins exactly once across a block → still-blocked → still-blocked sequence', async () => {
+    mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue(BLOCKING_TRANSITION);
+
+    // Sweep 1 — the genuine false→true transition: notify once.
+    mockPrisma.workflowInstanceStage.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([makeOpenInstanceStage({ isUnassigned: false })]);
+    await runProcess();
+    expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).toHaveBeenCalledTimes(1);
+
+    // Sweeps 2 and 3 — flag now reads true, still blocked: silence.
+    for (let i = 0; i < 2; i++) {
+      mockPrisma.workflowInstanceStage.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([makeOpenInstanceStage({ isUnassigned: true })]);
+      await runProcess();
+    }
+    expect(mockWorkflowService.notifyTenantAdminsOfUnassignedStage).toHaveBeenCalledTimes(1);
+  });
+
+  it('never attempts recovery while the stage is still blocked, however many sweeps run', async () => {
+    const stage = makeOpenInstanceStage({ isUnassigned: true });
+    mockWorkflowService.resolveUnassignedBlockingTransitions.mockResolvedValue(BLOCKING_TRANSITION);
+    mockTaskService.hasUnassignedStageTasks.mockResolvedValue(true); // orphan exists, but stage is blocked
+
+    for (let i = 0; i < 2; i++) {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([stage]);
+      await runProcess();
+    }
+
+    expect(mockTaskService.hasUnassignedStageTasks).not.toHaveBeenCalled();
+    expect(mockTaskService.attachAssigneesToUnassignedStageTasks).not.toHaveBeenCalled();
   });
 
   // A stage can recover because its blocking transition's requiredPermission
