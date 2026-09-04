@@ -47,6 +47,8 @@ const mockPrisma = {
     findMany: jest.fn(),
     findFirst: jest.fn(),
     update: jest.fn(),
+    // ACC-52 — hasUnassignedStageTasks()'s cheap existence check.
+    count: jest.fn(),
   },
   taskAssignee: {
     updateMany: jest.fn(),
@@ -698,6 +700,26 @@ describe('TaskService', () => {
       expect(store.task.status).toBe('COMPLETED');
     });
 
+    // ACC-52 — the property that lets the caller drop its one-shot guard:
+    // calling this repeatedly, once nothing is orphaned, must be a true
+    // no-op — no writes, and critically no duplicate assignee notification.
+    it('is a no-op with no writes and no notification when nothing is orphaned — safe to call every sweep', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]); // already recovered
+
+      const recovered = await service.attachAssigneesToUnassignedStageTasks(
+        INSTANCE_ID,
+        STAGE_ID,
+        [USER_A],
+        ORG_A,
+      );
+
+      expect(recovered).toBe(0);
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
     itEnforcesTenantIsolation(
       'attachAssigneesToUnassignedStageTasks only recovers tasks within the requested tenant',
       async () => {
@@ -715,6 +737,48 @@ describe('TaskService', () => {
         expect(recovered).toBe(0);
         expect(mockPrisma.task.update).not.toHaveBeenCalled();
         expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+        );
+      },
+    );
+  });
+
+  // ACC-52 — the cheap pre-check that keeps idempotent recovery affordable.
+  describe('hasUnassignedStageTasks', () => {
+    const INSTANCE_ID = 'wf-instance-1';
+    const STAGE_ID = 'stage-1';
+
+    it('returns true when an orphaned UNASSIGNED task exists for the stage', async () => {
+      mockPrisma.task.count.mockResolvedValue(1);
+
+      const result = await service.hasUnassignedStageTasks(INSTANCE_ID, STAGE_ID, ORG_A);
+
+      expect(result).toBe(true);
+      expect(mockPrisma.task.count).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          workflowInstanceId: INSTANCE_ID,
+          sourceStageId: STAGE_ID,
+          status: 'UNASSIGNED',
+        },
+      });
+    });
+
+    it('returns false when nothing is orphaned — the common healthy-tenant path', async () => {
+      mockPrisma.task.count.mockResolvedValue(0);
+
+      expect(await service.hasUnassignedStageTasks(INSTANCE_ID, STAGE_ID, ORG_A)).toBe(false);
+    });
+
+    itEnforcesTenantIsolation(
+      'hasUnassignedStageTasks only counts orphaned tasks within the requested tenant',
+      async () => {
+        mockPrisma.task.count.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+          Promise.resolve(where.organizationId === ORG_A ? 1 : 0),
+        );
+
+        expect(await service.hasUnassignedStageTasks(INSTANCE_ID, STAGE_ID, ORG_B)).toBe(false);
+        expect(mockPrisma.task.count).toHaveBeenCalledWith(
           expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
         );
       },
