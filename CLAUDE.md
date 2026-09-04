@@ -2039,22 +2039,53 @@ complete, not just the currently-in-review ones.
   turned out to be. Not scoped or sized yet — this is a full audit,
   not a single fix, grouped here with the other future UI-consistency
   items but distinctly larger in scope than either.
-- **Schema migrations from unmerged feature branches must not be
-  applied directly to the shared dev database that a live Railway
-  deployment depends on** — confirmed as the root cause of ACC-48's
-  14.5-hour production sweep outage (SlaMonitorProcessor silently
-  disabled on the deployed dev instance, tenant-wide, including the
-  real Demo Organization). ACC-46's Commit 1 migration was run
-  directly against the shared dev Supabase database before any
-  corresponding code was merged to `dev` — the deployed instance kept
-  running old code that still queried the now-dropped columns, and
-  `SlaMonitorProcessor.process()` having no per-step error isolation
-  (ACC-49) turned one crashing query into a total sweep outage.
-  Needs a real decision, not a one-off fix: either genuinely separate
-  dev/staging databases per environment, or a documented rule that a
+- **Local development points at SHARED infrastructure that a live
+  Railway deployment also depends on — both the dev database and the
+  dev Redis queue.** Confirmed twice, in two structurally different
+  ways, which is why this is recorded as one problem rather than two
+  incidents:
+  - **ACC-48 — shared DATABASE.** Root cause of a 14.5-hour production
+    sweep outage (`SlaMonitorProcessor` silently disabled on the
+    deployed dev instance, tenant-wide, including the real Demo
+    Organization). ACC-46's Commit 1 migration was run directly
+    against the shared dev Supabase database before any corresponding
+    code was merged to `dev` — the deployed instance kept running old
+    code that still queried the now-dropped columns, and
+    `SlaMonitorProcessor.process()` having no per-step error isolation
+    (ACC-49) turned one crashing query into a total outage of all six
+    sweep mechanisms at once.
+  - **ACC-51 — shared REDIS.** `REDIS_URL` points at a shared Railway
+    Redis (`sakura.proxy.rlwy.net`), so the deployed instance and any
+    local dev server are **competing workers on the same
+    `sla-monitor` queue**. During ACC-51's live verification, a sweep
+    job enqueued locally to exercise newly-written recovery code was
+    consumed by the deployed worker running `dev`'s recovery-less
+    code instead. It cleared the stage's `isUnassigned` flag and
+    stopped there — silently invalidating the verification, and
+    (because that recovery path is one-shot: the
+    `wasUnassigned === isNowUnassigned → continue` guard means only
+    the transition itself triggers it) permanently consuming the only
+    chance to recover that task. The queue still holds ACC-48's own
+    old failures from `/app/dist/...`, which is how the shared-worker
+    situation was identified at all.
+
+  The decision needed is the **same for both**, which is the point:
+  either genuinely separate dev/staging infrastructure per
+  environment (database AND queue), or a documented rule about
+  exactly what may safely point at a shared instance — e.g. that a
   migration only gets applied once its corresponding code is merged,
-  never before. Not decided or scoped here — this note exists so the
+  never before, and that local workers must not share a queue with a
+  deployed one. Not decided or scoped here — this note exists so the
   question isn't lost before that decision gets made.
+
+  **Practical implication until it is decided:** verifying
+  queue-driven behavior locally is unreliable by default, because
+  there is no guarantee the local worker processes its own job.
+  ACC-51's verification worked around this by invoking
+  `SlaMonitorProcessor.process()` directly in-process against the
+  real database rather than enqueueing — a usable workaround, not a
+  fix, and worth knowing about before someone else loses time to the
+  same silent failure.
 - **No form in this app has a per-field inline error-message pattern**
   (confirmed via full grep, zero matches) — every form relies solely
   on a disabled submit button as its only invalid-state feedback.
