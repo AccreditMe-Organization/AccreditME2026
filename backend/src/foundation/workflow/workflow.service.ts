@@ -903,6 +903,30 @@ export class WorkflowService {
     return this.applyOutOfOfficeRouting(rawUserIds, organizationId);
   }
 
+  // ACC-51 — public accessor over the private resolveAssignee() above, for
+  // SlaMonitorProcessor's unassigned-stage RECOVERY branch: once a stage's
+  // isUnassigned flag clears, the sweep needs the concrete pool that just
+  // became resolvable, to attach to the still-UNASSIGNED Task.
+  // Same precedent as resolveUnassignedBlockingTransitions() being public
+  // specifically so that processor can reuse this file's resolution logic
+  // rather than duplicating it. Deliberately a thin pass-through, not a
+  // second implementation — OOO routing included, exactly as every other
+  // consumer of the pool gets it.
+  //
+  // Yes, this re-resolves a pool resolveUnassignedBlockingTransitions()
+  // already resolved moments earlier in the same sweep pass. Accepted: it
+  // runs only on the rare recovery branch of a 15-minute job, and threading
+  // the pool back out through a method whose whole contract is "return the
+  // blocking transitions" would muddy that contract for a micro-optimization
+  // nothing has measured a need for.
+  async resolveAssigneeForStage(
+    stage: PrismaWorkflowStage,
+    instance: PrismaWorkflowInstance,
+    organizationId: string,
+  ): Promise<string[]> {
+    return this.resolveAssignee(stage, instance, organizationId);
+  }
+
   private async resolveAssigneeRaw(
     stage: PrismaWorkflowStage,
     instance: PrismaWorkflowInstance,

@@ -11,9 +11,12 @@ import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrganizationService } from '../organization/organization.service';
 import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
+import { TaskService } from '../task/task.service';
 import {
   Task as PrismaTask,
   TaskAssignee as PrismaTaskAssignee,
+  WorkflowStage as PrismaWorkflowStage,
+  WorkflowInstance as PrismaWorkflowInstance,
 } from '../../../generated/prisma/client';
 
 // ACC-40 Section 2.5.1 — the 2-day interval between periodic
@@ -65,6 +68,12 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // (above), this is just the provider-level injection to match.
     @Inject(forwardRef(() => TenantService))
     private readonly tenantService: TenantService,
+    // ACC-51 — unassigned-stage recovery hands the newly-resolved pool to
+    // TaskService, which owns the assignment/notification logic. forwardRef
+    // to match WorkflowModule's own existing forwardRef(() => TaskModule)
+    // edge, same precedent as tenantService directly above.
+    @Inject(forwardRef(() => TaskService))
+    private readonly taskService: TaskService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -183,6 +192,22 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         // Recovered — an ancestor now covers this unit (e.g. its Acting
         // Head was just (re)assigned). Silent, same convention as
         // sweepUnassignedStages()'s own clear-on-recovery case.
+        //
+        // ACC-51 — deliberately NOT given that sweep's new assignee-facing
+        // recovery treatment. Checked rather than assumed symmetric, and the
+        // two genuinely differ: there is no orphaned-Task problem here to
+        // solve. Verified three ways — (i) Task has no org-unit field and
+        // TaskSourceType has no ORG_UNIT value, so a task can never be
+        // "about" an org unit; (ii) neither the organization nor
+        // org-position module ever calls TaskService or touches prisma.task
+        // at all; (iii) the real workflow consequence of a head vacancy — an
+        // ORG_UNIT_HEAD-strategy stage resolving an empty pool — is already
+        // fully covered by sweepUnassignedStages() above, which re-resolves
+        // live through resolveActingHeadForOrgUnit() rather than reading the
+        // isHeadVacant cache, so it observes this same recovery within the
+        // same sweep pass regardless of the order these two run in. Adding a
+        // parallel notification here would either duplicate that one or
+        // announce work that does not exist.
         await this.prisma.orgUnit.update({
           where: { id: orgUnit.id },
           data: { isHeadFullyUnresolved: false, headFullyUnresolvedLastRemindedAt: null },
@@ -322,8 +347,19 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       });
 
       // Only the false→true transition pages an admin — the symmetric
-      // clear-on-recovery case (a new Chairman appointed) updates the row
-      // silently, per plan Section 2.5.1.
+      // clear-on-recovery case (a new Chairman appointed) stays silent FOR
+      // ADMINS, per plan Section 2.5.1. That half of the original reasoning
+      // still holds and is deliberately unchanged: nobody should be paged
+      // about a problem that just fixed itself.
+      //
+      // ACC-51 — but that same silence was also swallowing the ASSIGNEE's
+      // own first notification, which is a materially different thing: the
+      // newly-eligible assignee was never eligible before this moment, so
+      // nothing had ever told them anything, by any mechanism. Worse, the
+      // Task that CREATE_TASK wrote at stage-entry time is still sitting at
+      // status UNASSIGNED with zero TaskAssignee rows — invisible to
+      // getMyTasks(), rejected by complete(), and excluded outright from
+      // sweepOverdueTasks(), so it had no route back to a human at all.
       if (isNowUnassigned) {
         await this.workflowService.notifyTenantAdminsOfUnassignedStage(
           organizationId,
@@ -331,8 +367,41 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
           instanceStage.stage,
           blocking,
         );
+      } else {
+        await this.recoverUnassignedStageTasks(instanceStage, organizationId);
       }
     }
+  }
+
+  // ACC-51 — the recovery counterpart to notifyTenantAdminsOfUnassignedStage()
+  // above. Resolves the pool that just became reachable and hands it to
+  // TaskService, which owns the actual assignment/notification business logic
+  // (this processor orchestrates; it never hand-rolls task writes).
+  //
+  // A still-empty pool is a real, expected outcome, not an error: a stage can
+  // recover because its blocking transition's requiredPermission became
+  // satisfiable, without the pool itself changing at all. Nothing to attach,
+  // nothing to notify — return quietly rather than logging noise.
+  private async recoverUnassignedStageTasks(
+    instanceStage: {
+      stage: PrismaWorkflowStage;
+      workflowInstance: PrismaWorkflowInstance;
+    },
+    organizationId: string,
+  ): Promise<void> {
+    const pool = await this.workflowService.resolveAssigneeForStage(
+      instanceStage.stage,
+      instanceStage.workflowInstance,
+      organizationId,
+    );
+    if (pool.length === 0) return;
+
+    await this.taskService.attachAssigneesToUnassignedStageTasks(
+      instanceStage.workflowInstance.id,
+      instanceStage.stage.id,
+      pool,
+      organizationId,
+    );
   }
 
   // Task Management (Step 8) extension — reuses this existing 15-minute

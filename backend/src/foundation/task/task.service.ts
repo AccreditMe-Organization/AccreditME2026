@@ -337,6 +337,146 @@ export class TaskService {
     return { reassignedCount, unassignedCount };
   }
 
+  // ACC-51 — the recovery half of the unassigned-task lifecycle. Called only
+  // by SlaMonitorProcessor.sweepUnassignedStages() when a stage's
+  // isUnassigned flag clears (true → false): the org gap that left this
+  // stage's assignee pool empty has been fixed, so the Task that CREATE_TASK
+  // already wrote at stage-entry time — real, persisted, and completely inert
+  // ever since — finally has someone who can genuinely act on it.
+  //
+  // Attaching assignees is not optional politeness here, it is the whole
+  // point: complete() rejects any caller without an active TaskAssignee row,
+  // and sweepOverdueTasks() excludes status UNASSIGNED outright, so a
+  // notification alone would point someone at work they can neither complete
+  // nor ever be reminded about again.
+  //
+  // Deliberately NOT reassign() — evaluated first, per this ticket's own
+  // note, and rejected for five concrete reasons, none of them stylistic:
+  //   1. ReassignTaskDto.reason is required, and is specifically a HUMAN
+  //      documented reason (Absence/Departure Pattern 2's audit requirement,
+  //      per that DTO's own comment) — a sweep would have to fabricate one.
+  //   2. It hardcodes AuditAction 'DELEGATE'. Nothing is delegated here: this
+  //      is the first-ever assignment of a task that never had an assignee,
+  //      not a transfer of work between two people.
+  //   3. It hardcodes "Task reassigned to you" — wrong for a recipient who
+  //      was never assigned. create()'s own "New task assigned" wording is
+  //      the correct precedent, reused verbatim below.
+  //   4. It requires an actorId for both assignedById and its audit log. A
+  //      sweep has no human actor — SlaMonitorProcessor's own audit logs omit
+  //      actorId entirely (AuditLog.actorId is nullable; TaskAssignee
+  //      .assignedById is not), so neither half could be satisfied honestly.
+  //   5. Its leading updateMany({ removedAt: now }) is a no-op on a task with
+  //      zero assignees, and actively harmful on a repeat recovery
+  //      (block → recover → re-block → recover): it stamps removedAt and then
+  //      re-creates the same (taskId, userId) pair, violating TaskAssignee's
+  //      @@unique([taskId, userId]). That is a real, pre-existing latent bug
+  //      in reassign() itself (reachable manually too: reassign A → B → A) —
+  //      NOT fixed here, deliberately outside this ticket's scope, but not
+  //      inherited either.
+  //
+  // Returns the number of tasks that genuinely transitioned out of
+  // UNASSIGNED, so the caller can log/assert on real effect rather than on
+  // "the method ran".
+  async attachAssigneesToUnassignedStageTasks(
+    workflowInstanceId: string,
+    sourceStageId: string,
+    resolvedAssigneeUserIds: string[],
+    organizationId: string,
+  ): Promise<number> {
+    const eligibleAssigneeIds = await this.filterActiveUsers(resolvedAssigneeUserIds, organizationId);
+    if (eligibleAssigneeIds.length === 0) return 0;
+
+    // Scoped by organizationId alongside the instance/stage ids, per this
+    // codebase's manual tenant-scoping discipline — never a bare lookup by
+    // workflowInstanceId on the assumption the caller already scoped it.
+    const tasks = await this.prisma.task.findMany({
+      where: { organizationId, workflowInstanceId, sourceStageId, status: 'UNASSIGNED' },
+      include: { assignees: true },
+    });
+    if (tasks.length === 0) return 0;
+
+    let recoveredCount = 0;
+
+    for (const task of tasks) {
+      const now = new Date();
+
+      // One transaction per task: a half-applied recovery (assignees attached
+      // but status still UNASSIGNED) would be permanently self-perpetuating,
+      // not self-healing — the stage's isUnassigned flag has already flipped
+      // false by this point, so the sweep's recovery branch never fires for
+      // it again and nothing would ever retry.
+      await this.prisma.$transaction(async (tx) => {
+        for (const userId of eligibleAssigneeIds) {
+          const existing = task.assignees.find((a) => a.userId === userId);
+          if (existing) {
+            // Reactivate-in-place, matching ACC-32's CommitteeMember
+            // precedent: TaskAssignee's @@unique([taskId, userId]) has no
+            // partial exemption, so a returning assignee reuses their own row
+            // rather than creating a second one. Reachable via a repeat
+            // recovery, and via a task left UNASSIGNED by
+            // reassignAllForUser() with removed rows still attached.
+            if (existing.removedAt !== null) {
+              await tx.taskAssignee.update({
+                where: { id: existing.id },
+                data: { removedAt: null, assignedAt: now },
+              });
+            }
+            continue;
+          }
+          await tx.taskAssignee.create({
+            data: {
+              taskId: task.id,
+              userId,
+              // No human actor exists for a sweep-driven assignment, and
+              // assignedById is a required FK. The task's own creator —
+              // whoever triggered the transition that created it — is the
+              // honest attribution: this assignment finishes what their
+              // action started, once the org gap blocking it was fixed.
+              assignedById: task.createdById,
+            },
+          });
+        }
+
+        await tx.task.update({ where: { id: task.id }, data: { status: 'PENDING' } });
+      });
+
+      recoveredCount += 1;
+
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: task.id,
+        // actorId deliberately omitted — system-driven sweep action, matching
+        // every other SlaMonitorProcessor-originated audit entry.
+        tenantId: organizationId,
+        metadata: {
+          event: 'unassigned_stage_recovery',
+          workflowInstanceId,
+          sourceStageId,
+          attachedAssigneeIds: eligibleAssigneeIds,
+        },
+      });
+
+      // Same per-assignee loop and wording as create()'s own assigned branch —
+      // for these recipients this genuinely IS a new assignment, since the
+      // pool was empty when the task was first created.
+      for (const userId of eligibleAssigneeIds) {
+        await this.notificationService.create(
+          {
+            userId,
+            titleEn: 'New task assigned',
+            bodyEn: `You have been assigned: "${task.title}"`,
+            objectType: 'Task',
+            objectId: task.id,
+          },
+          organizationId,
+        );
+      }
+    }
+
+    return recoveredCount;
+  }
+
   async addEvidence(
     taskId: string,
     dto: AddTaskEvidenceDto,

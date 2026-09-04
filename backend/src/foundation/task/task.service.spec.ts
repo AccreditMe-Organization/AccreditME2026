@@ -8,6 +8,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
 import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -66,6 +67,15 @@ const mockPrisma = {
     findMany: jest.fn(),
   },
 };
+
+// ACC-51 — attachAssigneesToUnassignedStageTasks() wraps its per-task writes
+// in a transaction; the callback runs against this same mock. Assigned after
+// the literal (not inside it) so mockPrisma's own type inference stays
+// intact — same shape user.service.spec.ts already uses for its own
+// transaction-taking flows.
+(mockPrisma as unknown as Record<string, unknown>)['$transaction'] = jest.fn(
+  (callback: (tx: unknown) => unknown) => callback(mockPrisma),
+);
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
@@ -500,5 +510,214 @@ describe('TaskService', () => {
 
       expect(result).toHaveLength(0);
     });
+  });
+
+  // ACC-51 — the recovery path. Every test here asserts real effect (the task
+  // genuinely leaves UNASSIGNED, with a real TaskAssignee row behind it), not
+  // just that a notification fired: a notification alone would point someone
+  // at work complete() would still reject them from.
+  describe('attachAssigneesToUnassignedStageTasks', () => {
+    const INSTANCE_ID = 'wf-instance-1';
+    const STAGE_ID = 'stage-1';
+    const UNASSIGNED_TASK = {
+      ...BASE_TASK,
+      id: 'task-unassigned',
+      status: 'UNASSIGNED',
+      createdById: ACTOR,
+      assignees: [],
+    };
+
+    it('attaches the newly-resolved assignee and flips the task out of UNASSIGNED', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([UNASSIGNED_TASK]);
+
+      const recovered = await service.attachAssigneesToUnassignedStageTasks(
+        INSTANCE_ID,
+        STAGE_ID,
+        [USER_A],
+        ORG_A,
+      );
+
+      expect(recovered).toBe(1);
+      expect(mockPrisma.taskAssignee.create).toHaveBeenCalledWith({
+        data: { taskId: 'task-unassigned', userId: USER_A, assignedById: ACTOR },
+      });
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-unassigned' },
+        data: { status: 'PENDING' },
+      });
+    });
+
+    it('notifies each newly-eligible assignee, reusing create()\'s own new-assignment wording', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([UNASSIGNED_TASK]);
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }, { id: USER_B }]);
+
+      await service.attachAssigneesToUnassignedStageTasks(INSTANCE_ID, STAGE_ID, [USER_A, USER_B], ORG_A);
+
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: USER_A,
+          titleEn: 'New task assigned',
+          objectType: 'Task',
+          objectId: 'task-unassigned',
+        }),
+        ORG_A,
+      );
+    });
+
+    it('queries only UNASSIGNED tasks for the recovered stage — an already-assigned task for the same stage is never touched', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      const recovered = await service.attachAssigneesToUnassignedStageTasks(
+        INSTANCE_ID,
+        STAGE_ID,
+        [USER_A],
+        ORG_A,
+      );
+
+      expect(recovered).toBe(0);
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            organizationId: ORG_A,
+            workflowInstanceId: INSTANCE_ID,
+            sourceStageId: STAGE_ID,
+            status: 'UNASSIGNED',
+          },
+        }),
+      );
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the resolved pool contains no ACTIVE user — never flips a task to PENDING with no real assignee', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]); // resolved id exists, but is INVITED/SUSPENDED
+
+      const recovered = await service.attachAssigneesToUnassignedStageTasks(
+        INSTANCE_ID,
+        STAGE_ID,
+        ['inactive-user'],
+        ORG_A,
+      );
+
+      expect(recovered).toBe(0);
+      expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    // Guards TaskAssignee's @@unique([taskId, userId]) — reachable on a
+    // repeat recovery (block → recover → re-block → recover), and on a task
+    // left UNASSIGNED by reassignAllForUser() with removed rows still on it.
+    it('reactivates an existing removed assignee row in place instead of creating a duplicate', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([
+        {
+          ...UNASSIGNED_TASK,
+          assignees: [
+            { id: 'ta-old', taskId: 'task-unassigned', userId: USER_A, assignedById: ACTOR, removedAt: new Date() },
+          ],
+        },
+      ]);
+
+      const recovered = await service.attachAssigneesToUnassignedStageTasks(
+        INSTANCE_ID,
+        STAGE_ID,
+        [USER_A],
+        ORG_A,
+      );
+
+      expect(recovered).toBe(1);
+      expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+      expect(mockPrisma.taskAssignee.update).toHaveBeenCalledWith({
+        where: { id: 'ta-old' },
+        data: { removedAt: null, assignedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-unassigned' },
+        data: { status: 'PENDING' },
+      });
+    });
+
+    it('audit-logs the recovery without an actorId — system-driven, matching every other sweep-originated entry', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([UNASSIGNED_TASK]);
+
+      await service.attachAssigneesToUnassignedStageTasks(INSTANCE_ID, STAGE_ID, [USER_A], ORG_A);
+
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE',
+          objectType: 'Task',
+          objectId: 'task-unassigned',
+          tenantId: ORG_A,
+          metadata: expect.objectContaining({ event: 'unassigned_stage_recovery' }),
+        }),
+      );
+      expect(mockAuditLog.log.mock.calls[0][0]).not.toHaveProperty('actorId');
+    });
+
+    // The contract that actually matters, and the one a mock-per-assertion
+    // test cannot prove: after recovery, the newly-eligible assignee can
+    // genuinely COMPLETE the task. complete() rejects any caller without an
+    // active TaskAssignee row, so this runs both methods back-to-back against
+    // a small stateful fake that really records what was written, rather than
+    // asserting on two independent mocks that never see each other's effects.
+    it('end-to-end: the newly-eligible assignee can actually complete the task afterward', async () => {
+      const store = {
+        task: {
+          ...UNASSIGNED_TASK,
+          assignees: [] as { id: string; taskId: string; userId: string; removedAt: Date | null }[],
+        },
+      };
+
+      mockPrisma.task.findMany.mockImplementation(({ where }: { where: { status?: string } }) =>
+        Promise.resolve(where.status === 'UNASSIGNED' && store.task.status === 'UNASSIGNED' ? [store.task] : []),
+      );
+      mockPrisma.taskAssignee.create.mockImplementation(({ data }: { data: { taskId: string; userId: string } }) => {
+        store.task.assignees.push({ id: 'ta-new', taskId: data.taskId, userId: data.userId, removedAt: null });
+        return Promise.resolve(store.task.assignees.at(-1));
+      });
+      mockPrisma.task.update.mockImplementation(({ data }: { data: { status?: string } }) => {
+        if (data.status) store.task.status = data.status;
+        return Promise.resolve(store.task);
+      });
+      // complete()'s own reads, served from the same store.
+      mockPrisma.task.findFirst.mockImplementation(() => Promise.resolve(store.task));
+      mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
+
+      // Before recovery: the task exists, but USER_A cannot complete it —
+      // this is the inert state the whole ticket is about.
+      await expect(service.complete(store.task.id, USER_A, ORG_A)).rejects.toThrow(NotFoundException);
+
+      await service.attachAssigneesToUnassignedStageTasks(INSTANCE_ID, STAGE_ID, [USER_A], ORG_A);
+
+      expect(store.task.status).toBe('PENDING');
+      expect(store.task.assignees).toHaveLength(1);
+      expect(store.task.assignees[0]).toMatchObject({ userId: USER_A, removedAt: null });
+
+      // After recovery: the same call now succeeds.
+      await expect(service.complete(store.task.id, USER_A, ORG_A)).resolves.toBeDefined();
+      expect(store.task.status).toBe('COMPLETED');
+    });
+
+    itEnforcesTenantIsolation(
+      'attachAssigneesToUnassignedStageTasks only recovers tasks within the requested tenant',
+      async () => {
+        mockPrisma.task.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+          Promise.resolve(where.organizationId === ORG_A ? [UNASSIGNED_TASK] : []),
+        );
+
+        const recovered = await service.attachAssigneesToUnassignedStageTasks(
+          INSTANCE_ID,
+          STAGE_ID,
+          [USER_A],
+          ORG_B,
+        );
+
+        expect(recovered).toBe(0);
+        expect(mockPrisma.task.update).not.toHaveBeenCalled();
+        expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+        );
+      },
+    );
   });
 });
