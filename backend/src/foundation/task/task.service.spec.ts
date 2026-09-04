@@ -654,6 +654,50 @@ describe('TaskService', () => {
       expect(mockAuditLog.log.mock.calls[0][0]).not.toHaveProperty('actorId');
     });
 
+    // The contract that actually matters, and the one a mock-per-assertion
+    // test cannot prove: after recovery, the newly-eligible assignee can
+    // genuinely COMPLETE the task. complete() rejects any caller without an
+    // active TaskAssignee row, so this runs both methods back-to-back against
+    // a small stateful fake that really records what was written, rather than
+    // asserting on two independent mocks that never see each other's effects.
+    it('end-to-end: the newly-eligible assignee can actually complete the task afterward', async () => {
+      const store = {
+        task: {
+          ...UNASSIGNED_TASK,
+          assignees: [] as { id: string; taskId: string; userId: string; removedAt: Date | null }[],
+        },
+      };
+
+      mockPrisma.task.findMany.mockImplementation(({ where }: { where: { status?: string } }) =>
+        Promise.resolve(where.status === 'UNASSIGNED' && store.task.status === 'UNASSIGNED' ? [store.task] : []),
+      );
+      mockPrisma.taskAssignee.create.mockImplementation(({ data }: { data: { taskId: string; userId: string } }) => {
+        store.task.assignees.push({ id: 'ta-new', taskId: data.taskId, userId: data.userId, removedAt: null });
+        return Promise.resolve(store.task.assignees.at(-1));
+      });
+      mockPrisma.task.update.mockImplementation(({ data }: { data: { status?: string } }) => {
+        if (data.status) store.task.status = data.status;
+        return Promise.resolve(store.task);
+      });
+      // complete()'s own reads, served from the same store.
+      mockPrisma.task.findFirst.mockImplementation(() => Promise.resolve(store.task));
+      mockPrisma.taskAssignee.updateMany.mockResolvedValue({ count: 0 });
+
+      // Before recovery: the task exists, but USER_A cannot complete it —
+      // this is the inert state the whole ticket is about.
+      await expect(service.complete(store.task.id, USER_A, ORG_A)).rejects.toThrow(NotFoundException);
+
+      await service.attachAssigneesToUnassignedStageTasks(INSTANCE_ID, STAGE_ID, [USER_A], ORG_A);
+
+      expect(store.task.status).toBe('PENDING');
+      expect(store.task.assignees).toHaveLength(1);
+      expect(store.task.assignees[0]).toMatchObject({ userId: USER_A, removedAt: null });
+
+      // After recovery: the same call now succeeds.
+      await expect(service.complete(store.task.id, USER_A, ORG_A)).resolves.toBeDefined();
+      expect(store.task.status).toBe('COMPLETED');
+    });
+
     itEnforcesTenantIsolation(
       'attachAssigneesToUnassignedStageTasks only recovers tasks within the requested tenant',
       async () => {
