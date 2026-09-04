@@ -1335,19 +1335,48 @@ enforced. The status-flip to `OVERDUE` is unconditional regardless of
 working hours; only the escalation notify/stamp/audit-log steps are
 gated.
 
-**No per-step error isolation in the surrounding `process()` method —
-a real, confirmed gap, not closed by this work.** `process()` runs
-`sweepOverdueTasks()` and five other sweep steps
-(`sweepUnassignedStages()`, `sweepExpiredActingOrgUnitAssignments()`,
-`sweepDueHandovers()`, `sweepOrgUnitVacancies()`,
-`sweepVacantHeadRoleMappings()`) as sequential unguarded `await`
-calls with no try/catch anywhere in the function body. This is
-exactly what turned ACC-48's specific column-mismatch bug into a
-14.5-hour outage of all six mechanisms at once, tenant-wide — a
-single failing step still aborts the entire chain for that cycle, and
-there is no structural reason this can't recur from an unrelated bug
-in any of the other five. Tracked as its own ticket (ACC-49), not
-attempted here.
+**Per-step error isolation — closed by ACC-49.** `process()` used to
+run `sweepOverdueTasks()` and its sibling steps as sequential
+unguarded `await` calls with no try/catch anywhere in the function
+body, which is exactly what turned ACC-48's specific column-mismatch
+bug into a 14.5-hour outage of all six mechanisms at once,
+tenant-wide. Every step now runs inside `runIsolatedStep()`, which
+catches, logs at error level with the step's name, records it, and
+continues to the next step. The breached-stages loop that used to sit
+inline at the top of `process()` was extracted into
+`sweepBreachedStageEscalations()` for the same treatment — it was the
+most exposed of all, running first and unguarded, so anything it threw
+pre-empted all six sweeps behind it. Seven isolated steps in total.
+
+Two properties of that design are deliberate and worth not undoing:
+
+- **The job still fails.** After every step has run, `process()`
+  throws an aggregate naming each failed step. Isolation deliberately
+  does not make a broken step silent: a job reporting success while a
+  step is broken would trade ACC-48's blast radius for an equally bad
+  blind spot, and BullMQ's failed-job list is the exact place ACC-48's
+  own failures were eventually found. This is costless because the
+  `sla-monitor` queue is registered with **no** `defaultJobOptions`
+  (unlike `workflow-actions` and `email-delivery`, which both set
+  `attempts: 3`), so BullMQ's default `attempts: 1` applies — a
+  failure never retries, it just stays visible until the next
+  scheduled run 15 minutes later.
+- **Isolation is safe because the steps are genuinely independent**,
+  verified rather than assumed: all seven return `Promise<void>`, none
+  consumes another's return value, and each re-reads live state at its
+  own start (the only shared input is `now`, passed by value). A
+  failed step is therefore indistinguishable, to every later step,
+  from that step simply having had nothing due yet — a state each
+  already tolerates by construction, since they all re-run every 15
+  minutes. Isolating them cannot introduce a sequencing bug because
+  there is no sequencing contract to break.
+
+**Still open, one level finer:** isolation is per-STEP, not per-tenant
+or per-row. Each sweep still loops over every tenant's rows in one
+unguarded pass, so a single tenant's bad data can still abort that one
+step for every other tenant in the same cycle. Same failure shape as
+ACC-48, one scope narrower. Not attempted by ACC-49 (whose scope was
+explicitly the step level) and not currently tracked by its own ticket.
 
 ### 3.5 Out-of-Office Routing — A Real Limitation
 

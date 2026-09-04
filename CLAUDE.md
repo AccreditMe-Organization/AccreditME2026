@@ -2052,8 +2052,11 @@ complete, not just the currently-in-review ones.
     code was merged to `dev` — the deployed instance kept running old
     code that still queried the now-dropped columns, and
     `SlaMonitorProcessor.process()` having no per-step error isolation
-    (ACC-49) turned one crashing query into a total outage of all six
-    sweep mechanisms at once.
+    turned one crashing query into a total outage of all six sweep
+    mechanisms at once. That blast-radius half is now fixed (ACC-49 —
+    every step is independently fault-isolated, and the job still
+    reports failed so a broken step stays visible); the
+    shared-infrastructure question below is what remains undecided.
   - **ACC-51 — shared REDIS.** `REDIS_URL` points at a shared Railway
     Redis (`sakura.proxy.rlwy.net`), so the deployed instance and any
     local dev server are **competing workers on the same

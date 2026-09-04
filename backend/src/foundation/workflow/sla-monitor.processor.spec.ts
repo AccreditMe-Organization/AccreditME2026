@@ -1275,4 +1275,86 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockOrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings).toHaveBeenCalledWith('org-b-id');
     });
   });
+
+  // ACC-49 — per-step fault isolation. Each test here drives a different step
+  // to throw and proves the rest of the chain still ran, because the whole
+  // point is that NO single step can take the others down again.
+  //
+  // Each step is identified by the Prisma call only it makes:
+  //   breachedStageEscalations           -> workflowInstanceStage.findMany (1st)
+  //   sweepOverdueTasks                  -> task.findMany
+  //   sweepUnassignedStages              -> workflowInstanceStage.findMany (2nd)
+  //   sweepExpiredActingOrgUnitAssignments -> user.findMany
+  //   sweepDueHandovers / sweepOrgUnitVacancies -> orgUnit.findMany
+  //   sweepVacantHeadRoleMappings        -> orgPosition.findMany
+  describe('per-step error isolation (ACC-49)', () => {
+    // The literal ACC-48 failure: a Prisma query throwing because the
+    // deployed code queried columns a prematurely-applied migration had
+    // already dropped.
+    const ACC48_STYLE_FAILURE = new Error(
+      'The column `Task.escalationUserId` does not exist in the current database.',
+    );
+
+    it('a failing step does not prevent the remaining steps from running — the exact ACC-48 scenario', async () => {
+      mockPrisma.task.findMany.mockRejectedValue(ACC48_STYLE_FAILURE); // sweepOverdueTasks throws
+
+      await expect(runProcess()).rejects.toThrow(/sweepOverdueTasks/);
+
+      // Every step AFTER the failing one still ran. Pre-ACC-49 all of these
+      // were silently skipped for the entire cycle.
+      expect(mockPrisma.workflowInstanceStage.findMany).toHaveBeenCalled(); // sweepUnassignedStages
+      expect(mockPrisma.user.findMany).toHaveBeenCalled(); // sweepExpiredActingOrgUnitAssignments
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalled(); // sweepDueHandovers + sweepOrgUnitVacancies
+      expect(mockPrisma.orgPosition.findMany).toHaveBeenCalled(); // sweepVacantHeadRoleMappings — the last step
+    });
+
+    it('a failure in the FIRST step still lets all six later sweeps run', async () => {
+      // breachedStageEscalations runs first and was previously unguarded, so
+      // anything it threw pre-empted the entire chain behind it.
+      mockPrisma.workflowInstanceStage.findMany.mockRejectedValueOnce(
+        new Error('breached-stage query blew up'),
+      );
+
+      await expect(runProcess()).rejects.toThrow(/breachedStageEscalations/);
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalled();
+      expect(mockPrisma.user.findMany).toHaveBeenCalled();
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalled();
+      expect(mockPrisma.orgPosition.findMany).toHaveBeenCalled();
+    });
+
+    it('a failure in the LAST step does not mask the fact that everything before it succeeded', async () => {
+      mockPrisma.orgPosition.findMany.mockRejectedValue(new Error('vacant-head-mapping query failed'));
+
+      await expect(runProcess()).rejects.toThrow(/sweepVacantHeadRoleMappings/);
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalled();
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalled();
+    });
+
+    it('reports every failed step, not just the first, when several fail in one cycle', async () => {
+      mockPrisma.task.findMany.mockRejectedValue(ACC48_STYLE_FAILURE);
+      mockPrisma.orgPosition.findMany.mockRejectedValue(new Error('and this one too'));
+
+      await expect(runProcess()).rejects.toThrow(/sweepOverdueTasks.*sweepVacantHeadRoleMappings/s);
+      // Steps between the two failures still ran.
+      expect(mockPrisma.user.findMany).toHaveBeenCalled();
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalled();
+    });
+
+    // The deliberate half of the design: isolation must not turn a broken
+    // step into a silently-successful job. BullMQ's failed-job list is where
+    // ACC-48's own failures were eventually found.
+    it('still fails the job so a broken step stays visible to BullMQ, naming the step', async () => {
+      mockPrisma.task.findMany.mockRejectedValue(ACC48_STYLE_FAILURE);
+
+      await expect(runProcess()).rejects.toThrow(
+        /SLA monitor sweep completed with 1 failed step\(s\): sweepOverdueTasks/,
+      );
+    });
+
+    it('completes without throwing when every step succeeds', async () => {
+      await expect(runProcess()).resolves.toBeUndefined();
+    });
+  });
 });
