@@ -1682,6 +1682,36 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
     });
 
+    // resolveApproverPool()'s POSITION_FIXED holder lookup is a SECOND,
+    // structurally separate query from resolveAssigneeRaw()'s — covered by
+    // its own gate-named test so CI's tenant-isolation job actually runs it,
+    // rather than relying on the resolver's test to imply this one is safe.
+    itEnforcesTenantIsolation(
+      "POSITION_FIXED's approver-pool lookup resolves holders only within the requested tenant",
+      async () => {
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+        mockPrisma.workflowStage.findFirst.mockResolvedValue(POSITION_FIXED_PARALLEL_STAGE);
+        mockPrisma.user.findMany.mockImplementation(
+          ({ where }: { where: { id?: { in: string[] }; organizationId: string } }) => {
+            // Only ORG_A resolves a holder; a foreign tenant's holder must
+            // never enter this pool.
+            const holders = where.organizationId === ORG_A ? [{ id: ACTOR }] : [{ id: 'leaked-approver' }];
+            return Promise.resolve(
+              where.id?.in ? holders.filter((h) => where.id!.in.includes(h.id)) : holders,
+            );
+          },
+        );
+        mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+
+        await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+        expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+        );
+      },
+    );
+
     it('never auto-advances on ABSTAINED', async () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'ABSTAINED' }));

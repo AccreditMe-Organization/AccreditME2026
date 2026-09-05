@@ -4,6 +4,7 @@ import { WorkflowTemplateService } from './workflow-template.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -759,7 +760,7 @@ describe('WorkflowTemplateService', () => {
         ...overrides,
       }) as never;
 
-    it('throws NotFoundException when assigneePositionId belongs to a different tenant', async () => {
+    itEnforcesTenantIsolation('assigneePositionId is rejected when it belongs to another tenant', async () => {
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
       mockPrisma.orgPosition.findFirst.mockResolvedValue(null); // foreign tenant's position
 
@@ -773,7 +774,7 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
     });
 
-    it('throws NotFoundException when assigneeOrgUnitId belongs to a different tenant', async () => {
+    itEnforcesTenantIsolation('assigneeOrgUnitId is rejected when it belongs to another tenant', async () => {
       mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
       mockPrisma.orgPosition.findFirst.mockResolvedValue({ id: 'position-a', organizationId: ORG_A });
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null); // foreign tenant's unit
