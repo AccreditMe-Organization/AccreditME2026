@@ -10,6 +10,7 @@ import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
 import { RoleService } from '../roles/role.service';
 import { OrganizationService } from '../organization/organization.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -811,6 +812,142 @@ describe('WorkflowService', () => {
       });
       expect(mockTaskService.create).toHaveBeenCalledWith(
         expect.objectContaining({ assigneeUserIds: ['chairman-user'] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
+    // ACC-54 — POSITION_FIXED: whoever holds a specific position in a
+    // specific, explicitly-configured unit.
+    const positionFixedStage = (overrides: Record<string, unknown> = {}) => ({
+      ...TARGET_STAGE,
+      assigneeStrategy: 'POSITION_FIXED',
+      assigneePositionId: 'position-a',
+      assigneeOrgUnitId: 'unit-a',
+      ...overrides,
+    });
+
+    // resolveAssignee() calls prisma.user.findMany TWICE for this strategy:
+    // once for the holder lookup, then again inside applyOutOfOfficeRouting()
+    // with `id: { in: [...] }` over whatever the first call resolved. A
+    // blanket mockResolvedValue would answer both identically and silently
+    // re-expand a pool SINGLE mode had just narrowed — so this honors the id
+    // filter, exactly as the OOO-aware tests elsewhere in this file do.
+    const mockPositionHolders = (holders: { id: string }[]) => {
+      mockPrisma.user.findMany.mockImplementation(
+        ({ where }: { where: { id?: { in: string[] }; organizationId: string } }) =>
+          Promise.resolve(
+            where.id?.in ? holders.filter((h) => where.id!.in.includes(h.id)) : holders,
+          ),
+      );
+    };
+
+    const runPositionFixedTransition = async (stage: Record<string, unknown>) => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': stage });
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+    };
+
+    it("resolves a POSITION_FIXED stage's assignee to the ACTIVE holder of that position in that unit", async () => {
+      mockPositionHolders([{ id: 'holder-1' }]);
+
+      await runPositionFixedTransition(positionFixedStage());
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          positionId: 'position-a',
+          primaryOrgUnitId: 'unit-a',
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
+    // The property that lets POSITION_FIXED inherit ACC-28's unassigned-stage
+    // detection and ACC-51/52's task recovery for free: an unresolvable pool
+    // must come back EMPTY, never throw. Pinned explicitly rather than
+    // assumed — a throw here would abort the transition and, via the sweep,
+    // take down every other step in that cycle.
+    it('returns an empty pool rather than throwing when no one holds the position in that unit', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+
+      await expect(runPositionFixedTransition(positionFixedStage())).resolves.not.toThrow();
+
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: [] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
+    it.each([
+      ['position', { assigneePositionId: null }],
+      ['org unit', { assigneeOrgUnitId: null }],
+      ['both fields', { assigneePositionId: null, assigneeOrgUnitId: null }],
+    ])(
+      'returns an empty pool rather than throwing when the stage is missing its %s',
+      async (_label, overrides) => {
+        await expect(runPositionFixedTransition(positionFixedStage(overrides))).resolves.not.toThrow();
+
+        // Short-circuits before querying at all — no point asking the
+        // database who holds an unspecified position.
+        expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
+        expect(mockTaskService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ assigneeUserIds: [] }),
+          ORG_A,
+          ACTOR,
+        );
+      },
+    );
+
+    it('narrows a POSITION_FIXED pool to one assignee under SINGLE approvalMode, like ROLE does', async () => {
+      mockPositionHolders([{ id: 'holder-1' }, { id: 'holder-2' }]);
+
+      await runPositionFixedTransition(positionFixedStage({ approvalMode: 'SINGLE' }));
+
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
+    it('returns every holder for a non-SINGLE POSITION_FIXED stage', async () => {
+      mockPositionHolders([{ id: 'holder-1' }, { id: 'holder-2' }]);
+
+      await runPositionFixedTransition(positionFixedStage({ approvalMode: 'PARALLEL' }));
+
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['holder-1', 'holder-2'] }),
+        ORG_A,
+        ACTOR,
+      );
+    });
+
+    itEnforcesTenantIsolation('POSITION_FIXED resolves holders only within the requested tenant', async () => {
+      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(where.organizationId === ORG_A ? [{ id: 'holder-1' }] : [{ id: 'leaked-holder' }]),
+      );
+
+      await runPositionFixedTransition(positionFixedStage());
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+      expect(mockTaskService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
         ORG_A,
         ACTOR,
       );
