@@ -1,5 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { Observable, forkJoin, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -295,7 +297,9 @@ export class WorkflowStageFormComponent implements OnInit {
   @Input() stage: WorkflowStageDto | null = null;
   @Input() templateId!: string;
   @Input() nextOrder = 10;
-  @Output() saved = new EventEmitter<WorkflowStageDto>();
+  // ACC-54 — emits the warning flag alongside the saved stage so the parent
+  // can keep the dialog open when it fires (ACC-43 precedent, position-form).
+  @Output() saved = new EventEmitter<{ stage: WorkflowStageDto; hadNoHolderWarning: boolean }>();
   @Output() cancelled = new EventEmitter<void>();
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
@@ -420,13 +424,31 @@ export class WorkflowStageFormComponent implements OnInit {
   // users:view, which a tenant-created custom role holding only
   // workflows:manage might not have; rendering "nobody holds this" when the
   // truth is "I wasn't allowed to look" would be worse than staying silent.
-  private refreshNoHolderWarning(positionId: string, orgUnitId: string): void {
-    this.userService.listUsers({ orgUnitId, status: 'ACTIVE' }).subscribe({
-      next: (users) => {
-        this.showNoHolderWarning.set(!users.some((u) => u.positionId === positionId));
-      },
-      error: () => this.showNoHolderWarning.set(false),
-    });
+  private noHolderWarning$(raw: {
+    assigneeStrategy: string | null;
+    assigneePositionId: string | null;
+    assigneeOrgUnitId: string | null;
+  }): Observable<boolean> {
+    // Only meaningful once both ids are set: a half-configured stage is
+    // already visibly incomplete in the form, and asking "who holds nothing
+    // in nowhere" would be noise.
+    if (
+      raw.assigneeStrategy !== 'POSITION_FIXED' ||
+      !raw.assigneePositionId ||
+      !raw.assigneeOrgUnitId
+    ) {
+      return of(false);
+    }
+    const positionId = raw.assigneePositionId;
+    return this.userService.listUsers({ orgUnitId: raw.assigneeOrgUnitId, status: 'ACTIVE' }).pipe(
+      map((users) => !users.some((u) => u.positionId === positionId)),
+      // A failed lookup yields NO warning, deliberately. Listing users needs
+      // users:view, which a tenant-created role holding only workflows:manage
+      // might lack; rendering "nobody holds this" when the truth is "I wasn't
+      // allowed to look" would be worse than staying silent — and it would
+      // wrongly hold the dialog open on top of that.
+      catchError(() => of(false)),
+    );
   }
 
   onSubmit(): void {
@@ -472,15 +494,6 @@ export class WorkflowStageFormComponent implements OnInit {
           : {}),
     };
 
-    // ACC-54 — fired alongside the request below, never in place of it
-    // (position-form's own showVacantRoleWarning precedent). Only meaningful
-    // when both ids are actually set: a half-configured stage is already
-    // visibly incomplete in the form, and asking "who holds nothing in
-    // nowhere" would be noise.
-    if (raw.assigneeStrategy === 'POSITION_FIXED' && raw.assigneePositionId && raw.assigneeOrgUnitId) {
-      this.refreshNoHolderWarning(raw.assigneePositionId, raw.assigneeOrgUnitId);
-    }
-
     const request$ = this.stage
       ? this.workflowTemplateService.updateStage(
           this.stage.id,
@@ -491,10 +504,23 @@ export class WorkflowStageFormComponent implements OnInit {
           order: this.nextOrder,
         } satisfies CreateWorkflowStageDto);
 
-    request$.subscribe({
-      next: (stage) => {
+    // ACC-54 — forkJoin rather than firing the check separately, because the
+    // parent has to know whether the warning applies at the moment `saved`
+    // emits: that flag is what decides whether the dialog stays open
+    // (ACC-43's fix for the same problem in position-form). position-form
+    // could read its own signal inline because its check is a pure
+    // form-value comparison; this one is an HTTP round-trip, so the flag
+    // simply is not known yet when the save resolves.
+    //
+    // Still non-blocking in the sense that matters: the save is issued
+    // regardless of the check, and the check's result can never prevent it
+    // or fail it (catchError below swallows a rejected lookup into "no
+    // warning"). Only the dialog's closing waits on it.
+    forkJoin({ stage: request$, hadNoHolderWarning: this.noHolderWarning$(raw) }).subscribe({
+      next: ({ stage, hadNoHolderWarning }) => {
         this.saving.set(false);
-        this.saved.emit(stage);
+        this.showNoHolderWarning.set(hadNoHolderWarning);
+        this.saved.emit({ stage, hadNoHolderWarning });
       },
       error: (err: unknown) => {
         this.saveError.set(extractErrorMessage(err, 'Save failed'));
