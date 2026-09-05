@@ -981,6 +981,42 @@ export class WorkflowService {
         return firstStage?.actorId ? [firstStage.actorId] : [];
       }
 
+      // ACC-54 — the FIXED half of OrgPosition-based resolution: whoever
+      // holds this specific position in this specific, explicitly-configured
+      // unit. Unlike ROLE (which returns every holder of a role anywhere in
+      // the tenant, with no connection to the triggering object), this is
+      // narrowed to one unit — but that unit is chosen at CONFIG time, so it
+      // is the same pool for every instance of the template. The RELATIVE
+      // variant, which derives the unit from the triggering object's own
+      // orgUnitId, is deliberately not built yet: no workflow-driven object
+      // carries an orgUnitId to derive from (Committee has none), so it
+      // would resolve empty for every object that exists today.
+      //
+      // Returns [] rather than throwing when either field is unset, exactly
+      // like every other case in this switch (SPECIFIC_USER, ROLE,
+      // ORG_UNIT_HEAD, COMMITTEE all do the same). That is what lets an
+      // unconfigured or half-configured stage flow into ACC-28's
+      // unassigned-stage detection and ACC-51/52's task recovery rather than
+      // crashing a transition or a sweep — the empty pool IS the signal.
+      case 'POSITION_FIXED': {
+        if (!stage.assigneePositionId || !stage.assigneeOrgUnitId) return [];
+        const holders = await this.prisma.user.findMany({
+          where: {
+            organizationId,
+            positionId: stage.assigneePositionId,
+            primaryOrgUnitId: stage.assigneeOrgUnitId,
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        });
+        const holderIds = holders.map((h) => h.id);
+        if (holderIds.length === 0) return [];
+        // Mirrors ROLE's own SINGLE-mode narrowing directly above: one
+        // approver needed means one assignee, and the position is normally
+        // isSingleAssignee anyway, so this is a no-op in the common case.
+        return stage.approvalMode === 'SINGLE' ? [holderIds[0] as string] : holderIds;
+      }
+
       case 'COMMITTEE': {
         if (!stage.committeeId) return [];
         // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) —

@@ -333,6 +333,12 @@ export class WorkflowTemplateService {
     if (dto.assigneeCommitteeRoleValueId) {
       await this.validateCommitteeRoleValueId(dto.assigneeCommitteeRoleValueId, organizationId);
     }
+    if (dto.assigneePositionId) {
+      await this.validateAssigneePositionId(dto.assigneePositionId, organizationId);
+    }
+    if (dto.assigneeOrgUnitId) {
+      await this.validateAssigneeOrgUnitId(dto.assigneeOrgUnitId, organizationId);
+    }
 
     const stage = await this.prisma.workflowStage.create({
       data: {
@@ -353,6 +359,8 @@ export class WorkflowTemplateService {
         assigneeUserId: dto.assigneeUserId ?? null,
         assigneeRoleId: dto.assigneeRoleId ?? null,
         assigneeCommitteeRoleValueId: dto.assigneeCommitteeRoleValueId ?? null,
+        assigneePositionId: dto.assigneePositionId ?? null,
+        assigneeOrgUnitId: dto.assigneeOrgUnitId ?? null,
         escalationConfig: this.toJson(dto.escalationConfig),
       },
     });
@@ -389,6 +397,12 @@ export class WorkflowTemplateService {
     if (dto.assigneeCommitteeRoleValueId) {
       await this.validateCommitteeRoleValueId(dto.assigneeCommitteeRoleValueId, organizationId);
     }
+    if (dto.assigneePositionId) {
+      await this.validateAssigneePositionId(dto.assigneePositionId, organizationId);
+    }
+    if (dto.assigneeOrgUnitId) {
+      await this.validateAssigneeOrgUnitId(dto.assigneeOrgUnitId, organizationId);
+    }
 
     const updated = await this.prisma.workflowStage.update({
       where: { id },
@@ -411,6 +425,12 @@ export class WorkflowTemplateService {
         ...(dto.assigneeCommitteeRoleValueId !== undefined && {
           assigneeCommitteeRoleValueId: dto.assigneeCommitteeRoleValueId,
         }),
+        // ACC-54 — `!== undefined` rather than a truthiness check, matching
+        // every sibling above: it lets an explicit null clear a previously-set
+        // value (e.g. switching a stage away from POSITION_FIXED), which
+        // `dto.x && ...` would silently ignore.
+        ...(dto.assigneePositionId !== undefined && { assigneePositionId: dto.assigneePositionId }),
+        ...(dto.assigneeOrgUnitId !== undefined && { assigneeOrgUnitId: dto.assigneeOrgUnitId }),
         ...(dto.escalationConfig !== undefined && { escalationConfig: this.toJson(dto.escalationConfig) }),
       },
     });
@@ -707,6 +727,40 @@ export class WorkflowTemplateService {
     const committee = await this.prisma.committee.findFirst({ where: { id: committeeId, organizationId } });
     if (!committee) {
       throw new NotFoundException('Committee not found in this tenant');
+    }
+  }
+
+  // ACC-54 — same pattern as validateAssigneeUserId()/validateCommitteeId()
+  // above, for the POSITION_FIXED pair. Both need it independently: a stage
+  // could otherwise be written referencing another tenant's position, or
+  // another tenant's org unit, or one of each.
+  //
+  // These are genuinely needed rather than defence-in-depth theatre —
+  // resolveAssigneeRaw()'s POSITION_FIXED case does filter its own query by
+  // organizationId, so a cross-tenant id would resolve to an empty pool
+  // rather than leaking anyone. But storing a foreign tenant's id on a stage
+  // is still wrong: it silently produces a permanently unresolvable stage,
+  // and it puts another tenant's identifier in this tenant's configuration
+  // where an admin can see it. Rejecting at write time is the same call
+  // ACC-17 made for assigneeUserId for the same reason.
+  private async validateAssigneePositionId(
+    positionId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const position = await this.prisma.orgPosition.findFirst({
+      where: { id: positionId, organizationId },
+    });
+    if (!position) {
+      throw new NotFoundException('Assignee position not found in this tenant');
+    }
+  }
+
+  private async validateAssigneeOrgUnitId(orgUnitId: string, organizationId: string): Promise<void> {
+    const orgUnit = await this.prisma.orgUnit.findFirst({
+      where: { id: orgUnitId, organizationId },
+    });
+    if (!orgUnit) {
+      throw new NotFoundException('Assignee org unit not found in this tenant');
     }
   }
 
