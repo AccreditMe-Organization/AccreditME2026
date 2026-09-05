@@ -2094,6 +2094,35 @@ complete, not just the currently-in-review ones.
   real database rather than enqueueing — a usable workaround, not a
   fix, and worth knowing about before someone else loses time to the
   same silent failure.
+
+  **Refinement (ACC-54) — "never migrate before merge" is too blunt a
+  rule; the real dividing line is ADDITIVE vs DESTRUCTIVE.** What
+  actually broke in ACC-48 was not the timing on its own, it was
+  applying a *destructive* change (dropped columns) that the running
+  deployment's older code still queried. An additive change does not
+  have that failure mode:
+  - **Adding a nullable column is safe** for a running old
+    deployment — Prisma generates its client from the schema it was
+    built with and selects only the columns it knows about, so a
+    column it has never heard of is simply never referenced.
+  - **Adding an enum value is safe** for the same class of reason —
+    no existing row can hold the new value, and nothing writes it
+    until the new code deploys.
+  - **Dropping or renaming a column, or narrowing a type, is NOT
+    safe** — that is exactly ACC-48, where old code kept selecting
+    columns that no longer existed and crashed on every query.
+
+  So the safe formulation is: *a destructive migration must not be
+  applied to shared infrastructure ahead of its code merging; an
+  additive one may be.* ACC-54's own migration (two nullable columns
+  plus one enum value) was applied to the shared dev database ahead
+  of its code under exactly this reasoning, deliberately and with
+  the distinction stated at the time rather than discovered
+  afterward. This does not replace the decision still needed above —
+  genuinely separate environments would make the whole question moot
+  — but it is the more precise interim rule, and it is worth knowing
+  that treating every migration as equally dangerous would block
+  ordinary additive work for no real safety gain.
 - **No form in this app has a per-field inline error-message pattern**
   (confirmed via full grep, zero matches) — every form relies solely
   on a disabled submit button as its only invalid-state feedback.
