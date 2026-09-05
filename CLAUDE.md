@@ -2161,6 +2161,16 @@ complete, not just the currently-in-review ones.
   softer/different when the cause is "holder hasn't activated yet"
   vs. a genuine empty assignment — not built now, this is a polish
   idea, not a defect.
+- **Workflow stage configuration changes are effectively unaudited** —
+  `updateStage`'s audit `before`/`after` records only `nameEn`/
+  `nameAr`, not `assigneeStrategy` or any assignee field, and
+  `WorkflowStage` has no `updatedAt` column. You can see THAT a stage
+  changed and WHO changed it, never WHAT changed. Found during ACC-54
+  while investigating unexpected stage config. Compounding:
+  maintenance/restore scripts that write via direct Prisma bypass
+  `AuditLogService` entirely, so those changes leave no trail at all.
+  Worth addressing for a compliance product — config-change history
+  that can't say what was configured is close to useless.
 
 ---
 
