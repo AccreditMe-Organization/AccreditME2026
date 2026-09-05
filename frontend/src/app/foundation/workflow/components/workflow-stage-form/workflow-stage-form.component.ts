@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -15,6 +15,18 @@ import {
   UpdateWorkflowStageDto,
 } from '../../services/workflow-template.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
+// ACC-54 — POSITION_FIXED's pickers and its config-time holder check. All
+// three services already existed; none needed a new endpoint.
+import {
+  OrgPositionService,
+  IOrgPositionDto,
+} from '../../../org-position/services/org-position.service';
+import {
+  OrgUnitService,
+  OrgUnitDto,
+  buildOrgUnitCascadeOptions,
+} from '../../../organization/services/org-unit.service';
+import { UserService } from '../../../user/services/user.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -249,11 +261,32 @@ export class WorkflowStageFormComponent implements OnInit {
   private readonly lookupService = inject(LookupService);
   private readonly languageService = inject(LanguageService);
   private readonly fb = inject(FormBuilder);
+  // ACC-54 — POSITION_FIXED's two pickers plus its config-time holder check.
+  // All three reuse existing services; no new endpoint was needed.
+  private readonly orgPositionService = inject(OrgPositionService);
+  private readonly orgUnitService = inject(OrgUnitService);
+  private readonly userService = inject(UserService);
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
   readonly roles = signal<RoleDto[]>([]);
   readonly committeeRoles = signal<LookupValueDto[]>([]);
+  readonly positions = signal<IOrgPositionDto[]>([]);
+  readonly orgUnits = signal<OrgUnitDto[]>([]);
+
+  // ACC-54 — non-blocking config-time warning, following position-form's
+  // showVacantRoleWarning exactly: set alongside the save request, never in
+  // place of it, and cleared reactively once it no longer applies.
+  readonly showNoHolderWarning = signal(false);
+
+  // ACC-42 Phase 6 — no excludeId: a workflow stage isn't an org unit, so
+  // there's no self/descendant relationship to exclude (unlike org-unit-
+  // form's own parentId picker). Same call shape as invite-user's.
+  readonly orgUnitCascadeOptions = computed(() =>
+    buildOrgUnitCascadeOptions(this.orgUnits(), null, null),
+  );
+
+  readonly activePositions = computed(() => this.positions().filter((p) => p.isActive));
 
   committeeRoleLabelField(): 'labelAr' | 'labelEn' {
     return this.languageService.isArabic() ? 'labelAr' : 'labelEn';
@@ -275,6 +308,8 @@ export class WorkflowStageFormComponent implements OnInit {
     assigneeStrategy: ['ROLE', [Validators.required]],
     assigneeRoleId: [null as string | null],
     assigneeCommitteeRoleValueId: [null as string | null],
+    assigneePositionId: [null as string | null],
+    assigneeOrgUnitId: [null as string | null],
   });
 
   readonly approvalMode = toSignal(this.form.controls.approvalMode.valueChanges, {
@@ -284,11 +319,33 @@ export class WorkflowStageFormComponent implements OnInit {
     initialValue: this.form.controls.assigneeStrategy.value,
   });
 
+  constructor() {
+    // ACC-54 — clears a shown warning as soon as it no longer applies (either
+    // picker changed, or the strategy moved away from POSITION_FIXED), rather
+    // than leaving a stale warning visible until the next save attempt. Same
+    // reasoning and same valueChanges mechanism as position-form's
+    // refreshVacantRoleWarning() — effect() can't be used here because
+    // FormControl values aren't signals.
+    this.form.controls.assigneePositionId.valueChanges.subscribe(() =>
+      this.showNoHolderWarning.set(false),
+    );
+    this.form.controls.assigneeOrgUnitId.valueChanges.subscribe(() =>
+      this.showNoHolderWarning.set(false),
+    );
+    this.form.controls.assigneeStrategy.valueChanges.subscribe(() =>
+      this.showNoHolderWarning.set(false),
+    );
+  }
+
   ngOnInit(): void {
     this.roleService.listRoles().subscribe({ next: (roles) => this.roles.set(roles) });
     this.lookupService.getValues('committee_member_role').subscribe({
       next: (values) => this.committeeRoles.set(values),
     });
+    this.orgPositionService.listPositions().subscribe({
+      next: (positions) => this.positions.set(positions),
+    });
+    this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
 
     if (this.stage) {
       this.form.patchValue({
@@ -303,8 +360,31 @@ export class WorkflowStageFormComponent implements OnInit {
         assigneeStrategy: this.stage.assigneeStrategy,
         assigneeRoleId: this.stage.assigneeRoleId,
         assigneeCommitteeRoleValueId: this.stage.assigneeCommitteeRoleValueId,
+        assigneePositionId: this.stage.assigneePositionId,
+        assigneeOrgUnitId: this.stage.assigneeOrgUnitId,
       });
     }
+  }
+
+  // ACC-54 — the config-time validity check. Runs entirely against existing
+  // API surface: GET /users?orgUnitId=&status=ACTIVE, filtered client-side on
+  // positionId (which toSafeUser() preserves). No new endpoint was required,
+  // which is why Step 4c stayed a genuine no-op.
+  //
+  // Non-blocking by construction — this never gates the save, it only sets a
+  // signal the template renders alongside it.
+  //
+  // A failed request sets NO warning, deliberately. Listing users needs
+  // users:view, which a tenant-created custom role holding only
+  // workflows:manage might not have; rendering "nobody holds this" when the
+  // truth is "I wasn't allowed to look" would be worse than staying silent.
+  private refreshNoHolderWarning(positionId: string, orgUnitId: string): void {
+    this.userService.listUsers({ orgUnitId, status: 'ACTIVE' }).subscribe({
+      next: (users) => {
+        this.showNoHolderWarning.set(!users.some((u) => u.positionId === positionId));
+      },
+      error: () => this.showNoHolderWarning.set(false),
+    });
   }
 
   onSubmit(): void {
@@ -335,7 +415,29 @@ export class WorkflowStageFormComponent implements OnInit {
         : this.stage && this.stage.assigneeCommitteeRoleValueId
           ? { assigneeCommitteeRoleValueId: null }
           : {}),
+      // ACC-54 — same set-or-explicitly-clear shape as the field above, for
+      // the same reason: switching a stage away from POSITION_FIXED must
+      // clear the pair rather than leave stale ids behind.
+      ...(raw.assigneePositionId
+        ? { assigneePositionId: raw.assigneePositionId }
+        : this.stage && this.stage.assigneePositionId
+          ? { assigneePositionId: null }
+          : {}),
+      ...(raw.assigneeOrgUnitId
+        ? { assigneeOrgUnitId: raw.assigneeOrgUnitId }
+        : this.stage && this.stage.assigneeOrgUnitId
+          ? { assigneeOrgUnitId: null }
+          : {}),
     };
+
+    // ACC-54 — fired alongside the request below, never in place of it
+    // (position-form's own showVacantRoleWarning precedent). Only meaningful
+    // when both ids are actually set: a half-configured stage is already
+    // visibly incomplete in the form, and asking "who holds nothing in
+    // nowhere" would be noise.
+    if (raw.assigneeStrategy === 'POSITION_FIXED' && raw.assigneePositionId && raw.assigneeOrgUnitId) {
+      this.refreshNoHolderWarning(raw.assigneePositionId, raw.assigneeOrgUnitId);
+    }
 
     const request$ = this.stage
       ? this.workflowTemplateService.updateStage(
