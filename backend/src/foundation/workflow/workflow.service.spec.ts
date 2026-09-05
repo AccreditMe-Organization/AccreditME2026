@@ -196,6 +196,33 @@ const mockQueue = { add: jest.fn() };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
+// ⚠️ MOCKING RULE FOR THIS FILE — any mock of `mockPrisma.user.findMany`
+// MUST honor the `id: { in: [...] }` filter.
+//
+// Assignee resolution queries user.findMany TWICE per call: once for the
+// strategy's own lookup (ROLE via userRole, POSITION_FIXED via user directly,
+// etc.), and then again inside applyOutOfOfficeRouting(), which re-queries
+// `{ id: { in: <whatever the first call resolved> }, organizationId }` to
+// check each resolved user's out-of-office window. The same is true of
+// resolveApproverPool(), which ends in the same applyOutOfOfficeRouting()
+// call.
+//
+// A blanket `mockResolvedValue([...])` answers BOTH queries identically and
+// silently corrupts the pool in one of two directions:
+//   - returns MORE than the first call resolved → re-expands a pool that
+//     SINGLE mode had just narrowed to one assignee;
+//   - returns [] or fewer → empties a pool that should be populated, so a
+//     gate under test is skipped and the test fails for a reason unrelated
+//     to the code being tested.
+//
+// Both failure modes have already occurred in this file's history (ACC-54:
+// once on the SINGLE-narrowing test, once on the approver-eligibility test),
+// each time producing a red test that looked like a bug in the
+// implementation and was not. Use mockImplementation and filter:
+//
+//   mockPrisma.user.findMany.mockImplementation(({ where }) =>
+//     Promise.resolve(where.id?.in ? holders.filter((h) => where.id.in.includes(h.id)) : holders),
+//   );
 describe('WorkflowService', () => {
   let service: WorkflowService;
 
