@@ -266,28 +266,48 @@ const ASSIGNEE_STRATEGIES = [
         </div>
       }
 
-      @if (showNoHolderWarning()) {
-        <p-message severity="warn" [text]="'workflow.noPositionHolderWarning' | translate" />
-      }
+      <!--
+        ACC-54 (finding F2) — warning and actions pinned to the bottom of
+        EditDialogComponent's scroll area (max-h-[60vh] overflow-y-auto)
+        rather than appended to the end of the form.
 
-      @if (saveError()) {
-        <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
-      }
+        Appended, the warning grew the form's height and pushed Cancel/Save
+        out of the visible region: a user saw one truncated line of an amber
+        message and no buttons at all, which reads as a broken dialog rather
+        than as advice. Sticky keeps both the full message and the buttons in
+        view at any scroll position, so the warning informs without
+        displacing the controls it is advising about.
 
-      <div class="flex gap-3 justify-end">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          type="button"
-          (onClick)="cancelled.emit()"
-        />
-        <p-button
-          type="submit"
-          [label]="(stage ? 'common.save' : 'common.add') | translate"
-          [loading]="saving()"
-          [disabled]="form.invalid"
-        />
+        Needs its own opaque background — it overlaps the scrolling content
+        beneath it — and a top border so it reads as a footer rather than as
+        floating text.
+      -->
+      <div
+        class="sticky bottom-0 -mx-1 mt-2 flex flex-col gap-2 border-t border-[var(--am-border)] bg-[var(--am-card)] px-1 pt-3"
+      >
+        @if (showNoHolderWarning()) {
+          <p-message severity="warn" [text]="'workflow.noPositionHolderWarning' | translate" />
+        }
+
+        @if (saveError()) {
+          <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
+        }
+
+        <div class="flex gap-3 justify-end">
+          <p-button
+            [label]="'common.cancel' | translate"
+            severity="secondary"
+            [text]="true"
+            type="button"
+            (onClick)="cancelled.emit()"
+          />
+          <p-button
+            type="submit"
+            [label]="(stage ? 'common.save' : 'common.add') | translate"
+            [loading]="saving()"
+            [disabled]="form.invalid"
+          />
+        </div>
       </div>
 
     </form>
