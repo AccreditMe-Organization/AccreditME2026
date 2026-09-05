@@ -37,6 +37,11 @@ export interface WorkflowStageDto {
   // meaningful when assigneeStrategy === 'COMMITTEE'; null preserves the
   // pre-ACC-28 "every active member" behavior.
   assigneeCommitteeRoleValueId: string | null;
+  // ACC-54 — the POSITION_FIXED pair: resolves to whoever holds this
+  // position in this specific unit. Only meaningful when
+  // assigneeStrategy === 'POSITION_FIXED'.
+  assigneePositionId: string | null;
+  assigneeOrgUnitId: string | null;
   escalationConfig: Record<string, unknown> | null;
   transitions?: WorkflowTransitionDto[];
 }
@@ -97,6 +102,12 @@ export interface CreateWorkflowStageDto {
   // meaningful value here: explicitly clearing a previously-set filter back
   // to "all active committee members," not merely "field not provided."
   assigneeCommitteeRoleValueId?: string | null;
+  // ACC-54 — string | null for the same reason as the field above: null
+  // explicitly clears a previously-set value (e.g. switching a stage away
+  // from POSITION_FIXED), which the backend distinguishes from "not
+  // provided" via its own `!== undefined` check.
+  assigneePositionId?: string | null;
+  assigneeOrgUnitId?: string | null;
   escalationConfig?: Record<string, unknown>[];
 }
 
