@@ -107,10 +107,29 @@ export class WorkflowTransitionActionsComponent {
   }
 
   private loadTransitions(instance: WorkflowInstanceDto): void {
-    if (!instance.currentStageId) {
-      this.transitionsFromCurrentStage.set([]);
-      return;
-    }
+    // ACC-54 (finding F5) — clear BEFORE fetching, not only on success.
+    //
+    // This runs from an effect on instance(), so it re-runs the moment a
+    // transition fires and the instance advances. getTemplate() is an HTTP
+    // round-trip, and until it resolved this signal still held the PREVIOUS
+    // stage's transitions — so the page kept offering the old stage's action
+    // (e.g. "Submit for Approval" after the instance had already moved to
+    // Terms Review) for the whole duration of the request.
+    //
+    // That window is a race, not a property of any particular path: the
+    // no-holder path merely happens to widen it (an extra p-message render,
+    // and the parent issuing its own concurrent getTemplate() from
+    // setCurrentInstance()), which is why it was observed there and not on
+    // the clean path. It could surface on either.
+    //
+    // Showing nothing briefly is strictly better than showing a stale
+    // control, because the stale button is CLICKABLE and clicking it fails:
+    // triggerTransition() rejects a transition whose fromStageId no longer
+    // matches the instance's current stage.
+    this.transitionsFromCurrentStage.set([]);
+
+    if (!instance.currentStageId) return;
+
     this.workflowTemplateService.getTemplate(instance.workflowTemplateId).subscribe({
       next: (template) => {
         const stage = template.stages?.find((s) => s.id === instance.currentStageId);
