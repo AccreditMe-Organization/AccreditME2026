@@ -634,7 +634,8 @@ the task" and "who is allowed to trigger the transition" (see 2.8).
 | `SPECIFIC_USER` | Returns `[stage.assigneeUserId]` if set, else `[]`. | None — fully resolved, static. |
 | `ROLE` | `userRole.findMany({ roleId: stage.assigneeRoleId, user: { organizationId, status: ACTIVE } })` → all active tenant-wide holders. For `SINGLE` approvalMode, returns only `userIds[0]` (arbitrary — whatever order Prisma returns, no deterministic "least loaded" or "primary" selection). | **Zero resource-instance awareness** — resolves to every holder of the role anywhere in the tenant, with no connection to which committee/document/CAPA triggered the instance. |
 | `ROUND_ROBIN` | **Identical code path to `ROLE`** (same `switch` case, `case 'ROLE': case 'ROUND_ROBIN':`). | No round-robin logic exists at all — no assignment-history tracking, no rotation. Falls back to `ROLE`'s "first active holder" behavior. Documented in-code as a known limitation, not an oversight. |
-| `ORG_UNIT_HEAD` | **Throws an `Error`** unconditionally: `"ORG_UNIT_HEAD assignee resolution requires an orgUnitId from the calling module — not yet supported."` | **Not implemented at all.** Any stage configured with this strategy will throw at resolution time, not silently return empty. |
+| `ORG_UNIT_HEAD` | Reads `instance.orgUnitId` defensively and returns `[]` when absent; otherwise delegates to `OrganizationService.resolveActingHeadForOrgUnit()` (5.3). **Corrected ACC-54** — this row previously claimed the case "throws an `Error` unconditionally… not implemented at all", which was true before ACC-40 wired it and false ever since. Section 5.8 described it correctly the whole time; this row was simply never updated. | Resolves to `[]` for every object that exists today: no workflow-driven object carries an `orgUnitId` column, so the defensive read always finds nothing. Wired, unreachable — not broken. |
+| `POSITION_FIXED` (ACC-54) | `user.findMany({ organizationId, positionId: stage.assigneePositionId, primaryOrgUnitId: stage.assigneeOrgUnitId, status: ACTIVE })` → the holders of one specific position in one specific, config-time-chosen unit. `SINGLE` approvalMode takes `holderIds[0]`, mirroring `ROLE`. Returns `[]` when either field is unset. | **Instance-unaware by design, unlike its intended sibling.** The unit is fixed at configuration time, so every instance of the template resolves the same pool regardless of which object triggered it — that is the "FIXED" in the name. The RELATIVE variant, which would derive the unit from the triggering object, is deliberately not built: nothing carries an `orgUnitId` to derive from (same blocker as `ORG_UNIT_HEAD` above). |
 | `SELF` | Finds the instance's first-ever `WorkflowInstanceStage` (`orderBy: enteredAt asc`) and returns its `actorId` — i.e. whoever started the instance. | Only meaningful for the literal instance-creator; cannot express "self" at any stage other than by reference to who opened the workflow. |
 | `COMMITTEE` | `committeeMember.findMany({ committeeId: stage.committeeId, organizationId, isActive: true, ...(stage.assigneeCommitteeRoleValueId ? { roleValueId: stage.assigneeCommitteeRoleValueId } : {}) })` → every active member, org-scoped, **optionally narrowed to one `committee_member_role` (ACC-28)**. | `assigneeCommitteeRoleValueId` defaults to `null` — every stage seeded before ACC-28 keeps returning every active member indiscriminately (Chairman, Secretary, Member, Observer, Advisor), unchanged. Only stages a tenant admin explicitly configures with a role filter narrow further. |
 
@@ -663,9 +664,38 @@ two strategies:
 - `ROLE` → identical query to `resolveAssigneeRaw()`'s `ROLE` case
   (all active tenant-wide holders), no `SINGLE`-mode truncation (pool
   sizing needs the full set).
+- `ORG_UNIT_HEAD` → added ACC-40 for exactly the reason the next
+  bullet describes; same `instance.orgUnitId` defensive read as 2.5's
+  own case.
+- `POSITION_FIXED` → added ACC-54. Same holder query as 2.5's case,
+  minus the `SINGLE`-mode truncation, for the same reason `ROLE` omits
+  it.
 - **Any other `assigneeStrategy` on a multi-approver stage returns
   `[]`** — treated as a seed/config error, "no well-defined pool to
   size a threshold against."
+
+**This method being structurally separate from `resolveAssigneeRaw()`
+is a live footgun, not a curiosity: a strategy gaining a case there
+does NOT gain one here.** It has now caught two strategies in a row.
+ACC-40 documented it for `ORG_UNIT_HEAD`; ACC-54 reproduced it exactly,
+shipping `POSITION_FIXED` with a resolver case and no approver-pool
+case, and only caught it by tracing this method during unrelated work.
+
+The failure is silent and it disables two things at once on any
+multi-approver stage:
+- `submitApproval()`'s eligibility gate is guarded by
+  `approverPool.length > 0`, so an empty pool skips the check entirely
+  — anyone past the transition's own permission check may approve.
+- `isApprovalThresholdMet()` sizes with
+  `pool.length || Math.max(approvals.length, 1)`, so `ALL` collapses to
+  the approval count and the FIRST approval satisfies a stage that
+  should need every holder.
+
+Unreachable under `SINGLE` (which never calls `submitApproval()`), fully
+reachable under `SEQUENTIAL`/`PARALLEL`/`COMMITTEE` — and `approvalMode`
+and `assigneeStrategy` are independent dropdowns in the stage form, so
+nothing stops the combination. **Any future strategy added to 2.5 must
+add a case here too, or state explicitly why it should not.**
 
 **As of ACC-40, the resolved pool (whichever branch produced it) is
 routed through `applyOutOfOfficeRouting()` (2.5.1) before being
