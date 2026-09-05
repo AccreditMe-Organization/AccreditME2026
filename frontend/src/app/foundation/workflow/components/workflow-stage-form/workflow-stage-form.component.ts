@@ -264,31 +264,48 @@ const ASSIGNEE_STRATEGIES = [
             {{ 'workflow.assigneePositionHint' | translate }}
           </small>
         </div>
+
+        <!--
+          ACC-54 — in normal flow, directly beneath the two pickers it is
+          about, rather than in the sticky footer below.
+
+          The first attempt at F2 put this in that footer, which fixed the
+          buttons-pushed-out-of-view problem but created a worse one: sticky
+          positioning OVERLAYS scrolling content, so at the un-scrolled
+          position the panel sat on top of the Org Unit picker — label
+          clipped, field hidden. Since the warning clears by changing EITHER
+          picker, that left a user who does not scroll able to reach only
+          Position, not the Org Unit field the warning is actually about.
+
+          In flow here it pushes content instead of covering it, and lands
+          immediately under the pair it describes, which is also where the
+          user's attention already is. Only the action row stays sticky, so
+          the buttons still cannot be pushed out of reach.
+        -->
+        @if (showNoHolderWarning()) {
+          <p-message severity="warn" [text]="'workflow.noPositionHolderWarning' | translate" />
+        }
       }
 
       <!--
-        ACC-54 (finding F2) — warning and actions pinned to the bottom of
-        EditDialogComponent's scroll area (max-h-[60vh] overflow-y-auto)
-        rather than appended to the end of the form.
+        ACC-54 (finding F2) — the ACTION ROW is pinned to the bottom of
+        EditDialogComponent's scroll area (max-h-[60vh] overflow-y-auto), so
+        Cancel/Save can never be pushed out of the visible region by content
+        growing above them. That was the original F2 defect: appending the
+        no-holder warning grew the form and the buttons disappeared entirely,
+        which reads as a broken dialog.
 
-        Appended, the warning grew the form's height and pushed Cancel/Save
-        out of the visible region: a user saw one truncated line of an amber
-        message and no buttons at all, which reads as a broken dialog rather
-        than as advice. Sticky keeps both the full message and the buttons in
-        view at any scroll position, so the warning informs without
-        displacing the controls it is advising about.
+        The warning itself is deliberately NOT in here — it lives in normal
+        flow beside its own pickers above. Sticky content overlays whatever
+        scrolls beneath it, and putting the warning here meant it covered the
+        Org Unit field (see the comment at its new location).
 
-        Needs its own opaque background — it overlaps the scrolling content
-        beneath it — and a top border so it reads as a footer rather than as
-        floating text.
+        Needs an opaque background since it overlaps scrolling content, and a
+        top border so it reads as a footer rather than floating text.
       -->
       <div
         class="sticky bottom-0 -mx-1 mt-2 flex flex-col gap-2 border-t border-[var(--am-border)] bg-[var(--am-card)] px-1 pt-3"
       >
-        @if (showNoHolderWarning()) {
-          <p-message severity="warn" [text]="'workflow.noPositionHolderWarning' | translate" />
-        }
-
         @if (saveError()) {
           <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
         }
