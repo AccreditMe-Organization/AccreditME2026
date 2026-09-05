@@ -17,6 +17,9 @@ export interface IWorkflowStage {
   assigneeUserId: string | null;
   assigneeRoleId: string | null;
   assigneeCommitteeRoleValueId: string | null;
+  // ACC-54 — only meaningful when assigneeStrategy === 'POSITION_FIXED'.
+  assigneePositionId: string | null;
+  assigneeOrgUnitId: string | null;
   escalationConfig: Record<string, unknown> | null;
   transitions?: IWorkflowTransition[];
 }

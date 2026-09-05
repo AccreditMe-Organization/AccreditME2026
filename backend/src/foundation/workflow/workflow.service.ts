@@ -981,6 +981,42 @@ export class WorkflowService {
         return firstStage?.actorId ? [firstStage.actorId] : [];
       }
 
+      // ACC-54 — the FIXED half of OrgPosition-based resolution: whoever
+      // holds this specific position in this specific, explicitly-configured
+      // unit. Unlike ROLE (which returns every holder of a role anywhere in
+      // the tenant, with no connection to the triggering object), this is
+      // narrowed to one unit — but that unit is chosen at CONFIG time, so it
+      // is the same pool for every instance of the template. The RELATIVE
+      // variant, which derives the unit from the triggering object's own
+      // orgUnitId, is deliberately not built yet: no workflow-driven object
+      // carries an orgUnitId to derive from (Committee has none), so it
+      // would resolve empty for every object that exists today.
+      //
+      // Returns [] rather than throwing when either field is unset, exactly
+      // like every other case in this switch (SPECIFIC_USER, ROLE,
+      // ORG_UNIT_HEAD, COMMITTEE all do the same). That is what lets an
+      // unconfigured or half-configured stage flow into ACC-28's
+      // unassigned-stage detection and ACC-51/52's task recovery rather than
+      // crashing a transition or a sweep — the empty pool IS the signal.
+      case 'POSITION_FIXED': {
+        if (!stage.assigneePositionId || !stage.assigneeOrgUnitId) return [];
+        const holders = await this.prisma.user.findMany({
+          where: {
+            organizationId,
+            positionId: stage.assigneePositionId,
+            primaryOrgUnitId: stage.assigneeOrgUnitId,
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        });
+        const holderIds = holders.map((h) => h.id);
+        if (holderIds.length === 0) return [];
+        // Mirrors ROLE's own SINGLE-mode narrowing directly above: one
+        // approver needed means one assignee, and the position is normally
+        // isSingleAssignee anyway, so this is a no-op in the common case.
+        return stage.approvalMode === 'SINGLE' ? [holderIds[0] as string] : holderIds;
+      }
+
       case 'COMMITTEE': {
         if (!stage.committeeId) return [];
         // Org-scoped read (ACC-22, closing the ACC-17 deferred gap) —
@@ -1399,6 +1435,36 @@ export class WorkflowService {
         where: { roleId: stage.assigneeRoleId, user: { organizationId, status: 'ACTIVE' } },
       });
       rawPool = userRoles.map((ur) => ur.userId);
+    } else if (
+      stage.assigneeStrategy === 'POSITION_FIXED' &&
+      stage.assigneePositionId &&
+      stage.assigneeOrgUnitId
+    ) {
+      // ACC-54 — required for the same reason ACC-40 gave for the
+      // ORG_UNIT_HEAD case directly below: this method is structurally
+      // separate from resolveAssigneeRaw(), so a strategy gaining a case
+      // there does NOT gain one here. Without this branch a POSITION_FIXED
+      // stage fell through to the terminal `else` and returned [], which
+      // silently disabled both consumers on any multi-approver stage —
+      // submitApproval()'s eligibility gate (`approverPool.length > 0 &&
+      // ...` skips entirely on an empty pool) and isApprovalThresholdMet()'s
+      // sizing (`pool.length || Math.max(approvals.length, 1)` falls back to
+      // the approval count, making ALL satisfiable by the first approver).
+      //
+      // Same query as resolveAssigneeRaw()'s POSITION_FIXED case, minus its
+      // SINGLE-mode narrowing: this method only ever runs for multi-approver
+      // stages, and a threshold must be sized against the whole eligible
+      // pool rather than one arbitrarily-chosen member of it.
+      const holders = await this.prisma.user.findMany({
+        where: {
+          organizationId,
+          positionId: stage.assigneePositionId,
+          primaryOrgUnitId: stage.assigneeOrgUnitId,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      rawPool = holders.map((h) => h.id);
     } else if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
       // ACC-40 Section 2.6.2 — required prerequisite this investigation
       // surfaced: without this case, submitApproval()'s eligibility gate

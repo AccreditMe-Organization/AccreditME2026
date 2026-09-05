@@ -96,6 +96,12 @@ enum WorkflowAssigneeStrategy {
   SELF
   COMMITTEE
   ROUND_ROBIN
+  // ACC-54 — resolves to whoever holds a specific OrgPosition in a
+  // specific, explicitly-configured OrgUnit. Named FIXED to pair with a
+  // future POSITION_RELATIVE (same position, unit derived at trigger time
+  // from the triggering object's own orgUnitId) — deferred until a
+  // workflow-driven object actually carries an orgUnitId to derive from.
+  POSITION_FIXED
 }
 
 enum WorkflowTriggerCondition {
@@ -678,6 +684,8 @@ model OrgUnit {
   children                        OrgUnit[]           @relation("OrgUnitHierarchy")
   users                           User[]
   actingUsers                     User[]              @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
+  // ACC-54 — back-relation for WorkflowStage.assigneeOrgUnitId (POSITION_FIXED).
+  assigneeForWorkflowStages       WorkflowStage[]     @relation("WorkflowStageAssigneeOrgUnit")
   pendingHead                     User?               @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
   actingHead                      User?               @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
   headEvents                      OrgUnitHeadEvent[]
@@ -801,6 +809,8 @@ model OrgPosition {
   role         Role?              @relation(fields: [roleId], references: [id])
   users        User[]
   headEvents   OrgUnitHeadEvent[] // back-relation for OrgUnitHeadEvent.positionId (ACC-40 Section 2.3)
+  // ACC-54 — back-relation for WorkflowStage.assigneePositionId (POSITION_FIXED).
+  workflowStages WorkflowStage[]
 
   @@unique([organizationId, nameEn])
   @@index([organizationId])
@@ -855,12 +865,35 @@ model WorkflowStage {
   // every existing seeded stage.
   assigneeCommitteeRoleValueId String?
 
+  // ACC-54 — only meaningful when assigneeStrategy = POSITION_FIXED, and
+  // named for that strategy rather than abstractly, following the exact
+  // precedent assigneeCommitteeRoleValueId above set (ACC-28): a field that
+  // only means something for one strategy is clearer named after it than
+  // given a fake-generic name. assigneePositionId is expected to be reused
+  // unchanged by a future POSITION_RELATIVE; assigneeOrgUnitId is
+  // FIXED-only by construction, since RELATIVE derives the unit at trigger
+  // time instead of storing one.
+  //
+  // Deliberately no @@index on either: WorkflowStage is only ever loaded by
+  // its own id or by workflowTemplateId, never queried BY assignee — the
+  // same reason the existing assigneeRoleId/assigneeUserId/committeeId
+  // columns carry no index.
+  //
+  // Cross-tenant integrity is enforced at the service layer on write, not
+  // by the FK (OrgPosition/OrgUnit are tenant-scoped but WorkflowStage
+  // reaches its tenant only through WorkflowTemplate) — same shape as
+  // ACC-17's assigneeUserId validation and ACC-28's validateCommitteeId().
+  assigneePositionId String?
+  assigneeOrgUnitId  String?
+
   escalationConfig Json?
 
   workflowTemplate WorkflowTemplate        @relation(fields: [workflowTemplateId], references: [id])
   transitionsFrom  WorkflowTransition[]    @relation("TransitionFrom")
   transitionsTo    WorkflowTransition[]    @relation("TransitionTo")
   instanceStages   WorkflowInstanceStage[]
+  assigneePosition OrgPosition?            @relation(fields: [assigneePositionId], references: [id])
+  assigneeOrgUnit  OrgUnit?                @relation("WorkflowStageAssigneeOrgUnit", fields: [assigneeOrgUnitId], references: [id])
 
   @@index([workflowTemplateId])
 }

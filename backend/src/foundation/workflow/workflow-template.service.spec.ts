@@ -4,6 +4,7 @@ import { WorkflowTemplateService } from './workflow-template.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ const BASE_STAGE = {
   assigneeUserId: null as string | null,
   assigneeRoleId: null as string | null,
   assigneeCommitteeRoleValueId: null as string | null,
+  assigneePositionId: null as string | null,
+  assigneeOrgUnitId: null as string | null,
   escalationConfig: null as unknown,
 };
 
@@ -117,6 +120,13 @@ const mockPrisma = {
     findFirst: jest.fn(),
   },
   lookupValue: {
+    findFirst: jest.fn(),
+  },
+  // ACC-54 — POSITION_FIXED's two write-time tenant validators.
+  orgPosition: {
+    findFirst: jest.fn(),
+  },
+  orgUnit: {
     findFirst: jest.fn(),
   },
   $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
@@ -731,6 +741,96 @@ describe('WorkflowTemplateService', () => {
         },
       });
       expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
+    // ACC-54 — both POSITION_FIXED ids re-validated against this tenant
+    // before being written onto the stage, mirroring the committeeId and
+    // assigneeCommitteeRoleValueId tests above. Both are checked
+    // independently: a stage could otherwise reference another tenant's
+    // position, another tenant's unit, or one of each.
+    const positionFixedDto = (overrides: Record<string, unknown> = {}) =>
+      ({
+        nameEn: 'Compliance Review',
+        nameAr: 'مراجعة الامتثال',
+        order: 10,
+        approvalMode: 'SINGLE',
+        assigneeStrategy: 'POSITION_FIXED',
+        assigneePositionId: 'position-a',
+        assigneeOrgUnitId: 'unit-a',
+        ...overrides,
+      }) as never;
+
+    itEnforcesTenantIsolation('assigneePositionId is rejected when it belongs to another tenant', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(null); // foreign tenant's position
+
+      await expect(
+        service.addStage('template-1', positionFixedDto({ assigneePositionId: 'foreign-position' }), ORG_A, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-position', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('assigneeOrgUnitId is rejected when it belongs to another tenant', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ id: 'position-a', organizationId: ORG_A });
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null); // foreign tenant's unit
+
+      await expect(
+        service.addStage('template-1', positionFixedDto({ assigneeOrgUnitId: 'foreign-unit' }), ORG_A, ACTOR),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-unit', organizationId: ORG_A },
+      });
+      expect(mockPrisma.workflowStage.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a POSITION_FIXED stage when both ids resolve within this tenant', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ id: 'position-a', organizationId: ORG_A });
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-a', organizationId: ORG_A });
+      mockPrisma.workflowStage.create.mockResolvedValue(
+        makeStage({ assigneePositionId: 'position-a', assigneeOrgUnitId: 'unit-a' }),
+      );
+
+      await service.addStage('template-1', positionFixedDto(), ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ assigneePositionId: 'position-a', assigneeOrgUnitId: 'unit-a' }),
+        }),
+      );
+    });
+
+    // The pairing rule, stated as a test so the choice is explicit rather
+    // than incidental: a POSITION_FIXED stage missing one or both ids is
+    // ACCEPTED at write time, not rejected. This matches every other
+    // strategy in this codebase — ROLE without assigneeRoleId and COMMITTEE
+    // without committeeId are both writable too — and it is what lets a
+    // half-configured stage surface through ACC-28's unassigned-stage
+    // detection instead of blocking an admin mid-configuration. The UI warns
+    // (non-blocking) rather than the API rejecting.
+    it('accepts a POSITION_FIXED stage with neither id set, matching how ROLE and COMMITTEE behave', async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.create.mockResolvedValue(makeStage({}));
+
+      await expect(
+        service.addStage(
+          'template-1',
+          positionFixedDto({ assigneePositionId: undefined, assigneeOrgUnitId: undefined }),
+          ORG_A,
+          ACTOR,
+        ),
+      ).resolves.toBeDefined();
+
+      // Nothing to validate, so neither validator is consulted at all.
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowStage.create).toHaveBeenCalled();
     });
 
     it('creates the stage when assigneeCommitteeRoleValueId resolves to a tenant-visible lookup value', async () => {

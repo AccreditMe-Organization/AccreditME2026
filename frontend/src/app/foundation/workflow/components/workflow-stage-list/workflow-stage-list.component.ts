@@ -162,7 +162,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           [stage]="editingStage()"
           [templateId]="templateId()"
           [nextOrder]="nextOrderForNewStage()"
-          (saved)="onStageSaved()"
+          (saved)="onStageSaved($event)"
           (cancelled)="showFormDialog.set(false)"
         />
       </ng-template>
@@ -221,8 +221,29 @@ export class WorkflowStageListComponent implements OnInit {
     this.showFormDialog.set(true);
   }
 
-  onStageSaved(): void {
-    this.showFormDialog.set(false);
+  // ACC-54 — mirrors PositionListComponent.onSaved() exactly (ACC-43): when
+  // the config-time warning fires, the dialog STAYS OPEN so the warning is
+  // actually readable. Closing on save as usual rendered it for a fraction of
+  // a second before the dialog disappeared, which is no warning at all.
+  //
+  // Switching editingStage to the saved record matters for the same reason it
+  // did in position-form, and it was checked rather than assumed to carry
+  // over: workflow-stage-form picks its endpoint with `this.stage ?
+  // updateStage(...) : addStage(...)`, and `stage` is an @Input bound to
+  // editingStage() here. Leaving it null while the dialog stays open would
+  // make a second Save create a duplicate stage instead of updating the one
+  // just created.
+  //
+  // Unlike position-form this cannot clobber what the user is looking at:
+  // that component re-patches its form from an effect() on its position
+  // input, whereas this one patches only in ngOnInit(), so updating the input
+  // on an already-open dialog leaves the visible form untouched.
+  onStageSaved(result: { stage: WorkflowStageDto; hadNoHolderWarning: boolean }): void {
+    if (result.hadNoHolderWarning) {
+      this.editingStage.set(result.stage);
+    } else {
+      this.showFormDialog.set(false);
+    }
     this.loadTemplate();
   }
 
