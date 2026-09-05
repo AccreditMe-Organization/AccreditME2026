@@ -1585,6 +1585,76 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
     });
 
+    // ACC-54 — resolveApproverPool() is structurally separate from
+    // resolveAssigneeRaw(), so POSITION_FIXED gaining a case there did NOT
+    // give it one here: it fell through to the terminal `else { return [] }`.
+    // These two tests pin the consequences that silently disappeared as a
+    // result, so the branch can't be dropped again without a failure.
+    const POSITION_FIXED_PARALLEL_STAGE = {
+      ...PARALLEL_STAGE,
+      assigneeStrategy: 'POSITION_FIXED',
+      assigneePositionId: 'position-a',
+      assigneeOrgUnitId: 'unit-a',
+    };
+
+    it('rejects an approver outside the resolved POSITION_FIXED pool', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(POSITION_FIXED_PARALLEL_STAGE);
+      // The position is held by someone else entirely — ACTOR is not in the
+      // pool. The id-filter branch is applyOutOfOfficeRouting()'s own second
+      // query over whatever the first resolved; it must return those same
+      // users, or the pool empties and the gate it is meant to prove is
+      // skipped for the wrong reason.
+      mockPrisma.user.findMany.mockImplementation(
+        ({ where }: { where: { id?: { in: string[] } } }) => {
+          const holders = [{ id: 'a-different-holder' }];
+          return Promise.resolve(
+            where.id?.in ? holders.filter((h) => where.id!.in.includes(h.id)) : holders,
+          );
+        },
+      );
+
+      await expect(
+        service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Rejected BEFORE the approval is recorded — with the pool empty (the
+      // pre-fix behavior) the gate was skipped entirely and this upsert ran.
+      expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          positionId: 'position-a',
+          primaryOrgUnitId: 'unit-a',
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+    });
+
+    it('sizes the ALL threshold against the real POSITION_FIXED pool, not the approval count', async () => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(POSITION_FIXED_PARALLEL_STAGE);
+      mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'APPROVED' }));
+      // Three holders, ACTOR among them: eligible to approve, and the
+      // threshold must be sized against all three.
+      mockPrisma.user.findMany.mockImplementation(
+        ({ where }: { where: { id?: { in: string[] } } }) => {
+          const pool = [{ id: ACTOR }, { id: 'holder-2' }, { id: 'holder-3' }];
+          return Promise.resolve(where.id?.in ? pool.filter((u) => where.id!.in.includes(u.id)) : pool);
+        },
+      );
+      // Only ACTOR has approved so far — 1 of 3 under PARALLEL/ALL.
+      mockPrisma.workflowApproval.findMany.mockResolvedValue([makeApproval({ decision: 'APPROVED' })]);
+
+      await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR);
+
+      // Must NOT advance. Pre-fix the pool was [], so poolSize fell back to
+      // Math.max(approvals.length, 1) === 1 and this single approval
+      // satisfied ALL — the stage advanced on one of three approvers.
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+    });
+
     it('never auto-advances on ABSTAINED', async () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'ABSTAINED' }));

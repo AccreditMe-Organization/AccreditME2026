@@ -1435,6 +1435,36 @@ export class WorkflowService {
         where: { roleId: stage.assigneeRoleId, user: { organizationId, status: 'ACTIVE' } },
       });
       rawPool = userRoles.map((ur) => ur.userId);
+    } else if (
+      stage.assigneeStrategy === 'POSITION_FIXED' &&
+      stage.assigneePositionId &&
+      stage.assigneeOrgUnitId
+    ) {
+      // ACC-54 — required for the same reason ACC-40 gave for the
+      // ORG_UNIT_HEAD case directly below: this method is structurally
+      // separate from resolveAssigneeRaw(), so a strategy gaining a case
+      // there does NOT gain one here. Without this branch a POSITION_FIXED
+      // stage fell through to the terminal `else` and returned [], which
+      // silently disabled both consumers on any multi-approver stage —
+      // submitApproval()'s eligibility gate (`approverPool.length > 0 &&
+      // ...` skips entirely on an empty pool) and isApprovalThresholdMet()'s
+      // sizing (`pool.length || Math.max(approvals.length, 1)` falls back to
+      // the approval count, making ALL satisfiable by the first approver).
+      //
+      // Same query as resolveAssigneeRaw()'s POSITION_FIXED case, minus its
+      // SINGLE-mode narrowing: this method only ever runs for multi-approver
+      // stages, and a threshold must be sized against the whole eligible
+      // pool rather than one arbitrarily-chosen member of it.
+      const holders = await this.prisma.user.findMany({
+        where: {
+          organizationId,
+          positionId: stage.assigneePositionId,
+          primaryOrgUnitId: stage.assigneeOrgUnitId,
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      rawPool = holders.map((h) => h.id);
     } else if (stage.assigneeStrategy === 'ORG_UNIT_HEAD') {
       // ACC-40 Section 2.6.2 — required prerequisite this investigation
       // surfaced: without this case, submitApproval()'s eligibility gate
