@@ -75,6 +75,11 @@ const ASSIGNEE_STRATEGIES = [
   { label: 'COMMITTEE', value: 'COMMITTEE' },
   { label: 'ROUND_ROBIN', value: 'ROUND_ROBIN' },
   { label: 'ORG_UNIT_HEAD', value: 'ORG_UNIT_HEAD' },
+  // ACC-54 — unlike ORG_UNIT_HEAD above (wired but still unreachable, since
+  // no workflow-driven object carries an orgUnitId to resolve against), this
+  // one is immediately usable: both the position and the unit are chosen
+  // here at config time, so nothing external has to supply them.
+  { label: 'POSITION_FIXED', value: 'POSITION_FIXED' },
 ];
 
 @Component({
@@ -224,6 +229,43 @@ const ASSIGNEE_STRATEGIES = [
           severity="info"
           [text]="'workflow.userPickerUnavailable' | translate"
         />
+      }
+
+      @if (assigneeStrategy() === 'POSITION_FIXED') {
+        <div class="flex flex-col gap-1">
+          <label for="assigneePositionId" class="font-medium text-sm">
+            {{ 'workflow.assigneePosition' | translate }}
+          </label>
+          <app-overlay-select
+            formControlName="assigneePositionId"
+            [options]="activePositions()"
+            optionLabel="nameEn"
+            optionValue="id"
+            [showClear]="true"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="assigneeOrgUnitId" class="font-medium text-sm">
+            {{ 'workflow.assigneeOrgUnit' | translate }}
+          </label>
+          <app-overlay-select
+            formControlName="assigneeOrgUnitId"
+            [options]="orgUnitCascadeOptions()"
+            optionLabel="label"
+            optionValue="value"
+            optionGroupLabel="label"
+            optionGroupChildren="items"
+            [showClear]="true"
+          />
+          <small class="text-[var(--am-text-secondary)]">
+            {{ 'workflow.assigneePositionHint' | translate }}
+          </small>
+        </div>
+      }
+
+      @if (showNoHolderWarning()) {
+        <p-message severity="warn" [text]="'workflow.noPositionHolderWarning' | translate" />
       }
 
       @if (saveError()) {
