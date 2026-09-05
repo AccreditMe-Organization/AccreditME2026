@@ -19,6 +19,7 @@ const WORKFLOW_ASSIGNEE_STRATEGIES = [
   'SELF',
   'COMMITTEE',
   'ROUND_ROBIN',
+  'POSITION_FIXED',
 ] as const;
 
 export class CreateWorkflowStageDto {
@@ -83,6 +84,21 @@ export class CreateWorkflowStageDto {
   @IsString()
   @IsOptional()
   assigneeCommitteeRoleValueId?: string;
+
+  // ACC-54 — the POSITION_FIXED pair: resolves to whoever holds this
+  // position in this specific unit. Both @IsOptional(), matching every other
+  // strategy-specific field on this DTO (assigneeUserId, assigneeRoleId,
+  // committeeId, assigneeCommitteeRoleValueId are all optional too) — this
+  // DTO deliberately does not enforce which fields a given strategy needs.
+  // See WorkflowTemplateService for why that stays soft rather than becoming
+  // a hard pairing rule here; each id IS tenant-validated there when present.
+  @IsString()
+  @IsOptional()
+  assigneePositionId?: string;
+
+  @IsString()
+  @IsOptional()
+  assigneeOrgUnitId?: string;
 
   @IsArray()
   @IsOptional()

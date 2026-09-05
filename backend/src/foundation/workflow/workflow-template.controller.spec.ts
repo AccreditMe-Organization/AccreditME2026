@@ -41,6 +41,8 @@ const MOCK_STAGE: IWorkflowStage = {
   assigneeUserId: null,
   assigneeRoleId: null,
   assigneeCommitteeRoleValueId: null,
+  assigneePositionId: null,
+  assigneeOrgUnitId: null,
   escalationConfig: null,
 };
 

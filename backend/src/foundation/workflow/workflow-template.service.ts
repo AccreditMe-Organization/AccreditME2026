@@ -762,6 +762,8 @@ export class WorkflowTemplateService {
       assigneeUserId: stage.assigneeUserId,
       assigneeRoleId: stage.assigneeRoleId,
       assigneeCommitteeRoleValueId: stage.assigneeCommitteeRoleValueId,
+      assigneePositionId: stage.assigneePositionId,
+      assigneeOrgUnitId: stage.assigneeOrgUnitId,
       escalationConfig: stage.escalationConfig as Record<string, unknown> | null,
       ...(transitions !== undefined && { transitions }),
     };
