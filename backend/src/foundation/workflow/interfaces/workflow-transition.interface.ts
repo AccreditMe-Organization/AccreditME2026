@@ -17,6 +17,21 @@ export interface IWorkflowTransition {
 // configurer intends. Both are WARNINGS, never rejections: the save always
 // succeeds and the value is written exactly as supplied.
 //
+// Reachability, since ACC-55's picker means a user can no longer TYPE an
+// arbitrary string (traced, not assumed — both warnings are live code):
+//   - UNKNOWN_PERMISSION still fires whenever a transition that ALREADY holds
+//     an unknown value is re-saved. The editor surfaces such a value as a
+//     selectable option so it round-trips, so editing any of the 45 seeded
+//     capa:*/incidents:manage transitions reaches this. It is also reachable
+//     via the API directly, which accepts any string. What is no longer
+//     reachable is a newly INVENTED unknown value through the UI — so this
+//     warning's role narrowed from "catch a fresh typo" to "flag a
+//     pre-existing unknown value whenever that transition is touched".
+//   - NO_ACTIVE_ROLE_HOLDS is unaffected: pick any real permission no active
+//     role in the tenant holds.
+// Seeding reaches neither — seedDefaultWorkflows() writes via
+// prisma.workflowTransition.create() directly, bypassing addTransition().
+//
 //   UNKNOWN_PERMISSION    no Permission row matches this module:action.
 //                         Deliberately does NOT distinguish a typo from a
 //                         forward reference — 45 seeded transitions across

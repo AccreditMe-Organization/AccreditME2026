@@ -453,6 +453,16 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   // shown as a real, selected option in its own group rather than silently
   // dropped, so opening a transition and saving it unchanged cannot rewrite
   // its permission.
+  //
+  // This is the ONLY way an unknown value can be present. There is
+  // deliberately no free-text escape hatch for entering a NEW one, and that
+  // asymmetry is the design, not a gap (live-verified, ACC-55 Test 4):
+  //   - existing unknown values stay fully editable, via this mechanism;
+  //   - new unknown values cannot be created through the UI at all.
+  // Allowing free entry and warning afterward would preserve the exact defect
+  // this ticket exists to fix, just behind an extra click. And adding a
+  // genuinely new forward reference means editing permissions.ts and
+  // workflow.seed.ts — not something a tenant admin does in a dialog.
   private readonly extraPermissionValues = signal<string[]>([]);
 
   readonly permissionGroups = computed<PermissionNode[]>(() => {
