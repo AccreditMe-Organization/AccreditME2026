@@ -201,7 +201,9 @@ function createManualScrollable(
             cdkOption
             [cdkOption]="getOptionValue(flat.node)"
             [cdkOptionTypeaheadLabel]="getOptionLabel(flat.node, flat.isGroup)"
+            [cdkOptionDisabled]="flat.isGroup && !groupsSelectable()"
             class="am-overlay-select-option"
+            [class.am-overlay-select-group-header]="flat.isGroup && !groupsSelectable()"
             [style.paddingInlineStart.rem]="0.75 + flat.depth * 1"
           >
             @if (itemTemplate(); as tpl) {
@@ -301,6 +303,23 @@ function createManualScrollable(
         background: var(--am-surface);
       }
 
+      /* ACC-55 — a non-selectable group renders as a heading, not a dead
+         option: no pointer cursor and no hover highlight, so it never looks
+         clickable in the first place. CdkOption already blocks the click and
+         the keyboard; this is what stops it inviting one. */
+      .am-overlay-select-option.am-overlay-select-group-header {
+        cursor: default;
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--am-text-secondary);
+      }
+
+      .am-overlay-select-option.am-overlay-select-group-header:hover {
+        background: transparent;
+      }
+
       /* aria-selected is managed by CdkOption itself — style off the real
          attribute rather than a separately-recomputed class, so the
          highlight can never drift out of sync with CDK's own state. */
@@ -365,6 +384,27 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // a depth-0 wrapping of options() when it's unset.
   readonly optionGroupLabel = input<string | undefined>(undefined);
   readonly optionGroupChildren = input<string | undefined>(undefined);
+
+  // ACC-55 — opt-in: when false, group (branch) nodes render as inert
+  // headings instead of choices.
+  //
+  // Defaults to TRUE, preserving the behavior ACC-42 deliberately built and
+  // pinned with its own test ("every node is individually selectable
+  // regardless of depth or branch/leaf status"): org-unit-form's tree needs a
+  // parent unit to be a valid parent, so a branch there IS a real choice.
+  //
+  // But that is a property of THAT data, not of hierarchies generally. A
+  // grouped list whose groups are pure categories — the permission picker's
+  // 19 module headings, where "committees" is not itself a permission — needs
+  // the opposite. Selecting such a heading in ACC-55 silently CLEARED the
+  // transition's required permission, widening who could fire it.
+  //
+  // Implemented via CdkOption's own `cdkOptionDisabled`, not a hand-rolled
+  // click guard, so pointer AND keyboard agree for free: CdkListbox applies
+  // `skipPredicate(option => option.disabled)` to its ActiveDescendantKeyManager,
+  // and guards selection on `!option.disabled` (verified in
+  // @angular/cdk/listbox source, not assumed).
+  readonly groupsSelectable = input<boolean>(true);
 
   // ACC-42 Phase 2 — custom option rendering (plan §2.3). CdkOption is a
   // plain directive, not a component, so it has no content-projection
