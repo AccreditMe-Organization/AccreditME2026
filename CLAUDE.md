@@ -1958,8 +1958,48 @@ complete, not just the currently-in-review ones.
    (`OrgPositionService.resolveManagerEscalationTargets()` reads it,
    and `SlaMonitorProcessor` calls that for the Manager escalation
    tier), where before ACC-46 it was display-only and read by nothing.
-3. **NOT STARTED — remove `Role`/`ROLE_BASED` from workflow assignee/
-   trigger strategies, replace with `OrgPosition`-based assignment.**
+3. **PARTIALLY COMPLETE — replace `Role`-based workflow assignment with
+   `OrgPosition`-based assignment.**
+   **Done (ACC-54, merged `57e621d`)**: the `POSITION_FIXED` assignee
+   strategy — a stage resolves to whoever holds a specific position in a
+   specific, config-time-chosen org unit. New enum value, two nullable
+   `WorkflowStage` columns, a `resolveAssigneeRaw()` case, the matching
+   `resolveApproverPool()` branch, write-time tenant validation for both
+   ids, and config UI with a non-blocking no-holder warning. Full detail:
+   SYSTEM-REFERENCE.md Section 2.5.
+   **Four things remain, stated explicitly so none is assumed done:**
+   - **`ROLE` is deliberately RETAINED, not being removed.** Genuine
+     broadcast-to-everyone patterns still need it — verified against
+     `workflow.seed.ts:231`, `MEETING.minutes_review` is
+     `assigneeStrategy: ROLE` / `assigneeRoleKey: BASE_USER` /
+     `approvalMode: PARALLEL` / `parallelThreshold: ALL`, i.e. every
+     user in the tenant must approve. No position-based strategy
+     expresses that, and it is the seed's only `BASE_USER` use.
+     This item's original wording ("remove `Role`") was
+     always too strong; the real goal is that `ROLE` stops being the
+     DEFAULT for cases that want a real organizational target, not that
+     it disappears.
+   - **`ROLE_BASED` on the trigger side is completely untouched.**
+     ACC-54 changed assignment (who receives work), never trigger-gating
+     (who may fire a transition) — two structurally separate mechanisms
+     (SYSTEM-REFERENCE.md Section 2.8). Every seeded transition is still
+     `ROLE_BASED`, and note this is also what ACC-56's open finding
+     depends on.
+   - **RELATIVE mode is not built and is deliberately blocked.** The
+     position would resolve against the *triggering object's own*
+     `orgUnitId`, walking up the parent chain if vacant. It has no live
+     consumer: `Committee` has no `orgUnitId` field, and it is the only
+     fully-built workflow-driven module. Building it now would ship a
+     second strategy resolving to an empty pool for every object that
+     exists — repeating exactly the wired-but-unreachable state
+     `ORG_UNIT_HEAD` sat in from ACC-40. Revisit when
+     `Committee.orgUnitId` (or another workflow-driven object with a
+     unit) exists to prove it against.
+   - **None of the 8 seeded templates were migrated off `ROLE`.** They
+     still resolve to flat tenant-wide `QUALITY_MANAGER`/
+     `QUALITY_OFFICER` lookups. That migration is a separate decision
+     with real seed-data implications, and belongs with item 4 below
+     rather than being smuggled into a strategy-implementation ticket.
 4. **NOT STARTED — new seed data reflecting the final structural
    shape**, once items 1–3 above are actually settled.
 

@@ -619,7 +619,7 @@ the user actually assigned the resulting task. `ASSIGNEE_POOL` is
 opt-in per transition, not a change to the other four conditions'
 existing behavior.
 
-### 2.5 `resolveAssigneeRaw()` — All 6 Strategies (`workflow.service.ts:720–776`)
+### 2.5 `resolveAssigneeRaw()` — All 7 Strategies (`workflow.service.ts:720–776`)
 
 Used for `CREATE_TASK`/`SEND_NOTIFICATION` targeting and the initial-
 stage notification. The raw resolver itself is never called directly
