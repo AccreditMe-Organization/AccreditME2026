@@ -3003,7 +3003,7 @@ code rather than restating the decision log.
   generic and ready for reuse; nothing has reused it yet because
   nothing else needs to yet.
 
-### 10.7 `OverlaySelectComponent` — the CDK Overlay Exception to PrimeNG (ACC-41, extended ACC-42)
+### 10.7 `OverlaySelectComponent` — the CDK Overlay Exception to PrimeNG (ACC-41, extended ACC-42 and ACC-55)
 
 `frontend/src/app/shared/components/overlay-select/overlay-select.component.ts`.
 The one deliberate exception to "UI components: PrimeNG" (CLAUDE.md
@@ -3190,6 +3190,40 @@ actingOrgUnitId` (re-verification target above) — the latter 3 pass
 `excludeId: null` since a user isn't an org unit and has no
 self/descendant relationship to exclude, unlike a unit picking its
 own parent.
+
+##### `groupsSelectable` — are group nodes themselves choices? (ACC-55)
+
+Every flattened node, branch or leaf, renders as its own selectable
+`CdkOption` by default, and ACC-42 pinned that with a dedicated test
+("every node is individually selectable regardless of depth or
+branch/leaf status"). That is correct for all 4 hierarchy consumers
+above: an org unit is a valid parent for another org unit, so a branch
+IS a real choice, matching `p-cascadeSelect`'s own behavior.
+
+**But that is a property of org-unit data, not of hierarchies in
+general.** A grouped list whose groups are pure categories needs the
+opposite, and ACC-55 found out the expensive way: the workflow
+transition editor's permission picker grouped 72 strings under 19
+module headings, `committees` is not itself a permission, and selecting
+a heading saved `requiredPermission: null` — silently CLEARING the
+transition's permission gate and widening who could fire it. A
+value-sentinel guard in the consumer was not enough; it turned a
+nonsense value into a destructive one.
+
+`groupsSelectable` (`input<boolean>(true)`) makes this opt-in. Default
+`true` preserves ACC-42's behavior and its test untouched; pass
+`[groupsSelectable]="false"` when groups are categories. Implemented via
+`CdkOption`'s own `cdkOptionDisabled` rather than a hand-rolled click
+guard, so pointer and keyboard agree for free — `CdkListbox` applies
+`skipPredicate(option => option.disabled)` to its
+`ActiveDescendantKeyManager` and guards selection on `!option.disabled`
+(verified against `@angular/cdk/listbox` source, including that
+`navigateDisabledOptions` defaults to `false`). A non-selectable group
+is also styled as a heading — no pointer cursor, no hover highlight —
+so it never invites the click CDK now refuses.
+
+Consumers so far (1): `workflow-transition-editor.requiredPermission`
+(both the add and edit dialogs).
 
 #### 10.7.3 Item-template projection (`itemTemplate`)
 
