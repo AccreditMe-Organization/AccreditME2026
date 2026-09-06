@@ -163,14 +163,60 @@ throws `Missing required permission: committees:aprove`, and nothing
 ever flags the transition as broken. This is the single easiest way to
 silently destroy a workflow through this UI.
 
-**This is not hypothetical — it has already happened in the seeded
-data.** In Demo Organization, the `terms_review → active` transition
-("Approve Committee") requires `committees:approve`, which **no role in
-that organization holds** (verified: the permission is granted to
-PLATFORM_ADMIN/TENANT_ADMIN/QUALITY_MANAGER in two newer tenants, and
-to nobody in Demo Organization). That transition cannot be fired by any
-user. The unassigned-stage detector does not catch it either — it
-inspects `triggerRoleId`, not `requiredPermission`.
+> **CORRECTION (2026-09-05, ACC-55 investigation).** This section
+> originally claimed the typo risk had *already occurred* in Demo
+> Organization — that its `terms_review → active` transition requires
+> `committees:approve`, which no role there holds, making it
+> unfireable. **That claim was wrong**, and is corrected below rather
+> than deleted, since it was committed to `dev` and repeated in Linear
+> ACC-56 (now repointed at the real finding). The typo risk described
+> above is real; the claimed live instance of it was not.
+>
+> Verified directly against the live shared dev database:
+>
+> - Demo Organization's "Approve Committee" transition requires
+>   **`committees:manage`**, not `committees:approve` — and
+>   `committees:manage` is held by 3 active roles there. **The
+>   transition is fireable.**
+> - Demo Organization does genuinely lack `committees:approve` role
+>   grants (it predates ACC-22's permission split; the two newer
+>   tenants have 3 roles each) — but no transition there requires it,
+>   so nothing is blocked by that fact.
+> - The only tenants holding `committees:approve` *transitions*
+>   (ACC45 Verify Temp, ACC46 P2 Verify) are also the ones that grant
+>   the permission.
+>
+> The error was conflating the **current seed source** (`workflow.seed.ts:262`
+> does say `committees:approve`) with Demo Organization's **actual
+> stored data**, seeded earlier under a different value. Reading the
+> seed is not the same as reading the tenant.
+>
+> Running the general form of the check across every tenant: **zero
+> transitions hold a known permission string that no active role in
+> their own tenant holds.** This failure class has no live instance
+> today.
+
+**Not yet observed in live data, but nothing prevents it.** No tenant
+currently holds a *known* permission string that nobody can satisfy
+(see the correction above). What does exist: 45 of the 195 transitions
+carrying a `requiredPermission` hold a string absent from
+`permissions.ts` entirely — `capa:investigate` (21), `capa:approve`
+(15), `capa:close` (3), `incidents:manage` (6). Those are **deliberate
+forward references** to the not-yet-built CAPA and Incident modules,
+declared in a block comment at `workflow.seed.ts:66-81` — not typos,
+and a reason any validation here must warn rather than reject.
+
+**The detection gap is real, for a different reason than first
+stated.** `resolveUnassignedBlockingTransitions()`
+(`workflow.service.ts:1268-1278`) *does* inspect `requiredPermission` —
+but only for `ASSIGNEE_POOL` transitions, against the resolved pool.
+`resolveUnreachableTriggerConditionTransitions()` states its own
+boundary in-code (`workflow.service.ts:1292-1297`): `ROLE_BASED`
+transitions with no `triggerRoleId` are outside its scope, because
+tenant-wide `requiredPermission` reachability is "a broader, more
+expensive question not covered here." All eight seeded templates are
+`ROLE_BASED` with `triggerRoleId = NULL`, so for the entire real
+corpus this is genuinely undetected. Tracked as ACC-56.
 
 **#8 Validator Config is an unlabelled JSON textarea.** No placeholder,
 no hint, no schema, no example. `checkValidatorConfig()` reads exactly

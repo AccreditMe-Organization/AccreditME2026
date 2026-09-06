@@ -10,7 +10,12 @@ import {
 } from '../../../generated/prisma/client';
 import { IWorkflowTemplate } from './interfaces/workflow-template.interface';
 import { IWorkflowStage } from './interfaces/workflow-stage.interface';
-import { IWorkflowTransition, IWorkflowTransitionAction } from './interfaces/workflow-transition.interface';
+import {
+  IWorkflowTransition,
+  IWorkflowTransitionAction,
+  IWorkflowTransitionWriteResult,
+  TransitionPermissionWarning,
+} from './interfaces/workflow-transition.interface';
 import { CreateWorkflowTemplateDto } from './dto/create-workflow-template.dto';
 import { UpdateWorkflowTemplateDto } from './dto/update-workflow-template.dto';
 import { CreateWorkflowStageDto } from './dto/create-workflow-stage.dto';
@@ -492,7 +497,7 @@ export class WorkflowTemplateService {
     dto: CreateWorkflowTransitionDto,
     organizationId: string,
     actorId: string,
-  ): Promise<IWorkflowTransition> {
+  ): Promise<IWorkflowTransitionWriteResult> {
     const fromStage = await this.prisma.workflowStage.findFirst({
       where: { id: dto.fromStageId, workflowTemplate: { organizationId } },
     });
@@ -530,7 +535,14 @@ export class WorkflowTemplateService {
       after: { labelEn: transition.labelEn, labelAr: transition.labelAr },
     });
 
-    return this.mapTransition(transition);
+    // Resolved AFTER the write, deliberately — this is advice about a saved
+    // record, not a precondition for saving it.
+    const permissionWarning = await this.resolvePermissionWarning(
+      transition.requiredPermission,
+      organizationId,
+    );
+
+    return { transition: this.mapTransition(transition), permissionWarning };
   }
 
   async updateTransition(
@@ -538,7 +550,7 @@ export class WorkflowTemplateService {
     dto: UpdateWorkflowTransitionDto,
     organizationId: string,
     actorId: string,
-  ): Promise<IWorkflowTransition> {
+  ): Promise<IWorkflowTransitionWriteResult> {
     const transition = await this.prisma.workflowTransition.findFirst({
       where: { id, fromStage: { workflowTemplate: { organizationId } } },
     });
@@ -586,7 +598,16 @@ export class WorkflowTemplateService {
       },
     });
 
-    return this.mapTransition(updated);
+    // Resolved against the SAVED value, not dto.requiredPermission — an
+    // update that leaves the field untouched must still report a pre-existing
+    // problem, otherwise editing an unrelated field would silently clear a
+    // warning the transition still deserves.
+    const permissionWarning = await this.resolvePermissionWarning(
+      updated.requiredPermission,
+      organizationId,
+    );
+
+    return { transition: this.mapTransition(updated), permissionWarning };
   }
 
   async removeTransition(id: string, organizationId: string, actorId: string): Promise<void> {
@@ -769,6 +790,50 @@ export class WorkflowTemplateService {
   // (organizationId: null) or a tenant-scoped row (custom value, or an
   // overrideLabel()-created override with its own id) — same "system OR
   // tenant" shape LookupService.getValues() itself resolves against.
+  // ACC-55 — resolves why a transition's requiredPermission may be
+  // unsatisfiable. Unlike every validate*() method above this is NOT a
+  // validator: it never throws and never blocks a write.
+  //
+  // It cannot be one. seedTemplates() writes 45 transitions carrying
+  // permission strings for modules that do not exist yet (workflow.seed.ts:66-81
+  // declares them deliberate forward references), so rejecting unknown values
+  // would break tenant provisioning itself — not just an admin's edit.
+  //
+  // Returns null when the permission is genuinely satisfiable, or when none is
+  // set at all (6 seeded transitions have no requiredPermission, which is a
+  // valid configuration meaning "gated by triggerCondition alone").
+  async resolvePermissionWarning(
+    requiredPermission: string | null | undefined,
+    organizationId: string,
+  ): Promise<TransitionPermissionWarning | null> {
+    if (!requiredPermission || requiredPermission.trim() === '') return null;
+
+    const [module, action] = requiredPermission.split(':');
+    if (!module || !action) return 'UNKNOWN_PERMISSION';
+
+    // Permission is a GLOBAL table — no organizationId column, one row per
+    // module:action shared by every tenant (only RolePermission is
+    // tenant-scoped, via Role). So this query is correctly unscoped, and must
+    // not be "fixed" to filter by organizationId: there is no such field.
+    const permission = await this.prisma.permission.findFirst({
+      where: { module, action },
+      select: { id: true },
+    });
+    if (!permission) return 'UNKNOWN_PERMISSION';
+
+    // Tenant-scoped through Role. isActive matters: a deactivated role's
+    // grants cannot satisfy triggerTransition(), which reads permissions via
+    // the actor's live role assignments.
+    const holdingRoles = await this.prisma.rolePermission.count({
+      where: {
+        permissionId: permission.id,
+        role: { organizationId, isActive: true },
+      },
+    });
+
+    return holdingRoles === 0 ? 'NO_ACTIVE_ROLE_HOLDS' : null;
+  }
+
   private async validateCommitteeRoleValueId(roleValueId: string, organizationId: string): Promise<void> {
     const value = await this.prisma.lookupValue.findFirst({
       where: {

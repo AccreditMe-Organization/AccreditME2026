@@ -52,7 +52,11 @@ const BASE_TRANSITION = {
   toStageId: 'stage-2',
   labelEn: 'Submit for Review',
   labelAr: 'إرسال للمراجعة',
-  requiredPermission: 'documents:submit',
+  // `as string | null` matches the real nullable column — without it,
+  // Partial<typeof BASE_TRANSITION> infers `string` and makeTransition()
+  // cannot express the "no permission required" case (6 seeded transitions),
+  // same shape as triggerUserId/triggerRoleId just below.
+  requiredPermission: 'documents:submit' as string | null,
   triggerCondition: 'ROLE_BASED',
   triggerUserId: null as string | null,
   triggerRoleId: null as string | null,
@@ -129,6 +133,17 @@ const mockPrisma = {
   orgUnit: {
     findFirst: jest.fn(),
   },
+  // ACC-55 — resolvePermissionWarning()'s two queries. Both transition write
+  // paths call it, so EVERY addTransition/updateTransition test needs these
+  // mocked or the call throws on undefined. beforeEach defaults them to the
+  // satisfiable case (known permission, at least one active role holds it),
+  // so tests that don't care about the warning are unaffected.
+  permission: {
+    findFirst: jest.fn(),
+  },
+  rolePermission: {
+    count: jest.fn(),
+  },
   $transaction: jest.fn((ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
@@ -149,6 +164,11 @@ describe('WorkflowTemplateService', () => {
     mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-a', organizationId: ORG_A });
     // Same default for assigneeCommitteeRoleValueId (ACC-28).
     mockPrisma.lookupValue.findFirst.mockResolvedValue({ id: 'lookup-chairman-id', organizationId: null });
+    // ACC-55 — default to the satisfiable case so resolvePermissionWarning()
+    // returns null and no pre-existing transition test has to care about it.
+    // The warning cases override these per-test.
+    mockPrisma.permission.findFirst.mockResolvedValue({ id: 'perm-id' });
+    mockPrisma.rolePermission.count.mockResolvedValue(1);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -1090,6 +1110,226 @@ describe('WorkflowTemplateService', () => {
           action: 'UPDATE',
           before: expect.objectContaining({ labelEn: BASE_TRANSITION.labelEn }),
           after: expect.objectContaining({ labelEn: 'Renamed' }),
+        }),
+      );
+    });
+  });
+
+  // ── resolvePermissionWarning (ACC-55) ────────────────────────────────────────
+
+  describe('permission warning on the transition write path', () => {
+    // Exercised through addTransition/updateTransition rather than by calling
+    // the resolver directly — the point of the feature is that a write both
+    // SUCCEEDS and reports, so testing the write is what proves it.
+    function stageLookupsSucceed(): void {
+      mockPrisma.workflowStage.findFirst
+        .mockResolvedValueOnce(makeStage({ id: 'stage-1', workflowTemplateId: 'template-1' }))
+        .mockResolvedValueOnce(makeStage({ id: 'stage-2', workflowTemplateId: 'template-1' }));
+    }
+
+    it('returns no warning when the permission exists and an active role holds it', async () => {
+      stageLookupsSucceed();
+      mockPrisma.workflowTransition.create.mockResolvedValue(
+        makeTransition({ requiredPermission: 'committees:manage' }),
+      );
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:manage' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBeNull();
+      expect(result.transition.requiredPermission).toBe('committees:manage');
+    });
+
+    it('returns UNKNOWN_PERMISSION when no Permission row matches, and still saves', async () => {
+      stageLookupsSucceed();
+      mockPrisma.permission.findFirst.mockResolvedValue(null);
+      mockPrisma.workflowTransition.create.mockResolvedValue(
+        makeTransition({ requiredPermission: 'committees:aprove' }),
+      );
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:aprove' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBe('UNKNOWN_PERMISSION');
+      // The whole point: a typo is reported, never rejected.
+      expect(mockPrisma.workflowTransition.create).toHaveBeenCalled();
+      expect(result.transition.requiredPermission).toBe('committees:aprove');
+    });
+
+    it('saves a deliberate forward reference to an unbuilt module, warning but not blocking', async () => {
+      // workflow.seed.ts:66-81 declares capa:*/incidents:manage as intentional
+      // forward references, and seedTemplates() writes 45 such transitions. A
+      // strict validator here would break tenant provisioning, not just an edit.
+      stageLookupsSucceed();
+      mockPrisma.permission.findFirst.mockResolvedValue(null);
+      mockPrisma.workflowTransition.create.mockResolvedValue(
+        makeTransition({ requiredPermission: 'capa:investigate' }),
+      );
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Start Investigation', labelAr: 'بدء التحقيق', triggerCondition: 'ROLE_BASED', requiredPermission: 'capa:investigate' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBe('UNKNOWN_PERMISSION');
+      expect(result.transition.requiredPermission).toBe('capa:investigate');
+    });
+
+    it('returns NO_ACTIVE_ROLE_HOLDS when the permission is real but ungranted', async () => {
+      stageLookupsSucceed();
+      mockPrisma.permission.findFirst.mockResolvedValue({ id: 'perm-id' });
+      mockPrisma.rolePermission.count.mockResolvedValue(0);
+      mockPrisma.workflowTransition.create.mockResolvedValue(
+        makeTransition({ requiredPermission: 'committees:approve' }),
+      );
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBe('NO_ACTIVE_ROLE_HOLDS');
+    });
+
+    it('counts only ACTIVE roles as holders', async () => {
+      stageLookupsSucceed();
+      mockPrisma.workflowTransition.create.mockResolvedValue(BASE_TRANSITION);
+
+      await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED', requiredPermission: 'documents:submit' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      // A deactivated role's grants cannot satisfy triggerTransition(), which
+      // reads permissions through the actor's live role assignments.
+      expect(mockPrisma.rolePermission.count).toHaveBeenCalledWith({
+        where: { permissionId: 'perm-id', role: { organizationId: ORG_A, isActive: true } },
+      });
+    });
+
+    it('returns no warning when no permission is required at all', async () => {
+      // 6 seeded transitions legitimately have none — gated by triggerCondition
+      // alone. That must not be reported as a problem.
+      stageLookupsSucceed();
+      mockPrisma.workflowTransition.create.mockResolvedValue(
+        makeTransition({ requiredPermission: null }),
+      );
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ANY_AUTHENTICATED' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBeNull();
+      expect(mockPrisma.permission.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('treats a malformed string with no colon as unknown without querying', async () => {
+      stageLookupsSucceed();
+      mockPrisma.workflowTransition.create.mockResolvedValue(
+        makeTransition({ requiredPermission: 'committees' }),
+      );
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Submit', labelAr: 'إرسال', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBe('UNKNOWN_PERMISSION');
+      expect(mockPrisma.permission.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('reports a pre-existing problem when an update leaves requiredPermission untouched', async () => {
+      // Resolving against the DTO instead of the saved row would let an edit
+      // to an unrelated field silently clear a warning the transition still
+      // deserves.
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ requiredPermission: 'committees:approve' }),
+      );
+      mockPrisma.workflowTransition.update.mockResolvedValue(
+        makeTransition({ labelEn: 'Renamed', requiredPermission: 'committees:approve' }),
+      );
+      mockPrisma.rolePermission.count.mockResolvedValue(0);
+
+      const result = await service.updateTransition(
+        'transition-1',
+        { labelEn: 'Renamed' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBe('NO_ACTIVE_ROLE_HOLDS');
+    });
+
+    it('clears requiredPermission when null is supplied, distinguishing it from undefined', async () => {
+      // The picker's "no permission required" option depends on this. Before
+      // ACC-55 the editor sent `raw.requiredPermission || undefined`, so an
+      // emptied field became undefined and the service's `!== undefined`
+      // guard skipped the write — clearing was impossible through the UI.
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransition.update.mockResolvedValue(
+        makeTransition({ requiredPermission: null }),
+      );
+
+      const result = await service.updateTransition(
+        'transition-1',
+        { requiredPermission: null } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { requiredPermission: null } }),
+      );
+      expect(result.transition.requiredPermission).toBeNull();
+      expect(result.permissionWarning).toBeNull();
+    });
+
+    it('leaves requiredPermission untouched when the field is absent', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransition.update.mockResolvedValue(makeTransition({ labelEn: 'Renamed' }));
+
+      await service.updateTransition('transition-1', { labelEn: 'Renamed' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { labelEn: 'Renamed' } }),
+      );
+    });
+
+    itEnforcesTenantIsolation('rolePermission holder count in resolvePermissionWarning', async () => {
+      // The holder count is the tenant-scoped half of this check. ORG_B holds
+      // the permission; ORG_A does not. Scoping it correctly means ORG_A gets
+      // the warning rather than inheriting ORG_B's grant.
+      mockPrisma.permission.findFirst.mockResolvedValue({ id: 'perm-id' });
+      mockPrisma.rolePermission.count.mockImplementation(({ where }: { where: { role: { organizationId: string } } }) =>
+        Promise.resolve(where.role.organizationId === ORG_B ? 1 : 0),
+      );
+      stageLookupsSucceed();
+      mockPrisma.workflowTransition.create.mockResolvedValue(
+        makeTransition({ requiredPermission: 'committees:approve' }),
+      );
+
+      const result = await service.addTransition(
+        { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'committees:approve' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(result.permissionWarning).toBe('NO_ACTIVE_ROLE_HOLDS');
+      expect(mockPrisma.rolePermission.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ role: expect.objectContaining({ organizationId: ORG_A }) }),
         }),
       );
     });

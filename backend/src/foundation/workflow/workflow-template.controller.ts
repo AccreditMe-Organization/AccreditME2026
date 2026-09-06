@@ -27,7 +27,10 @@ import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transit
 import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { IWorkflowTemplate } from './interfaces/workflow-template.interface';
 import { IWorkflowStage } from './interfaces/workflow-stage.interface';
-import { IWorkflowTransition, IWorkflowTransitionAction } from './interfaces/workflow-transition.interface';
+import {
+  IWorkflowTransitionAction,
+  IWorkflowTransitionWriteResult,
+} from './interfaces/workflow-transition.interface';
 
 // Route order is deliberate: static segments (transitions, stages) are
 // declared before the dynamic '/:id' routes below them — Nest matches routes
@@ -58,13 +61,20 @@ export class WorkflowTemplateController {
 
   // ── Transitions ──────────────────────────────────────────────────────────────
 
+  // ACC-55 — add/update return IWorkflowTransitionWriteResult
+  // ({ transition, permissionWarning }) rather than the bare transition. The
+  // warning is advice about a record that has already been saved, never a
+  // rejection: requiredPermission cannot be validated strictly, because
+  // seedTemplates() itself writes deliberate forward references to unbuilt
+  // modules (workflow.seed.ts:66-81). Reads are unchanged and still return
+  // the bare shape — resolving the warning costs two queries per transition.
   @Post('transitions')
   @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
   addTransition(
     @Body() dto: CreateWorkflowTransitionDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
-  ): Promise<IWorkflowTransition> {
+  ): Promise<IWorkflowTransitionWriteResult> {
     return this.workflowTemplateService.addTransition(dto, tenantId, actorId);
   }
 
@@ -75,7 +85,7 @@ export class WorkflowTemplateController {
     @Body() dto: UpdateWorkflowTransitionDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
-  ): Promise<IWorkflowTransition> {
+  ): Promise<IWorkflowTransitionWriteResult> {
     return this.workflowTemplateService.updateTransition(id, dto, tenantId, actorId);
   }
 

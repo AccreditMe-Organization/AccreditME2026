@@ -1,6 +1,6 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnChanges, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, OnChanges, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -17,8 +17,9 @@ import {
   WorkflowTransitionDto,
   CreateWorkflowTransitionDto,
   UpdateWorkflowTransitionDto,
+  TransitionPermissionWarning,
 } from '../../services/workflow-template.service';
-import { RoleService, RoleDto } from '../../../roles/services/role.service';
+import { RoleService, RoleDto, PermissionDto } from '../../../roles/services/role.service';
 import { WorkflowActionConfiguratorComponent } from '../workflow-action-configurator/workflow-action-configurator.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // ACC-42 Phase 4 — OverlaySelectComponent replaces p-select on these fields:
@@ -34,6 +35,37 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // to ACC-29's bug (editForm.reset() runs imperatively in openEdit(), no
 // separate *-form.component.ts involved).
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+
+// ACC-55 — hierarchy-mode shape for OverlaySelectComponent:
+//   optionGroupChildren="permissions"  optionGroupLabel="module"
+//   optionLabel="label"                optionValue="value"
+// A node with a non-empty `permissions` array renders as a group header; one
+// without renders as a selectable leaf.
+interface PermissionNode {
+  value: string;
+  label?: string;
+  module?: string;
+  permissions?: PermissionNode[];
+}
+
+// Module headings still need a unique value even though they can no longer be
+// selected ([groupsSelectable]="false"): @for tracks by
+// getOptionValue(flat.node), so 19 headings all resolving to undefined would
+// collide on the track key.
+//
+// toPermissionPayload() also refuses to persist a sentinel. That is now
+// defence in depth rather than the primary guard, and it is kept deliberately:
+// before ACC-55's live pass the sentinel was the ONLY protection, and it was
+// not enough — selecting a heading sent requiredPermission: null, silently
+// CLEARING an existing permission and widening who could fire the transition.
+// The real fix is that CdkOption now refuses the click and the keyboard; this
+// stays so a future template that forgets [groupsSelectable]="false" degrades
+// to a no-op instead of quietly stripping a permission gate.
+const GROUP_SENTINEL_PREFIX = '__module__:';
+
+// The picker's explicit "no permission required" choice. Distinct from the
+// sentinel: this one IS meant to be selected, and persists as null.
+const NO_PERMISSION_VALUE = '';
 
 const TRIGGER_CONDITIONS = [
   { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
@@ -193,9 +225,29 @@ const TRIGGER_CONDITIONS = [
             <p-message severity="info" [text]="'workflow.assigneePoolHelp' | translate" />
           }
 
+          <!--
+            ACC-55 — grouped picker replaces the free-text input. 72 strings
+            across 19 modules, read from GET /roles/permissions (the real
+            source), so a typo can no longer silently create a permanently
+            unfireable transition.
+          -->
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-            <input pInputText formControlName="requiredPermission" />
+            <app-overlay-select
+              formControlName="requiredPermission"
+              [options]="permissionGroups()"
+              optionLabel="label"
+              optionValue="value"
+              optionGroupLabel="module"
+              optionGroupChildren="permissions"
+              [groupsSelectable]="false"
+              [placeholder]="'workflow.noPermissionRequired' | translate"
+            />
+            @if (permissionsLoadFailed()) {
+              <small class="text-[var(--am-text-secondary)]">
+                {{ 'workflow.permissionListUnavailable' | translate }}
+              </small>
+            }
           </div>
 
           <div class="flex items-center gap-2">
@@ -220,7 +272,7 @@ const TRIGGER_CONDITIONS = [
               severity="secondary"
               [text]="true"
               type="button"
-              (onClick)="showAddDialog.set(false)"
+              (onClick)="onAddDialogVisibleChange(false)"
             />
             <p-button
               type="submit"
@@ -232,7 +284,8 @@ const TRIGGER_CONDITIONS = [
         </form>
       </ng-template>
       <app-edit-dialog
-        [(visible)]="showAddDialog"
+        [visible]="showAddDialog()"
+        (visibleChange)="onAddDialogVisibleChange($event)"
         [header]="'workflow.addTransition' | translate"
         [content]="addFormTpl"
         width="560px"
@@ -266,7 +319,39 @@ const TRIGGER_CONDITIONS = [
 
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-            <input pInputText formControlName="requiredPermission" />
+            <app-overlay-select
+              formControlName="requiredPermission"
+              [options]="permissionGroups()"
+              optionLabel="label"
+              optionValue="value"
+              optionGroupLabel="module"
+              optionGroupChildren="permissions"
+              [groupsSelectable]="false"
+              [placeholder]="'workflow.noPermissionRequired' | translate"
+            />
+            @if (permissionsLoadFailed()) {
+              <small class="text-[var(--am-text-secondary)]">
+                {{ 'workflow.permissionListUnavailable' | translate }}
+              </small>
+            }
+            <!--
+              ACC-55 — the warning sits in normal flow directly under the
+              field it is about, deliberately NOT in a sticky footer. ACC-54
+              tried that on the stage form and it regressed: sticky content
+              overlays what scrolls beneath it, so the panel covered the very
+              picker it was advising on. Here it pushes content instead.
+            -->
+            @if (editPermissionWarning(); as warning) {
+              <p-message
+                severity="warn"
+                [text]="
+                  (warning === 'UNKNOWN_PERMISSION'
+                    ? 'workflow.permissionUnknownWarning'
+                    : 'workflow.permissionNoHolderWarning'
+                  ) | translate
+                "
+              />
+            }
           </div>
 
           <div class="flex items-center gap-2">
@@ -291,7 +376,7 @@ const TRIGGER_CONDITIONS = [
               severity="secondary"
               [text]="true"
               type="button"
-              (onClick)="showEditDialog.set(false)"
+              (onClick)="onEditDialogVisibleChange(false)"
             />
             <p-button
               type="submit"
@@ -303,7 +388,8 @@ const TRIGGER_CONDITIONS = [
         </form>
       </ng-template>
       <app-edit-dialog
-        [(visible)]="showEditDialog"
+        [visible]="showEditDialog()"
+        (visibleChange)="onEditDialogVisibleChange($event)"
         [header]="'workflow.editTransition' | translate"
         [content]="editFormTpl"
         width="560px"
@@ -342,9 +428,163 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   private readonly roleService = inject(RoleService);
   private readonly fb = inject(FormBuilder);
   private readonly confirmationService = inject(ConfirmationService);
+  // ACC-55 — group labels are built inside a computed, outside the template,
+  // so TranslatePipe cannot reach them. instant() matches the established
+  // precedent in org-unit-head-panel.component.ts.
+  private readonly translateService = inject(TranslateService);
 
   readonly triggerConditions = TRIGGER_CONDITIONS;
   readonly roles = signal<RoleDto[]>([]);
+
+  // ── ACC-55: requiredPermission picker ──────────────────────────────────────
+  // 72 permission strings across 19 modules. Flat that is unusable, and
+  // OverlaySelectComponent has no filter-search (a known, deliberate gap —
+  // CLAUDE.md, ACC-42), so the picker uses hierarchy mode: one group per
+  // module, 2-8 options each.
+  readonly allPermissions = signal<PermissionDto[]>([]);
+  readonly permissionsLoadFailed = signal(false);
+  readonly editPermissionWarning = signal<TransitionPermissionWarning | null>(null);
+
+  // A transition may hold a permission that is not in the known list — 45
+  // seeded transitions across every tenant legitimately do (capa:investigate,
+  // capa:approve, capa:close, incidents:manage: deliberate forward references
+  // to unbuilt modules, workflow.seed.ts:66-81), and a typo looks identical.
+  // Either way the value MUST survive a round-trip through this dialog: it is
+  // shown as a real, selected option in its own group rather than silently
+  // dropped, so opening a transition and saving it unchanged cannot rewrite
+  // its permission.
+  //
+  // This is the ONLY way an unknown value can be present. There is
+  // deliberately no free-text escape hatch for entering a NEW one, and that
+  // asymmetry is the design, not a gap (live-verified, ACC-55 Test 4):
+  //   - existing unknown values stay fully editable, via this mechanism;
+  //   - new unknown values cannot be created through the UI at all.
+  // Allowing free entry and warning afterward would preserve the exact defect
+  // this ticket exists to fix, just behind an extra click. And adding a
+  // genuinely new forward reference means editing permissions.ts and
+  // workflow.seed.ts — not something a tenant admin does in a dialog.
+  private readonly extraPermissionValues = signal<string[]>([]);
+
+  readonly permissionGroups = computed<PermissionNode[]>(() => {
+    // Establishes the dependency that instant() alone does not. The two
+    // labels below are resolved imperatively, so without reading a signal
+    // that changes on a language switch this computed would never
+    // re-evaluate — leaving "No permission required" and the not-defined
+    // heading stuck in the previous language for the rest of the session.
+    // TranslateService.currentLang is a real Signal (LanguageService relies
+    // on the same fact), so reading it here is enough.
+    this.translateService.currentLang();
+
+    // Same Map<string, PermissionDto[]> shape role-permission-matrix already
+    // uses, rather than a second grouping idiom for the same data.
+    const byModule = new Map<string, PermissionNode[]>();
+    for (const perm of this.allPermissions()) {
+      const key = `${perm.module}:${perm.action}`;
+      const list = byModule.get(perm.module) ?? [];
+      list.push({ value: key, label: key });
+      byModule.set(perm.module, list);
+    }
+
+    const nodes: PermissionNode[] = [
+      // Leaf, not a group — no `permissions` array, so it stays selectable
+      // and sits at the top where a configurer looks first.
+      {
+        value: NO_PERMISSION_VALUE,
+        label: this.translateService.instant('workflow.noPermissionRequired'),
+      },
+      ...[...byModule.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([module, permissions]) => ({
+          value: `${GROUP_SENTINEL_PREFIX}${module}`,
+          module,
+          permissions,
+        })),
+    ];
+
+    // Values with no matching Permission row get their own group, kept last
+    // and labelled as not-defined, so the configurer can see the value is
+    // unknown without the picker having to guess whether that is a deliberate
+    // forward reference or a typo.
+    const extras = this.extraPermissionValues();
+    if (extras.length > 0) {
+      nodes.push({
+        value: `${GROUP_SENTINEL_PREFIX}__unknown__`,
+        module: this.translateService.instant('workflow.permissionNotDefined'),
+        permissions: extras.map((value) => ({ value, label: value })),
+      });
+    }
+    return nodes;
+  });
+
+  // ── ACC-55: deferred parent notification ───────────────────────────────────
+  // `changed` triggers workflow-stage-list's loadTemplate(), which replaces
+  // the stages array. p-table then rebuilds the expanded row's embedded view,
+  // DESTROYING this component and recreating it — resetting showEditDialog and
+  // editPermissionWarning to their initial values.
+  //
+  // That is why the warning flashed and vanished on ACC-55's live pass, on
+  // both the add and edit paths. The dialog logic was already correct; the
+  // component holding it was being torn down underneath. Verified directly:
+  // after a reload the component instance identity changes and both signals
+  // are back at their defaults.
+  //
+  // So a save that produced a warning does NOT notify the parent. The refresh
+  // is deferred until the dialog actually closes, by which point there is no
+  // surface left to destroy. The list is briefly stale while the dialog is
+  // open — the correct trade, since the user is looking at the dialog, not the
+  // row behind it.
+  private readonly refreshPending = signal(false);
+
+  private notifyParent(): void {
+    this.refreshPending.set(false);
+    this.changed.emit();
+  }
+
+  // Both dialogs route their visibility through here rather than binding
+  // [(visible)] directly, so EVERY way out — Cancel, the X, Escape, an
+  // outside click — flushes a deferred refresh. A pending refresh must not be
+  // strandable by any exit path, or the list stays stale until something else
+  // happens to reload it.
+  onAddDialogVisibleChange(visible: boolean): void {
+    this.showAddDialog.set(visible);
+    if (!visible) this.onDialogClosed();
+  }
+
+  onEditDialogVisibleChange(visible: boolean): void {
+    this.showEditDialog.set(visible);
+    if (!visible) this.onDialogClosed();
+  }
+
+  private onDialogClosed(): void {
+    if (!this.refreshPending()) return;
+    this.notifyParent();
+  }
+
+  // Registers a value so it round-trips even when it is not a known
+  // permission. No-op for a value already in the known list.
+  private trackExtraPermission(value: string | null): void {
+    if (!value) return;
+    const known = this.allPermissions().some((p) => `${p.module}:${p.action}` === value);
+    if (known) return;
+    if (this.extraPermissionValues().includes(value)) return;
+    this.extraPermissionValues.update((v) => [...v, value]);
+  }
+
+  // The form control holds '' for "no permission required"; the API needs
+  // null to actually CLEAR it (undefined means "leave unchanged" — see the
+  // clearing fix commit). Keeping the control on '' avoids null-vs-empty
+  // churn in the template.
+  //
+  // Also the guard that makes a module header inert: hierarchy mode renders
+  // headers as selectable rows, so a header's sentinel must never reach the
+  // API. Treating it as "no permission" is the safe reading — a header is not
+  // a permission, and silently persisting '__module__:committees' would
+  // create exactly the unfireable transition this ticket exists to prevent.
+  private toPermissionPayload(raw: string | null | undefined): string | null {
+    if (!raw || raw.trim() === '') return null;
+    if (raw.startsWith(GROUP_SENTINEL_PREFIX)) return null;
+    return raw;
+  }
 
   readonly showAddDialog = signal(false);
   readonly showEditDialog = signal(false);
@@ -378,6 +618,34 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
 
   ngOnInit(): void {
     this.roleService.listRoles().subscribe({ next: (roles) => this.roles.set(roles) });
+    this.loadPermissions();
+  }
+
+  // Reuses RoleService.listAllPermissions() (GET /roles/permissions), the
+  // same call role-permission-matrix makes — the real source, not a
+  // hardcoded duplicate of permissions.ts.
+  //
+  // On failure the picker degrades to accepting whatever is already there
+  // rather than showing an empty list that looks like "no permissions
+  // exist". The endpoint requires roles:view while this screen requires
+  // workflows:manage; every real role holds both today, but a
+  // workflows-only role would 403 here (recorded as a known limitation).
+  private loadPermissions(): void {
+    this.roleService.listAllPermissions().subscribe({
+      next: (permissions) => {
+        this.allPermissions.set(permissions);
+        this.permissionsLoadFailed.set(false);
+        // Re-register every value already in use: this runs after the parent
+        // has supplied `transitions`, so a forward reference like
+        // capa:approve becomes selectable rather than being dropped the
+        // first time its dialog opens.
+        for (const t of this.transitions) this.trackExtraPermission(t.requiredPermission);
+      },
+      error: () => {
+        this.allPermissions.set([]);
+        this.permissionsLoadFailed.set(true);
+      },
+    });
   }
 
   ngOnChanges(): void {
@@ -405,6 +673,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
 
   openEdit(transition: WorkflowTransitionDto): void {
     this.editingTransition.set(transition);
+    // Before resetting the form: a value the picker does not know about must
+    // become a selectable option first, or the control would bind to a value
+    // with no matching option and render blank — which then saves back as
+    // "cleared", silently destroying a deliberate forward reference.
+    this.trackExtraPermission(transition.requiredPermission);
     this.editForm.reset({
       labelEn: transition.labelEn,
       labelAr: transition.labelAr,
@@ -414,6 +687,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       validatorConfig: transition.validatorConfig ? JSON.stringify(transition.validatorConfig) : '',
     });
     this.saveError.set(null);
+    this.editPermissionWarning.set(null);
     this.showEditDialog.set(true);
   }
 
@@ -443,7 +717,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       labelEn: raw.labelEn!,
       labelAr: raw.labelAr!,
       triggerCondition: raw.triggerCondition!,
-      ...(raw.requiredPermission ? { requiredPermission: raw.requiredPermission } : {}),
+      // Omitted entirely when blank — on CREATE the column defaults to null,
+      // so there is nothing to clear and sending null would be noise.
+      ...(this.toPermissionPayload(raw.requiredPermission)
+        ? { requiredPermission: this.toPermissionPayload(raw.requiredPermission)! }
+        : {}),
       ...(raw.triggerCondition === 'ROLE_BASED' && raw.triggerRoleId
         ? { triggerRoleId: raw.triggerRoleId }
         : {}),
@@ -451,10 +729,23 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     };
 
     this.workflowTemplateService.addTransition(dto).subscribe({
-      next: () => {
+      next: (result) => {
         this.saving.set(false);
         this.showAddDialog.set(false);
-        this.changed.emit();
+
+        // The transition already exists by now, so the add dialog cannot stay
+        // open — re-submitting would create a second one. On a warning we
+        // switch to the EDIT dialog for the record just created (ACC-54's
+        // stage form does the same create→edit switch).
+        if (result.permissionWarning) {
+          this.openEdit(result.transition);
+          this.editPermissionWarning.set(result.permissionWarning);
+          // Saved, but the parent must not refresh yet — doing so would
+          // destroy the dialog we just opened to show this warning.
+          this.refreshPending.set(true);
+        } else {
+          this.notifyParent();
+        }
       },
       error: (err: unknown) => {
         this.saveError.set(extractErrorMessage(err, 'Save failed'));
@@ -483,16 +774,29 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       labelEn: raw.labelEn!,
       labelAr: raw.labelAr!,
       triggerCondition: raw.triggerCondition!,
-      requiredPermission: raw.requiredPermission || undefined,
+      // null, not undefined — the picker's "no permission required" option
+      // must actually CLEAR the field. `|| undefined` meant "leave
+      // unchanged", so clearing was impossible (fixed alongside ACC-55).
+      requiredPermission: this.toPermissionPayload(raw.requiredPermission),
       isApprovalPath: raw.isApprovalPath!,
       ...(validatorConfig ? { validatorConfig } : {}),
     };
 
     this.workflowTemplateService.updateTransition(transition.id, dto).subscribe({
-      next: () => {
+      next: (result) => {
         this.saving.set(false);
-        this.showEditDialog.set(false);
-        this.changed.emit();
+        this.editPermissionWarning.set(result.permissionWarning);
+
+        if (!result.permissionWarning) {
+          this.showEditDialog.set(false);
+          this.notifyParent();
+        } else {
+          // Dialog stays open so the warning is readable — and crucially the
+          // parent is NOT notified yet (see notifyParent()).
+          this.editingTransition.set(result.transition);
+          this.trackExtraPermission(result.transition.requiredPermission);
+          this.refreshPending.set(true);
+        }
       },
       error: (err: unknown) => {
         this.saveError.set(extractErrorMessage(err, 'Save failed'));

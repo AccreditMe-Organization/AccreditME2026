@@ -61,6 +61,29 @@ export interface WorkflowTransitionDto {
   actions?: WorkflowTransitionActionDto[];
 }
 
+// ACC-55 — why a saved transition's requiredPermission may not do what the
+// configurer intended. Always advisory: the write has already succeeded by
+// the time this arrives.
+//
+//   UNKNOWN_PERMISSION    no permission with this module:action exists.
+//                         Deliberately does not distinguish a typo from a
+//                         deliberate forward reference — 45 seeded
+//                         transitions legitimately carry strings for unbuilt
+//                         modules (capa:*, incidents:manage), and nothing at
+//                         write time can tell those from 'committees:aprove'.
+//   NO_ACTIVE_ROLE_HOLDS  the permission is real, but no active role in this
+//                         tenant grants it, so nobody can ever fire the
+//                         transition.
+export type TransitionPermissionWarning = 'UNKNOWN_PERMISSION' | 'NO_ACTIVE_ROLE_HOLDS';
+
+// Returned by addTransition/updateTransition only. Reads still return the
+// bare WorkflowTransitionDto — resolving the warning costs two backend
+// queries per transition, and getTemplate() returns a whole template's worth.
+export interface WorkflowTransitionWriteResult {
+  transition: WorkflowTransitionDto;
+  permissionWarning: TransitionPermissionWarning | null;
+}
+
 export interface WorkflowTransitionActionDto {
   id: string;
   workflowTransitionId: string;
@@ -118,7 +141,11 @@ export interface CreateWorkflowTransitionDto {
   toStageId: string;
   labelEn: string;
   labelAr: string;
-  requiredPermission?: string;
+  // ACC-55 — `| null` clears a previously-set permission (the picker's
+  // "no permission required" option). The backend distinguishes null from
+  // undefined via `!== undefined`, so `|| undefined` would silently mean
+  // "leave unchanged" and make clearing impossible.
+  requiredPermission?: string | null;
   triggerCondition: string;
   triggerUserId?: string;
   triggerRoleId?: string;
@@ -128,7 +155,11 @@ export interface CreateWorkflowTransitionDto {
 export interface UpdateWorkflowTransitionDto {
   labelEn?: string;
   labelAr?: string;
-  requiredPermission?: string;
+  // ACC-55 — `| null` clears a previously-set permission (the picker's
+  // "no permission required" option). The backend distinguishes null from
+  // undefined via `!== undefined`, so `|| undefined` would silently mean
+  // "leave unchanged" and make clearing impossible.
+  requiredPermission?: string | null;
   triggerCondition?: string;
   triggerUserId?: string;
   triggerRoleId?: string;
@@ -190,12 +221,20 @@ export class WorkflowTemplateService {
 
   // ── Transitions ──────────────────────────────────────────────────────────────
 
-  addTransition(dto: CreateWorkflowTransitionDto): Observable<WorkflowTransitionDto> {
-    return this.http.post<WorkflowTransitionDto>(`${this.base}/transitions`, dto);
+  // ACC-55 — both return { transition, permissionWarning }. The permission
+  // LIST itself is not fetched here: RoleService.listAllPermissions() already
+  // calls GET /roles/permissions and is already consumed by
+  // role-permission-matrix, so the editor reuses that rather than adding a
+  // second call to the same endpoint from a second service.
+  addTransition(dto: CreateWorkflowTransitionDto): Observable<WorkflowTransitionWriteResult> {
+    return this.http.post<WorkflowTransitionWriteResult>(`${this.base}/transitions`, dto);
   }
 
-  updateTransition(id: string, dto: UpdateWorkflowTransitionDto): Observable<WorkflowTransitionDto> {
-    return this.http.patch<WorkflowTransitionDto>(`${this.base}/transitions/${id}`, dto);
+  updateTransition(
+    id: string,
+    dto: UpdateWorkflowTransitionDto,
+  ): Observable<WorkflowTransitionWriteResult> {
+    return this.http.patch<WorkflowTransitionWriteResult>(`${this.base}/transitions/${id}`, dto);
   }
 
   removeTransition(id: string): Observable<void> {

@@ -1750,6 +1750,65 @@ Prisma Studio.
   (`prisma migrate dev`), not left as dead schema. Full audit trail:
   SYSTEM-REFERENCE.md Section 2.1.
 
+## Key Architecture Decisions (ACC-55)
+
+- **A save that returns a WARNING must keep its surface alive and visible
+  until the user dismisses it — including not triggering a parent refresh
+  that destroys that surface.** This is now a required contract for every
+  non-blocking config-time warning, not advice. Both halves are load-bearing;
+  the second half is the one nobody knew to check, and it is what broke
+  ACC-55 in live testing.
+  Three occurrences, and they do NOT share one mechanism — worth knowing
+  before anyone tries to extract a single helper for them:
+  - **ACC-43 (`position-form`)** and **ACC-54 (`workflow-stage-form`)** share
+    the FIRST mechanism: the dialog closed itself immediately on save, so the
+    warning rendered for a fraction of a second. Both fixed the same way —
+    keep the dialog open, and (for a create) switch create→edit so
+    re-submitting cannot make a second record.
+  - **ACC-55 (`workflow-transition-editor`)** is a DIFFERENT mechanism, and
+    is why this note exists. The dialog logic was already correct — verified
+    in isolation, it stayed open and rendered the warning. The component
+    holding it was destroyed underneath: it emitted `changed`, the parent
+    (`workflow-stage-list`) ran `loadTemplate()`, the `stages()` array was
+    replaced, `p-table` rebuilt the expanded row's embedded view, and the
+    editor was recreated with every dialog signal back at its default.
+    Fixed by deferring `changed.emit()` until the dialog actually closes
+    (`refreshPending` + a `notifyParent()` flush on every exit route). The
+    list is briefly stale while the dialog is open — the correct trade, since
+    the user is looking at the dialog, not the row behind it.
+  An "always keep the dialog open on warning" helper would have prevented the
+  first two and NOT the third. So: treat this as a contract to check against,
+  not a component to reuse. When adding any new warning-returning save, verify
+  BOTH that the surface stays open AND that nothing it triggers destroys the
+  surface — the second needs a parent+child test, not a component test
+  (`workflow-stage-list.integration.spec.ts` is the worked example).
+- **`OverlaySelectComponent.groupsSelectable`** (default `true`) — opt-in
+  control over whether group/branch nodes in hierarchy mode are themselves
+  valid choices. Default preserves ACC-42's deliberate, separately-tested
+  behavior ("every node is individually selectable regardless of depth or
+  branch/leaf status"), which `org-unit-form` genuinely needs: a parent unit
+  IS a valid parent. But that is a property of THAT data, not of hierarchies
+  in general. A grouped list whose groups are pure categories needs the
+  opposite, and getting it wrong is not cosmetic: in ACC-55 the permission
+  picker's module headings were selectable, and selecting one saved
+  `requiredPermission: null` — silently CLEARING the transition's permission
+  gate and widening who could fire it. Implemented via CdkOption's own
+  `cdkOptionDisabled` rather than a hand-rolled click guard, so pointer and
+  keyboard agree for free (`CdkListbox` applies
+  `skipPredicate(option => option.disabled)` to its `ActiveDescendantKeyManager`
+  — verified in `@angular/cdk/listbox` source, not assumed). Set
+  `[groupsSelectable]="false"` on any picker whose groups are categories.
+- **A label resolved with `TranslateService.instant()` inside a `computed()`
+  needs an explicit dependency on `translate.currentLang()`**, or it will
+  never re-evaluate on a language switch and will stay stuck in the previous
+  language for the rest of the session. `instant()` is a plain function call,
+  not a signal read. `currentLang` IS a real signal (`LanguageService` relies
+  on the same fact), so reading it inside the computed is the whole fix.
+  Prefer `TranslatePipe` in the template; `instant()` is only for labels built
+  outside it (option lists, `ConfirmationService` messages).
+
+---
+
 ## Open / Deferred Items
 
 - **Resend email domain (`accreditme.com`) is not verified** in the
