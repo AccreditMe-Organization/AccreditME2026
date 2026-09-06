@@ -1272,6 +1272,41 @@ describe('WorkflowTemplateService', () => {
       expect(result.permissionWarning).toBe('NO_ACTIVE_ROLE_HOLDS');
     });
 
+    it('clears requiredPermission when null is supplied, distinguishing it from undefined', async () => {
+      // The picker's "no permission required" option depends on this. Before
+      // ACC-55 the editor sent `raw.requiredPermission || undefined`, so an
+      // emptied field became undefined and the service's `!== undefined`
+      // guard skipped the write — clearing was impossible through the UI.
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransition.update.mockResolvedValue(
+        makeTransition({ requiredPermission: null }),
+      );
+
+      const result = await service.updateTransition(
+        'transition-1',
+        { requiredPermission: null } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { requiredPermission: null } }),
+      );
+      expect(result.transition.requiredPermission).toBeNull();
+      expect(result.permissionWarning).toBeNull();
+    });
+
+    it('leaves requiredPermission untouched when the field is absent', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransition.update.mockResolvedValue(makeTransition({ labelEn: 'Renamed' }));
+
+      await service.updateTransition('transition-1', { labelEn: 'Renamed' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { labelEn: 'Renamed' } }),
+      );
+    });
+
     itEnforcesTenantIsolation('rolePermission holder count in resolvePermissionWarning', async () => {
       // The holder count is the tenant-scoped half of this check. ORG_B holds
       // the permission; ORG_A does not. Scoping it correctly means ORG_A gets

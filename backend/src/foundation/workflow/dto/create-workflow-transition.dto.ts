@@ -33,9 +33,15 @@ export class CreateWorkflowTransitionDto {
   @MaxLength(100)
   labelAr!: string;
 
+  // ACC-55 — `| null` is a genuine, distinct value here, not just "absent":
+  // null explicitly CLEARS a previously-set permission, which the service
+  // distinguishes from "not provided" via its own `!== undefined` check.
+  // Same reasoning as assigneeCommitteeRoleValueId on the stage DTOs.
+  // @IsOptional() skips validation for null (verified empirically, not
+  // assumed), so null passes through while a non-string is still rejected.
   @IsString()
   @IsOptional()
-  requiredPermission?: string;
+  requiredPermission?: string | null;
 
   @IsIn(WORKFLOW_TRIGGER_CONDITIONS)
   triggerCondition!: (typeof WORKFLOW_TRIGGER_CONDITIONS)[number];

@@ -141,7 +141,11 @@ export interface CreateWorkflowTransitionDto {
   toStageId: string;
   labelEn: string;
   labelAr: string;
-  requiredPermission?: string;
+  // ACC-55 — `| null` clears a previously-set permission (the picker's
+  // "no permission required" option). The backend distinguishes null from
+  // undefined via `!== undefined`, so `|| undefined` would silently mean
+  // "leave unchanged" and make clearing impossible.
+  requiredPermission?: string | null;
   triggerCondition: string;
   triggerUserId?: string;
   triggerRoleId?: string;
@@ -151,7 +155,11 @@ export interface CreateWorkflowTransitionDto {
 export interface UpdateWorkflowTransitionDto {
   labelEn?: string;
   labelAr?: string;
-  requiredPermission?: string;
+  // ACC-55 — `| null` clears a previously-set permission (the picker's
+  // "no permission required" option). The backend distinguishes null from
+  // undefined via `!== undefined`, so `|| undefined` would silently mean
+  // "leave unchanged" and make clearing impossible.
+  requiredPermission?: string | null;
   triggerCondition?: string;
   triggerUserId?: string;
   triggerRoleId?: string;
