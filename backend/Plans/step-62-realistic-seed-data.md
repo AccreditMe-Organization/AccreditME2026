@@ -1,0 +1,525 @@
+# ACC-62 — Realistic Seed Data: Two Tenants
+
+**Status:** PLAN ONLY — no code written, no data changed.
+**Branch:** `feature/ACC-62-realistic-seed-data`
+**Depends on:** the investigation recorded in this document's Section 5 and
+Section 7 (Pending Discussion #1), which is a hard blocker.
+
+---
+
+## 0. What this replaces, and what it does not
+
+Today the database holds 4 organizations: the platform org, `Demo
+Organization` (22 users, 8 committees, 1,226 audit rows), and two leftover
+test tenants (`ACC45 Verify Temp`, `ACC46 P2 Verify`) created during earlier
+verification work and never cleaned up. Between them: 45 users, 2,365 audit
+rows, 21 org units, 8 committees.
+
+None of it is realistic. `Demo Organization` has a flat-ish structure, users
+named after test scenarios, and committees created to exercise a specific
+ticket. Nothing in it resembles what a real customer's tenant looks like, so
+nothing in it is useful for a demo, for persona testing, or for finding the
+class of bug that only appears at real organizational depth.
+
+This plan replaces all of it with two tenants that look like real
+customers — one hospital, one university — and deliberately encodes four
+edge cases that are otherwise only reachable by hand-editing the database.
+
+**Not in scope:** any change to `TenantService.bootstrap()` or the four
+seeders it calls. This layers on top of them (Section 6).
+
+---
+
+## 1. The two tenants
+
+Both names are **fictional**, chosen to be plausible for the GCC/MENA market
+without implying a real institution or customer.
+
+### Tenant A — Al Nakheel Specialist Hospital (`al-nakheel`)
+
+Country: SA. 21 org units across 4 levels (root + 3, as required).
+
+```
+Al Nakheel Specialist Hospital                    [NAKHEEL]        root
+├── Medical Affairs                               [MED]            department
+│   ├── Internal Medicine Ward                    [MED-IM]         ward
+│   │   ├── Cardiology Unit                       [MED-IM-CAR]     unit
+│   │   └── Endocrinology Unit                    [MED-IM-END]     unit
+│   ├── Critical Care Ward                        [MED-CC]         ward
+│   │   ├── Adult ICU                             [MED-CC-AIC]     unit
+│   │   └── Neonatal ICU                          [MED-CC-NIC]     unit   ← EDGE CASE 1
+│   └── Surgical Ward                             [MED-SU]         ward
+│       └── Operating Theatres Unit               [MED-SU-OT]      unit
+├── Nursing Affairs                               [NUR]            department
+│   ├── Inpatient Nursing Ward                    [NUR-IP]         ward
+│   │   └── Ward Nursing Unit                     [NUR-IP-WN]      unit
+│   └── Outpatient Nursing Ward                   [NUR-OP]         ward
+├── Quality & Patient Safety                      [QPS]            department
+│   ├── Accreditation Section                     [QPS-ACC]        section
+│   └── Infection Control Section                 [QPS-IC]         section
+└── Clinical Support Services                     [CSS]            department
+    ├── Pharmacy Section                          [CSS-PHR]        section  ← EDGE CASE 3
+    └── Laboratory Section                        [CSS-LAB]        section
+        └── Microbiology Unit                     [CSS-LAB-MIC]    unit
+```
+
+**A deliberate deviation from the brief, flagged for approval.** The brief
+says the hospital runs Departments → Wards → Units. That is right for
+*clinical* departments and wrong for administrative ones — no real hospital
+has a "Quality & Patient Safety Ward". So clinical departments (Medical,
+Nursing) use Ward at level 2, and administrative ones (Quality, Clinical
+Support) use Section. If you would rather have it uniform, say so and I will
+make every level-2 unit a Ward.
+
+`OrgUnit.type` is a free-text `String?` with **no validation anywhere** — the
+`org_unit_type` SYSTEM lookup category exists (6 values: department,
+division, unit, section, administration, office) but has **zero consumers in
+backend or frontend**, confirmed by grep. So `ward`, `faculty`, `school` and
+`program` can be used freely; they simply will not match a lookup value.
+Noted rather than worked around — see Pending Discussion #4.
+
+### Tenant B — Al Manara University (`al-manara`)
+
+Country: AE. 19 org units across 4 levels.
+
+```
+Al Manara University                              [MANARA]         root
+├── Faculty of Engineering                        [ENG]            faculty
+│   ├── School of Civil & Environmental Eng.      [ENG-CIV]        school
+│   │   ├── BSc Civil Engineering                 [ENG-CIV-BSC]    program
+│   │   └── MSc Environmental Engineering         [ENG-CIV-MSC]    program
+│   └── School of Computing                       [ENG-CMP]        school
+│       ├── BSc Computer Science                  [ENG-CMP-CS]     program
+│       └── BSc Software Engineering              [ENG-CMP-SE]     program
+├── Faculty of Health Sciences                    [HS]             faculty
+│   ├── School of Nursing                         [HS-NUR]         school
+│   │   └── BSc Nursing                           [HS-NUR-BSN]     program
+│   └── School of Pharmacy                        [HS-PHA]         school
+│       └── PharmD Program                        [HS-PHA-PD]      program
+├── Faculty of Business                           [BUS]            faculty
+│   └── School of Management                      [BUS-MGT]        school
+│       └── BBA Program                           [BUS-MGT-BBA]    program
+└── Deanship of Quality & Accreditation           [DQA]            deanship
+    ├── Accreditation Office                      [DQA-ACC]        office
+    └── Institutional Effectiveness Office        [DQA-IE]         office
+```
+
+Codes are unique per tenant, which is all the schema requires
+(`@@unique([organizationId, code])`), so both tenants may reuse a prefix
+without collision.
+
+---
+
+## 2. The people
+
+`User.name` is a **single field** (there is no first/last split), and
+uniqueness is `@@unique([organizationId, email])` — **names are not unique**,
+which is what makes Edge Case 4 expressible.
+
+### 2.1 A prerequisite: head-conferring positions
+
+`DEFAULT_POSITIONS` seeds 10 deliberately industry-agnostic titles (Director
+→ Staff). **Only `Director` has `isUnitHeadPosition: true`.** Since ACC-40
+made positions org-wide, a unit's head is derived as *"an ACTIVE user whose
+`primaryOrgUnitId` is this unit and whose position has
+`isUnitHeadPosition: true`"* — so with the defaults alone, the head of a
+Faculty, a School and a Program would all have to hold the single title
+"Director".
+
+That is unrealistic and makes the seed useless as a demo. **Proposal:** each
+tenant additionally seeds its own head-conferring vocabulary, which is
+possible because positions are per-tenant (`@@unique([organizationId,
+nameEn])`):
+
+| Tenant | Added positions (all `isUnitHeadPosition: true`, `isSingleAssignee: true`) | Grade |
+|---|---|---|
+| Hospital | Chief Executive Officer | 12 |
+| Hospital | Chief Medical Officer | 11 |
+| Hospital | Head of Ward | 8 |
+| Hospital | Unit Head | 6 |
+| University | Rector | 12 |
+| University | Dean | 11 |
+| University | Head of School | 8 |
+| University | Programme Director | 6 |
+
+The schema enforces the `isUnitHeadPosition → isSingleAssignee` pairing, and
+`seedDefaultPositions()` writes via direct `prisma.create()` bypassing
+`createPosition()`, so **the fixture data must satisfy that invariant
+itself** — the seeder's own comment says exactly this. Flagged as Pending
+Discussion #2 because it adds positions the product does not ship by default.
+
+### 2.2 Al Nakheel Specialist Hospital — 21 people
+
+| # | Name | Position | Org unit | Reports to |
+|---|---|---|---|---|
+| 1 | Dr. Hessa Al-Dosari | Chief Executive Officer | NAKHEEL (root) | — |
+| 2 | Dr. Faisal Al-Qahtani | Chief Medical Officer | MED | Hessa Al-Dosari |
+| 3 | Dr. Layla Al-Harbi | Head of Ward | MED-IM | Faisal Al-Qahtani |
+| 4 | Dr. Omar Siddiqui | Senior Specialist | MED-IM | Layla Al-Harbi |
+| 5 | Dr. Nawaf Al-Shammari | Unit Head | MED-IM-CAR | Layla Al-Harbi |
+| 6 | Mohammed Al-Otaibi | Specialist | MED-IM-CAR | Nawaf Al-Shammari |
+| 7 | Dr. Reem Al-Zahrani | Unit Head | MED-IM-END | Layla Al-Harbi |
+| 8 | Dr. Khalid Bin Saleh | Head of Ward | MED-CC | Faisal Al-Qahtani |
+| 9 | Dr. Sara Al-Mutairi | Unit Head | MED-CC-AIC | Khalid Bin Saleh |
+| 10 | Fatima Al-Anazi | Senior Specialist | MED-CC-NIC | Khalid Bin Saleh |
+| 11 | Dr. Tariq Al-Juhani | Head of Ward | MED-SU | Faisal Al-Qahtani |
+| 12 | Dr. Maha Al-Subaie | Unit Head | MED-SU-OT | Tariq Al-Juhani |
+| 13 | Noura Al-Ghamdi | Director | NUR | Hessa Al-Dosari |
+| 14 | Aisha Al-Balawi | Head of Ward | NUR-IP | Noura Al-Ghamdi |
+| 15 | Huda Al-Rashidi | Unit Head | NUR-IP-WN | Aisha Al-Balawi |
+| 16 | Mariam Al-Suwaidi | Head of Ward | NUR-OP | Noura Al-Ghamdi |
+| 17 | Dr. Yasser Al-Amri | Director | QPS | Hessa Al-Dosari |
+| 18 | Haya Al-Marri | Section Manager | QPS-ACC | Yasser Al-Amri |
+| 19 | Salem Al-Hajri | Section Manager | QPS-IC | Yasser Al-Amri |
+| 20 | Amal Al-Ghamdi | Section Manager | CSS-PHR | Hessa Al-Dosari |
+| 21 | Yousef Bin Tariq | Senior Specialist | CSS-PHR | Amal Al-Ghamdi |
+| 22 | Mohammed Al-Otaibi | Section Manager | CSS-LAB | Hessa Al-Dosari |
+| 23 | Ibrahim Al-Dakhil | Senior Technician | CSS-LAB-MIC | Mohammed Al-Otaibi (CSS-LAB) |
+
+23 people. Every `managerId` points to someone in the same unit or its direct
+parent, so the reporting tree is a strict subtree of the org tree — never an
+arbitrary cross-link.
+
+Two units deliberately have **no** head-position holder: `MED-CC-NIC`
+(Edge Case 1) and `CSS-LAB-MIC` (its Senior Technician is not a head
+position). `CSS-PHR` has one, mid-handover (Edge Case 3).
+
+### 2.3 Al Manara University — 19 people
+
+| # | Name | Position | Org unit | Reports to |
+|---|---|---|---|---|
+| 1 | Prof. Adel Al-Mansoori | Rector | MANARA (root) | — |
+| 2 | Prof. Huda Al-Blooshi | Dean | ENG | Adel Al-Mansoori |
+| 3 | Dr. Rashid Al-Nuaimi | Head of School | ENG-CIV | Huda Al-Blooshi |
+| 4 | Dr. Latifa Al-Kaabi | Programme Director | ENG-CIV-BSC | Rashid Al-Nuaimi |
+| 5 | Dr. Saeed Al-Hammadi | Programme Director | ENG-CIV-MSC | Rashid Al-Nuaimi |
+| 6 | Dr. Mariam Al-Shamsi | Head of School | ENG-CMP | Huda Al-Blooshi |
+| 7 | Dr. Hamad Al-Zaabi | Programme Director | ENG-CMP-CS | Mariam Al-Shamsi |
+| 8 | Dr. Noor Abdullah | Programme Director | ENG-CMP-SE | Mariam Al-Shamsi |
+| 9 | Aliya Al-Suwaidi | Senior Specialist | ENG-CMP-CS | Hamad Al-Zaabi |
+| 10 | Prof. Salma Al-Falasi | Dean | HS | Adel Al-Mansoori |
+| 11 | Dr. Khalifa Al-Muhairi | Head of School | HS-NUR | Salma Al-Falasi |
+| 12 | Dr. Amna Al-Qubaisi | Programme Director | HS-NUR-BSN | Khalifa Al-Muhairi |
+| 13 | Dr. Jassim Al-Ali | Head of School | HS-PHA | Salma Al-Falasi |
+| 14 | Dr. Noor Abdullah | Programme Director | HS-PHA-PD | Jassim Al-Ali |
+| 15 | Prof. Badr Al-Marzooqi | Dean | BUS | Adel Al-Mansoori |
+| 16 | Dr. Shaikha Al-Rumaithi | Head of School | BUS-MGT | Badr Al-Marzooqi |
+| 17 | Dr. Omar Al-Hosani | Programme Director | BUS-MGT-BBA | Shaikha Al-Rumaithi |
+| 18 | Dr. Hind Al-Dhaheri | Director | DQA | Adel Al-Mansoori |
+| 19 | Maitha Al-Ameri | Section Manager | DQA-ACC | Hind Al-Dhaheri |
+| 20 | Sultan Al-Junaibi | Senior Specialist | DQA-IE | Hind Al-Dhaheri |
+
+20 people. `DQA-IE` deliberately has no head-position holder — a second,
+independent instance of the vacancy pattern, so the behaviour can be seen in
+both tenants rather than looking hospital-specific.
+
+---
+
+## 3. The four edge cases
+
+Each is a deliberate choice with a stated reason and a stated observable
+effect. All four are invisible in the current database.
+
+### Edge Case 1 — Vacant head: `MED-CC-NIC` (Neonatal ICU)
+
+Fatima Al-Anazi works there as a **Senior Specialist** — a real occupant,
+but not a head-conferring position. So the unit has staff and no head.
+
+**Why this unit:** its parent `MED-CC` (Critical Care Ward) *does* have a
+head (Dr. Khalid Bin Saleh), so `resolveActingHeadForOrgUnit()` walks up one
+level and resolves successfully. That produces a **partial** vacancy:
+`isHeadVacant = true`, `isHeadFullyUnresolved = false`, **no notification** —
+"partial vacancy never blocks or notifies." A unit that is simply empty would
+not exercise the walk-up at all.
+
+**Deliberately NOT seeded: the fully-unresolved case.** Reaching
+`isHeadFullyUnresolved = true` requires *every* ancestor up to the root to
+lack an ACTIVE head-holder, which for these trees means a headless
+organisation — unrealistic as demo data, and it would fire tenant-admin
+notifications on every sweep. That branch is better covered by a test than by
+fixture data. Raising it rather than leaving the gap unexplained.
+
+### Edge Case 2 — Out of office: Dr. Layla Al-Harbi, covered by Dr. Omar Siddiqui
+
+Layla (#3, Head of Ward, `MED-IM`) has `outOfOfficeFrom` / `outOfOfficeTo`
+spanning today, with `actingUserId` → Omar Siddiqui (#4, Senior Specialist in
+the same ward).
+
+**Why this pair:** Layla is a head-position holder with a real subtree
+beneath her, so her absence is consequential — `applyOutOfOfficeRouting()`
+substitutes Omar wherever she would have been assigned or gated. Omar sits in
+the same unit, which is what a real coverage arrangement looks like.
+
+**Dates must be computed relative to seed time** (e.g. `now - 3 days` →
+`now + 11 days`), never hardcoded, or the case silently expires and the seed
+stops demonstrating anything. This is a re-runnability requirement, not a
+detail.
+
+### Edge Case 3 — Mid-handover: `CSS-PHR` (Pharmacy Section)
+
+`OrgUnit.pendingHeadUserId` → Yousef Bin Tariq (#21), with
+`headHandoverEffectiveDate` = **`now + 14 days`**, while Amal Al-Ghamdi (#20)
+remains the current holder.
+
+**Why future-dated, and this matters:** `SlaMonitorProcessor.sweepDueHandovers()`
+selects units where `headHandoverEffectiveDate <= now` and completes them. A
+past or present date would be swept within 15 minutes and the edge case would
+evaporate — the seed would look correct on creation and be gone by the time
+anyone looked. The schema comment is explicit that these two fields are a
+*cache* and not the source of truth (the real state is two `User.positionId`
+assignments), so the fixture must set both sides coherently.
+
+### Edge Case 4 — Duplicate name: two people called **Mohammed Al-Otaibi**
+
+- #6 — Specialist, `MED-IM-CAR` (Cardiology Unit)
+- #22 — Section Manager, `CSS-LAB` (Laboratory Section)
+
+Different emails (required — `@@unique([organizationId, email])`); identical
+`name` (permitted — no uniqueness on name).
+
+**Why this matters and why these two:** ACC-37 added org-unit display to every
+user picker specifically so people can be told apart, and that fix has never
+had data that actually exercises it. They are in different departments and
+hold different positions, so a picker showing only a name is genuinely
+ambiguous, while one showing name + unit is not. A third instance is proposed
+in the university tenant — **Dr. Noor Abdullah** (#8 in `ENG-CMP-SE`, #14 in
+`HS-PHA-PD`) — to prove the case is not an artefact of one tenant's data.
+
+---
+
+## 4. Committees
+
+`committee_type` and `committee_member_role` are SYSTEM lookups with real
+seeded values (5 and 6 respectively), so fixtures reference existing keys
+rather than inventing any.
+
+### Hospital — 3 committees
+
+| Committee | Type | Members (role) |
+|---|---|---|
+| Quality & Patient Safety Committee | `quality_committee` | Yasser Al-Amri (chairman), Haya Al-Marri (secretary), Layla Al-Harbi (member), Noura Al-Ghamdi (member), Khalid Bin Saleh (member) |
+| Infection Control Committee | `safety_committee` | Salem Al-Hajri (chairman), Huda Al-Rashidi (secretary), Sara Al-Mutairi (member), Mohammed Al-Otaibi/CSS-LAB (member) |
+| Pharmacy & Therapeutics Committee | `clinical_committee` | Amal Al-Ghamdi (chairman), Yousef Bin Tariq (secretary), Faisal Al-Qahtani (member), Reem Al-Zahrani (advisor) |
+
+Infection Control **reports to** Quality & Patient Safety via
+`reportingToCommitteeId`, giving one real committee hierarchy.
+
+### University — 3 committees
+
+| Committee | Type | Members (role) |
+|---|---|---|
+| Quality Assurance Committee | `quality_committee` | Hind Al-Dhaheri (chairman), Maitha Al-Ameri (secretary), Huda Al-Blooshi (member), Salma Al-Falasi (member), Badr Al-Marzooqi (member) |
+| Academic Standards Committee | `advisory_committee` | Salma Al-Falasi (chairman), Sultan Al-Junaibi (secretary), Rashid Al-Nuaimi (member), Mariam Al-Shamsi (member) |
+| Campus Health & Safety Committee | `safety_committee` | Khalifa Al-Muhairi (chairman), Amna Al-Qubaisi (secretary), Omar Al-Hosani (member), Aliya Al-Suwaidi (observer) |
+
+Academic Standards **reports to** Quality Assurance.
+
+### The brief's "attached to a specific org unit" cannot be satisfied
+
+**`Committee` has no `orgUnitId` field.** Confirmed against the schema: its
+relations are `parentCommitteeId`, `reportingToCommitteeId`,
+`reportingToRoleId`, members, membership events and meetings — nothing links
+a committee to an org unit. This is the *same* missing field that blocks
+`ORG_UNIT_HEAD` from being reachable and that keeps RELATIVE assignee mode
+out of scope (CLAUDE.md structural item 3, ACC-56).
+
+I will not fake it by encoding a unit name into the committee's title. See
+Pending Discussion #3.
+
+---
+
+## 5. Re-runnability
+
+**Recommendation: reset-then-seed, not idempotent upserts.**
+
+The reason is structural, not stylistic. Of the 85 foreign keys in this
+schema, **56 are `ON DELETE RESTRICT`** — an idempotent seed would have to
+delete prior data in exact leaf-first order across 44 models before
+re-creating it, and two specific constraints make that actively dangerous:
+
+- **`AuditLog.organizationId` is `RESTRICT`.** An Organization cannot be
+  deleted while any audit row references it. "Keep the audit history and
+  delete the tenant" is not an available option — the database refuses.
+  (`AuditLog.actorId` is `SET NULL`, so deleting *users* is already safe;
+  users were never the blocker.)
+- **`LookupCategory.organizationId` and `LookupValue.organizationId` are
+  `SET NULL`.** In this schema `organizationId: null` *means* "SYSTEM row,
+  shared by every tenant". So deleting a tenant Organization would silently
+  **promote that tenant's private lookup values into global rows visible to
+  all tenants** — no error, no warning. A hand-rolled cleanup would do this
+  quietly.
+
+`prisma migrate reset` drops and recreates the schema, replaying all 34
+migrations. It sidesteps the ordering problem and the promotion hazard
+entirely, and produces a byte-identical starting point every time — which is
+what "identical state on re-run" actually requires.
+
+**On the append-only rule:** CLAUDE.md forbids UPDATE/DELETE *operations* on
+`AuditLog` — it governs application behaviour and production retention. It
+was never intended to make a development database un-rebuildable. Rebuilding
+a dev schema is categorically different from shipping code that deletes audit
+history; the alternative (an `auditLog.deleteMany()` in a committed script)
+would violate the rule explicitly and leave that precedent in the repo.
+
+**If someone runs it against a database that already has data:** `prisma
+migrate reset` **destroys everything** — all tenants, all users, all audit
+history. It prompts for confirmation unless `--force` is passed. The seed
+script must therefore refuse to run when it detects a non-development
+environment, and must never be wired into a deploy step. Concrete guard
+proposed: abort unless `NODE_ENV !== 'production'` **and** the database host
+matches an explicit allowlist, so that pointing `DATABASE_URL` at anything
+unexpected fails closed rather than wiping it.
+
+---
+
+## 6. Structure
+
+### 6.1 Layering on the real flow, per ACC-23
+
+ACC-23 deliberately reduced `demo-seed.ts` to genesis-only (platform org +
+`PLATFORM_ADMIN`) precisely so tenants would be provisioned through the real
+Super Admin flow rather than a hand-rolled script that silently drifts from
+`TenantService.bootstrap()`. **A rich seed script is exactly the drift risk
+that ticket removed**, so this must not reimplement provisioning.
+
+The canonical entry point is `PlatformTenantService.createTenant()`, whose own
+comment records that `bootstrap()` alone cannot create a tenant (it needs the
+Organization row to exist). It does: create Organization → `bootstrap()` →
+`invite()` the admin → assign `TENANT_ADMIN`. Proposed order per tenant:
+
+```
+1. PlatformTenantService.createTenant()   ← real flow; gives org, root unit,
+                                            10 positions, 12 lookup categories,
+                                            7 roles, 8 workflow templates,
+                                            an invited TENANT_ADMIN
+2. Seed tenant-specific head positions     ← Section 2.1 (fixture data)
+3. Create the org-unit tree                ← via OrganizationService
+4. Create + activate users                 ← see 6.2
+5. Apply the four edge cases               ← Section 3
+6. Create committees and members           ← via CommitteesService
+```
+
+Steps 3–6 add data through existing services wherever a service method
+exists, so audit logging, validation and the head-derivation caches all fire
+the way they would for a real user. Direct Prisma writes are reserved for the
+edge-case cache fields that have no service-level setter.
+
+### 6.2 The activation problem
+
+`UserService.invite()` creates users with `status: INVITED`. **Head derivation
+filters on `status: 'ACTIVE'`** (`resolveActingHeadForOrgUnit()`), so invited
+users confer no head and every unit would read as vacant — all four edge
+cases would collapse.
+
+`demo-seed.ts` already solves this for the platform admin: it builds a local
+Better Auth instance and signs the user up, producing a real, loginable
+account. The same pattern extends here, giving ~43 users who can actually log
+in — which is what makes persona testing possible. Two known costs: argon2
+hashing is deliberately expensive (~43 hashes, seconds not minutes), and the
+haveIBeenPwned plugin must stay disabled in the seed's own auth instance, as
+`demo-seed.ts` documents for exactly this reason.
+
+### 6.3 File layout — keeping it maintainable
+
+The brief's concern is a wall of inline objects. Proposed split:
+
+```
+backend/prisma/seed/
+├── seed-realistic.ts            orchestrator; no fixture data
+├── fixtures/
+│   ├── hospital.fixture.ts      tree + people + committees for Tenant A
+│   ├── university.fixture.ts    tree + people + committees for Tenant B
+│   └── fixture.types.ts         shared shapes (see below)
+└── apply/
+    ├── apply-org-tree.ts        walks a UnitFixture tree, creates units
+    ├── apply-people.ts          creates + activates users, wires managerId
+    ├── apply-edge-cases.ts      the four cases, each with its own comment
+    └── apply-committees.ts      committees + members
+```
+
+Fixtures are **declarative data** referencing units and people by stable
+string keys (`'MED-IM'`, `'layla'`), never by database id — the `apply/`
+functions resolve keys to ids. That keeps a fixture readable as an org chart
+and makes the manager tree checkable by eye. It also lets a single validation
+pass assert, before any write, that every referenced key exists, that the
+manager graph is acyclic, and that each manager sits in the same unit or an
+ancestor — turning a whole class of fixture typo into an immediate error
+rather than a confusing runtime state.
+
+Adding a third tenant later is then one fixture file, no orchestrator change.
+
+---
+
+## 7. Pending Discussions
+
+### #1 — The shared database is a hard blocker (needs your decision)
+
+`DATABASE_URL` points at `aws-1-eu-central-1.pooler.supabase.com` — **the
+same instance the Railway deployment reads.** There is no separate test or
+staging database; only one `DATABASE_URL` exists in the environment.
+
+So running this seed destroys the deployed environment's data, including the
+real `Demo Organization`. That is worse than ACC-48, where the data survived
+and only the code was mismatched.
+
+This is the decision CLAUDE.md already records as undecided, and a full wipe
+forces it. Options: provision a separate dev database and repoint local
+development first (recommended), or accept and schedule the deployment's data
+loss deliberately. **No code should be written for ACC-62 until this is
+settled**, because the answer may change where the seed is allowed to point.
+
+### #2 — Tenant-specific head positions (Section 2.1)
+
+Adding CEO/CMO/Head of Ward/Unit Head and Rector/Dean/Head of School/
+Programme Director means the seed ships positions the product does not
+include by default. It is necessary for a believable 4-level hierarchy, since
+only `Director` confers headship out of the box. Confirm you want the seed to
+add them, or say the seed should use only the 10 shipped positions and accept
+that most units inherit their head from an ancestor.
+
+### #3 — "At least one committee attached to a specific org unit" is not
+buildable
+
+`Committee` has no `orgUnitId`. I can (a) drop that requirement and use
+committee-to-committee reporting instead, as drafted; (b) use
+`reportingToRoleId` to point a committee at a Role, which is a different
+concept and would misrepresent it; or (c) treat adding `Committee.orgUnitId`
+as its own ticket — which would also unblock RELATIVE assignee mode and part
+of ACC-56, and is arguably overdue. **Recommendation: (a) now, and raise (c)
+separately** rather than growing ACC-62 into a schema change.
+
+### #4 — Should the seed add `org_unit_type` lookup values?
+
+`ward`, `faculty`, `school`, `program` and `deanship` are not among the 6
+seeded values. Nothing validates `OrgUnit.type`, and the `org_unit_type`
+category has zero consumers, so the seed works either way. Adding tenant-level
+values would make the data internally consistent for whenever that lookup
+does get wired up; not adding them keeps the seed smaller. Low stakes — I
+lean toward adding them.
+
+### #5 — What happens to the two leftover test tenants?
+
+`ACC45 Verify Temp` and `ACC46 P2 Verify` are verification leftovers holding
+22 users and 1,118 audit rows between them. Under a full reset they simply
+disappear, which is the desired outcome. Raising it only so their removal is
+an intended result rather than a surprise.
+
+---
+
+## 8. Verification plan (once implemented)
+
+- Re-run the seed twice; assert identical row counts and identical logical
+  state, proving re-runnability rather than assuming it.
+- Assert `MED-CC-NIC` reports `isHeadVacant = true`,
+  `isHeadFullyUnresolved = false`, and that
+  `resolveActingHeadForOrgUnit()` returns Khalid Bin Saleh via the walk-up.
+- Assert `resolveAssignee()` substitutes Omar Siddiqui for Layla Al-Harbi
+  while the out-of-office window is open.
+- Assert `CSS-PHR.headHandoverEffectiveDate` is in the future and that a
+  `SlaMonitorProcessor` run does **not** complete it.
+- Assert both `Mohammed Al-Otaibi` records exist with distinct emails and
+  distinct `primaryOrgUnitId`, and that a user picker renders them
+  distinguishably.
+- Log in as a non-admin persona (e.g. Yasser Al-Amri, Quality Director) and
+  confirm permission-gating behaves — the live Quality Manager persona test
+  that structural sequence item 5 has been waiting for.
