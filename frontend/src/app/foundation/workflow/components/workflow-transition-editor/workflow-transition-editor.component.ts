@@ -1,6 +1,6 @@
 import { Component, Input, Output, EventEmitter, OnInit, OnChanges, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -36,21 +36,34 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // separate *-form.component.ts involved).
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
-// ACC-55 — hierarchy-mode shape for OverlaySelectComponent: `permissions`
-// is the optionGroupChildren field, `module` the optionGroupLabel.
-interface PermissionOption {
+// ACC-55 — hierarchy-mode shape for OverlaySelectComponent:
+//   optionGroupChildren="permissions"  optionGroupLabel="module"
+//   optionLabel="label"                optionValue="value"
+// A node with a non-empty `permissions` array renders as a group header; one
+// without renders as a selectable leaf.
+interface PermissionNode {
   value: string;
-  label: string;
+  label?: string;
+  module?: string;
+  permissions?: PermissionNode[];
 }
 
-interface PermissionGroup {
-  module: string;
-  permissions: PermissionOption[];
-  // Marks the group holding values with no matching Permission row — either
-  // deliberate forward references to unbuilt modules or genuine typos. Its
-  // `module` is a translation key rather than a real module name.
-  isUnknownGroup?: boolean;
-}
+// OverlaySelectComponent's hierarchy mode renders EVERY node as a cdkOption,
+// group headers included — correct for its first consumer (org-unit's tree,
+// where a parent unit is itself a valid choice), wrong here, since
+// "committees" is not a permission.
+//
+// The component has no non-selectable-option support, and adding it would be
+// a scope expansion into a shared required-pattern component. So headers get
+// a sentinel value instead: it keeps @for's `track getOptionValue(...)` keys
+// unique (19 headers all resolving to undefined would collide), and
+// toPermissionPayload() refuses to persist it, so selecting a header is inert
+// rather than saving a nonsense permission. Flagged for follow-up.
+const GROUP_SENTINEL_PREFIX = '__module__:';
+
+// The picker's explicit "no permission required" choice. Distinct from the
+// sentinel: this one IS meant to be selected, and persists as null.
+const NO_PERMISSION_VALUE = '';
 
 const TRIGGER_CONDITIONS = [
   { label: 'SPECIFIC_USER', value: 'SPECIFIC_USER' },
@@ -210,9 +223,28 @@ const TRIGGER_CONDITIONS = [
             <p-message severity="info" [text]="'workflow.assigneePoolHelp' | translate" />
           }
 
+          <!--
+            ACC-55 — grouped picker replaces the free-text input. 72 strings
+            across 19 modules, read from GET /roles/permissions (the real
+            source), so a typo can no longer silently create a permanently
+            unfireable transition.
+          -->
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-            <input pInputText formControlName="requiredPermission" />
+            <app-overlay-select
+              formControlName="requiredPermission"
+              [options]="permissionGroups()"
+              optionLabel="label"
+              optionValue="value"
+              optionGroupLabel="module"
+              optionGroupChildren="permissions"
+              [placeholder]="'workflow.noPermissionRequired' | translate"
+            />
+            @if (permissionsLoadFailed()) {
+              <small class="text-[var(--am-text-secondary)]">
+                {{ 'workflow.permissionListUnavailable' | translate }}
+              </small>
+            }
           </div>
 
           <div class="flex items-center gap-2">
@@ -283,7 +315,38 @@ const TRIGGER_CONDITIONS = [
 
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-            <input pInputText formControlName="requiredPermission" />
+            <app-overlay-select
+              formControlName="requiredPermission"
+              [options]="permissionGroups()"
+              optionLabel="label"
+              optionValue="value"
+              optionGroupLabel="module"
+              optionGroupChildren="permissions"
+              [placeholder]="'workflow.noPermissionRequired' | translate"
+            />
+            @if (permissionsLoadFailed()) {
+              <small class="text-[var(--am-text-secondary)]">
+                {{ 'workflow.permissionListUnavailable' | translate }}
+              </small>
+            }
+            <!--
+              ACC-55 — the warning sits in normal flow directly under the
+              field it is about, deliberately NOT in a sticky footer. ACC-54
+              tried that on the stage form and it regressed: sticky content
+              overlays what scrolls beneath it, so the panel covered the very
+              picker it was advising on. Here it pushes content instead.
+            -->
+            @if (editPermissionWarning(); as warning) {
+              <p-message
+                severity="warn"
+                [text]="
+                  (warning === 'UNKNOWN_PERMISSION'
+                    ? 'workflow.permissionUnknownWarning'
+                    : 'workflow.permissionNoHolderWarning'
+                  ) | translate
+                "
+              />
+            }
           </div>
 
           <div class="flex items-center gap-2">
@@ -359,6 +422,10 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   private readonly roleService = inject(RoleService);
   private readonly fb = inject(FormBuilder);
   private readonly confirmationService = inject(ConfirmationService);
+  // ACC-55 — group labels are built inside a computed, outside the template,
+  // so TranslatePipe cannot reach them. instant() matches the established
+  // precedent in org-unit-head-panel.component.ts.
+  private readonly translateService = inject(TranslateService);
 
   readonly triggerConditions = TRIGGER_CONDITIONS;
   readonly roles = signal<RoleDto[]>([]);
@@ -370,7 +437,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   // module, 2-8 options each.
   readonly allPermissions = signal<PermissionDto[]>([]);
   readonly permissionsLoadFailed = signal(false);
-  readonly addPermissionWarning = signal<TransitionPermissionWarning | null>(null);
   readonly editPermissionWarning = signal<TransitionPermissionWarning | null>(null);
 
   // A transition may hold a permission that is not in the known list — 45
@@ -383,10 +449,10 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   // its permission.
   private readonly extraPermissionValues = signal<string[]>([]);
 
-  readonly permissionGroups = computed<PermissionGroup[]>(() => {
+  readonly permissionGroups = computed<PermissionNode[]>(() => {
     // Same Map<string, PermissionDto[]> shape role-permission-matrix already
     // uses, rather than a second grouping idiom for the same data.
-    const byModule = new Map<string, PermissionOption[]>();
+    const byModule = new Map<string, PermissionNode[]>();
     for (const perm of this.allPermissions()) {
       const key = `${perm.module}:${perm.action}`;
       const list = byModule.get(perm.module) ?? [];
@@ -394,22 +460,35 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       byModule.set(perm.module, list);
     }
 
-    const groups: PermissionGroup[] = [...byModule.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([module, permissions]) => ({ module, permissions }));
+    const nodes: PermissionNode[] = [
+      // Leaf, not a group — no `permissions` array, so it stays selectable
+      // and sits at the top where a configurer looks first.
+      {
+        value: NO_PERMISSION_VALUE,
+        label: this.translateService.instant('workflow.noPermissionRequired'),
+      },
+      ...[...byModule.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([module, permissions]) => ({
+          value: `${GROUP_SENTINEL_PREFIX}${module}`,
+          module,
+          permissions,
+        })),
+    ];
 
-    // Unknown values get their own group, kept last and labelled, so the
-    // configurer can see the value is not a defined permission without the
-    // picker having to guess whether it is a typo or a forward reference.
+    // Values with no matching Permission row get their own group, kept last
+    // and labelled as not-defined, so the configurer can see the value is
+    // unknown without the picker having to guess whether that is a deliberate
+    // forward reference or a typo.
     const extras = this.extraPermissionValues();
     if (extras.length > 0) {
-      groups.push({
-        module: 'workflow.permissionNotDefined',
-        isUnknownGroup: true,
+      nodes.push({
+        value: `${GROUP_SENTINEL_PREFIX}__unknown__`,
+        module: this.translateService.instant('workflow.permissionNotDefined'),
         permissions: extras.map((value) => ({ value, label: value })),
       });
     }
-    return groups;
+    return nodes;
   });
 
   // Registers a value so it round-trips even when it is not a known
@@ -426,8 +505,16 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   // null to actually CLEAR it (undefined means "leave unchanged" — see the
   // clearing fix commit). Keeping the control on '' avoids null-vs-empty
   // churn in the template.
+  //
+  // Also the guard that makes a module header inert: hierarchy mode renders
+  // headers as selectable rows, so a header's sentinel must never reach the
+  // API. Treating it as "no permission" is the safe reading — a header is not
+  // a permission, and silently persisting '__module__:committees' would
+  // create exactly the unfireable transition this ticket exists to prevent.
   private toPermissionPayload(raw: string | null | undefined): string | null {
-    return raw && raw.trim() !== '' ? raw : null;
+    if (!raw || raw.trim() === '') return null;
+    if (raw.startsWith(GROUP_SENTINEL_PREFIX)) return null;
+    return raw;
   }
 
   readonly showAddDialog = signal(false);
@@ -512,7 +599,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       validatorConfig: '',
     });
     this.saveError.set(null);
-    this.addPermissionWarning.set(null);
     this.showAddDialog.set(true);
   }
 
