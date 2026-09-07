@@ -283,6 +283,7 @@ async function main(): Promise<void> {
   await confirmIntent({ dbHost, existingSlugs });
 
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
+  let authPrisma: PrismaClient | undefined;
 
   try {
     const prisma = app.get(PrismaService);
@@ -298,11 +299,21 @@ async function main(): Promise<void> {
       );
     }
 
+    // A REAL PrismaClient for Better Auth, not the Nest service cast to look
+    // like one. PrismaService does not extend PrismaClient — it wraps a
+    // private client behind per-model getters — so `prisma as unknown as
+    // PrismaClient` was a double-cast that happened to work only because the
+    // getters cover the five auth models the adapter touches. Any adapter
+    // change reaching for something else would fail at runtime with the type
+    // system having asserted it was fine. demo-seed.ts constructs its own
+    // client for the same reason; this follows it.
+    authPrisma = new PrismaClient({
+      adapter: new PrismaPg(new Pool({ connectionString: process.env['DATABASE_URL'] })),
+    });
+
     const deps = {
       prisma,
-      // Better Auth's prismaAdapter wants the generated client, not the
-      // Nest-wrapped service.
-      rawPrisma: prisma as unknown as PrismaClient,
+      rawPrisma: authPrisma,
       platformTenantService: app.get(PlatformTenantService),
       organizationService: app.get(OrganizationService),
       orgUnitHeadService: app.get(OrgUnitHeadService),
@@ -323,9 +334,10 @@ async function main(): Promise<void> {
     console.log('══════════════════════════════════════\n');
   } finally {
     // Closes the Nest context, which also shuts down the BullMQ workers the
-    // warning above is about. In a finally block so a mid-seed failure does
-    // not leave them running.
+    // warning above is about, and disconnects Better Auth's own client. In a
+    // finally block so a mid-seed failure leaves neither running.
     await app.close();
+    await authPrisma?.$disconnect();
   }
 }
 
