@@ -148,7 +148,7 @@ The schema enforces the `isUnitHeadPosition → isSingleAssignee` pairing, and
 itself** — the seeder's own comment says exactly this. Flagged as Pending
 Discussion #2 because it adds positions the product does not ship by default.
 
-### 2.2 Al Nakheel Specialist Hospital — 21 people
+### 2.2 Al Nakheel Specialist Hospital — 23 people
 
 | # | Name | Position | Org unit | Reports to |
 |---|---|---|---|---|
@@ -184,7 +184,7 @@ Two units deliberately have **no** head-position holder: `MED-CC-NIC`
 (Edge Case 1) and `CSS-LAB-MIC` (its Senior Technician is not a head
 position). `CSS-PHR` has one, mid-handover (Edge Case 3).
 
-### 2.3 Al Manara University — 19 people
+### 2.3 Al Manara University — 20 people
 
 | # | Name | Position | Org unit | Reports to |
 |---|---|---|---|---|
@@ -450,9 +450,24 @@ Adding a third tenant later is then one fixture file, no orchestrator change.
 
 ---
 
-## 7. Pending Discussions
+## 7. Pending Discussions — ALL RESOLVED 2026-09-07
+
+Each decision is recorded inline below, under the question that prompted it.
+The original reasoning is kept rather than deleted, so a later reader can see
+what was weighed and not just what was chosen.
 
 ### #1 — The shared database is a hard blocker (needs your decision)
+
+> **RESOLVED — proceed.** Ahmad confirmed the dev environment is disposable:
+> full data loss is acceptable, explicitly including audit history and
+> tenant-custom lookup values. The two hazards below are therefore accepted
+> consequences, not problems to design around.
+>
+> Two things this does **not** change. The environment guard in Section 5
+> still ships — the decision is that *this* database is disposable, not that
+> the seed may run anywhere it happens to be pointed. And CLAUDE.md's
+> underlying shared-infrastructure question stays open; this ticket consumes
+> the answer for one run, it does not settle the standing policy.
 
 `DATABASE_URL` points at `aws-1-eu-central-1.pooler.supabase.com` — **the
 same instance the Railway deployment reads.** There is no separate test or
@@ -470,6 +485,12 @@ settled**, because the answer may change where the seed is allowed to point.
 
 ### #2 — Tenant-specific head positions (Section 2.1)
 
+> **RESOLVED — yes, seed them as proposed.** The 8 positions in Section
+> 2.1's table are part of the fixture data. Each must satisfy the
+> `isUnitHeadPosition → isSingleAssignee` pairing itself, since
+> `seedDefaultPositions()`-style direct writes bypass
+> `validateHeadFlagPairing()`.
+
 Adding CEO/CMO/Head of Ward/Unit Head and Rector/Dean/Head of School/
 Programme Director means the seed ships positions the product does not
 include by default. It is necessary for a believable 4-level hierarchy, since
@@ -479,6 +500,15 @@ that most units inherit their head from an ancestor.
 
 ### #3 — "At least one committee attached to a specific org unit" is not
 buildable
+
+> **RESOLVED — option (a).** Committee-to-committee reporting now, as
+> drafted in Section 4. `Committee.orgUnitId` is raised as **ACC-63**
+> (Backlog) rather than being folded into ACC-62, noting that it would also
+> unblock RELATIVE assignee mode and `ORG_UNIT_HEAD` reachability, and is
+> a dependency of part of ACC-56. The brief's original
+> "attached to an org unit" requirement is therefore **not met by this
+> ticket**, deliberately — recorded here so it is not later read as an
+> oversight.
 
 `Committee` has no `orgUnitId`. I can (a) drop that requirement and use
 committee-to-committee reporting instead, as drafted; (b) use
@@ -490,6 +520,14 @@ separately** rather than growing ACC-62 into a schema change.
 
 ### #4 — Should the seed add `org_unit_type` lookup values?
 
+> **RESOLVED — yes, add them.** `ward`, `faculty`, `school`, `program` and
+> `deanship` become tenant-scoped `LookupValue` rows under the existing
+> SYSTEM `org_unit_type` category, so `OrgUnit.type` is internally
+> consistent for whenever that lookup is finally wired up. Note these are
+> exactly the rows that would be silently promoted to SYSTEM by a
+> tenant-delete (Section 5) — irrelevant under reset-then-seed, but the
+> reason the hazard is worth remembering.
+
 `ward`, `faculty`, `school`, `program` and `deanship` are not among the 6
 seeded values. Nothing validates `OrgUnit.type`, and the `org_unit_type`
 category has zero consumers, so the seed works either way. Adding tenant-level
@@ -498,6 +536,10 @@ does get wired up; not adding them keeps the seed smaller. Low stakes — I
 lean toward adding them.
 
 ### #5 — What happens to the two leftover test tenants?
+
+> **RESOLVED — confirmed, their removal is intended.** `ACC45 Verify Temp`
+> and `ACC46 P2 Verify` disappear with the reset, along with the existing
+> `Demo Organization`.
 
 `ACC45 Verify Temp` and `ACC46 P2 Verify` are verification leftovers holding
 22 users and 1,118 audit rows between them. Under a full reset they simply
