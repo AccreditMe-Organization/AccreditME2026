@@ -21,6 +21,8 @@ import { OrgUnitHeadService } from '../../src/foundation/organization/org-unit-h
 import { LookupService } from '../../src/foundation/lookup/lookup.service';
 import { UserService } from '../../src/foundation/user/user.service';
 import { CommitteesService } from '../../src/foundation/committees/committees.service';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import { PrismaClient } from '../../generated/prisma/client';
 import { HOSPITAL_FIXTURE } from './fixtures/hospital.fixture';
 import { UNIVERSITY_FIXTURE } from './fixtures/university.fixture';
@@ -94,6 +96,56 @@ function assertSafeEnvironment(): void {
         '   that will compete with any deployed instance on that same Redis for the\n' +
         '   duration of this run (ACC-51). Safe during a deliberate wipe; know about it otherwise.\n',
     );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Confirmation gate
+// ─────────────────────────────────────────────────────────────────────────────
+
+// assertSafeEnvironment() answers "is this the wrong database?". This answers
+// a different question it cannot: "did you MEAN to run this at all?"
+//
+// Added because that gap was not hypothetical. During ACC-62's own
+// guard-branch testing, a run with the real (correctly allowlisted)
+// DATABASE_URL passed every check and seeded a live tenant that nobody
+// intended to create. The guard behaved exactly as designed; the design was
+// simply not covering intent.
+//
+// Typing the database host, rather than "yes", is deliberate: "yes" is the
+// kind of thing a person types reflexively, and the host is the one fact
+// worth being sure about.
+async function confirmIntent(preflight: {
+  dbHost: string;
+  existingSlugs: string[];
+}): Promise<void> {
+  const args = process.argv.slice(2);
+  if (args.includes('--confirm')) {
+    console.log('Proceeding: --confirm supplied.');
+    return;
+  }
+
+  console.log('\nThis will create tenants in a REAL database.');
+  console.log(`  database host : ${preflight.dbHost}`);
+  console.log(`  tenants       : ${FIXTURES.map((f) => f.slug).join(', ')}`);
+  console.log(`  people        : ${FIXTURES.reduce((n, f) => n + f.people.length, 0)} across both`);
+
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      'Refusing to seed: not an interactive terminal and --confirm was not supplied. ' +
+        'Pass --confirm only when the run is genuinely intended.',
+    );
+  }
+
+  const readline = await import('node:readline/promises');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(`\nType the database host to proceed (${preflight.dbHost}): `);
+    if (answer.trim() !== preflight.dbHost) {
+      throw new Error('Refusing to seed: confirmation did not match the database host.');
+    }
+  } finally {
+    rl.close();
   }
 }
 
@@ -198,6 +250,37 @@ async function main(): Promise<void> {
   // and require a manual reset to retry.
   for (const fixture of FIXTURES) validateFixture(fixture);
   console.log(`Fixtures valid: ${FIXTURES.map((f) => f.slug).join(', ')}`);
+
+  // Pre-flight on a standalone client, BEFORE booting Nest. Two reasons:
+  // booting starts the BullMQ workers the environment warning is about, so
+  // there is no sense doing it for a run the operator is about to decline;
+  // and a slug collision should be reported up front rather than surfacing as
+  // a ConflictException partway through creating a tenant.
+  const dbHost = hostOf(process.env['DATABASE_URL'])!;
+  const preflightPrisma = new PrismaClient({
+    adapter: new PrismaPg(new Pool({ connectionString: process.env['DATABASE_URL'] })),
+  });
+
+  let existingSlugs: string[];
+  try {
+    const clashes = await preflightPrisma.organization.findMany({
+      where: { slug: { in: FIXTURES.map((f) => f.slug) } },
+      select: { slug: true },
+    });
+    existingSlugs = clashes.map((c) => c.slug);
+  } finally {
+    await preflightPrisma.$disconnect();
+  }
+
+  if (existingSlugs.length > 0) {
+    throw new Error(
+      `Refusing to seed: ${existingSlugs.join(', ')} already exist. This script creates tenants from ` +
+        'scratch and would collide on slugs and emails. Run `npx prisma migrate reset --force` first — ' +
+        'that reset is the intended way to re-run this seed (see ACC-62 Section 5).',
+    );
+  }
+
+  await confirmIntent({ dbHost, existingSlugs });
 
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
 

@@ -653,6 +653,39 @@ an intended result rather than a surprise.
 
 ---
 
+## 7b. A partial `al-nakheel` tenant exists in the dev database — deliberately left
+
+**If you find a half-populated `al-nakheel` tenant, it is not a failed run to
+diagnose.** During ACC-62's own guard-branch testing, one test used the real
+(correctly allowlisted) `DATABASE_URL`. The environment guard passed — as
+designed — and the seed genuinely ran before it was stopped. A first attempt
+to stop it killed only the shell wrapper, not the `node` process `npm run` had
+spawned, so it kept seeding for a while after it appeared to have halted.
+
+Final state: 21 org units, 15 positions, 25 activated users, 1 committee, plus
+audit rows and notifications. `al-manara` was never created.
+
+**Left in place on purpose.** Removing it means deleting its `AuditLog` rows —
+`AuditLog.organizationId` is `ON DELETE RESTRICT` — which is exactly the
+rule-violating path Section 5 argues against. The `prisma migrate reset` that
+must precede any real seed run destroys it anyway, so cleaning it by hand would
+cost an audit-deleting script for something a required step already removes.
+
+Two things came out of it worth keeping:
+
+- **It proved the pipeline works.** All 25 hospital users were created *and*
+  activated through Better Auth in the computed order, with no failures — the
+  argon2 volume was fine and the interleaved head-before-staff ordering held
+  against the real `invite()` guards, not just the simulation of them.
+- **It exposed a real gap in the guard**, now closed. `assertSafeEnvironment()`
+  answers *"is this the wrong database?"*. It cannot answer *"did you mean to
+  run this at all?"* — and in this incident every check passed correctly while
+  the run was still unintended. The seed now also requires explicit intent
+  (`--confirm`, or typing the database host at an interactive prompt) and
+  refuses outright if any target slug already exists.
+
+---
+
 ## 8. Verification plan (once implemented)
 
 - Re-run the seed twice; assert identical row counts and identical logical
