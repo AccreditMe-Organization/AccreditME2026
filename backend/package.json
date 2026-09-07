@@ -20,6 +20,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:demo": "ts-node -r tsconfig-paths/register prisma/demo-seed.ts",
+    "seed:realistic": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/seed/seed-realistic.ts",
     "backfill:positions-permissions": "ts-node -r tsconfig-paths/register prisma/backfill-positions-permissions.ts",
     "backfill:committees-approve-permission": "ts-node -r tsconfig-paths/register prisma/backfill-committees-approve-permission.ts",
     "backfill:committees-resource-permissions": "ts-node -r tsconfig-paths/register prisma/backfill-committees-resource-permissions.ts",
