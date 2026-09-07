@@ -93,8 +93,8 @@ Country: AE. 19 org units across 4 levels.
 Al Manara University                              [MANARA]         root
 ├── Faculty of Engineering                        [ENG]            faculty
 │   ├── School of Civil & Environmental Eng.      [ENG-CIV]        school
-│   │   ├── BSc Civil Engineering                 [ENG-CIV-BSC]    program
-│   │   └── MSc Environmental Engineering         [ENG-CIV-MSC]    program
+│   │   ├── BSc Civil Engineering                 [CIV-BSC]        program
+│   │   └── MSc Environmental Engineering         [CIV-MSC]        program
 │   └── School of Computing                       [ENG-CMP]        school
 │       ├── BSc Computer Science                  [ENG-CMP-CS]     program
 │       └── BSc Software Engineering              [ENG-CMP-SE]     program
@@ -105,7 +105,7 @@ Al Manara University                              [MANARA]         root
 │       └── PharmD Program                        [HS-PHA-PD]      program
 ├── Faculty of Business                           [BUS]            faculty
 │   └── School of Management                      [BUS-MGT]        school
-│       └── BBA Program                           [BUS-MGT-BBA]    program
+│       └── BBA Program                           [MGT-BBA]        program
 └── Deanship of Quality & Accreditation           [DQA]            deanship
     ├── Accreditation Office                      [DQA-ACC]        office
     └── Institutional Effectiveness Office        [DQA-IE]         office
@@ -148,6 +148,7 @@ nameEn])`):
 | University | Rector | 12 |
 | University | Dean | 11 |
 | University | Head of School | 8 |
+| University | Head of Office | 7 |
 | University | Programme Director | 6 |
 
 The schema enforces the `isUnitHeadPosition → isSingleAssignee` pairing, and
@@ -210,12 +211,12 @@ that structural sequence item 5 has been waiting to test against.
 | 1 | Prof. Adel Al-Mansoori | Rector | MANARA (root) | — |
 | 2 | Prof. Huda Al-Blooshi | Dean | ENG | Adel Al-Mansoori |
 | 3 | Dr. Rashid Al-Nuaimi | Head of School | ENG-CIV | Huda Al-Blooshi |
-| 4 | Dr. Latifa Al-Kaabi | Programme Director | ENG-CIV-BSC | Rashid Al-Nuaimi |
-| 5 | Dr. Saeed Al-Hammadi | Programme Director | ENG-CIV-MSC | Rashid Al-Nuaimi |
+| 4 | Dr. Latifa Al-Kaabi | Programme Director | CIV-BSC | Rashid Al-Nuaimi |
+| 5 | Dr. Saeed Al-Hammadi | Programme Director | CIV-MSC | Rashid Al-Nuaimi |
 | 6 | Dr. Mariam Al-Shamsi | Head of School | ENG-CMP | Huda Al-Blooshi |
 | 7 | Dr. Hamad Al-Zaabi | Programme Director | ENG-CMP-CS | Mariam Al-Shamsi |
-| 8 | Dr. Noor Abdullah | Programme Director | ENG-CMP-SE | Mariam Al-Shamsi |
-| 9 | Aliya Al-Suwaidi | Senior Specialist | ENG-CMP-CS | Hamad Al-Zaabi |
+| 8 | Aliya Al-Suwaidi | Senior Specialist | ENG-CMP-CS | Hamad Al-Zaabi |
+| 9 | Dr. Noor Abdullah | Programme Director | ENG-CMP-SE | Mariam Al-Shamsi |
 | 10 | Prof. Salma Al-Falasi | Dean | HS | Adel Al-Mansoori |
 | 11 | Dr. Khalifa Al-Muhairi | Head of School | HS-NUR | Salma Al-Falasi |
 | 12 | Dr. Amna Al-Qubaisi | Programme Director | HS-NUR-BSN | Khalifa Al-Muhairi |
@@ -223,16 +224,27 @@ that structural sequence item 5 has been waiting to test against.
 | 14 | Dr. Noor Abdullah | Programme Director | HS-PHA-PD | Jassim Al-Ali |
 | 15 | Prof. Badr Al-Marzooqi | Dean | BUS | Adel Al-Mansoori |
 | 16 | Dr. Shaikha Al-Rumaithi | Head of School | BUS-MGT | Badr Al-Marzooqi |
-| 17 | Dr. Omar Al-Hosani | Programme Director | BUS-MGT-BBA | Shaikha Al-Rumaithi |
+| 17 | Dr. Omar Al-Hosani | Programme Director | MGT-BBA | Shaikha Al-Rumaithi |
 | 18 | Dr. Hind Al-Dhaheri | Director | DQA | Adel Al-Mansoori |
-| 19 | Maitha Al-Ameri | Section Manager | DQA-ACC | Hind Al-Dhaheri |
+| 19 | Maitha Al-Ameri | Head of Office | DQA-ACC | Hind Al-Dhaheri |
 | 20 | Sultan Al-Junaibi | Senior Specialist | DQA-IE | Hind Al-Dhaheri |
 
-20 people. `DQA-IE` deliberately has no head-position holder — a second,
-independent instance of the vacancy pattern, so the behaviour can be seen in
-both tenants rather than looking hospital-specific.
+Same head-coverage rule as the hospital: every unit has a head-position
+holder **except `DQA-IE`**, so the seeded vacancy is the only one in the
+tenant. `Head of Office` was added for the same reason the hospital needed
+`Head of Section` — the Deanship's offices are real units needing real heads,
+and `Director` (grade 10) is far too senior for an office reporting into a
+deanship.
 
----
+`Dr. Hind Al-Dhaheri` (#18, Director of the Deanship of Quality &
+Accreditation) is the tenant admin.
+
+**All four edge cases are seeded in BOTH tenants, not split between them.**
+This plan originally placed out-of-office and handover only in the hospital.
+Doing both in the university as well proves the mechanisms are not
+hospital-specific — the same reasoning that already justified a second
+duplicate-name pair — and costs nothing, since these are ordinary data states.
+The university's own instances are listed in Section 3.
 
 ## 3. The four edge cases
 
@@ -303,6 +315,21 @@ hold different positions, so a picker showing only a name is genuinely
 ambiguous, while one showing name + unit is not. A third instance is proposed
 in the university tenant — **Dr. Noor Abdullah** (#8 in `ENG-CMP-SE`, #14 in
 `HS-PHA-PD`) — to prove the case is not an artefact of one tenant's data.
+
+---
+
+### The university's own instances of all four
+
+Added during implementation (commit 3): the plan first placed cases 2 and 3
+only in the hospital. Seeding all four in both tenants proves none of the
+machinery is industry-specific, and costs nothing.
+
+| Case | Al Manara University |
+|---|---|
+| 1 — Vacant head | `DQA-IE` (Institutional Effectiveness Office). Sultan Al-Junaibi works there as a Senior Specialist; parent `DQA` has Dr. Hind Al-Dhaheri, so the walk-up resolves — partial vacancy, silent. |
+| 2 — Out of office | Prof. Salma Al-Falasi (Dean, Health Sciences), covered by Dr. Khalifa Al-Muhairi (Head of School, Nursing). A dean with two schools and their programmes beneath her, so the absence has real reach. |
+| 3 — Mid-handover | `BUS-MGT` (School of Management), Dr. Shaikha Al-Rumaithi → Dr. Omar Al-Hosani, effective in **21 days**. An ordinary internal promotion — Omar currently directs the BBA programme beneath her. 21 rather than the hospital's 14 so the two tenants do not expire on the same day. |
+| 4 — Duplicate name | **Dr. Noor Abdullah** — Programme Director in `ENG-CMP-SE` (Software Engineering) and in `HS-PHA-PD` (PharmD). Different faculties entirely. |
 
 ---
 
