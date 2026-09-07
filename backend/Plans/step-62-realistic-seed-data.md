@@ -60,8 +60,15 @@ Al Nakheel Specialist Hospital                    [NAKHEEL]        root
 └── Clinical Support Services                     [CSS]            department
     ├── Pharmacy Section                          [CSS-PHR]        section  ← EDGE CASE 3
     └── Laboratory Section                        [CSS-LAB]        section
-        └── Microbiology Unit                     [CSS-LAB-MIC]    unit
+        └── Microbiology Unit                     [CSS-MIC]        unit
 ```
+
+> **Code correction (implementation, commit 2).** `CreateOrgUnitDto` enforces
+> `@MaxLength(10)` and `/^[A-Z0-9-]+$/` on `code`, which this plan's first
+> draft did not account for. `CSS-LAB-MIC` was 11 characters and would have
+> been rejected at write time; it is `CSS-MIC` above. `MED-IM-CAR` and
+> `MED-CC-NIC` are exactly 10 and fit. `validateFixture()` now enforces the
+> real limit so this class of error fails before any database write.
 
 **A deliberate deviation from the brief, flagged for approval.** The brief
 says the hospital runs Departments → Wards → Units. That is right for
@@ -136,6 +143,7 @@ nameEn])`):
 | Hospital | Chief Executive Officer | 12 |
 | Hospital | Chief Medical Officer | 11 |
 | Hospital | Head of Ward | 8 |
+| Hospital | Head of Section | 7 |
 | Hospital | Unit Head | 6 |
 | University | Rector | 12 |
 | University | Dean | 11 |
@@ -148,7 +156,7 @@ The schema enforces the `isUnitHeadPosition → isSingleAssignee` pairing, and
 itself** — the seeder's own comment says exactly this. Flagged as Pending
 Discussion #2 because it adds positions the product does not ship by default.
 
-### 2.2 Al Nakheel Specialist Hospital — 23 people
+### 2.2 Al Nakheel Specialist Hospital — 24 people
 
 | # | Name | Position | Org unit | Reports to |
 |---|---|---|---|---|
@@ -169,20 +177,31 @@ Discussion #2 because it adds positions the product does not ship by default.
 | 15 | Huda Al-Rashidi | Unit Head | NUR-IP-WN | Aisha Al-Balawi |
 | 16 | Mariam Al-Suwaidi | Head of Ward | NUR-OP | Noura Al-Ghamdi |
 | 17 | Dr. Yasser Al-Amri | Director | QPS | Hessa Al-Dosari |
-| 18 | Haya Al-Marri | Section Manager | QPS-ACC | Yasser Al-Amri |
-| 19 | Salem Al-Hajri | Section Manager | QPS-IC | Yasser Al-Amri |
-| 20 | Amal Al-Ghamdi | Section Manager | CSS-PHR | Hessa Al-Dosari |
-| 21 | Yousef Bin Tariq | Senior Specialist | CSS-PHR | Amal Al-Ghamdi |
-| 22 | Mohammed Al-Otaibi | Section Manager | CSS-LAB | Hessa Al-Dosari |
-| 23 | Ibrahim Al-Dakhil | Senior Technician | CSS-LAB-MIC | Mohammed Al-Otaibi (CSS-LAB) |
+| 18 | Haya Al-Marri | Head of Section | QPS-ACC | Yasser Al-Amri |
+| 19 | Salem Al-Hajri | Head of Section | QPS-IC | Yasser Al-Amri |
+| 20 | Nasser Al-Qassimi | Director | CSS | Hessa Al-Dosari |
+| 21 | Amal Al-Ghamdi | Head of Section | CSS-PHR | Nasser Al-Qassimi |
+| 22 | Yousef Bin Tariq | Senior Specialist | CSS-PHR | Amal Al-Ghamdi |
+| 23 | Mohammed Al-Otaibi | Head of Section | CSS-LAB | Nasser Al-Qassimi |
+| 24 | Ibrahim Al-Dakhil | Unit Head | CSS-MIC | Mohammed Al-Otaibi (CSS-LAB) |
 
-23 people. Every `managerId` points to someone in the same unit or its direct
-parent, so the reporting tree is a strict subtree of the org tree — never an
-arbitrary cross-link.
+**Revised during implementation (commit 2), for a reason worth recording.**
+The first draft left several units without a head-position holder — Clinical
+Support Services had no director, and its sections were led by *Section
+Managers*, which is not a head-conferring position. That would have produced
+**four** incidental vacancies alongside the one deliberate edge case, making
+the seeded vacancy unfindable among accidents.
 
-Two units deliberately have **no** head-position holder: `MED-CC-NIC`
-(Edge Case 1) and `CSS-LAB-MIC` (its Senior Technician is not a head
-position). `CSS-PHR` has one, mid-handover (Edge Case 3).
+Every unit now has a head-position holder **except `MED-CC-NIC`**, so the
+vacancy is the only one in the tenant. Concretely: `Head of Section` was added
+to the position vocabulary (Section Managers cannot be heads, and the Pharmacy
+handover requires its holder to actually *be* a head), and Nasser Al-Qassimi
+was added to lead CSS. Verified by running the validator: exactly one unit
+resolves to no head, and it is the declared one.
+
+`Dr. Yasser Al-Amri` (#17, Director of Quality & Patient Safety) is the
+tenant admin — the natural owner of a QMS, and the Quality Manager persona
+that structural sequence item 5 has been waiting to test against.
 
 ### 2.3 Al Manara University — 20 people
 
