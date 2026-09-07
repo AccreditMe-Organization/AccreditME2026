@@ -2222,6 +2222,23 @@ complete, not just the currently-in-review ones.
   — but it is the more precise interim rule, and it is worth knowing
   that treating every migration as equally dangerous would block
   ordinary additive work for no real safety gain.
+- **The documented database region does not match the live one.** CLAUDE.md
+  states "Supabase — Bahrain region (me-south-1)" in three places (Tech Stack,
+  Infrastructure, and the Tier 1/2 deployment description). The live
+  `DATABASE_URL` points at **`aws-1-eu-central-1.pooler.supabase.com`** —
+  Frankfurt, not Bahrain. Found during ACC-62's investigation and recorded
+  here rather than silently corrected, because the two possible fixes are
+  very different decisions and only Ahmad can pick:
+  - the **documentation** is wrong and the instance is deliberately in
+    eu-central-1 — in which case the region claims here need updating; or
+  - the **instance** is in the wrong region and should be moved.
+  This is not cosmetic for this product. Deployment Tiers 1 and 2 make
+  regional data-residency claims to a GCC/MENA market, and several GCC
+  customers in regulated sectors (healthcare especially) have data-residency
+  requirements that a Frankfurt-hosted database would not satisfy. Worth
+  settling before any real customer data exists, not after. Note the same
+  question applies separately to `AWS_REGION=me-south-1` for S3, which has
+  not been verified against a live bucket.
 - **No form in this app has a per-field inline error-message pattern**
   (confirmed via full grep, zero matches) — every form relies solely
   on a disabled submit button as its only invalid-state feedback.

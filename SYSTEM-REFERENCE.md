@@ -1924,6 +1924,43 @@ fact with no follow-on vacancy/role effects, unlike everything else in
 this section). All three run alongside the pre-existing SLA sweep, no
 new BullMQ queue.
 
+### 5.5.1 The ACTIVE-vs-INVITED asymmetry between the two head checks (ACC-62)
+
+Two guards ask "does this unit have a head?" and answer with **different
+status filters**. They are easy to read as interchangeable and are not.
+
+| Guard | Used by | Counts |
+|---|---|---|
+| `OrgPositionService.hasAnyHeadConferringHolder()` | `validateUnitHeadUniqueness()` — one head per unit | `status IN (ACTIVE, INVITED)` |
+| `OrgUnitHeadService.hasDirectOrActingHead()` | ACC-46's staffing block in `invite()` | `status = ACTIVE` only (plus `actingHeadUserId`) |
+
+Both are individually correct. Uniqueness must count an INVITED head, or two
+people could be invited into the same headship before either activates.
+Staffing must not, because an INVITED head cannot yet act.
+
+**The interaction is the part worth knowing**, and it is invisible from either
+method alone: **a unit's head must be invited AND activated before any
+non-head staff can be invited into that unit.** Creating users in bulk by
+inviting everyone first and activating afterwards therefore fails on the
+second person into any unit — the head is still INVITED, so
+`hasDirectOrActingHead()` reports no head and the ACC-46 block rejects the
+invite.
+
+Found while building ACC-62's seed, which now interleaves invite-then-activate
+one person at a time in a computed order (`orderPeopleForInvite()`,
+`prisma/seed/apply/order-people.ts`). Recorded here rather than left as seed
+trivia because **bulk user import** — a tracked Open/Deferred item in
+CLAUDE.md, explicitly scoped for organisations of 100+ users — will hit
+exactly this, and the obvious implementation (bulk-invite, then bulk-activate)
+is the one that fails.
+
+Note also that `hasDirectOrActingHead()` looks only at the target unit:
+escalation coverage from a parent does **not** satisfy it, by design (its own
+comment says so). A unit whose head has departed is therefore un-staffable
+until a head or acting head is assigned, even though
+`resolveActingHeadForOrgUnit()` (5.3) resolves happily up the chain for
+assignment purposes.
+
 ### 5.6 Acting Head — Coverage, Not Position-Holding
 
 `assignActingHead()`/`clearActingHead()` (`org-unit-head.service.ts:525`/`:651`)
