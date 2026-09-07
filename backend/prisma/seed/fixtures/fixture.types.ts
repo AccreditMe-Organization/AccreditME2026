@@ -495,6 +495,40 @@ export function validateFixture(fixture: TenantFixture): void {
   for (const key of [edge.handover.from, edge.handover.to]) {
     if (!peopleByKey.has(key)) errors.push(`edgeCases.handover references unknown person '${key}'.`);
   }
+
+  // declareHandover()'s own guards, checked here so a fixture fails at
+  // validation rather than mid-seed:
+  //   - the outgoing person must be the unit's current ACTIVE head, or it
+  //     throws "no current Head to hand over from";
+  //   - the incoming person must NOT already hold a head-conferring position
+  //     anywhere, or it throws "already holds a different Head-conferring
+  //     position" — silently reassigning them would orphan the unit they
+  //     currently head, with no VACATED event recorded for it.
+  const outgoing = peopleByKey.get(edge.handover.from);
+  const incoming = peopleByKey.get(edge.handover.to);
+  if (outgoing) {
+    if (outgoing.unit !== edge.handover.unit) {
+      errors.push(
+        `Handover's outgoing head '${outgoing.key}' is in '${outgoing.unit}', not '${edge.handover.unit}'.`,
+      );
+    }
+    if (!headPositions.has(outgoing.position)) {
+      errors.push(
+        `Handover's outgoing head '${outgoing.key}' holds '${outgoing.position}', which is not ` +
+          'head-conferring — declareHandover() would reject the unit as having no current Head.',
+      );
+    }
+  }
+  if (incoming && headPositions.has(incoming.position)) {
+    errors.push(
+      `Handover's incoming successor '${incoming.key}' already holds the head-conferring position ` +
+        `'${incoming.position}'. declareHandover() rejects that outright, to avoid orphaning the unit ` +
+        'they currently head.',
+    );
+  }
+  if (outgoing && incoming && outgoing.key === incoming.key) {
+    errors.push('Handover outgoing and incoming must be different people.');
+  }
   if (edge.handover.effectiveInDays <= 0) {
     errors.push(
       'edgeCases.handover.effectiveInDays must be positive. sweepDueHandovers() completes any ' +

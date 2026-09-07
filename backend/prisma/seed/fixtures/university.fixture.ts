@@ -154,6 +154,12 @@ const PEOPLE = [
   { key: 'badr', name: 'Prof. Badr Al-Marzooqi', emailLocal: 'badr.almarzooqi', position: 'Dean', unit: 'BUS', reportsTo: 'adel' },
   { key: 'shaikha', name: 'Dr. Shaikha Al-Rumaithi', emailLocal: 'shaikha.alrumaithi', position: 'Head of School', unit: 'BUS-MGT', reportsTo: 'badr' },
   { key: 'omar', name: 'Dr. Omar Al-Hosani', emailLocal: 'omar.alhosani', position: 'Programme Director', unit: 'MGT-BBA', reportsTo: 'shaikha' },
+  // EDGE CASE 3 — the incoming successor. Deliberately a NON-head:
+  // declareHandover() rejects a successor who already holds a head-conferring
+  // position anywhere, because silently reassigning them would orphan the unit
+  // they currently head with no VACATED event recorded. Omar (Programme
+  // Director of the BBA) would have been rejected for exactly that reason.
+  { key: 'fahad', name: 'Dr. Fahad Al-Shehhi', emailLocal: 'fahad.alshehhi', position: 'Senior Specialist', unit: 'BUS-MGT', reportsTo: 'shaikha' },
 
   // Deanship of Quality & Accreditation — hind is the tenant admin.
   { key: 'hind', name: 'Dr. Hind Al-Dhaheri', emailLocal: 'hind.aldhaheri', position: 'Director', unit: 'DQA', reportsTo: 'adel' },
@@ -255,13 +261,15 @@ export const UNIVERSITY_FIXTURE: TenantFixture = {
     // real reach.
     outOfOffice: { person: 'salma', covering: 'khalifa', startsDaysAgo: 5, endsInDays: 9 },
 
-    // School of Management: Shaikha hands over to Omar, currently the
-    // Programme Director beneath her — an ordinary internal promotion.
+    // School of Management: Shaikha hands over to Fahad, a Senior Specialist
+    // in her own school being promoted to head it — an ordinary internal
+    // promotion. The successor must NOT already be a head somewhere else,
+    // which is why this is Fahad and not Omar.
     // Future-dated for the same reason as the hospital's: sweepDueHandovers()
     // would otherwise complete it within 15 minutes and the case would vanish.
     // 21 days rather than the hospital's 14, so the two tenants do not both
     // expire on the same day.
-    handover: { unit: 'BUS-MGT', from: 'shaikha', to: 'omar', effectiveInDays: 21 },
+    handover: { unit: 'BUS-MGT', from: 'shaikha', to: 'fahad', effectiveInDays: 21 },
 
     // Two Dr. Noor Abdullahs, in different faculties entirely — Software
     // Engineering and Pharmacy. Deliberately a second, independent instance of

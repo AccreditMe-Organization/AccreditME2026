@@ -214,7 +214,7 @@ Quality Director, which is exactly what structural sequence item 5 needs. A
 Tenant Admin holds every permission and so proves nothing about
 permission-gating — CLAUDE.md's own criticism of every test to date.
 
-### 2.3 Al Manara University — 21 people
+### 2.3 Al Manara University — 22 people
 
 | # | Name | Position | Org unit | Reports to |
 |---|---|---|---|---|
@@ -238,7 +238,8 @@ permission-gating — CLAUDE.md's own criticism of every test to date.
 | 18 | Dr. Hind Al-Dhaheri | Director | DQA | Adel Al-Mansoori |
 | 19 | Maitha Al-Ameri | Head of Office | DQA-ACC | Hind Al-Dhaheri |
 | 20 | Dr. Rana Al-Zaabi | Head of Office | DQA-IE | Hind Al-Dhaheri | **departs** |
-| 21 | Sultan Al-Junaibi | Senior Specialist | DQA-IE | Hind Al-Dhaheri |
+| 21 | Dr. Fahad Al-Shehhi | Senior Specialist | BUS-MGT | Shaikha Al-Rumaithi | **handover successor** |
+| 22 | Sultan Al-Junaibi | Senior Specialist | DQA-IE | Hind Al-Dhaheri |
 
 Same head-coverage rule as the hospital: every unit has a head-position
 holder **except `DQA-IE`**, so the seeded vacancy is the only one in the
@@ -369,7 +370,7 @@ machinery is industry-specific, and costs nothing.
 |---|---|
 | 1 — Vacant head | `DQA-IE` (Institutional Effectiveness Office). Sultan Al-Junaibi works there as a Senior Specialist; parent `DQA` has Dr. Hind Al-Dhaheri, so the walk-up resolves — partial vacancy, silent. |
 | 2 — Out of office | Prof. Salma Al-Falasi (Dean, Health Sciences), covered by Dr. Khalifa Al-Muhairi (Head of School, Nursing). A dean with two schools and their programmes beneath her, so the absence has real reach. |
-| 3 — Mid-handover | `BUS-MGT` (School of Management), Dr. Shaikha Al-Rumaithi → Dr. Omar Al-Hosani, effective in **21 days**. An ordinary internal promotion — Omar currently directs the BBA programme beneath her. 21 rather than the hospital's 14 so the two tenants do not expire on the same day. |
+| 3 — Mid-handover | `BUS-MGT` (School of Management), Dr. Shaikha Al-Rumaithi → **Dr. Fahad Al-Shehhi**, effective in **21 days**. A Senior Specialist in her own school promoted to head it. 21 rather than the hospital's 14 so the two tenants do not expire on the same day. **Corrected in commit 6:** the successor was originally Dr. Omar Al-Hosani, but `declareHandover()` rejects a successor who already holds a head-conferring position anywhere — silently reassigning them would orphan the unit they currently head with no VACATED event. Omar directs the BBA programme, so he was rejected; Fahad was added as a non-head successor. |
 | 4 — Duplicate name | **Dr. Noor Abdullah** — Programme Director in `ENG-CMP-SE` (Software Engineering) and in `HS-PHA-PD` (PharmD). Different faculties entirely. |
 
 ---
