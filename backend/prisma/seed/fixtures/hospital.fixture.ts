@@ -155,8 +155,14 @@ const PEOPLE = [
   { key: 'reem', name: 'Dr. Reem Al-Zahrani', emailLocal: 'reem.alzahrani', position: 'Unit Head', unit: 'MED-IM-END', reportsTo: 'layla' },
   { key: 'khalid', name: 'Dr. Khalid Bin Saleh', emailLocal: 'khalid.binsaleh', position: 'Head of Ward', unit: 'MED-CC', reportsTo: 'faisal' },
   { key: 'sara', name: 'Dr. Sara Al-Mutairi', emailLocal: 'sara.almutairi', position: 'Unit Head', unit: 'MED-CC-AIC', reportsTo: 'khalid' },
-  // EDGE CASE 1 — real staff in a unit with no head. Her manager is the PARENT
-  // ward's head, which is what the vacancy walk-up will resolve to.
+  // EDGE CASE 1 — Ziad heads the Neonatal ICU today and DEPARTS during
+  // seeding, which is what creates the vacancy. He must exist and be active
+  // first: invite() refuses to place non-head staff into a headless unit.
+  { key: 'ziad', name: 'Dr. Ziad Al-Fahad', emailLocal: 'ziad.alfahad', position: 'Unit Head', unit: 'MED-CC-NIC', reportsTo: 'khalid' },
+  // The staffer who REMAINS after Ziad leaves — the point of the case.
+  // Reports to the parent ward's head, deliberately NOT to Ziad: deactivate()
+  // leaves reports' managerId untouched, so reporting to him would dangle at
+  // an INACTIVE user.
   { key: 'fatima', name: 'Fatima Al-Anazi', emailLocal: 'fatima.alanazi', position: 'Senior Specialist', unit: 'MED-CC-NIC', reportsTo: 'khalid' },
   { key: 'tariq', name: 'Dr. Tariq Al-Juhani', emailLocal: 'tariq.aljuhani', position: 'Head of Ward', unit: 'MED-SU', reportsTo: 'faisal' },
   { key: 'maha', name: 'Dr. Maha Al-Subaie', emailLocal: 'maha.alsubaie', position: 'Unit Head', unit: 'MED-SU-OT', reportsTo: 'tariq' },
@@ -244,7 +250,7 @@ export const HOSPITAL_FIXTURE: TenantFixture = {
   name: 'Al Nakheel Specialist Hospital',
   country: 'SA',
   emailDomain: 'alnakheel-hospital.test',
-  adminKey: 'yasser',
+  adminKey: 'hessa',
 
   // ACC-62 PD #4 (approved) — 'ward' is not among the 6 SYSTEM org_unit_type
   // values. Nothing validates OrgUnit.type and that lookup category has zero
@@ -258,13 +264,14 @@ export const HOSPITAL_FIXTURE: TenantFixture = {
   committees: COMMITTEES,
 
   edgeCases: {
-    // Neonatal ICU: Fatima Al-Anazi works there as a Senior Specialist — a
-    // real occupant, but not a head-conferring position. Its parent ward
-    // MED-CC has Dr. Khalid Bin Saleh, so resolveActingHeadForOrgUnit() walks
-    // up one level and resolves. That is a PARTIAL vacancy: isHeadVacant true,
-    // isHeadFullyUnresolved false, silent, no notification. An empty unit
-    // would not exercise the walk-up at all.
-    vacantHeadUnit: 'MED-CC-NIC',
+    // Neonatal ICU. Dr. Ziad Al-Fahad heads it, then departs — the seed
+    // deactivates him, and deactivate() calls refreshOrgUnitHeadVacancy()
+    // itself, so the vacancy is produced by the real mechanism rather than
+    // written by hand. Fatima Al-Anazi remains as a Senior Specialist, which
+    // confers no headship. Its parent ward MED-CC has Dr. Khalid Bin Saleh, so
+    // resolveActingHeadForOrgUnit() walks up one level and resolves: a PARTIAL
+    // vacancy — isHeadVacant true, isHeadFullyUnresolved false, silent.
+    vacantHeadUnit: { unit: 'MED-CC-NIC', departingHead: 'ziad' },
 
     // Layla heads Internal Medicine and has a real subtree beneath her, so her
     // absence is consequential — applyOutOfOfficeRouting() substitutes Omar

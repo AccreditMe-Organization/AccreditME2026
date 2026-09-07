@@ -158,8 +158,11 @@ const PEOPLE = [
   // Deanship of Quality & Accreditation — hind is the tenant admin.
   { key: 'hind', name: 'Dr. Hind Al-Dhaheri', emailLocal: 'hind.aldhaheri', position: 'Director', unit: 'DQA', reportsTo: 'adel' },
   { key: 'maitha', name: 'Maitha Al-Ameri', emailLocal: 'maitha.alameri', position: 'Head of Office', unit: 'DQA-ACC', reportsTo: 'hind' },
-  // EDGE CASE 1 — real staff in the unit with no head. Reports to the parent
-  // deanship's director, which is what the vacancy walk-up resolves to.
+  // EDGE CASE 1 — Rana heads Institutional Effectiveness today and DEPARTS
+  // during seeding, which is what creates the vacancy.
+  { key: 'rana', name: 'Dr. Rana Al-Zaabi', emailLocal: 'rana.alzaabi', position: 'Head of Office', unit: 'DQA-IE', reportsTo: 'hind' },
+  // The staffer who REMAINS. Reports to the parent deanship's director, not
+  // to Rana, so nothing dangles at an INACTIVE user after her departure.
   { key: 'sultan', name: 'Sultan Al-Junaibi', emailLocal: 'sultan.aljunaibi', position: 'Senior Specialist', unit: 'DQA-IE', reportsTo: 'hind' },
 ];
 
@@ -219,7 +222,7 @@ export const UNIVERSITY_FIXTURE: TenantFixture = {
   name: 'Al Manara University',
   country: 'AE',
   emailDomain: 'almanara-univ.test',
-  adminKey: 'hind',
+  adminKey: 'adel',
 
   // ACC-62 PD #4 (approved). 'office' is already a SYSTEM value, so only the
   // four genuinely new ones are added.
@@ -241,11 +244,11 @@ export const UNIVERSITY_FIXTURE: TenantFixture = {
   // same reasoning that already applied to the duplicate-name case — and costs
   // nothing, since the states are ordinary data.
   edgeCases: {
-    // Institutional Effectiveness Office: Sultan Al-Junaibi works there as a
-    // Senior Specialist, which confers no headship. Its parent DQA has Dr.
-    // Hind Al-Dhaheri (Director), so the walk-up resolves one level up —
-    // a PARTIAL vacancy, flagged and silent.
-    vacantHeadUnit: 'DQA-IE',
+    // Institutional Effectiveness Office. Dr. Rana Al-Zaabi heads it, then
+    // departs; Sultan Al-Junaibi remains as a Senior Specialist, which confers
+    // no headship. Parent DQA has Dr. Hind Al-Dhaheri, so the walk-up resolves
+    // one level up — a PARTIAL vacancy, flagged and silent.
+    vacantHeadUnit: { unit: 'DQA-IE', departingHead: 'rana' },
 
     // A Dean out of office, covered by one of her own Heads of School. Salma
     // has two schools and their programmes beneath her, so her absence has

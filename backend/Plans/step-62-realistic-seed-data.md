@@ -157,7 +157,7 @@ The schema enforces the `isUnitHeadPosition → isSingleAssignee` pairing, and
 itself** — the seeder's own comment says exactly this. Flagged as Pending
 Discussion #2 because it adds positions the product does not ship by default.
 
-### 2.2 Al Nakheel Specialist Hospital — 24 people
+### 2.2 Al Nakheel Specialist Hospital — 25 people
 
 | # | Name | Position | Org unit | Reports to |
 |---|---|---|---|---|
@@ -170,7 +170,8 @@ Discussion #2 because it adds positions the product does not ship by default.
 | 7 | Dr. Reem Al-Zahrani | Unit Head | MED-IM-END | Layla Al-Harbi |
 | 8 | Dr. Khalid Bin Saleh | Head of Ward | MED-CC | Faisal Al-Qahtani |
 | 9 | Dr. Sara Al-Mutairi | Unit Head | MED-CC-AIC | Khalid Bin Saleh |
-| 10 | Fatima Al-Anazi | Senior Specialist | MED-CC-NIC | Khalid Bin Saleh |
+| 10 | Dr. Ziad Al-Fahad | Unit Head | MED-CC-NIC | Khalid Bin Saleh | **departs** |
+| 11 | Fatima Al-Anazi | Senior Specialist | MED-CC-NIC | Khalid Bin Saleh |
 | 11 | Dr. Tariq Al-Juhani | Head of Ward | MED-SU | Faisal Al-Qahtani |
 | 12 | Dr. Maha Al-Subaie | Unit Head | MED-SU-OT | Tariq Al-Juhani |
 | 13 | Noura Al-Ghamdi | Director | NUR | Hessa Al-Dosari |
@@ -200,11 +201,20 @@ handover requires its holder to actually *be* a head), and Nasser Al-Qassimi
 was added to lead CSS. Verified by running the validator: exactly one unit
 resolves to no head, and it is the declared one.
 
-`Dr. Yasser Al-Amri` (#17, Director of Quality & Patient Safety) is the
-tenant admin — the natural owner of a QMS, and the Quality Manager persona
-that structural sequence item 5 has been waiting to test against.
+**The tenant admin is `Dr. Hessa Al-Dosari` (#1, the root unit's head), not
+Yasser — and this is forced by the code, not a preference.**
+`PlatformTenantService.createTenant()` invites the admin as `Director` in the
+ROOT unit before this seed runs. `Director` is head-conferring, and
+`hasAnyHeadConferringHolder()` counts **ACTIVE and INVITED**, so that invited
+admin already blocks anyone else from becoming root's head. Any other
+`adminKey` makes the seed unrunnable.
 
-### 2.3 Al Manara University — 20 people
+This turns out to be better for the purpose anyway: Yasser stays a **non-admin**
+Quality Director, which is exactly what structural sequence item 5 needs. A
+Tenant Admin holds every permission and so proves nothing about
+permission-gating — CLAUDE.md's own criticism of every test to date.
+
+### 2.3 Al Manara University — 21 people
 
 | # | Name | Position | Org unit | Reports to |
 |---|---|---|---|---|
@@ -227,7 +237,8 @@ that structural sequence item 5 has been waiting to test against.
 | 17 | Dr. Omar Al-Hosani | Programme Director | MGT-BBA | Shaikha Al-Rumaithi |
 | 18 | Dr. Hind Al-Dhaheri | Director | DQA | Adel Al-Mansoori |
 | 19 | Maitha Al-Ameri | Head of Office | DQA-ACC | Hind Al-Dhaheri |
-| 20 | Sultan Al-Junaibi | Senior Specialist | DQA-IE | Hind Al-Dhaheri |
+| 20 | Dr. Rana Al-Zaabi | Head of Office | DQA-IE | Hind Al-Dhaheri | **departs** |
+| 21 | Sultan Al-Junaibi | Senior Specialist | DQA-IE | Hind Al-Dhaheri |
 
 Same head-coverage rule as the hospital: every unit has a head-position
 holder **except `DQA-IE`**, so the seeded vacancy is the only one in the
@@ -236,8 +247,9 @@ tenant. `Head of Office` was added for the same reason the hospital needed
 and `Director` (grade 10) is far too senior for an office reporting into a
 deanship.
 
-`Dr. Hind Al-Dhaheri` (#18, Director of the Deanship of Quality &
-Accreditation) is the tenant admin.
+The tenant admin is `Prof. Adel Al-Mansoori` (#1, the root unit's head), for
+the same forced reason as the hospital's. `Dr. Hind Al-Dhaheri` stays a
+non-admin Quality Director — the university's equivalent persona.
 
 **All four edge cases are seeded in BOTH tenants, not split between them.**
 This plan originally placed out-of-office and handover only in the hospital.
@@ -269,6 +281,35 @@ lack an ACTIVE head-holder, which for these trees means a headless
 organisation — unrealistic as demo data, and it would fire tenant-admin
 notifications on every sweep. That branch is better covered by a test than by
 fixture data. Raising it rather than leaving the gap unexplained.
+
+> **REFRAMED during implementation (commit 5) — the original design was not
+> buildable.** `invite()` carries an ACC-46 hard block: *"cannot invite anyone
+> into a unit with no direct Head and no Acting Head"*, and
+> `hasDirectOrActingHead()` looks only at the target unit — escalation coverage
+> from a parent explicitly does not count. A unit therefore cannot be **born**
+> headless with staff in it; the product forbids exactly that as a starting
+> state. Fatima and Sultan could not have been created.
+>
+> The vacancy is now produced the way it happens in reality: **a head departs.**
+> Dr. Ziad Al-Fahad heads the Neonatal ICU (and Dr. Rana Al-Zaabi the
+> Institutional Effectiveness Office); each is invited, activated, has their
+> staffer placed beneath them, and is then deactivated in commit 6.
+>
+> This is better than the original, not merely a workaround:
+> - Units do not become vacant spontaneously — someone leaves. The seed now
+>   tells that story.
+> - `deactivate()` calls `refreshOrgUnitHeadVacancy()` **itself**, so
+>   `isHeadVacant`/`headVacantSince` are set by the real mechanism rather than
+>   written directly by the seed.
+> - It gives real data to CLAUDE.md's existing note that vacancy detection is
+>   ACTIVE-only.
+>
+> **Confirmed before relying on it** (rather than discovered at run time):
+> `deactivate()` never touches its reports' `managerId` —
+> `reassignAllForUser()` moves `TaskAssignee` rows, not people — and its only
+> throw is last-admin lockout. The staffer is left exactly in place. Both
+> staffers deliberately report to the **parent** unit's head, not to the
+> departing head, so nothing dangles at an INACTIVE user.
 
 ### Edge Case 2 — Out of office: Dr. Layla Al-Harbi, covered by Dr. Omar Siddiqui
 
@@ -464,6 +505,23 @@ in — which is what makes persona testing possible. Two known costs: argon2
 hashing is deliberately expensive (~43 hashes, seconds not minutes), and the
 haveIBeenPwned plugin must stay disabled in the seed's own auth instance, as
 `demo-seed.ts` documents for exactly this reason.
+
+**Activation must be interleaved, not batched — a second finding from the
+code.** Two guards filter on different statuses, and they pull in opposite
+directions:
+
+| Guard | Counts | Effect |
+|---|---|---|
+| `hasAnyHeadConferringHolder()` (head uniqueness) | ACTIVE **and** INVITED | merely *inviting* a second head into a unit is already a conflict |
+| `hasDirectOrActingHead()` (ACC-46 staffing block) | **ACTIVE only** | a still-INVITED head does not unlock their unit for staff |
+
+So invite-everyone-then-activate-everyone **fails on the second person into any
+unit**. `applyPeople()` therefore invites and activates one person at a time,
+in an order computed up front by `orderPeopleForInvite()`: each unit's head
+before anyone else in that unit, and every manager before their reports.
+Verified by simulating all three `invite()` guards against the computed order
+for both fixtures, rather than discovering a `ConflictException` thirty users
+into a run.
 
 ### 6.3 File layout — keeping it maintainable
 

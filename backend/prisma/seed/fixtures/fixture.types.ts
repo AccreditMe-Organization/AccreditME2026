@@ -110,11 +110,31 @@ export interface CommitteeFixture {
 // so the reason for each choice lives next to the choice, and so the seed
 // cannot half-apply one.
 export interface EdgeCaseFixture {
-  // A unit with staff but no head-position holder, whose PARENT does have
-  // one — producing a PARTIAL vacancy that exercises
-  // resolveActingHeadForOrgUnit()'s walk-up (flagged, silent, no
-  // notification). An empty unit would not exercise the walk-up at all.
-  vacantHeadUnit: string;
+  // A vacancy is created the way it happens in reality: a head DEPARTS.
+  //
+  // It cannot be seeded directly. invite() carries an ACC-46 hard block —
+  // "cannot invite anyone into a unit with no direct Head and no Acting
+  // Head", and hasDirectOrActingHead() looks only at the target unit, never
+  // at escalation coverage from a parent. So a unit cannot be born headless
+  // with staff in it; the product forbids exactly that state as a starting
+  // point.
+  //
+  // Instead: the departing head is invited and activated, the staffer is
+  // invited beneath them, and the head is then deactivated. That is strictly
+  // better than seeding the end state by hand — deactivate() itself calls
+  // refreshOrgUnitHeadVacancy(), so isHeadVacant/headVacantSince are set by
+  // the real mechanism rather than written directly by the seed.
+  //
+  // Confirmed before relying on it: deactivate() never touches its reports'
+  // managerId (reassignAllForUser moves TaskAssignee rows, not people), and
+  // its only throw is last-admin lockout. The staffer is therefore left
+  // exactly in place.
+  vacantHeadUnit: {
+    unit: string;
+    // Must hold a head-conferring position IN that unit, and must be its ONLY
+    // head — validateUnitHeadUniqueness() permits just one per unit.
+    departingHead: string;
+  };
 
   // Out-of-office with real coverage. Dates are computed relative to seed
   // time by the applier — never stored here as absolute values, or the case
@@ -327,8 +347,33 @@ export function validateFixture(fixture: TenantFixture): void {
   }
 
   // -- Admin ------------------------------------------------------------------
-  if (!peopleByKey.has(fixture.adminKey)) {
+  // The admin MUST be the root unit's head, and this is forced by the code,
+  // not a preference. PlatformTenantService.createTenant() invites the admin
+  // as 'Director' in the root unit — a head-conferring position — before this
+  // seed runs. hasAnyHeadConferringHolder() counts ACTIVE *and* INVITED, so
+  // that invited admin already blocks anyone else from becoming root's head
+  // via validateUnitHeadUniqueness(). Any other adminKey makes the seed
+  // unrunnable.
+  const admin = peopleByKey.get(fixture.adminKey);
+  if (!admin) {
     errors.push(`adminKey '${fixture.adminKey}' is not a person in this fixture.`);
+  } else {
+    if (admin.unit !== fixture.tree.key) {
+      errors.push(
+        `adminKey '${fixture.adminKey}' is in '${admin.unit}', but createTenant() places the tenant admin ` +
+          `in the ROOT unit ('${fixture.tree.key}'), where they immediately hold a head-conferring position.`,
+      );
+    }
+    if (!headPositions.has(admin.position)) {
+      errors.push(
+        `adminKey '${fixture.adminKey}' holds '${admin.position}', which is not head-conferring. ` +
+          "createTenant() invites the admin as 'Director' (a head position) in the root unit, so the " +
+          'fixture must reconcile to another head position, not a non-head one.',
+      );
+    }
+    if (admin.reportsTo !== null) {
+      errors.push(`adminKey '${fixture.adminKey}' must be the root of the reporting tree (reportsTo: null).`);
+    }
   }
 
   // -- Committees -------------------------------------------------------------
@@ -355,25 +400,69 @@ export function validateFixture(fixture: TenantFixture): void {
   // -- Edge cases: prove each one is actually the state it claims to be ------
   const edge = fixture.edgeCases;
 
-  // Vacancy must be PARTIAL: the unit itself has no head-position holder, but
-  // an ancestor does. Both halves are checked — a unit whose ancestors are
-  // also headless would be a different (fully-unresolved) case that ACC-62
-  // deliberately does not seed.
-  if (!unitKeys.has(edge.vacantHeadUnit)) {
-    errors.push(`edgeCases.vacantHeadUnit '${edge.vacantHeadUnit}' is not a known unit.`);
-  } else {
-    const holdsHeadPositionIn = (unitKey: string): boolean =>
-      fixture.people.some((p) => p.unit === unitKey && headPositions.has(p.position));
+  // The vacancy is produced by deactivating a real head, so the fixture must
+  // describe the state BEFORE the departure and every part of the story must
+  // hold: the unit has exactly one head (who leaves), at least one non-head
+  // staffer (who stays, and is the point), and an ancestor with its own head
+  // (so the result is a PARTIAL vacancy that exercises the walk-up rather
+  // than the fully-unresolved case ACC-62 deliberately does not seed).
+  const vacancy = edge.vacantHeadUnit;
+  const holdersOfHeadPositionIn = (unitKey: string): PersonFixture[] =>
+    fixture.people.filter((p) => p.unit === unitKey && headPositions.has(p.position));
 
-    if (holdsHeadPositionIn(edge.vacantHeadUnit)) {
+  if (!unitKeys.has(vacancy.unit)) {
+    errors.push(`edgeCases.vacantHeadUnit.unit '${vacancy.unit}' is not a known unit.`);
+  } else {
+    const departing = peopleByKey.get(vacancy.departingHead);
+    if (!departing) {
+      errors.push(`edgeCases.vacantHeadUnit.departingHead '${vacancy.departingHead}' is not a known person.`);
+    } else {
+      if (departing.unit !== vacancy.unit) {
+        errors.push(
+          `Departing head '${departing.key}' is in '${departing.unit}', not the vacating unit '${vacancy.unit}'.`,
+        );
+      }
+      if (!headPositions.has(departing.position)) {
+        errors.push(
+          `Departing head '${departing.key}' holds '${departing.position}', which is not head-conferring — ` +
+            'deactivating them would not vacate anything.',
+        );
+      }
+    }
+
+    const heads = holdersOfHeadPositionIn(vacancy.unit);
+    if (heads.length > 1) {
       errors.push(
-        `edgeCases.vacantHeadUnit '${edge.vacantHeadUnit}' has a head-position holder, so it is not vacant.`,
+        `Unit '${vacancy.unit}' has ${heads.length} head-position holders (${heads.map((h) => h.key).join(', ')}). ` +
+          'validateUnitHeadUniqueness() permits only one per unit, so the invite would be rejected.',
       );
     }
-    let ancestor = parentByUnit.get(edge.vacantHeadUnit) ?? null;
+
+    const remainingStaff = fixture.people.filter(
+      (p) => p.unit === vacancy.unit && p.key !== vacancy.departingHead,
+    );
+    if (remainingStaff.length === 0) {
+      errors.push(
+        `Unit '${vacancy.unit}' would be empty after the head departs. The case exists to show a unit ` +
+          'with real staff and no head — an empty unit demonstrates nothing.',
+      );
+    }
+    // A staffer must NOT report to the departing head: deactivate() does not
+    // touch its reports' managerId, so that would leave a dangling manager
+    // pointing at an INACTIVE user.
+    for (const staff of remainingStaff) {
+      if (staff.reportsTo === vacancy.departingHead) {
+        errors.push(
+          `'${staff.key}' reports to the departing head '${vacancy.departingHead}'. deactivate() leaves ` +
+            'reports\' managerId untouched, so this would dangle at an INACTIVE user — report to the parent unit instead.',
+        );
+      }
+    }
+
+    let ancestor = parentByUnit.get(vacancy.unit) ?? null;
     let covered = false;
     while (ancestor) {
-      if (holdsHeadPositionIn(ancestor)) {
+      if (holdersOfHeadPositionIn(ancestor).length > 0) {
         covered = true;
         break;
       }
@@ -381,7 +470,7 @@ export function validateFixture(fixture: TenantFixture): void {
     }
     if (!covered) {
       errors.push(
-        `edgeCases.vacantHeadUnit '${edge.vacantHeadUnit}' has no head anywhere up its chain. ` +
+        `Unit '${vacancy.unit}' has no head anywhere up its chain once its own departs. ` +
           'That is the FULLY-unresolved case, which ACC-62 deliberately does not seed ' +
           '(it requires a headless organization and notifies tenant admins on every sweep).',
       );
