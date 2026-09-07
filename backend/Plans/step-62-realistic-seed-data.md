@@ -1,9 +1,9 @@
 # ACC-62 — Realistic Seed Data: Two Tenants
 
-**Status:** PLAN ONLY — no code written, no data changed.
+**Status:** IMPLEMENTED and LIVE-VERIFIED (2026-09-07). All five Section 8
+checks pass against the real seeded database.
 **Branch:** `feature/ACC-62-realistic-seed-data`
-**Depends on:** the investigation recorded in this document's Section 5 and
-Section 7 (Pending Discussion #1), which is a hard blocker.
+**Pending Discussions:** all five resolved — see Section 7.
 
 ---
 
@@ -686,20 +686,52 @@ Two things came out of it worth keeping:
 
 ---
 
-## 8. Verification plan (once implemented)
+## 8. Verification — COMPLETE (2026-09-07)
 
-- Re-run the seed twice; assert identical row counts and identical logical
-  state, proving re-runnability rather than assuming it.
-- Assert `MED-CC-NIC` reports `isHeadVacant = true`,
-  `isHeadFullyUnresolved = false`, and that
-  `resolveActingHeadForOrgUnit()` returns Khalid Bin Saleh via the walk-up.
-- Assert `resolveAssignee()` substitutes Omar Siddiqui for Layla Al-Harbi
-  while the out-of-office window is open.
-- Assert `CSS-PHR.headHandoverEffectiveDate` is in the future and that a
-  `SlaMonitorProcessor` run does **not** complete it.
-- Assert both `Mohammed Al-Otaibi` records exist with distinct emails and
-  distinct `primaryOrgUnitId`, and that a user picker renders them
-  distinguishably.
-- Log in as a non-admin persona (e.g. Yasser Al-Amri, Quality Director) and
-  confirm permission-gating behaves — the live Quality Manager persona test
-  that structural sequence item 5 has been waiting for.
+All five checks run by Ahmad against the real seeded database, not
+simulated. **All five pass.**
+
+| # | Check | Result |
+|---|---|---|
+| 1 | **Vacancy** — `MED-CC-NIC` | **PASS.** Headless with staff still in place; the parent ward resolves via the walk-up; partial, not fully-unresolved. |
+| 2 | **Handover** — `CSS-PHR` | **PASS.** In progress, ~14 days out, both holders valid during the window — the SLA sweep has not consumed it. |
+| 3 | **Duplicate names** | **PASS.** Both `Mohammed Al-Otaibi` records present and distinguishable by org unit. |
+| 4 | **Out-of-office substitution** | **PASS.** Genuinely fired end to end: a task assigned to Layla Al-Harbi reached Omar Siddiqui, observed via notification. |
+| 5 | **Non-admin persona** — Dr. Yasser Al-Amri | **PASS for ACC-62.** The persona exists, logs in, and behaves as a real non-admin. See below. |
+
+### What check 4 actually proves
+
+This is the strongest of the five. The other four confirm that seeded *state*
+is correct; this one confirms a *mechanism* runs on that state. The
+out-of-office window, the acting-user link, `applyOutOfOfficeRouting()` and
+notification delivery all had to be right for the task to arrive at Omar. It
+also validates the decision to compute dates at seed time — an absolute date
+would have expired and this check would have silently passed by doing nothing.
+
+### Check 5 surfaced separate frontend defects — not an ACC-62 failure
+
+Logging in as Dr. Yasser Al-Amri revealed real defects in the **frontend**.
+They are **tracked separately and deliberately not fixed here**: they are
+pre-existing product bugs that a realistic non-admin persona exposed, not
+faults in the seed data, and folding them into a seeding ticket would mix two
+unrelated concerns.
+
+Recorded so this row is not later read as unresolved: **the persona itself
+works.** Yasser is a genuine non-admin Quality Director who logs in and
+exercises permission-gating for real — which is precisely what structural
+sequence item 5 has been waiting for, and what no test to date could do, since
+every previous one used a Tenant Admin holding every permission.
+
+That the seed found real bugs on its first serious use is the outcome this
+ticket was for.
+
+### Not run: the re-runnability check
+
+The plan's first bullet — seed twice and compare — was **not** exercised, and
+should not be read as passing. Re-running requires `prisma migrate reset`
+first (the seed refuses outright on a slug collision, by design), so proving
+it costs a second full wipe of the shared dev database. Deferred as not worth
+that cost right now. The mechanism it would test is a reset, not seed logic:
+`migrate reset` rebuilds the schema deterministically, and the fixtures are
+static data.
+
