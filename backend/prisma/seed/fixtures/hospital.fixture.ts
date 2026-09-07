@@ -7,7 +7,7 @@
 // validateFixture() before a single write happens — unit-code length, the
 // head-position pairing, the manager tree being a real subtree of the org
 // tree, and each edge case genuinely being the state it claims to be.
-import { TenantFixture } from './fixture.types';
+import { CommitteeFixture, PersonFixture, PositionFixture, TenantFixture, UnitFixture } from './fixture.types';
 
 // ── Head-conferring positions ────────────────────────────────────────────────
 // Only 'Director' ships with isUnitHeadPosition among the 10 industry-agnostic
@@ -19,7 +19,7 @@ import { TenantFixture } from './fixture.types';
 // isSingleAssignee is set on every one of these, never independently: the
 // schema requires the pairing and direct-create seeding bypasses
 // validateHeadFlagPairing().
-const POSITIONS = [
+const POSITIONS: PositionFixture[] = [
   { nameEn: 'Chief Executive Officer', nameAr: 'الرئيس التنفيذي', grade: 12, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Chief Medical Officer', nameAr: 'المدير الطبي', grade: 11, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Ward', nameAr: 'رئيس جناح', grade: 8, isUnitHeadPosition: true, isSingleAssignee: true },
@@ -36,7 +36,7 @@ const POSITIONS = [
 // @MaxLength(10) and /^[A-Z0-9-]+$/. That limit is why the microbiology unit
 // is CSS-MIC rather than the plan's original CSS-LAB-MIC, which was 11 chars
 // and would have been rejected at write time.
-const TREE = {
+const TREE: UnitFixture = {
   key: 'NAKHEEL',
   nameEn: 'Al Nakheel Specialist Hospital',
   nameAr: 'مستشفى النخيل التخصصي',
@@ -141,7 +141,7 @@ const TREE = {
 // Every reportsTo points to someone in the same unit or a direct ancestor —
 // validateFixture() proves this, so the reporting tree cannot silently stop
 // being a subtree of the org tree.
-const PEOPLE = [
+const PEOPLE: PersonFixture[] = [
   { key: 'hessa', name: 'Dr. Hessa Al-Dosari', emailLocal: 'hessa.aldosari', position: 'Chief Executive Officer', unit: 'NAKHEEL', reportsTo: null },
 
   // Medical Affairs
@@ -195,7 +195,7 @@ const PEOPLE = [
 // ones. Infection Control reports to Quality & Patient Safety, giving one real
 // committee hierarchy — which is the only structural relationship the schema
 // can express, since Committee has no orgUnitId (ACC-62 PD #3 / ACC-63).
-const COMMITTEES = [
+const COMMITTEES: CommitteeFixture[] = [
   {
     key: 'qps-committee',
     nameEn: 'Quality & Patient Safety Committee',

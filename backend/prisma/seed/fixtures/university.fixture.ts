@@ -8,7 +8,7 @@
 // Wards -> Units, and its own head-conferring titles. That is the point of
 // having two tenants — it proves nothing in the seeding machinery is
 // hospital-specific.
-import { TenantFixture } from './fixture.types';
+import { CommitteeFixture, PersonFixture, PositionFixture, TenantFixture, UnitFixture } from './fixture.types';
 
 // ── Head-conferring positions ────────────────────────────────────────────────
 // Same reasoning as the hospital's (ACC-62 PD #2): only 'Director' ships with
@@ -19,7 +19,7 @@ import { TenantFixture } from './fixture.types';
 // Section': the Deanship's offices are real units that need real heads, and
 // no shipped position fits at that level — 'Director' (grade 10) is far too
 // senior for an office reporting into a deanship.
-const POSITIONS = [
+const POSITIONS: PositionFixture[] = [
   { nameEn: 'Rector', nameAr: 'مدير الجامعة', grade: 12, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Dean', nameAr: 'عميد', grade: 11, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of School', nameAr: 'رئيس مدرسة', grade: 8, isUnitHeadPosition: true, isSingleAssignee: true },
@@ -33,7 +33,7 @@ const POSITIONS = [
 // ENG-CIV-BSC / ENG-CIV-MSC / BUS-MGT-BBA were all 11. They are CIV-BSC,
 // CIV-MSC and MGT-BBA here. ENG-CMP-CS and HS-NUR-BSN are exactly 10 and fit
 // unchanged.
-const TREE = {
+const TREE: UnitFixture = {
   key: 'MANARA',
   nameEn: 'Al Manara University',
   nameAr: 'جامعة المنارة',
@@ -128,7 +128,7 @@ const TREE = {
 // 20 people. As in the hospital fixture, every unit has a head-position holder
 // EXCEPT the one declared vacancy (DQA-IE) — so the seeded vacancy is the only
 // one in the tenant rather than one of several accidents.
-const PEOPLE = [
+const PEOPLE: PersonFixture[] = [
   { key: 'adel', name: 'Prof. Adel Al-Mansoori', emailLocal: 'adel.almansoori', position: 'Rector', unit: 'MANARA', reportsTo: null },
 
   // Faculty of Engineering
@@ -173,7 +173,7 @@ const PEOPLE = [
 ];
 
 // ── Committees ───────────────────────────────────────────────────────────────
-const COMMITTEES = [
+const COMMITTEES: CommitteeFixture[] = [
   {
     key: 'quality-assurance',
     nameEn: 'Quality Assurance Committee',

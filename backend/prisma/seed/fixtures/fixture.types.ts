@@ -1,3 +1,5 @@
+import { COMMITTEE_MEETING_FREQUENCIES } from '../../../src/foundation/committees/dto/create-committee.dto';
+
 // ACC-62 — the declarative shapes a tenant fixture is written in.
 //
 // The governing rule: a fixture references everything by a STABLE STRING KEY
@@ -92,7 +94,10 @@ export interface CommitteeFixture {
   type: string;
   purpose: string;
   quorumCount: number;
-  meetingFrequency: string;
+  // The DTO's own union, not `string`: a typo'd frequency then fails at
+  // compile time rather than being caught by @IsIn() at write time — or, if
+  // the applier had cast it away, not at all.
+  meetingFrequency: (typeof COMMITTEE_MEETING_FREQUENCIES)[number];
   // CommitteeFixture.key of the committee this one reports to.
   //
   // NOT an org unit: Committee has no orgUnitId field at all (ACC-62 PD #3,
