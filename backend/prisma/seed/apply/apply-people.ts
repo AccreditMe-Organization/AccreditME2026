@@ -23,7 +23,8 @@ import * as argon2 from 'argon2';
 import { PrismaClient } from '../../../generated/prisma/client';
 import { UserService } from '../../../src/foundation/user/user.service';
 import { PrismaService } from '../../../src/prisma/prisma.service';
-import { PersonFixture, SeedContext, TenantFixture, resolve } from '../fixtures/fixture.types';
+import { SeedContext, TenantFixture, resolve } from '../fixtures/fixture.types';
+import { orderPeopleForInvite } from './order-people';
 
 // Dev-only, and every seeded account shares it — the whole point is that a
 // tester can log in as any persona without looking anything up.
@@ -63,48 +64,6 @@ function createAuthInstance(prisma: PrismaClient) {
     verification: { modelName: 'authVerification' },
     advanced: { database: { generateId: false } },
   });
-}
-
-// Orders people so that, at each step, everything invite() requires already
-// exists. Computed up front and asserted complete, rather than discovered by
-// try/catch at write time — a wrong order otherwise surfaces as a confusing
-// ConflictException 30 users in.
-export function orderPeopleForInvite(fixture: TenantFixture): PersonFixture[] {
-  const headPositions = new Set(
-    fixture.positions.filter((p) => p.isUnitHeadPosition).map((p) => p.nameEn),
-  );
-  // 'Director' ships with isUnitHeadPosition among DEFAULT_POSITIONS and is
-  // used by several fixtures, so it counts even though no fixture declares it.
-  headPositions.add('Director');
-
-  const remaining = [...fixture.people];
-  const ordered: PersonFixture[] = [];
-  const placed = new Set<string>();
-  const unitsWithActiveHead = new Set<string>();
-
-  while (remaining.length > 0) {
-    const index = remaining.findIndex((person) => {
-      const managerReady = person.reportsTo === null || placed.has(person.reportsTo);
-      const isOwnUnitHead = headPositions.has(person.position);
-      const unitReady = isOwnUnitHead || unitsWithActiveHead.has(person.unit);
-      return managerReady && unitReady;
-    });
-
-    if (index === -1) {
-      throw new Error(
-        'Cannot order people for invite: no remaining person has both their manager and their ' +
-          `unit's head already placed. Stuck on: ${remaining.map((p) => p.key).join(', ')}. ` +
-          'Every unit needs a head-conferring holder, and the manager graph must be acyclic.',
-      );
-    }
-
-    const [person] = remaining.splice(index, 1);
-    ordered.push(person!);
-    placed.add(person!.key);
-    if (headPositions.has(person!.position)) unitsWithActiveHead.add(person!.unit);
-  }
-
-  return ordered;
 }
 
 export async function applyPeople(
