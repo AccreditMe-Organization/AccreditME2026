@@ -13,6 +13,34 @@ export interface IWorkflowTransition {
   actions?: IWorkflowTransitionAction[];
 }
 
+// ACC-65 — the shape of WorkflowTransition.validatorConfig, which is a raw
+// Json column. Declared explicitly so the difference between "designed" and
+// "enforced" is visible at the type level rather than only in
+// checkValidatorConfig()'s body.
+//
+// step-06 §8 designed four validators. Two remain unenforced and are
+// deliberately NOT declared here, because declaring them would imply the
+// engine acts on them:
+//
+//   requiredFields  | minAttachments
+//     Both describe the BUSINESS OBJECT — a document's title, its
+//     attachments — which the engine never sees. They need the
+//     caller-supplied object snapshot that TriggerTransitionDto does not
+//     carry and that was never built. Still unenforced; still correct to
+//     defer. A transition may carry them (2 seeded transitions do), and
+//     they are simply ignored.
+//
+// The two below are enforced, and both are enforceable for the same reason:
+// each is answerable from data the engine already owns, with no snapshot.
+export interface ValidatorConfig {
+  // Checked against this stage's own WorkflowApproval rows.
+  minApprovals?: number;
+  // ACC-65 — checked against Task rows carrying this instance and stage.
+  // Was deferred alongside the two above under one shared "needs a snapshot"
+  // comment; that reason never applied to it (SYSTEM-REFERENCE.md §2.10).
+  allPreviousStageTasksComplete?: boolean;
+}
+
 // ACC-55 — why a transition's requiredPermission may not do what the
 // configurer intends. Both are WARNINGS, never rejections: the save always
 // succeeds and the value is written exactly as supplied.

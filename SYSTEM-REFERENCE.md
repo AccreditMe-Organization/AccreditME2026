@@ -870,10 +870,12 @@ Fires in `order` after a successful transition. Per `actionType`:
 
 ### 2.10 Validator Config — `checkValidatorConfig()` (`workflow.service.ts:860`)
 
-Only **one** of the four validator conditions CLAUDE.md documents is
-actually enforced: `minApprovals` (checked against the transition's own
-`WorkflowApproval` rows). `requiredFields`, `minAttachments`, and
-`allPreviousStageTasksComplete` are **not enforced anywhere**.
+**Two** of the four validator conditions CLAUDE.md documents are now
+enforced: `minApprovals` (checked against the transition's own
+`WorkflowApproval` rows) and, as of **ACC-65**,
+`allPreviousStageTasksComplete` (checked against `Task` rows carrying
+this instance and stage). `requiredFields` and `minAttachments` remain
+**not enforced anywhere**.
 
 The code comment gives one shared reason for all three — they "need a
 caller-supplied object snapshot that `TriggerTransitionDto` does not
@@ -892,14 +894,64 @@ carry — left unenforced until a functional module needs them."
   `sourceStageId` with the *destination* stage — and `Task.status` is
   set to `COMPLETED` in one place. "Are this stage's tasks done?" is one
   query the engine can already make, making it exactly as self-contained
-  as `minApprovals`. It needs no snapshot; it was grouped with the
-  snapshot-dependent two and deferred with them.
+  as `minApprovals`. It needed no snapshot; it was grouped with the
+  snapshot-dependent two and deferred with them. **ACC-65 enforced it**
+  — see 2.10.1 below.
 
 This distinction is load-bearing, not pedantic: task-completion gating
 is the mechanism ACC-64's architectural decision depends on (see
 CLAUDE.md, "Automate mechanical work, not decisions"), and it is viable
 precisely because this validator is buildable from data that already
 exists.
+
+#### 2.10.1 `allPreviousStageTasksComplete` — enforcement (ACC-65)
+
+`assertStageTasksComplete()` blocks a transition while the stage being
+**left** still has outstanding tasks. Three scoping decisions were made
+deliberately; each has a plausible wrong default, so they are recorded
+here rather than left to be re-derived from the `where` clause.
+
+**Which stage.** `Task.sourceStageId` holds the stage a task was created
+*for*, which `executeCreateTask()` sets to the transition's
+**destination** (`sourceStageId: toStage.id`). So the tasks belonging to
+the stage now being left are those stamped with
+`currentInstanceStage.stageId` — the **from**-stage. The field name says
+"source" while holding a destination; that is pre-existing and unchanged,
+and it is the single easiest thing to read backwards here.
+
+**Which statuses block.** `{ notIn: ['COMPLETED', 'CANCELLED'] }`.
+`COMPLETED` is done and `CANCELLED` is void — the naive
+`{ not: 'COMPLETED' }` would wrongly block on cancelled tasks.
+Everything else blocks, **including `UNASSIGNED`**, which is a deliberate
+one-value divergence from `SlaMonitorProcessor.sweepOverdueTasks()`'s
+`notIn ['COMPLETED', 'CANCELLED', 'UNASSIGNED']` (3.4.1). That sweep
+excludes `UNASSIGNED` because nobody can be nagged about a task with no
+assignee; this gate includes it because an unassigned task is real work
+that is definitely not done, and passing it would fail open in exactly
+the case the gate exists for. The resulting block is a **stall with an
+exit, not a deadlock** — three existing paths clear it:
+`TaskService.reassign()` flips `UNASSIGNED` to `PENDING` (3.2), ACC-34's
+Unassigned Tasks view surfaces them under `tasks:manage`, and ACC-51/52's
+sweep re-resolves and assigns them automatically. A test pins the exact
+list so the divergence cannot later be "tidied up" into agreement.
+
+**Whether manual tasks count.** They do. `CreateTaskDto` accepts
+`sourceStageId` and `workflowInstanceId`, so a user with `tasks:create`
+can attach work to a stage and block advancement. The gate answers "is
+this stage's work done", not "is its *engine-generated* work done";
+excluding manual tasks would need a provenance field that does not exist,
+and would silently ignore work a Quality Manager deliberately attached.
+
+The query filters `workflowInstanceId` as well as `sourceStageId` —
+without it, a task from a *different* object at the same template stage
+would block this instance. The `ConflictException` names the outstanding
+tasks and their statuses, since the actor's next action is to complete
+those specific tasks.
+
+**Not** wired into the transition editor UI: `validatorConfig` is still
+an unlabelled JSON textarea, so configuring this means typing
+`{"allPreviousStageTasksComplete": true}` by hand. Enforcement and
+configurability are separate concerns and only the former is built.
 
 **Live evidence of how little this is exercised:** across all tenants,
 exactly **2 of 134** transitions carry any `validatorConfig`, and both
