@@ -1809,6 +1809,53 @@ Prisma Studio.
 
 ---
 
+## Key Architecture Decisions (ACC-64)
+
+- **Automate mechanical work, not decisions.** Established while evaluating
+  Document Management against the workflow engine (ACC-64; full evidence in
+  `backend/Plans/workflow-task-model-review.md` and
+  `backend/Plans/document-management-engine-fit.md`).
+
+  Document Management's design contains three flows where one object's
+  workflow appears to need to act on another object:
+
+  1. `DOCUMENT_REQUEST` reaching Approved → create the `DOCUMENT` workflow
+  2. `CHANGE_REQUEST` approved → open a new document revision cycle
+  3. A merged document reaching Published → move its source documents to
+     Obsolete
+
+  **All three resolve to `CREATE_TASK` plus task-completion gating.** The task
+  is the bridge: the workflow creates a task, a human does the work, and their
+  completion gates the next advancement (via the
+  `allPreviousStageTasksComplete` validator — see SYSTEM-REFERENCE.md Section
+  2.10 for why that one is buildable from data the engine already has, unlike
+  the other two unenforced validators).
+
+  **No new `WorkflowActionType` is being added.** A `START_WORKFLOW` action was
+  considered and deliberately not built. This is recorded so a future reader
+  finds a decision rather than an oversight, and does not re-derive it.
+
+  **This SIDESTEPS the outbound-hook requirement rather than satisfying it.**
+  Be clear about what did and did not change: `performTransition()` still emits
+  no event, invokes no callback, and calls no consuming-module service. The
+  engine genuinely has no mechanism for one object's workflow to act on
+  another — that limit is real and unchanged. **The human in the loop is what
+  removes the need for the mechanism, not a capability that was added.** Any
+  future flow that requires a purely automatic cross-object effect, with no
+  human step, still has nothing to build on.
+
+  **Why case 3 in particular stays human.** Not convenience — compliance.
+  *Obsoleting a controlled document is a judgement with retention
+  consequences, not a mechanical step.* It carries records-management weight
+  and belongs in the audit trail with a named actor, which a task completion
+  provides and an automatic action does not.
+
+  The general principle for future modules: where a step is mechanical, an
+  action type may do it; where it is a judgement — especially one with
+  regulatory, retention, or safety consequences — it gets a task and a person.
+
+---
+
 ## Open / Deferred Items
 
 - **Resend email domain (`accreditme.com`) is not verified** in the
