@@ -868,15 +868,45 @@ Fires in `order` after a successful transition. Per `actionType`:
   path recorded for non-webhook actions (only webhook retries produce
   `FAILED`/`RETRYING` status via the separate processor).
 
-### 2.10 Validator Config — `checkValidatorConfig()` (`workflow.service.ts:674–697`)
+### 2.10 Validator Config — `checkValidatorConfig()` (`workflow.service.ts:860`)
 
 Only **one** of the four validator conditions CLAUDE.md documents is
 actually enforced: `minApprovals` (checked against the transition's own
-`WorkflowApproval` rows). `requiredFields`, `minAttachments`, and "all
-previous stage tasks completed" are **not enforced anywhere** — the
-code comment states this plainly: they "need a caller-supplied object
-snapshot that `TriggerTransitionDto` does not carry — left unenforced
-until a functional module needs them."
+`WorkflowApproval` rows). `requiredFields`, `minAttachments`, and
+`allPreviousStageTasksComplete` are **not enforced anywhere**.
+
+The code comment gives one shared reason for all three — they "need a
+caller-supplied object snapshot that `TriggerTransitionDto` does not
+carry — left unenforced until a functional module needs them."
+**That reason is correct for two of the three and wrong for the third**
+(ACC-64, `backend/Plans/workflow-task-model-review.md` §1.1):
+
+- `requiredFields` and `minAttachments` genuinely describe the
+  **business object** — a document's title, its attachments — which the
+  engine never sees. The snapshot mechanism is a real prerequisite, and
+  it was never built (`TriggerTransitionDto` carries only `transitionId`
+  and `comment`).
+- `allPreviousStageTasksComplete` describes the **engine's own data**.
+  `Task.workflowInstanceId` and `Task.sourceStageId` are both populated
+  on every workflow-created task — `executeCreateTask()` stamps
+  `sourceStageId` with the *destination* stage — and `Task.status` is
+  set to `COMPLETED` in one place. "Are this stage's tasks done?" is one
+  query the engine can already make, making it exactly as self-contained
+  as `minApprovals`. It needs no snapshot; it was grouped with the
+  snapshot-dependent two and deferred with them.
+
+This distinction is load-bearing, not pedantic: task-completion gating
+is the mechanism ACC-64's architectural decision depends on (see
+CLAUDE.md, "Automate mechanical work, not decisions"), and it is viable
+precisely because this validator is buildable from data that already
+exists.
+
+**Live evidence of how little this is exercised:** across all tenants,
+exactly **2 of 134** transitions carry any `validatorConfig`, and both
+are `{"requiredFields":["title","content"]}` on `DOCUMENT/Drafting` —
+one of the three unenforced conditions. Every validator ever configured
+in this system is one that does nothing; `minApprovals`, the only
+enforced one, has never been configured anywhere.
 
 ### 2.11 Consumers
 
