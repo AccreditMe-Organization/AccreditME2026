@@ -24,6 +24,7 @@ import {
   TaskSourceType,
 } from '../../../generated/prisma/client';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
+import { ValidatorConfig } from './interfaces/workflow-transition.interface';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 
@@ -255,7 +256,7 @@ export class WorkflowService {
       throw new ConflictException('No active stage entry found for this instance');
     }
 
-    await this.checkValidatorConfig(transition, currentInstanceStage);
+    await this.checkValidatorConfig(transition, currentInstanceStage, organizationId);
 
     if (fromStage.approvalMode === 'SINGLE') {
       return this.performTransition(
@@ -860,26 +861,107 @@ export class WorkflowService {
   private async checkValidatorConfig(
     transition: PrismaWorkflowTransition,
     currentInstanceStage: PrismaWorkflowInstanceStage,
+    organizationId: string,
   ): Promise<void> {
-    const config = transition.validatorConfig as { minApprovals?: number } | null;
-    // requiredFields/minAttachments/allPreviousStageTasksComplete need a
-    // caller-supplied object snapshot that TriggerTransitionDto does not
-    // carry — left unenforced until a functional module needs them (see
-    // Section 8 of the Step 6 plan). minApprovals is self-contained (checked
-    // against our own WorkflowApproval rows) so it's enforced here.
-    if (!config?.minApprovals) return;
+    const config = transition.validatorConfig as ValidatorConfig | null;
+    if (!config) return;
 
-    const approvedCount = await this.prisma.workflowApproval.count({
-      where: {
-        workflowInstanceStageId: currentInstanceStage.id,
-        decision: { in: ['APPROVED', 'APPROVED_WITH_COMMENTS'] },
-      },
-    });
-    if (approvedCount < config.minApprovals) {
-      throw new ConflictException(
-        `At least ${config.minApprovals} approval(s) required before this transition can fire`,
-      );
+    // requiredFields/minAttachments remain unenforced: both describe the
+    // BUSINESS OBJECT (a document's title, its attachments), which this
+    // engine never sees, so both genuinely need the caller-supplied object
+    // snapshot TriggerTransitionDto does not carry. Still correctly deferred.
+    //
+    // The two checks below need no snapshot — each is answerable from data
+    // the engine already owns. allPreviousStageTasksComplete was previously
+    // grouped with the snapshot-dependent two and deferred by association;
+    // that reason never applied to it (ACC-65, SYSTEM-REFERENCE.md §2.10).
+    if (config.minApprovals) {
+      const approvedCount = await this.prisma.workflowApproval.count({
+        where: {
+          workflowInstanceStageId: currentInstanceStage.id,
+          decision: { in: ['APPROVED', 'APPROVED_WITH_COMMENTS'] },
+        },
+      });
+      if (approvedCount < config.minApprovals) {
+        throw new ConflictException(
+          `At least ${config.minApprovals} approval(s) required before this transition can fire`,
+        );
+      }
     }
+
+    if (config.allPreviousStageTasksComplete) {
+      await this.assertStageTasksComplete(currentInstanceStage, organizationId);
+    }
+  }
+
+  // ACC-65 — blocks a transition while the stage being LEFT still has
+  // outstanding tasks. The missing half of the workflow/task seam: without
+  // it a user completes a task and separately presses a transition, with
+  // nothing connecting the two and nothing stopping them advancing with the
+  // task still open.
+  //
+  // Three scoping decisions, each made deliberately rather than falling out
+  // of the where clause:
+  //
+  // 1. WHICH STAGE. Task.sourceStageId holds the stage a task was created
+  //    FOR, which executeCreateTask() sets to the transition's DESTINATION
+  //    (`sourceStageId: toStage.id`). So the tasks belonging to the stage we
+  //    are now leaving are those stamped with currentInstanceStage.stageId.
+  //    The field name says "source" while holding a destination — that is
+  //    pre-existing and not changed here, but it is why this reads the
+  //    from-stage and not transition.toStageId.
+  //
+  // 2. WHICH STATUSES COUNT AS OUTSTANDING. COMPLETED is done. CANCELLED is
+  //    void — a cancelled task must not block, so the naive
+  //    `{ not: 'COMPLETED' }` would be wrong. Everything else blocks,
+  //    INCLUDING UNASSIGNED, and that is the deliberate part:
+  //
+  //      sweepOverdueTasks() uses notIn ['COMPLETED','CANCELLED','UNASSIGNED']
+  //      because nobody can be nagged about a task with no assignee. This
+  //      check deliberately DIFFERS by one value. An unassigned task is real
+  //      work that definitely is not done; letting it pass would fail open in
+  //      exactly the case the gate exists for. The resulting block is
+  //      recoverable by design and by three separate existing paths —
+  //      TaskService.reassign() flips UNASSIGNED to PENDING, ACC-34's
+  //      Unassigned Tasks view surfaces them under tasks:manage, and
+  //      ACC-51/52's sweep re-resolves and assigns them automatically. It is
+  //      a stall with an exit, not a deadlock.
+  //
+  // 3. WHETHER MANUAL TASKS COUNT. They do. CreateTaskDto accepts
+  //    sourceStageId and workflowInstanceId, so a user with tasks:create can
+  //    attach a task to this stage, and it will block. That is intended: the
+  //    question this gate answers is "is this stage's work done", not "is
+  //    this stage's ENGINE-GENERATED work done". Excluding manual tasks would
+  //    need a provenance field that does not exist, and would silently ignore
+  //    work a Quality Manager deliberately attached to the stage.
+  private async assertStageTasksComplete(
+    currentInstanceStage: PrismaWorkflowInstanceStage,
+    organizationId: string,
+  ): Promise<void> {
+    const outstanding = await this.prisma.task.findMany({
+      where: {
+        organizationId,
+        // Both, not just the stage: without workflowInstanceId a task from a
+        // DIFFERENT object sitting at the same template stage would block
+        // this instance — an intermittent bug that would be painful to trace.
+        workflowInstanceId: currentInstanceStage.workflowInstanceId,
+        sourceStageId: currentInstanceStage.stageId,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      select: { title: true, status: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (outstanding.length === 0) return;
+
+    // Names what is outstanding rather than throwing a generic conflict —
+    // the actor's next action is to go and complete those specific tasks,
+    // and "a task is incomplete" does not tell them which.
+    const summary = outstanding.map((t) => `"${t.title}" (${t.status})`).join(', ');
+    throw new ConflictException(
+      `This stage has ${outstanding.length} incomplete task(s) that must be completed before ` +
+        `this transition can fire: ${summary}`,
+    );
   }
 
   // ── Internal: assignee resolution ────────────────────────────────────────────
