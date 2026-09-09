@@ -1598,9 +1598,30 @@ Prisma Studio.
   squash-merge creates (a separate push-triggered workflow run).
   Confirmed via reading `ci.yml` directly — both `push` and
   `pull_request` triggers exist, so a genuine second run always
-  fires on merge. Verify post-merge CI via a direct `WebFetch` to
-  `api.github.com/repos/.../commits/{sha}/check-runs` — the
+  fires on merge. Verify post-merge CI by querying
+  `api.github.com/repos/.../commits/{sha}/check-runs` directly — the
   PR-scoped tool will not surface it.
+  **This is the correct METHOD when post-merge CI verification is
+  requested — it is not a routine step after every merge.** Ahmad
+  checks CI himself; ACC-65 was an explicit one-off request. Do not
+  read this as a standing instruction to verify, still less to poll.
+  **Use `curl` — not `gh`, and not `WebFetch`** (corrected ACC-67;
+  this note originally prescribed `WebFetch`):
+  - **`gh` is not available.** `gh: command not found` in the Bash
+    tool, `The term 'gh' is not recognized` in PowerShell — not on
+    PATH in either shell. Any future step that assumes the GitHub
+    CLI will fail at the point of use.
+  - **`WebFetch` works but caches per URL for 15 minutes.** On a
+    re-check after CI has moved on it can return the earlier
+    `in_progress` snapshot, which is indistinguishable from CI
+    genuinely still running — a silent wrong answer, not an error,
+    so nothing signals the result is stale. Changing the URL (e.g.
+    appending `?per_page=50`) busts the cache, but that is a
+    workaround you have to remember every time.
+  - **`curl` works unauthenticated** against this repo, has no
+    cache, and can be wrapped in a background `until` loop so
+    completion arrives as one notification rather than by
+    hand-polling.
 - **Better Auth's `better-auth/api` import (and `better-auth/config`)
   is ESM-only** and breaks Jest for any spec file that transitively
   loads a module importing it — not just the file importing it
