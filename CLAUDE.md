@@ -2307,6 +2307,15 @@ complete, not just the currently-in-review ones.
   settling before any real customer data exists, not after. Note the same
   question applies separately to `AWS_REGION=me-south-1` for S3, which has
   not been verified against a live bucket.
+  **This geography is also, measurably, why local development feels slow**
+  (ACC-60) — a workflow transition is ~240ms of application work, but takes
+  6–11 seconds from a Middle East client against the Frankfurt database,
+  with connection setup dominating; the same query runs in 240ms from inside
+  the network. That is a **local-development cost only** — a deployed
+  environment sits beside its database and does not pay it. Recorded here so
+  it is understood as a known consequence of this open question rather than
+  rediscovered as a performance bug, which is exactly what ACC-60 was before
+  it was measured. Measurements are in ACC-60's closing comment.
 - **No form in this app has a per-field inline error-message pattern**
   (confirmed via full grep, zero matches) — every form relies solely
   on a disabled submit button as its only invalid-state feedback.
