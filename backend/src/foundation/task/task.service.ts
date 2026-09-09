@@ -199,6 +199,114 @@ export class TaskService {
     return task;
   }
 
+  // ACC-68 — cancels every OPEN task belonging to one stage of one workflow
+  // instance. Before this existed, `TaskStatus.CANCELLED` was an unreachable
+  // enum value: declared in step-08 §5 (inherited from module-designs.md's own
+  // Task Management data model), referenced in filters, and produced by
+  // nothing. This is its only producer.
+  //
+  // Three decisions worth stating, because each is load-bearing and none is
+  // obvious from the query alone:
+  //
+  // 1. "OPEN" MEANS THE SAME HERE AS IN THE ACC-65 GATE. Both use
+  //    notIn ['COMPLETED', 'CANCELLED'] — deliberately identical. If the two
+  //    ever disagreed, a task could be un-cancellable yet still blocking, or
+  //    cancelled yet still counted. Keep them in step.
+  //
+  // 2. ASSIGNEES ARE DELIBERATELY LEFT ATTACHED. `complete()` clears
+  //    `removedAt` on the other assignees; this does NOT, and must not.
+  //    `getMyTasks()` filters on `assignees: { some: { removedAt: null } }`,
+  //    so detaching them would make the task vanish from the assignee's list
+  //    entirely. The decision (ACC-68) is the opposite: a cancelled task stays
+  //    VISIBLE, badged CANCELLED with the Complete button hidden — the UI
+  //    already does both — because silently disappearing is worse than visible
+  //    history, and the status filter serves anyone who wants them gone.
+  //
+  // 3. ONE AUDIT ENTRY PER TASK, not one for the batch. The objectId of an
+  //    audit row is a Task id; a single aggregate row could not name which
+  //    tasks were cancelled. A task leaving someone's active work with no
+  //    trail is exactly what a compliance product has to be able to explain.
+  //
+  // Returns the number of tasks cancelled so callers can log it.
+  async cancelForStage(
+    workflowInstanceId: string,
+    sourceStageId: string,
+    organizationId: string,
+    actorId: string,
+    reason: 'STAGE_EXIT' | 'INSTANCE_CANCELLED',
+  ): Promise<number> {
+    const open = await this.prisma.task.findMany({
+      where: {
+        organizationId,
+        workflowInstanceId,
+        sourceStageId,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      include: { assignees: true },
+    });
+    if (open.length === 0) return 0;
+
+    await this.prisma.task.updateMany({
+      where: { id: { in: open.map((t) => t.id) }, organizationId },
+      data: { status: 'CANCELLED' },
+    });
+
+    for (const before of open) {
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: before.id,
+        actorId,
+        tenantId: organizationId,
+        before: before as unknown as Record<string, unknown>,
+        after: { ...before, status: 'CANCELLED' } as unknown as Record<string, unknown>,
+        metadata: { cancelledBy: actorId, reason, workflowInstanceId, sourceStageId },
+      });
+    }
+
+    return open.length;
+  }
+
+  // ACC-68 — cancels every open task across EVERY stage of one instance, for
+  // the force-cancel path. Separate from cancelForStage() rather than a
+  // parameterised version of it: this one deliberately does not scope by
+  // stage, and collapsing the two would make it easy to call the wrong one.
+  async cancelForInstance(
+    workflowInstanceId: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<number> {
+    const open = await this.prisma.task.findMany({
+      where: {
+        organizationId,
+        workflowInstanceId,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      include: { assignees: true },
+    });
+    if (open.length === 0) return 0;
+
+    await this.prisma.task.updateMany({
+      where: { id: { in: open.map((t) => t.id) }, organizationId },
+      data: { status: 'CANCELLED' },
+    });
+
+    for (const before of open) {
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: before.id,
+        actorId,
+        tenantId: organizationId,
+        before: before as unknown as Record<string, unknown>,
+        after: { ...before, status: 'CANCELLED' } as unknown as Record<string, unknown>,
+        metadata: { cancelledBy: actorId, reason: 'INSTANCE_CANCELLED', workflowInstanceId },
+      });
+    }
+
+    return open.length;
+  }
+
   // Pattern 2 — Manual Reassignment (Absence and Departure Management).
   async reassign(
     id: string,
