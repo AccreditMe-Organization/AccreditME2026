@@ -545,6 +545,35 @@ export class WorkflowService {
       data: { exitedAt: new Date(), outcome, ...(comment !== undefined && { comment }) },
     });
 
+    // ACC-68 — the stage has just been left, so its open tasks are now work
+    // the object has moved away from. Cancel them.
+    //
+    // DIRECTION-AGNOSTIC, deliberately. Stage `order` was considered as a way
+    // to tell a backward transition from a forward one and rejected: order is
+    // display-only by design, and real lifecycles are not linear enough for it
+    // to be reliable. Direction turns out not to matter — on a GATED forward
+    // transition the task is already COMPLETED (that is what the ACC-65 gate
+    // just enforced), so there is nothing open to cancel; on an UNGATED one
+    // the object has moved on regardless. The bug this fixes was found on
+    // exactly that second case: Terms Review → Formation via "Revise Terms",
+    // which left a PENDING task assigned to someone, gating nothing.
+    //
+    // Without this, re-entering the stage stacks a second CREATE_TASK on top
+    // of the first, so both must be completed to make one gated advancement —
+    // and every further round trip adds another.
+    //
+    // Runs BEFORE fireTransitionActions() below, which is what creates the
+    // NEXT stage's task. That ordering also makes a self-transition behave:
+    // the old task is cancelled first, then the new one is created, rather
+    // than the new one being cancelled by its own transition.
+    await this.taskService.cancelForStage(
+      instance.id,
+      currentInstanceStage.stageId,
+      organizationId,
+      actorId,
+      'STAGE_EXIT',
+    );
+
     const slaDueAt = await this.computeSlaDueAt(toStage, organizationId);
     const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
 
