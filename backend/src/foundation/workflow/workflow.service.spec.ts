@@ -192,7 +192,13 @@ const mockPrisma = {
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
-const mockTaskService = { create: jest.fn() };
+// ACC-68 — performTransition() cancels the stage it is leaving; cancelInstance()
+// cancels the whole instance.
+const mockTaskService = {
+  create: jest.fn(),
+  cancelForStage: jest.fn(),
+  cancelForInstance: jest.fn(),
+};
 const mockRoleService = { getUserPermissions: jest.fn() };
 const mockOrganizationService = { resolveActingHeadForOrgUnit: jest.fn() };
 const mockQueue = { add: jest.fn() };
@@ -418,12 +424,32 @@ describe('WorkflowService', () => {
       );
     });
 
+    // ACC-68 — before this, force-cancelling a workflow closed every stage and
+    // flipped the instance but left every one of its tasks open.
+    it('cancels the open tasks of the whole instance, not just the current stage', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+
+      await service.cancelInstance('instance-1', ORG_A, ACTOR, 'abandoned');
+
+      expect(mockTaskService.cancelForInstance).toHaveBeenCalledWith('instance-1', ORG_A, ACTOR);
+      expect(mockTaskService.cancelForStage).not.toHaveBeenCalled();
+    });
+
     it('throws ConflictException if already CANCELLED', async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ status: 'CANCELLED' }));
 
       await expect(service.cancelInstance('instance-1', ORG_A, ACTOR, 'x')).rejects.toThrow(
         ConflictException,
       );
+    });
+
+    it('does not cancel any task when the instance is already closed', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ status: 'COMPLETED' }));
+
+      await expect(service.cancelInstance('instance-1', ORG_A, ACTOR, 'x')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockTaskService.cancelForInstance).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException if already COMPLETED', async () => {
@@ -507,6 +533,36 @@ describe('WorkflowService', () => {
 
       expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ actionType: 'CREATE_TASK', status: 'SUCCESS' }) }),
+      );
+    });
+
+    // ACC-68 — regression test for the orphaned-task bug found during ACC-65's
+    // live verification. A committee took the ungated "Revise Terms" transition
+    // out of Terms Review and its open task stayed PENDING, gating nothing;
+    // re-entering the stage then stacked a second task on the first.
+    it('cancels the open tasks of the stage being LEFT, using the from-stage id', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockStagesById({
+        'stage-single': SINGLE_STAGE,
+        'stage-target': { ...SINGLE_STAGE, id: 'stage-target' },
+      });
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([]);
+      mockPrisma.userRole.findMany.mockResolvedValue([]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      // The FROM stage — Task.sourceStageId holds the stage a task was created
+      // FOR, so the tasks belonging to the stage being left carry the
+      // from-stage id, never transition.toStageId.
+      expect(mockTaskService.cancelForStage).toHaveBeenCalledWith(
+        'instance-1',
+        BASE_INSTANCE_STAGE.stageId,
+        ORG_A,
+        ACTOR,
+        'STAGE_EXIT',
       );
     });
 

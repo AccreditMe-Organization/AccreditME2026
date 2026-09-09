@@ -922,6 +922,10 @@ and it is the single easiest thing to read backwards here.
 **Which statuses block.** `{ notIn: ['COMPLETED', 'CANCELLED'] }`.
 `COMPLETED` is done and `CANCELLED` is void — the naive
 `{ not: 'COMPLETED' }` would wrongly block on cancelled tasks.
+(As written at ACC-65 the `CANCELLED` half was **theoretical** — nothing
+could produce that status. ACC-68 gave it a producer, so this branch is
+now live; the two predicates are deliberately identical and must stay
+in step. See 3.2 `cancelForStage()`.)
 Everything else blocks, **including `UNASSIGNED`**, which is a deliberate
 one-value divergence from `SlaMonitorProcessor.sweepOverdueTasks()`'s
 `notIn ['COMPLETED', 'CANCELLED', 'UNASSIGNED']` (3.4.1). That sweep
@@ -1222,6 +1226,39 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   `TaskAssignee` row for the same task (not deleted — a permanent
   record of who was ever assigned) and sets the task `COMPLETED`.
   Rejects (404, not 403) if the caller isn't a currently-active assignee.
+- **`cancelForStage()`** / **`cancelForInstance()`** (ACC-68) — the
+  only producers of `TaskStatus.CANCELLED` anywhere in the codebase.
+  Before ACC-68 that enum value was **unreachable**: declared in
+  step-08 §5 (inherited from module-designs.md's own Task Management
+  data model), referenced in status filters, and set by nothing —
+  the same shape `WorkflowStage.requiredPermission` had before ACC-44.
+  `cancelForStage(workflowInstanceId, sourceStageId, …)` cancels the
+  open tasks of ONE stage of ONE instance; `cancelForInstance()` drops
+  the stage predicate and cancels every open task of the instance.
+  Both return the count. Three behaviours that are deliberate and are
+  the ones to preserve:
+  - **"Open" is `notIn ['COMPLETED', 'CANCELLED']`** — byte-identical
+    to the ACC-65 gate's own predicate (2.10.1). If the two ever
+    diverged, a task could be un-cancellable yet still blocking, or
+    cancelled yet still counted.
+  - **Assignees are left ATTACHED**, unlike `complete()`, which stamps
+    `removedAt` on the others. `getMyTasks()` filters on
+    `assignees: { some: { removedAt: null } }`, so detaching would make
+    the task vanish from the assignee's list. The decision is the
+    opposite: a cancelled task stays VISIBLE, badged `CANCELLED` with
+    the Complete button hidden (`my-tasks.component.ts` already did
+    both before a backend could produce the status), because silently
+    disappearing is worse than visible history.
+  - **One audit entry per task**, not one per batch — an audit row's
+    `objectId` is a Task id, so an aggregate row could not name which
+    tasks were cancelled.
+
+  Two callers, both in `WorkflowService`: `performTransition()` calls
+  `cancelForStage()` with the **from**-stage id immediately after the
+  stage-exit write and **before** `fireTransitionActions()` (so a
+  self-transition cancels the old task before creating the new one);
+  `cancelInstance()` calls `cancelForInstance()`. **Not retroactive** —
+  tasks orphaned before ACC-68 stay open.
 - **`reassign()`** — Pattern 2 (Manual Reassignment). Removes every
   current active assignee (`removedAt` stamped), creates new
   `TaskAssignee` rows for `dto.newAssigneeUserIds` (filtered through
