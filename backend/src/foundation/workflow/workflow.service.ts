@@ -173,6 +173,17 @@ export class WorkflowService {
       data: { exitedAt: new Date(), outcome: 'SKIPPED' },
     });
 
+    // ACC-68 — the same orphaning bug as the stage-exit path, one level up.
+    // This method closed every open stage and flipped the instance to
+    // CANCELLED but never touched tasks, so force-cancelling a workflow left
+    // every one of its tasks open — the same defect with a wider blast radius,
+    // since it abandons the whole instance rather than one stage.
+    //
+    // Uses cancelForInstance(), not cancelForStage(): this path is not leaving
+    // one stage, it is abandoning all of them, including tasks belonging to
+    // stages exited earlier that were somehow still open.
+    await this.taskService.cancelForInstance(id, organizationId, actorId);
+
     await this.prisma.workflowInstance.update({ where: { id }, data: { status: 'CANCELLED' } });
 
     await this.auditLog.log({
