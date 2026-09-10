@@ -2,34 +2,9 @@ import { Component, inject, input } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
-
-interface NavItem {
-  labelKey: string;
-  icon: string;
-  route: string;
-  requiredPermission: string;
-}
-
-// Only routes that actually exist today (ACC-5–ACC-22) — meetings/
-// documents/etc. are still unbuilt and will add their own entries once
-// those modules ship, not stubbed here as dead links.
-const FOUNDATION_NAV_ITEMS: NavItem[] = [
-  { labelKey: 'nav.organization', icon: 'pi pi-building', route: '/organization', requiredPermission: 'org:view' },
-  { labelKey: 'nav.workingCalendar', icon: 'pi pi-calendar', route: '/working-calendar', requiredPermission: 'org:view' },
-  { labelKey: 'nav.lookups', icon: 'pi pi-list', route: '/lookups', requiredPermission: 'lookups:view' },
-  { labelKey: 'nav.roles', icon: 'pi pi-shield', route: '/roles', requiredPermission: 'roles:view' },
-  { labelKey: 'nav.workflows', icon: 'pi pi-sitemap', route: '/workflows', requiredPermission: 'workflows:view' },
-  { labelKey: 'nav.orgPositions', icon: 'pi pi-briefcase', route: '/org-positions', requiredPermission: 'positions:view' },
-  { labelKey: 'nav.committees', icon: 'pi pi-flag', route: '/committees', requiredPermission: 'committees:view' },
-  { labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks', requiredPermission: 'tasks:view' },
-  { labelKey: 'nav.unassignedTasks', icon: 'pi pi-exclamation-triangle', route: '/tasks/unassigned', requiredPermission: 'tasks:manage' },
-  { labelKey: 'nav.users', icon: 'pi pi-users', route: '/users', requiredPermission: 'users:view' },
-];
-
-// Functional modules (ACC-17+) will be appended here as they ship, each
-// filtered through navigationAccessService.isModuleEnabled(moduleKey) —
-// none exist yet, so this list is intentionally empty for now.
-const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
+// ACC-70 — both lists moved to core/navigation/nav-items.ts so the sidebar and
+// the route guards read one mapping instead of two copies.
+import { FOUNDATION_NAV_ITEMS, FUNCTIONAL_NAV_ITEMS, NavItem } from '../../core/navigation/nav-items';
 
 @Component({
   selector: 'app-sidebar',
