@@ -4,7 +4,12 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 // ACC-70 — both lists moved to core/navigation/nav-items.ts so the sidebar and
 // the route guards read one mapping instead of two copies.
-import { FOUNDATION_NAV_ITEMS, FUNCTIONAL_NAV_ITEMS, NavItem } from '../../core/navigation/nav-items';
+import {
+  FOUNDATION_NAV_ITEMS,
+  FUNCTIONAL_NAV_ITEMS,
+  STANDALONE_ROUTE_PERMISSIONS,
+  NavItem,
+} from '../../core/navigation/nav-items';
 
 @Component({
   selector: 'app-sidebar',
@@ -88,7 +93,11 @@ export class SidebarComponent {
     );
   }
 
+  // ACC-70 — reads the permission from the shared mapping rather than
+  // repeating the string, so this link and the route guarding /admin-settings
+  // cannot disagree about who may see it.
   visibleAdminSettingsLink(): boolean {
-    return this.navigationAccessService.hasPermission('tenant:manage_config');
+    const required = STANDALONE_ROUTE_PERMISSIONS.get('admin-settings');
+    return !!required && this.navigationAccessService.hasPermission(required);
   }
 }

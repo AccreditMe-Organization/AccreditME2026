@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { platformAdminGuard } from './core/guards/platform-admin.guard';
+import { permissionGuard } from './core/guards/permission.guard';
 import { AppShellComponent } from './layout/app-shell/app-shell.component';
 
 // Every route below the shell inherits its parent's canActivate — a child
@@ -25,6 +26,7 @@ export const routes: Routes = [
       { path: '', redirectTo: 'organization', pathMatch: 'full' },
       {
         path: 'organization',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.organization' },
         loadChildren: () =>
           import('./foundation/organization/organization.routes').then(
@@ -33,6 +35,7 @@ export const routes: Routes = [
       },
       {
         path: 'working-calendar',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.workingCalendar' },
         loadChildren: () =>
           import('./foundation/working-calendar/working-calendar.routes').then(
@@ -41,6 +44,7 @@ export const routes: Routes = [
       },
       {
         path: 'lookups',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.lookups' },
         loadChildren: () =>
           import('./foundation/lookup/lookup.routes').then(
@@ -49,6 +53,7 @@ export const routes: Routes = [
       },
       {
         path: 'roles',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.roles' },
         loadChildren: () =>
           import('./foundation/roles/roles.routes').then(
@@ -57,6 +62,7 @@ export const routes: Routes = [
       },
       {
         path: 'workflows',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.workflows' },
         loadChildren: () =>
           import('./foundation/workflow/workflow.routes').then(
@@ -65,6 +71,7 @@ export const routes: Routes = [
       },
       {
         path: 'org-positions',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.orgPositions' },
         loadChildren: () =>
           import('./foundation/org-position/org-position.routes').then(
@@ -73,6 +80,7 @@ export const routes: Routes = [
       },
       {
         path: 'committees',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.committees' },
         loadChildren: () =>
           import('./foundation/committees/committees.routes').then(
@@ -81,12 +89,14 @@ export const routes: Routes = [
       },
       {
         path: 'tasks',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.tasks' },
         loadChildren: () =>
           import('./foundation/tasks/tasks.routes').then((m) => m.TASKS_ROUTES),
       },
       {
         path: 'users',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.users' },
         loadChildren: () =>
           import('./foundation/user/user.routes').then((m) => m.USER_ROUTES),
@@ -100,6 +110,7 @@ export const routes: Routes = [
       },
       {
         path: 'admin-settings',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.adminSettings' },
         loadChildren: () =>
           import('./foundation/admin-settings/admin-settings.routes').then(

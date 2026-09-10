@@ -47,15 +47,24 @@ export const FOUNDATION_NAV_ITEMS: NavItem[] = [
 // none exist yet, so this list is intentionally empty for now.
 export const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
 
+// Permission-gated routes that are NOT rendered from the lists above.
+// Admin Settings is drawn separately in the sidebar (its own divider and
+// icon, below the nav list) but is still permission-gated, so it belongs in
+// the mapping even though it is not a NavItem. Without this it would be the
+// one gated screen the route guard silently allowed through.
+export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, string> = new Map([
+  ['admin-settings', 'tenant:manage_config'],
+]);
+
 // Route path -> required permission, for the guard. Keyed by the route path
 // WITHOUT its leading slash, matching how app.routes.ts declares children
 // under the shell's `path: ''`.
 //
 // Built from the lists above rather than hand-written, so adding a nav item
 // automatically guards its route and there is no second place to forget.
-export const ROUTE_PERMISSIONS: ReadonlyMap<string, string> = new Map(
-  [...FOUNDATION_NAV_ITEMS, ...FUNCTIONAL_NAV_ITEMS].map((item) => [
-    item.route.replace(/^\//, ''),
-    item.requiredPermission,
-  ]),
-);
+export const ROUTE_PERMISSIONS: ReadonlyMap<string, string> = new Map([
+  ...[...FOUNDATION_NAV_ITEMS, ...FUNCTIONAL_NAV_ITEMS].map(
+    (item) => [item.route.replace(/^\//, ''), item.requiredPermission] as const,
+  ),
+  ...STANDALONE_ROUTE_PERMISSIONS,
+]);

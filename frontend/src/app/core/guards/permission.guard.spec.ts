@@ -109,8 +109,18 @@ describe('permissionGuard', () => {
     setup({ permissions: [] });
 
     expect(run('home')).toBe(true);
-    expect(run('admin-settings')).toBe(true);
     expect(run()).toBe(true);
+  });
+
+  // admin-settings is drawn separately in the sidebar rather than from the
+  // nav list, so it is mapped via STANDALONE_ROUTE_PERMISSIONS. Without that
+  // it would have been the one permission-gated screen the guard let through.
+  it('guards admin-settings, which is gated outside the nav list', () => {
+    setup({ permissions: [] });
+    expect(run('admin-settings')).toEqual(router.parseUrl(LANDING_ROUTE));
+
+    setup({ permissions: ['tenant:manage_config'] });
+    expect(run('admin-settings')).toBe(true);
   });
 
   // ACC-70's failure-mode decision, asserted so it cannot be quietly reverted
