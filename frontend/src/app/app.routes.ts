@@ -14,15 +14,29 @@ export const routes: Routes = [
     component: AppShellComponent,
     canActivate: [authGuard],
     children: [
-      // Static TENANT_ADMIN-oriented fallback, deliberately not role-aware —
-      // only reached when an already-authenticated user hits the bare root
-      // directly (e.g. a bookmark, or clicking a logo/home link), which
-      // LoginComponent's own post-login redirect never goes through. Making
-      // this properly role-aware would need an async guard (NavigationAccessService's
-      // permissions/tenant data isn't available synchronously at route-recognition
-      // time, before AppShellComponent has mounted) — not worth it for an edge
-      // case this rare. A platform admin hitting this path lands on
-      // /organization and can navigate to Platform from the sidebar.
+      // Bare-root fallback — reached when an already-authenticated user hits
+      // '/' directly (a bookmark, or a logo/home link).
+      //
+      // It no longer needs to be role-aware: it redirects to the landing page,
+      // which is reachable by every authenticated user regardless of
+      // permissions. Previously it sent everyone to /organization, which a
+      // user without org:view could not use.
+      //
+      // CORRECTION (ACC-70) — this comment used to justify that choice by
+      // stating that making it role-aware "would need an async guard
+      // (NavigationAccessService's permissions/tenant data isn't available
+      // synchronously at route-recognition time, before AppShellComponent has
+      // mounted)". That was true when written and is FALSE now: ACC-21 moved
+      // loadAccess() into provideAppInitializer, chained after
+      // restoreSession(), and the initializer does not settle until both
+      // resolve — so the router's initial navigation cannot begin before
+      // permission data is loaded. Synchronous permission checks at
+      // route-recognition time are exactly what permissionGuard and
+      // platformAdminGuard now do.
+      //
+      // Left explicit rather than deleted because the stale version had
+      // already been read as a standing constraint and used to conclude that
+      // route guards were not buildable here. They are.
       { path: '', redirectTo: 'home', pathMatch: 'full' },
       {
         // ACC-70 — deliberately NO permissionGuard and no ROUTE_PERMISSIONS
