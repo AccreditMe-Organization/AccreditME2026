@@ -1,8 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Reflector } from '@nestjs/core';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
+import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { ITask } from './interfaces/task.interface';
 
 const TENANT_ID = 'tenant-test';
@@ -77,6 +80,33 @@ describe('TaskController', () => {
 
     expect(service.getMyTasks).toHaveBeenCalledWith(USER_ID, TENANT_ID, { status: 'PENDING' });
     expect(result).toEqual([MOCK_TASK]);
+  });
+
+  // ACC-70 — asserts the decorator metadata directly, because this is a
+  // deliberate authorization decision that would otherwise be silently
+  // reverted by anyone "restoring" the missing decorator for consistency
+  // with its neighbours. my-tasks is self-scoped (assignees.some(userId =
+  // caller)); the neighbours are not, and stay gated.
+  it('my-tasks requires NO permission — it is self-scoped, like the notification inbox', () => {
+    const reflector = new Reflector();
+    const required = reflector.get<string[] | undefined>(
+      PERMISSIONS_KEY,
+      TaskController.prototype.getMyTasks,
+    );
+
+    expect(required).toBeUndefined();
+  });
+
+  it('the non-self-scoped task endpoints remain permission-gated', () => {
+    const reflector = new Reflector();
+
+    // getForSource() and getById() can return ANY task in the tenant.
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getForSource)).toEqual([
+      TASKS_PERMISSIONS.VIEW,
+    ]);
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getById)).toEqual([
+      TASKS_PERMISSIONS.VIEW,
+    ]);
   });
 
   it('getForSource delegates to the service', async () => {
