@@ -42,8 +42,44 @@ export class NavigationAccessService {
   private readonly _modules = signal<Record<string, boolean>>({});
   private readonly _isPlatformOrg = signal(false);
 
+  // ACC-70 — before this, a caller could not tell "loaded, and this user
+  // genuinely has no permissions" from "the request failed", because
+  // loadAccess()'s catchError set the signals to empty AND reported success.
+  //
+  // That ambiguity was harmless while the only consumer was the sidebar (an
+  // empty sidebar is a reasonable degraded state either way). It stops being
+  // harmless the moment a ROUTE GUARD reads the same signals: an empty
+  // permission set then means "deny everything", so one transient 5xx on
+  // /roles/my-permissions locks the user out of every guarded route until
+  // they reload, with nothing on screen explaining why.
+  //
+  // This is not hypothetical and not introduced by the guards — it is a live
+  // bug in platformAdminGuard today. On a hard reload of a deep /platform/*
+  // URL, a failed loadAccess() leaves isPlatformOrg false, the initializer
+  // still resolves successfully, and a genuine platform admin is bounced to
+  // /organization. ACC-21 fixed the TIMING race (guard evaluating before the
+  // request resolved); it did not touch the FAILURE case.
+  private readonly _loadState = signal<'PENDING' | 'LOADED' | 'FAILED'>('PENDING');
+
   readonly permissions = this._permissions.asReadonly();
   readonly modules = this._modules.asReadonly();
+  readonly loadState = this._loadState.asReadonly();
+
+  // Whether the permission signals reflect a real answer from the server.
+  // False while still pending and after a failed load — in both cases the
+  // signals are empty for reasons that have nothing to do with what this
+  // user may actually do.
+  //
+  // Guards must consult this BEFORE treating an absent permission as a
+  // denial. A guard in this codebase is defence in depth, never the
+  // enforcement boundary (platformAdminGuard's own comment says so, and the
+  // backend's PermissionGuard/PlatformGuard re-check every request
+  // regardless) — so allowing navigation through on an unknown answer is
+  // safe, and is strictly better than locking a legitimate user out of the
+  // application because one request failed.
+  hasTrustworthyPermissions(): boolean {
+    return this._loadState() === 'LOADED';
+  }
 
   hasPermission(permission: string): boolean {
     return this._permissions().includes(permission);
@@ -73,12 +109,19 @@ export class NavigationAccessService {
         this._permissions.set(permissions);
         this._modules.set(tenant.modules);
         this._isPlatformOrg.set(tenant.isPlatformOrg);
+        this._loadState.set('LOADED');
       }),
       map(() => void 0),
       catchError(() => {
         this._permissions.set([]);
         this._modules.set({});
         this._isPlatformOrg.set(false);
+        // Still swallows the error and completes — every existing caller
+        // (the initializer, AppShellComponent) depends on that, and a
+        // rejected initializer would block the app from bootstrapping at
+        // all. The difference is that the failure is now RECORDED rather
+        // than silently indistinguishable from an empty result.
+        this._loadState.set('FAILED');
         return of(void 0);
       }),
     );

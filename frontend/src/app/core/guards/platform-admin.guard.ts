@@ -12,6 +12,14 @@ export const platformAdminGuard: CanActivateFn = () => {
   const navigationAccessService = inject(NavigationAccessService);
   const router = inject(Router);
 
+  // ACC-70 — a failed loadAccess() leaves every signal empty while still
+  // resolving successfully, so isPlatformAdmin() returns false for a reason
+  // that has nothing to do with this user. Bouncing on that was a live bug:
+  // one transient 5xx during a hard reload of /platform/* ejected a genuine
+  // platform admin. Defer to the backend's own PlatformGuard instead, which
+  // re-checks the real answer on every request.
+  if (!navigationAccessService.hasTrustworthyPermissions()) return true;
+
   if (navigationAccessService.isPlatformAdmin()) return true;
 
   return router.parseUrl('/organization');
