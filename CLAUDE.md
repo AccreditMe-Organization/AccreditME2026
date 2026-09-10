@@ -1902,10 +1902,15 @@ Prisma Studio.
   required. Found during ACC-46's skill audit. Worth updating whenever
   next touched, not urgent.
 - **The skills' verification commands are duplicated by hand, with no
-  shared source.** `cd frontend && npx tsc --noEmit` and its backend
-  counterpart appear in five separate skill files. One change to *how
-  verification works* therefore means editing every copy, and any copy
-  missed drifts silently.
+  shared source.** Counted directly rather than estimated:
+  `npx tsc --noEmit` appears at **13 call sites across 7 skills** —
+  6 frontend sites in 5 skills (`ready-to-pr`, `angular-component`,
+  `health-check`, `new-feature`, `new-module` ×2) and 7 backend sites
+  in 6 skills (those minus `angular-component`, plus `debug` and
+  `module-scaffold`). One change to *how verification works*
+  therefore means editing every copy, and any copy missed drifts
+  silently. Note the two sets are not the same skills, so a sweep
+  that only follows one command misses the other's outliers.
   This directly contradicts a pattern this project already established
   deliberately elsewhere: `pr-checklist` exists so that `ready-to-pr`
   and `pr-reviewer` read one file for their check content, and its own
