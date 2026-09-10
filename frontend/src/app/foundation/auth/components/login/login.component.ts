@@ -7,6 +7,7 @@ import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { AuthService } from '../../../../core/services/auth.service';
+import { LANDING_ROUTE } from '../../../../core/navigation/landing-route';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
@@ -159,7 +160,10 @@ export class LoginComponent {
   // trade-off against duplicating the role-check logic in a second place.
   private redirectAfterLogin(): void {
     this.navigationAccessService.loadAccess().subscribe(() => {
-      const destination = this.navigationAccessService.isPlatformAdmin() ? '/platform' : '/organization';
+      // ACC-70 — LANDING_ROUTE, not '/organization'. Sending every user to an
+      // admin screen meant a user without org:view landed on a page they could
+      // not use; the landing page is reachable regardless of permissions.
+      const destination = this.navigationAccessService.isPlatformAdmin() ? '/platform' : LANDING_ROUTE;
       void this.router.navigate([destination]);
     });
   }

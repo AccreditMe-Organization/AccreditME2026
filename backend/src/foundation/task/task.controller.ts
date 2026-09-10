@@ -17,8 +17,31 @@ import { ITaskEvidence } from './interfaces/task-evidence.interface';
 export class TaskController {
   constructor(private readonly taskService: TaskService) {}
 
+  // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
+  //
+  // A user's own task list is intrinsically self-scoped, exactly like the
+  // notification inbox: getMyTasks() filters on
+  // `assignees: { some: { userId: <caller>, removedAt: null } }` plus
+  // organizationId, so it can only ever return work assigned to the calling
+  // user. It cannot leak another user's tasks regardless of permissions.
+  //
+  // This follows the principle NotificationController already states for the
+  // same shape of data: "a user's own notification inbox is not
+  // permission-gated content, it is intrinsically self-scoped (every query
+  // filters userId = the calling user)". Gating my-tasks behind tasks:view
+  // was inconsistent with that, and had a concrete consequence — the landing
+  // page every user is sent to after login could not show a permission-less
+  // user their own assigned work, which is most of the reason that page
+  // exists.
+  //
+  // Note the contrast with the neighbouring endpoints, which stay gated and
+  // should: getForSource()/getById() can return ANY task in the tenant, and
+  // 'unassigned' is an administrative view. Only this one is self-scoped.
+  //
+  // PermissionGuard still runs (class-level @UseGuards) and returns true when
+  // no @Permissions metadata is present; TenantGuard still authenticates and
+  // populates @CurrentUser()/@CurrentTenant().
   @Get('my-tasks')
-  @Permissions(TASKS_PERMISSIONS.VIEW)
   getMyTasks(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,

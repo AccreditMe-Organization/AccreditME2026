@@ -371,6 +371,86 @@ wired: `/auth/me`, `/accept-invitation`, `/forgot-password`,
 `/reset-password`, `/mfa/setup`, `/mfa/setup/verify`, `/mfa/disable`,
 `/mfa/status` all have calling code in this one service file.
 
+### 1.7 Frontend Authorization Layer (ACC-70)
+
+Everything above in Section 1 is backend. This is the client-side
+layer, which until ACC-70 existed only as nav-link filtering — the
+links were hidden, the URLs were not, so any tenant screen was
+reachable by typing its address.
+
+**Standing rule: every guard here is defence in depth, never an
+enforcement boundary.** The backend's `PermissionGuard`/`PlatformGuard`
+re-check on every request regardless. These exist so a user who cannot
+use a screen does not land on one rendering a wall of failed requests.
+Anything relying on a frontend guard for actual protection is a bug.
+
+**One mapping, three consumers.**
+`core/navigation/nav-items.ts` holds `FOUNDATION_NAV_ITEMS`,
+`FUNCTIONAL_NAV_ITEMS` (empty) and `STANDALONE_ROUTE_PERMISSIONS`
+(`admin-settings`, which the sidebar draws outside the list). It derives
+`ROUTE_PERMISSIONS` from all three. The sidebar, `permissionGuard` and
+the Admin Settings link all read it — a route and its own nav link can
+therefore never disagree about who may see it. **Do not re-declare a
+permission anywhere else**; change the entry instead.
+
+**`permissionGuard`** (`core/guards/permission.guard.ts`) is applied to
+10 routes: `organization`, `working-calendar`, `lookups`, `roles`,
+`workflows`, `org-positions`, `committees`, `tasks`, `users`,
+`admin-settings`, plus the `tasks/unassigned` child which declares a
+stricter `tasks:manage`. It rebuilds the configured path from
+`pathFromRoot` and matches longest-prefix-first, so `/committees/:id`
+resolves to its guarded parent and `tasks/unassigned` gets its own
+stricter entry. **An unmapped route is allowed** — absence is not
+denial, or every future route added without a nav entry would silently
+break. Denial redirects to `LANDING_ROUTE`.
+
+**`LANDING_ROUTE`** (`core/navigation/landing-route.ts`) is the single
+name for `/home`. It replaced the string `'/organization'`, which had
+been repeated across five redirect sites, none of which could guarantee
+the arriving user held `org:view`.
+
+**`NavigationAccessService.loadAccess()` runs its two requests with
+INDEPENDENT recovery**, and that is load-bearing rather than stylistic:
+
+| Call | Gating | Feeds |
+|---|---|---|
+| `GET /roles/my-permissions` | none | `hasPermission()`, `loadState` |
+| `GET /tenant` | `tenant:view` | `isModuleEnabled()`, `isPlatformOrg` |
+
+A single outer `catchError` made `forkJoin` collapse on the first
+failure. A zero-permission user gets `200 []` from the first and **403**
+from the second, so the correct permissions answer was discarded and
+`loadState` became `FAILED` — which made `permissionGuard` fail open and
+left **every** guarded route reachable by exactly the users it
+constrains. Fail-open was designed for a *transient* fault; that 403 is
+structural and permanent. Found in ACC-70's live pass, fixed by
+splitting.
+
+**Two trust signals, because they answer different questions:**
+- `hasTrustworthyPermissions()` — the permissions call succeeded.
+  `permissionGuard` allows through when false, deferring to the backend
+  rather than locking a user out of every route over one transient 5xx.
+- `hasTrustworthyTenantAccess()` — the tenant call produced a real
+  answer, where **403 counts as real** and 5xx does not. `isPlatformAdmin()`
+  reads `isPlatformOrg` (from `/tenant`) *and* the `platform:admin`
+  permission, so `platformAdminGuard` requires both signals. The 403/5xx
+  split is what lets it deny a zero-permission user while still not
+  ejecting a genuine platform admin during an outage.
+
+**Known consequence, flagged at `FUNCTIONAL_NAV_ITEMS`:** when `/tenant`
+403s, `isModuleEnabled()` answers false for every module regardless of
+truth. Harmless while that list is empty; load-bearing for whoever adds
+the first functional module, who should then decide whether `/tenant`'s
+`tenant:view` gating is still right.
+
+**`GET /tasks/my-tasks` carries no `@Permissions()`** (ACC-70),
+deliberately — it filters `assignees.some(userId = caller)` and is
+self-scoped in exactly the sense `NotificationController` already
+documents for the notification inbox. Its neighbours stay gated:
+`getForSource()` and `getById()` can return any task in the tenant. A
+spec asserts the metadata directly so the decorator is not "restored"
+for consistency.
+
 ---
 
 ## 2. Workflow Engine

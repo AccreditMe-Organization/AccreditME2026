@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { platformAdminGuard } from './core/guards/platform-admin.guard';
+import { permissionGuard } from './core/guards/permission.guard';
 import { AppShellComponent } from './layout/app-shell/app-shell.component';
 
 // Every route below the shell inherits its parent's canActivate — a child
@@ -13,18 +14,43 @@ export const routes: Routes = [
     component: AppShellComponent,
     canActivate: [authGuard],
     children: [
-      // Static TENANT_ADMIN-oriented fallback, deliberately not role-aware —
-      // only reached when an already-authenticated user hits the bare root
-      // directly (e.g. a bookmark, or clicking a logo/home link), which
-      // LoginComponent's own post-login redirect never goes through. Making
-      // this properly role-aware would need an async guard (NavigationAccessService's
-      // permissions/tenant data isn't available synchronously at route-recognition
-      // time, before AppShellComponent has mounted) — not worth it for an edge
-      // case this rare. A platform admin hitting this path lands on
-      // /organization and can navigate to Platform from the sidebar.
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      // Bare-root fallback — reached when an already-authenticated user hits
+      // '/' directly (a bookmark, or a logo/home link).
+      //
+      // It no longer needs to be role-aware: it redirects to the landing page,
+      // which is reachable by every authenticated user regardless of
+      // permissions. Previously it sent everyone to /organization, which a
+      // user without org:view could not use.
+      //
+      // CORRECTION (ACC-70) — this comment used to justify that choice by
+      // stating that making it role-aware "would need an async guard
+      // (NavigationAccessService's permissions/tenant data isn't available
+      // synchronously at route-recognition time, before AppShellComponent has
+      // mounted)". That was true when written and is FALSE now: ACC-21 moved
+      // loadAccess() into provideAppInitializer, chained after
+      // restoreSession(), and the initializer does not settle until both
+      // resolve — so the router's initial navigation cannot begin before
+      // permission data is loaded. Synchronous permission checks at
+      // route-recognition time are exactly what permissionGuard and
+      // platformAdminGuard now do.
+      //
+      // Left explicit rather than deleted because the stale version had
+      // already been read as a standing constraint and used to conclude that
+      // route guards were not buildable here. They are.
+      { path: '', redirectTo: 'home', pathMatch: 'full' },
+      {
+        // ACC-70 — deliberately NO permissionGuard and no ROUTE_PERMISSIONS
+        // entry. This is where every user is sent after login, including one
+        // holding no permissions at all, so guarding it would make it the
+        // thing it exists to prevent.
+        path: 'home',
+        data: { breadcrumb: 'nav.home' },
+        loadComponent: () =>
+          import('./foundation/home/home.component').then((m) => m.HomeComponent),
+      },
       {
         path: 'organization',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.organization' },
         loadChildren: () =>
           import('./foundation/organization/organization.routes').then(
@@ -33,6 +59,7 @@ export const routes: Routes = [
       },
       {
         path: 'working-calendar',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.workingCalendar' },
         loadChildren: () =>
           import('./foundation/working-calendar/working-calendar.routes').then(
@@ -41,6 +68,7 @@ export const routes: Routes = [
       },
       {
         path: 'lookups',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.lookups' },
         loadChildren: () =>
           import('./foundation/lookup/lookup.routes').then(
@@ -49,6 +77,7 @@ export const routes: Routes = [
       },
       {
         path: 'roles',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.roles' },
         loadChildren: () =>
           import('./foundation/roles/roles.routes').then(
@@ -57,6 +86,7 @@ export const routes: Routes = [
       },
       {
         path: 'workflows',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.workflows' },
         loadChildren: () =>
           import('./foundation/workflow/workflow.routes').then(
@@ -65,6 +95,7 @@ export const routes: Routes = [
       },
       {
         path: 'org-positions',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.orgPositions' },
         loadChildren: () =>
           import('./foundation/org-position/org-position.routes').then(
@@ -73,6 +104,7 @@ export const routes: Routes = [
       },
       {
         path: 'committees',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.committees' },
         loadChildren: () =>
           import('./foundation/committees/committees.routes').then(
@@ -81,12 +113,14 @@ export const routes: Routes = [
       },
       {
         path: 'tasks',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.tasks' },
         loadChildren: () =>
           import('./foundation/tasks/tasks.routes').then((m) => m.TASKS_ROUTES),
       },
       {
         path: 'users',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.users' },
         loadChildren: () =>
           import('./foundation/user/user.routes').then((m) => m.USER_ROUTES),
@@ -100,6 +134,7 @@ export const routes: Routes = [
       },
       {
         path: 'admin-settings',
+        canActivate: [permissionGuard],
         data: { breadcrumb: 'nav.adminSettings' },
         loadChildren: () =>
           import('./foundation/admin-settings/admin-settings.routes').then(

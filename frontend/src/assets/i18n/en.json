@@ -44,7 +44,8 @@
     "workflows": "Workflows",
     "settings": "Settings",
     "platform": "Super Admin",
-    "adminSettings": "Admin Settings"
+    "adminSettings": "Admin Settings",
+    "home": "Home"
   },
   "organization": {
     "title": "Organization Structure",
@@ -578,5 +579,14 @@
     "dueAfterHours": "Due After (hours)",
     "managerEscalationAfterHours": "Manager Escalation (hours after due)",
     "headEscalationAfterHours": "Head Escalation (hours after manager)"
+  },
+  "home": {
+    "greeting": "Welcome back, {{name}}",
+    "subtitle": "Your open work and recent activity",
+    "myTasks": "My Open Tasks",
+    "viewAll": "View all",
+    "noOpenTasks": "You have no open tasks.",
+    "notifications": "Recent Notifications",
+    "noNotifications": "No recent notifications."
   }
 }
