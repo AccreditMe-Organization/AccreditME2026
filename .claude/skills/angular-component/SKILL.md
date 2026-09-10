@@ -558,15 +558,24 @@ Register in parent routing file as lazy-loaded route:
 
 ---
 
-## TypeScript Verification
+## TypeScript and Template Verification
 
 Run after completing all component files:
 
 ```bash
 cd frontend && npx tsc --noEmit
+cd frontend && npx ng build
 ```
 
-Must produce zero errors before committing.
+Both must produce zero errors before committing.
+
+**Run `ng build` too — `tsc --noEmit` cannot check your template.**
+It does not invoke the Angular compiler, so `strictTemplates` never
+applies: a binding to a field the type does not have compiles clean.
+That matters most in this skill, which is where templates get
+written. `ng test` will not save you either — it only compiles
+components a spec imports, so a component without a spec is checked
+by nothing until `ng build` runs (ACC-72, found live in ACC-70).
 
 ---
 
