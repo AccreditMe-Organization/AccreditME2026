@@ -44,7 +44,8 @@
     "workflows": "سير العمل",
     "settings": "الإعدادات",
     "platform": "إدارة المنصة",
-    "adminSettings": "إعدادات المؤسسة"
+    "adminSettings": "إعدادات المؤسسة",
+    "home": "الرئيسية"
   },
   "organization": {
     "title": "هيكل المنظمة",
@@ -578,5 +579,14 @@
     "dueAfterHours": "الاستحقاق بعد (ساعات)",
     "managerEscalationAfterHours": "تصعيد إلى المدير (ساعات بعد الاستحقاق)",
     "headEscalationAfterHours": "تصعيد إلى الرئيس (ساعات بعد المدير)"
+  },
+  "home": {
+    "greeting": "مرحبًا بعودتك، {{name}}",
+    "subtitle": "مهامك المفتوحة والنشاط الأخير",
+    "myTasks": "مهامي المفتوحة",
+    "viewAll": "عرض الكل",
+    "noOpenTasks": "لا توجد لديك مهام مفتوحة.",
+    "notifications": "الإشعارات الأخيرة",
+    "noNotifications": "لا توجد إشعارات حديثة."
   }
 }
