@@ -104,24 +104,32 @@ Flag as PASS if:
 
 ---
 
-## Check 4 — Frontend TypeScript
+## Check 4 — Frontend TypeScript and Templates
 
 ```bash
 cd frontend && npx tsc --noEmit 2>&1
+cd frontend && npx ng build 2>&1
 ```
+
+**Both are required to answer "is the frontend sound?"** — `tsc` does
+not invoke the Angular compiler, so it never type-checks templates
+despite `strictTemplates` being enabled. Reporting a clean `tsc` alone
+answers this check's own question wrongly (ACC-72).
 
 Report:
 
-- Total error count
+- Total error count from each command
 - List each error with file, line, and error message
+- Whether the build succeeded
 
 Flag as ERROR if:
 
 - Any TypeScript errors exist
+- The build fails
 
 Flag as PASS if:
 
-- Zero errors
+- Zero TypeScript errors AND the build succeeds
 
 ---
 

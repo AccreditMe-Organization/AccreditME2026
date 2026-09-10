@@ -67,7 +67,7 @@ Do not force-push to fix commit messages on a shared branch.
 
 ---
 
-## Step 3 — TypeScript Verification
+## Step 3 — TypeScript and Template Verification
 
 ```bash
 cd backend && npx tsc --noEmit
@@ -77,12 +77,22 @@ cd backend && npx tsc --noEmit
 cd frontend && npx tsc --noEmit
 ```
 
+```bash
+cd frontend && npx ng build
+```
+
+**`ng build` is not redundant with `tsc --noEmit`** — `tsc` does not
+invoke the Angular compiler, so it never type-checks templates, even
+though `strictTemplates` is enabled. A binding against a field that
+does not exist passes `tsc` and fails only here (ACC-72).
+
 - [ ] Backend TypeScript errors: zero
 - [ ] Frontend TypeScript errors: zero
+- [ ] Frontend build: succeeds
 
 If any errors exist — STOP.
 Fix all TypeScript errors and commit the fix before proceeding.
-Never open a PR with TypeScript errors.
+Never open a PR with TypeScript or template errors.
 
 ---
 
