@@ -23,7 +23,17 @@ export const routes: Routes = [
       // time, before AppShellComponent has mounted) — not worth it for an edge
       // case this rare. A platform admin hitting this path lands on
       // /organization and can navigate to Platform from the sidebar.
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      { path: '', redirectTo: 'home', pathMatch: 'full' },
+      {
+        // ACC-70 — deliberately NO permissionGuard and no ROUTE_PERMISSIONS
+        // entry. This is where every user is sent after login, including one
+        // holding no permissions at all, so guarding it would make it the
+        // thing it exists to prevent.
+        path: 'home',
+        data: { breadcrumb: 'nav.home' },
+        loadComponent: () =>
+          import('./foundation/home/home.component').then((m) => m.HomeComponent),
+      },
       {
         path: 'organization',
         canActivate: [permissionGuard],
