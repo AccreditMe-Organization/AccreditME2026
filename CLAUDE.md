@@ -738,6 +738,17 @@ Runs as stateless Docker container — no extra infrastructure.
 Canvas reads from and writes to WorkflowTemplate database records.
 Built in Phase 3 when paying customers justify the engineering investment.
 
+**Independently sighted again by the UX review, as UX-10** (ACC-71):
+*"Workflow templates are edited as a table, with no picture of the
+flow."* That is a second, independent arrival at the same conclusion
+— reached by reviewing the built product rather than from the design
+intent that produced this entry. It does NOT change the Phase 3
+deferral, and no separate ticket should be opened for it; the
+decision above stands, with the reasoning it already carries. What
+the second sighting adds is evidence that the absence is felt in
+real use, not only anticipated in design — worth weighing if the
+Phase 3 ordering is ever revisited.
+
 #### Webhook Integration
 Tenant admin configures webhook URLs per transition in the workflow builder.
 AccreditMe fires webhooks via BullMQ background jobs.
@@ -1895,6 +1906,13 @@ Prisma Studio.
   milestone, after Document Management, alongside the full
   visual/brand polish ticket. Distinct from the smaller, near-term
   Committee-specific RTL pass in the sequence below.
+  **Partly overlapped by UX-23** (ACC-71), which found the
+  accessibility baseline is below WCAG 2.2 AA and covers language
+  and device concerns alongside it — workstream 6 in the sequence
+  above. The overlap is partial, not total: UX-23 is an
+  accessibility standard, this is a visual-correctness pass over
+  every screen in Arabic. Worth scoping them together when either is
+  picked up, so the same screens are not walked twice.
 - **RESOLVED (ACC-42)** — **`p-cascadeSelect` adopted in exactly one
   place, not consistently** — was: `org-unit-form.component.ts`'s
   `parentId` got the hierarchy-aware `p-cascadeSelect` widget while
@@ -2097,6 +2115,59 @@ complete, not just the currently-in-review ones.
    remaining value is the LIVE, persona-driven half using Playwright
    MCP. Followed by the permanent, CI-integrated Playwright E2E
    suite, informed by the audit's findings.
+
+6b. **THEN — the UX review workstreams, BEFORE Meeting Management**
+   (ACC-71). Full review: `backend/Plans/ux-review-2026-09-10.md`
+   (26 findings, UX-01 … UX-26) and `AccreditMe-UX-Review.pdf`.
+
+   **Why before rather than alongside.** Documents, Incidents, CAPA
+   and Audit will copy whatever list, record and notification
+   patterns exist at the moment they are built. That is the same
+   argument that already moved the object-detail pattern ahead of
+   Meeting Management — applying it here is consistent, not novel.
+   Building Meeting first means retrofitting two modules instead of
+   establishing one pattern.
+
+   **The 26 findings group into six workstreams**, because several
+   are the same underlying gap on different screens — fixing them as
+   separate tickets would mean touching the same components
+   repeatedly. Verified complete: 7+3+6+3+5+1+1 = 26, none omitted,
+   none double-counted.
+
+   | # | Workstream | Findings |
+   |---|---|---|
+   | 1 | Shell & navigation | UX-02, 03, 04, 05, 06, 25, 26 |
+   | 2 | Home & daily work | UX-01, 07, 08 |
+   | 3 | Shared list pattern | UX-11, 12, 13, 15, 16, 17 |
+   | 4 | Record pages | UX-09, 18, 19, + the object-detail pattern |
+   | 5 | Forms & display conventions | UX-14, 20, 21, 22, 24 |
+   | 6 | Accessibility | UX-23, + the accessibility halves of 07 and 13 |
+   | — | Standalone | UX-10 |
+
+   **Workstreams 3 and 4 go first** — they are what Meeting
+   Management would copy most directly.
+
+   **This ordering SUPERSEDES the review's own "Recommended order"
+   section.** Read that section as historical. It sorts findings
+   into "Before the demo milestone / Alongside the next modules /
+   Polish & later", and it was written against CLAUDE.md's build
+   sequence rather than against this decision — so where the two
+   disagree, this one is current. Both are in the repo, so which is
+   authoritative has to be stated rather than inferred.
+
+   **Already covered elsewhere — do not open new tickets for these:**
+   - **UX-01** (no home page; users land on an admin screen) —
+     **delivered by ACC-70**, merged `40c0ec4`.
+   - **UX-07** (notifications flooded with one repeated,
+     unactionable alert) — **is ACC-59**, already ticketed.
+   - **UX-08, UX-09** — fold into the object-detail pattern above.
+   - **UX-10** — a second sighting of Phase 3's "Visual workflow
+     canvas (draw.io)", already decided and deferred. See that entry.
+   - **UX-11** — subsumes and widens the list-page filtering entry
+     in Open/Deferred Items.
+   - **UX-23** — partly overlaps the full RTL visual audit and the
+     frontend design-consistency audit, both already recorded.
+
 7. **ONLY THEN — Meeting Management planning begins.** Its own plan
    MUST, as a mandatory step:
    - Check SYSTEM-REFERENCE.md's remaining Tier 2/3 items for real
@@ -2179,6 +2250,14 @@ complete, not just the currently-in-review ones.
   a single generic filter pattern applied uniformly everywhere. Not
   scoped or sized yet — this note exists so the idea isn't lost, not
   as a commitment to a specific approach.
+  **SUBSUMED AND WIDENED by UX-11** (ACC-71). The UX review found the
+  gap is larger than filtering alone: *"No table can be searched,
+  sorted, filtered, paginated or exported."* So the investigation
+  described above should cover all five capabilities, not just
+  filtering — and it is now workstream 3 (Shared list pattern) in the
+  sequence above, alongside UX-12, 13, 15, 16 and 17, rather than a
+  standalone note. Do not pick this up in isolation; the whole
+  workstream touches the same components.
 - **Field alignment/spacing inconsistency, `committee-form`'s Quorum
   and Meeting Frequency fields** — Ahmad flagged a visual
   misalignment between the two during ACC-42 testing. Not fixed as
@@ -2211,6 +2290,15 @@ complete, not just the currently-in-review ones.
   turned out to be. Not scoped or sized yet — this is a full audit,
   not a single fix, grouped here with the other future UI-consistency
   items but distinctly larger in scope than either.
+  **Substantially answered by the UX review** (ACC-71): it walked the
+  built product and produced 26 concrete findings, which is most of
+  the "verify every real screen actually follows them" half of this
+  audit. What it does NOT answer is the first half — whether a
+  complete, written set of frontend design rules exists at all, and
+  which deviations are documented exceptions versus one-offs. Read
+  the review before starting this, and scope this to the gap it
+  leaves rather than repeating the walk. Workstream 5 (Forms &
+  display conventions) is where most of its findings landed.
 - **Local development points at SHARED infrastructure that a live
   Railway deployment also depends on — both the dev database and the
   dev Redis queue.** Confirmed twice, in two structurally different
