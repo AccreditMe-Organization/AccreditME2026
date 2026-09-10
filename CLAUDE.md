@@ -1901,6 +1901,36 @@ Prisma Studio.
   referenced as required patterns despite this file marking both
   required. Found during ACC-46's skill audit. Worth updating whenever
   next touched, not urgent.
+- **The skills' verification commands are duplicated by hand, with no
+  shared source.** Counted directly rather than estimated:
+  `npx tsc --noEmit` appears at **13 call sites across 7 skills** —
+  6 frontend sites in 5 skills (`ready-to-pr`, `angular-component`,
+  `health-check`, `new-feature`, `new-module` ×2) and 7 backend sites
+  in 6 skills (those minus `angular-component`, plus `debug` and
+  `module-scaffold`). One change to *how verification works*
+  therefore means editing every copy, and any copy missed drifts
+  silently. Note the two sets are not the same skills, so a sweep
+  that only follows one command misses the other's outliers.
+  This directly contradicts a pattern this project already established
+  deliberately elsewhere: `pr-checklist` exists so that `ready-to-pr`
+  and `pr-reviewer` read one file for their check content, and its own
+  header says the reason is so "the two can't drift apart from each
+  other." That reasoning was never applied to the commands themselves.
+  **ACC-72 is the worked example**, and the reason this is recorded
+  rather than theorised. Adding `ng build` to frontend verification —
+  one conceptual change — required editing three skill files, and
+  deliberately left two others inconsistent because sweeping every
+  call site was a bigger diff than that ticket warranted. Which two,
+  and why they were excluded, is recorded in ACC-72 rather than
+  repeated here: names go stale if either skill is later updated,
+  whereas the ticket stays accurate because it records a decision made
+  at a point in time.
+  If this is ever acted on, the obvious shape is a shared
+  verification-commands file the others reference, matching
+  `pr-checklist`'s own pattern. **Recorded, not scoped** — this note
+  exists so the idea isn't lost, not as a commitment to that approach.
+  Note the backend command is duplicated the same way, so a fix scoped
+  to frontend-only would solve half the problem.
 - **Full RTL visual audit** — deferred, see the i18n / RTL Foundation
   note in Build Sequence above. Positioned right before the demo
   milestone, after Document Management, alongside the full
