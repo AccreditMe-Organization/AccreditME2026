@@ -4,7 +4,6 @@ import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
-import { ButtonModule } from 'primeng/button';
 import { CardComponent } from '../../shared/components/card/card.component';
 import { TaskService, ITaskDto } from '../tasks/services/task.service';
 import { NotificationService, NotificationDto } from '../notification/services/notification.service';
@@ -38,7 +37,7 @@ import { LanguageService } from '../../core/services/language.service';
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [DatePipe, RouterLink, TranslatePipe, TableModule, TagModule, ButtonModule, CardComponent],
+  imports: [DatePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
   template: `
     <div class="flex flex-col gap-6">
       <div>
