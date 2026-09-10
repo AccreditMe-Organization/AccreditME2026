@@ -5,6 +5,7 @@ import { ButtonModule } from 'primeng/button';
 import { MenuModule } from 'primeng/menu';
 import { MenuItem } from 'primeng/api';
 import { AuthService } from '../../core/services/auth.service';
+import { LANDING_ROUTE } from '../../core/navigation/landing-route';
 import { PlatformTenantService } from '../../platform/services/platform-tenant.service';
 import { NotificationBellComponent } from '../../foundation/notification/components/notification-bell/notification-bell.component';
 
@@ -93,7 +94,9 @@ export class TopbarComponent {
     // so every in-memory signal needs a fresh APP_INITIALIZER boot.
     this.platformTenantService.endImpersonation().subscribe({
       next: () => { window.location.href = '/platform/tenants'; },
-      error: () => { window.location.href = '/organization'; },
+      // ACC-70 — LANDING_ROUTE rather than '/organization', which the user
+      // being returned to may hold no permission for.
+      error: () => { window.location.href = LANDING_ROUTE; },
     });
   }
 }

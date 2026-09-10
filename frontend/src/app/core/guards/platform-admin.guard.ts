@@ -7,6 +7,7 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { NavigationAccessService } from '../services/navigation-access.service';
+import { LANDING_ROUTE } from '../navigation/landing-route';
 
 export const platformAdminGuard: CanActivateFn = () => {
   const navigationAccessService = inject(NavigationAccessService);
@@ -22,5 +23,7 @@ export const platformAdminGuard: CanActivateFn = () => {
 
   if (navigationAccessService.isPlatformAdmin()) return true;
 
-  return router.parseUrl('/organization');
+  // ACC-70 — was '/organization', which could bounce a non-platform-admin
+  // onto a screen they hold no permission for.
+  return router.parseUrl(LANDING_ROUTE);
 };

@@ -1,3 +1,4 @@
+import { LANDING_ROUTE } from '../../../core/navigation/landing-route';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -204,7 +205,9 @@ export class TenantDetailComponent implements OnInit {
       // server-side; AuthService/NavigationAccessService's signals need a
       // fresh APP_INITIALIZER boot to pick up the impersonated identity,
       // not a stale in-memory carryover from the platform admin's own session.
-      next: () => { window.location.href = '/organization'; },
+      // ACC-70 — LANDING_ROUTE rather than '/organization': the impersonated
+      // user may hold no org:view, and would now be bounced by permissionGuard.
+      next: () => { window.location.href = LANDING_ROUTE; },
       error: () => this.error.set('platform.errorImpersonate'),
     });
   }
