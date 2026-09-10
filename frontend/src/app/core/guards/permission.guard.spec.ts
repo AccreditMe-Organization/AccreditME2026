@@ -1,6 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { provideRouter } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { environment } from '../../../environments/environment';
 import { permissionGuard } from './permission.guard';
 import { NavigationAccessService } from '../services/navigation-access.service';
 import { LANDING_ROUTE } from '../navigation/landing-route';
@@ -136,5 +139,112 @@ describe('permissionGuard', () => {
     setup({ permissions: [], trustworthy: true });
 
     expect(run('organization')).toEqual(router.parseUrl(LANDING_ROUTE));
+  });
+});
+
+// ACC-70 live pass, check 2 — the reported failure, reproduced end to end.
+//
+// The specs above stub NavigationAccessService, so they could not have caught
+// this: the bug was in how the REAL service reacted to a 403 on /tenant, not
+// in the guard's own logic. Typing /organization as a zero-permission user
+// landed on the broken screen because loadAccess()'s forkJoin discarded a
+// correct empty-permissions answer, leaving the guard to fail open.
+//
+// This wires the real service to the real guard over mocked HTTP, so the two
+// are exercised together against the exact response pair the live pass hit.
+describe('permissionGuard — with the real NavigationAccessService', () => {
+  let router: Router;
+  let httpMock: HttpTestingController;
+  let service: NavigationAccessService;
+
+  const PERMISSIONS_URL = `${environment.apiUrl}/roles/my-permissions`;
+  const TENANT_URL = `${environment.apiUrl}/tenant`;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        NavigationAccessService,
+      ],
+    });
+    router = TestBed.inject(Router);
+    httpMock = TestBed.inject(HttpTestingController);
+    service = TestBed.inject(NavigationAccessService);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  function guard(path: string): boolean | UrlTree {
+    const chain = ['', path].map((p) => ({ routeConfig: { path: p } }));
+    const route = {
+      routeConfig: chain[chain.length - 1].routeConfig,
+      pathFromRoot: chain,
+    } as unknown as ActivatedRouteSnapshot;
+    return TestBed.runInInjectionContext(() =>
+      permissionGuard(route, {} as RouterStateSnapshot),
+    ) as boolean | UrlTree;
+  }
+
+  // Exactly what the live pass produced for Dr. Yasser Al-Amri:
+  //   GET /roles/my-permissions -> 200 []
+  //   GET /tenant               -> 403 "Required permission: tenant:view"
+  function loadAsZeroPermissionUser(): void {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush([]);
+    httpMock.expectOne(TENANT_URL).flush(
+      { message: 'Required permission: tenant:view', error: 'Forbidden', statusCode: 403 },
+      { status: 403, statusText: 'Forbidden' },
+    );
+  }
+
+  it('DENIES every guarded route to a zero-permission user, despite /tenant returning 403', () => {
+    loadAsZeroPermissionUser();
+
+    // Ahmad only tested /organization live; the others were unverified, and
+    // the fail-open branch hit before any per-route logic, so all of them
+    // were reachable. Asserted together so a future regression cannot be
+    // mistaken for affecting one screen.
+    for (const path of [
+      'organization',
+      'users',
+      'roles',
+      'workflows',
+      'lookups',
+      'org-positions',
+      'committees',
+      'tasks',
+      'working-calendar',
+      'admin-settings',
+    ]) {
+      expect(guard(path)).withContext(path).toEqual(router.parseUrl(LANDING_ROUTE));
+    }
+  });
+
+  it('still allows the landing page itself to a zero-permission user', () => {
+    loadAsZeroPermissionUser();
+
+    expect(guard('home')).toBe(true);
+  });
+
+  it('allows a guarded route to a user who holds its permission, even when /tenant 403s', () => {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush(['org:view']);
+    httpMock.expectOne(TENANT_URL).flush('forbidden', { status: 403, statusText: 'Forbidden' });
+
+    expect(guard('organization')).toBe(true);
+    expect(guard('users')).toEqual(router.parseUrl(LANDING_ROUTE));
+  });
+
+  // The transient-fault case fail-open was actually written for: the
+  // PERMISSIONS call itself failing means the answer is genuinely unknown.
+  it('falls open only when the permissions call itself fails', () => {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush('boom', { status: 503, statusText: 'Unavailable' });
+    httpMock.expectOne(TENANT_URL).flush({ isPlatformOrg: false, modules: {} });
+
+    expect(guard('organization')).toBe(true);
   });
 });

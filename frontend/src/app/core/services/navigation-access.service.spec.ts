@@ -35,13 +35,13 @@ describe('NavigationAccessService', () => {
     httpMock.expectOne(TENANT_URL).flush({ isPlatformOrg, modules });
   }
 
-  // Fails the permissions call, which collapses the whole forkJoin. match()
-  // then drains the cancelled tenant request from the mock's queue — without
-  // it, a later loadAccess() in the same test sees two matching tenant
-  // requests (the cancelled one and the live one) and expectOne() fails.
+  // Fails the permissions call. Since ACC-70's split the two requests recover
+  // independently, so the tenant request is NOT cancelled — it still needs
+  // answering, or it stays queued and a later loadAccess() in the same test
+  // sees two matching tenant requests.
   function failPermissions(): void {
     httpMock.expectOne(PERMISSIONS_URL).flush('boom', { status: 500, statusText: 'Server Error' });
-    httpMock.match(TENANT_URL);
+    httpMock.expectOne(TENANT_URL).flush({ isPlatformOrg: false, modules: {} });
   }
 
   it('starts PENDING, before anything has been loaded', () => {
@@ -77,13 +77,53 @@ describe('NavigationAccessService', () => {
     expect(service.hasTrustworthyPermissions()).toBe(false);
   });
 
-  it('records FAILED when the tenant request errors', () => {
+  // ACC-70 live pass, check 2 — the regression this split exists for.
+  //
+  // GET /tenant requires tenant:view, so a user holding NO permissions gets a
+  // correct `[]` from the ungated permissions call and a 403 from /tenant.
+  // While both shared one outer catchError, forkJoin collapsed and threw the
+  // good answer away, leaving loadState FAILED — which made permissionGuard
+  // take its fail-open branch and let that user into every guarded route.
+  it('keeps permissions trustworthy when /tenant 403s — the zero-permission case', () => {
     service.loadAccess().subscribe();
-    httpMock.expectOne(PERMISSIONS_URL).flush(['org:view']);
+    httpMock.expectOne(PERMISSIONS_URL).flush([]);
+    httpMock.expectOne(TENANT_URL).flush('forbidden', { status: 403, statusText: 'Forbidden' });
+
+    // The permissions answer is known and empty. That is a real answer, and
+    // the guards must be able to act on it.
+    expect(service.loadState()).toBe('LOADED');
+    expect(service.hasTrustworthyPermissions()).toBe(true);
+    expect(service.hasPermission('org:view')).toBe(false);
+  });
+
+  it('keeps a NON-empty permissions answer when /tenant fails', () => {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush(['org:view', 'users:view']);
     httpMock.expectOne(TENANT_URL).flush('boom', { status: 500, statusText: 'Server Error' });
 
+    expect(service.hasTrustworthyPermissions()).toBe(true);
+    expect(service.hasPermission('org:view')).toBe(true);
+  });
+
+  // The two calls no longer cancel each other, so a permissions failure leaves
+  // the tenant answer intact too.
+  it('keeps the tenant answer when the permissions request fails', () => {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush('boom', { status: 500, statusText: 'Server Error' });
+    httpMock.expectOne(TENANT_URL).flush({ isPlatformOrg: true, modules: { documents: true } });
+
     expect(service.loadState()).toBe('FAILED');
-    expect(service.hasTrustworthyPermissions()).toBe(false);
+    expect(service.isModuleEnabled('documents')).toBe(true);
+  });
+
+  it('clears tenant-derived state when /tenant fails, without touching loadState', () => {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush(['platform:admin']);
+    httpMock.expectOne(TENANT_URL).flush('forbidden', { status: 403, statusText: 'Forbidden' });
+
+    expect(service.loadState()).toBe('LOADED');
+    expect(service.isModuleEnabled('documents')).toBe(false);
+    expect(service.isPlatformAdmin()).toBe(false);
   });
 
   // Every existing caller — provideAppInitializer and AppShellComponent —

@@ -13,13 +13,25 @@ export const platformAdminGuard: CanActivateFn = () => {
   const navigationAccessService = inject(NavigationAccessService);
   const router = inject(Router);
 
-  // ACC-70 — a failed loadAccess() leaves every signal empty while still
-  // resolving successfully, so isPlatformAdmin() returns false for a reason
-  // that has nothing to do with this user. Bouncing on that was a live bug:
-  // one transient 5xx during a hard reload of /platform/* ejected a genuine
-  // platform admin. Defer to the backend's own PlatformGuard instead, which
-  // re-checks the real answer on every request.
-  if (!navigationAccessService.hasTrustworthyPermissions()) return true;
+  // ACC-70 — isPlatformAdmin() reads BOTH halves (isPlatformOrg from /tenant,
+  // platform:admin from the permissions call), so both must be real answers
+  // before a false result can be treated as a denial.
+  //
+  // Bouncing without that check was a live bug: one transient 5xx during a
+  // hard reload of /platform/* left every signal empty and ejected a genuine
+  // platform admin. Deferring to the backend's own PlatformGuard — which
+  // re-checks on every request — is the safe response to an unknown answer.
+  //
+  // Note hasTrustworthyTenantAccess() counts a 403 as trustworthy, so a
+  // zero-permission user (403 on /tenant) is still correctly DENIED here
+  // rather than falling through. That case was the ACC-70 live-pass
+  // regression; only a genuine fault falls open.
+  if (
+    !navigationAccessService.hasTrustworthyPermissions() ||
+    !navigationAccessService.hasTrustworthyTenantAccess()
+  ) {
+    return true;
+  }
 
   if (navigationAccessService.isPlatformAdmin()) return true;
 

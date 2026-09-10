@@ -45,6 +45,29 @@ export const FOUNDATION_NAV_ITEMS: NavItem[] = [
 // Functional modules (ACC-17+) will be appended here as they ship, each
 // filtered through navigationAccessService.isModuleEnabled(moduleKey) —
 // none exist yet, so this list is intentionally empty for now.
+//
+// READ THIS BEFORE ADDING THE FIRST ENTRY (ACC-70).
+//
+// isModuleEnabled() reads `modules`, which comes from GET /tenant — and that
+// endpoint requires `tenant:view`. A user who lacks it gets a 403, and
+// NavigationAccessService deliberately does NOT let that failure invalidate
+// the user's permissions (it would otherwise discard a correct answer and
+// make every route guard fail open — the ACC-70 live-pass regression). The
+// tenant call recovering on its own means `modules` is left EMPTY in that
+// case.
+//
+// Consequence: for such a user, isModuleEnabled() answers false for every
+// module, whether or not the module is actually enabled for their tenant.
+// That is harmless while this list is empty — nothing consumes it. The first
+// entry added here makes it load-bearing: that nav item would be hidden from
+// any user whose /tenant call failed, even one holding the module's own
+// view permission.
+//
+// So when the first functional module ships, decide deliberately whether
+// GET /tenant should still require tenant:view. Module enablement shapes
+// navigation for every user, not only admins, which is an argument for
+// ungating it — but that is a real authorization change and was explicitly
+// left for whoever needs it rather than made pre-emptively here.
 export const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
 
 // Permission-gated routes that are NOT rendered from the lists above.
