@@ -9,6 +9,7 @@ import { CardComponent } from '../../shared/components/card/card.component';
 import { TaskService, ITaskDto } from '../tasks/services/task.service';
 import { NotificationService, NotificationDto } from '../notification/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
+import { LanguageService } from '../../core/services/language.service';
 
 // HomeComponent — ACC-70. The post-login landing page.
 //
@@ -100,7 +101,7 @@ import { AuthService } from '../../core/services/auth.service';
               @for (item of notifications(); track item.id) {
                 <li class="py-3 flex flex-col gap-1">
                   <span class="text-sm" [class.font-semibold]="item.status === 'UNREAD'">
-                    {{ item.title }}
+                    {{ notificationTitle(item) }}
                   </span>
                   <span class="text-xs text-[var(--am-text-secondary)]">
                     {{ item.createdAt | date: 'short' }}
@@ -118,6 +119,7 @@ export class HomeComponent implements OnInit {
   private readonly taskService = inject(TaskService);
   private readonly notificationService = inject(NotificationService);
   private readonly authService = inject(AuthService);
+  private readonly languageService = inject(LanguageService);
 
   readonly openTasks = signal<ITaskDto[]>([]);
   readonly notifications = signal<NotificationDto[]>([]);
@@ -126,6 +128,13 @@ export class HomeComponent implements OnInit {
 
   userName(): string {
     return this.authService.currentUser()?.name ?? '';
+  }
+
+  // Notifications carry titleEn/titleAr, not a single resolved title — same
+  // shape NotificationBellComponent already renders. Arabic falls back to
+  // English when titleAr is null rather than showing an empty row.
+  notificationTitle(item: NotificationDto): string {
+    return this.languageService.isArabic() && item.titleAr ? item.titleAr : item.titleEn;
   }
 
   statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'info' {
