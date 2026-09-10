@@ -23,12 +23,31 @@ export const permissionGuard: CanActivateFn = (route) => {
   const navigationAccessService = inject(NavigationAccessService);
   const router = inject(Router);
 
-  // The path this guard is attached to, as declared in app.routes.ts. Read
-  // from the route config rather than the resolved URL so a deep child URL
-  // (/committees/:id) is judged by its guarded parent's permission, not by a
-  // path that has no entry in the map.
-  const path = route.routeConfig?.path ?? '';
-  const required = ROUTE_PERMISSIONS.get(path);
+  // The full CONFIGURED path this guard sits on, rebuilt from the route
+  // hierarchy — not routeConfig.path alone, and not the resolved URL.
+  //
+  // Both simpler options are wrong in a way that matters:
+  //   - routeConfig.path alone yields 'unassigned' for /tasks/unassigned,
+  //     which is not a key in the map, so the stricter tasks:manage entry
+  //     would be silently skipped.
+  //   - the resolved URL yields '/committees/abc123', which matches nothing,
+  //     so a deep child would be treated as unmapped and allowed.
+  //
+  // Joining the configured segments gives 'tasks/unassigned' and
+  // 'committees/:id' respectively. The first matches exactly; the second
+  // falls back below to its guarded parent.
+  const fullPath = route.pathFromRoot
+    .map((r) => r.routeConfig?.path ?? '')
+    .filter((p) => p.length > 0)
+    .join('/');
+
+  // Exact match first, then walk up. A child inherits its parent's
+  // requirement unless it declares a stricter one of its own.
+  let required: string | undefined;
+  const segments = fullPath.split('/').filter((s) => s.length > 0);
+  for (let i = segments.length; i > 0 && !required; i--) {
+    required = ROUTE_PERMISSIONS.get(segments.slice(0, i).join('/'));
+  }
 
   // No entry means this route was never meant to be permission-gated (the
   // landing page, a user's own profile). Absence is not denial — a guard that

@@ -16,14 +16,25 @@ describe('permissionGuard', () => {
       hasPermission: (p: string) => opts.permissions.includes(p),
       hasTrustworthyPermissions: () => opts.trustworthy ?? true,
     };
+    // reset first — several specs below call setup() twice to compare the
+    // same route under two different permission sets, and TestBed cannot be
+    // reconfigured once it has been injected from.
+    TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: NavigationAccessService, useValue: stub }],
     });
     router = TestBed.inject(Router);
   }
 
-  function run(path: string): boolean | UrlTree {
-    const route = { routeConfig: { path } } as ActivatedRouteSnapshot;
+  // Builds a snapshot whose pathFromRoot mirrors the real route hierarchy:
+  // segments are the CONFIGURED paths, with the shell's empty '' parent
+  // included, since that is what the guard walks.
+  function run(...segments: string[]): boolean | UrlTree {
+    const chain = ['', ...segments].map((path) => ({ routeConfig: { path } }));
+    const route = {
+      routeConfig: chain[chain.length - 1].routeConfig,
+      pathFromRoot: chain,
+    } as unknown as ActivatedRouteSnapshot;
     return TestBed.runInInjectionContext(() =>
       permissionGuard(route, {} as RouterStateSnapshot),
     ) as boolean | UrlTree;
@@ -71,12 +82,35 @@ describe('permissionGuard', () => {
     expect(run('working-calendar')).toBe(true);
   });
 
+  // The two cases the hierarchy-based path resolution exists for. Both are
+  // silently wrong if the guard reads routeConfig.path alone, or the
+  // resolved URL, instead of rebuilding the configured path.
+  it('applies a nested route’s OWN stricter permission (/tasks/unassigned needs tasks:manage)', () => {
+    setup({ permissions: ['tasks:view'] });
+
+    expect(run('tasks')).toBe(true);
+    // tasks:view is not enough for the unassigned view.
+    expect(run('tasks', 'unassigned')).toEqual(router.parseUrl(LANDING_ROUTE));
+
+    setup({ permissions: ['tasks:view', 'tasks:manage'] });
+    expect(run('tasks', 'unassigned')).toBe(true);
+  });
+
+  it('falls back to the guarded parent for a deep child (/committees/:id)', () => {
+    setup({ permissions: ['committees:view'] });
+
+    expect(run('committees', ':id')).toBe(true);
+
+    setup({ permissions: [] });
+    expect(run('committees', ':id')).toEqual(router.parseUrl(LANDING_ROUTE));
+  });
+
   it('allows an UNMAPPED route — absence of an entry is not a denial', () => {
     setup({ permissions: [] });
 
     expect(run('home')).toBe(true);
     expect(run('admin-settings')).toBe(true);
-    expect(run('')).toBe(true);
+    expect(run()).toBe(true);
   });
 
   // ACC-70's failure-mode decision, asserted so it cannot be quietly reverted
