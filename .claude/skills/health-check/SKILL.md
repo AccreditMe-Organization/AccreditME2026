@@ -129,7 +129,7 @@ Flag as ERROR if:
 
 Flag as PASS if:
 
-- Zero errors
+- Zero TypeScript errors AND the build succeeds
 
 ---
 
