@@ -22,3 +22,7 @@ Thumbs.db
 
 # Playwright MCP session artifacts
 .playwright-mcp/
+
+# ACC-75 — npm audit report written by the CI dependency gate.
+# Build artifact, never committed.
+audit.json
