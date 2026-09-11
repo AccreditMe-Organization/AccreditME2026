@@ -12,4 +12,6 @@ export class RoleResponseDto implements IRole {
   createdAt!: Date;
   updatedAt!: Date;
   permissions?: string[];
+  // ACC-74 — present on list responses; see IRole.
+  permissionCount?: number;
 }
