@@ -30,6 +30,37 @@ export interface ITaskDto {
   updatedAt: string;
 }
 
+// ACC-40 §2.6.3's delegation stamp, resolved server-side. See the backend's
+// delegation-label.interface.ts for why the label is resolved there:
+// contextId is polymorphic (an OrgUnit id for ACTING_HEAD, the covered-for
+// USER's id for OUT_OF_OFFICE_COVERAGE), so a client cannot resolve it
+// without duplicating that mapping.
+//
+// Rendered by isArabic() selection, never `| translate` — an org unit name is
+// tenant-editable data (SYSTEM-REFERENCE §9.3).
+export interface ResolvedDelegationDto {
+  reason: 'ACTING_HEAD' | 'OUT_OF_OFFICE_COVERAGE';
+  contextId: string;
+  // Null when the referenced OrgUnit/User no longer resolves. Render the
+  // actor with NO qualifier in that case — never a raw id.
+  contextLabelEn: string | null;
+  contextLabelAr: string | null;
+}
+
+export interface TaskAssigneeDto {
+  userId: string;
+  userName: string;
+  delegation: ResolvedDelegationDto | null;
+}
+
+// ACC-76 — returned by getForSource() ONLY. Deliberately a separate type
+// rather than an optional field on ITaskDto: an optional field populated by
+// exactly one endpoint is the trap ACC-74 hit, where role-list bound to
+// `permissions?.length` and rendered 0 for every role, silently, forever.
+export interface ITaskWithAssigneesDto extends ITaskDto {
+  assignees: TaskAssigneeDto[];
+}
+
 export interface CreateTaskDto {
   title: string;
   description?: string;
@@ -71,9 +102,10 @@ export class TaskService {
     return this.http.get<ITaskDto[]>(`${this.base}/my-tasks`, { params });
   }
 
-  getForSource(sourceType: string, sourceId: string): Observable<ITaskDto[]> {
+  // ACC-76 — the only list endpoint carrying assignees. Requires tasks:view.
+  getForSource(sourceType: string, sourceId: string): Observable<ITaskWithAssigneesDto[]> {
     const params = new HttpParams().set('sourceType', sourceType).set('sourceId', sourceId);
-    return this.http.get<ITaskDto[]>(this.base, { params });
+    return this.http.get<ITaskWithAssigneesDto[]>(this.base, { params });
   }
 
   getUnassigned(): Observable<ITaskDto[]> {
