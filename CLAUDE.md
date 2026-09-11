@@ -102,7 +102,14 @@ Tier 3 — On-premises / private cloud (future)
 - i18n: ngx-translate (English + Arabic)
 - Charts: PrimeNG Charts
 - Diagrams: draw.io embedded (iframe embed)
-- Excel export: SheetJS
+- Excel export: **library choice OPEN, not settled** (ACC-75) — was
+  listed as SheetJS from scaffold, but `xlsx` was removed: npm's newest
+  is 0.18.5 with two HIGH advisories whose fixes (0.19.3, 0.20.2) exist
+  only on the vendor's own CDN, because SheetJS left the registry. It
+  had never been imported in any commit. Whoever builds export picks the
+  library then — `exceljs` is maintained on npm; SheetJS remains viable
+  if sourced from its CDN rather than npm. Do not treat this line as a
+  decision already made.
 - Typography: Inter (Google Fonts)
 - Icons: PrimeIcons + Tabler Icons
 
@@ -1390,8 +1397,17 @@ Reporting Tier 1 — Built-in dashboards
   Compliance scores, document lifecycle, audit findings, incident patterns
 
 Reporting Tier 1 — Export engine
-  Every table exportable to formatted XLSX via SheetJS
+  Every table exportable to formatted XLSX (library OPEN — see Tech
+    Stack; the SheetJS npm package was removed in ACC-75)
   Scheduled exports: daily/weekly/monthly via email
+  UNBUILT as of ACC-75. No export endpoint, no frontend capability, and
+    no plan file specifies a design. Note "every table" is aspirational:
+    of 19 p-table components today, most are configuration screens or
+    nested editors where export is meaningless, and the datasets this
+    section is really written for — documents, incidents, audits, CAPA —
+    do not exist yet. reports:export already exists as a seeded
+    permission held by 3 roles while reports:view is held by 6, so the
+    "fewer may export than may view" decision is already made.
 
 Reporting Tier 2 — Custom report builder
   Drag-and-drop report builder
