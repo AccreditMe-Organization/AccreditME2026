@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import {
@@ -177,6 +177,11 @@ export class WorkflowStageIndicatorComponent {
   // not because either is optional. One fetch serves both regardless.
   readonly show = input<'both' | 'sequence' | 'history'>('both');
 
+  // How many transitions the history holds, for a wrapping panel's count chip.
+  // Emitted rather than exposed as a signal the parent reads, so the parent
+  // does not have to care whether the fetch has resolved yet.
+  readonly loaded = output<number>();
+
   readonly history = signal<WorkflowStageHistoryDto | null>(null);
 
   constructor() {
@@ -185,7 +190,10 @@ export class WorkflowStageIndicatorComponent {
     effect(() => {
       const instance = this.instance();
       this.workflowService.getStageHistory(instance.id).subscribe({
-        next: (history) => this.history.set(history),
+        next: (history) => {
+          this.history.set(history);
+          this.loaded.emit(history.visits.length);
+        },
         error: () => this.history.set(null),
       });
     });
