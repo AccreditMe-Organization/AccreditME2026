@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
@@ -7,7 +7,9 @@ import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
+import { ListboxModule } from 'primeng/listbox';
 import { TaskService } from '../../services/task.service';
+import { UserService, IUserDto } from '../../../user/services/user.service';
 // ACC-41 — OverlaySelectComponent replaces p-select here: this field sits in
 // a raw p-dialog (not EditDialogComponent), the second confirmed DOM context
 // where PrimeNG's own scroll-chaining bug is reachable, and the option list
@@ -47,6 +49,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     DatePickerModule,
     ButtonModule,
     MessageModule,
+    ListboxModule,
     OverlaySelectComponent,
   ],
   template: `
@@ -107,7 +110,54 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         </div>
       </div>
 
-      <p-message severity="info" [text]="'task.assigneePickerUnavailable' | translate" />
+      <!-- ACC-76 — a real assignee picker, replacing the stopgap message that
+           claimed this "will be available once User Management is set up".
+           User Management shipped in ACC-12; the message had been stale for
+           most of the project, and sat directly above a Save button that is
+           disabled whenever the title is empty, so users read it as the reason
+           Save was dead.
+
+           p-listbox, not p-multiselect or OverlaySelectComponent: CLAUDE.md
+           makes it the required pattern for inline multi-select inside a
+           dialog (structurally immune to the scroll-chaining bug rather than
+           merely protected from it), and it carries the filter box a user list
+           needs — which OverlaySelectComponent deliberately does not have
+           (ACC-42). Copied in shape from unassigned-tasks' Reassign field,
+           which already does exactly this.
+
+           ALL ACTIVE USERS, not just members of the source record: the backend
+           accepts any active user, and a committee task can legitimately go to
+           a department head outside the committee who owes it data. -->
+      <div class="flex flex-col gap-1">
+        <label for="assigneeUserIds" class="text-sm font-medium">
+          {{ 'task.assignees' | translate }}
+        </label>
+        @if (users().length > 0) {
+          <p-listbox
+            inputId="assigneeUserIds"
+            formControlName="assigneeUserIds"
+            [options]="users()"
+            optionLabel="name"
+            optionValue="id"
+            [multiple]="true"
+            [checkbox]="true"
+            [filter]="true"
+            filterBy="name,email"
+            [showToggleAll]="false"
+            [listStyle]="{ 'max-height': '180px' }"
+          />
+          <small class="text-xs text-[var(--am-text-secondary)]">
+            {{ 'task.assigneesHint' | translate }}
+          </small>
+        } @else {
+          <!-- Degrades rather than blocks. A caller whose role grants
+               tasks:create but not users:view gets an empty list and a 403 they
+               cannot act on; creating the task unassigned is still a real,
+               supported outcome — TaskService.create() sets status UNASSIGNED
+               and notifies every tenant admin to assign it. -->
+          <p-message severity="info" [text]="'task.assigneesUnavailable' | translate" />
+        }
+      </div>
 
       <div class="flex justify-end gap-2 pt-2">
         <p-button
@@ -122,9 +172,10 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     </form>
   `,
 })
-export class TaskFormComponent {
+export class TaskFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
+  private readonly userService = inject(UserService);
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
@@ -145,11 +196,28 @@ export class TaskFormComponent {
   readonly sourceTypes = SOURCE_TYPES;
   readonly priorities = PRIORITIES;
 
+  // Every ACTIVE user in the tenant. The backend filters again through
+  // filterActiveUsers() at create time, so a user deactivated between load and
+  // submit is dropped there rather than creating a dead assignment.
+  readonly users = signal<IUserDto[]>([]);
+
+  ngOnInit(): void {
+    // Requires users:view. Every seeded role holding tasks:create also holds
+    // it, but a tenant-created role need not — hence the quiet failure: an
+    // empty list renders the explanatory message and the task can still be
+    // created unassigned.
+    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({
+      next: (users) => this.users.set(users),
+      error: () => this.users.set([]),
+    });
+  }
+
   readonly form = this.fb.group({
     title: ['', [Validators.required, Validators.maxLength(255)]],
     description: ['', [Validators.maxLength(2000)]],
     sourceType: ['DOCUMENT', [Validators.required]],
     sourceId: ['', [Validators.required]],
+    assigneeUserIds: [[] as string[]],
     priority: ['MEDIUM'],
     dueDate: [null as Date | null],
   });
@@ -185,12 +253,11 @@ export class TaskFormComponent {
         sourceId: value.sourceId!,
         priority: value.priority ?? undefined,
         dueDate: value.dueDate ? value.dueDate.toISOString() : undefined,
-        // No user-listing endpoint exists yet (Users module is Step 9) — see
-        // the p-message stopgap above. Submitting empty is a genuinely
-        // working path: TaskService.create() creates the task as UNASSIGNED
-        // and notifies the Tenant Admin to assign it, rather than faking a
-        // picker with raw ID text input.
-        assigneeUserIds: [],
+        // Empty is a real, supported outcome, not a failure: TaskService
+        // .create() sets status UNASSIGNED and notifies every tenant admin to
+        // assign it. So the picker is optional rather than required — a task
+        // worth recording now is worth recording before its owner is known.
+        assigneeUserIds: value.assigneeUserIds ?? [],
       })
       .subscribe({
         next: () => {
