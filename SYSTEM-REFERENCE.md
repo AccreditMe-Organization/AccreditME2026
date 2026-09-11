@@ -292,6 +292,29 @@ elsewhere.**
 - **`getRoles()`** — filters `PLATFORM_ADMIN` out of the list for any
   non-platform organization (UX-only defense-in-depth; `PlatformGuard`
   is the real gate, not this filter).
+  **Returns `permissionCount`, never `permissions`** (ACC-74). The two
+  are deliberately separate fields on `IRole`:
+  - `permissions?: string[]` is **detail-only** — populated by
+    `getRoleById()` via `attachPermissions()`, absent from every list
+    response. step-04 specified it that way.
+  - `permissionCount?: number` is what list views get, resolved by a
+    single `rolePermission.groupBy` over the already-tenant-filtered
+    role ids. **Not** a per-role `attachPermissions()` call: that is an
+    N+1, and it ships the whole permission set — 70 strings for
+    Organization Administrator — to render one number. The N+1 is
+    invisible at today's 7 roles, which is exactly when a bad shape
+    gets established and copied.
+  - A role with no permissions reports `0`, not `undefined`, so a
+    consumer can distinguish it from "not loaded".
+
+  This omission is what the bug was. Before ACC-74 the method returned
+  neither field, and `role-list` bound to `permissions?.length` — so
+  the Roles list showed **0 permissions for every role**, on a security
+  screen, while the permission matrix showed dozens. This section
+  documented `getRoles()` and covered only the `PLATFORM_ADMIN` filter,
+  which is why the gap stayed invisible. Any future list endpoint
+  rendering a count should follow the grouped-count shape rather than
+  reaching for `attachPermissions()` because it already exists.
 
 ### 1.5 Consumers
 
