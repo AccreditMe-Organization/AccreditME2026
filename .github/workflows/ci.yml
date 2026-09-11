@@ -31,7 +31,6 @@ jobs:
           ! test -f .mcp.json && echo "✅ .mcp.json not committed" || echo "⚠️  .mcp.json found — ensure it contains no secrets"
           echo "✅ Secret file check passed"
 
-
   # ─────────────────────────────────────────────
   # Stage 1b — Dependency vulnerability scan
   # ─────────────────────────────────────────────
