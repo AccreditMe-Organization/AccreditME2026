@@ -1,7 +1,11 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { WorkflowService, WorkflowStageHistoryDto } from '../../services/workflow.service';
+import {
+  WorkflowService,
+  WorkflowInstanceDto,
+  WorkflowStageHistoryDto,
+} from '../../services/workflow.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
 
@@ -114,19 +118,27 @@ export class WorkflowStageIndicatorComponent {
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
 
-  readonly instanceId = input.required<string>();
+  // Takes the INSTANCE, not its id — matching WorkflowTransitionActionsComponent
+  // beside it, and load-bearing rather than cosmetic.
+  //
+  // This was `instanceId: string` and did not refresh after a transition:
+  // triggerTransition() returns an updated instance, the parent stores it, but
+  // the ID IS UNCHANGED — so the input signal never notified, the effect never
+  // re-ran, and the timeline showed stale history until a manual page reload.
+  // Signal inputs compare by reference (Object.is), and the parent sets the
+  // fresh object it got back, so taking the object makes every transition
+  // reload the history with no reload call anywhere.
+  readonly instance = input.required<WorkflowInstanceDto>();
 
   readonly history = signal<WorkflowStageHistoryDto | null>(null);
 
   constructor() {
-    // Reloads whenever the instance changes — including after a transition,
-    // since the parent re-emits the instance it gets back from
-    // triggerTransition(). Fails silently: a caller without workflows:view
-    // gets a 403 and this panel simply renders nothing, exactly as the
-    // "Current Stage" label it replaces already did.
+    // Fails silently: a caller without workflows:view gets a 403 and this
+    // panel renders nothing, exactly as the "Current Stage" label it replaced
+    // already did.
     effect(() => {
-      const id = this.instanceId();
-      this.workflowService.getStageHistory(id).subscribe({
+      const instance = this.instance();
+      this.workflowService.getStageHistory(instance.id).subscribe({
         next: (history) => this.history.set(history),
         error: () => this.history.set(null),
       });

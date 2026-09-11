@@ -114,7 +114,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
              message. -->
         @if (currentInstance(); as instance) {
           <app-record-panel [heading]="'committee.lifecycle' | translate">
-            <app-workflow-stage-indicator [instanceId]="instance.id" />
+            <app-workflow-stage-indicator [instance]="instance" />
           </app-record-panel>
         }
 
