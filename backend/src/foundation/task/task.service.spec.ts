@@ -491,6 +491,92 @@ describe('TaskService', () => {
 
       expect(result).toHaveLength(0);
     });
+
+    // ACC-76 — the populated path. Before this ticket no list endpoint
+    // returned assignees at all, so nothing here ever exercised it: the
+    // isolation test above only ever asserted the EMPTY result.
+    it('returns each assignee with a resolved user name', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([
+        {
+          ...BASE_TASK,
+          assignees: [
+            { ...BASE_TASK.assignees[0], user: { id: USER_A, name: 'Sarah' } },
+          ],
+        },
+      ]);
+
+      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      expect(result[0]!.assignees).toEqual([
+        { userId: USER_A, userName: 'Sarah', delegation: null },
+      ]);
+    });
+
+    // complete() stamps removedAt rather than deleting, so without this
+    // filter a completed task would list everyone ever assigned to it as
+    // though they still were.
+    it('asks the database for active assignees only', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      const args = mockPrisma.task.findMany.mock.calls[0]![0];
+      expect(args.include.assignees.where).toEqual({ removedAt: null });
+    });
+
+    // ACC-40 §2.6.3's stamp, surfaced for the first time. The qualifier is
+    // what lets a page read "Sarah — Acting Head of Cardiology" rather than
+    // implying Sarah holds the position outright.
+    it('resolves an ACTING_HEAD assignee to its org unit', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([
+        { id: 'unit-cardiology', nameEn: 'Cardiology', nameAr: 'القلب' },
+      ]);
+      mockPrisma.task.findMany.mockResolvedValue([
+        {
+          ...BASE_TASK,
+          assignees: [
+            {
+              ...BASE_TASK.assignees[0],
+              delegationReason: 'ACTING_HEAD',
+              delegationContextId: 'unit-cardiology',
+              user: { id: USER_A, name: 'Sarah' },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      expect(result[0]!.assignees[0]!.delegation).toEqual({
+        reason: 'ACTING_HEAD',
+        contextId: 'unit-cardiology',
+        contextLabelEn: 'Cardiology',
+        contextLabelAr: 'القلب',
+      });
+    });
+
+    // One resolve call for the whole page, not one per task — at ~110ms per
+    // round trip the difference is visible to a user.
+    it('resolves delegation labels once across every task on the page', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([
+        { id: 'unit-cardiology', nameEn: 'Cardiology', nameAr: null },
+      ]);
+      const stampedAssignee = {
+        ...BASE_TASK.assignees[0],
+        delegationReason: 'ACTING_HEAD',
+        delegationContextId: 'unit-cardiology',
+        user: { id: USER_A, name: 'Sarah' },
+      };
+      mockPrisma.task.findMany.mockResolvedValue([
+        { ...BASE_TASK, id: 'task-1', assignees: [stampedAssignee] },
+        { ...BASE_TASK, id: 'task-2', assignees: [stampedAssignee] },
+        { ...BASE_TASK, id: 'task-3', assignees: [stampedAssignee] },
+      ]);
+
+      await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('listUnassigned (ACC-34)', () => {
