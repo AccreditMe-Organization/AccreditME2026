@@ -9,6 +9,7 @@ import { Queue } from 'bullmq';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
@@ -25,6 +26,7 @@ import {
 } from '../../../generated/prisma/client';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
 import { ValidatorConfig } from './interfaces/workflow-transition.interface';
+import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 
@@ -49,6 +51,7 @@ export class WorkflowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly delegationLabels: DelegationLabelService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     private readonly taskService: TaskService,
@@ -131,6 +134,82 @@ export class WorkflowService {
     const instance = await this.prisma.workflowInstance.findFirst({ where: { id, organizationId } });
     if (!instance) throw new NotFoundException('Workflow instance not found');
     return this.mapInstance(instance);
+  }
+
+  // ACC-76 — the real path an object took through its workflow.
+  //
+  // See IWorkflowStageHistory for why this returns a chronology of visits
+  // plus a set of unreached stages, rather than a progression over
+  // WorkflowStage.order. Short version: a record that went
+  // Formation -> Terms Review -> Formation -> Terms Review has four visits
+  // and no meaningful "step N of M", and `order` cannot say otherwise
+  // because it is a display field, not a traversal record.
+  async getStageHistory(
+    instanceId: string,
+    organizationId: string,
+  ): Promise<IWorkflowStageHistory> {
+    // Scoped by id AND organizationId together, per CLAUDE.md's query shape —
+    // also the only way to learn which template to diff the visits against.
+    const instance = await this.prisma.workflowInstance.findFirst({
+      where: { id: instanceId, organizationId },
+      select: { id: true, workflowTemplateId: true },
+    });
+    if (!instance) throw new NotFoundException('Workflow instance not found');
+
+    const [visitRows, stages] = await Promise.all([
+      // WorkflowInstanceStage has NO organizationId of its own — tenancy is
+      // transitive through workflowInstance (SYSTEM-REFERENCE §8.3). Scoped
+      // relationally here as well as via the check above: belt and braces on
+      // a query that returns actor names.
+      this.prisma.workflowInstanceStage.findMany({
+        where: { workflowInstanceId: instance.id, workflowInstance: { organizationId } },
+        orderBy: { enteredAt: 'asc' },
+        include: { stage: { select: { id: true, nameEn: true, nameAr: true } } },
+      }),
+      this.prisma.workflowStage.findMany({
+        where: { workflowTemplateId: instance.workflowTemplateId },
+        orderBy: { order: 'asc' },
+        select: { id: true, nameEn: true, nameAr: true, order: true },
+      }),
+    ]);
+
+    // Two batched lookups for the whole history rather than per-row: actor
+    // names, and ACC-40's delegation stamp resolved by the same service the
+    // task list uses.
+    const actorIds = [...new Set(visitRows.map((v) => v.actorId).filter((id): id is string => !!id))];
+    const [actors, delegations] = await Promise.all([
+      actorIds.length > 0
+        ? this.prisma.user.findMany({
+            where: { id: { in: actorIds }, organizationId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      this.delegationLabels.resolveMany(visitRows, organizationId),
+    ]);
+    const actorNameById = new Map(actors.map((a) => [a.id, a.name]));
+
+    const visitedStageIds = new Set(visitRows.map((v) => v.stageId));
+
+    return {
+      instanceId: instance.id,
+      visits: visitRows.map((visit) => ({
+        // The instance-stage row id, not the stage id — the stage id repeats
+        // across visits and would collide as a list key.
+        id: visit.id,
+        stageId: visit.stageId,
+        stageNameEn: visit.stage.nameEn,
+        stageNameAr: visit.stage.nameAr,
+        enteredAt: visit.enteredAt,
+        exitedAt: visit.exitedAt,
+        outcome: visit.outcome,
+        actorId: visit.actorId,
+        actorName: visit.actorId ? (actorNameById.get(visit.actorId) ?? null) : null,
+        comment: visit.comment,
+        isUnassigned: visit.isUnassigned,
+        delegation: this.delegationLabels.lookup(visit, delegations),
+      })),
+      unvisitedStages: stages.filter((stage) => !visitedStageIds.has(stage.id)),
+    };
   }
 
   // Plural, and returns every instance ever created for this object — one

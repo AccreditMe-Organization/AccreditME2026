@@ -5,6 +5,7 @@ import { DateTime } from 'luxon';
 import { WorkflowService } from './workflow.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
@@ -160,7 +161,7 @@ const makeApproval = (overrides: Partial<typeof BASE_APPROVAL> = {}) => ({
 
 const mockPrisma = {
   workflowTemplate: { findFirst: jest.fn() },
-  workflowStage: { findFirst: jest.fn() },
+  workflowStage: { findFirst: jest.fn(), findMany: jest.fn() },
   workflowInstance: {
     findFirst: jest.fn(),
     findUnique: jest.fn(),
@@ -186,7 +187,9 @@ const mockPrisma = {
   committeeMember: { findMany: jest.fn() },
   user: { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn() },
   role: { findFirst: jest.fn() },
-  orgUnit: { findFirst: jest.fn() },
+  // ACC-76 — findMany added for DelegationLabelService; getStageHistory()
+  // also diffs visits against the template via workflowStage.findMany.
+  orgUnit: { findFirst: jest.fn(), findMany: jest.fn() },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -275,6 +278,9 @@ describe('WorkflowService', () => {
         WorkflowService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        // The REAL service (it takes only PrismaService) — mocking it would
+        // hide the tenant scoping its own isolation test exists to prove.
+        DelegationLabelService,
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TaskService, useValue: mockTaskService },
