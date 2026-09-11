@@ -1,5 +1,5 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { DatePipe } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
@@ -8,6 +8,10 @@ import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { CardComponent } from '../../../../shared/components/card/card.component';
+import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
+import { TaskListComponent } from '../../../tasks/components/task-list/task-list.component';
+import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import {
   CommitteeService,
   CommitteeDto,
@@ -18,7 +22,6 @@ import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.s
 import { UserService, IUserDto } from '../../../user/services/user.service';
 import { RoleService, RoleDto } from '../../../roles/services/role.service';
 import { WorkflowService, WorkflowInstanceDto } from '../../../workflow/services/workflow.service';
-import { WorkflowTemplateService } from '../../../workflow/services/workflow-template.service';
 import { WorkflowTransitionActionsComponent } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -37,6 +40,10 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     TagModule,
     MessageModule,
     CardComponent,
+    RecordPanelComponent,
+    RouterLink,
+    TaskListComponent,
+    WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
     WorkflowTransitionActionsComponent,
@@ -53,11 +60,6 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
           <div>
             <h2 class="text-xl font-semibold">{{ displayName(c) }}</h2>
             <p class="text-sm text-[var(--am-text-secondary)]">{{ typeLabel(c.typeValueId) }}</p>
-            @if (currentStageLabel()) {
-              <p class="text-sm text-[var(--am-text-secondary)] mt-1">
-                {{ 'committee.currentStage' | translate }}: {{ currentStageLabel() }}
-              </p>
-            }
             @if (currentInstance(); as instance) {
               <app-workflow-transition-actions
                 class="block mt-2"
@@ -99,6 +101,67 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
             <p>{{ c.purpose }}</p>
           </app-card>
         }
+
+        <!-- ACC-76 — the object-detail pattern. Every panel fetches on its own
+             and fails on its own: a 403 on one (a user without tasks:view,
+             say) leaves the rest of the page intact.
+
+             The Meetings and Documents panels are REAL sections with empty
+             states, not "coming soon" scaffolding. An empty Documents panel
+             says something true — Committee.termsOfReferenceDocumentId is in
+             the schema today and unpopulated — whereas placeholder styling
+             would say the page is unfinished. Same information, different
+             message. -->
+        @if (currentInstance(); as instance) {
+          <app-record-panel [heading]="'committee.lifecycle' | translate">
+            <app-workflow-stage-indicator [instanceId]="instance.id" />
+          </app-record-panel>
+        }
+
+        <app-record-panel
+          [heading]="'committee.tasks' | translate"
+          [count]="taskList.taskCount()"
+          [error]="taskList.loadError()"
+        >
+          @if (canCreateTasks()) {
+            <p-button
+              panelActions
+              [label]="'task.newTask' | translate"
+              icon="pi pi-plus"
+              size="small"
+              (onClick)="taskList.onAdd()"
+            />
+          }
+          <!-- Source is locked to this committee in the create dialog — see
+               task-form. The list renders its own loading and empty states, so
+               the panel is given neither. -->
+          <app-task-list
+            #taskList
+            [embedded]="true"
+            sourceType="COMMITTEE"
+            [sourceId]="committeeId"
+            [sourceLabel]="displayName(c)"
+          />
+        </app-record-panel>
+
+        <app-record-panel
+          [heading]="'committee.subCommittees' | translate"
+          [count]="subCommittees().length"
+          [isEmpty]="subCommittees().length === 0"
+          [emptyMessage]="'committee.noSubCommittees' | translate"
+        >
+          <div class="flex flex-col gap-2">
+            @for (sub of subCommittees(); track sub.id) {
+              <a
+                class="flex items-center justify-between p-2 rounded-md border border-[var(--am-border)] text-sm hover:border-[var(--am-blue-primary)]"
+                [routerLink]="['/committees', sub.id]"
+              >
+                <span>{{ displayName(sub) }}</span>
+                <span class="text-[var(--am-text-secondary)]">{{ typeLabel(sub.typeValueId) }}</span>
+              </a>
+            }
+          </div>
+        </app-record-panel>
 
         <hr />
 
@@ -211,9 +274,9 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly roleService = inject(RoleService);
   private readonly workflowService = inject(WorkflowService);
-  private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly languageService = inject(LanguageService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly navigationAccess = inject(NavigationAccessService);
 
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
 
@@ -228,8 +291,22 @@ export class CommitteeDetailComponent implements OnInit {
   readonly memberRoles = signal<LookupValueDto[]>([]);
   readonly users = signal<IUserDto[]>([]);
   readonly roles = signal<RoleDto[]>([]);
-  readonly currentStageLabel = signal<string | null>(null);
   readonly currentInstance = signal<WorkflowInstanceDto | null>(null);
+
+  // ACC-76 — derived from listCommittees(), which this page already loaded
+  // for the parent-name lookup. No new request.
+  readonly subCommittees = computed(() =>
+    this.allCommittees().filter((c) => c.parentCommitteeId === this.committeeId),
+  );
+
+  // Panel-level gating, matching ACC-70's route guarding: GET /tasks is
+  // gated on tasks:view and POST /tasks on tasks:create, so a user without
+  // tasks:create sees the list but not the button. Client-side only — the
+  // backend re-checks regardless, same contract as
+  // WorkflowTransitionActionsComponent's own filtering.
+  readonly canCreateTasks = computed(() =>
+    this.navigationAccess.hasPermission('tasks:create'),
+  );
 
   readonly formVisible = signal(false);
   readonly memberFormVisible = signal(false);
@@ -366,10 +443,7 @@ export class CommitteeDetailComponent implements OnInit {
   }
 
   // Current lifecycle stage is read live from the workflow engine, never a
-  // stored field on Committee (ACC-22 Pending Discussion #5). Plain-text
-  // display only — WorkflowStage has no persisted, stable key/slug to bind
-  // a colored badge to (see step-22-committee-management.md's revised
-  // Pending Discussion #8).
+  // stored field on Committee (ACC-22 Pending Discussion #5).
   private loadCurrentStage(): void {
     this.workflowService.getInstancesByObject('COMMITTEE', this.committeeId).subscribe({
       next: (instances) => {
@@ -379,17 +453,13 @@ export class CommitteeDetailComponent implements OnInit {
     });
   }
 
+  // ACC-76 — this used to load the whole WorkflowTemplate a SECOND time
+  // (WorkflowTransitionActionsComponent already loads it) purely to resolve
+  // one stage's name for a "Current Stage: X" label. Both the label and that
+  // fetch are gone: WorkflowStageIndicatorComponent shows the current stage
+  // in the context of the whole path, from its own endpoint. The page now
+  // makes one template request instead of two.
   private setCurrentInstance(instance: WorkflowInstanceDto): void {
     this.currentInstance.set(instance);
-    if (!instance.currentStageId) {
-      this.currentStageLabel.set(null);
-      return;
-    }
-    this.workflowTemplateService.getTemplate(instance.workflowTemplateId).subscribe({
-      next: (template) => {
-        const stage = template.stages?.find((s) => s.id === instance.currentStageId);
-        this.currentStageLabel.set(stage ? (this.languageService.isArabic() ? stage.nameAr : stage.nameEn) : null);
-      },
-    });
   }
 }
