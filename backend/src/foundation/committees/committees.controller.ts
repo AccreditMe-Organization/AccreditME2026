@@ -11,7 +11,7 @@ import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
 import { ChangeCommitteeMemberRoleDto } from './dto/change-committee-member-role.dto';
 import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
-import { ICommittee, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
+import { ICommittee, ICommitteeListItem, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
 
 // Lifecycle transitions (FORMATION -> ... -> DISSOLVED) go through the
 // already-generic WorkflowController (GET/POST /workflows/instances...),
@@ -24,7 +24,7 @@ export class CommitteesController {
 
   @Get()
   @Permissions(COMMITTEES_PERMISSIONS.VIEW)
-  listCommittees(@CurrentTenant() tenantId: string): Promise<ICommittee[]> {
+  listCommittees(@CurrentTenant() tenantId: string): Promise<ICommitteeListItem[]> {
     return this.committeesService.listCommittees(tenantId);
   }
 

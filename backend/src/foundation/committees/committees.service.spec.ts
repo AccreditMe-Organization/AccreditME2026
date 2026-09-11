@@ -55,6 +55,9 @@ const mockPrisma = {
   },
   committeeMember: {
     findMany: jest.fn(),
+    // ACC-76 — listCommittees() counts active members per committee in one
+    // grouped query rather than one per row.
+    groupBy: jest.fn(),
     findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -65,6 +68,13 @@ const mockPrisma = {
   },
   role: {
     findFirst: jest.fn(),
+  },
+  // ACC-76 — listCommittees() resolves each committee live workflow stage.
+  workflowInstance: {
+    findMany: jest.fn(),
+  },
+  workflowStage: {
+    findMany: jest.fn(),
   },
   user: {
     findFirst: jest.fn(),
@@ -84,6 +94,9 @@ describe('CommitteesService', () => {
     mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
     mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-a', organizationId: ORG_A });
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
+    mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
+    mockPrisma.workflowInstance.findMany.mockResolvedValue([]);
+    mockPrisma.workflowStage.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
