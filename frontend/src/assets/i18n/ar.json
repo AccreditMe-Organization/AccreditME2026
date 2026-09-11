@@ -180,7 +180,7 @@
     "removeRole": "إزالة الدور",
     "noRoles": "لا توجد أدوار.",
     "noPermissions": "لا توجد صلاحيات مسندة.",
-    "permissionCount": "{{count}} صلاحية",
+    "permissionsColumn": "الصلاحيات",
     "errorLoad": "فشل تحميل الأدوار."
   },
   "workflow": {

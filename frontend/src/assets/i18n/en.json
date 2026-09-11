@@ -180,7 +180,7 @@
     "removeRole": "Remove Role",
     "noRoles": "No roles found.",
     "noPermissions": "No permissions assigned.",
-    "permissionCount": "{{count}} permissions",
+    "permissionsColumn": "Permissions",
     "errorLoad": "Failed to load roles."
   },
   "workflow": {
