@@ -393,7 +393,6 @@
     "newAssignees": "New Assignees",
     "selectAssignees": "Select assignees",
     "addEvidence": "Add Evidence",
-    "assigneePickerUnavailable": "Assignee selection will be available once User Management is set up. This task will be created as unassigned and a Tenant Admin will be notified to assign it.",
     "noTasks": "No tasks found.",
     "noUnassignedTasks": "No unassigned tasks — everything has an assignee.",
     "errorLoad": "Failed to load tasks.",
@@ -424,7 +423,9 @@
     "unassigned": "Unassigned",
     "actingHeadOf": "Acting Head of {{context}}",
     "coveringFor": "covering for {{context}}",
-    "overdueCount": "{{count}} overdue"
+    "overdueCount": "{{count}} overdue",
+    "assigneesHint": "Leave empty to create the task unassigned — tenant administrators are notified to assign it.",
+    "assigneesUnavailable": "You do not have access to the user list. The task will be created unassigned and tenant administrators will be notified to assign it."
   },
   "auth": {
     "login": "Log In",
