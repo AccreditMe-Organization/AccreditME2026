@@ -250,7 +250,16 @@ export class WorkflowService {
           actorName: visit.actorId ? (actorNameById.get(visit.actorId) ?? null) : null,
           transitionLabelEn: transition?.labelEn ?? null,
           transitionLabelAr: transition?.labelAr ?? null,
-          comment: visit.comment,
+          // The PREVIOUS visit's comment, not this row's own. A comment is
+          // written at exit, so it explains the transition INTO the next
+          // stage — see IWorkflowStageVisit for why showing it beside this
+          // row's actor was a wrong attribution rather than a cosmetic one.
+          //
+          // Known consequence, accepted: a comment written when the LAST
+          // visit is exited (cancelInstance() exits the open stage with
+          // outcome SKIPPED) has no following row to appear on. Dropping it
+          // beats showing it against the wrong event.
+          comment: previous?.comment ?? null,
           isUnassigned: visit.isUnassigned,
           delegation: this.delegationLabels.lookup(visit, delegations),
         };

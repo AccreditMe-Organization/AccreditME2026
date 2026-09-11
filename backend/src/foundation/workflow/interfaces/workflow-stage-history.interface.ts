@@ -74,6 +74,20 @@ export interface IWorkflowStageVisit {
   transitionLabelEn: string | null;
   transitionLabelAr: string | null;
 
+  // ACC-76 — WHY that transition was fired, and the subtle half of this
+  // feature.
+  //
+  // A comment is written by the exit update onto the row being LEFT. So a
+  // row's own `comment` column explains the transition OUT of it, while its
+  // actorName and transitionLabel describe the transition IN. Rendering all
+  // three on one line — which the first cut of this did — attributes an
+  // explanation to the wrong event and the wrong person. It LOOKS right,
+  // which makes it worse than a blank: a reader has no cue to distrust it.
+  //
+  // So this carries the PREVIOUS visit's comment: the reason the transition
+  // into this stage was fired. "Terms Review — Revise Terms — scope unclear"
+  // is an exit comment from the stage before, and belongs on the row for the
+  // stage it sent the record to.
   comment: string | null;
 
   isUnassigned: boolean;
