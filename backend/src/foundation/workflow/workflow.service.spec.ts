@@ -617,6 +617,117 @@ describe('WorkflowService', () => {
       );
     });
 
+    // ── transition inference + comment attribution (ACC-76) ────────────────
+
+    // Committee's own seeded transitions for the stages above. No pair repeats
+    // — which is what makes inference from a from/to pair safe.
+    const TEMPLATE_TRANSITIONS = [
+      {
+        fromStageId: 'stage-formation',
+        toStageId: 'stage-terms',
+        labelEn: 'Submit for Approval',
+        labelAr: 'إرسال للاعتماد',
+      },
+      {
+        fromStageId: 'stage-terms',
+        toStageId: 'stage-formation',
+        labelEn: 'Revise Terms',
+        labelAr: 'مراجعة النظام الداخلي',
+      },
+      {
+        fromStageId: 'stage-terms',
+        toStageId: 'stage-active',
+        labelEn: 'Approve Committee',
+        labelAr: 'اعتماد اللجنة',
+      },
+    ];
+
+    it('names the transition that caused each visit, including a loop', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue(TEMPLATE_TRANSITIONS);
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
+        visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', '2026-01-03T09:00:00Z'),
+        visit('is-3', 'stage-formation', '2026-01-03T09:00:00Z', '2026-01-04T09:00:00Z'),
+        visit('is-4', 'stage-terms', '2026-01-04T09:00:00Z', null),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.visits.map((v) => v.transitionLabelEn)).toEqual([
+        // The first visit was not transitioned into — the instance started there.
+        null,
+        'Submit for Approval',
+        // The loop: Terms Review sent it BACK, which is a different transition
+        // from the one that first brought it forward.
+        'Revise Terms',
+        'Submit for Approval',
+      ]);
+    });
+
+    // A pair with two transitions cannot be told apart from the visit rows
+    // alone. Naming the wrong action in a compliance trail is worse than
+    // naming none.
+    it('names no transition when a from/to pair is ambiguous', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue([
+        ...TEMPLATE_TRANSITIONS,
+        {
+          fromStageId: 'stage-formation',
+          toStageId: 'stage-terms',
+          labelEn: 'Fast-track Approval',
+          labelAr: 'اعتماد سريع',
+        },
+      ]);
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
+        visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', null),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.visits[1]!.transitionLabelEn).toBeNull();
+      expect(result.visits[1]!.transitionLabelAr).toBeNull();
+    });
+
+    // THE ATTRIBUTION TEST. A comment is written onto the row being LEFT, so
+    // it explains the transition into the NEXT stage. Showing it beside this
+    // row's own actor names the wrong person for the wrong event — and looks
+    // right while doing so.
+    it('shows a comment against the transition it explains, not the stage it was written on', async () => {
+      mockPrisma.workflowTransition.findMany.mockResolvedValue(TEMPLATE_TRANSITIONS);
+      mockPrisma.user.findMany.mockResolvedValue([
+        { id: 'user-nora', name: 'Nora' },
+        { id: 'user-ahmad', name: 'Ahmad' },
+      ]);
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z', {
+          actorId: 'user-nora',
+        }),
+        // Ahmad returned it from Terms Review, writing his reason on THIS row
+        // as he left it.
+        visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', '2026-01-03T09:00:00Z', {
+          actorId: 'user-nora',
+          comment: 'scope unclear',
+        }),
+        visit('is-3', 'stage-formation', '2026-01-03T09:00:00Z', null, {
+          actorId: 'user-ahmad',
+        }),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      // "scope unclear" explains the Revise Terms transition, which Ahmad
+      // fired and which landed on Formation.
+      expect(result.visits[2]).toMatchObject({
+        stageId: 'stage-formation',
+        transitionLabelEn: 'Revise Terms',
+        actorName: 'Ahmad',
+        comment: 'scope unclear',
+      });
+      // And it must NOT still sit on the Terms Review row beside Nora, which
+      // is where the raw column holds it.
+      expect(result.visits[1]!.comment).toBeNull();
+    });
+
     itEnforcesTenantIsolation('getStageHistory', async () => {
       mockPrisma.workflowInstance.findFirst.mockImplementation(({ where }) =>
         Promise.resolve(
