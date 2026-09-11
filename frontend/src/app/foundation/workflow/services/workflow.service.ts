@@ -40,7 +40,17 @@ export interface WorkflowStageVisitDto {
   exitedAt: string | null;
   outcome: string;
   actorId: string | null;
+  // The person who ENTERED this stage — actorId is written once at creation
+  // and never overwritten by whoever later left.
   actorName: string | null;
+  // The transition that caused entry into this stage. Derived server-side
+  // from the (previous stage -> this stage) pair; null on the first visit and
+  // when a pair is ambiguous. Tenant-editable — isArabic(), never translate.
+  transitionLabelEn: string | null;
+  transitionLabelAr: string | null;
+  // WHY that transition was fired. Carries the PREVIOUS visit comment: a
+  // comment is written at exit, so it explains the transition into the NEXT
+  // stage, not the row it physically sits on.
   comment: string | null;
   isUnassigned: boolean;
   delegation: ResolvedDelegationDto | null;
