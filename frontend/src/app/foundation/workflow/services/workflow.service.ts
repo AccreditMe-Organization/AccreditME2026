@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { ResolvedDelegationDto } from '../../tasks/services/task.service';
 
 export interface WorkflowInstanceDto {
   id: string;
@@ -14,6 +15,50 @@ export interface WorkflowInstanceDto {
   createdAt: string;
   updatedAt: string;
   unassignedTaskWarnings: string[];
+}
+
+// ACC-76 — one entry per WorkflowInstanceStage row: an object's real journey,
+// not a progression over WorkflowStage.order.
+//
+// A stage entered more than once appears more than once. Committee's seeded
+// template has a TERMS_REVIEW -> FORMATION "Revise Terms" transition, so a
+// real committee's path can read Formation, Terms Review, Formation, Terms
+// Review — four visits across two stages. `order` cannot express that; it is
+// a display field, not a traversal record.
+export interface WorkflowStageVisitDto {
+  // The instance-stage row id, NOT stageId — stage ids repeat across visits
+  // and would collide as a @for track key.
+  id: string;
+  stageId: string;
+  // Tenant-editable: rendered by isArabic() selection, never `| translate`.
+  stageNameEn: string;
+  stageNameAr: string;
+  enteredAt: string;
+  // Null marks the open visit — the current stage. Derived from the data
+  // rather than from currentStageId, which cannot say WHICH of two visits to
+  // the same stage is live.
+  exitedAt: string | null;
+  outcome: string;
+  actorId: string | null;
+  actorName: string | null;
+  comment: string | null;
+  isUnassigned: boolean;
+  delegation: ResolvedDelegationDto | null;
+}
+
+export interface WorkflowUnvisitedStageDto {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  order: number;
+}
+
+export interface WorkflowStageHistoryDto {
+  instanceId: string;
+  visits: WorkflowStageVisitDto[];
+  // Deliberately a SET, not a continuation of the chronology — nothing here
+  // promises these will be reached, or reached in this sequence.
+  unvisitedStages: WorkflowUnvisitedStageDto[];
 }
 
 export interface WorkflowApprovalDto {
@@ -43,6 +88,15 @@ export class WorkflowService {
 
   getInstance(id: string): Observable<WorkflowInstanceDto> {
     return this.http.get<WorkflowInstanceDto>(`${this.base}/instances/${id}`);
+  }
+
+  // ACC-76 — requires workflows:view, same as the two reads around it. A
+  // caller without it gets a 403 and the stage indicator renders nothing,
+  // which is how the plain "Current Stage" label already behaved.
+  getStageHistory(instanceId: string): Observable<WorkflowStageHistoryDto> {
+    return this.http.get<WorkflowStageHistoryDto>(
+      `${this.base}/instances/${instanceId}/stage-history`,
+    );
   }
 
   getInstancesByObject(objectType: string, objectId: string): Observable<WorkflowInstanceDto[]> {
