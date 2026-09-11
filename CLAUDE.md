@@ -1985,38 +1985,37 @@ Prisma Studio.
   **The LIST half of this is now resolved (ACC-76)**: `TaskListComponent`
   gained a real `embedded` mode and lives inside Committee's detail page,
   which is the home its own original header comment always described.
-  **The CREATION half is not, and is worse than this note previously
-  claimed.** It said creation "works correctly and is fully decoupled" —
-  that is wrong, and was corrected during ACC-76's live testing:
-  - `task-form` has **no assignee picker at all**. It posts
-    `assigneeUserIds: []` unconditionally, so **every manually created
-    task is born `UNASSIGNED`** — a real record nobody is working on,
-    which then needs an admin to find it via the Unassigned Tasks view
-    (ACC-34) and reassign it. Creation succeeds; it just doesn't produce
-    an assigned task, which is what a user creating a task means to do.
-  - The form shows an info message claiming assignee selection "will be
-    available once User Management is set up". **That message is stale
-    and misleading.** It dates from ACC-11; User Management shipped in
-    ACC-12, and `UserService.listUsers()` is live and already consumed
-    elsewhere (`committee-detail` calls it). It sits directly above a
-    Save button that is disabled whenever the title is empty, so users
-    read it as the reason Save is dead — it isn't. (Save-disabled-with-
-    no-explanation is the separate app-wide gap recorded under the
-    per-field-error-message note below.)
-  - ACC-76 therefore **deliberately ships the embedded Tasks panel with
-    no create button**. A button that cannot produce an assigned task is
-    worse than no button.
-  What's needed is a real decision, not a picker bolted on: **how are
-  assignees chosen for a manually created task?** The workflow engine
-  resolves them from a strategy (`ROLE`, `ORG_UNIT_HEAD`,
-  `POSITION_FIXED`, …); a human creating a task ad hoc has no strategy,
-  so this is a genuine design question — free choice of any active user,
-  constrained to the record's own org unit, constrained to committee
-  members when created from a committee, or something else. Note it
-  interacts with escalation validation (`validateEscalationTarget()`
-  checks grade and org-unit ancestry) and with out-of-office routing,
-  neither of which currently applies to a manually created task. Needs
-  its own ticket and its own investigation.
+  **The CREATION half is also RESOLVED (ACC-76)** — and two claims made
+  about it mid-ticket were wrong, corrected here so neither is inherited:
+  - **"Manual task creation is non-functional / rejected by
+    validation" — FALSE.** `CreateTaskDto.assigneeUserIds` carries
+    `@IsArray() @IsString({each:true}) @IsNotEmpty({each:true})`, and
+    `each` validators run per element, so an empty array passes. Verified
+    by running the validator, not by reading it. The `@ArrayMinSize(1)`
+    that prompted this belongs to **`ReassignTaskDto`**, a different DTO.
+    Creating with no assignee has always succeeded, producing an
+    `UNASSIGNED` task with every tenant admin notified — a path
+    `TaskService.create()` handles deliberately, not a failure.
+  - What was genuinely missing was the **picker**, not the endpoint.
+    `task-form` posted `assigneeUserIds: []` unconditionally and showed
+    a message claiming assignee selection awaited User Management — which
+    had shipped in ACC-12, most of the project earlier. Sitting directly
+    above a Save button that disables on an empty title, it was read as
+    the reason Save was dead. It wasn't. (That
+    disabled-with-no-explanation problem is the separate app-wide gap in
+    the per-field-error-message note below, and is still open.)
+  ACC-76 added a real picker: `p-listbox` with filter, all ACTIVE users
+  selectable, optional rather than required. **Selection scope decided:
+  any active user, not just members of the source record** — the backend
+  accepts any, and a committee task can legitimately go to a department
+  head outside the committee who owes it data. Empty still creates an
+  `UNASSIGNED` task, so a caller whose role grants `tasks:create` but not
+  `users:view` can still record the work.
+  Two things it does NOT do, stated so they are not assumed: out-of-office
+  routing is not applied to a manually created task (`create()` filters on
+  `status: 'ACTIVE'` only — SYSTEM-REFERENCE §3.5), and
+  `validateEscalationTarget()` runs only when an `escalationUserId` is
+  supplied, which this form does not send.
 - **No business object in this product has a human-readable reference
   code.** Found while building ACC-76's Committee record page against
   a design that shows one (`QMC-014`) beside the committee's name.

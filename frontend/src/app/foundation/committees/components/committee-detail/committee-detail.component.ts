@@ -7,7 +7,8 @@ import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
-import { TaskListComponent } from '../../../tasks/components/task-list/task-list.component';
+import { TaskFormComponent } from '../../../tasks/components/task-form/task-form.component';
+import { TaskService, ITaskWithAssigneesDto } from '../../../tasks/services/task.service';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
@@ -39,7 +40,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     MessageModule,
     RecordPanelComponent,
     RouterLink,
-    TaskListComponent,
+    TaskFormComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
@@ -271,26 +272,58 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
           </app-record-panel>
 
           <!-- Gated on tasks:view, which is what GET /tasks requires — a user
-               without it would get a 403 and an empty panel that looks like
-               "no tasks" rather than "not yours to see". -->
+               without it would get a 403 and an empty panel reading as "no
+               tasks" when the truth is "not yours to see".
+
+               ACC-76 — rendered HERE rather than by embedding
+               TaskListComponent. That component is a full routed page: it
+               brings its own p-table, its own type scale and its own column
+               widths, so embedded it sat at a different height from its four
+               siblings, in a larger font, scrolling horizontally while they
+               did not. A summary panel needs four facts — title, assignee, due
+               date, overdue — not a table's full column set. -->
           @if (canViewTasks()) {
             <app-record-panel
               [heading]="'committee.tasks' | translate"
-              [count]="taskList.taskCount()"
+              [count]="tasks().length"
               [badge]="overdueBadge()"
-              [error]="taskList.loadError()"
+              [error]="tasksError()"
+              [loading]="tasksLoading()"
+              [isEmpty]="!tasksLoading() && tasks().length === 0"
+              [emptyTitle]="'task.noTasks' | translate"
             >
-              <!-- No create action, deliberately: manual task creation cannot
-                   produce an ASSIGNED task (CLAUDE.md's task-creation note), so
-                   the button would not work. Unlike Add member below, which
-                   does. -->
-              <app-task-list
-                #taskList
-                [embedded]="true"
-                sourceType="COMMITTEE"
-                [sourceId]="committeeId"
-                [sourceLabel]="displayName(c)"
-              />
+              @if (canCreateTasks()) {
+                <button
+                  panelActions
+                  type="button"
+                  class="text-[12.5px] text-[var(--am-blue-primary)] hover:underline"
+                  (click)="onAddTask()"
+                >
+                  {{ 'task.newTask' | translate }}
+                </button>
+              }
+              @for (task of tasks(); track task.id) {
+                <div
+                  class="grid grid-cols-[1fr_auto] gap-2.5 items-center px-4 py-2 border-b border-[var(--am-border)]"
+                >
+                  <span class="min-w-0">
+                    <span class="block text-[13px] font-medium truncate">{{ task.title }}</span>
+                    <span class="block text-[11.5px] text-[var(--am-text-secondary)] truncate">
+                      {{ assigneeSummary(task) }}
+                    </span>
+                  </span>
+                  <!-- Overdue is the one thing worth colouring in a summary:
+                       it is the only state that demands action today. -->
+                  <span
+                    dir="ltr"
+                    style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
+                    class="text-[11.5px] font-medium whitespace-nowrap"
+                    [style.color]="isOverdue(task) ? 'var(--am-severity-critical)' : 'var(--am-text-secondary)'"
+                  >
+                    {{ dueSummary(task) }}
+                  </span>
+                </div>
+              }
             </app-record-panel>
           }
 
@@ -405,6 +438,25 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       [content]="committeeFormTpl"
     />
 
+    <ng-template #taskFormTpl>
+      @if (committee(); as c) {
+        <!-- Source prefilled and locked: the task belongs to this committee,
+             so it is not a question to ask. -->
+        <app-task-form
+          lockedSourceType="COMMITTEE"
+          [lockedSourceId]="committeeId"
+          [lockedSourceLabel]="displayName(c)"
+          (saved)="onTaskSaved()"
+          (cancelled)="taskFormVisible.set(false)"
+        />
+      }
+    </ng-template>
+    <app-edit-dialog
+      [(visible)]="taskFormVisible"
+      [header]="'task.newTask' | translate"
+      [content]="taskFormTpl"
+    />
+
     <ng-template #memberFormTpl>
       <app-committee-member-form
         [committeeId]="committeeId"
@@ -424,15 +476,13 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 export class CommitteeDetailComponent implements OnInit {
   @ViewChild('committeeFormTpl', { read: TemplateRef, static: true }) committeeFormTpl!: TemplateRef<unknown>;
   @ViewChild('memberFormTpl', { read: TemplateRef, static: true }) memberFormTpl!: TemplateRef<unknown>;
-  // Read by overdueBadge(); optional because the Tasks panel is hidden
-  // entirely for a caller without tasks:view.
-  @ViewChild('taskList') taskList?: TaskListComponent;
 
   private readonly route = inject(ActivatedRoute);
   private readonly committeeService = inject(CommitteeService);
   private readonly lookupService = inject(LookupService);
   private readonly userService = inject(UserService);
   private readonly roleService = inject(RoleService);
+  private readonly taskService = inject(TaskService);
   private readonly workflowService = inject(WorkflowService);
   private readonly languageService = inject(LanguageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -464,6 +514,14 @@ export class CommitteeDetailComponent implements OnInit {
 
   readonly stageHistoryCount = signal<number | null>(null);
 
+  // ACC-76 — the Tasks panel owns its data directly rather than delegating to
+  // TaskListComponent, so it can reload after a create. The embedded list had
+  // no way to be told a task had been added.
+  readonly tasks = signal<ITaskWithAssigneesDto[]>([]);
+  readonly tasksLoading = signal(false);
+  readonly tasksError = signal<string | null>(null);
+  readonly taskFormVisible = signal(false);
+
   // "5 of 9 members" — the configured quorum against who is actually on the
   // committee. Either number alone is half the picture: a quorum of 5 means
   // something different on a committee of 9 than on one of 5.
@@ -477,14 +535,43 @@ export class CommitteeDetailComponent implements OnInit {
   // Rendered as a chip beside the Tasks count. Null when nothing is overdue —
   // an explicit "0 overdue" is noise on a panel that is already fine.
   readonly overdueBadge = computed(() => {
-    const now = Date.now();
-    const overdue = this.taskList?.tasks().filter(
-      (t) => t.dueAt && new Date(t.dueAt).getTime() < now && t.status !== 'COMPLETED' && t.status !== 'CANCELLED',
-    ).length;
+    const overdue = this.tasks().filter((t) => this.isOverdue(t)).length;
     if (!overdue) return null;
     this.translate.currentLang();
     return this.translate.instant('task.overdueCount', { count: overdue });
   });
+
+  // A task that is finished or cancelled is not overdue however old its due
+  // date — the state that matters is "still owed and past due".
+  isOverdue(task: ITaskWithAssigneesDto): boolean {
+    if (!task.dueAt || task.status === 'COMPLETED' || task.status === 'CANCELLED') return false;
+    return new Date(task.dueAt).getTime() < Date.now();
+  }
+
+  // "overdue 6d" or a plain date. The elapsed form is used only when overdue
+  // because that is when the magnitude changes what a reader does about it.
+  dueSummary(task: ITaskWithAssigneesDto): string {
+    if (!task.dueAt) return '—';
+    this.translate.currentLang();
+    if (this.isOverdue(task)) {
+      const days = Math.floor((Date.now() - new Date(task.dueAt).getTime()) / 86_400_000);
+      return this.translate.instant('task.overdueBy', { days });
+    }
+    return new Date(task.dueAt).toLocaleDateString(this.languageService.isArabic() ? 'ar' : 'en-GB', {
+      day: '2-digit',
+      month: 'short',
+    });
+  }
+
+  // Names come resolved from the backend (ACC-76), so this needs no user
+  // lookup. Beyond two, the names stop being readable in a summary row and a
+  // count says more.
+  assigneeSummary(task: ITaskWithAssigneesDto): string {
+    this.translate.currentLang();
+    if (task.assignees.length === 0) return this.translate.instant('task.unassigned');
+    if (task.assignees.length <= 2) return task.assignees.map((a) => a.userName).join(', ');
+    return this.translate.instant('task.assigneeCount', { count: task.assignees.length });
+  }
 
   // PANEL-LEVEL PERMISSION GATING. An action is shown only where the caller
   // holds the permission its endpoint requires, rather than shown and failing
@@ -508,6 +595,10 @@ export class CommitteeDetailComponent implements OnInit {
   // rather than shown empty — an empty panel would read as "no tasks" when the
   // truth is "not yours to see".
   readonly canViewTasks = computed(() => this.navigationAccess.hasPermission('tasks:view'));
+  // POST /tasks gates on tasks:create. The button now genuinely works — the
+  // form has a real assignee picker as of ACC-76 — so showing it is correct
+  // where it was not before.
+  readonly canCreateTasks = computed(() => this.navigationAccess.hasPermission('tasks:create'));
 
   readonly formVisible = signal(false);
   readonly memberFormVisible = signal(false);
@@ -524,6 +615,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.loadMembers();
     this.loadMembershipEvents();
     this.loadCurrentStage();
+    if (this.canViewTasks()) this.loadTasks();
   }
 
   displayName(committee: CommitteeDto): string {
@@ -640,6 +732,33 @@ export class CommitteeDetailComponent implements OnInit {
     this.memberFormVisible.set(false);
     this.loadMembers();
     this.loadMembershipEvents();
+  }
+
+  onAddTask(): void {
+    this.taskFormVisible.set(true);
+  }
+
+  // The reload Ahmad's live pass found missing. Every panel that can be
+  // changed from this page reloads the data it changed — Members and
+  // Membership history already did (onMemberSaved above), Tasks could not,
+  // because the embedded TaskListComponent had no way to be told.
+  onTaskSaved(): void {
+    this.taskFormVisible.set(false);
+    this.loadTasks();
+  }
+
+  private loadTasks(): void {
+    this.tasksLoading.set(true);
+    this.taskService.getForSource('COMMITTEE', this.committeeId).subscribe({
+      next: (tasks) => {
+        this.tasks.set(tasks);
+        this.tasksLoading.set(false);
+      },
+      error: () => {
+        this.tasksError.set('task.errorLoad');
+        this.tasksLoading.set(false);
+      },
+    });
   }
 
   onRemoveMember(member: CommitteeMemberDto): void {

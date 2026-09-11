@@ -425,7 +425,9 @@
     "coveringFor": "covering for {{context}}",
     "overdueCount": "{{count}} overdue",
     "assigneesHint": "Leave empty to create the task unassigned — tenant administrators are notified to assign it.",
-    "assigneesUnavailable": "You do not have access to the user list. The task will be created unassigned and tenant administrators will be notified to assign it."
+    "assigneesUnavailable": "You do not have access to the user list. The task will be created unassigned and tenant administrators will be notified to assign it.",
+    "overdueBy": "overdue {{days}}d",
+    "assigneeCount": "{{count}} assignees"
   },
   "auth": {
     "login": "Log In",
