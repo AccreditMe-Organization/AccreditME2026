@@ -163,6 +163,28 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
           </div>
         </app-record-panel>
 
+        <!-- Four of the seven things an accreditation surveyor checks for a
+             committee live here (module-designs.md:880-887): attendance per
+             meeting, quorum confirmation, decisions with vote counts, and
+             action items tracked to completion. -->
+        <app-record-panel
+          [heading]="'committee.meetings' | translate"
+          [description]="'committee.meetingsDescription' | translate"
+          [isEmpty]="true"
+          [emptyMessage]="'committee.noMeetings' | translate"
+        />
+
+        <!-- Terms of Reference and reporting evidence — the remaining two
+             surveyor checks. Committee.termsOfReferenceDocumentId already
+             exists in the schema, annotated there as unpopulated until
+             Document Management ships. -->
+        <app-record-panel
+          [heading]="'committee.documents' | translate"
+          [description]="'committee.documentsDescription' | translate"
+          [isEmpty]="true"
+          [emptyMessage]="'committee.noDocuments' | translate"
+        />
+
         <hr />
 
         <div class="flex items-center justify-between">
