@@ -2017,6 +2017,30 @@ Prisma Studio.
   checks grade and org-unit ancestry) and with out-of-office routing,
   neither of which currently applies to a manually created task. Needs
   its own ticket and its own investigation.
+- **No business object in this product has a human-readable reference
+  code.** Found while building ACC-76's Committee record page against
+  a design that shows one (`QMC-014`) beside the committee's name.
+  `Committee` has no `code` column, and neither does any other
+  functional-module record — `OrgUnit.code` is the only precedent
+  anywhere, and it is tenant-entered rather than generated.
+  Deliberately NOT added as part of ACC-76: a reference code is a
+  product decision, not a layout one. CLAUDE.md already devotes a
+  whole **Document Numbering** section to what such a scheme involves
+  — `{TYPE_PREFIX}-{ORG_UNIT_CODE}-{YEAR}-{SEQUENCE}`, configurable
+  per tenant via lookup attributes, codes never reused even after
+  obsolescence — and that reasoning is not Document-specific: an
+  accreditation surveyor asking "show me the minutes of QMC-014"
+  needs the same guarantees from a committee code as from a document
+  number.
+  Real questions this needs, none of them answerable from the design:
+  is the code per-object-type or product-wide; is it tenant-editable
+  or system-generated; does it survive a rename; what happens on
+  dissolution and re-formation; and does it need to be unique across
+  tenants or only within one. Worth deciding once, for every module,
+  rather than per module as each record page is built — Meeting,
+  Document, Incident, CAPA and Audit will all want one, and
+  discovering that five times is the expensive way. Not scoped or
+  sized; recorded here so the next record page doesn't re-derive it.
 - **Platform Admin has no real navigation structure** — confirmed
   while testing ACC-39: `ai-feature-costs` and `ai-credit-packs` are
   only reachable by typing their URLs directly after a platform-admin
