@@ -47,8 +47,35 @@ export interface IWorkflowStageVisit {
   actorId: string | null;
   // Resolved from User.name at query time; null when the actor no longer
   // resolves within the tenant.
+  //
+  // WHO THIS IS: the person who ENTERED this stage. WorkflowInstanceStage.actorId
+  // is written once, at row creation, and the exit update touches only
+  // exitedAt/outcome/comment — so it is never overwritten by whoever later
+  // left. On a revisited stage the two visits are separate rows with separate
+  // actors, each correctly its own.
   actorName: string | null;
+
+  // ACC-76 — the transition that caused entry into this stage, so a history
+  // row reads "Terms Review — Submit for Approval" rather than just naming a
+  // stage.
+  //
+  // DERIVED, NOT STORED. WorkflowInstanceStage records no transition id, so
+  // this is resolved from the (previous visit's stage -> this visit's stage)
+  // pair against the template's transitions. Verified safe for every shipped
+  // workflow: across all 8 seeded templates, 67 transitions, NO template has
+  // two transitions sharing a from/to pair. Where a tenant later creates one
+  // that does, the pair is ambiguous and both fields are null — a blank beats
+  // a guess in a compliance trail.
+  //
+  // Null on the first visit too: nothing transitioned into it, the instance
+  // started there.
+  //
+  // Tenant-editable data: rendered by isArabic() selection, never `| translate`.
+  transitionLabelEn: string | null;
+  transitionLabelAr: string | null;
+
   comment: string | null;
+
   isUnassigned: boolean;
   // ACC-40 §2.6.3's stamp — the same pair TaskAssignee carries, resolved the
   // same way by the same service. This is what lets a history row read

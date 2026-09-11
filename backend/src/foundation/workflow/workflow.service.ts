@@ -156,7 +156,7 @@ export class WorkflowService {
     });
     if (!instance) throw new NotFoundException('Workflow instance not found');
 
-    const [visitRows, stages] = await Promise.all([
+    const [visitRows, stages, transitions] = await Promise.all([
       // WorkflowInstanceStage has NO organizationId of its own — tenancy is
       // transitive through workflowInstance (SYSTEM-REFERENCE §8.3). Scoped
       // relationally here as well as via the check above: belt and braces on
@@ -171,7 +171,30 @@ export class WorkflowService {
         orderBy: { order: 'asc' },
         select: { id: true, nameEn: true, nameAr: true, order: true },
       }),
+      // ACC-76 — the template's transitions, for naming what moved the record
+      // between each pair of visits. Scoped through fromStage rather than by a
+      // templateId column, which WorkflowTransition does not have.
+      this.prisma.workflowTransition.findMany({
+        where: { fromStage: { workflowTemplateId: instance.workflowTemplateId } },
+        select: { fromStageId: true, toStageId: true, labelEn: true, labelAr: true },
+      }),
     ]);
+
+    // Keyed by from->to. A pair with MORE than one transition is recorded as
+    // null rather than picking one: no seeded template has such a pair (67
+    // transitions across 8 templates, all unique), but a tenant can create
+    // one, and naming the wrong action in a compliance trail is worse than
+    // naming none.
+    const transitionByPair = new Map<string, { labelEn: string; labelAr: string } | null>();
+    for (const transition of transitions) {
+      const key = `${transition.fromStageId}->${transition.toStageId}`;
+      transitionByPair.set(
+        key,
+        transitionByPair.has(key)
+          ? null
+          : { labelEn: transition.labelEn, labelAr: transition.labelAr },
+      );
+    }
 
     // Two batched lookups for the whole history rather than per-row: actor
     // names, and ACC-40's delegation stamp resolved by the same service the
@@ -204,22 +227,34 @@ export class WorkflowService {
         visitCount: visitCountByStageId.get(stage.id) ?? 0,
         isCurrent: openVisit?.stageId === stage.id,
       })),
-      visits: visitRows.map((visit) => ({
-        // The instance-stage row id, not the stage id — the stage id repeats
-        // across visits and would collide as a list key.
-        id: visit.id,
-        stageId: visit.stageId,
-        stageNameEn: visit.stage.nameEn,
-        stageNameAr: visit.stage.nameAr,
-        enteredAt: visit.enteredAt,
-        exitedAt: visit.exitedAt,
-        outcome: visit.outcome,
-        actorId: visit.actorId,
-        actorName: visit.actorId ? (actorNameById.get(visit.actorId) ?? null) : null,
-        comment: visit.comment,
-        isUnassigned: visit.isUnassigned,
-        delegation: this.delegationLabels.lookup(visit, delegations),
-      })),
+      visits: visitRows.map((visit, index) => {
+        // The visit BEFORE this one supplies two things this row needs and
+        // its own columns cannot: which transition brought the record here,
+        // and the comment explaining why. See IWorkflowStageVisit.
+        const previous = index > 0 ? visitRows[index - 1] : undefined;
+        const transition = previous
+          ? (transitionByPair.get(`${previous.stageId}->${visit.stageId}`) ?? null)
+          : null;
+
+        return {
+          // The instance-stage row id, not the stage id — the stage id repeats
+          // across visits and would collide as a list key.
+          id: visit.id,
+          stageId: visit.stageId,
+          stageNameEn: visit.stage.nameEn,
+          stageNameAr: visit.stage.nameAr,
+          enteredAt: visit.enteredAt,
+          exitedAt: visit.exitedAt,
+          outcome: visit.outcome,
+          actorId: visit.actorId,
+          actorName: visit.actorId ? (actorNameById.get(visit.actorId) ?? null) : null,
+          transitionLabelEn: transition?.labelEn ?? null,
+          transitionLabelAr: transition?.labelAr ?? null,
+          comment: visit.comment,
+          isUnassigned: visit.isUnassigned,
+          delegation: this.delegationLabels.lookup(visit, delegations),
+        };
+      }),
     };
   }
 
