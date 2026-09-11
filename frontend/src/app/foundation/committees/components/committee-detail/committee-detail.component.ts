@@ -609,8 +609,8 @@ export class CommitteeDetailComponent implements OnInit {
     this.lookupService.getValues('committee_member_role').subscribe({ next: (v) => this.memberRoles.set(v) });
     this.userService.listUsers().subscribe({ next: (v) => this.users.set(v) });
     this.roleService.listRoles().subscribe({ next: (v) => this.roles.set(v) });
-    this.committeeService.listCommittees().subscribe({ next: (v) => this.allCommittees.set(v) });
 
+    this.loadCommitteeList();
     this.loadCommittee();
     this.loadMembers();
     this.loadMembershipEvents();
@@ -716,6 +716,9 @@ export class CommitteeDetailComponent implements OnInit {
   onCommitteeSaved(): void {
     this.formVisible.set(false);
     this.loadCommittee();
+    // The committee's own row in allCommittees() is now stale — its name feeds
+    // any sibling's parent lookup, and its stage feeds the header pill.
+    this.loadCommitteeList();
   }
 
   onAddMember(): void {
@@ -780,6 +783,13 @@ export class CommitteeDetailComponent implements OnInit {
     });
   }
 
+  // Feeds four things, three of which can change from this page: the header
+  // stage pill, the parent-committee name, the reporting-to name, and the
+  // sub-committees panel. Loaded once in ngOnInit was the bug.
+  private loadCommitteeList(): void {
+    this.committeeService.listCommittees().subscribe({ next: (v) => this.allCommittees.set(v) });
+  }
+
   private loadCommittee(): void {
     this.committeeService.getById(this.committeeId).subscribe({
       next: (committee) => this.committee.set(committee),
@@ -813,6 +823,13 @@ export class CommitteeDetailComponent implements OnInit {
   // redundant re-fetch of the instance itself.
   onWorkflowTransitioned(instance: WorkflowInstanceDto): void {
     this.setCurrentInstance(instance);
+    // ACC-76 — the SECOND instance of the stale-panel bug Ahmad found on the
+    // stage timeline, in a different place. The header's stage pill reads
+    // currentStageName(), which derives from allCommittees() — loaded once in
+    // ngOnInit and never reloaded. Without this the pill still showed the
+    // stage the committee was in BEFORE the transition it just made, while
+    // the stepper beside it showed the new one.
+    this.loadCommitteeList();
   }
 
   // Current lifecycle stage is read live from the workflow engine, never a
