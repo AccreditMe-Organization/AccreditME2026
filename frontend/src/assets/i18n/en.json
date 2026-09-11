@@ -427,7 +427,9 @@
     "assigneesHint": "Leave empty to create the task unassigned — tenant administrators are notified to assign it.",
     "assigneesUnavailable": "You do not have access to the user list. The task will be created unassigned and tenant administrators will be notified to assign it.",
     "overdueBy": "overdue {{days}}d",
-    "assigneeCount": "{{count}} assignees"
+    "assigneeCount": "{{count}} assignees",
+    "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
+    "errorAction": "The action could not be completed. Please try again."
   },
   "auth": {
     "login": "Log In",

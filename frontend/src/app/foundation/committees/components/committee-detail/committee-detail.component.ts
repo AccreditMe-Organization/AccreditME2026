@@ -4,6 +4,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { DatePipe } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
+import { TooltipModule } from 'primeng/tooltip';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
@@ -24,6 +25,7 @@ import { WorkflowService, WorkflowInstanceDto } from '../../../workflow/services
 import { WorkflowTransitionActionsComponent } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { AuthService } from '../../../../core/services/auth.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
@@ -38,6 +40,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     ButtonModule,
     TagModule,
     MessageModule,
+    TooltipModule,
     RecordPanelComponent,
     RouterLink,
     TaskFormComponent,
@@ -320,15 +323,33 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                       {{ 'task.status.' + task.status.toLowerCase() | translate }}
                     </span>
                   </span>
-                  <!-- Overdue is the one thing worth colouring in a summary:
-                       it is the only state that demands action today. -->
-                  <span
-                    dir="ltr"
-                    style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
-                    class="text-[11.5px] font-medium whitespace-nowrap"
-                    [style.color]="isOverdue(task) ? 'var(--am-severity-critical)' : 'var(--am-text-secondary)'"
-                  >
-                    {{ dueSummary(task) }}
+                  <span class="flex items-center gap-2 shrink-0">
+                    <!-- Overdue is the one thing worth colouring in a summary:
+                         it is the only state that demands action today. -->
+                    <span
+                      dir="ltr"
+                      style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
+                      class="text-[11.5px] font-medium whitespace-nowrap"
+                      [style.color]="isOverdue(task) ? 'var(--am-severity-critical)' : 'var(--am-text-secondary)'"
+                    >
+                      {{ dueSummary(task) }}
+                    </span>
+                    <!-- Shown on rows the caller is actually assigned to, and
+                         on no others. NOT permission-gated: completing a task
+                         is self-scoped, so POST /tasks/:id/complete carries no
+                         @Permissions — the service 404s a non-assignee. Gating
+                         this on a permission would hide it from exactly the
+                         people entitled to use it (tasks:complete is not
+                         seeded to BASE_USER, whom the engine assigns to). -->
+                    @if (canComplete(task)) {
+                      <p-button
+                        icon="pi pi-check"
+                        [text]="true"
+                        size="small"
+                        [pTooltip]="'task.complete' | translate"
+                        (onClick)="onCompleteTask(task)"
+                      />
+                    }
                   </span>
                 </div>
               }
@@ -495,6 +516,7 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly languageService = inject(LanguageService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly navigationAccess = inject(NavigationAccessService);
+  private readonly authService = inject(AuthService);
   private readonly translate = inject(TranslateService);
 
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
@@ -747,6 +769,38 @@ export class CommitteeDetailComponent implements OnInit {
 
   onAddTask(): void {
     this.taskFormVisible.set(true);
+  }
+
+  // Assignee-ness ALONE, no permission check — POST /tasks/:id/complete is
+  // ungated as of ACC-76 because it is self-scoped, and TaskService.complete()
+  // 404s anyone who is not a currently-active assignee. A permission check
+  // here would hide the button from the people entitled to use it, since
+  // tasks:complete is not seeded to BASE_USER and the engine assigns to
+  // BASE_USER tenant-wide.
+  //
+  // `assignees` carries ACTIVE assignees only (removedAt: null), so someone
+  // whose assignment was completed by a colleague or reassigned away is
+  // correctly excluded without a second check.
+  canComplete(task: ITaskWithAssigneesDto): boolean {
+    if (task.status === 'COMPLETED' || task.status === 'CANCELLED') return false;
+    const me = this.authService.currentUser()?.id;
+    return !!me && task.assignees.some((a) => a.userId === me);
+  }
+
+  onCompleteTask(task: ITaskWithAssigneesDto): void {
+    // Confirmed first: ANY-assignee-completes semantics mean this finishes the
+    // task for every other assignee too, not just for the caller.
+    this.confirmationService.confirm({
+      message: this.translate.instant('task.confirmComplete', { title: task.title }),
+      header: this.translate.instant('common.confirm'),
+      icon: 'pi pi-check-circle',
+      accept: () => {
+        this.taskService.complete(task.id).subscribe({
+          next: () => this.loadTasks(),
+          error: (err: unknown) => this.tasksError.set(extractErrorMessage(err, 'task.errorAction')),
+        });
+      },
+    });
   }
 
   // The reload Ahmad's live pass found missing. Every panel that can be
