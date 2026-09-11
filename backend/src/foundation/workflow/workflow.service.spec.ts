@@ -503,27 +503,61 @@ describe('WorkflowService', () => {
       expect(result.visits.find((v) => v.exitedAt === null)!.id).toBe('is-2');
     });
 
-    it('returns template stages never entered as unvisited', async () => {
+    // The SEQUENCE view — every template stage, always, in order. Distinct
+    // from the chronology above and not derivable from it: visit rows carry no
+    // `order`, so a client given only `visits` cannot reconstruct the process.
+    it('returns every template stage in order, reached or not', async () => {
       mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
         visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', null),
       ]);
 
       const result = await service.getStageHistory('instance-1', ORG_A);
 
-      expect(result.unvisitedStages.map((s) => s.id)).toEqual(['stage-terms', 'stage-active']);
+      expect(result.stages.map((s) => s.id)).toEqual([
+        'stage-formation',
+        'stage-terms',
+        'stage-active',
+      ]);
+      expect(result.stages.map((s) => s.visitCount)).toEqual([1, 0, 0]);
+      expect(result.stages.map((s) => s.isCurrent)).toEqual([true, false, false]);
     });
 
-    // A revisited stage is visited, not pending — it must not appear in both.
-    it('does not list a revisited stage as unvisited', async () => {
+    // How a linear sequence admits a loop honestly: it counts the visits
+    // rather than flattening them to "visited".
+    it('counts repeat visits on the sequence entry', async () => {
       mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
         visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
         visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', '2026-01-03T09:00:00Z'),
-        visit('is-3', 'stage-formation', '2026-01-03T09:00:00Z', null),
+        visit('is-3', 'stage-formation', '2026-01-03T09:00:00Z', '2026-01-04T09:00:00Z'),
+        visit('is-4', 'stage-terms', '2026-01-04T09:00:00Z', null),
       ]);
 
       const result = await service.getStageHistory('instance-1', ORG_A);
 
-      expect(result.unvisitedStages.map((s) => s.id)).toEqual(['stage-active']);
+      expect(result.stages.map((s) => s.visitCount)).toEqual([2, 2, 0]);
+      // Current is the stage holding the OPEN visit — the second Terms Review,
+      // not the first, and not Formation despite it also being visited twice.
+      expect(result.stages.filter((s) => s.isCurrent).map((s) => s.id)).toEqual(['stage-terms']);
+    });
+
+    it('marks no stage current once every visit has been exited', async () => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.stages.some((s) => s.isCurrent)).toBe(false);
+    });
+
+    it('returns the full sequence even for an instance with no visits yet', async () => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.stages.length).toBe(3);
+      expect(result.stages.every((s) => s.visitCount === 0 && !s.isCurrent)).toBe(true);
+      expect(result.visits).toEqual([]);
     });
 
     it('resolves actor names and leaves an unresolvable actor null', async () => {

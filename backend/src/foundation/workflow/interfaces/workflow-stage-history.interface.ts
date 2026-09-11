@@ -1,28 +1,33 @@
 import { IResolvedDelegation } from '../../../common/services/delegation-label.interface';
 
-// ACC-76 — an object's real journey through its workflow.
+// ACC-76 — an object's workflow position, answered TWO ways, because there
+// are two different questions and neither answer substitutes for the other.
 //
-// WHY THIS SHAPE, STATED DELIBERATELY. The obvious alternative is a stepper
-// over the template's stages, ordered by WorkflowStage.order, with everything
-// before the current stage ticked. That shape LIES about any record that
-// revisited a stage — and this engine has such records by design: Committee's
-// seeded template carries a TERMS_REVIEW -> FORMATION "Revise Terms"
-// transition, so a real committee's path can read
-// Formation -> Terms Review -> Formation -> Terms Review. A stepper renders
-// that as "step 2 of 6" with no hint that the record has been round the loop,
-// and `order` cannot express it because order is a display field, not a
-// traversal record.
+//   `stages`  — what is the process, and where in it are we?
+//               Every template stage, in order, always. This is the sequence
+//               view: a reader who has never seen a committee before learns
+//               the shape of the lifecycle from it.
 //
-// So: `visits` is the primary element and is a CHRONOLOGY, not a progression.
-// A stage entered twice appears twice. The repeat is the information — being
-// sent back to Formation is a governance fact a surveyor asks about, not a
-// duplicate to collapse.
+//   `visits`  — what actually happened to THIS record?
+//               The chronology, repeats preserved.
 //
-// `unvisitedStages` carries the rest of the template so a reader can still see
-// the whole shape of the process, which is most of the point of replacing a
-// bare "Current Stage: X" label. It is deliberately a SET, not a continuation
-// of the chronology: nothing here promises those stages will be reached, or
-// reached in that sequence.
+// WHY BOTH, STATED DELIBERATELY — an earlier revision of this ticket shipped
+// `visits` alone, on the reasoning below, and that was wrong: the reasoning is
+// a good argument against the sequence being the ONLY view, and no argument at
+// all against it existing.
+//
+// The reasoning that still holds: a stepper's grammar is linear progress with
+// a fixed step count — numbered nodes, ticks behind you, "step 3 of 6". Every
+// one of those elements states something false about a record that revisited a
+// stage, and this engine produces such records by design (Committee's seeded
+// template has a TERMS_REVIEW -> FORMATION "Revise Terms" transition, so a real
+// path can read Formation -> Terms Review -> Formation -> Terms Review).
+// `order` cannot express that: it is a display field, not a traversal record.
+//
+// What follows from it is NOT "drop the sequence" but "the sequence must not
+// claim to be a progression". Hence `visitCount` on each entry: the sequence
+// shows the loop rather than hiding it, and the chronology beside it shows
+// when the loop happened.
 export interface IWorkflowStageVisit {
   // The WorkflowInstanceStage row id — NOT the stage id, which repeats across
   // visits and is therefore unusable as a list key.
@@ -51,18 +56,29 @@ export interface IWorkflowStageVisit {
   delegation: IResolvedDelegation | null;
 }
 
-export interface IWorkflowUnvisitedStage {
+// One entry per stage the template defines — every stage, whether reached or
+// not. This is what the sequence view renders.
+export interface IWorkflowStageSequenceEntry {
   id: string;
   nameEn: string;
   nameAr: string;
   order: number;
+  // 0 = not yet reached. >1 = the record has been here more than once, which
+  // the sequence must SHOW rather than flatten — it is the one honest way a
+  // linear list can admit a loop happened.
+  visitCount: number;
+  // True for the stage with an open visit. Derived from exitedAt, never from
+  // WorkflowInstance.currentStageId: with a repeat, currentStageId matches two
+  // visit rows and cannot say which is live. At most one entry is current; all
+  // are false once the instance reaches a final stage and exits it.
+  isCurrent: boolean;
 }
 
 export interface IWorkflowStageHistory {
   instanceId: string;
+  // Every template stage, ordered by `order`. Always present, even before the
+  // record has been anywhere.
+  stages: IWorkflowStageSequenceEntry[];
   // Chronological by enteredAt, oldest first. Repeats preserved.
   visits: IWorkflowStageVisit[];
-  // Template stages with no visit row. Ordered by `order` purely so the list
-  // is stable between loads — see the note above on what that does NOT mean.
-  unvisitedStages: IWorkflowUnvisitedStage[];
 }

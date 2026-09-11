@@ -138,12 +138,12 @@ export class WorkflowService {
 
   // ACC-76 — the real path an object took through its workflow.
   //
-  // See IWorkflowStageHistory for why this returns a chronology of visits
-  // plus a set of unreached stages, rather than a progression over
-  // WorkflowStage.order. Short version: a record that went
-  // Formation -> Terms Review -> Formation -> Terms Review has four visits
-  // and no meaningful "step N of M", and `order` cannot say otherwise
-  // because it is a display field, not a traversal record.
+  // Returns BOTH views — see IWorkflowStageHistory for why neither substitutes
+  // for the other. `stages` is the sequence (every template stage, in order,
+  // each carrying how many times it was entered); `visits` is the chronology
+  // (what actually happened, repeats preserved). A record that went
+  // Formation -> Terms Review -> Formation -> Terms Review appears in the
+  // first as two stages with visitCount 2, and in the second as four rows.
   async getStageHistory(
     instanceId: string,
     organizationId: string,
@@ -188,10 +188,22 @@ export class WorkflowService {
     ]);
     const actorNameById = new Map(actors.map((a) => [a.id, a.name]));
 
-    const visitedStageIds = new Set(visitRows.map((v) => v.stageId));
+    // Visit counts per stage, and which stage holds the OPEN visit. Both are
+    // derived from the visit rows rather than from currentStageId, which
+    // cannot distinguish two visits to the same stage.
+    const visitCountByStageId = new Map<string, number>();
+    for (const visit of visitRows) {
+      visitCountByStageId.set(visit.stageId, (visitCountByStageId.get(visit.stageId) ?? 0) + 1);
+    }
+    const openVisit = visitRows.find((v) => v.exitedAt === null);
 
     return {
       instanceId: instance.id,
+      stages: stages.map((stage) => ({
+        ...stage,
+        visitCount: visitCountByStageId.get(stage.id) ?? 0,
+        isCurrent: openVisit?.stageId === stage.id,
+      })),
       visits: visitRows.map((visit) => ({
         // The instance-stage row id, not the stage id — the stage id repeats
         // across visits and would collide as a list key.
@@ -208,7 +220,6 @@ export class WorkflowService {
         isUnassigned: visit.isUnassigned,
         delegation: this.delegationLabels.lookup(visit, delegations),
       })),
-      unvisitedStages: stages.filter((stage) => !visitedStageIds.has(stage.id)),
     };
   }
 
