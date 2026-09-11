@@ -32,6 +32,42 @@ jobs:
           echo "✅ Secret file check passed"
 
   # ─────────────────────────────────────────────
+  # Stage 1b — Dependency vulnerability scan
+  # ─────────────────────────────────────────────
+  dependencies:
+    name: Dependencies — Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: validate-repo
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ matrix.workspace }}
+
+      - name: Capture audit report
+        working-directory: ${{ matrix.workspace }}
+        # `npm audit` exits non-zero whenever ANY finding exists, so its own
+        # exit code cannot be the gate — capture the JSON and let the gate
+        # script decide. `|| true` keeps the step green so the script runs.
+        run: npm audit --json > audit.json || true
+
+      - name: Audit gate — fail only on findings with no fix available
+        # ONE script for both workspaces, run from the repo root rather than
+        # copied into each. See CLAUDE.md's note on skill verification
+        # commands being duplicated with no shared source (ACC-73) — the same
+        # trap, avoided here.
+        run: node .github/scripts/audit-gate.js ${{ matrix.workspace }}/audit.json ${{ matrix.workspace }}
+
+  # ─────────────────────────────────────────────
   # Stage 2 — Backend
   # ─────────────────────────────────────────────
   backend:
