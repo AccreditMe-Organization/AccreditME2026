@@ -308,8 +308,16 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                 >
                   <span class="min-w-0">
                     <span class="block text-[13px] font-medium truncate">{{ task.title }}</span>
+                    <!-- Status shares the second line rather than taking a chip
+                         or a fourth column: at the 320px panel floor in a
+                         five-across row there is no width for either. It has to
+                         be here, though — dueSummary() deliberately drops the
+                         overdue colour for a COMPLETED task, so without status
+                         a finished task is indistinguishable from one merely
+                         not yet due. -->
                     <span class="block text-[11.5px] text-[var(--am-text-secondary)] truncate">
-                      {{ assigneeSummary(task) }}
+                      {{ assigneeSummary(task) }} ·
+                      {{ 'task.status.' + task.status.toLowerCase() | translate }}
                     </span>
                   </span>
                   <!-- Overdue is the one thing worth colouring in a summary:
