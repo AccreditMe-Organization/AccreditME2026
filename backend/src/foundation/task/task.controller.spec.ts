@@ -97,6 +97,23 @@ describe('TaskController', () => {
     expect(required).toBeUndefined();
   });
 
+  // ACC-76 — same reasoning as my-tasks above, and the same warning against
+  // "restoring" the decorator for consistency with its neighbours.
+  // TaskService.complete() 404s anyone who is not a currently-active assignee,
+  // so tasks:complete gated nothing the service did not already enforce. It
+  // DID break the engine: tasks:complete is not seeded to BASE_USER, and
+  // MEETING.minutes_review assigns to BASE_USER tenant-wide, so the engine
+  // handed out work its own permission model forbade finishing.
+  it('complete requires NO permission — it is self-scoped to an active assignee', () => {
+    const reflector = new Reflector();
+    const required = reflector.get<string[] | undefined>(
+      PERMISSIONS_KEY,
+      TaskController.prototype.complete,
+    );
+
+    expect(required).toBeUndefined();
+  });
+
   it('the non-self-scoped task endpoints remain permission-gated', () => {
     const reflector = new Reflector();
 
@@ -106,6 +123,11 @@ describe('TaskController', () => {
     ]);
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getById)).toEqual([
       TASKS_PERMISSIONS.VIEW,
+    ]);
+    // reassign() acts on someone ELSE's assignment — genuinely administrative,
+    // and stays gated.
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.reassign)).toEqual([
+      TASKS_PERMISSIONS.REASSIGN,
     ]);
   });
 
