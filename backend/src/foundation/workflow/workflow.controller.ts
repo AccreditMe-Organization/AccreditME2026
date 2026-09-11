@@ -11,6 +11,7 @@ import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 import { CancelWorkflowInstanceDto } from './dto/cancel-workflow-instance.dto';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
+import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
 
 @Controller('workflows')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -34,6 +35,24 @@ export class WorkflowController {
     @CurrentTenant() tenantId: string,
   ): Promise<IWorkflowInstance[]> {
     return this.workflowService.getInstancesByObject(objectType, objectId, tenantId);
+  }
+
+  // ACC-76 — the object-detail stage indicator's data.
+  //
+  // Gated on workflows:view, the same as the two reads above: this exposes
+  // who acted at each stage and any comment they left, which is more than
+  // the instance row itself carries. A caller without the permission gets a
+  // 403 and the panel renders nothing — the existing "Current Stage" label
+  // already behaves this way, so the gating is consistent rather than new.
+  //
+  // No route conflict with 'instances/:id' above — three segments, not two.
+  @Get('instances/:id/stage-history')
+  @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
+  getStageHistory(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+  ): Promise<IWorkflowStageHistory> {
+    return this.workflowService.getStageHistory(id, tenantId);
   }
 
   // No class-level @Permissions — the required permission is data-driven
