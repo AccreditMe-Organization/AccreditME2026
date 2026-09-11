@@ -171,6 +171,8 @@ const mockPrisma = {
   },
   workflowInstanceStage: {
     findFirst: jest.fn(),
+    // ACC-76 — getStageHistory() reads the whole visit chronology.
+    findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
@@ -411,6 +413,188 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowInstance.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
       );
+    });
+  });
+
+  // ── getStageHistory (ACC-76) ─────────────────────────────────────────────────
+
+  describe('getStageHistory (ACC-76)', () => {
+    // Committee's own seeded template: Formation, Terms Review, Active,
+    // Suspended, Dissolution Pending, Dissolved. Only the first three matter
+    // to these tests.
+    const TEMPLATE_STAGES = [
+      { id: 'stage-formation', nameEn: 'Formation', nameAr: 'التكوين', order: 1 },
+      { id: 'stage-terms', nameEn: 'Terms Review', nameAr: 'مراجعة النظام', order: 2 },
+      { id: 'stage-active', nameEn: 'Active', nameAr: 'نشط', order: 3 },
+    ];
+
+    const visit = (
+      id: string,
+      stageId: string,
+      enteredAt: string,
+      exitedAt: string | null,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      ...BASE_INSTANCE_STAGE,
+      id,
+      stageId,
+      enteredAt: new Date(enteredAt),
+      exitedAt: exitedAt ? new Date(exitedAt) : null,
+      actorId: null,
+      comment: null,
+      isUnassigned: false,
+      delegationReason: null,
+      delegationContextId: null,
+      stage: TEMPLATE_STAGES.find((s) => s.id === stageId)!,
+      ...extra,
+    });
+
+    beforeEach(() => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue({
+        id: 'instance-1',
+        workflowTemplateId: 'template-1',
+      });
+      mockPrisma.workflowStage.findMany.mockResolvedValue(TEMPLATE_STAGES);
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+    });
+
+    // THE test for this feature's shape. A committee that took the
+    // "Revise Terms" transition back to Formation has been in two stages but
+    // made FOUR visits. Any representation that collapses this to "step 2 of
+    // 6" states something false about the record — which is why the history
+    // is a chronology rather than a progression over WorkflowStage.order.
+    it('preserves a stage entered more than once as separate visits, in order', async () => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
+        visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', '2026-01-03T09:00:00Z'),
+        visit('is-3', 'stage-formation', '2026-01-03T09:00:00Z', '2026-01-04T09:00:00Z'),
+        visit('is-4', 'stage-terms', '2026-01-04T09:00:00Z', null),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.visits).toHaveLength(4);
+      expect(result.visits.map((v) => v.stageId)).toEqual([
+        'stage-formation',
+        'stage-terms',
+        'stage-formation',
+        'stage-terms',
+      ]);
+      // Each visit is keyed by its own instance-stage row, never the stage id
+      // — two visits to one stage would otherwise collide as list keys.
+      expect(new Set(result.visits.map((v) => v.id)).size).toBe(4);
+      expect(mockPrisma.workflowInstanceStage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { enteredAt: 'asc' } }),
+      );
+    });
+
+    // The current stage is the OPEN visit, not a currentStageId comparison —
+    // with a repeat, currentStageId cannot say which visit is live.
+    it('marks exactly one visit as open when the instance is running', async () => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
+        visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', null),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.visits.filter((v) => v.exitedAt === null)).toHaveLength(1);
+      expect(result.visits.find((v) => v.exitedAt === null)!.id).toBe('is-2');
+    });
+
+    it('returns template stages never entered as unvisited', async () => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', null),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.unvisitedStages.map((s) => s.id)).toEqual(['stage-terms', 'stage-active']);
+    });
+
+    // A revisited stage is visited, not pending — it must not appear in both.
+    it('does not list a revisited stage as unvisited', async () => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
+        visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', '2026-01-03T09:00:00Z'),
+        visit('is-3', 'stage-formation', '2026-01-03T09:00:00Z', null),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.unvisitedStages.map((s) => s.id)).toEqual(['stage-active']);
+    });
+
+    it('resolves actor names and leaves an unresolvable actor null', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'user-sarah', name: 'Sarah' }]);
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z', {
+          actorId: 'user-sarah',
+        }),
+        visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', null, { actorId: 'user-gone' }),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.visits[0]!.actorName).toBe('Sarah');
+      expect(result.visits[1]!.actorName).toBeNull();
+    });
+
+    // ACC-40 §2.6.3's stamp reaching a surface for the first time — this is
+    // what lets a row read "Sarah — Acting Head of Cardiology" instead of
+    // implying Sarah holds the position outright.
+    it('resolves the delegation qualifier on a visit', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'user-sarah', name: 'Sarah' }]);
+      mockPrisma.orgUnit.findMany.mockResolvedValue([
+        { id: 'unit-cardiology', nameEn: 'Cardiology', nameAr: 'القلب' },
+      ]);
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([
+        visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', null, {
+          actorId: 'user-sarah',
+          delegationReason: 'ACTING_HEAD',
+          delegationContextId: 'unit-cardiology',
+        }),
+      ]);
+
+      const result = await service.getStageHistory('instance-1', ORG_A);
+
+      expect(result.visits[0]!.delegation).toEqual({
+        reason: 'ACTING_HEAD',
+        contextId: 'unit-cardiology',
+        contextLabelEn: 'Cardiology',
+        contextLabelAr: 'القلب',
+      });
+    });
+
+    // WorkflowInstanceStage carries no organizationId of its own — tenancy is
+    // transitive through workflowInstance. Asserted explicitly because the
+    // scoping is easy to drop silently when the parent check above already
+    // appears to cover it.
+    it('scopes the visit query relationally, not just via the parent check', async () => {
+      mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
+
+      await service.getStageHistory('instance-1', ORG_A);
+
+      expect(mockPrisma.workflowInstanceStage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { workflowInstanceId: 'instance-1', workflowInstance: { organizationId: ORG_A } },
+        }),
+      );
+    });
+
+    itEnforcesTenantIsolation('getStageHistory', async () => {
+      mockPrisma.workflowInstance.findFirst.mockImplementation(({ where }) =>
+        Promise.resolve(
+          where.organizationId === ORG_A
+            ? { id: 'instance-1', workflowTemplateId: 'template-1' }
+            : null,
+        ),
+      );
+
+      await expect(service.getStageHistory('instance-1', ORG_B)).rejects.toThrow(NotFoundException);
+      // Never reached the history at all — not merely filtered afterwards.
+      expect(mockPrisma.workflowInstanceStage.findMany).not.toHaveBeenCalled();
     });
   });
 
