@@ -10,6 +10,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { ITask } from './interfaces/task.interface';
+import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
 
 @Controller('tasks')
@@ -78,7 +79,10 @@ export class TaskController {
       | 'QUALITY_IMPROVEMENT_PLAN'
       | 'COMMITTEE',
     @Query('sourceId') sourceId: string,
-  ): Promise<ITask[]> {
+    // ACC-76 — the ONLY list endpoint returning assignees. Stays gated on
+    // tasks:view (unlike my-tasks above, which is self-scoped): this can
+    // return any task in the tenant, and now names the people on it.
+  ): Promise<ITaskWithAssignees[]> {
     return this.taskService.getForSource(sourceType, sourceId, tenantId);
   }
 
