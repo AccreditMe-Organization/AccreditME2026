@@ -267,7 +267,14 @@
     "noStages": "لا توجد مراحل معرّفة لهذا القالب.",
     "noTransitions": "لا توجد انتقالات معرّفة لهذه المرحلة.",
     "noActions": "لا توجد إجراءات معرّفة لهذا الانتقال.",
-    "errorLoad": "فشل تحميل بيانات سير العمل."
+    "errorLoad": "فشل تحميل بيانات سير العمل.",
+    "stageIndicator": {
+      "current": "الحالية",
+      "notYetReached": "لم يتم الوصول إليها بعد",
+      "unassigned": "لا يوجد مُسند مؤهل",
+      "actingHeadOf": "رئيس بالإنابة لـ {{context}}",
+      "coveringFor": "ينوب عن {{context}}"
+    }
   },
   "notification": {
     "title": "الإشعارات",
@@ -318,7 +325,17 @@
       "joined": "انضم",
       "left": "غادر",
       "role_changed": "تغيير الدور"
-    }
+    },
+    "lifecycle": "دورة الحياة",
+    "tasks": "المهام",
+    "subCommittees": "اللجان الفرعية",
+    "noSubCommittees": "لا توجد لجان فرعية تتبع هذه اللجنة.",
+    "meetings": "الاجتماعات",
+    "meetingsDescription": "يتم تسجيل الحضور والنصاب والقرارات وبنود العمل هنا.",
+    "noMeetings": "لم يتم تسجيل أي اجتماعات بعد.",
+    "documents": "المستندات",
+    "documentsDescription": "يتم ربط النظام الداخلي والتقارير المرفوعة إلى الجهة الأم هنا.",
+    "noDocuments": "لم يتم ربط أي مستندات بعد."
   },
   "orgPosition": {
     "title": "المسميات الوظيفية",
@@ -388,7 +405,11 @@
       "attachment": "مرفق",
       "link": "رابط",
       "internal_reference": "مرجع داخلي"
-    }
+    },
+    "assignees": "مُسند إلى",
+    "unassigned": "غير مُسند",
+    "actingHeadOf": "رئيس بالإنابة لـ {{context}}",
+    "coveringFor": "ينوب عن {{context}}"
   },
   "auth": {
     "login": "تسجيل الدخول",

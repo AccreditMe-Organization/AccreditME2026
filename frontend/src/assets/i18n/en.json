@@ -267,7 +267,14 @@
     "noStages": "No stages defined for this template.",
     "noTransitions": "No transitions defined for this stage.",
     "noActions": "No actions configured for this transition.",
-    "errorLoad": "Failed to load workflow data."
+    "errorLoad": "Failed to load workflow data.",
+    "stageIndicator": {
+      "current": "Current",
+      "notYetReached": "Not yet reached",
+      "unassigned": "No eligible assignee",
+      "actingHeadOf": "Acting Head of {{context}}",
+      "coveringFor": "covering for {{context}}"
+    }
   },
   "notification": {
     "title": "Notifications",
@@ -318,7 +325,17 @@
       "joined": "Joined",
       "left": "Left",
       "role_changed": "Role Changed"
-    }
+    },
+    "lifecycle": "Lifecycle",
+    "tasks": "Tasks",
+    "subCommittees": "Sub-committees",
+    "noSubCommittees": "No sub-committees report to this committee.",
+    "meetings": "Meetings",
+    "meetingsDescription": "Attendance, quorum, decisions and action items are recorded here.",
+    "noMeetings": "No meetings recorded yet.",
+    "documents": "Documents",
+    "documentsDescription": "Terms of Reference and reports submitted to the parent body are linked here.",
+    "noDocuments": "No documents linked yet."
   },
   "orgPosition": {
     "title": "Org Positions",
@@ -388,7 +405,11 @@
       "attachment": "Attachment",
       "link": "Link",
       "internal_reference": "Internal Reference"
-    }
+    },
+    "assignees": "Assigned to",
+    "unassigned": "Unassigned",
+    "actingHeadOf": "Acting Head of {{context}}",
+    "coveringFor": "covering for {{context}}"
   },
   "auth": {
     "login": "Log In",
