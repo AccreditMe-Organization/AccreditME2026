@@ -269,11 +269,13 @@
     "noActions": "No actions configured for this transition.",
     "errorLoad": "Failed to load workflow data.",
     "stageIndicator": {
-      "current": "Current",
       "unassigned": "No eligible assignee",
       "actingHeadOf": "Acting Head of {{context}}",
       "coveringFor": "covering for {{context}}",
-      "history": "History"
+      "lifecycle": "Lifecycle",
+      "inStageDays": "in stage {{days}} days",
+      "revisited": "revisited ×{{count}}",
+      "since": "since {{date}}"
     }
   },
   "notification": {
@@ -335,7 +337,19 @@
     "noMeetings": "No meetings recorded yet.",
     "documents": "Documents",
     "documentsDescription": "Terms of Reference and reports submitted to the parent body are linked here.",
-    "noDocuments": "No documents linked yet."
+    "noDocuments": "No documents linked yet.",
+    "stageHistory": "Stage history",
+    "quorumOf": "{{quorum}} of {{total}} members",
+    "memberCount": "{{count}} members",
+    "approvedBy": "by {{name}}",
+    "frequency": {
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "quarterly": "Quarterly",
+      "biannual": "Twice yearly",
+      "annual": "Annually",
+      "as_needed": "As needed"
+    }
   },
   "orgPosition": {
     "title": "Org Positions",
@@ -409,7 +423,8 @@
     "assignees": "Assigned to",
     "unassigned": "Unassigned",
     "actingHeadOf": "Acting Head of {{context}}",
-    "coveringFor": "covering for {{context}}"
+    "coveringFor": "covering for {{context}}",
+    "overdueCount": "{{count}} overdue"
   },
   "auth": {
     "login": "Log In",

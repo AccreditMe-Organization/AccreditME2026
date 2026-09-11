@@ -269,11 +269,13 @@
     "noActions": "لا توجد إجراءات معرّفة لهذا الانتقال.",
     "errorLoad": "فشل تحميل بيانات سير العمل.",
     "stageIndicator": {
-      "current": "الحالية",
       "unassigned": "لا يوجد مُسند مؤهل",
       "actingHeadOf": "رئيس بالإنابة لـ {{context}}",
       "coveringFor": "ينوب عن {{context}}",
-      "history": "السجل"
+      "lifecycle": "دورة الحياة",
+      "inStageDays": "في هذه المرحلة {{days}} يوماً",
+      "revisited": "أُعيدت ×{{count}}",
+      "since": "منذ {{date}}"
     }
   },
   "notification": {
@@ -335,7 +337,19 @@
     "noMeetings": "لم يتم تسجيل أي اجتماعات بعد.",
     "documents": "المستندات",
     "documentsDescription": "يتم ربط النظام الداخلي والتقارير المرفوعة إلى الجهة الأم هنا.",
-    "noDocuments": "لم يتم ربط أي مستندات بعد."
+    "noDocuments": "لم يتم ربط أي مستندات بعد.",
+    "stageHistory": "سجل المراحل",
+    "quorumOf": "{{quorum}} من {{total}} عضواً",
+    "memberCount": "{{count}} أعضاء",
+    "approvedBy": "بواسطة {{name}}",
+    "frequency": {
+      "weekly": "أسبوعي",
+      "monthly": "شهري",
+      "quarterly": "ربع سنوي",
+      "biannual": "نصف سنوي",
+      "annual": "سنوي",
+      "as_needed": "عند الحاجة"
+    }
   },
   "orgPosition": {
     "title": "المسميات الوظيفية",
@@ -409,7 +423,8 @@
     "assignees": "مُسند إلى",
     "unassigned": "غير مُسند",
     "actingHeadOf": "رئيس بالإنابة لـ {{context}}",
-    "coveringFor": "ينوب عن {{context}}"
+    "coveringFor": "ينوب عن {{context}}",
+    "overdueCount": "{{count}} متأخرة"
   },
   "auth": {
     "login": "تسجيل الدخول",
