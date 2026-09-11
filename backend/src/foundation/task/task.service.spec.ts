@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
@@ -65,6 +66,12 @@ const mockPrisma = {
   user: {
     findMany: jest.fn(),
   },
+  // ACC-76 — DelegationLabelService resolves an ACTING_HEAD stamp's
+  // contextId against OrgUnit (and an OUT_OF_OFFICE_COVERAGE one against
+  // user, above).
+  orgUnit: {
+    findMany: jest.fn(),
+  },
   role: {
     findFirst: jest.fn(),
   },
@@ -105,12 +112,17 @@ describe('TaskService', () => {
     mockWorkingCalendar.calculateDeadline.mockResolvedValue(DateTime.fromISO('2026-02-01T12:00:00Z'));
     mockTenantService.getTaskSla.mockResolvedValue(DEFAULT_SLA);
     mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }]);
+    mockPrisma.orgUnit.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        // The REAL service, not a mock — it takes only PrismaService, and
+        // mocking it would hide the tenant scoping its own isolation test
+        // exists to prove.
+        DelegationLabelService,
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TenantService, useValue: mockTenantService },
