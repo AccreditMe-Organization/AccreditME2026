@@ -4,6 +4,7 @@ import { CommitteesService } from './committees.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { WorkflowService } from '../workflow/workflow.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -134,6 +135,138 @@ describe('CommitteesService', () => {
 
       expect(resultA).toHaveLength(1);
       expect(resultB).toHaveLength(0);
+    });
+
+    // ── ACC-76: member count and live stage ──────────────────────────────
+
+    it('carries the active member count per committee', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([
+        makeCommittee({ id: 'committee-1' }),
+        makeCommittee({ id: 'committee-2' }),
+      ]);
+      mockPrisma.committeeMember.groupBy.mockResolvedValue([
+        { committeeId: 'committee-1', _count: { committeeId: 9 } },
+      ]);
+
+      const result = await service.listCommittees(ORG_A);
+
+      expect(result[0]!.memberCount).toBe(9);
+      // A committee with no members is 0, not undefined — the count is a
+      // number the UI renders directly.
+      expect(result[1]!.memberCount).toBe(0);
+    });
+
+    // A departed member is not part of the committee. CommitteeMember rows are
+    // reactivated in place rather than recreated (ACC-32), so without this
+    // filter a committee that has ever lost a member would overcount forever.
+    it('counts active members only', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([makeCommittee({ id: 'committee-1' })]);
+
+      await service.listCommittees(ORG_A);
+
+      expect(mockPrisma.committeeMember.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ isActive: true, organizationId: ORG_A }),
+        }),
+      );
+    });
+
+    it('resolves each committee live workflow stage', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([makeCommittee({ id: 'committee-1' })]);
+      mockPrisma.workflowInstance.findMany.mockResolvedValue([
+        { objectId: 'committee-1', currentStageId: 'stage-active' },
+      ]);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { id: 'stage-active', nameEn: 'Active', nameAr: 'نشطة' },
+      ]);
+
+      const result = await service.listCommittees(ORG_A);
+
+      expect(result[0]!.currentStageNameEn).toBe('Active');
+      expect(result[0]!.currentStageNameAr).toBe('نشطة');
+    });
+
+    // A committee can accumulate instances over time, same as any workflow
+    // object. The newest is the live one.
+    it('uses the newest workflow instance when a committee has several', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([makeCommittee({ id: 'committee-1' })]);
+      mockPrisma.workflowInstance.findMany.mockResolvedValue([
+        { objectId: 'committee-1', currentStageId: 'stage-active' },
+        { objectId: 'committee-1', currentStageId: 'stage-formation' },
+      ]);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { id: 'stage-active', nameEn: 'Active', nameAr: 'نشطة' },
+        { id: 'stage-formation', nameEn: 'Formation', nameAr: 'التأسيس' },
+      ]);
+
+      const result = await service.listCommittees(ORG_A);
+
+      expect(result[0]!.currentStageNameEn).toBe('Active');
+      expect(mockPrisma.workflowInstance.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
+      );
+    });
+
+    it('leaves the stage null when a committee has no workflow instance', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([makeCommittee({ id: 'committee-1' })]);
+
+      const result = await service.listCommittees(ORG_A);
+
+      expect(result[0]!.currentStageNameEn).toBeNull();
+      expect(result[0]!.currentStageNameAr).toBeNull();
+    });
+
+    // The batching guarantee, asserted rather than assumed: a regression to
+    // per-row lookups would fail no other test here, it would just be slow.
+    it('issues one grouped count and one instance query regardless of list length', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([
+        makeCommittee({ id: 'committee-1' }),
+        makeCommittee({ id: 'committee-2' }),
+        makeCommittee({ id: 'committee-3' }),
+      ]);
+
+      await service.listCommittees(ORG_A);
+
+      expect(mockPrisma.committeeMember.groupBy).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.workflowInstance.findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('makes no follow-up queries for an empty list', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([]);
+
+      const result = await service.listCommittees(ORG_A);
+
+      expect(result).toEqual([]);
+      expect(mockPrisma.committeeMember.groupBy).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowInstance.findMany).not.toHaveBeenCalled();
+    });
+
+    // Both new queries are tenant-scoped in their own right, not merely via
+    // the committee id set — so neither depends on how that set was built.
+    itEnforcesTenantIsolation('listCommittees member count and stage lookups', async () => {
+      mockPrisma.committee.findMany.mockResolvedValue([makeCommittee({ id: 'committee-1' })]);
+      mockPrisma.committeeMember.groupBy.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(
+          where.organizationId === ORG_A
+            ? [{ committeeId: 'committee-1', _count: { committeeId: 9 } }]
+            : [],
+        ),
+      );
+      mockPrisma.workflowInstance.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(
+          where.organizationId === ORG_A
+            ? [{ objectId: 'committee-1', currentStageId: 'stage-active' }]
+            : [],
+        ),
+      );
+      mockPrisma.workflowStage.findMany.mockResolvedValue([
+        { id: 'stage-active', nameEn: 'Active', nameAr: 'نشطة' },
+      ]);
+
+      const result = await service.listCommittees(ORG_B);
+
+      expect(result[0]!.memberCount).toBe(0);
+      expect(result[0]!.currentStageNameEn).toBeNull();
     });
   });
 
