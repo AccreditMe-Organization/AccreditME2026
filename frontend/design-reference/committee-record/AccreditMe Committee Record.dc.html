@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: oklch(0.972 0.004 250); font-family: "Helvetica Neue", Helvetica, "IBM Plex Sans Arabic", sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: oklch(0.52 0.11 250); }
+  a:hover { color: oklch(0.42 0.11 250); }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: oklch(0.88 0.006 250); border: 3px solid #fff; border-radius: 6px; }
+</style>
+</helmet>
+
+<div dir="{{ dir }}" style="min-height: 100vh; color: oklch(0.25 0.01 250); font-size: 14px; line-height: 1.45;">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 24px; background: #fff; border-block-end: 1px solid oklch(0.9 0.006 250);">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: oklch(0.52 0.012 250); min-width: 0;">
+      <span>Quality Management</span>
+      <span style="color: oklch(0.8 0.006 250);">/</span>
+      <a href="#" style="text-decoration: none;">Committees</a>
+      <span style="color: oklch(0.8 0.006 250);">/</span>
+      <span style="color: oklch(0.25 0.01 250); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">QMC-014</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; flex: none;">
+      <span dir="ltr" style="font-size: 12px; color: oklch(0.52 0.012 250); unicode-bidi: isolate;">Last updated 2 Sep 2026 · Nora Al-Otaibi</span>
+      <div style="display: flex; border: 1px solid oklch(0.88 0.006 250); border-radius: 6px; overflow: hidden;">
+        <button onClick="{{ setLtr }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ ltrBtnStyle }}">EN</button>
+        <button onClick="{{ setRtl }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ rtlBtnStyle }}">ع</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 24px 24px; max-width: 1800px; margin-inline: auto;">
+
+    <section style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 18px 14px;">
+        <div style="min-width: 280px; flex: 1 1 320px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-block-end: 6px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.52 0.11 250); background: oklch(0.96 0.02 250); border: 1px solid oklch(0.9 0.03 250); border-radius: 4px; padding: 2px 7px;">Committee</span>
+            <span style="font-size: 12px; color: oklch(0.52 0.012 250); font-variant-numeric: tabular-nums;">QMC-014</span>
+          </div>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2;">Infection Prevention &amp; Control Committee</h1>
+          <div style="font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 16px; color: oklch(0.45 0.012 250); margin-block-start: 3px; text-align: start; unicode-bidi: isolate;">لجنة مكافحة العدوى والوقاية منها</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 999px; background: oklch(0.96 0.03 165); border: 1px solid oklch(0.87 0.05 165);">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: oklch(0.52 0.11 165);"></span>
+            <span style="font-size: 13px; font-weight: 600; color: oklch(0.38 0.08 165);">Active</span>
+          </div>
+          <button style-hover="background: oklch(0.45 0.11 250);" style="background: oklch(0.52 0.11 250); color: #fff; border: 1px solid oklch(0.47 0.11 250); border-radius: 6px; padding: 8px 16px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;">Approve Committee</button>
+          <button style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; color: oklch(0.3 0.01 250); border: 1px solid oklch(0.86 0.006 250); border-radius: 6px; padding: 8px 14px; font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer;">Revise Terms</button>
+          <button style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; color: oklch(0.4 0.01 250); border: 1px solid oklch(0.86 0.006 250); border-radius: 6px; width: 34px; height: 34px; font-size: 16px; font-family: inherit; cursor: pointer;">⋯</button>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; background: #fff;">
+        <div style="padding: 10px 18px; flex: 2 1 320px; min-width: 0; border-block-start: 1px solid oklch(0.92 0.006 250); border-inline-end: 1px solid oklch(0.92 0.006 250);">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.58 0.012 250); margin-block-end: 3px;">Purpose</div>
+          <div dir="ltr" style="font-size: 13px; color: oklch(0.3 0.01 250); text-wrap: pretty; unicode-bidi: isolate; text-align: start;">Oversee surveillance, prevention and control of healthcare-associated infections across all facilities; maintain compliance with JCI IPSG and CBAHI IC standards.</div>
+        </div>
+        <div style="padding: 10px 18px; flex: 1 1 170px; min-width: 0; border-block-start: 1px solid oklch(0.92 0.006 250); border-inline-end: 1px solid oklch(0.92 0.006 250);">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.58 0.012 250); margin-block-end: 3px;">Type</div>
+          <div style="font-size: 13px;">Standing · Clinical</div>
+        </div>
+        <div style="padding: 10px 18px; flex: 1 1 170px; min-width: 0; border-block-start: 1px solid oklch(0.92 0.006 250); border-inline-end: 1px solid oklch(0.92 0.006 250);">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.58 0.012 250); margin-block-end: 3px;">Parent committee</div>
+          <div style="font-size: 13px;"><a href="#" style="text-decoration: none;">Quality &amp; Patient Safety Council</a></div>
+        </div>
+        <div style="padding: 10px 18px; flex: 1 1 170px; min-width: 0; border-block-start: 1px solid oklch(0.92 0.006 250); border-inline-end: 1px solid oklch(0.92 0.006 250);">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.58 0.012 250); margin-block-end: 3px;">Reporting line</div>
+          <div style="font-size: 13px;">Chief Medical Officer</div>
+        </div>
+        <div style="padding: 10px 18px; flex: 1 1 170px; min-width: 0; border-block-start: 1px solid oklch(0.92 0.006 250); border-inline-end: 1px solid oklch(0.92 0.006 250);">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.58 0.012 250); margin-block-end: 3px;">Quorum</div>
+          <div dir="ltr" style="font-size: 13px; font-variant-numeric: tabular-nums; unicode-bidi: isolate; text-align: start;">5 of 9 members</div>
+        </div>
+        <div style="padding: 10px 18px; flex: 1 1 170px; min-width: 0; border-block-start: 1px solid oklch(0.92 0.006 250); border-inline-end: 1px solid oklch(0.92 0.006 250);">
+          <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.58 0.012 250); margin-block-end: 3px;">Meeting frequency</div>
+          <div style="font-size: 13px;">Monthly · 2nd Tuesday</div>
+        </div>
+      </div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; align-items: stretch;">
+      <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; padding: 14px 18px 16px; grid-column: span 2; min-width: 0;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-block-end: 16px;">
+          <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Lifecycle</span>
+          <span dir="ltr" style="font-size: 12px; color: oklch(0.55 0.012 250); unicode-bidi: isolate;">Stage 3 of 4 · in stage 214 days</span>
+        </div>
+        <div style="display: flex; align-items: flex-start; gap: 0;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: none; width: 104px;">
+            <span style="width: 26px; height: 26px; border-radius: 50%; background: oklch(0.52 0.11 165); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;">✓</span>
+            <span style="font-size: 12.5px; font-weight: 500; color: oklch(0.4 0.012 250); text-align: center;">Formation</span>
+            <span dir="ltr" style="font-size: 11px; color: oklch(0.6 0.012 250); font-variant-numeric: tabular-nums; unicode-bidi: isolate;">14 Jan 2025</span>
+          </div>
+          <div style="flex: 1 1 auto; border-block-start: 2px solid oklch(0.52 0.11 165); margin-block-start: 13px; min-width: 12px;"></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: none; width: 104px;">
+            <span style="width: 26px; height: 26px; border-radius: 50%; background: oklch(0.52 0.11 165); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;">✓</span>
+            <span style="font-size: 12.5px; font-weight: 500; color: oklch(0.4 0.012 250); text-align: center;">Terms Review</span>
+            <span style="font-size: 11px; color: oklch(0.6 0.012 250); font-variant-numeric: tabular-nums;">revisited ×2</span>
+          </div>
+          <div style="flex: 1 1 auto; border-block-start: 2px solid oklch(0.52 0.11 165); margin-block-start: 13px; min-width: 12px;"></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: none; width: 104px;">
+            <span style="width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid oklch(0.52 0.11 250); box-shadow: 0 0 0 4px oklch(0.95 0.03 250); color: oklch(0.45 0.11 250); display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700;">3</span>
+            <span style="font-size: 12.5px; font-weight: 700; color: oklch(0.42 0.11 250); text-align: center;">Active</span>
+            <span dir="ltr" style="font-size: 11px; color: oklch(0.5 0.11 250); font-variant-numeric: tabular-nums; unicode-bidi: isolate;">since 9 Feb 2026</span>
+          </div>
+          <div style="flex: 1 1 auto; border-block-start: 2px dashed oklch(0.87 0.006 250); margin-block-start: 13px; min-width: 12px;"></div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 7px; flex: none; width: 104px;">
+            <span style="width: 26px; height: 26px; border-radius: 50%; background: oklch(0.97 0.004 250); border: 1px solid oklch(0.87 0.006 250); color: oklch(0.62 0.012 250); display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600;">4</span>
+            <span style="font-size: 12.5px; font-weight: 500; color: oklch(0.62 0.012 250); text-align: center;">Dissolved</span>
+            <span style="font-size: 11px; color: oklch(0.68 0.012 250);">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; min-width: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+          <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Stage history</span>
+          <span style="font-size: 12px; color: oklch(0.55 0.012 250);">6 transitions</span>
+        </div>
+        <div style="overflow-y: auto; max-height: 146px; padding: 4px 0;">
+          <sc-for list="{{ stageLog }}" as="e" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: 76px 1fr auto; gap: 10px; align-items: baseline; padding: 6px 16px;">
+              <span dir="ltr" style="font-size: 11.5px; color: oklch(0.58 0.012 250); font-variant-numeric: tabular-nums; unicode-bidi: isolate; text-align: start;">{{ e.date }}</span>
+              <span style="font-size: 12.5px; min-width: 0;"><span style="font-weight: 500;">{{ e.stage }}</span><span style="color: oklch(0.55 0.012 250);"> — {{ e.event }}</span></span>
+              <span style="font-size: 11.5px; color: oklch(0.58 0.012 250); white-space: nowrap;">{{ e.actor }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px;">
+
+      <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; min-width: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Members</span>
+            <span style="font-size: 11.5px; font-weight: 600; color: oklch(0.45 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">9</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button style-hover="color: oklch(0.42 0.11 250);" style="background: none; border: none; padding: 0; font-family: inherit; font-size: 12.5px; color: oklch(0.52 0.11 250); cursor: pointer;">Add member</button>
+            <a href="#" style="font-size: 12.5px; text-decoration: none;">View all</a>
+          </div>
+        </div>
+        <div style="overflow-y: auto; height: 214px;">
+          <sc-for list="{{ members }}" as="m" hint-placeholder-count="6">
+            <div style-hover="background: oklch(0.98 0.004 250);" style="display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 8px 16px; border-block-end: 1px solid oklch(0.96 0.004 250);">
+              <span style="width: 28px; height: 28px; border-radius: 50%; background: oklch(0.94 0.02 250); color: oklch(0.42 0.06 250); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;">{{ m.initials }}</span>
+              <span style="min-width: 0;">
+                <span style="display: block; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ m.name }}</span>
+                <span style="display: block; font-size: 11.5px; color: oklch(0.55 0.012 250);">{{ m.role }}</span>
+              </span>
+              <span dir="ltr" style="font-size: 11.5px; color: oklch(0.58 0.012 250); white-space: nowrap; font-variant-numeric: tabular-nums; unicode-bidi: isolate;">{{ m.joined }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <sc-if value="{{ canSeeTasks }}" hint-placeholder-val="{{ true }}">
+        <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; min-width: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Tasks</span>
+              <span style="font-size: 11.5px; font-weight: 600; color: oklch(0.45 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">7 open</span>
+              <span style="font-size: 11.5px; font-weight: 600; color: oklch(0.45 0.14 35); background: oklch(0.96 0.03 35); border-radius: 4px; padding: 1px 6px;">2 overdue</span>
+            </div>
+            <a href="#" style="font-size: 12.5px; text-decoration: none;">View all</a>
+          </div>
+          <div style="overflow-y: auto; height: 214px;">
+            <sc-for list="{{ tasks }}" as="t" hint-placeholder-count="6">
+              <div style-hover="background: oklch(0.98 0.004 250);" style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 16px; border-block-end: 1px solid oklch(0.96 0.004 250);">
+                <span style="min-width: 0;">
+                  <span style="display: block; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.title }}</span>
+                  <span style="display: block; font-size: 11.5px; color: oklch(0.55 0.012 250);">{{ t.assignee }}</span>
+                </span>
+                <span dir="ltr" style="font-size: 11.5px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; unicode-bidi: isolate; color: {{ t.dueColor }};">{{ t.due }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; min-width: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Sub-committees</span>
+            <span style="font-size: 11.5px; font-weight: 600; color: oklch(0.45 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">3</span>
+          </div>
+          <a href="#" style="font-size: 12.5px; text-decoration: none;">View all</a>
+        </div>
+        <div style="overflow-y: auto; height: 214px;">
+          <sc-for list="{{ subs }}" as="s" hint-placeholder-count="3">
+            <div style-hover="background: oklch(0.98 0.004 250);" style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 16px; border-block-end: 1px solid oklch(0.96 0.004 250);">
+              <span style="min-width: 0;">
+                <a href="#" style="display: block; font-size: 13px; font-weight: 500; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ s.name }}</a>
+                <span style="display: block; font-size: 11.5px; color: oklch(0.55 0.012 250);">{{ s.meta }}</span>
+              </span>
+              <span style="font-size: 11px; font-weight: 600; white-space: nowrap; border-radius: 4px; padding: 2px 7px; color: {{ s.chipInk }}; background: {{ s.chipBg }};">{{ s.stage }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; min-width: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Meetings</span>
+            <span style="font-size: 11.5px; font-weight: 600; color: oklch(0.5 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">0</span>
+          </div>
+          <a href="#" style="font-size: 12.5px; text-decoration: none; color: oklch(0.65 0.012 250); pointer-events: none;">View all</a>
+        </div>
+        <div style="height: 214px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px 24px; text-align: center;">
+          <span style="width: 34px; height: 34px; border-radius: 8px; border: 1px dashed oklch(0.84 0.006 250); background: oklch(0.98 0.004 250);"></span>
+          <span style="font-size: 13px; font-weight: 500; color: oklch(0.42 0.012 250); margin-block-start: 2px;">No meetings recorded</span>
+          <span style="font-size: 12px; color: oklch(0.58 0.012 250); text-wrap: pretty; max-width: 30ch;">Scheduled and held meetings for this committee will be listed here with date, attendance and quorum outcome.</span>
+        </div>
+      </div>
+
+      <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; min-width: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Documents</span>
+            <span style="font-size: 11.5px; font-weight: 600; color: oklch(0.5 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">0</span>
+          </div>
+          <a href="#" style="font-size: 12.5px; text-decoration: none; color: oklch(0.65 0.012 250); pointer-events: none;">View all</a>
+        </div>
+        <div style="height: 214px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px 24px; text-align: center;">
+          <span style="width: 34px; height: 34px; border-radius: 8px; border: 1px dashed oklch(0.84 0.006 250); background: oklch(0.98 0.004 250);"></span>
+          <span style="font-size: 13px; font-weight: 500; color: oklch(0.42 0.012 250); margin-block-start: 2px;">No documents linked</span>
+          <span style="font-size: 12px; color: oklch(0.58 0.012 250); text-wrap: pretty; max-width: 30ch;">Terms of reference, approved minutes and governing policies linked to this committee will appear here.</span>
+        </div>
+      </div>
+
+      <sc-if value="{{ canSeeAudit }}" hint-placeholder-val="{{ true }}">
+        <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; min-width: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 16px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: oklch(0.45 0.012 250);">Membership history</span>
+              <span style="font-size: 11.5px; font-weight: 600; color: oklch(0.45 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">14</span>
+            </div>
+            <a href="#" style="font-size: 12.5px; text-decoration: none;">Export log</a>
+          </div>
+          <div style="overflow-y: auto; height: 214px;">
+            <sc-for list="{{ audit }}" as="a" hint-placeholder-count="6">
+              <div style="display: grid; grid-template-columns: 8px 1fr auto; gap: 10px; align-items: baseline; padding: 8px 16px; border-block-end: 1px solid oklch(0.96 0.004 250);">
+                <span style="width: 7px; height: 7px; border-radius: 50%; margin-block-start: 5px; background: {{ a.dot }};"></span>
+                <span style="min-width: 0; font-size: 12.5px;">
+                  <span style="font-weight: 500;">{{ a.name }}</span>
+                  <span style="color: oklch(0.55 0.012 250);"> {{ a.action }}</span>
+                  <span style="display: block; font-size: 11.5px; color: oklch(0.6 0.012 250);">{{ a.by }}</span>
+                </span>
+                <span dir="ltr" style="font-size: 11.5px; color: oklch(0.58 0.012 250); white-space: nowrap; font-variant-numeric: tabular-nums; unicode-bidi: isolate;">{{ a.date }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </section>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;dir&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;ltr&quot;,&quot;rtl&quot;],&quot;default&quot;:&quot;ltr&quot;,&quot;tsType&quot;:&quot;'ltr' | 'rtl'&quot;,&quot;section&quot;:&quot;Localization&quot;},&quot;canSeeTasks&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Permissions&quot;},&quot;canSeeAudit&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Permissions&quot;}}">
+class Component extends DCLogic {
+  state = { dir: null };
+
+  get dir() { return this.state.dir || this.props.dir || "ltr"; }
+
+  renderVals() {
+    const on = "padding: 5px 11px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; background: oklch(0.95 0.02 250); color: oklch(0.42 0.11 250);";
+    const off = "padding: 5px 11px; font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer; border: none; background: #fff; color: oklch(0.5 0.012 250);";
+    const rtl = this.dir === "rtl";
+    const overdue = "oklch(0.5 0.15 35)";
+    const muted = "oklch(0.58 0.012 250)";
+    return {
+      dir: this.dir,
+      ltrBtnStyle: rtl ? off : on,
+      rtlBtnStyle: rtl ? on : off,
+      setLtr: () => this.setState({ dir: "ltr" }),
+      setRtl: () => this.setState({ dir: "rtl" }),
+      canSeeTasks: this.props.canSeeTasks ?? true,
+      canSeeAudit: this.props.canSeeAudit ?? true,
+      stageLog: [
+        { date: "09 Feb 2026", stage: "Active", event: "approved by council", actor: "A. Al-Harbi" },
+        { date: "02 Feb 2026", stage: "Terms Review", event: "resubmitted", actor: "N. Al-Otaibi" },
+        { date: "18 Jan 2026", stage: "Terms Review", event: "returned — scope unclear", actor: "A. Al-Harbi" },
+        { date: "11 Dec 2025", stage: "Terms Review", event: "submitted", actor: "N. Al-Otaibi" },
+        { date: "20 Jan 2025", stage: "Formation", event: "charter drafted", actor: "M. Saeed" },
+        { date: "14 Jan 2025", stage: "Formation", event: "record created", actor: "M. Saeed" }
+      ],
+      members: [
+        { initials: "FA", name: "Dr. Fahad Al-Anazi", role: "Chair · Infectious Diseases", joined: "14 Jan 2025" },
+        { initials: "NO", name: "Nora Al-Otaibi", role: "Secretary · Quality", joined: "14 Jan 2025" },
+        { initials: "HZ", name: "Dr. Huda Zahrani", role: "Member · Microbiology", joined: "14 Jan 2025" },
+        { initials: "MS", name: "Mohammed Saeed", role: "Member · Nursing", joined: "02 Mar 2025" },
+        { initials: "LK", name: "Layla Kassem", role: "Member · Pharmacy", joined: "02 Mar 2025" },
+        { initials: "OB", name: "Omar Bakri", role: "Member · Facilities", joined: "19 Jun 2025" },
+        { initials: "RA", name: "Dr. Reem Alami", role: "Member · ICU", joined: "19 Jun 2025" },
+        { initials: "TS", name: "Tariq Suleiman", role: "Member · Lab", joined: "04 Feb 2026" },
+        { initials: "JM", name: "Jawaher Mutairi", role: "Observer · Internal Audit", joined: "04 Feb 2026" }
+      ],
+      tasks: [
+        { title: "Update hand-hygiene audit tool", assignee: "Nora Al-Otaibi", due: "overdue 6d", dueColor: overdue },
+        { title: "Close CAPA-0912 (CLABSI cluster)", assignee: "Dr. Reem Alami", due: "overdue 2d", dueColor: overdue },
+        { title: "Q3 surveillance report to council", assignee: "Dr. Huda Zahrani", due: "18 Sep", dueColor: muted },
+        { title: "Review isolation policy IPC-04", assignee: "Layla Kassem", due: "24 Sep", dueColor: muted },
+        { title: "Antimicrobial stewardship training", assignee: "Tariq Suleiman", due: "01 Oct", dueColor: muted },
+        { title: "Negative-pressure room validation", assignee: "Omar Bakri", due: "09 Oct", dueColor: muted },
+        { title: "Annual terms of reference review", assignee: "Dr. Fahad Al-Anazi", due: "12 Jan", dueColor: muted }
+      ],
+      subs: [
+        { name: "Antimicrobial Stewardship Sub-committee", meta: "6 members · monthly", stage: "Active", chipInk: "oklch(0.38 0.08 165)", chipBg: "oklch(0.95 0.03 165)" },
+        { name: "Sterilization & CSSD Working Group", meta: "4 members · quarterly", stage: "Active", chipInk: "oklch(0.38 0.08 165)", chipBg: "oklch(0.95 0.03 165)" },
+        { name: "Outbreak Response Task Force", meta: "5 members · ad hoc", stage: "Terms Review", chipInk: "oklch(0.42 0.06 250)", chipBg: "oklch(0.95 0.02 250)" }
+      ],
+      audit: [
+        { name: "Jawaher Mutairi", action: "added as Observer · Internal Audit", by: "by N. Al-Otaibi", date: "04 Feb 2026", dot: "oklch(0.52 0.11 165)" },
+        { name: "Khalid Nasser", action: "removed — left organization", by: "by HR sync", date: "21 Jan 2026", dot: "oklch(0.55 0.14 35)" },
+        { name: "Dr. Reem Alami", action: "role changed to Member · ICU", by: "by A. Al-Harbi", date: "19 Jun 2025", dot: "oklch(0.52 0.11 250)" },
+        { name: "Omar Bakri", action: "added as Member · Facilities", by: "by N. Al-Otaibi", date: "19 Jun 2025", dot: "oklch(0.52 0.11 165)" },
+        { name: "Sara Idris", action: "removed — term expired", by: "by system", date: "01 May 2025", dot: "oklch(0.55 0.14 35)" },
+        { name: "Mohammed Saeed", action: "added as Member · Nursing", by: "by M. Saeed", date: "02 Mar 2025", dot: "oklch(0.52 0.11 165)" },
+        { name: "Layla Kassem", action: "added as Member · Pharmacy", by: "by M. Saeed", date: "02 Mar 2025", dot: "oklch(0.52 0.11 165)" }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
