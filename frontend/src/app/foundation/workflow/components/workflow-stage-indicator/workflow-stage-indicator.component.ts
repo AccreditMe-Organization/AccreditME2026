@@ -39,6 +39,7 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
   template: `
     @if (history(); as h) {
       <div class="flex flex-col gap-5">
+        @if (show() !== 'history') {
         <!-- THE SEQUENCE. Every stage the template defines, in order, always
              — including before the record has been anywhere. This is what
              tells a reader who has never seen a committee before what the
@@ -86,16 +87,10 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
               ></i>
             }
           }
-        </div>
-
-        @if (h.visits.length > 0) {
-          <div class="border-t border-[var(--am-border)] pt-4">
-            <p class="text-xs text-[var(--am-text-secondary)] mb-2">
-              {{ 'workflow.stageIndicator.history' | translate }}
-            </p>
           </div>
         }
 
+        @if (show() !== 'sequence') {
         <ol class="flex flex-col">
           @for (visit of h.visits; track visit.id) {
             <li class="flex gap-3">
@@ -152,7 +147,7 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
             </li>
           }
         </ol>
-
+        }
       </div>
     }
   `,
@@ -173,6 +168,17 @@ export class WorkflowStageIndicatorComponent {
   // fresh object it got back, so taking the object makes every transition
   // reload the history with no reload call anywhere.
   readonly instance = input.required<WorkflowInstanceDto>();
+
+  // Which of the two views to render. Default 'both' keeps the component
+  // usable standalone; committee-detail splits them because they belong in
+  // different places on that page — the sequence is always-visible page
+  // furniture in the header band, the history is reference material in the
+  // rail. Splitting is a LAYOUT choice, not a suggestion that either view is
+  // optional: both are rendered, just not adjacently.
+  //
+  // One fetch serves both regardless of this input — the request is keyed on
+  // the instance, not on what is displayed.
+  readonly show = input<'both' | 'sequence' | 'history'>('both');
 
   readonly history = signal<WorkflowStageHistoryDto | null>(null);
 

@@ -7,6 +7,7 @@ import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
+import { TabsModule } from 'primeng/tabs';
 import { CardComponent } from '../../../../shared/components/card/card.component';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
 import { TaskListComponent } from '../../../tasks/components/task-list/task-list.component';
@@ -38,6 +39,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     TableModule,
     TagModule,
     MessageModule,
+    TabsModule,
     CardComponent,
     RecordPanelComponent,
     RouterLink,
@@ -54,201 +56,277 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     }
 
     @if (committee(); as c) {
-      <div class="flex flex-col gap-6">
-        <div class="flex items-start justify-between">
-          <div>
-            <h2 class="text-xl font-semibold">{{ displayName(c) }}</h2>
-            <p class="text-sm text-[var(--am-text-secondary)]">{{ typeLabel(c.typeValueId) }}</p>
-            @if (currentInstance(); as instance) {
-              <app-workflow-transition-actions
-                class="block mt-2"
-                [instance]="instance"
-                (transitioned)="onWorkflowTransitioned($event)"
-              />
-            }
+      <!-- ACC-76 — BAND + TWO-COLUMN WORKSPACE.
+           The page was a single full-width stack of ten blocks, four of them
+           unbounded lists — roughly two and a half screens at 1440x900. A
+           record you can only read by scrolling defeats the point of a record
+           page, so the layout is now fixed-height on a normal screen, with
+           each column scrolling inside itself rather than the page scrolling.
+
+           BAND (always visible): identity, actions, and the stage SEQUENCE.
+           The sequence earns permanent space because it answers the question
+           every reader has first — where is this committee in its lifecycle.
+
+           MAIN (2/3): tabs. Every section name and count is visible at once in
+           the strip, which states the full set of relationships more directly
+           than scrolling past four panels did — "Documents 0" is legible
+           immediately rather than three screens down.
+
+           RAIL (1/3): the facts, the purpose, and the two histories.
+
+           Below 1280px (xl) the rail drops beneath the main pane and the page
+           scrolls normally; below 768px the tab strip scrolls horizontally
+           (p-tabs does that natively) and the band wraps. -->
+      <div class="flex flex-col gap-4 xl:h-full xl:min-h-0">
+        <div class="flex flex-col gap-3 shrink-0">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="min-w-0">
+              <h2 class="text-xl font-semibold">{{ displayName(c) }}</h2>
+              <p class="text-sm text-[var(--am-text-secondary)]">{{ typeLabel(c.typeValueId) }}</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              @if (!c.isActive) {
+                <p-tag [value]="'common.inactive' | translate" severity="secondary" />
+              }
+              @if (currentInstance(); as instance) {
+                <app-workflow-transition-actions
+                  [instance]="instance"
+                  (transitioned)="onWorkflowTransitioned($event)"
+                />
+              }
+              <p-button [label]="'common.edit' | translate" icon="pi pi-pencil" [text]="true" (onClick)="onEdit()" />
+            </div>
           </div>
-          <div class="flex gap-2">
-            @if (!c.isActive) {
-              <p-tag [value]="'common.inactive' | translate" severity="secondary" />
-            }
-            <p-button [label]="'common.edit' | translate" icon="pi pi-pencil" [text]="true" (onClick)="onEdit()" />
-          </div>
-        </div>
 
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <app-card>
-            <p class="text-sm text-[var(--am-text-secondary)]">{{ 'committee.quorumCount' | translate }}</p>
-            <p class="text-lg font-semibold">{{ c.quorumCount }}</p>
-          </app-card>
-          <app-card>
-            <p class="text-sm text-[var(--am-text-secondary)]">{{ 'committee.meetingFrequency' | translate }}</p>
-            <p class="text-lg font-semibold">{{ c.meetingFrequency }}</p>
-          </app-card>
-          <app-card>
-            <p class="text-sm text-[var(--am-text-secondary)]">{{ 'committee.parentCommittee' | translate }}</p>
-            <p class="text-lg font-semibold">{{ parentCommitteeName(c) }}</p>
-          </app-card>
-          <app-card>
-            <p class="text-sm text-[var(--am-text-secondary)]">{{ 'committee.reportingTo' | translate }}</p>
-            <p class="text-lg font-semibold">{{ reportingToName(c) }}</p>
-          </app-card>
-        </div>
-
-        @if (c.purpose) {
-          <app-card>
-            <p class="text-sm text-[var(--am-text-secondary)]">{{ 'committee.purpose' | translate }}</p>
-            <p>{{ c.purpose }}</p>
-          </app-card>
-        }
-
-        <!-- ACC-76 — the object-detail pattern. Every panel fetches on its own
-             and fails on its own: a 403 on one (a user without tasks:view,
-             say) leaves the rest of the page intact.
-
-             The Meetings and Documents panels are REAL sections with empty
-             states, not "coming soon" scaffolding. An empty Documents panel
-             says something true — Committee.termsOfReferenceDocumentId is in
-             the schema today and unpopulated — whereas placeholder styling
-             would say the page is unfinished. Same information, different
-             message. -->
-        @if (currentInstance(); as instance) {
-          <app-record-panel [heading]="'committee.lifecycle' | translate">
-            <app-workflow-stage-indicator [instance]="instance" />
-          </app-record-panel>
-        }
-
-        <app-record-panel
-          [heading]="'committee.tasks' | translate"
-          [count]="taskList.taskCount()"
-          [error]="taskList.loadError()"
-        >
-          <!-- NO create button, deliberately. This panel exists to show what is
-               connected to a committee, not to create it — and manual task
-               creation does not currently work: the form offers no way to pick
-               an assignee, so every manually created task lands UNASSIGNED. A
-               button that cannot do its job is worse than no button.
-               Non-functional since ACC-11; recorded in CLAUDE.md as needing
-               its own decision about how assignees are chosen, which is not
-               this ticket's to make.
-
-               The list renders its own loading and empty states, so the panel
-               is given neither. -->
-          <app-task-list
-            #taskList
-            [embedded]="true"
-            sourceType="COMMITTEE"
-            [sourceId]="committeeId"
-            [sourceLabel]="displayName(c)"
-          />
-        </app-record-panel>
-
-        <app-record-panel
-          [heading]="'committee.subCommittees' | translate"
-          [count]="subCommittees().length"
-          [isEmpty]="subCommittees().length === 0"
-          [emptyMessage]="'committee.noSubCommittees' | translate"
-        >
-          <div class="flex flex-col gap-2">
-            @for (sub of subCommittees(); track sub.id) {
-              <a
-                class="flex items-center justify-between p-2 rounded-md border border-[var(--am-border)] text-sm hover:border-[var(--am-blue-primary)]"
-                [routerLink]="['/committees', sub.id]"
-              >
-                <span>{{ displayName(sub) }}</span>
-                <span class="text-[var(--am-text-secondary)]">{{ typeLabel(sub.typeValueId) }}</span>
-              </a>
-            }
-          </div>
-        </app-record-panel>
-
-        <!-- Four of the seven things an accreditation surveyor checks for a
-             committee live here (module-designs.md:880-887): attendance per
-             meeting, quorum confirmation, decisions with vote counts, and
-             action items tracked to completion. -->
-        <app-record-panel
-          [heading]="'committee.meetings' | translate"
-          [description]="'committee.meetingsDescription' | translate"
-          [isEmpty]="true"
-          [emptyMessage]="'committee.noMeetings' | translate"
-        />
-
-        <!-- Terms of Reference and reporting evidence — the remaining two
-             surveyor checks. Committee.termsOfReferenceDocumentId already
-             exists in the schema, annotated there as unpopulated until
-             Document Management ships. -->
-        <app-record-panel
-          [heading]="'committee.documents' | translate"
-          [description]="'committee.documentsDescription' | translate"
-          [isEmpty]="true"
-          [emptyMessage]="'committee.noDocuments' | translate"
-        />
-
-        <hr />
-
-        <div class="flex items-center justify-between">
-          <h3 class="text-lg font-medium">{{ 'committee.members' | translate }}</h3>
-          <p-button
-            [label]="'committee.addMember' | translate"
-            icon="pi pi-plus"
-            size="small"
-            (onClick)="onAddMember()"
-          />
-        </div>
-
-        <p-table [value]="members()" [loading]="membersLoading()" styleClass="w-full">
-          <ng-template pTemplate="header">
-            <tr>
-              <th>{{ 'committee.member' | translate }}</th>
-              <th>{{ 'committee.memberRole' | translate }}</th>
-              <th>{{ 'committee.joinedAt' | translate }}</th>
-              <th></th>
-            </tr>
-          </ng-template>
-          <ng-template pTemplate="body" let-member>
-            <tr>
-              <td>{{ userName(member.userId) }}</td>
-              <td>{{ memberRoleLabel(member.roleValueId) }}</td>
-              <td>{{ member.joinedAt | date: 'mediumDate' }}</td>
-              <td>
-                <div class="flex gap-1 justify-end">
-                  <p-button icon="pi pi-pencil" [text]="true" size="small" (onClick)="onChangeMemberRole(member)" />
-                  <p-button
-                    icon="pi pi-times"
-                    [text]="true"
-                    size="small"
-                    severity="danger"
-                    (onClick)="onRemoveMember(member)"
-                  />
-                </div>
-              </td>
-            </tr>
-          </ng-template>
-          <ng-template pTemplate="emptymessage">
-            <tr>
-              <td colspan="4" class="text-center py-6 text-[var(--am-text-secondary)]">
-                {{ 'committee.noMembers' | translate }}
-              </td>
-            </tr>
-          </ng-template>
-        </p-table>
-
-        <hr />
-
-        <h3 class="text-lg font-medium">{{ 'committee.membershipHistory' | translate }}</h3>
-        @if (membershipEvents().length === 0) {
-          <p class="text-sm text-[var(--am-text-secondary)]">{{ 'committee.noMembershipHistory' | translate }}</p>
-        }
-        <div class="flex flex-col gap-2">
-          @for (event of membershipEvents(); track event.id) {
-            <div class="flex items-center justify-between p-2 rounded-md border border-[var(--am-border)] text-sm">
-              <span>
-                {{ userName(event.userId) }} —
-                {{ ('committee.action.' + event.action.toLowerCase()) | translate }} —
-                {{ memberRoleLabel(event.roleValueId) }}
-              </span>
-              <span class="text-[var(--am-text-secondary)]">{{ event.effectiveDate | date: 'mediumDate' }}</span>
+          <!-- Scrolls horizontally rather than wrapping: at narrow widths a
+               wrapped sequence becomes a tall block that pushes content
+               off-screen, which is the problem this layout exists to fix. -->
+          @if (currentInstance(); as instance) {
+            <div class="overflow-x-auto">
+              <app-workflow-stage-indicator [instance]="instance" [show]="'sequence'" />
             </div>
           }
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 xl:flex-1 xl:min-h-0">
+          <div class="xl:col-span-2 xl:min-h-0 flex flex-col">
+            <app-card>
+              <p-tabs value="tasks" scrollable>
+                <p-tablist>
+                  <p-tab value="tasks">
+                    {{ 'committee.tasks' | translate }}
+                    <span class="text-xs text-[var(--am-text-secondary)] ms-1">{{ taskList.taskCount() }}</span>
+                  </p-tab>
+                  <p-tab value="members">
+                    {{ 'committee.members' | translate }}
+                    <span class="text-xs text-[var(--am-text-secondary)] ms-1">{{ members().length }}</span>
+                  </p-tab>
+                  <p-tab value="subCommittees">
+                    {{ 'committee.subCommittees' | translate }}
+                    <span class="text-xs text-[var(--am-text-secondary)] ms-1">{{ subCommittees().length }}</span>
+                  </p-tab>
+                  <p-tab value="meetings">
+                    {{ 'committee.meetings' | translate }}
+                    <span class="text-xs text-[var(--am-text-secondary)] ms-1">0</span>
+                  </p-tab>
+                  <p-tab value="documents">
+                    {{ 'committee.documents' | translate }}
+                    <span class="text-xs text-[var(--am-text-secondary)] ms-1">0</span>
+                  </p-tab>
+                </p-tablist>
+
+                <p-tabpanels>
+                  <p-tabpanel value="tasks">
+                    <div class="xl:max-h-[46vh] overflow-y-auto">
+                      @if (taskList.loadError(); as taskError) {
+                        <p-message severity="error" [text]="taskError | translate" />
+                      }
+                      <!-- No create button, deliberately — manual task creation
+                           cannot produce an ASSIGNED task (see CLAUDE.md's
+                           task-creation note). A button that cannot do its job
+                           is worse than no button. -->
+                      <app-task-list
+                        #taskList
+                        [embedded]="true"
+                        sourceType="COMMITTEE"
+                        [sourceId]="committeeId"
+                        [sourceLabel]="displayName(c)"
+                      />
+                    </div>
+                  </p-tabpanel>
+
+                  <p-tabpanel value="members">
+                    <div class="flex flex-col gap-3">
+                      <div class="flex justify-end">
+                        <p-button
+                          [label]="'committee.addMember' | translate"
+                          icon="pi pi-plus"
+                          size="small"
+                          (onClick)="onAddMember()"
+                        />
+                      </div>
+                      <div class="xl:max-h-[40vh] overflow-y-auto">
+                        <p-table [value]="members()" [loading]="membersLoading()" styleClass="w-full">
+                          <ng-template pTemplate="header">
+                            <tr>
+                              <th>{{ 'committee.member' | translate }}</th>
+                              <th>{{ 'committee.memberRole' | translate }}</th>
+                              <th>{{ 'committee.joinedAt' | translate }}</th>
+                              <th></th>
+                            </tr>
+                          </ng-template>
+                          <ng-template pTemplate="body" let-member>
+                            <tr>
+                              <td>{{ userName(member.userId) }}</td>
+                              <td>{{ memberRoleLabel(member.roleValueId) }}</td>
+                              <td>{{ member.joinedAt | date: 'mediumDate' }}</td>
+                              <td>
+                                <div class="flex gap-1 justify-end">
+                                  <p-button icon="pi pi-pencil" [text]="true" size="small" (onClick)="onChangeMemberRole(member)" />
+                                  <p-button
+                                    icon="pi pi-times"
+                                    [text]="true"
+                                    size="small"
+                                    severity="danger"
+                                    (onClick)="onRemoveMember(member)"
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          </ng-template>
+                          <ng-template pTemplate="emptymessage">
+                            <tr>
+                              <td colspan="4" class="text-center py-6 text-[var(--am-text-secondary)]">
+                                {{ 'committee.noMembers' | translate }}
+                              </td>
+                            </tr>
+                          </ng-template>
+                        </p-table>
+                      </div>
+                    </div>
+                  </p-tabpanel>
+
+                  <p-tabpanel value="subCommittees">
+                    <div class="xl:max-h-[46vh] overflow-y-auto">
+                      @if (subCommittees().length === 0) {
+                        <p class="py-6 text-center text-sm text-[var(--am-text-secondary)]">
+                          {{ 'committee.noSubCommittees' | translate }}
+                        </p>
+                      } @else {
+                        <div class="flex flex-col gap-2">
+                          @for (sub of subCommittees(); track sub.id) {
+                            <a
+                              class="flex items-center justify-between p-2 rounded-md border border-[var(--am-border)] text-sm hover:border-[var(--am-blue-primary)]"
+                              [routerLink]="['/committees', sub.id]"
+                            >
+                              <span>{{ displayName(sub) }}</span>
+                              <span class="text-[var(--am-text-secondary)]">{{ typeLabel(sub.typeValueId) }}</span>
+                            </a>
+                          }
+                        </div>
+                      }
+                    </div>
+                  </p-tabpanel>
+
+                  <!-- Four of the seven things an accreditation surveyor checks
+                       for a committee live here (module-designs.md:880-887):
+                       attendance, quorum confirmation, decisions with vote
+                       counts, and action items tracked to completion.
+
+                       A REAL section with an empty state, not "coming soon"
+                       scaffolding — an empty Meetings tab says the relationship
+                       exists and is unpopulated, which is true; placeholder
+                       styling would say the page is unfinished, which is a
+                       different and worse claim. -->
+                  <p-tabpanel value="meetings">
+                    <div class="flex flex-col gap-2 py-2">
+                      <p class="text-xs text-[var(--am-text-secondary)]">
+                        {{ 'committee.meetingsDescription' | translate }}
+                      </p>
+                      <p class="py-6 text-center text-sm text-[var(--am-text-secondary)]">
+                        {{ 'committee.noMeetings' | translate }}
+                      </p>
+                    </div>
+                  </p-tabpanel>
+
+                  <!-- Terms of Reference and reporting evidence — the remaining
+                       two surveyor checks. Committee.termsOfReferenceDocumentId
+                       is already in the schema, annotated there as unpopulated
+                       until Document Management ships. -->
+                  <p-tabpanel value="documents">
+                    <div class="flex flex-col gap-2 py-2">
+                      <p class="text-xs text-[var(--am-text-secondary)]">
+                        {{ 'committee.documentsDescription' | translate }}
+                      </p>
+                      <p class="py-6 text-center text-sm text-[var(--am-text-secondary)]">
+                        {{ 'committee.noDocuments' | translate }}
+                      </p>
+                    </div>
+                  </p-tabpanel>
+                </p-tabpanels>
+              </p-tabs>
+            </app-card>
+          </div>
+
+          <div class="flex flex-col gap-4 xl:min-h-0 xl:overflow-y-auto">
+            <!-- A definition list, not four cards: four short values do not
+                 need four bordered boxes, and the rail has less width. -->
+            <app-card>
+              <dl class="flex flex-col gap-3 text-sm">
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--am-text-secondary)]">{{ 'committee.quorumCount' | translate }}</dt>
+                  <dd class="font-medium">{{ c.quorumCount }}</dd>
+                </div>
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--am-text-secondary)]">{{ 'committee.meetingFrequency' | translate }}</dt>
+                  <dd class="font-medium">{{ c.meetingFrequency }}</dd>
+                </div>
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--am-text-secondary)]">{{ 'committee.parentCommittee' | translate }}</dt>
+                  <dd class="font-medium text-end">{{ parentCommitteeName(c) }}</dd>
+                </div>
+                <div class="flex justify-between gap-4">
+                  <dt class="text-[var(--am-text-secondary)]">{{ 'committee.reportingTo' | translate }}</dt>
+                  <dd class="font-medium text-end">{{ reportingToName(c) }}</dd>
+                </div>
+              </dl>
+            </app-card>
+
+            @if (c.purpose) {
+              <app-card>
+                <p class="text-sm text-[var(--am-text-secondary)]">{{ 'committee.purpose' | translate }}</p>
+                <p class="text-sm mt-1">{{ c.purpose }}</p>
+              </app-card>
+            }
+
+            @if (currentInstance(); as instance) {
+              <app-record-panel [heading]="'committee.lifecycle' | translate">
+                <div class="max-h-[32vh] overflow-y-auto">
+                  <app-workflow-stage-indicator [instance]="instance" [show]="'history'" />
+                </div>
+              </app-record-panel>
+            }
+
+            <app-record-panel
+              [heading]="'committee.membershipHistory' | translate"
+              [count]="membershipEvents().length"
+              [isEmpty]="membershipEvents().length === 0"
+              [emptyMessage]="'committee.noMembershipHistory' | translate"
+            >
+              <div class="flex flex-col gap-2 max-h-[32vh] overflow-y-auto">
+                @for (event of membershipEvents(); track event.id) {
+                  <div class="flex items-center justify-between gap-2 p-2 rounded-md border border-[var(--am-border)] text-sm">
+                    <span>
+                      {{ userName(event.userId) }} —
+                      {{ ('committee.action.' + event.action.toLowerCase()) | translate }} —
+                      {{ memberRoleLabel(event.roleValueId) }}
+                    </span>
+                    <span class="text-[var(--am-text-secondary)] whitespace-nowrap">{{ event.effectiveDate | date: 'mediumDate' }}</span>
+                  </div>
+                }
+              </div>
+            </app-record-panel>
+          </div>
         </div>
       </div>
     }
