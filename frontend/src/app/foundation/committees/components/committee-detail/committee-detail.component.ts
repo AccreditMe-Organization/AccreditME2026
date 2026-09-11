@@ -11,7 +11,6 @@ import { CardComponent } from '../../../../shared/components/card/card.component
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
 import { TaskListComponent } from '../../../tasks/components/task-list/task-list.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
-import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import {
   CommitteeService,
   CommitteeDto,
@@ -123,18 +122,17 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
           [count]="taskList.taskCount()"
           [error]="taskList.loadError()"
         >
-          @if (canCreateTasks()) {
-            <p-button
-              panelActions
-              [label]="'task.newTask' | translate"
-              icon="pi pi-plus"
-              size="small"
-              (onClick)="taskList.onAdd()"
-            />
-          }
-          <!-- Source is locked to this committee in the create dialog — see
-               task-form. The list renders its own loading and empty states, so
-               the panel is given neither. -->
+          <!-- NO create button, deliberately. This panel exists to show what is
+               connected to a committee, not to create it — and manual task
+               creation does not currently work: the form offers no way to pick
+               an assignee, so every manually created task lands UNASSIGNED. A
+               button that cannot do its job is worse than no button.
+               Non-functional since ACC-11; recorded in CLAUDE.md as needing
+               its own decision about how assignees are chosen, which is not
+               this ticket's to make.
+
+               The list renders its own loading and empty states, so the panel
+               is given neither. -->
           <app-task-list
             #taskList
             [embedded]="true"
@@ -298,7 +296,6 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly workflowService = inject(WorkflowService);
   private readonly languageService = inject(LanguageService);
   private readonly confirmationService = inject(ConfirmationService);
-  private readonly navigationAccess = inject(NavigationAccessService);
 
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
 
@@ -319,15 +316,6 @@ export class CommitteeDetailComponent implements OnInit {
   // for the parent-name lookup. No new request.
   readonly subCommittees = computed(() =>
     this.allCommittees().filter((c) => c.parentCommitteeId === this.committeeId),
-  );
-
-  // Panel-level gating, matching ACC-70's route guarding: GET /tasks is
-  // gated on tasks:view and POST /tasks on tasks:create, so a user without
-  // tasks:create sees the list but not the button. Client-side only — the
-  // backend re-checks regardless, same contract as
-  // WorkflowTransitionActionsComponent's own filtering.
-  readonly canCreateTasks = computed(() =>
-    this.navigationAccess.hasPermission('tasks:create'),
   );
 
   readonly formVisible = signal(false);

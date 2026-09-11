@@ -1980,17 +1980,43 @@ Prisma Studio.
   defect — its list silently shows "No tasks" regardless of actual
   data, since the route supplies no `sourceType`/`sourceId` and the
   component's own guard clause returns early without ever querying.
-  Task CREATION itself (the "New Task" button/form) works correctly
-  and is fully decoupled from this — creating a task always succeeds,
-  it just never appears in this specific broken list afterward.
   Do NOT add a nav link to `/tasks/all` as a quick fix — this would
   make the misleading empty-list defect easier to find, not fix it.
-  The real fix is a deliberate design pass: decide where task creation
-  and task lists genuinely belong from a business standpoint (most
-  likely embedded in Committee's detail page today, the only fully-
-  built business module, following `TaskListComponent`'s own original
-  intended pattern) once that's properly scoped — not a navigation
-  patch.
+  **The LIST half of this is now resolved (ACC-76)**: `TaskListComponent`
+  gained a real `embedded` mode and lives inside Committee's detail page,
+  which is the home its own original header comment always described.
+  **The CREATION half is not, and is worse than this note previously
+  claimed.** It said creation "works correctly and is fully decoupled" —
+  that is wrong, and was corrected during ACC-76's live testing:
+  - `task-form` has **no assignee picker at all**. It posts
+    `assigneeUserIds: []` unconditionally, so **every manually created
+    task is born `UNASSIGNED`** — a real record nobody is working on,
+    which then needs an admin to find it via the Unassigned Tasks view
+    (ACC-34) and reassign it. Creation succeeds; it just doesn't produce
+    an assigned task, which is what a user creating a task means to do.
+  - The form shows an info message claiming assignee selection "will be
+    available once User Management is set up". **That message is stale
+    and misleading.** It dates from ACC-11; User Management shipped in
+    ACC-12, and `UserService.listUsers()` is live and already consumed
+    elsewhere (`committee-detail` calls it). It sits directly above a
+    Save button that is disabled whenever the title is empty, so users
+    read it as the reason Save is dead — it isn't. (Save-disabled-with-
+    no-explanation is the separate app-wide gap recorded under the
+    per-field-error-message note below.)
+  - ACC-76 therefore **deliberately ships the embedded Tasks panel with
+    no create button**. A button that cannot produce an assigned task is
+    worse than no button.
+  What's needed is a real decision, not a picker bolted on: **how are
+  assignees chosen for a manually created task?** The workflow engine
+  resolves them from a strategy (`ROLE`, `ORG_UNIT_HEAD`,
+  `POSITION_FIXED`, …); a human creating a task ad hoc has no strategy,
+  so this is a genuine design question — free choice of any active user,
+  constrained to the record's own org unit, constrained to committee
+  members when created from a committee, or something else. Note it
+  interacts with escalation validation (`validateEscalationTarget()`
+  checks grade and org-unit ancestry) and with out-of-office routing,
+  neither of which currently applies to a manually created task. Needs
+  its own ticket and its own investigation.
 - **Platform Admin has no real navigation structure** — confirmed
   while testing ACC-39: `ai-feature-costs` and `ai-credit-packs` are
   only reachable by typing their URLs directly after a platform-admin
