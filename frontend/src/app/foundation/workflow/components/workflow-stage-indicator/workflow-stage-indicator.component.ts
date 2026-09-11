@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, effect, inject, input, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import {
@@ -9,36 +9,93 @@ import {
 import { LanguageService } from '../../../../core/services/language.service';
 import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
 
-// ACC-76 — a read-only view of the whole path a record has taken, replacing
+// ACC-76 — a read-only view of where a record is in its workflow, replacing
 // the bare "Current Stage: X" label. Generic over object type, like
-// WorkflowTransitionActionsComponent beside it: it takes an instance id and
+// WorkflowTransitionActionsComponent beside it: it takes an instance and
 // nothing module-specific.
 //
-// WHY A TIMELINE AND NOT A STEPPER — the decision this component exists to
-// encode, recorded here because the alternative looks more obvious and is
-// wrong.
+// TWO VIEWS, BOTH REQUIRED — and an earlier revision of this component
+// shipped only the second, which was wrong.
 //
-// A stepper's visual grammar is linear progress with a fixed step count:
-// numbered nodes, checkmarks behind you, "step 3 of 6". Every one of those
-// elements states something false about a record that revisited a stage — and
-// this engine produces such records by design. Committee's seeded template has
-// a TERMS_REVIEW -> FORMATION "Revise Terms" transition, so a real committee
-// can read Formation -> Terms Review -> Formation -> Terms Review: four
-// visits, two stages, no meaningful "step N of M". WorkflowStage.order cannot
-// rescue it either — order is a display field, not a traversal record.
+//   SEQUENCE   every stage the template defines, in order, always. Tells a
+//              reader what the lifecycle IS and where this record sits in it.
+//   HISTORY    the chronology of actual visits, repeats preserved. Tells them
+//              what happened to THIS record.
 //
-// So the primary element is a CHRONOLOGY. A stage entered twice renders twice,
-// because the repeat is the information: being sent back to Formation is a
-// governance fact a surveyor asks about, not a duplicate to collapse. The
-// unreached stages follow as a plain set, with no connectors implying they
-// will happen in that sequence.
+// The argument that produced the mistake still holds, but proves something
+// narrower than it first appeared. A stepper's grammar — numbered nodes, ticks
+// behind you, "step 3 of 6" — states something false about a record that
+// revisited a stage, and this engine produces those by design (Committee's
+// TERMS_REVIEW -> FORMATION "Revise Terms" transition). WorkflowStage.order
+// cannot rescue it: order is a display field, not a traversal record.
+//
+// What follows is not "drop the sequence" but "the sequence must not claim to
+// be a progression". So it asserts only reached / current / not yet reached,
+// and shows a repeat as a visit count rather than flattening it away.
 @Component({
   selector: 'app-workflow-stage-indicator',
   standalone: true,
   imports: [DatePipe, TranslatePipe],
   template: `
     @if (history(); as h) {
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-5">
+        <!-- THE SEQUENCE. Every stage the template defines, in order, always
+             — including before the record has been anywhere. This is what
+             tells a reader who has never seen a committee before what the
+             lifecycle actually is.
+
+             It admits loops rather than hiding them: a stage entered more
+             than once carries its count. What it deliberately does NOT do is
+             tick off "completed" stages or number them "3 of 6" — with a
+             revisit there is no such number, and claiming one would be
+             false. Reached / current / not yet reached is all it asserts. -->
+        <div class="flex flex-wrap items-center gap-x-1 gap-y-2">
+          @for (stage of h.stages; track stage.id) {
+            <span
+              class="text-sm px-2.5 py-1 rounded-full whitespace-nowrap"
+              [style.background]="stage.isCurrent ? 'var(--am-blue-primary)' : 'transparent'"
+              [style.color]="
+                stage.isCurrent
+                  ? 'white'
+                  : stage.visitCount > 0
+                    ? 'var(--am-text-primary)'
+                    : 'var(--am-text-secondary)'
+              "
+              [style.border]="
+                stage.isCurrent
+                  ? '1px solid var(--am-blue-primary)'
+                  : stage.visitCount > 0
+                    ? '1px solid var(--am-text-secondary)'
+                    : '1px dashed var(--am-border)'
+              "
+            >
+              {{ stageName(stage.nameEn, stage.nameAr) }}
+              @if (stage.visitCount > 1) {
+                <span class="text-xs opacity-80">×{{ stage.visitCount }}</span>
+              }
+            </span>
+            @if (!$last) {
+              <!-- A chevron, not an arrow into a progress bar: it separates
+                   stages in the template's declared order and claims nothing
+                   about what this record will do next. RTL-safe via the
+                   direction-aware icon. -->
+              <i
+                class="pi text-xs text-[var(--am-text-secondary)]"
+                [class.pi-chevron-right]="!isRtl()"
+                [class.pi-chevron-left]="isRtl()"
+              ></i>
+            }
+          }
+        </div>
+
+        @if (h.visits.length > 0) {
+          <div class="border-t border-[var(--am-border)] pt-4">
+            <p class="text-xs text-[var(--am-text-secondary)] mb-2">
+              {{ 'workflow.stageIndicator.history' | translate }}
+            </p>
+          </div>
+        }
+
         <ol class="flex flex-col">
           @for (visit of h.visits; track visit.id) {
             <li class="flex gap-3">
@@ -96,19 +153,6 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
           }
         </ol>
 
-        @if (h.unvisitedStages.length > 0) {
-          <div class="flex flex-col gap-1">
-            <p class="text-xs text-[var(--am-text-secondary)]">
-              {{ 'workflow.stageIndicator.notYetReached' | translate }}
-            </p>
-            <!-- A set, not a sequence: comma-separated, unnumbered, no
-                 connectors. Nothing here claims these will be reached, or
-                 reached in this order. -->
-            <p class="text-sm text-[var(--am-text-secondary)]">
-              {{ unvisitedNames() }}
-            </p>
-          </div>
-        }
       </div>
     }
   `,
@@ -179,15 +223,10 @@ export class WorkflowStageIndicatorComponent {
     return ` — ${this.translate.instant(key, { context: label })}`;
   }
 
-  readonly unvisitedNames = computed(() => {
-    const h = this.history();
-    if (!h) return '';
-    // ACC-55 — instant() is a plain call, not a signal read, so a computed
-    // using it needs an explicit dependency on currentLang or it stays stuck
-    // in the previous language for the rest of the session. isArabic() is
-    // that dependency here.
-    const arabic = this.languageService.isArabic();
-    // Arabic comma (U+060C) when Arabic, Latin comma otherwise.
-    return h.unvisitedStages.map((s) => (arabic ? s.nameAr : s.nameEn)).join(arabic ? '، ' : ', ');
-  });
+  // Drives the chevron direction between sequence stages. Read from
+  // LanguageService rather than derived locally — it is the single owning
+  // mechanism for direction (SYSTEM-REFERENCE §9.1).
+  isRtl(): boolean {
+    return this.languageService.isRtl();
+  }
 }

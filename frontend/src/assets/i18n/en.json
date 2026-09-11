@@ -270,10 +270,10 @@
     "errorLoad": "Failed to load workflow data.",
     "stageIndicator": {
       "current": "Current",
-      "notYetReached": "Not yet reached",
       "unassigned": "No eligible assignee",
       "actingHeadOf": "Acting Head of {{context}}",
-      "coveringFor": "covering for {{context}}"
+      "coveringFor": "covering for {{context}}",
+      "history": "History"
     }
   },
   "notification": {

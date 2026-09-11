@@ -270,10 +270,10 @@
     "errorLoad": "فشل تحميل بيانات سير العمل.",
     "stageIndicator": {
       "current": "الحالية",
-      "notYetReached": "لم يتم الوصول إليها بعد",
       "unassigned": "لا يوجد مُسند مؤهل",
       "actingHeadOf": "رئيس بالإنابة لـ {{context}}",
-      "coveringFor": "ينوب عن {{context}}"
+      "coveringFor": "ينوب عن {{context}}",
+      "history": "السجل"
     }
   },
   "notification": {

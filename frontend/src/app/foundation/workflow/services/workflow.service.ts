@@ -46,19 +46,29 @@ export interface WorkflowStageVisitDto {
   delegation: ResolvedDelegationDto | null;
 }
 
-export interface WorkflowUnvisitedStageDto {
+// One entry per stage the template defines — every stage, reached or not.
+// This is the SEQUENCE view: what the process is, and where in it we are.
+export interface WorkflowStageSequenceEntryDto {
   id: string;
   nameEn: string;
   nameAr: string;
   order: number;
+  // 0 = not yet reached. >1 = the record has been here more than once, which
+  // the sequence shows rather than flattening — the one honest way a linear
+  // list can admit a loop happened.
+  visitCount: number;
+  // The stage holding the open visit. At most one; none once the instance has
+  // exited a final stage.
+  isCurrent: boolean;
 }
 
 export interface WorkflowStageHistoryDto {
   instanceId: string;
+  // The sequence. Always every stage, in order.
+  stages: WorkflowStageSequenceEntryDto[];
+  // The chronology. Repeats preserved. Neither substitutes for the other —
+  // see the backend interface for why.
   visits: WorkflowStageVisitDto[];
-  // Deliberately a SET, not a continuation of the chronology — nothing here
-  // promises these will be reached, or reached in this sequence.
-  unvisitedStages: WorkflowUnvisitedStageDto[];
 }
 
 export interface WorkflowApprovalDto {
