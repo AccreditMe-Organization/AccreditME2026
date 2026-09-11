@@ -774,6 +774,45 @@ Full visual integration builder (n8n-style) deferred to Phase 3.
 - Escalation triggered automatically when SLA is breached
 - Task reassignment and absence coverage — see Absence and
   Departure Management section below
+- **The two creation paths have DIFFERENT LIFETIMES, and the
+  difference is deliberate.** Recorded because the behaviour is
+  correct, undocumented, and looks like a bug from the outside —
+  someone will eventually report "my task disappeared" or "my task
+  should have disappeared" depending on which half they meet first.
+
+  **Workflow-created tasks are STAGE-scoped.** They are cancelled
+  when the object leaves the stage that created them (ACC-68,
+  `TaskService.cancelForStage()`, called from `performTransition()`).
+  That is right because such a task exists to gate *that stage's*
+  transition: once the object has moved on, the work it was holding
+  up is moot. Leaving it open was the ACC-68 bug — a PENDING task
+  assigned to a real person, gating nothing, and stacking a second
+  copy on every re-entry to the stage.
+
+  **Manually created tasks are OBJECT-scoped and PERSIST.** A person
+  created them deliberately, for a reason that has nothing to do with
+  whichever stage the object happened to be sitting in at the time.
+  "Chase the lab for December's figures" does not stop mattering
+  because the committee advanced from Terms Review to Active.
+
+  **How the separation is enforced: structurally, not by a guard.**
+  `cancelForStage()` matches on `workflowInstanceId` AND
+  `sourceStageId` together. The manual path
+  (`POST /tasks` → `TaskService.create()`) sets neither — both DTO
+  fields are optional and are only ever populated by the engine's own
+  `executeCreateTask()` — so a manual task stores `null` for both and
+  cannot match. There is no "is this manual?" branch to accidentally
+  invert; the data shape does the work.
+
+  **Why this matters beyond the distinction itself: ACC-68 cancels
+  SILENTLY.** No notification, no confirmation — just an audit row per
+  task. That is the right trade for engine-generated gating work
+  nobody chose to create. It would NOT be acceptable for human-created
+  work: silently cancelling something a person deliberately recorded
+  is a different act from tidying up after the engine. So if anyone
+  ever extends cancellation to reach manual tasks, the silence has to
+  be reconsidered at the same time — the two decisions are coupled,
+  and only the first one has been made.
 
 ### Absence and Departure Management
 Full design in module-designs.md.
