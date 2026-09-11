@@ -104,7 +104,33 @@ export class RoleService {
       ? roles
       : roles.filter((r) => r.key !== 'PLATFORM_ADMIN');
 
-    return visibleRoles.map((r) => this.mapRole(r));
+    // ACC-74 — ONE grouped query for every role's count, not one query per
+    // role. attachPermissions() already exists and would have been the
+    // shorter route, but it is the wrong shape twice over: it is an N+1
+    // (one findMany per role), and it returns the full permission set when
+    // the list renders only a number — 70 strings for Organization
+    // Administrator to display "70".
+    //
+    // The N+1 would be invisible at today's 7 roles, which is exactly when a
+    // bad shape gets established and copied. Grouped is the same information
+    // in one round trip regardless of role count.
+    //
+    // Scoped implicitly but safely: roleId is drawn from visibleRoles, which
+    // is already filtered by organizationId above, so this cannot count a
+    // RolePermission belonging to another tenant's role.
+    const counts = await this.prisma.rolePermission.groupBy({
+      by: ['roleId'],
+      where: { roleId: { in: visibleRoles.map((r) => r.id) } },
+      _count: { roleId: true },
+    });
+    const countByRoleId = new Map(counts.map((c) => [c.roleId, c._count.roleId]));
+
+    return visibleRoles.map((r) => ({
+      ...this.mapRole(r),
+      // 0 rather than undefined: a role with no permissions is a real answer,
+      // and the frontend must be able to tell it from "not loaded".
+      permissionCount: countByRoleId.get(r.id) ?? 0,
+    }));
   }
 
   async getRoleById(id: string, organizationId: string): Promise<IRole> {

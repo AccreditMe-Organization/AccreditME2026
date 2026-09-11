@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { ALL_PERMISSIONS } from './permission.seed';
 import { SYSTEM_ROLE_SEED } from './role.seed';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,9 @@ const mockPrisma = {
     findMany: jest.fn(),
     deleteMany: jest.fn(),
     createMany: jest.fn(),
+    // ACC-74 — getRoles() resolves every role's permission count in one
+    // grouped query rather than a findMany per role.
+    groupBy: jest.fn(),
   },
   user: {
     findFirst: jest.fn(),
@@ -87,6 +91,7 @@ describe('RoleService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.rolePermission.findMany.mockResolvedValue([]);
+    mockPrisma.rolePermission.groupBy.mockResolvedValue([]);
     mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
 
     const module: TestingModule = await Test.createTestingModule({
@@ -196,6 +201,84 @@ describe('RoleService', () => {
       const result = await service.getRoles(ORG_A);
 
       expect(result.map((r) => r.key).sort()).toEqual(['PLATFORM_ADMIN', 'TENANT_ADMIN']);
+    });
+
+    // ACC-74 — the Roles list rendered 0 for every role because getRoles()
+    // returned no permission data at all. These assert the count is real,
+    // and that it is resolved the intended way.
+    it('returns each role real permission count', async () => {
+      const admin = makeRole({ id: 'role-admin', key: 'TENANT_ADMIN' });
+      const viewer = makeRole({ id: 'role-viewer', key: 'VIEWER' });
+      mockPrisma.role.findMany.mockResolvedValue([admin, viewer]);
+      mockPrisma.rolePermission.groupBy.mockResolvedValue([
+        { roleId: 'role-admin', _count: { roleId: 70 } },
+        { roleId: 'role-viewer', _count: { roleId: 13 } },
+      ]);
+
+      const result = await service.getRoles(ORG_A);
+
+      expect(result.find((r) => r.id === 'role-admin')?.permissionCount).toBe(70);
+      expect(result.find((r) => r.id === 'role-viewer')?.permissionCount).toBe(13);
+    });
+
+    // A role with no permissions is a real answer, not a missing one — the
+    // frontend must be able to tell 0 from "never loaded".
+    it('reports 0 for a role with no permissions, not undefined', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([makeRole({ id: 'role-empty' })]);
+      mockPrisma.rolePermission.groupBy.mockResolvedValue([]);
+
+      const result = await service.getRoles(ORG_A);
+
+      expect(result[0]!.permissionCount).toBe(0);
+      expect(result[0]!.permissionCount).not.toBeUndefined();
+    });
+
+    // The shape decision, asserted so it cannot quietly regress into an N+1.
+    it('resolves every count in ONE grouped query, never one per role', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([
+        makeRole({ id: 'r1' }),
+        makeRole({ id: 'r2' }),
+        makeRole({ id: 'r3' }),
+      ]);
+      mockPrisma.rolePermission.groupBy.mockResolvedValue([]);
+
+      await service.getRoles(ORG_A);
+
+      expect(mockPrisma.rolePermission.groupBy).toHaveBeenCalledTimes(1);
+      // attachPermissions()' per-role fetch must not be what backs this.
+      expect(mockPrisma.rolePermission.findMany).not.toHaveBeenCalled();
+    });
+
+    // The list renders a number; it must not also ship the whole set.
+    it('does not populate the full permissions array on list responses', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([makeRole({ id: 'r1' })]);
+      mockPrisma.rolePermission.groupBy.mockResolvedValue([
+        { roleId: 'r1', _count: { roleId: 70 } },
+      ]);
+
+      const result = await service.getRoles(ORG_A);
+
+      expect(result[0]!.permissionCount).toBe(70);
+      expect(result[0]!.permissions).toBeUndefined();
+    });
+
+    itEnforcesTenantIsolation('permission counts in getRoles', async () => {
+      // The groupBy is scoped by roleId drawn from the already-tenant-filtered
+      // role list, so a role belonging to another tenant can never appear in
+      // the `in` clause and its RolePermission rows can never be counted.
+      const orgARole = makeRole({ id: 'role-org-a', organizationId: ORG_A });
+      mockPrisma.role.findMany.mockImplementation(
+        ({ where }: { where: { organizationId: string } }) =>
+          Promise.resolve(where.organizationId === ORG_A ? [orgARole] : []),
+      );
+      mockPrisma.rolePermission.groupBy.mockResolvedValue([]);
+
+      const result = await service.getRoles(ORG_B);
+
+      expect(result).toEqual([]);
+      expect(mockPrisma.rolePermission.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { roleId: { in: [] } } }),
+      );
     });
   });
 

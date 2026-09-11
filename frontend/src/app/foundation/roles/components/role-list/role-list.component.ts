@@ -52,7 +52,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             <th style="width: 20%">{{ 'roles.nameAr' | translate }}</th>
             <th style="width: 12%">{{ 'roles.roleType' | translate }}</th>
             <th style="width: 12%">{{ 'roles.isActive' | translate }}</th>
-            <th style="width: 16%">{{ 'roles.permissionCount' | translate: { count: 0 } }}</th>
+            <th style="width: 16%">{{ 'roles.permissionsColumn' | translate }}</th>
             <th style="width: 15%"></th>
           </tr>
         </ng-template>
@@ -77,7 +77,10 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                 [severity]="role.isActive ? 'success' : 'secondary'"
               />
             </td>
-            <td>{{ (role.permissions?.length ?? 0) }}</td>
+            <!-- ACC-74 — permissionCount, not permissions?.length. listRoles()
+                 deliberately does not carry the permission array; binding to it
+                 rendered 0 for every role, always. -->
+            <td>{{ role.permissionCount ?? 0 }}</td>
             <td>
               <div class="flex gap-1 justify-end">
                 <p-button
