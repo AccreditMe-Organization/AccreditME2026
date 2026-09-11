@@ -14,7 +14,11 @@ export interface RoleDto {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  // Detail-only — populated by getRole(), absent from listRoles().
   permissions?: string[];
+  // ACC-74 — present on listRoles() responses. The list renders a number, so
+  // the backend sends a count rather than the full permission set.
+  permissionCount?: number;
 }
 
 export interface PermissionDto {
