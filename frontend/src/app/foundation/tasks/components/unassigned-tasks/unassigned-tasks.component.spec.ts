@@ -78,7 +78,11 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${environment.apiUrl}/tasks/unassigned`).flush([UNASSIGNED_TASK]);
-    httpMock.expectOne(`${environment.apiUrl}/users?status=ACTIVE`).flush([USER_A]);
+    // ACC-78 — listAllUsers() asks for the backend's page-size cap, and the
+    // endpoint returns the shared envelope rather than a bare array.
+    httpMock
+      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
+      .flush({ data: [USER_A], total: 1, page: 1, pageSize: 200 });
     httpMock.expectOne(`${environment.apiUrl}/organization/units/flat`).flush([]);
     fixture.detectChanges();
   });

@@ -539,7 +539,7 @@ export class TransferUserWizardComponent implements OnInit {
   private loadSourceUnitCandidates(): void {
     const sourceUnitId = this.departingUser()?.primaryOrgUnitId;
     if (!sourceUnitId) return;
-    this.userService.listUsers({ status: 'ACTIVE', orgUnitId: sourceUnitId }).subscribe({
+    this.userService.listAllUsers({ status: 'ACTIVE', orgUnitId: sourceUnitId }).subscribe({
       next: (users) =>
         this.sourceUnitCandidates.set(
           users.filter((u) => u.id !== this.userId()).map((u) => ({ id: u.id, name: u.name })),
@@ -548,7 +548,7 @@ export class TransferUserWizardComponent implements OnInit {
   }
 
   private loadDestinationManagerCandidates(destinationOrgUnitId: string): void {
-    this.userService.listUsers({ status: 'ACTIVE', orgUnitId: destinationOrgUnitId }).subscribe({
+    this.userService.listAllUsers({ status: 'ACTIVE', orgUnitId: destinationOrgUnitId }).subscribe({
       next: (users) => this.destinationManagerCandidates.set(users.map((u) => ({ id: u.id, name: u.name }))),
     });
   }
