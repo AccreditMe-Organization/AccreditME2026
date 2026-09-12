@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
 // ACC-78 — this endpoint's own filters, declared on ONE DTO together with the
@@ -31,14 +31,22 @@ export class ListUsersQueryDto extends PaginationQueryDto {
   @IsOptional()
   status?: string;
 
-  @IsUUID()
+  // @IsString, NOT @IsUUID. This schema generates ids with cuid(), not uuid()
+  // — @IsUUID rejected every real id with a 400, which passed every unit test
+  // because the fixtures were UUIDs. Found in a browser, not in the suite.
+  //
+  // A stale or malformed id is better answered with an empty list than a
+  // validation error: an id from a bookmarked URL is a normal thing to meet.
+  @IsString()
+  @MaxLength(64)
   @IsOptional()
   orgUnitId?: string;
 
   // ACC-78 — new. The design reference's filter bar is status + org unit +
   // position; the first two existed and this one did not, so the filter bar
   // could not be built as designed without it.
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   @IsOptional()
   positionId?: string;
 }

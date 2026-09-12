@@ -109,12 +109,18 @@ import { StatusChipComponent } from '../../../../shared/components/status-chip/s
                       <app-status-chip variant="account" value="CANCELLED" />
                     }
                   </div>
-                  <div
-                    dir="rtl"
-                    style="unicode-bidi: isolate"
-                    class="text-[11.5px] text-[var(--am-text-secondary)] truncate text-start"
-                  >
-                    {{ role.nameAr }}
+                  <!-- dir=rtl on the SPAN, not the block. On the block it
+                       also flips the block's alignment, so text-start
+                       resolves to the RIGHT edge of a wide grid cell and the
+                       Arabic name floats away from the English one it belongs
+                       under — visible only in a screenshot, since the
+                       accessibility tree reports the text as present either
+                       way. Isolating an inline span gives correct bidi
+                       rendering while the block stays left-aligned in an LTR
+                       session (and right-aligned in an Arabic one, which is
+                       equally correct). -->
+                  <div class="text-[11.5px] text-[var(--am-text-secondary)] truncate">
+                    <span dir="rtl" style="unicode-bidi: isolate">{{ role.nameAr }}</span>
                   </div>
                 </div>
               }

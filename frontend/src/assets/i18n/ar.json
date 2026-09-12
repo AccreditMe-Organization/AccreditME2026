@@ -283,7 +283,8 @@
       "since": "منذ {{date}}"
     },
     "stageName": "المرحلة",
-    "sla": "مدة الإنجاز"
+    "sla": "مدة الإنجاز",
+    "searchStages": "ابحث في المراحل…"
   },
   "notification": {
     "title": "الإشعارات",

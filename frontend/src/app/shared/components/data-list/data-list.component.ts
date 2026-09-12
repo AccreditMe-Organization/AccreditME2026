@@ -1,5 +1,6 @@
 import {
   Component,
+  OnInit,
   TemplateRef,
   computed,
   contentChild,
@@ -352,7 +353,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
     </div>
   `,
 })
-export class DataListComponent<T> {
+export class DataListComponent<T> implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -420,6 +421,11 @@ export class DataListComponent<T> {
   private readonly unfilteredTotal = signal(0);
   private readonly reloadToken = signal(0);
 
+  // The write-effect must not run before ngOnInit has read the URL, or it
+  // writes the empty default query over the very params it is about to
+  // restore. This is what made the address bar lose its own parameters.
+  private readonly restored = signal(false);
+
   readonly isPage = computed(() => this.variant() === 'page');
 
   // The single grid definition both the header row and every data row read,
@@ -432,12 +438,24 @@ export class DataListComponent<T> {
     return [...tracks, ...(suffix ? [suffix] : [])].join(' ') || '1fr';
   });
 
-  constructor() {
+  // RESTORE RUNS HERE, NOT IN THE CONSTRUCTOR, and the distinction is not
+  // stylistic. Signal inputs still hold their DEFAULTS while the constructor
+  // runs — persistKey() was null, so restore() returned immediately and no URL
+  // state was ever read. Worse than unsupported: the write-effect then
+  // overwrote the address bar with the empty query, so a shared link visibly
+  // dropped its own parameters on arrival.
+  //
+  // ngOnInit runs after inputs are set and before the load effect first
+  // flushes, so the restored query is what the first fetch uses. Verified in a
+  // browser, which is the only place the original failure was visible at all.
+  ngOnInit(): void {
     this.restore();
+  }
 
+  constructor() {
     effect(() => {
       const key = this.persistKey();
-      if (!key) return;
+      if (!key || !this.restored()) return;
 
       const query = this.query();
       const scope = this.activeScope();
@@ -556,7 +574,10 @@ export class DataListComponent<T> {
 
   private restore(): void {
     const key = this.persistKey();
-    if (!key) return;
+    if (!key) {
+      this.restored.set(true);
+      return;
+    }
 
     const prefs = readPreferences(key);
     let query: IListQuery = {
@@ -587,6 +608,7 @@ export class DataListComponent<T> {
 
     this.query.set(query);
     this.activeScope.set(scope);
+    this.restored.set(true);
   }
 
   // Reloads without changing the query. The parent needs this after a write —

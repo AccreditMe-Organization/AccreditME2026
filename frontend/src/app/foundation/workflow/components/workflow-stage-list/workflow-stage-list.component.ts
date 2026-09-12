@@ -75,6 +75,7 @@ import {
           [trackBy]="trackById"
           [columns]="columns()"
           [showPager]="false"
+          [searchPlaceholder]="'workflow.searchStages' | translate"
           [emptyTitle]="'workflow.noStages' | translate"
         >
           <ng-template #listHeader let-h>
@@ -122,12 +123,9 @@ import {
                         </span>
                       }
                     </div>
-                    <div
-                      dir="rtl"
-                      style="unicode-bidi: isolate"
-                      class="text-xs text-[var(--am-text-secondary)] truncate text-start"
-                    >
-                      {{ stage.nameAr }}
+                    <!-- See role-list: dir on the span, not the block. -->
+                    <div class="text-xs text-[var(--am-text-secondary)] truncate">
+                      <span dir="rtl" style="unicode-bidi: isolate">{{ stage.nameAr }}</span>
                     </div>
                   </div>
                 }

@@ -283,7 +283,8 @@
       "since": "since {{date}}"
     },
     "stageName": "Stage",
-    "sla": "SLA"
+    "sla": "SLA",
+    "searchStages": "Search stages…"
   },
   "notification": {
     "title": "Notifications",

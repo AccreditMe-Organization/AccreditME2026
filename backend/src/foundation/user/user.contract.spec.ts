@@ -83,13 +83,13 @@ describe('UserController HTTP contract (ACC-78)', () => {
     ['no parameters at all', ''],
     ['pagination only', '?page=2&pageSize=50'],
     ['the status chip', '?status=ACTIVE'],
-    ['the org-unit filter', '?orgUnitId=3f5e2917-bd9b-4d09-8379-66d919aff729'],
-    ['the position filter', '?positionId=3f5e2917-bd9b-4d09-8379-66d919aff729'],
+    ['the org-unit filter', '?orgUnitId=cmtr9x8as0001ocp145mpar17'],
+    ['the position filter', '?positionId=cmtr9x8as0001ocp145mpar17'],
     ['search plus sort', '?search=ahmad&sortBy=email&sortDir=desc'],
     [
       'every filter at once, as the full bar sends them',
-      '?status=INVITED&orgUnitId=3f5e2917-bd9b-4d09-8379-66d919aff729' +
-        '&positionId=3f5e2917-bd9b-4d09-8379-66d919aff729' +
+      '?status=INVITED&orgUnitId=cmtr9x8as0001ocp145mpar17' +
+        '&positionId=cmtr9x8as0001ocp145mpar17' +
         '&search=a&sortBy=name&sortDir=asc&page=1&pageSize=25',
     ],
   ];
@@ -117,8 +117,15 @@ describe('UserController HTTP contract (ACC-78)', () => {
     expect(listUsers).not.toHaveBeenCalled();
   });
 
-  it('rejects a non-uuid orgUnitId', async () => {
-    await request(app.getHttpServer()).get('/users?orgUnitId=not-a-uuid').expect(400);
+  // The ids in the fixtures above are REAL cuids, copied from the dev
+  // database. They were UUIDs at first, which made @IsUUID() on the DTO look
+  // correct: every test passed and every real request 400'd, because this
+  // schema generates ids with cuid(). A fixture that does not look like
+  // production data tests the fixture.
+  it('rejects an over-long orgUnitId', async () => {
+    await request(app.getHttpServer())
+      .get(`/users?orgUnitId=${'x'.repeat(100)}`)
+      .expect(400);
     expect(listUsers).not.toHaveBeenCalled();
   });
 

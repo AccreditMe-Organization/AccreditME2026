@@ -96,8 +96,12 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
           <!-- The two pickers are projected: only this list knows that its org
                unit filter is a hierarchy and its position filter is flat. -->
           <div listFilters class="flex items-center gap-1.5 shrink-0">
+            <!-- Wider than the English labels need. Arabic renders these
+                 longer — "كل الوحدات التنظيمية" truncated at 170px, which was
+                 only visible in an Arabic screenshot. Sized for the longer of
+                 the two languages rather than the one being developed in. -->
             <app-overlay-select
-              class="w-[170px]"
+              class="w-[210px]"
               [options]="orgUnitOptions()"
               optionLabel="label"
               optionValue="value"
@@ -109,7 +113,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
               (ngModelChange)="list.setFilter('orgUnitId', $event)"
             />
             <app-overlay-select
-              class="w-[170px]"
+              class="w-[210px]"
               [options]="positionOptions()"
               optionLabel="label"
               optionValue="value"
