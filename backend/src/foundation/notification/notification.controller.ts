@@ -4,7 +4,7 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { NotificationService } from './notification.service';
 import { INotification } from './interfaces/notification.interface';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 
 // No @Permissions() on any endpoint here, and no PermissionGuard — a user's
@@ -19,22 +19,22 @@ import { IPaginatedResponse } from '../../common/interfaces/paginated-response.i
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
-  // ACC-78 — page-based, and returns a total. `status` stays a plain @Query
-  // rather than joining the DTO: it is this endpoint's own filter, not part of
-  // the shared list contract.
+  // ACC-78 — page-based, returns a total, and `status` is declared ON the DTO.
+  // It was a separate @Query('status') at first, which meant any request
+  // carrying it was rejected 400 by the global pipe — latent here only because
+  // both callers pass nothing. See ListUsersQueryDto for the full account.
   @Get()
   getForUser(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
-    @Query() pagination: PaginationQueryDto,
-    @Query('status') status?: 'UNREAD' | 'READ' | 'DISMISSED',
+    @Query() query: ListNotificationsQueryDto,
   ): Promise<IPaginatedResponse<INotification>> {
     return this.notificationService.getForUser(userId, tenantId, {
-      status,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      sortBy: pagination.sortBy,
-      sortDir: pagination.sortDir,
+      status: query.status,
+      page: query.page,
+      pageSize: query.pageSize,
+      sortBy: query.sortBy,
+      sortDir: query.sortDir,
     });
   }
 

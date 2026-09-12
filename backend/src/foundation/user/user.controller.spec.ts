@@ -64,18 +64,25 @@ describe('UserController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  // ACC-78 — search/page/pageSize/sort arrive via the shared
-  // PaginationQueryDto; status/orgUnitId stay this endpoint's own params.
+  // ACC-78 — ONE DTO carries the shared list contract and this endpoint's own
+  // filters together. Note what this spec can and cannot see: it calls the
+  // method directly, so the ValidationPipe never runs and a rejected query is
+  // invisible here. That blind spot is why user.contract.spec.ts exists.
   it('listUsers delegates to UserService.listUsers with filters', async () => {
-    await controller.listUsers(
-      TENANT_ID,
-      { search: 'ahmad', page: 2, pageSize: 50, sortBy: 'email', sortDir: 'desc' },
-      'ACTIVE',
-      'unit-1',
-    );
+    await controller.listUsers(TENANT_ID, {
+      search: 'ahmad',
+      page: 2,
+      pageSize: 50,
+      sortBy: 'email',
+      sortDir: 'desc',
+      status: 'ACTIVE',
+      orgUnitId: 'unit-1',
+      positionId: 'position-1',
+    });
     expect(service.listUsers).toHaveBeenCalledWith(TENANT_ID, {
       status: 'ACTIVE',
       orgUnitId: 'unit-1',
+      positionId: 'position-1',
       search: 'ahmad',
       page: 2,
       pageSize: 50,

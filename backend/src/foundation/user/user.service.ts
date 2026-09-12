@@ -61,6 +61,10 @@ const TENANT_ADMIN_KEY = 'TENANT_ADMIN';
 export interface ListUsersFilters {
   status?: string;
   orgUnitId?: string;
+  // ACC-78 — the design reference's filter bar is status + org unit +
+  // position. The first two existed; this one did not, so the bar could not be
+  // built as designed without it. Indexed already (@@index([positionId])).
+  positionId?: string;
   search?: string;
   // ACC-78 — the shared list contract.
   page?: number;
@@ -164,6 +168,7 @@ export class UserService {
       organizationId,
       status: filters?.status ? (filters.status as never) : undefined,
       primaryOrgUnitId: filters?.orgUnitId ?? undefined,
+      positionId: filters?.positionId ?? undefined,
       // ACC-78 — search now spans NAME AND EMAIL, where it previously matched
       // name alone. Which columns a free-text search covers is the endpoint's
       // business, not the caller's — same reasoning as the sort whitelist. On a

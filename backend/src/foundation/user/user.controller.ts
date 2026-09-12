@@ -15,7 +15,7 @@ import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IUser } from './interfaces/user.interface';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { IRole } from '../roles/interfaces/role.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
@@ -28,23 +28,24 @@ export class UserController {
 
   @Get()
   @Permissions(USERS_PERMISSIONS.VIEW)
-  // ACC-78 — paginated. `status`/`orgUnitId` stay their own @Query params: they
-  // are this endpoint's own filters, not part of the shared list contract.
-  // `search` moves INTO the DTO, because it is part of it.
+  // ACC-78 — ONE DTO carrying both the shared list contract and this
+  // endpoint's own filters. Separate @Query('status') parameters alongside a
+  // bare @Query() DTO looked equivalent and was not: the bare @Query() binds
+  // the whole query object, so forbidNonWhitelisted rejected every filter with
+  // a 400. See ListUsersQueryDto's own comment and user.contract.spec.ts.
   async listUsers(
     @CurrentTenant() tenantId: string,
-    @Query() pagination: PaginationQueryDto,
-    @Query('status') status?: string,
-    @Query('orgUnitId') orgUnitId?: string,
+    @Query() query: ListUsersQueryDto,
   ): Promise<IPaginatedResponse<IUser>> {
     const result = await this.userService.listUsers(tenantId, {
-      status,
-      orgUnitId,
-      search: pagination.search,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      sortBy: pagination.sortBy,
-      sortDir: pagination.sortDir,
+      status: query.status,
+      orgUnitId: query.orgUnitId,
+      positionId: query.positionId,
+      search: query.search,
+      page: query.page,
+      pageSize: query.pageSize,
+      sortBy: query.sortBy,
+      sortDir: query.sortDir,
     });
     // ACC-45 — mapped via toSafeUser() at this HTTP boundary; see its own
     // comment in user.service.ts for why this isn't baked into

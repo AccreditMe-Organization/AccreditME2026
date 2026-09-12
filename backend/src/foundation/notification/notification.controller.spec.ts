@@ -57,16 +57,17 @@ describe('NotificationController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  // ACC-78 — page-based pagination via the shared PaginationQueryDto, replacing
-  // the old limit/offset string params. `status` stays a separate @Query: it is
-  // this endpoint's own filter, not part of the shared list contract.
+  // ACC-78 — page-based pagination, with `status` declared on the endpoint's
+  // own DTO rather than as a separate @Query. See user.contract.spec.ts for
+  // the check this spec structurally cannot perform.
   it('getForUser delegates to the service, scoped by tenant and current user', async () => {
-    const result = await controller.getForUser(
-      TENANT_ID,
-      USER_ID,
-      { page: 2, pageSize: 10, sortBy: 'status', sortDir: 'asc' },
-      'UNREAD',
-    );
+    const result = await controller.getForUser(TENANT_ID, USER_ID, {
+      page: 2,
+      pageSize: 10,
+      sortBy: 'status',
+      sortDir: 'asc',
+      status: 'UNREAD',
+    });
 
     expect(service.getForUser).toHaveBeenCalledWith(USER_ID, TENANT_ID, {
       status: 'UNREAD',
