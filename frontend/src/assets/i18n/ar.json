@@ -23,7 +23,8 @@
     "no": "لا",
     "back": "رجوع",
     "next": "التالي",
-    "close": "إغلاق"
+    "close": "إغلاق",
+    "remove": "إزالة"
   },
   "nav": {
     "dashboard": "لوحة التحكم",
@@ -280,7 +281,9 @@
       "inStageDays": "في هذه المرحلة {{days}} يوماً",
       "revisited": "أُعيدت ×{{count}}",
       "since": "منذ {{date}}"
-    }
+    },
+    "stageName": "المرحلة",
+    "sla": "مدة الإنجاز"
   },
   "notification": {
     "title": "الإشعارات",

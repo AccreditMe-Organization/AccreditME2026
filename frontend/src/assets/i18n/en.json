@@ -23,7 +23,8 @@
     "no": "No",
     "back": "Back",
     "next": "Next",
-    "close": "Close"
+    "close": "Close",
+    "remove": "Remove"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -280,7 +281,9 @@
       "inStageDays": "in stage {{days}} days",
       "revisited": "revisited ×{{count}}",
       "since": "since {{date}}"
-    }
+    },
+    "stageName": "Stage",
+    "sla": "SLA"
   },
   "notification": {
     "title": "Notifications",

@@ -307,7 +307,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
       <!-- Page mode only. PrimeNG's paginator rather than a hand-rolled one:
            it handles RTL, keyboard and ARIA, and the first attempt hand-rolled
            a range label and then shipped no way to reach page 2 at all. -->
-      @if (isPage() && total() > 0) {
+      @if (isPage() && showPager() && total() > 0) {
         <p-paginator
           [first]="firstRecord()"
           [rows]="effectivePageSize()"
@@ -384,6 +384,15 @@ export class DataListComponent<T> {
   readonly searchPlaceholder = input<string>('');
   readonly emptyTitle = input<string>('');
   readonly emptyMessage = input<string>('');
+
+  // Page mode renders a pager; a list that is inherently COMPLETE turns it
+  // off. This is an explicit caller decision, not a row-count rule — Workflow
+  // Stages is client-side and manually ordered, so there is never a second
+  // page and a "1-6 of 6" bar is pure noise. Deliberately not inferred from
+  // total <= pageSize: that would hide the rows-per-page control on any list
+  // that happens to fit today, which is the same over-generalisation this
+  // rebuild exists to undo.
+  readonly showPager = input<boolean>(true);
 
   readonly hasDestination = input<boolean>(false);
   readonly bodyClass = input<string>('');
