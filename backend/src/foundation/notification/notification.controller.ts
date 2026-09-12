@@ -4,6 +4,8 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { NotificationService } from './notification.service';
 import { INotification } from './interfaces/notification.interface';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 
 // No @Permissions() on any endpoint here, and no PermissionGuard — a user's
 // own notification inbox is not permission-gated content, it is intrinsically
@@ -17,18 +19,22 @@ import { INotification } from './interfaces/notification.interface';
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
+  // ACC-78 — page-based, and returns a total. `status` stays a plain @Query
+  // rather than joining the DTO: it is this endpoint's own filter, not part of
+  // the shared list contract.
   @Get()
   getForUser(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @Query() pagination: PaginationQueryDto,
     @Query('status') status?: 'UNREAD' | 'READ' | 'DISMISSED',
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-  ): Promise<INotification[]> {
+  ): Promise<IPaginatedResponse<INotification>> {
     return this.notificationService.getForUser(userId, tenantId, {
       status,
-      limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      sortBy: pagination.sortBy,
+      sortDir: pagination.sortDir,
     });
   }
 

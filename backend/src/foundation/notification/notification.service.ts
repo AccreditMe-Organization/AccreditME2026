@@ -5,12 +5,28 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { INotification } from './interfaces/notification.interface';
+import {
+  IPaginatedResponse,
+  paginated,
+} from '../../common/interfaces/paginated-response.interface';
+import { SortWhitelist, toSkipTake } from '../../common/utils/sort-whitelist';
 
 export interface GetNotificationsOptions {
   status?: 'UNREAD' | 'READ' | 'DISMISSED';
-  limit?: number;
-  offset?: number;
+  // ACC-78 — was limit/offset. Page-based now, matching every other list.
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
 }
+
+// The inbox's sortable columns. `createdAt desc` is the fallback because a
+// notification inbox is newest-first by nature; the other two exist so the
+// shared list component's sort menu has something real to offer.
+const NOTIFICATION_SORT = new SortWhitelist(['createdAt', 'status', 'titleEn'] as const, {
+  column: 'createdAt',
+  dir: 'desc',
+});
 
 // The cross-cutting service CLAUDE.md refers to in "Event-driven —
 // modules emit events, NotificationService subscribes. Never hardcode
@@ -75,21 +91,40 @@ export class NotificationService {
   // Personal inbox — always scoped to the CALLING user, never another
   // user's, regardless of any permission the caller holds (see plan
   // Business Rules — Permission Model for the Personal Inbox).
+  // ACC-78 — migrated onto the shared page-based envelope. This was the ONLY
+  // paginating endpoint in the product, and it used limit/offset and returned
+  // no total — so a caller could fetch a page and still not know whether more
+  // existed, which is why nothing could render a paginator against it.
+  //
+  // Migrated first among the endpoints deliberately: it is the one with real
+  // pagination already, so it proves the envelope against live behaviour before
+  // other endpoints depend on it.
   async getForUser(
     userId: string,
     organizationId: string,
     options: GetNotificationsOptions = {},
-  ): Promise<INotification[]> {
-    return this.prisma.notification.findMany({
-      where: {
-        userId,
-        organizationId,
-        ...(options.status ? { status: options.status } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      take: options.limit ?? 20,
-      skip: options.offset ?? 0,
-    });
+  ): Promise<IPaginatedResponse<INotification>> {
+    const { skip, take, page, pageSize } = toSkipTake(options.page, options.pageSize, 20);
+
+    const where = {
+      userId,
+      organizationId,
+      ...(options.status ? { status: options.status } : {}),
+    };
+
+    // Count and page in parallel — two round trips either way, but not
+    // sequentially. At ~110ms each (SYSTEM-REFERENCE §8) that halves the wait.
+    const [data, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where,
+        orderBy: NOTIFICATION_SORT.resolve(options.sortBy, options.sortDir),
+        take,
+        skip,
+      }),
+      this.prisma.notification.count({ where }),
+    ]);
+
+    return paginated(data, total, page, pageSize);
   }
 
   async getUnreadCount(userId: string, organizationId: string): Promise<number> {
