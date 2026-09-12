@@ -98,6 +98,13 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
         >
           <!-- The two pickers are projected: only this list knows that its org
                unit filter is a hierarchy and its position filter is flat. -->
+          <!-- optionGroupChildren is "items", NOT "children".
+               buildOrgUnitCascadeOptions() emits
+               OrgUnitCascadeOption { label, value, items? }, and every other
+               org-unit picker passes "items" (invite-user, user-profile,
+               org-unit-form). Passing "children" made flattenHierarchy() find
+               no descendants, so all 21 units collapsed to the single root —
+               a filter that silently offered one choice instead of a tree. -->
           <div listFilters class="flex items-center gap-1.5 shrink-0">
             <!-- Wider than the English labels need. Arabic renders these
                  longer — "كل الوحدات التنظيمية" truncated at 170px, which was
@@ -109,7 +116,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
               optionLabel="label"
               optionValue="value"
               optionGroupLabel="label"
-              optionGroupChildren="children"
+              optionGroupChildren="items"
               [groupsSelectable]="true"
               [showClear]="true"
               [placeholder]="'user.allOrgUnits' | translate"

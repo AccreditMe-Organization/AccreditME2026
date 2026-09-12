@@ -3852,6 +3852,17 @@ array-backed list to the same contract, so there is one code path.
   label, and labelling a column does not imply it sorts. Where sorting
   IS offered, row indices must come from the underlying array, not the
   rendered page.
+- **Hierarchy mode's children field is `items`.**
+  `buildOrgUnitCascadeOptions()` emits
+  `OrgUnitCascadeOption { label, value, items? }`, and every org-unit
+  picker in the app passes `optionGroupChildren="items"`. Passing
+  `"children"` is not an error anywhere — `flattenHierarchy()` simply
+  finds no descendants, so a 21-unit three-level tree collapses to its
+  single root and the picker silently offers one choice. Nothing fails:
+  not `tsc`, not the build, not a test, and not an element query
+  confirming "options exist". Only opening the picker and looking shows
+  it. `flattenHierarchy()` itself recurses to arbitrary depth, so the
+  field name is the whole of it.
 - **Filters must be clearable, and `OverlaySelectComponent` already
   does it** — `[showClear]="true"` renders a clear affordance that sets
   the value to `null`; 10+ forms already use it. An uncleartable form
@@ -3985,6 +3996,13 @@ everything above it:
   `element.scrollTop` or a synthetic `WheelEvent` — synthetic wheel
   events are untrusted and never scroll, so they prove nothing in either
   direction.
+- **Check `ng build` by its EXIT CODE, not by grepping for
+  "error TS".** Angular template errors are `NG5002` and friends — a
+  grep for TypeScript errors reports zero while the build fails and
+  exits 1, which is precisely the class `ng build` exists to catch
+  (ACC-72). An unterminated tag caught this out mid-ticket: `tsc` was
+  clean, the grep said zero, and the build was broken. Use
+  `npx ng build; echo $?` or grep `NG[0-9]` as well.
 - **Wait long enough for the real database.** A filter read at 1200ms
   showed the *previous* result and looked like a broken filter; the same
   path read at 3000ms was correct. Local development talks to a
