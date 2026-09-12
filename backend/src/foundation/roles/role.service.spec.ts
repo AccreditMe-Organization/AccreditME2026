@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { RoleService } from './role.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -49,6 +49,8 @@ const mockPrisma = {
   role: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
+    // ACC-78 — getRoles() counts alongside the page.
+    count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     upsert: jest.fn(),
@@ -173,34 +175,59 @@ describe('RoleService', () => {
 
       const result = await service.getRoles(ORG_A);
 
-      expect(result).toHaveLength(1);
+      // ACC-78 — the envelope, not a bare array.
+      expect(result.data).toHaveLength(1);
       expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { organizationId: ORG_A } }),
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
       );
     });
 
-    it('filters out PLATFORM_ADMIN for a non-platform organization', async () => {
+    // ACC-78 — these two used to assert that the application filtered
+    // PLATFORM_ADMIN out of the query's results. It is now excluded in the
+    // WHERE clause instead, so they assert the clause.
+    //
+    // The change is a correctness fix, not a refactor: a post-query filter and
+    // a database-side count cannot agree. Filtering after the fact would return
+    // 24 rows for a page of 25 whenever PLATFORM_ADMIN fell inside it, and
+    // count() would include a role the caller can never see — so both the total
+    // and the page count would be wrong.
+    it('excludes PLATFORM_ADMIN in the query for a non-platform organization', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
-      mockPrisma.role.findMany.mockResolvedValue([
-        makeRole({ key: 'PLATFORM_ADMIN', nameEn: 'Platform Administrator' }),
-        makeRole({ key: 'TENANT_ADMIN', nameEn: 'Organization Administrator' }),
-      ]);
+      mockPrisma.role.findMany.mockResolvedValue([makeRole({ key: 'TENANT_ADMIN' })]);
 
       const result = await service.getRoles(ORG_A);
 
-      expect(result.map((r) => r.key)).toEqual(['TENANT_ADMIN']);
+      const where = mockPrisma.role.findMany.mock.calls[0]![0].where;
+      expect(where.key).toEqual({ not: 'PLATFORM_ADMIN' });
+      expect(result.data.map((r) => r.key)).toEqual(['TENANT_ADMIN']);
     });
 
-    it('includes PLATFORM_ADMIN for the designated platform organization', async () => {
+    it('does not exclude PLATFORM_ADMIN for the designated platform organization', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
       mockPrisma.role.findMany.mockResolvedValue([
-        makeRole({ key: 'PLATFORM_ADMIN', nameEn: 'Platform Administrator' }),
-        makeRole({ key: 'TENANT_ADMIN', nameEn: 'Organization Administrator' }),
+        makeRole({ key: 'PLATFORM_ADMIN' }),
+        makeRole({ key: 'TENANT_ADMIN' }),
       ]);
 
       const result = await service.getRoles(ORG_A);
 
-      expect(result.map((r) => r.key).sort()).toEqual(['PLATFORM_ADMIN', 'TENANT_ADMIN']);
+      expect(mockPrisma.role.findMany.mock.calls[0]![0].where.key).toBeUndefined();
+      expect(result.data.map((r) => r.key).sort()).toEqual(['PLATFORM_ADMIN', 'TENANT_ADMIN']);
+    });
+
+    // The exclusion must reach the COUNT too, or the paginator reports a total
+    // that includes a row the caller can never be shown.
+    it('applies the PLATFORM_ADMIN exclusion to the count as well as the page', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
+      mockPrisma.role.findMany.mockResolvedValue([]);
+      mockPrisma.role.count.mockResolvedValue(0);
+
+      await service.getRoles(ORG_A);
+
+      const findWhere = mockPrisma.role.findMany.mock.calls[0]![0].where;
+      const countWhere = mockPrisma.role.count.mock.calls[0]![0].where;
+      expect(countWhere).toEqual(findWhere);
+      expect(countWhere.key).toEqual({ not: 'PLATFORM_ADMIN' });
     });
 
     // ACC-74 — the Roles list rendered 0 for every role because getRoles()
@@ -217,8 +244,8 @@ describe('RoleService', () => {
 
       const result = await service.getRoles(ORG_A);
 
-      expect(result.find((r) => r.id === 'role-admin')?.permissionCount).toBe(70);
-      expect(result.find((r) => r.id === 'role-viewer')?.permissionCount).toBe(13);
+      expect(result.data.find((r) => r.id === 'role-admin')?.permissionCount).toBe(70);
+      expect(result.data.find((r) => r.id === 'role-viewer')?.permissionCount).toBe(13);
     });
 
     // A role with no permissions is a real answer, not a missing one — the
@@ -229,8 +256,8 @@ describe('RoleService', () => {
 
       const result = await service.getRoles(ORG_A);
 
-      expect(result[0]!.permissionCount).toBe(0);
-      expect(result[0]!.permissionCount).not.toBeUndefined();
+      expect(result.data[0]!.permissionCount).toBe(0);
+      expect(result.data[0]!.permissionCount).not.toBeUndefined();
     });
 
     // The shape decision, asserted so it cannot quietly regress into an N+1.
@@ -249,6 +276,19 @@ describe('RoleService', () => {
       expect(mockPrisma.rolePermission.findMany).not.toHaveBeenCalled();
     });
 
+    // ACC-78 — an empty page skips the grouped query entirely. `roleId: { in: [] }`
+    // is a guaranteed-empty result that still costs a round trip, and under
+    // pagination an empty page is now a routine occurrence rather than an edge
+    // case (any page past the last one).
+    it('makes no grouped query at all for an empty page', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([]);
+      mockPrisma.role.count.mockResolvedValue(0);
+
+      await service.getRoles(ORG_A, { page: 99 });
+
+      expect(mockPrisma.rolePermission.groupBy).not.toHaveBeenCalled();
+    });
+
     // The list renders a number; it must not also ship the whole set.
     it('does not populate the full permissions array on list responses', async () => {
       mockPrisma.role.findMany.mockResolvedValue([makeRole({ id: 'r1' })]);
@@ -258,9 +298,76 @@ describe('RoleService', () => {
 
       const result = await service.getRoles(ORG_A);
 
-      expect(result[0]!.permissionCount).toBe(70);
-      expect(result[0]!.permissions).toBeUndefined();
+      expect(result.data[0]!.permissionCount).toBe(70);
+      expect(result.data[0]!.permissions).toBeUndefined();
     });
+
+    // ── ACC-78: pagination, bilingual search, compound sort ────────────────
+
+    it('returns the envelope with total from count()', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([BASE_ROLE]);
+      mockPrisma.role.count.mockResolvedValue(9);
+
+      const result = await service.getRoles(ORG_A, { page: 2, pageSize: 5 });
+
+      expect(result).toMatchObject({ total: 9, page: 2, pageSize: 5 });
+      expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 5, take: 5 }),
+      );
+    });
+
+    // A role's Arabic name is not a translation of a search term — it is the
+    // name an Arabic-speaking admin knows it by. Searching only nameEn would
+    // make the Arabic UI's search box quietly useless.
+    it('searches BOTH bilingual names', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([]);
+      mockPrisma.role.count.mockResolvedValue(0);
+
+      await service.getRoles(ORG_A, { search: 'جودة' });
+
+      expect(mockPrisma.role.findMany.mock.calls[0]![0].where.OR).toEqual([
+        { nameEn: { contains: 'جودة', mode: 'insensitive' } },
+        { nameAr: { contains: 'جودة', mode: 'insensitive' } },
+      ]);
+    });
+
+    // The compound default: system roles first, then alphabetical. It predates
+    // this ticket and is a real UX property — a single-column fallback would
+    // have dropped the grouping silently.
+    it('defaults to the compound order — system roles first, then alphabetical', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([]);
+      mockPrisma.role.count.mockResolvedValue(0);
+
+      await service.getRoles(ORG_A, {});
+
+      expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: [{ isSystem: 'desc' }, { nameEn: 'asc' }] }),
+      );
+    });
+
+    // Both bilingual names are sortable rather than one synthetic "name", so
+    // the sort matches whichever name the reader is actually looking at.
+    it('sorts by either bilingual name on request', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([]);
+      mockPrisma.role.count.mockResolvedValue(0);
+
+      await service.getRoles(ORG_A, { sortBy: 'nameAr', sortDir: 'asc' });
+
+      expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { nameAr: 'asc' } }),
+      );
+    });
+
+    it.each(['organizationId', 'id', 'description'])(
+      'refuses to sort by %s and never queries',
+      async (column) => {
+        await expect(service.getRoles(ORG_A, { sortBy: column })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(mockPrisma.role.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.role.count).not.toHaveBeenCalled();
+      },
+    );
 
     itEnforcesTenantIsolation('permission counts in getRoles', async () => {
       // The groupBy is scoped by roleId drawn from the already-tenant-filtered
@@ -275,10 +382,26 @@ describe('RoleService', () => {
 
       const result = await service.getRoles(ORG_B);
 
-      expect(result).toEqual([]);
-      expect(mockPrisma.rolePermission.groupBy).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { roleId: { in: [] } } }),
+      expect(result.data).toEqual([]);
+      // ACC-78 — the grouped query is now skipped entirely for an empty page
+      // rather than being called with an empty `in`, so the isolation
+      // guarantee is stronger: no query runs at all.
+      expect(mockPrisma.rolePermission.groupBy).not.toHaveBeenCalled();
+    });
+
+    // Tenant scoping on the COUNT, which is a second query pagination
+    // introduced. If it held only on the page, a paginator would report another
+    // tenant's role total.
+    itEnforcesTenantIsolation('getRoles count query', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([]);
+      mockPrisma.role.count.mockImplementation(
+        ({ where }: { where: { organizationId: string } }) =>
+          Promise.resolve(where.organizationId === ORG_A ? 7 : 0),
       );
+
+      const result = await service.getRoles(ORG_B);
+
+      expect(result.total).toBe(0);
     });
   });
 
@@ -778,8 +901,8 @@ describe('RoleService', () => {
       const resultA = await service.getRoles(ORG_A);
       const resultB = await service.getRoles(ORG_B);
 
-      expect(resultA.map((r) => r.id)).toEqual(['role-a']);
-      expect(resultB.map((r) => r.id)).toEqual(['role-b']);
+      expect(resultA.data.map((r) => r.id)).toEqual(['role-a']);
+      expect(resultB.data.map((r) => r.id)).toEqual(['role-b']);
     });
 
     it('should NOT allow assigning a role belonging to a different tenant to a user', async () => {
