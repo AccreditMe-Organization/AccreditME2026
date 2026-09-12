@@ -56,11 +56,18 @@ export interface DataListScope {
 //
 // Applies to panel mode ONLY, and that boundary is the correction this rebuild
 // exists for. The rule itself is right where it applies: a panel holding six
-// tasks has nothing to search. Generalised to full pages it was wrong, and it
-// shipped a Users page with no search, no sort and no headers because the
-// seeded tenant had fewer than twelve users. A page is a destination; its
-// controls are part of what it IS, and they do not appear and vanish with the
-// size of the data.
+// tasks has nothing to search. Generalised to full pages it was wrong: it
+// shipped a Roles page with no search at all, because that tenant has seven
+// roles.
+//
+// Be precise about what the threshold did and did not cause, because the
+// first diagnosis got this wrong. Users has 25 rows and WAS above it, so that
+// page did have a search box. What every page lacked — headers, click-to-sort
+// and a pager — was never gated on anything; it simply had not been built.
+// The threshold explains the missing search on small lists and nothing else.
+//
+// A page is a destination; its controls are part of what it IS, and they do
+// not appear and vanish with the size of the data.
 export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
 
 // ACC-78 — the shared list, rebuilt. Built against

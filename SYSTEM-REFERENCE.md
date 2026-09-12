@@ -67,7 +67,7 @@ audit's starting point, not be mistaken for having already done it.
 7. Organization Structure — ✅ complete
 8. Multi-Tenancy Conventions — ✅ complete
 9. i18n / RTL — ✅ complete
-10. Frontend Design Patterns — ✅ complete
+10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
 
@@ -3752,6 +3752,251 @@ page can place them separately, as Committee's does.
 correct fix for numerals reordering in Arabic, and the first use of it
 in this codebase. Worth adopting wherever a date or count sits inside a
 translated sentence.
+
+---
+
+### 10.10 `DataListComponent` — the Shared List Pattern (ACC-78)
+
+`frontend/src/app/shared/components/data-list/`. The list pattern every
+table in the app is migrating onto. Built against the Claude Design
+exports in `frontend/design-reference/`, and proved on three
+structurally different tables: **Users** (server-side, 7 columns),
+**Roles** (bilingual names, row actions), **Workflow Stages** (the hard
+case — client-side, manually ordered, expandable rows containing a
+further editor).
+
+**Written after a first attempt was discarded.** That matters for
+reading this section: several rules below are stated as corrections
+because they were arrived at the expensive way.
+
+#### Two modes, named by the caller
+
+`variant: 'page' | 'panel'`.
+
+**PAGE** — a real table: projected header row with click-to-sort, a
+`p-paginator` with rows-per-page, a projected filter slot, a column
+chooser.
+**PANEL** — the compact list for embedding in a record page: no header,
+no pager, and a toolbar only once the set is big enough to want one.
+
+**The first attempt had ONE mode and derived its controls from row
+count**, reasoning that set size is the honest variable and mounting
+context is not. That is wrong, and the reasoning is worth keeping so it
+is not re-derived: a full page is a destination somebody navigated to,
+and its header row, sorting and pager are part of what the page *is* —
+not a response to how much data happened to arrive.
+
+**But the rule was not wrong, only over-generalised.** It survives as
+`PANEL_TOOLBAR_ROW_THRESHOLD` (12), applying to panel mode alone, where
+a list of six tasks genuinely has nothing to search. Correct in its
+scope; wrong as a universal law. That distinction is the whole lesson —
+the fix was to bound the rule, not to delete it.
+
+**Be precise about what the threshold actually cost**, because the first
+diagnosis over-attributed to it. Measured on the real seeded tenant:
+Users has 25 rows, was above the threshold, and *did* render a search
+box; Roles has 7 and rendered none. Headers, click-to-sort and the pager
+were missing from every page and were never gated on anything — they
+had simply not been built. The threshold explains a missing search on
+small lists and nothing else.
+
+#### Contract
+
+```ts
+type DataListSource<T> = (query: IListQuery) => Observable<IPaginatedResponse<T>>;
+// IListQuery  { page, pageSize, search, sortBy, sortDir, scope, filters }
+// IPaginatedResponse<T> { data, total, page, pageSize }   // page is 1-INDEXED
+```
+
+`clientSideSource(() => items, { searchFields, comparators })` adapts an
+array-backed list to the same contract, so there is one code path.
+
+#### Properties that are easy to get wrong
+
+- **`source` must be an ARROW PROPERTY, never a method.** It is read as
+  a signal input, so a bound method is a new reference on every change
+  detection → invalidates the computed → refetches forever. The symptom
+  is a network tab scrolling by itself, not an error. The single most
+  likely way to misuse this component.
+- **`clientSideSource` reads its items through a FUNCTION**, not a
+  snapshot. `items()` captures one array and never updates; `() =>
+  items()` re-reads per query. Total is counted after filtering, before
+  slicing.
+- **Column widths live on `DataListColumn.width`, and the component
+  builds the grid.** Both the header template and every row read the
+  same `--am-list-cols`, so they cannot drift, and hiding a column
+  closes its track rather than leaving a gap the caller must recompute
+  around. This is the alternative to a column-config API: the three
+  proving tables share no structure, so a config API would be a small
+  framework describing layouts that do not rhyme.
+- **A manually ordered list gives no column a `sortBy`.** Workflow
+  Stages never will: its order IS its data and every row carries reorder
+  buttons, so re-sorting would leave those buttons pointing at positions
+  the reader can no longer see. Headers still render — a header is a
+  label, and labelling a column does not imply it sorts. Where sorting
+  IS offered, row indices must come from the underlying array, not the
+  rendered page.
+- **`showPager` is an explicit caller decision, not a row count.**
+  Deliberately not inferred from `total <= pageSize`: that would hide
+  the rows-per-page control on any list that happens to fit today, which
+  is the same over-generalisation this rebuild exists to undo.
+- **Persistence splits by lifetime**: what belongs in a shared link
+  (search, scope, page, filters) goes in URL params; what is a personal
+  habit (sort, page size, hidden columns) goes in localStorage. URL wins
+  where both exist, because a pasted link must render what the sender
+  saw.
+- **`restore()` runs in `ngOnInit`, NOT the constructor.** Signal inputs
+  still hold their defaults while the constructor runs, so `persistKey()`
+  was null, restore returned immediately, and the write-effect then
+  overwrote the address bar with the empty query — a shared link visibly
+  dropped its own parameters on arrival. The write-effect is gated on a
+  `restored` flag so it cannot clobber what it is about to read.
+
+#### `reload()` — and why this keeps happening
+
+A query-driven component refetches when its query changes. **"The data
+changed but the query did not" has no natural trigger** — deleting a row
+or saving a dialog leaves `{page, search, sort}` identical, so nothing
+re-runs and the list silently shows stale data. Hence the explicit
+`reload()`.
+
+**Third component in two tickets to need it** (ACC-76's stage timeline
+and tasks panel were the first two), each found the same way: watching a
+screen not update after a successful save. Any future component whose
+input is a *query* rather than *data* will need it. Build it in.
+
+#### Rules the backend half established
+
+1. **The count must be PROVEN to share the page's scoping.** They are
+   separate queries (`Promise.all([findMany, count])`), so a correctly
+   scoped page can sit under a total that counts another tenant's rows,
+   and an isolation test on the page proves nothing about the count. Two
+   proofs, both used: build **one `where` const and pass it to both**,
+   then assert they received the same object
+   (`expect(countWhere).toEqual(findWhere)`), and/or add a **second
+   isolation test naming the count query**. The shared const removes the
+   failure mode; the test catches its reintroduction. The CI gate matches
+   on the literal test name, so a count test must go through
+   `itEnforcesTenantIsolation()` to be seen.
+2. **Audit for post-query filtering BEFORE paginating.** A `.filter()`
+   after the query is harmless while endpoints return everything and a
+   defect the moment they do not: the page comes back short and the total
+   counts rows the caller may never see. `PLATFORM_ADMIN` on `/roles` was
+   exactly this — the fix is the `WHERE` clause, not filtering again in
+   the component.
+3. **Find every non-list consumer before changing a list endpoint's
+   return shape.** Paginating `/users` silently capped ten *pickers* at
+   25 rows. `tsc` flagged each call site, and unwrapping `.data` at each
+   would have satisfied the compiler while leaving every picker quietly
+   truncated. Hence `listAllUsers()`/`listAllRoles()` — "give me all of
+   them to choose from" is a different question from "show me a page".
+4. **`sortBy` is a per-endpoint allowlist; an unknown column is a 400**,
+   not a silent fallback. And a column the UI renders as sortable must be
+   ON that list — a header that offers to sort and answers 400 is worse
+   than one that does not offer.
+5. **An endpoint's own filters belong ON its query DTO, not beside it.**
+   A bare `@Query()` binds the WHOLE query object, so the global
+   `forbidNonWhitelisted: true` validates every parameter against that
+   DTO. `@Query() pagination: PaginationQueryDto` next to
+   `@Query('status')` therefore rejected every filtered request with
+   `{"message":["property status should not exist"],...,"statusCode":400}`.
+   Per-endpoint DTOs extending `PaginationQueryDto` are the fix; relaxing
+   the pipe is not, since `forbidNonWhitelisted` is what turns a
+   misspelled filter into an error instead of a silently ignored one.
+
+#### Verification: what each layer cannot see
+
+This is the section to read before trusting a green suite on list work.
+**203 frontend tests passed against a component that rendered none of
+its features on real data.** Each defect below was invisible to
+everything above it:
+
+| Layer | Cannot see |
+|---|---|
+| Controller specs | A `ValidationPipe` rejection — they call methods directly with arguments already built |
+| HTTP contract specs | A fixture that does not look like production data |
+| Unit + component tests | Whether anything renders on real data at all |
+| Accessibility snapshot | Where on the page an element actually is |
+| A browser | Nothing found so far — every remaining defect surfaced here |
+
+- **`user.contract.spec.ts` / `notification.contract.spec.ts`** are the
+  shape that catches the DTO/pipe class: a real Nest app, the real
+  `main.ts` pipe config, real query strings, mocked service. Their pipe
+  options MUST mirror `main.ts` — if they drift, the spec passes while
+  production rejects.
+- **Fixtures must look like production data.** `@IsUUID()` on
+  `orgUnitId` passed every test and rejected every real request, because
+  this schema generates ids with `cuid()` and the fixtures were UUIDs. A
+  fixture that does not resemble real data tests the fixture.
+- **An accessibility snapshot is not a substitute for looking at the
+  page.** The bilingual cells reported their Arabic text as present and
+  correct while it rendered in the wrong column — `dir="rtl"` on a block
+  flips the block's alignment, so `text-start` resolved to the right
+  edge of a wide grid cell. Only a screenshot showed it. Put `dir` on an
+  inline span with `unicode-bidi: isolate`; leave the block alone.
+- **Check the non-development language.** Both user filters truncated
+  their Arabic labels at a width the English labels fit comfortably.
+  Size for the longer of the two languages, not the one being developed
+  in.
+
+#### A named pattern: the stale promise
+
+**A string that asserts something about the product's state goes stale
+when the state changes, and nothing fails.** Four instances now, which
+is well past coincidence:
+
+| String | Asserted | Reality when found |
+|---|---|---|
+| `assigneePickerUnavailable` | User Management not built | It had shipped (ACC-76) |
+| `committee-detail.component.ts:59` | A design-reference path | Folder restructured (ACC-78) |
+| List footer | Preferences persist *per user* | localStorage — per browser |
+| PR #75's own diagnosis | Every table below the threshold | Users had 25 rows and a search box |
+
+The fourth is the instructive one: **a wrong diagnosis left in the
+record behaves exactly like a stale promise.** It reads as settled fact
+to whoever finds it next, and nothing will ever contradict it. It was
+corrected in the closed PR and in the code comments that repeated it,
+not only in conversation.
+
+The rule: **a user-visible string making a claim about the system is a
+claim that needs an owner.** Prefer deriving the state over describing
+it in prose no test can verify. Where prose is unavoidable, make it true
+of the weakest case — the footer says "on this device", which is what
+localStorage does.
+
+#### Nothing in the toolchain catches a missing translation key
+
+ngx-translate renders the **raw key string**; nothing throws, `tsc` and
+`ng build` both pass, and the user sees `user.invited` where a label
+should be. **Diffing en.json against ar.json by hand is not a control** —
+it depends on somebody remembering, and it passed these same keys more
+than once. `frontend/src/app/shared/i18n/translation-keys.spec.ts` is
+the control that now exists; its parity check is automatic and real, its
+concatenated-key registry is a hand-maintained list that **cannot grow
+by itself**. Read that file's header before trusting it.
+
+Related: **`list.range` and `list.panelRange` are separate keys and are
+not interchangeable.** PrimeNG's paginator substitutes its own
+`{first}`/`{totalRecords}`; ngx-translate substitutes `{{first}}`.
+Passing either to the other renders the braces literally.
+
+#### A salvage note, for the next discarded branch
+
+When ACC-78's first attempt was abandoned, two commits named for a list
+migration (`1d015ba`, `503b9f8`) touched 11 and 12 files each — and only
+ONE file apiece was the list rewrite. The rest was the
+`listAllUsers()`/`listAllRoles()` fix across ~20 picker call sites.
+**Discarding them wholesale would have silently reintroduced capped
+pickers**: it compiles, it renders, and a colleague is simply missing
+from a dropdown. Audit what a commit TOUCHED, not what its message says,
+before discarding it.
+
+#### Consumers (3)
+
+`user-list`, `role-list`, `workflow-stage-list`. **Fifteen `p-table`
+screens remain unmigrated** — a deliberate split; a follow-up migrates
+the rest. `p-table` is not deprecated by this: it remains correct for a
+nested editor grid that is not a list page.
 
 ---
 

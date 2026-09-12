@@ -44,8 +44,11 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // Seven labelled columns with click-to-sort headers, a real pager, the
 // three-filter bar (status chips with counts, org unit, position), a column
 // chooser, and Edit labelled beside a More menu. The first attempt rendered
-// the compact panel's two-line cell here and gated its toolbar on row count,
-// so a tenant with eleven users saw no search, no sort and no headers at all.
+// the compact panel's two-line cell here and built no header row, no
+// click-to-sort and no pager at all — none of which was gated on row count;
+// they were simply absent. (This page's own search DID render, since the
+// tenant has 25 users and the toolbar threshold is 12. The threshold cost
+// Roles its search, not this page.)
 @Component({
   selector: 'app-user-list',
   standalone: true,
