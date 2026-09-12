@@ -68,7 +68,7 @@ import {
            used 13px/11.5px rows above a PrimeNG p-table at 14px with its own
            cell padding, so an expanded stage showed two different table
            idioms stacked on each other. -->
-      <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden">
+      <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden flex flex-col min-h-0">
         <app-data-list
           variant="page"
           [source]="source"

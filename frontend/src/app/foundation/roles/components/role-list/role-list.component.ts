@@ -58,7 +58,7 @@ import { StatusChipComponent } from '../../../../shared/components/status-chip/s
            than one chosen by language. A role's Arabic name is what an
            Arabic-speaking admin knows it by, and an English session should
            still show it. -->
-      <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden">
+      <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden flex flex-col min-h-0">
         <app-data-list
           #list
           variant="page"

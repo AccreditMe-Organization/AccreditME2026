@@ -80,7 +80,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
       }
 
       <div
-        class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden"
+        class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden flex flex-col min-h-0"
       >
         <app-data-list
           #list
@@ -111,6 +111,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
               optionGroupLabel="label"
               optionGroupChildren="children"
               [groupsSelectable]="true"
+              [showClear]="true"
               [placeholder]="'user.allOrgUnits' | translate"
               [ngModel]="list.filterValue('orgUnitId')"
               (ngModelChange)="list.setFilter('orgUnitId', $event)"
@@ -120,6 +121,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
               [options]="positionOptions()"
               optionLabel="label"
               optionValue="value"
+              [showClear]="true"
               [placeholder]="'user.allPositions' | translate"
               [ngModel]="list.filterValue('positionId')"
               (ngModelChange)="list.setFilter('positionId', $event)"

@@ -103,6 +103,15 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
 @Component({
   selector: 'app-data-list',
   standalone: true,
+  // ACC-78 - the host is a custom element and therefore `display: inline` by
+  // default, which makes every flex/height rule inside it inert. It has to be
+  // a shrinkable flex column for the body's scroll region to work at all.
+  //
+  // min-height: 0 is the load-bearing half. A flex item's default
+  // `min-height: auto` refuses to shrink below its content, so a tall table
+  // pushes its own container past the available height instead of scrolling
+  // inside it - which is exactly the bug this fixes.
+  host: { class: 'flex flex-col min-h-0' },
   imports: [
     NgTemplateOutlet,
     TranslatePipe,
@@ -113,7 +122,10 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
     TooltipModule,
   ],
   template: `
-    <div class="flex flex-col min-w-0" [style]="'--am-list-cols: ' + gridTemplate()">
+    <div
+      class="flex flex-col min-w-0 flex-1 min-h-0"
+      [style]="'--am-list-cols: ' + gridTemplate()"
+    >
       <!-- ── toolbar ─────────────────────────────────────────────────────── -->
       @if (showToolbar()) {
         <div
@@ -252,6 +264,19 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
       }
 
       <!-- ── body ────────────────────────────────────────────────────────── -->
+      <!-- THE SCROLL REGION, and it is deliberately only this. The toolbar,
+           scope chips, header row and pager sit outside it, so they stay put
+           while rows scroll underneath - a pager that scrolls away is a pager
+           the reader has to go looking for.
+           This replaces what p-table's scrollable scrollHeight="flex" did
+           before the migration. Losing it is what made the last row render
+           cut off and put the pager 730px below the viewport with no way to
+           reach it: the card clipped its overflow rather than scrolling, so
+           the shell's own scrollable <main> never had anything to scroll.
+           When the parent does NOT constrain height, flex-1 simply grows to
+           content and no scrollbar appears - so this is safe in panel mode
+           too, and does not need a per-variant branch. -->
+      <div class="flex-1 min-h-0 overflow-y-auto">
       @if (error()) {
         <div class="p-4"><p-message severity="error" [text]="error()! | translate" /></div>
       } @else if (loading()) {
@@ -310,6 +335,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
           </div>
         </div>
       }
+      </div>
 
       <!-- ── pager ───────────────────────────────────────────────────────── -->
       <!-- Page mode only. PrimeNG's paginator rather than a hand-rolled one:

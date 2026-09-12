@@ -3829,6 +3829,22 @@ array-backed list to the same contract, so there is one code path.
   around. This is the alternative to a column-config API: the three
   proving tables share no structure, so a config API would be a small
   framework describing layouts that do not rhyme.
+- **The body is the scroll region, and every ancestor needs
+  `min-h-0`.** A flex item defaults to `min-height: auto`, which refuses
+  to shrink below its content — so a tall table pushes its container
+  past the available height instead of scrolling inside it. The chain
+  that has to cooperate is: the page root (`h-full`), the card wrapper
+  (`flex flex-col min-h-0`), the component host (`flex flex-col
+  min-h-0`, set via `host:` because a custom element is `display:
+  inline` by default and every rule inside it is otherwise inert), and
+  the body (`flex-1 min-h-0 overflow-y-auto`). Toolbar, chips, header
+  and pager sit OUTSIDE the scroll region so they stay put. This
+  replaces what `p-table`'s `scrollable scrollHeight="flex"` did before
+  the migration — a checklist item dismissed as "N/A, this is not a
+  p-table", which is how the pager ended up unreachable. Where the
+  parent does not constrain height, `flex-1` grows to content and no
+  scrollbar appears, so the same markup is correct in panel mode
+  without a variant branch.
 - **A manually ordered list gives no column a `sortBy`.** Workflow
   Stages never will: its order IS its data and every row carries reorder
   buttons, so re-sorting would leave those buttons pointing at positions
@@ -3836,6 +3852,11 @@ array-backed list to the same contract, so there is one code path.
   label, and labelling a column does not imply it sorts. Where sorting
   IS offered, row indices must come from the underlying array, not the
   rendered page.
+- **Filters must be clearable, and `OverlaySelectComponent` already
+  does it** — `[showClear]="true"` renders a clear affordance that sets
+  the value to `null`; 10+ forms already use it. An uncleartable form
+  field is annoying; an uncleartable FILTER hides data with no way back,
+  so this matters more on a list than anywhere it was already used.
 - **`showPager` is an explicit caller decision, not a row count.**
   Deliberately not inferred from `total <= pageSize`: that would hide
   the rows-per-page control on any list that happens to fit today, which
@@ -3916,8 +3937,9 @@ everything above it:
 | Controller specs | A `ValidationPipe` rejection — they call methods directly with arguments already built |
 | HTTP contract specs | A fixture that does not look like production data |
 | Unit + component tests | Whether anything renders on real data at all |
-| Accessibility snapshot | Where on the page an element actually is |
-| A browser | Nothing found so far — every remaining defect surfaced here |
+| Accessibility snapshot | Where an element is, whether it is clipped, and whether a person can reach it |
+| A **scripted** browser pass | The difference between "the control responded" and "a person could get to it" |
+| A screenshot | Caught both defects the layers above reported as fine |
 
 - **`user.contract.spec.ts` / `notification.contract.spec.ts`** are the
   shape that catches the DTO/pipe class: a real Nest app, the real
@@ -3928,12 +3950,47 @@ everything above it:
   `orgUnitId` passed every test and rejected every real request, because
   this schema generates ids with `cuid()` and the fixtures were UUIDs. A
   fixture that does not resemble real data tests the fixture.
-- **An accessibility snapshot is not a substitute for looking at the
-  page.** The bilingual cells reported their Arabic text as present and
-  correct while it rendered in the wrong column — `dir="rtl"` on a block
-  flips the block's alignment, so `text-start` resolved to the right
-  edge of a wide grid cell. Only a screenshot showed it. Put `dir` on an
-  inline span with `unicode-bidi: isolate`; leave the block alone.
+- **A SCRIPTED CLICK IS NOT EVIDENCE A HUMAN CAN REACH THE CONTROL.**
+  This is the rule; the accessibility tree is only half of why.
+
+  **`overflow: hidden` still creates a scroll container.** It has no
+  scrollbar and ignores the wheel, so a person cannot scroll it — but
+  `scrollTop` is settable by script and `scrollIntoView()` moves it, and
+  Playwright calls `scrollIntoView` before every click. Automation
+  therefore reaches controls that are, for a user, simply not there.
+
+  Two instances, both reported as working by every layer except an
+  image:
+
+  1. **The pager was unreachable.** The card was a flex item pinned
+     under `h-full`, shrank to 645px against 1462px of content, and
+     `overflow-hidden` clipped the rest — putting the paginator 730px
+     below the viewport. Because the clip happened first, the shell's
+     own `overflow-auto` `<main>` never had anything to scroll either.
+     The verification pass reported paging to page 3 and reading
+     "21-25 of 25", all of it true and all of it reached by scripted
+     scrolling of a container a user cannot scroll. **A screenshot
+     would have shown the pager was not in the frame.**
+  2. **The Arabic name rendered in the wrong column.** The tree
+     reported the text present and correct; `dir="rtl"` on a block
+     flips the block's alignment, so `text-start` resolved to the right
+     edge of a wide grid cell. Put `dir` on an inline span with
+     `unicode-bidi: isolate`; leave the block alone. **Only a
+     screenshot showed it.**
+
+  So: **screenshot every page state you claim to have verified**, and
+  when a control's reachability is the question, assert its rect against
+  the viewport (`getBoundingClientRect().bottom <= innerHeight`) and
+  drive it with a trusted input (`page.mouse.wheel`) rather than
+  `element.scrollTop` or a synthetic `WheelEvent` — synthetic wheel
+  events are untrusted and never scroll, so they prove nothing in either
+  direction.
+- **Wait long enough for the real database.** A filter read at 1200ms
+  showed the *previous* result and looked like a broken filter; the same
+  path read at 3000ms was correct. Local development talks to a
+  Frankfurt database at 6–11s for some round trips (ACC-60), so a short
+  timeout manufactures defects that do not exist. Confirm against the
+  network request and the API's own answer before reporting one.
 - **Check the non-development language.** Both user filters truncated
   their Arabic labels at a width the English labels fit comfortably.
   Size for the longer of the two languages, not the one being developed
