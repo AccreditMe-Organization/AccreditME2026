@@ -15,6 +15,8 @@ import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IUser } from './interfaces/user.interface';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { IRole } from '../roles/interfaces/role.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
@@ -26,17 +28,34 @@ export class UserController {
 
   @Get()
   @Permissions(USERS_PERMISSIONS.VIEW)
+  // ACC-78 — paginated. `status`/`orgUnitId` stay their own @Query params: they
+  // are this endpoint's own filters, not part of the shared list contract.
+  // `search` moves INTO the DTO, because it is part of it.
   async listUsers(
     @CurrentTenant() tenantId: string,
+    @Query() pagination: PaginationQueryDto,
     @Query('status') status?: string,
     @Query('orgUnitId') orgUnitId?: string,
-    @Query('search') search?: string,
-  ): Promise<IUser[]> {
+  ): Promise<IPaginatedResponse<IUser>> {
+    const result = await this.userService.listUsers(tenantId, {
+      status,
+      orgUnitId,
+      search: pagination.search,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      sortBy: pagination.sortBy,
+      sortDir: pagination.sortDir,
+    });
     // ACC-45 — mapped via toSafeUser() at this HTTP boundary; see its own
     // comment in user.service.ts for why this isn't baked into
     // UserService.listUsers() itself.
-    const users = await this.userService.listUsers(tenantId, { status, orgUnitId, search });
-    return users.map(toSafeUser);
+    //
+    // ACC-78 — maps over `.data` and rebuilds the envelope rather than
+    // spreading it. Spreading would carry `data` through unmapped if the field
+    // order ever changed, which is exactly the silent-leak shape ACC-45 exists
+    // to prevent: the raw Prisma row satisfies IUser structurally, so a missed
+    // mapping compiles cleanly and leaks invitationToken at runtime.
+    return { ...result, data: result.data.map(toSafeUser) };
   }
 
   // ACC-43 — no @Permissions() decorator here on purpose, same reasoning

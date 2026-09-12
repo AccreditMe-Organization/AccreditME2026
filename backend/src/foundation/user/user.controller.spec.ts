@@ -28,7 +28,8 @@ describe('UserController', () => {
 
   beforeEach(async () => {
     service = {
-      listUsers: jest.fn().mockResolvedValue([]),
+      // ACC-78 — the envelope, not a bare array.
+      listUsers: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 }),
       getById: jest.fn().mockResolvedValue({ id: USER_ID }),
       getByIdForViewer: jest.fn().mockResolvedValue({ id: USER_ID }),
       getTransferContext: jest.fn().mockResolvedValue({
@@ -63,12 +64,23 @@ describe('UserController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  // ACC-78 — search/page/pageSize/sort arrive via the shared
+  // PaginationQueryDto; status/orgUnitId stay this endpoint's own params.
   it('listUsers delegates to UserService.listUsers with filters', async () => {
-    await controller.listUsers(TENANT_ID, 'ACTIVE', 'unit-1', 'ahmad');
+    await controller.listUsers(
+      TENANT_ID,
+      { search: 'ahmad', page: 2, pageSize: 50, sortBy: 'email', sortDir: 'desc' },
+      'ACTIVE',
+      'unit-1',
+    );
     expect(service.listUsers).toHaveBeenCalledWith(TENANT_ID, {
       status: 'ACTIVE',
       orgUnitId: 'unit-1',
       search: 'ahmad',
+      page: 2,
+      pageSize: 50,
+      sortBy: 'email',
+      sortDir: 'desc',
     });
   });
 
@@ -193,12 +205,32 @@ describe('UserController', () => {
     ] as const;
 
     it('listUsers strips invitationToken and every other internal-only field from each returned user', async () => {
-      service.listUsers.mockResolvedValue([RAW_USER_WITH_SECRETS]);
-      const result = await controller.listUsers(TENANT_ID);
-      const [mapped] = result;
+      service.listUsers.mockResolvedValue({
+        data: [RAW_USER_WITH_SECRETS],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+      });
+      const result = await controller.listUsers(TENANT_ID, {});
+      // ACC-78 — the mapper now runs over `.data` inside the envelope. This is
+      // the assertion that catches a paginated endpoint forgetting to map,
+      // which would compile cleanly: a raw Prisma row satisfies IUser
+      // structurally, so the leak is invisible to the type system.
+      const [mapped] = result.data;
       for (const field of SENSITIVE_FIELDS) expect(mapped).not.toHaveProperty(field);
       expect(mapped?.id).toBe(USER_ID);
       expect(mapped?.email).toBe('a@example.com');
+    });
+
+    it('listUsers carries the envelope metadata through unchanged', async () => {
+      service.listUsers.mockResolvedValue({
+        data: [RAW_USER_WITH_SECRETS],
+        total: 91,
+        page: 3,
+        pageSize: 25,
+      });
+      const result = await controller.listUsers(TENANT_ID, {});
+      expect(result).toMatchObject({ total: 91, page: 3, pageSize: 25 });
     });
 
     it('getById strips invitationToken and every other internal-only field', async () => {

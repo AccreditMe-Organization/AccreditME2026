@@ -159,8 +159,9 @@ describe('UserService', () => {
       );
 
       const result = await service.listUsers(ORG_A);
-      expect(result).toHaveLength(1);
-      expect(result[0]?.organizationId).toBe(ORG_A);
+      // ACC-78 — the envelope, not a bare array.
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.organizationId).toBe(ORG_A);
     });
   });
 
