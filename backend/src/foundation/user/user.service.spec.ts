@@ -48,6 +48,7 @@ describe('UserService', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
         count: jest.fn(),
+        groupBy: jest.fn(),
       },
       // ACC-46 Section 2.6.c — a real prisma.$transaction(async (tx) => ...)
       // call, mocked by invoking the callback with mockPrisma itself, so
@@ -183,6 +184,51 @@ describe('UserService', () => {
       );
     });
 
+  });
+
+  // ACC-78 — counts behind the list's filter chips.
+  describe('getStatusCounts', () => {
+    it('returns every known status, at zero when the group is absent', async () => {
+      mockPrisma.user.groupBy.mockResolvedValue([
+        { status: 'ACTIVE', _count: { _all: 7 } },
+        { status: 'INVITED', _count: { _all: 2 } },
+      ]);
+
+      const counts = await service.getStatusCounts(ORG_A);
+
+      // INACTIVE and SUSPENDED were not in the grouped result at all. They must
+      // still be present: a chip that vanishes at zero is a filter bar that
+      // changes shape as it is used.
+      expect(counts).toEqual({ ACTIVE: 7, INVITED: 2, INACTIVE: 0, SUSPENDED: 0 });
+    });
+
+    it('asks the database for one grouped query, not one count per status', async () => {
+      mockPrisma.user.groupBy.mockResolvedValue([]);
+
+      await service.getStatusCounts(ORG_A);
+
+      expect(mockPrisma.user.groupBy).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.count).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('getStatusCounts grouped query', async () => {
+      mockPrisma.user.groupBy.mockImplementation(
+        ({ where }: { where: { organizationId: string } }) =>
+          Promise.resolve(
+            where.organizationId === ORG_A ? [{ status: 'ACTIVE', _count: { _all: 9 } }] : [],
+          ),
+      );
+
+      const counts = await service.getStatusCounts(ORG_B);
+
+      expect(counts.ACTIVE).toBe(0);
+      expect(mockPrisma.user.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+      );
+    });
+  });
+
+  describe('listUsers pagination', () => {
     // ── ACC-78: pagination ─────────────────────────────────────────────────
 
     it('returns the envelope with total from count()', async () => {

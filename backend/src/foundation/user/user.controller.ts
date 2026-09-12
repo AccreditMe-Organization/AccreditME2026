@@ -59,6 +59,18 @@ export class UserController {
     return { ...result, data: result.data.map(toSafeUser) };
   }
 
+  // ACC-78 — counts for the list's filter chips.
+  //
+  // DECLARED BEFORE @Get(':id') AND IT MUST STAY THERE. Nest matches routes in
+  // declaration order, so below that one this path would be swallowed as an id
+  // and return "user status-counts not found" — a 404 that looks like a data
+  // problem rather than a routing one.
+  @Get('status-counts')
+  @Permissions(USERS_PERMISSIONS.VIEW)
+  getStatusCounts(@CurrentTenant() tenantId: string): Promise<Record<string, number>> {
+    return this.userService.getStatusCounts(tenantId);
+  }
+
   // ACC-43 — no @Permissions() decorator here on purpose, same reasoning
   // as updateProfile()/updateOutOfOffice() below: viewing your OWN profile
   // must never require users:view — every authenticated user already

@@ -158,6 +158,41 @@ export class UserService {
     private readonly orgPositionService: OrgPositionService,
   ) {}
 
+  // ACC-78 — counts per status for the list's filter chips.
+  //
+  // A SEPARATE ENDPOINT, not a field on the list response, and the reason is
+  // that the two answer different questions. The list is already filtered: on
+  // the Invited chip its total is the number of invited users, so a count
+  // derived from it could only ever say "Invited (4)" next to 4 invited rows,
+  // and every other chip would read 0. A chip has to say how many rows are
+  // behind it, which is a question about the unfiltered set.
+  //
+  // One grouped query rather than four counts — four round trips to a
+  // Frankfurt database (SYSTEM-REFERENCE §8) to render three small numbers is
+  // not a trade worth making.
+  async getStatusCounts(organizationId: string): Promise<Record<string, number>> {
+    const grouped = await this.prisma.user.groupBy({
+      by: ['status'],
+      where: { organizationId },
+      _count: { _all: true },
+    });
+
+    // Every known status is present in the result, at zero if absent. A chip
+    // that disappears when its count reaches zero is a filter bar that changes
+    // shape as you use it — and "Invited (0)" is information, where a missing
+    // chip is ambiguous between none and not-loaded.
+    const counts: Record<string, number> = {
+      ACTIVE: 0,
+      INVITED: 0,
+      INACTIVE: 0,
+      SUSPENDED: 0,
+    };
+    for (const row of grouped) {
+      counts[row.status as string] = row._count._all;
+    }
+    return counts;
+  }
+
   async listUsers(
     organizationId: string,
     filters?: ListUsersFilters,
