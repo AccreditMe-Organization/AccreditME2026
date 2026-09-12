@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: oklch(0.972 0.004 250); font-family: "Helvetica Neue", Helvetica, "IBM Plex Sans Arabic", sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: oklch(0.52 0.11 250); }
+  a:hover { color: oklch(0.42 0.11 250); }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: oklch(0.88 0.006 250); border: 3px solid #fff; border-radius: 6px; }
+  input::placeholder { color: oklch(0.66 0.012 250); }
+</style>
+</helmet>
+
+<div dir="{{ dir }}" style="display: flex; align-items: stretch; min-height: 100vh; color: oklch(0.25 0.01 250); font-size: 14px; line-height: 1.45;">
+
+  <aside style="{{ sidebarStyle }}">
+    <div style="display: flex; align-items: center; gap: 9px; height: 46px; padding-inline: 16px; border-block-end: 1px solid oklch(0.32 0.02 255); flex: none;">
+      <span style="width: 22px; height: 22px; border-radius: 5px; background: oklch(0.62 0.13 250); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none;">A</span>
+      <sc-if value="{{ sidebarOpen }}" hint-placeholder-val="{{ true }}">
+        <span style="font-size: 13.5px; font-weight: 600; color: oklch(0.97 0.004 250); white-space: nowrap;">AccreditMe</span>
+      </sc-if>
+    </div>
+    <nav style="flex: 1 1 auto; overflow-y: auto; padding: 8px 8px 16px;">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="12">
+        <div style="{{ n.wrapStyle }}">
+          <span style="{{ n.glyphStyle }}">{{ n.glyph }}</span>
+          <sc-if value="{{ n.showLabel }}" hint-placeholder-val="{{ true }}">
+            <span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ n.label }}</span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </nav>
+  </aside>
+
+  <div ref="{{ rootRef }}" style="flex: 1 1 auto; min-width: 0;">
+
+  <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 24px; background: #fff; border-block-end: 1px solid oklch(0.9 0.006 250);">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: oklch(0.52 0.012 250); min-width: 0;">
+      <span>Administration</span>
+      <span style="color: oklch(0.8 0.006 250);">/</span>
+      <span style="color: oklch(0.25 0.01 250); font-weight: 500;">{{ t.users }}</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px; flex: none;">
+      <span dir="ltr" style="font-size: 12px; color: oklch(0.52 0.012 250); unicode-bidi: isolate;">King Fahad Medical City · JCI cycle 2026</span>
+      <div style="display: flex; border: 1px solid oklch(0.88 0.006 250); border-radius: 6px; overflow: hidden;">
+        <button onClick="{{ setLtr }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ ltrBtnStyle }}">EN</button>
+        <button onClick="{{ setRtl }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ rtlBtnStyle }}">ع</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 24px 40px; max-width: 1612px;">
+
+    <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px;">
+      <div style="min-width: 0;">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em;">{{ t.users }}</h1>
+        <div style="font-size: 12.5px; color: oklch(0.52 0.012 250); margin-block-start: 2px;">{{ subtitle }}</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <div style="position: relative;">
+          <button onClick="{{ toggleExport }}" style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; color: oklch(0.3 0.01 250); border: 1px solid oklch(0.86 0.006 250); border-radius: 6px; padding: 7px 12px; font-size: 13.5px; font-weight: 500; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 6px;">{{ t.export }}<span style="font-size: 10px; color: oklch(0.6 0.012 250);">▼</span></button>
+          <sc-if value="{{ exportOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position: absolute; inset-inline-end: 0; top: calc(100% + 5px); z-index: 30; width: 264px; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 8px; box-shadow: 0 12px 28px oklch(0.25 0.02 250 / 0.14); padding: 5px; text-align: start;">
+              <div style="padding: 7px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.6 0.012 250);">{{ t.exportGroup }}</div>
+              <div style="padding: 7px 10px; border-radius: 5px; font-size: 13px; color: oklch(0.62 0.012 250); display: flex; justify-content: space-between; gap: 10px; cursor: not-allowed;"><span>{{ t.exportView }}</span><span style="font-size: 11px;">CSV</span></div>
+              <div style="padding: 7px 10px; border-radius: 5px; font-size: 13px; color: oklch(0.62 0.012 250); display: flex; justify-content: space-between; gap: 10px; cursor: not-allowed;"><span>{{ t.exportAll }}</span><span style="font-size: 11px;">XLSX</span></div>
+              <div style="margin: 4px 4px 2px; padding: 8px 6px 2px; border-block-start: 1px solid oklch(0.94 0.004 250); font-size: 11.5px; color: oklch(0.58 0.012 250); text-wrap: pretty;">{{ t.exportNote }}</div>
+            </div>
+          </sc-if>
+        </div>
+        <button style-hover="background: oklch(0.45 0.11 250);" style="background: oklch(0.52 0.11 250); color: #fff; border: 1px solid oklch(0.47 0.11 250); border-radius: 6px; padding: 8px 15px; font-size: 13.5px; font-weight: 600; font-family: inherit; cursor: pointer;">{{ t.invite }}</button>
+      </div>
+    </div>
+
+    <section style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px;">
+
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+        <div style="position: relative; flex: 1 1 260px; min-width: 200px; display: flex; align-items: center;">
+          <span style="position: absolute; inset-inline-start: 10px; font-size: 13px; color: oklch(0.62 0.012 250); pointer-events: none;">⌕</span>
+          <input value="{{ q }}" onInput="{{ onSearch }}" placeholder="{{ t.searchPlaceholder }}" style="width: 100%; box-sizing: border-box; padding: 7px 12px; padding-inline-start: 30px; font-family: inherit; font-size: 13.5px; color: inherit; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 6px; outline: none;" style-focus="border-color: oklch(0.6 0.11 250); box-shadow: 0 0 0 3px oklch(0.95 0.03 250);" />
+        </div>
+
+        <div style="display: flex; align-items: center; border: 1px solid oklch(0.88 0.006 250); border-radius: 6px; overflow: hidden; flex: none;">
+          <sc-for list="{{ statusTabs }}" as="s" hint-placeholder-count="4">
+            <button onClick="{{ s.onClick }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ s.style }}">{{ s.label }}<span style="font-size: 11px; opacity: 0.7; margin-inline-start: 5px; font-variant-numeric: tabular-nums;">{{ s.count }}</span></button>
+          </sc-for>
+        </div>
+
+        <div style="position: relative; flex: none;">
+          <button ref="{{ unitBtnRef }}" onClick="{{ toggleUnit }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ unitBtnStyle }}">{{ unitLabel }}<span style="font-size: 10px; color: oklch(0.6 0.012 250);">▼</span></button>
+          <sc-if value="{{ unitOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position: absolute; top: calc(100% + 5px); z-index: 30; width: 236px; max-height: 260px; {{ unitMenuAnchor }} overflow-y: auto; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 8px; box-shadow: 0 12px 28px oklch(0.25 0.02 250 / 0.14); padding: 5px; text-align: start;">
+              <sc-for list="{{ unitOptions }}" as="o" hint-placeholder-count="6">
+                <button onClick="{{ o.onClick }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ o.style }}"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ o.label }}</span><span style="font-size: 11px; color: oklch(0.6 0.012 250); font-variant-numeric: tabular-nums;">{{ o.count }}</span></button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="position: relative; flex: none;">
+          <button ref="{{ posBtnRef }}" onClick="{{ togglePos }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ posBtnStyle }}">{{ posLabel }}<span style="font-size: 10px; color: oklch(0.6 0.012 250);">▼</span></button>
+          <sc-if value="{{ posOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position: absolute; top: calc(100% + 5px); z-index: 30; width: 250px; max-height: 260px; {{ posMenuAnchor }} overflow-y: auto; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 8px; box-shadow: 0 12px 28px oklch(0.25 0.02 250 / 0.14); padding: 5px; text-align: start;">
+              <sc-for list="{{ posOptions }}" as="o" hint-placeholder-count="6">
+                <button onClick="{{ o.onClick }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ o.style }}"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ o.label }}</span><span style="font-size: 11px; color: oklch(0.6 0.012 250); font-variant-numeric: tabular-nums;">{{ o.count }}</span></button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="flex: 1 1 0; min-width: 0;"></div>
+
+        <div style="position: relative; flex: none;">
+          <button ref="{{ colsBtnRef }}" onClick="{{ toggleCols }}" style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; color: oklch(0.35 0.01 250); border: 1px solid oklch(0.88 0.006 250); border-radius: 6px; padding: 7px 11px; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 6px;">{{ t.columns }}<span style="font-size: 10px; color: oklch(0.6 0.012 250);">▼</span></button>
+          <sc-if value="{{ colsOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position: absolute; top: calc(100% + 5px); z-index: 30; width: 234px; background: #fff; {{ colsMenuAnchor }} border: 1px solid oklch(0.88 0.006 250); border-radius: 8px; box-shadow: 0 12px 28px oklch(0.25 0.02 250 / 0.14); padding: 5px; text-align: start;">
+              <div style="padding: 7px 10px 5px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.6 0.012 250);">{{ t.columnsGroup }}</div>
+              <sc-for list="{{ colToggles }}" as="c" hint-placeholder-count="5">
+                <button onClick="{{ c.onClick }}" style-hover="background: oklch(0.96 0.004 250);" style="width: 100%; display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: none; border-radius: 5px; background: none; font-family: inherit; font-size: 13px; color: inherit; cursor: pointer; text-align: start;"><span style="{{ c.boxStyle }}">✓</span><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.label }}</span><span style="margin-inline-start: auto; font-size: 11px; color: oklch(0.62 0.012 250);">{{ c.hint }}</span></button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <sc-if value="{{ hasActiveFilters }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; background: oklch(0.985 0.006 250); border-block-end: 1px solid oklch(0.93 0.006 250);">
+          <span style="font-size: 12px; color: oklch(0.5 0.012 250);">{{ t.filtering }}</span>
+          <sc-for list="{{ activeFilters }}" as="f" hint-placeholder-count="2">
+            <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 999px; padding: 3px 5px 3px 10px;"><span>{{ f.label }}</span><button onClick="{{ f.onClear }}" style-hover="background: oklch(0.92 0.006 250);" style="border: none; background: oklch(0.95 0.004 250); color: oklch(0.45 0.012 250); width: 17px; height: 17px; border-radius: 50%; font-family: inherit; font-size: 11px; line-height: 1; cursor: pointer;">✕</button></span>
+          </sc-for>
+          <button onClick="{{ clearFilters }}" style-hover="color: oklch(0.4 0.11 250);" style="border: none; background: none; padding: 0; margin-inline-start: 4px; font-family: inherit; font-size: 12.5px; font-weight: 500; color: oklch(0.52 0.11 250); cursor: pointer;">{{ t.clearAll }}</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ hasSelection }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 14px; background: oklch(0.96 0.03 250); border-block-end: 1px solid oklch(0.88 0.04 250);">
+          <span style="font-size: 13px; font-weight: 600; color: oklch(0.38 0.09 250);">{{ selectionLabel }}</span>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+            <sc-for list="{{ bulkActions }}" as="b" hint-placeholder-count="4">
+              <button style-hover="background: oklch(0.97 0.004 250);" style="{{ b.style }}">{{ b.label }}</button>
+            </sc-for>
+          </div>
+          <button onClick="{{ clearSelection }}" style-hover="color: oklch(0.32 0.09 250);" style="margin-inline-start: auto; border: none; background: none; padding: 0; font-family: inherit; font-size: 12.5px; font-weight: 500; color: oklch(0.45 0.09 250); cursor: pointer;">{{ t.clearSelection }}</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showTable }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <sc-if value="{{ isWide }}" hint-placeholder-val="{{ true }}">
+            <div style="position: sticky; top: 0; z-index: 10; display: flex; align-items: stretch; gap: 12px; padding: 0 14px; background: oklch(0.985 0.006 250); border-block-end: 1px solid oklch(0.91 0.006 250);">
+              <button onClick="{{ toggleAll }}" style="flex: none; width: 22px; display: flex; align-items: center; background: none; border: none; padding: 0; cursor: pointer;"><span style="{{ headBoxStyle }}">{{ headBoxMark }}</span></button>
+              <sc-for list="{{ headCells }}" as="h" hint-placeholder-count="6">
+                <button onClick="{{ h.onClick }}" style-hover="color: oklch(0.3 0.01 250);" style="{{ h.style }}"><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ h.label }}</span><span style="font-size: 10px; color: oklch(0.45 0.11 250); font-weight: 700;">{{ h.arrow }}</span></button>
+              </sc-for>
+              <div style="flex: none; width: 128px;"></div>
+            </div>
+
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
+              <div style="{{ r.rowStyle }}" style-hover="background: oklch(0.985 0.006 250);">
+                <button onClick="{{ r.onToggle }}" style="flex: none; width: 22px; display: flex; align-items: flex-start; padding-block-start: 12px; background: none; border: none; cursor: pointer;"><span style="{{ r.boxStyle }}">✓</span></button>
+
+                <div style="flex: 2.2 1 230px; min-width: 0; padding: 9px 0;">
+                  <div style="font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; unicode-bidi: isolate;">{{ r.primaryName }}</div>
+                  <div style="font-size: 12px; color: oklch(0.56 0.012 250); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; unicode-bidi: isolate; font-family: {{ r.secondaryFont }};">{{ r.secondaryName }}</div>
+                </div>
+
+                <sc-if value="{{ vis.email }}" hint-placeholder-val="{{ true }}">
+                  <div dir="ltr" style="flex: 1.6 1 190px; min-width: 0; padding: 11px 0; font-size: 13px; color: oklch(0.42 0.012 250); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; unicode-bidi: isolate; text-align: start;">{{ r.email }}</div>
+                </sc-if>
+                <sc-if value="{{ vis.position }}" hint-placeholder-val="{{ true }}">
+                  <div style="flex: 1.4 1 160px; min-width: 0; padding: 11px 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.position }}</div>
+                </sc-if>
+                <sc-if value="{{ vis.unit }}" hint-placeholder-val="{{ true }}">
+                  <div style="flex: 1.4 1 160px; min-width: 0; padding: 11px 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.unit }}</div>
+                </sc-if>
+                <sc-if value="{{ vis.manager }}" hint-placeholder-val="{{ true }}">
+                  <div style="flex: 1.2 1 140px; min-width: 0; padding: 11px 0; font-size: 13px; color: oklch(0.42 0.012 250); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ r.manager }}</div>
+                </sc-if>
+
+                <div style="flex: none; width: 104px; padding: 10px 0;">
+                  <span style="{{ r.statusStyle }}"><sc-if value="{{ r.statusDot }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.statusLabel }}</span>
+                </div>
+
+                <sc-if value="{{ vis.lastLogin }}" hint-placeholder-val="{{ true }}">
+                  <div dir="ltr" style="flex: none; width: 104px; padding: 11px 0; font-size: 12.5px; white-space: nowrap; unicode-bidi: isolate; text-align: start; font-variant-numeric: tabular-nums; color: {{ r.loginInk }};">{{ r.lastLogin }}</div>
+                </sc-if>
+
+                <div style="flex: none; width: 128px; padding: 7px 0; display: flex; align-items: flex-start; justify-content: flex-end; gap: 4px; position: relative;">
+                  <button style-hover="background: oklch(0.96 0.004 250); border-color: oklch(0.82 0.006 250);" style="background: #fff; color: oklch(0.35 0.01 250); border: 1px solid oklch(0.88 0.006 250); border-radius: 5px; padding: 4px 10px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;">{{ t.edit }}</button>
+                  <button onClick="{{ r.onMenu }}" style-hover="background: oklch(0.96 0.004 250); border-color: oklch(0.82 0.006 250);" style="background: #fff; color: oklch(0.4 0.01 250); border: 1px solid oklch(0.88 0.006 250); border-radius: 5px; width: 27px; height: 25px; font-family: inherit; font-size: 14px; line-height: 1; cursor: pointer;">⋯</button>
+                  <sc-if value="{{ r.menuOpen }}" hint-placeholder-val="{{ false }}">
+                    <div style="position: absolute; inset-inline-end: 0; top: calc(100% - 2px); z-index: 40; width: 214px; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 8px; box-shadow: 0 12px 28px oklch(0.25 0.02 250 / 0.16); padding: 5px; text-align: start;">
+                      <div style="padding: 7px 10px; border-radius: 5px; font-size: 13px; cursor: pointer;" style-hover="background: oklch(0.96 0.004 250);">{{ t.transfer }}</div>
+                      <div style="padding: 7px 10px; border-radius: 5px; font-size: 13px; cursor: pointer;" style-hover="background: oklch(0.96 0.004 250);">{{ t.roles }}</div>
+                      <div style="margin: 4px 4px; border-block-start: 1px solid oklch(0.94 0.004 250);"></div>
+                      <div style="padding: 7px 10px; border-radius: 5px; font-size: 13px; color: oklch(0.5 0.15 30); cursor: pointer;" style-hover="background: oklch(0.97 0.02 30);">{{ r.deactivateLabel }}</div>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </sc-if>
+
+          <sc-if value="{{ isNarrow }}" hint-placeholder-val="{{ false }}">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="6">
+              <div style="display: flex; align-items: flex-start; gap: 10px; padding: 11px 14px; border-block-end: 1px solid oklch(0.955 0.004 250);">
+                <button onClick="{{ r.onToggle }}" style="flex: none; padding: 2px 0 0; background: none; border: none; cursor: pointer;"><span style="{{ r.boxStyle }}">✓</span></button>
+                <div style="flex: 1 1 auto; min-width: 0;">
+                  <div style="display: flex; align-items: baseline; gap: 8px; justify-content: space-between;">
+                    <span style="font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate;">{{ r.primaryName }}</span>
+                    <span style="{{ r.statusStyle }}"><sc-if value="{{ r.statusDot }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.statusLabel }}</span>
+                  </div>
+                  <div style="font-size: 12.5px; color: oklch(0.56 0.012 250); unicode-bidi: isolate; font-family: {{ r.secondaryFont }};">{{ r.secondaryName }}</div>
+                  <div dir="ltr" style="font-size: 12.5px; color: oklch(0.45 0.012 250); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate; text-align: start; margin-block-start: 3px;">{{ r.email }}</div>
+                  <div style="font-size: 12.5px; color: oklch(0.5 0.012 250); margin-block-start: 2px; text-wrap: pretty;">{{ r.metaLine }}</div>
+                  <div style="display: flex; align-items: center; gap: 6px; margin-block-start: 8px;">
+                    <button style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; color: oklch(0.35 0.01 250); border: 1px solid oklch(0.88 0.006 250); border-radius: 5px; padding: 5px 12px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;">{{ t.edit }}</button>
+                    <button style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; color: oklch(0.35 0.01 250); border: 1px solid oklch(0.88 0.006 250); border-radius: 5px; padding: 5px 12px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;">{{ t.more }}</button>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showNoResults }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 56px 24px; text-align: center;">
+          <span style="width: 34px; height: 34px; border-radius: 8px; border: 1px dashed oklch(0.84 0.006 250); background: oklch(0.98 0.004 250);"></span>
+          <span style="font-size: 15px; font-weight: 600; margin-block-start: 3px;">{{ t.noResultsTitle }}</span>
+          <span style="font-size: 13px; color: oklch(0.55 0.012 250); max-width: 46ch; text-wrap: pretty;">{{ noResultsBody }}</span>
+          <div style="display: flex; gap: 8px; margin-block-start: 10px;">
+            <button onClick="{{ clearFilters }}" style-hover="background: oklch(0.45 0.11 250);" style="background: oklch(0.52 0.11 250); color: #fff; border: 1px solid oklch(0.47 0.11 250); border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;">{{ t.clearAll }}</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showNoRecords }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 56px 24px; text-align: center;">
+          <span style="width: 34px; height: 34px; border-radius: 8px; border: 1px dashed oklch(0.84 0.006 250); background: oklch(0.98 0.004 250);"></span>
+          <span style="font-size: 15px; font-weight: 600; margin-block-start: 3px;">{{ t.noRecordsTitle }}</span>
+          <span style="font-size: 13px; color: oklch(0.55 0.012 250); max-width: 48ch; text-wrap: pretty;">{{ t.noRecordsBody }}</span>
+          <div style="display: flex; gap: 8px; margin-block-start: 10px;">
+            <button style-hover="background: oklch(0.45 0.11 250);" style="background: oklch(0.52 0.11 250); color: #fff; border: 1px solid oklch(0.47 0.11 250); border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;">{{ t.invite }}</button>
+            <button style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; color: oklch(0.3 0.01 250); border: 1px solid oklch(0.86 0.006 250); border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 500; font-family: inherit; cursor: pointer;">{{ t.importUsers }}</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 14px; border-block-start: 1px solid oklch(0.93 0.006 250); background: oklch(0.99 0.004 250); border-end-start-radius: 8px; border-end-end-radius: 8px;">
+        <span dir="{{ dir }}" style="font-size: 12.5px; color: oklch(0.5 0.012 250); font-variant-numeric: tabular-nums;">{{ rangeLabel }}</span>
+        <sc-if value="{{ showPager }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: oklch(0.5 0.012 250);">
+              <span>{{ t.rowsPerPage }}</span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 5px; padding: 3px 8px; color: oklch(0.3 0.01 250); font-weight: 500; font-variant-numeric: tabular-nums;">25<span style="font-size: 9px; color: oklch(0.6 0.012 250);">▼</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 3px;">
+              <button style="{{ pagerEdgeStyle }}">{{ prevGlyph }}</button>
+              <sc-for list="{{ pages }}" as="p" hint-placeholder-count="5">
+                <button style="{{ p.style }}">{{ p.label }}</button>
+              </sc-for>
+              <button style-hover="background: oklch(0.96 0.004 250);" style="{{ nextStyle }}">{{ nextGlyph }}</button>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+
+    <p style="margin: 0; font-size: 12px; color: oklch(0.58 0.012 250); text-wrap: pretty; max-width: 96ch;">{{ t.footnote }}</p>
+  </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;dir&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;ltr&quot;,&quot;rtl&quot;],&quot;default&quot;:&quot;ltr&quot;,&quot;tsType&quot;:&quot;'ltr' | 'rtl'&quot;,&quot;section&quot;:&quot;Localization&quot;},&quot;sidebarCollapsed&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;App shell&quot;},&quot;hasRecords&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;States&quot;}}">
+const AR = "'IBM Plex Sans Arabic', sans-serif";
+const LAT = "inherit";
+
+const USERS = [
+  ["Dr. Fahad Al-Anazi", "د. فهد العنزي", "f.alanazi@kfmc.med.sa", "Consultant, Infectious Diseases", "Medical Affairs", "Dr. Saleh Al-Qahtani", "active", "2h ago"],
+  ["Nora Al-Otaibi", "نورة العتيبي", "n.alotaibi@kfmc.med.sa", "Quality Manager", "Quality & Patient Safety", "Abdullah Al-Harbi", "active", "Today 08:12"],
+  ["Dr. Huda Zahrani", "د. هدى الزهراني", "h.zahrani@kfmc.med.sa", "Head of Microbiology", "Laboratory Services", "Dr. Saleh Al-Qahtani", "active", "Yesterday"],
+  ["Mohammed Saeed", "محمد سعيد", "m.saeed@kfmc.med.sa", "Nursing Supervisor", "Nursing Affairs", "Amal Bin Zayed", "active", "Yesterday"],
+  ["Layla Kassem", "ليلى قاسم", "l.kassem@kfmc.med.sa", "Clinical Pharmacist", "Pharmacy", "Rania Haddad", "active", "3 Sep 2026"],
+  ["Omar Bakri", "عمر بكري", "o.bakri@kfmc.med.sa", "Facilities Engineer", "Facilities Management", "Tariq Nour", "inactive", "14 Mar 2026"],
+  ["Dr. Reem Alami", "د. ريم العلمي", "r.alami@kfmc.med.sa", "ICU Consultant", "Critical Care", "Dr. Saleh Al-Qahtani", "active", "Today 06:40"],
+  ["Tariq Suleiman", "طارق سليمان", "t.suleiman@kfmc.med.sa", "Lab Technologist", "Laboratory Services", "Dr. Huda Zahrani", "invited", "—"],
+  ["Jawaher Mutairi", "جواهر المطيري", "j.mutairi@kfmc.med.sa", "Internal Auditor", "Internal Audit", "Abdullah Al-Harbi", "invited", "—"],
+  ["Abdullah Al-Harbi", "عبدالله الحربي", "a.alharbi@kfmc.med.sa", "Director of Quality", "Quality & Patient Safety", "Dr. Saleh Al-Qahtani", "active", "Today 07:55"],
+  ["Amal Bin Zayed", "أمل بن زايد", "a.binzayed@kfmc.med.sa", "Chief Nursing Officer", "Nursing Affairs", "Dr. Saleh Al-Qahtani", "active", "Today 09:20"],
+  ["Rania Haddad", "رانيا حداد", "r.haddad@kfmc.med.sa", "Director of Pharmacy", "Pharmacy", "Dr. Saleh Al-Qahtani", "active", "2 Sep 2026"],
+  ["Khalid Nasser", "خالد ناصر", "k.nasser@kfmc.med.sa", "Radiology Technologist", "Radiology", "Yousef Barakat", "inactive", "21 Jan 2026"],
+  ["Sara Idris", "سارة إدريس", "s.idris@kfmc.med.sa", "Quality Coordinator", "Quality & Patient Safety", "Nora Al-Otaibi", "active", "Yesterday"],
+  ["Yousef Barakat", "يوسف بركات", "y.barakat@kfmc.med.sa", "Head of Radiology", "Radiology", "Dr. Saleh Al-Qahtani", "active", "1 Sep 2026"],
+  ["Maha Al-Dossari", "مها الدوسري", "m.aldossari@kfmc.med.sa", "Infection Control Nurse", "Nursing Affairs", "Amal Bin Zayed", "active", "Today 08:02"],
+  ["Dr. Saleh Al-Qahtani", "د. صالح القحطاني", "s.alqahtani@kfmc.med.sa", "Chief Medical Officer", "Medical Affairs", "—", "active", "Today 07:10"],
+  ["Bandar Al-Shehri", "بندر الشهري", "b.alshehri@kfmc.med.sa", "Biomedical Engineer", "Facilities Management", "Tariq Nour", "active", "4 Sep 2026"],
+  ["Hessa Al-Rashid", "حصة الرشيد", "h.alrashid@kfmc.med.sa", "Document Controller", "Quality & Patient Safety", "Nora Al-Otaibi", "active", "Yesterday"],
+  ["Tariq Nour", "طارق نور", "t.nour@kfmc.med.sa", "Director of Facilities", "Facilities Management", "Dr. Saleh Al-Qahtani", "active", "2 Sep 2026"],
+  ["Ghada Mansour", "غادة منصور", "g.mansour@kfmc.med.sa", "Patient Experience Lead", "Quality & Patient Safety", "Abdullah Al-Harbi", "invited", "—"],
+  ["Ibrahim Fakhoury", "إبراهيم فاخوري", "i.fakhoury@kfmc.med.sa", "Lab Quality Officer", "Laboratory Services", "Dr. Huda Zahrani", "active", "3 Sep 2026"],
+  ["Noof Al-Kaabi", "نوف الكعبي", "n.alkaabi@kfmc.med.sa", "Staff Nurse, ICU", "Critical Care", "Amal Bin Zayed", "active", "Today 05:30"],
+  ["Salem Al-Balushi", "سالم البلوشي", "s.albalushi@kfmc.med.sa", "Pharmacy Technician", "Pharmacy", "Rania Haddad", "inactive", "9 Nov 2025"],
+  ["Dana Chalabi", "دانة الجلبي", "d.chalabi@kfmc.med.sa", "Accreditation Specialist", "Quality & Patient Safety", "Nora Al-Otaibi", "active", "Today 08:48"]
+];
+
+const STATUS = {
+  active: { en: "Active", ar: "نشط", ink: "oklch(0.52 0.012 250)", bg: "transparent", border: "transparent", dot: false, weight: 400 },
+  invited: { en: "Invited", ar: "مدعو", ink: "oklch(0.42 0.09 75)", bg: "oklch(0.96 0.05 85)", border: "oklch(0.86 0.07 85)", dot: "oklch(0.65 0.14 75)", weight: 600 },
+  inactive: { en: "Inactive", ar: "غير نشط", ink: "oklch(0.45 0.012 250)", bg: "oklch(0.95 0.004 250)", border: "oklch(0.88 0.006 250)", dot: false, weight: 500 }
+};
+
+const STR = {
+  en: {
+    users: "Users", export: "Export", invite: "Invite user", importUsers: "Import from HR file",
+    searchPlaceholder: "Search name, email, position or org unit…",
+    allStatus: "All", columns: "Columns", columnsGroup: "Visible columns",
+    exportGroup: "Export", exportView: "Current view, filters applied", exportAll: "All users",
+    exportNote: "Export is not yet enabled for this tenant. Requests are logged for the audit trail.",
+    filtering: "Filtered by", clearAll: "Clear all filters", clearSelection: "Clear selection",
+    edit: "Edit", more: "More…", transfer: "Transfer to another unit", roles: "Manage roles",
+    deactivate: "Deactivate user", reactivate: "Reactivate user", revoke: "Revoke invitation",
+    rowsPerPage: "Rows", noResultsTitle: "No users match these filters",
+    noRecordsTitle: "No users yet", noRecordsBody: "Invite colleagues individually, or import your staff list from an HR export. Invited users appear here before they first sign in.",
+    footnote: "Sorting, filters, page size and column choices are kept per user and per list, and are restored on return. A filtered view can be shared as a URL so a surveyor sees exactly the evidence referenced.",
+    bulk: ["Transfer to unit", "Manage roles", "Deactivate", "Export selected"],
+    heads: { name: "Name", email: "Email", position: "Position", unit: "Org unit", manager: "Manager", status: "Status", lastLogin: "Last login" },
+    unitAll: "All org units", posAll: "All positions"
+  },
+  ar: {
+    users: "المستخدمون", export: "تصدير", invite: "دعوة مستخدم", importUsers: "استيراد من ملف الموارد البشرية",
+    searchPlaceholder: "ابحث بالاسم أو البريد أو المسمى أو الوحدة…",
+    allStatus: "الكل", columns: "الأعمدة", columnsGroup: "الأعمدة الظاهرة",
+    exportGroup: "تصدير", exportView: "العرض الحالي مع الفلاتر", exportAll: "كل المستخدمين",
+    exportNote: "التصدير غير مُفعّل لهذه المنشأة بعد. تُسجَّل الطلبات في سجل التدقيق.",
+    filtering: "مُفلتر حسب", clearAll: "إزالة كل الفلاتر", clearSelection: "إلغاء التحديد",
+    edit: "تعديل", more: "المزيد…", transfer: "نقل إلى وحدة أخرى", roles: "إدارة الأدوار",
+    deactivate: "تعطيل المستخدم", reactivate: "إعادة التنشيط", revoke: "إلغاء الدعوة",
+    rowsPerPage: "صفوف", noResultsTitle: "لا يوجد مستخدمون مطابقون للفلاتر",
+    noRecordsTitle: "لا يوجد مستخدمون بعد", noRecordsBody: "ادعُ الزملاء فرديًا أو استورد قائمة الموظفين من ملف الموارد البشرية. يظهر المدعوون هنا قبل أول تسجيل دخول.",
+    footnote: "يُحفَظ الترتيب والفلاتر وحجم الصفحة والأعمدة لكل مستخدم ولكل قائمة، ويُستعاد عند العودة. ويمكن مشاركة العرض المُفلتر كرابط ليرى المُقيّم الدليل المُشار إليه تمامًا.",
+    bulk: ["نقل إلى وحدة", "إدارة الأدوار", "تعطيل", "تصدير المحدد"],
+    heads: { name: "الاسم", email: "البريد الإلكتروني", position: "المسمى الوظيفي", unit: "الوحدة التنظيمية", manager: "المدير", status: "الحالة", lastLogin: "آخر دخول" },
+    unitAll: "كل الوحدات", posAll: "كل المسميات"
+  }
+};
+
+class Component extends DCLogic {
+  rootRef = React.createRef();
+  unitBtnRef = React.createRef();
+  posBtnRef = React.createRef();
+  colsBtnRef = React.createRef();
+  state = { dir: null, q: "", status: "all", unit: "all", position: "all", sortKey: "name", sortDir: 1, selected: [], menu: null, cols: {}, width: 1600 };
+
+  componentDidMount() {
+    const el = this.rootRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    this.ro = new ResizeObserver(() => this.setState({ width: el.clientWidth }));
+    this.ro.observe(el);
+    this.setState({ width: el.clientWidth });
+    this.onDoc = () => { if (this.state.menu) this.setState({ menu: null }); };
+    document.addEventListener("click", this.onDoc, true);
+  }
+  componentWillUnmount() { if (this.ro) this.ro.disconnect(); if (this.onDoc) document.removeEventListener("click", this.onDoc, true); }
+
+  get dir() { return this.state.dir || this.props.dir || "ltr"; }
+  get L() { return this.dir === "rtl" ? STR.ar : STR.en; }
+
+  menuToggle(key) { return (e) => { e.stopPropagation(); this.setState(s => ({ menu: s.menu === key ? null : key })); }; }
+
+  anchorFor(ref, menuWidth) {
+    const el = ref && ref.current, root = this.rootRef.current;
+    if (!el || !root) return "inset-inline-start: 0;";
+    const rb = root.getBoundingClientRect(), b = el.getBoundingClientRect();
+    const startOffset = this.dir === "rtl" ? rb.right - b.right : b.left - rb.left;
+    return rb.width - startOffset >= menuWidth + 12 ? "inset-inline-start: 0;" : "inset-inline-end: 0;";
+  }
+
+  visibility() {
+    const w = this.state.width, o = this.state.cols;
+    const auto = { email: w >= 820, position: w >= 1060, unit: w >= 980, manager: w >= 1400, lastLogin: w >= 1120 };
+    const out = {};
+    Object.keys(auto).forEach(k => { out[k] = o[k] === undefined ? auto[k] : o[k]; });
+    return out;
+  }
+
+  renderVals() {
+    const L = this.L, rtl = this.dir === "rtl", st = this.state;
+    const total = this.props.hasRecords === false ? 0 : 312;
+    const vis = this.visibility();
+    const isNarrow = st.width < 760;
+
+    const all = USERS.map((u, i) => ({
+      id: "u" + i, name: u[0], nameAr: u[1], email: u[2], position: u[3], unit: u[4], manager: u[5], status: u[6], lastLogin: u[7],
+      sortLogin: u[7] === "—" ? -1 : (u[7].indexOf("Today") === 0 || u[7].indexOf("h ago") > 0 ? 3 : u[7] === "Yesterday" ? 2 : 1)
+    }));
+
+    const q = st.q.trim().toLowerCase();
+    const matches = (r) => {
+      if (q && [r.name, r.nameAr, r.email, r.position, r.unit, r.manager].join(" ").toLowerCase().indexOf(q) === -1) return false;
+      if (st.status !== "all" && r.status !== st.status) return false;
+      if (st.unit !== "all" && r.unit !== st.unit) return false;
+      if (st.position !== "all" && r.position !== st.position) return false;
+      return true;
+    };
+    let rows = this.props.hasRecords === false ? [] : all.filter(matches);
+
+    const keyOf = { name: r => (rtl ? r.nameAr : r.name), email: r => r.email, position: r => r.position, unit: r => r.unit, manager: r => r.manager, status: r => ["active", "invited", "inactive"].indexOf(r.status), lastLogin: r => r.sortLogin };
+    const get = keyOf[st.sortKey] || keyOf.name;
+    rows = rows.slice().sort((a, b) => {
+      const x = get(a), y = get(b);
+      if (typeof x === "number") return (x - y) * st.sortDir;
+      return String(x).localeCompare(String(y), rtl ? "ar" : "en") * st.sortDir;
+    });
+
+    const counts = { all: 0, active: 0, invited: 0, inactive: 0 };
+    all.forEach(r => { counts.all++; counts[r.status]++; });
+    const scale = total ? total / all.length : 0;
+    const est = n => Math.round(n * scale);
+
+    const statusTabs = ["all", "active", "invited", "inactive"].map(k => {
+      const on = st.status === k;
+      return {
+        label: k === "all" ? L.allStatus : STATUS[k][rtl ? "ar" : "en"],
+        count: est(counts[k]),
+        onClick: () => this.setState({ status: k, selected: [] }),
+        style: "padding: 6px 11px; border: none; font-family: inherit; font-size: 13px; cursor: pointer; display: flex; align-items: center; white-space: nowrap;"
+          + (on ? "background: oklch(0.95 0.02 250); color: oklch(0.4 0.11 250); font-weight: 600;" : "background: #fff; color: oklch(0.45 0.012 250); font-weight: 500;")
+      };
+    });
+
+    const selectStyle = (on) => "background: " + (on ? "oklch(0.95 0.02 250)" : "#fff") + "; color: " + (on ? "oklch(0.4 0.11 250)" : "oklch(0.35 0.01 250)") + "; border: 1px solid " + (on ? "oklch(0.85 0.04 250)" : "oklch(0.88 0.006 250)") + "; border-radius: 6px; padding: 7px 11px; font-size: 13px; font-weight: " + (on ? 600 : 500) + "; font-family: inherit; cursor: pointer; display: flex; align-items: center; gap: 6px; max-width: 230px; white-space: nowrap;";
+    const optStyle = (on) => "width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border: none; border-radius: 5px; background: " + (on ? "oklch(0.95 0.02 250)" : "none") + "; font-family: inherit; font-size: 13px; font-weight: " + (on ? 600 : 400) + "; color: inherit; cursor: pointer; text-align: start;";
+
+    const uniq = (k) => { const m = {}; all.forEach(r => { m[r[k]] = (m[r[k]] || 0) + 1; }); return Object.keys(m).sort().map(v => ({ v, n: m[v] })); };
+    const unitOptions = [{ v: "all", n: counts.all }].concat(uniq("unit")).map(o => ({
+      label: o.v === "all" ? L.unitAll : o.v, count: est(o.n), style: optStyle(st.unit === o.v),
+      onClick: (e) => { e.stopPropagation(); this.setState({ unit: o.v, menu: null, selected: [] }); }
+    }));
+    const posOptions = [{ v: "all", n: counts.all }].concat(uniq("position")).map(o => ({
+      label: o.v === "all" ? L.posAll : o.v, count: est(o.n), style: optStyle(st.position === o.v),
+      onClick: (e) => { e.stopPropagation(); this.setState({ position: o.v, menu: null, selected: [] }); }
+    }));
+
+    const headDef = [
+      { k: "name", label: L.heads.name, flex: "2.2 1 230px", show: true },
+      { k: "email", label: L.heads.email, flex: "1.6 1 190px", show: vis.email },
+      { k: "position", label: L.heads.position, flex: "1.4 1 160px", show: vis.position },
+      { k: "unit", label: L.heads.unit, flex: "1.4 1 160px", show: vis.unit },
+      { k: "manager", label: L.heads.manager, flex: "1.2 1 140px", show: vis.manager },
+      { k: "status", label: L.heads.status, flex: "none; width: 104px", show: true },
+      { k: "lastLogin", label: L.heads.lastLogin, flex: "none; width: 104px", show: vis.lastLogin }
+    ];
+    const headCells = headDef.filter(h => h.show).map(h => ({
+      label: h.label,
+      arrow: st.sortKey === h.k ? (st.sortDir === 1 ? "▲" : "▼") : "",
+      onClick: () => this.setState(s => ({ sortKey: h.k, sortDir: s.sortKey === h.k ? -s.sortDir : 1 })),
+      style: "flex: " + h.flex + "; min-width: 0; display: flex; align-items: center; gap: 5px; padding: 9px 0; background: none; border: none; font-family: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: " + (st.sortKey === h.k ? "oklch(0.4 0.05 250)" : "oklch(0.52 0.012 250)") + "; cursor: pointer; text-align: start;"
+    }));
+
+    const sel = st.selected;
+    const box = (on) => "width: 15px; height: 15px; border-radius: 3px; border: 1px solid " + (on ? "oklch(0.5 0.11 250)" : "oklch(0.78 0.006 250)") + "; background: " + (on ? "oklch(0.52 0.11 250)" : "#fff") + "; color: " + (on ? "#fff" : "transparent") + "; font-size: 10px; line-height: 13px; text-align: center; flex: none;";
+
+    const outRows = rows.map(r => {
+      const s = STATUS[r.status], on = sel.indexOf(r.id) > -1;
+      return {
+        primaryName: rtl ? r.nameAr : r.name,
+        secondaryName: rtl ? r.name : r.nameAr,
+        secondaryFont: rtl ? LAT : AR,
+        email: r.email, position: r.position, unit: r.unit, manager: r.manager,
+        metaLine: r.position + " · " + r.unit,
+        statusLabel: s[rtl ? "ar" : "en"],
+        statusDot: !!s.dot,
+        dotStyle: "width: 6px; height: 6px; border-radius: 50%; background: " + (s.dot || "transparent") + ";",
+        statusStyle: "display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: " + s.weight + "; color: " + s.ink + "; background: " + s.bg + "; border: 1px solid " + s.border + "; border-radius: 999px; padding: 2px 8px; white-space: nowrap;",
+        lastLogin: r.lastLogin === "—" ? "—" : r.lastLogin,
+        loginInk: r.status === "invited" ? "oklch(0.62 0.012 250)" : "oklch(0.45 0.012 250)",
+        deactivateLabel: r.status === "invited" ? L.revoke : r.status === "inactive" ? L.reactivate : L.deactivate,
+        boxStyle: box(on),
+        onToggle: () => this.setState(s2 => ({ selected: s2.selected.indexOf(r.id) > -1 ? s2.selected.filter(x => x !== r.id) : s2.selected.concat([r.id]) })),
+        onMenu: this.menuToggle("row:" + r.id),
+        menuOpen: st.menu === "row:" + r.id,
+        rowStyle: "display: flex; align-items: flex-start; gap: 12px; padding: 0 14px; border-block-end: 1px solid oklch(0.955 0.004 250); background: " + (on ? "oklch(0.985 0.012 250)" : "#fff") + ";"
+      };
+    });
+
+    const allOn = outRows.length > 0 && sel.length === outRows.length;
+    const filters = [];
+    if (st.q.trim()) filters.push({ label: "“" + st.q.trim() + "”", onClear: () => this.setState({ q: "" }) });
+    if (st.status !== "all") filters.push({ label: L.heads.status + ": " + STATUS[st.status][rtl ? "ar" : "en"], onClear: () => this.setState({ status: "all" }) });
+    if (st.unit !== "all") filters.push({ label: L.heads.unit + ": " + st.unit, onClear: () => this.setState({ unit: "all" }) });
+    if (st.position !== "all") filters.push({ label: L.heads.position + ": " + st.position, onClear: () => this.setState({ position: "all" }) });
+
+    const filtered = filters.length > 0;
+    const shown = outRows.length;
+    const rangeTotal = filtered ? est(shown) : total;
+    const rangeLabel = total === 0 ? (rtl ? "لا سجلات" : "No records")
+      : filtered ? (rtl ? "١–" + shown + " من " + rangeTotal + " مطابق (من " + total + ")" : "1–" + shown + " of " + rangeTotal + " matching · " + total + " total")
+      : (rtl ? "١–٢٥ من " + total : "1–25 of " + total);
+
+    const pageBtn = (on) => "min-width: 27px; height: 27px; padding: 0 7px; border: 1px solid " + (on ? "oklch(0.5 0.11 250)" : "oklch(0.89 0.006 250)") + "; background: " + (on ? "oklch(0.52 0.11 250)" : "#fff") + "; color: " + (on ? "#fff" : "oklch(0.4 0.01 250)") + "; border-radius: 5px; font-family: inherit; font-size: 12.5px; font-weight: " + (on ? 600 : 500) + "; cursor: pointer; font-variant-numeric: tabular-nums;";
+
+    const colToggles = [
+      { k: "email", label: L.heads.email }, { k: "position", label: L.heads.position },
+      { k: "unit", label: L.heads.unit }, { k: "manager", label: L.heads.manager },
+      { k: "lastLogin", label: L.heads.lastLogin }
+    ].map(c => ({
+      label: c.label, boxStyle: box(vis[c.k]),
+      hint: vis[c.k] ? "" : (rtl ? "مخفي" : "hidden"),
+      onClick: (e) => { e.stopPropagation(); this.setState(s => ({ cols: Object.assign({}, s.cols, { [c.k]: !vis[c.k] }) })); }
+    }));
+
+    const on = this.dir === "rtl";
+    const open = this.props.sidebarCollapsed !== true;
+    const navDef = [
+      ["◱", "Dashboard", "الرئيسية", 0], ["▤", "Standards", "المعايير", 0], ["◇", "Committees", "اللجان", 0],
+      ["▭", "Documents", "الوثائق", 0], ["◷", "Meetings", "الاجتماعات", 0], ["△", "Incidents", "الحوادث", 0],
+      ["◎", "Audits", "التدقيق", 0], ["⟳", "CAPAs", "الإجراءات التصحيحية", 0], ["✓", "Tasks", "المهام", 0],
+      ["▣", "Users", "المستخدمون", 1], ["◈", "Roles", "الأدوار", 0], ["⬡", "Org positions", "الهيكل الوظيفي", 0],
+      ["⇄", "Workflows", "مسارات العمل", 0], ["≡", "Lookups", "القوائم المرجعية", 0]
+    ];
+
+    return {
+      rootRef: this.rootRef, dir: this.dir, t: L, vis,
+      sidebarOpen: open,
+      sidebarStyle: "flex: none; width: " + (open ? "260px" : "72px") + "; display: flex; flex-direction: column; background: oklch(0.27 0.02 258); position: sticky; top: 0; align-self: flex-start; height: 100vh;",
+      nav: navDef.map(n => ({
+        glyph: n[0], label: rtl ? n[2] : n[1], showLabel: open,
+        glyphStyle: "width: 20px; text-align: center; font-size: 13px; flex: none; color: " + (n[3] ? "oklch(0.88 0.05 250)" : "oklch(0.68 0.02 255)") + ";",
+        wrapStyle: "display: flex; align-items: center; gap: 10px; padding: 7px 10px; margin-block-end: 1px; border-radius: 6px; font-size: 13px; font-weight: " + (n[3] ? 600 : 400) + "; color: " + (n[3] ? "#fff" : "oklch(0.82 0.01 255)") + "; background: " + (n[3] ? "oklch(0.38 0.06 255)" : "transparent") + "; cursor: pointer; justify-content: " + (open ? "flex-start" : "center") + ";"
+      })),
+      ltrBtnStyle: (on ? "padding: 5px 11px; font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer; border: none; background: #fff; color: oklch(0.5 0.012 250);" : "padding: 5px 11px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; background: oklch(0.95 0.02 250); color: oklch(0.42 0.11 250);"),
+      rtlBtnStyle: (on ? "padding: 5px 11px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; background: oklch(0.95 0.02 250); color: oklch(0.42 0.11 250);" : "padding: 5px 11px; font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer; border: none; background: #fff; color: oklch(0.5 0.012 250);"),
+      setLtr: () => this.setState({ dir: "ltr", menu: null }),
+      setRtl: () => this.setState({ dir: "rtl", menu: null }),
+      subtitle: rtl ? "المستخدمون المسجلون في هذه المنشأة" : "People with access to this tenant",
+      q: st.q,
+      onSearch: (e) => this.setState({ q: e.target.value, selected: [] }),
+      statusTabs,
+      unitOpen: st.menu === "unit", posOpen: st.menu === "pos", colsOpen: st.menu === "cols", exportOpen: st.menu === "export",
+      toggleUnit: this.menuToggle("unit"), togglePos: this.menuToggle("pos"), toggleCols: this.menuToggle("cols"), toggleExport: this.menuToggle("export"),
+      unitLabel: st.unit === "all" ? L.unitAll : st.unit,
+      posLabel: st.position === "all" ? L.posAll : st.position,
+      unitBtnStyle: selectStyle(st.unit !== "all"), posBtnStyle: selectStyle(st.position !== "all"),
+      unitOptions, posOptions, colToggles,
+      unitBtnRef: this.unitBtnRef, posBtnRef: this.posBtnRef, colsBtnRef: this.colsBtnRef,
+      unitMenuAnchor: this.anchorFor(this.unitBtnRef, 236),
+      posMenuAnchor: this.anchorFor(this.posBtnRef, 250),
+      colsMenuAnchor: this.anchorFor(this.colsBtnRef, 234),
+      hasActiveFilters: filtered, activeFilters: filters,
+      clearFilters: () => this.setState({ q: "", status: "all", unit: "all", position: "all" }),
+      hasSelection: sel.length > 0,
+      selectionLabel: rtl ? sel.length + " محدد" : sel.length + (sel.length === 1 ? " user selected" : " users selected"),
+      bulkActions: L.bulk.map((b, i) => ({ label: b, style: "background: #fff; color: " + (i === 2 ? "oklch(0.48 0.15 30)" : "oklch(0.32 0.01 250)") + "; border: 1px solid " + (i === 2 ? "oklch(0.85 0.06 30)" : "oklch(0.85 0.02 250)") + "; border-radius: 5px; padding: 5px 11px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap;" })),
+      clearSelection: () => this.setState({ selected: [] }),
+      headCells,
+      headBoxStyle: box(allOn), headBoxMark: allOn ? "✓" : sel.length ? "–" : "✓",
+      toggleAll: () => this.setState(s => ({ selected: s.selected.length === outRows.length ? [] : outRows.map(r => r.id) })),
+      rows: outRows,
+      isWide: !isNarrow, isNarrow,
+      showTable: outRows.length > 0,
+      showNoResults: outRows.length === 0 && total > 0,
+      showNoRecords: total === 0,
+      noResultsBody: rtl ? "جرّب توسيع الفلاتر أو البحث بكلمة أقصر. لا يزال لدى المنشأة " + total + " مستخدمًا." : "Try widening the filters or searching a shorter term. This tenant still has " + total + " users.",
+      showPager: total > 25,
+      rangeLabel,
+      prevGlyph: rtl ? "›" : "‹", nextGlyph: rtl ? "‹" : "›",
+      pagerEdgeStyle: "min-width: 27px; height: 27px; border: 1px solid oklch(0.92 0.006 250); background: oklch(0.98 0.004 250); color: oklch(0.72 0.012 250); border-radius: 5px; font-family: inherit; font-size: 13px; cursor: not-allowed;",
+      nextStyle: pageBtn(false),
+      pages: [1, 2, 3, 4, 13].map((n, i) => ({ label: i === 4 ? (rtl ? "…" + n : n + "") : n + "", style: pageBtn(n === 1) })),
+      footnote: L.footnote
+    };
+  }
+}
+</script>
+</body>
+</html>

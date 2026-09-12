@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: oklch(0.972 0.004 250); font-family: "Helvetica Neue", Helvetica, "IBM Plex Sans Arabic", sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: oklch(0.52 0.11 250); }
+  a:hover { color: oklch(0.42 0.11 250); }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: oklch(0.88 0.006 250); border: 3px solid #fff; border-radius: 6px; }
+  input::placeholder { color: oklch(0.66 0.012 250); }
+</style>
+</helmet>
+
+<div dir="{{ dir }}" style="min-height: 100vh; color: oklch(0.25 0.01 250); font-size: 14px; line-height: 1.45; padding: 20px 24px 48px;">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; max-width: 1612px; margin-block-end: 14px;">
+    <div style="min-width: 0;">
+      <h1 style="margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.01em;">Compact list — panel variant</h1>
+      <div style="font-size: 12.5px; color: oklch(0.52 0.012 250); margin-block-start: 3px; text-wrap: pretty; max-width: 88ch;">The same list component as the full page, rendered inside a record-page panel at 352px. Row anatomy, controls and states are defined here; panels below are live.</div>
+    </div>
+    <div style="display: flex; border: 1px solid oklch(0.88 0.006 250); border-radius: 6px; overflow: hidden; flex: none;">
+      <button onClick="{{ setLtr }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ ltrBtnStyle }}">EN</button>
+      <button onClick="{{ setRtl }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ rtlBtnStyle }}">ع</button>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 12px; max-width: 1612px; margin-block-end: 22px;">
+    <div style="flex: 1 1 300px; min-width: 260px; background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; padding: 12px 14px;">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: oklch(0.45 0.09 165); margin-block-end: 8px;">Kept in the panel</div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <sc-for list="{{ kept }}" as="k" hint-placeholder-count="5">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 12.5px;"><span style="color: oklch(0.55 0.1 165);">✓</span><span style="text-wrap: pretty;"><span style="font-weight: 600;">{{ k.what }}</span><span style="color: oklch(0.5 0.012 250);"> — {{ k.how }}</span></span></div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="flex: 1 1 300px; min-width: 260px; background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; padding: 12px 14px;">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: oklch(0.5 0.012 250); margin-block-end: 8px;">Dropped, and what carries it instead</div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <sc-for list="{{ dropped }}" as="d" hint-placeholder-count="5">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 12.5px;"><span style="color: oklch(0.7 0.012 250);">✕</span><span style="text-wrap: pretty;"><span style="font-weight: 600;">{{ d.what }}</span><span style="color: oklch(0.5 0.012 250);"> — {{ d.how }}</span></span></div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-wrap: wrap; align-items: flex-start; gap: 14px;">
+    <sc-for list="{{ panels }}" as="p" hint-placeholder-count="5">
+      <div style="{{ p.wrapStyle }}">
+        <div style="background: #fff; border: 1px solid oklch(0.9 0.006 250); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden;">
+
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-block-end: 1px solid oklch(0.93 0.006 250);">
+            <div style="display: flex; align-items: center; gap: 7px; min-width: 0;">
+              <span style="font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: oklch(0.45 0.012 250); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ p.title }}</span>
+              <span style="{{ p.countStyle }}">{{ p.countLabel }}</span>
+              <sc-if value="{{ p.alert }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 11px; font-weight: 600; color: oklch(0.45 0.14 30); background: oklch(0.96 0.03 30); border-radius: 4px; padding: 1px 6px; white-space: nowrap;">{{ p.alert }}</span>
+              </sc-if>
+            </div>
+            <button style-hover="background: oklch(0.96 0.004 250); border-color: oklch(0.82 0.006 250);" style="{{ p.actionStyle }}">{{ p.action }}</button>
+          </div>
+
+          <sc-if value="{{ p.showToolbar }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: oklch(0.985 0.006 250); border-block-end: 1px solid oklch(0.94 0.006 250);">
+              <div style="position: relative; flex: 1 1 auto; min-width: 0; display: flex; align-items: center;">
+                <span style="position: absolute; inset-inline-start: 8px; font-size: 12px; color: oklch(0.62 0.012 250); pointer-events: none;">⌕</span>
+                <input value="{{ p.q }}" onInput="{{ p.onSearch }}" placeholder="{{ p.searchPlaceholder }}" style="width: 100%; box-sizing: border-box; padding: 5px 9px; padding-inline-start: 26px; font-family: inherit; font-size: 12.5px; color: inherit; background: #fff; border: 1px solid oklch(0.89 0.006 250); border-radius: 5px; outline: none;" style-focus="border-color: oklch(0.6 0.11 250); box-shadow: 0 0 0 3px oklch(0.95 0.03 250);" />
+              </div>
+              <div style="position: relative; flex: none;">
+                <button onClick="{{ p.onSortMenu }}" style-hover="background: oklch(0.96 0.004 250);" style="background: #fff; border: 1px solid oklch(0.89 0.006 250); border-radius: 5px; padding: 5px 8px; font-family: inherit; font-size: 12px; font-weight: 500; color: oklch(0.4 0.01 250); cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;">{{ p.sortLabel }}<span style="font-size: 9px; color: oklch(0.6 0.012 250);">▼</span></button>
+                <sc-if value="{{ p.sortOpen }}" hint-placeholder-val="{{ false }}">
+                  <div style="position: absolute; inset-inline-end: 0; top: calc(100% + 4px); z-index: 30; width: 186px; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 7px; box-shadow: 0 10px 24px oklch(0.25 0.02 250 / 0.15); padding: 4px; text-align: start;">
+                    <sc-for list="{{ p.sortOptions }}" as="o" hint-placeholder-count="3">
+                      <button onClick="{{ o.onClick }}" style-hover="background: oklch(0.96 0.004 250);" style="{{ o.style }}">{{ o.label }}</button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ p.showScope }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 4px; padding: 7px 10px; border-block-end: 1px solid oklch(0.95 0.004 250);">
+              <sc-for list="{{ p.scopes }}" as="s" hint-placeholder-count="3">
+                <button onClick="{{ s.onClick }}" style-hover="border-color: oklch(0.8 0.006 250);" style="{{ s.style }}">{{ s.label }}<span style="font-size: 10.5px; opacity: 0.65; margin-inline-start: 4px; font-variant-numeric: tabular-nums;">{{ s.count }}</span></button>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ p.hasRows }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ p.bodyStyle }}">
+              <sc-for list="{{ p.rows }}" as="r" hint-placeholder-count="6">
+                <div style="{{ r.rowStyle }}" style-hover="background: oklch(0.982 0.004 250);">
+                  <sc-if value="{{ r.avatar }}" hint-placeholder-val="{{ false }}">
+                    <span style="width: 26px; height: 26px; border-radius: 50%; background: oklch(0.94 0.02 250); color: oklch(0.42 0.06 250); display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 600; flex: none; margin-block-start: 1px;">{{ r.avatar }}</span>
+                  </sc-if>
+                  <div style="flex: 1 1 auto; min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 6px; min-width: 0;">
+                      <span style="{{ r.titleStyle }}">{{ r.line1 }}</span>
+                      <sc-if value="{{ r.chipLabel }}" hint-placeholder-val="{{ false }}">
+                        <span style="{{ r.chipStyle }}">{{ r.chipLabel }}</span>
+                      </sc-if>
+                    </div>
+                    <div style="display: flex; align-items: baseline; gap: 5px; min-width: 0; font-size: 11.5px; margin-block-start: 1px;">
+                      <span style="color: oklch(0.55 0.012 250); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.line2a }}</span>
+                      <span style="color: oklch(0.78 0.006 250); flex: none;">{{ r.sep }}</span>
+                      <span style="{{ r.line2bStyle }}">{{ r.line2b }}</span>
+                    </div>
+                  </div>
+                  <sc-if value="{{ r.wide }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ r.wideColStyle }}">{{ r.wideCol }}</div>
+                  </sc-if>
+                  <div style="flex: none; position: relative;">
+                    <button onClick="{{ r.onMenu }}" style-hover="background: oklch(0.95 0.004 250); color: oklch(0.3 0.01 250);" style="background: none; border: none; border-radius: 5px; width: 24px; height: 22px; font-family: inherit; font-size: 14px; line-height: 1; color: oklch(0.62 0.012 250); cursor: pointer;">⋯</button>
+                    <sc-if value="{{ r.menuOpen }}" hint-placeholder-val="{{ false }}">
+                      <div style="position: absolute; inset-inline-end: 0; top: calc(100% - 1px); z-index: 40; width: 196px; background: #fff; border: 1px solid oklch(0.88 0.006 250); border-radius: 7px; box-shadow: 0 12px 26px oklch(0.25 0.02 250 / 0.17); padding: 4px; text-align: start;">
+                        <sc-for list="{{ r.menuItems }}" as="m" hint-placeholder-count="3">
+                          <div style="{{ m.style }}" style-hover="background: oklch(0.96 0.004 250);">{{ m.label }}</div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ p.isNoResults }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ p.emptyStyle }}">
+              <span style="font-size: 13px; font-weight: 600;">{{ p.emptyTitle }}</span>
+              <span style="font-size: 12px; color: oklch(0.55 0.012 250); text-wrap: pretty;">{{ p.emptyBody }}</span>
+              <button onClick="{{ p.onClear }}" style-hover="background: oklch(0.96 0.004 250);" style="margin-block-start: 8px; background: #fff; border: 1px solid oklch(0.87 0.006 250); border-radius: 5px; padding: 5px 12px; font-family: inherit; font-size: 12.5px; font-weight: 500; color: oklch(0.35 0.01 250); cursor: pointer;">{{ p.emptyAction }}</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ p.isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="{{ p.emptyStyle }}">
+              <span style="width: 30px; height: 30px; border-radius: 7px; border: 1px dashed oklch(0.84 0.006 250); background: oklch(0.98 0.004 250); margin-block-end: 5px;"></span>
+              <span style="font-size: 13px; font-weight: 600;">{{ p.emptyTitle }}</span>
+              <span style="font-size: 12px; color: oklch(0.55 0.012 250); text-wrap: pretty;">{{ p.emptyBody }}</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ p.footer }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-block-start: 1px solid oklch(0.94 0.006 250); background: oklch(0.99 0.004 250);">
+              <span dir="{{ dir }}" style="font-size: 11.5px; color: oklch(0.55 0.012 250); font-variant-numeric: tabular-nums;">{{ p.footerCount }}</span>
+              <a href="#" style="font-size: 12px; font-weight: 500; text-decoration: none; white-space: nowrap;">{{ p.footer }}</a>
+            </div>
+          </sc-if>
+        </div>
+        <div style="font-size: 11.5px; color: oklch(0.5 0.012 250); padding: 7px 2px 0; text-wrap: pretty;"><span style="font-weight: 600; color: oklch(0.38 0.01 250);">{{ p.captionLead }}</span> {{ p.caption }}</div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;dir&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;ltr&quot;,&quot;rtl&quot;],&quot;default&quot;:&quot;ltr&quot;,&quot;tsType&quot;:&quot;'ltr' | 'rtl'&quot;,&quot;section&quot;:&quot;Localization&quot;}}">
+const TASKS = [
+  ["Update hand-hygiene audit tool", "Nora Al-Otaibi", -6, "open"],
+  ["Close CAPA-0912 (CLABSI cluster)", "Dr. Reem Alami", -2, "blocked"],
+  ["Q3 surveillance report to council", "Dr. Huda Zahrani", 6, "review"],
+  ["Review isolation policy IPC-04", "Layla Kassem", 12, "open"],
+  ["Antimicrobial stewardship training", "Tariq Suleiman", 19, "open"],
+  ["Negative-pressure room validation", "Omar Bakri", 27, "open"],
+  ["Annual terms of reference review", "Dr. Fahad Al-Anazi", 122, "open"],
+  ["Sharps injury trend analysis", "Maha Al-Dossari", 9, "open"],
+  ["CSSD load monitoring checklist", "Bandar Al-Shehri", 15, "review"],
+  ["Outbreak drill after-action report", "Dana Chalabi", 4, "open"],
+  ["Update IPC orientation deck", "Sara Idris", 33, "open"],
+  ["Water culture schedule sign-off", "Tariq Nour", 41, "open"],
+  ["Vaccination compliance follow-up", "Maha Al-Dossari", -1, "open"],
+  ["Link JCI IPSG.5 evidence set", "Hessa Al-Rashid", 21, "open"],
+  ["Hand-hygiene compliance audit Q2", "Maha Al-Dossari", -74, "done"],
+  ["Revise IPC committee charter", "Nora Al-Otaibi", -51, "done"],
+  ["Close CAPA-0788 (SSI rate)", "Dr. Reem Alami", -40, "done"],
+  ["Endoscope reprocessing review", "Bandar Al-Shehri", -33, "done"],
+  ["JCI mock survey action list", "Dana Chalabi", -18, "done"]
+];
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const AR_MONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+function dueDate(days, rtl) {
+  const d = new Date(2026, 8, 12);
+  d.setDate(d.getDate() + days);
+  const m = rtl ? AR_MONTHS[d.getMonth()] : MONTHS[d.getMonth()];
+  return d.getDate() + " " + m;
+}
+
+const MEMBERS = [
+  ["FA", "Dr. Fahad Al-Anazi", "Chair · Infectious Diseases", "14 Jan 2025"],
+  ["NO", "Nora Al-Otaibi", "Secretary · Quality", "14 Jan 2025"],
+  ["HZ", "Dr. Huda Zahrani", "Member · Microbiology", "14 Jan 2025"],
+  ["MS", "Mohammed Saeed", "Member · Nursing", "02 Mar 2025"],
+  ["LK", "Layla Kassem", "Member · Pharmacy", "02 Mar 2025"],
+  ["OB", "Omar Bakri", "Member · Facilities", "19 Jun 2025"],
+  ["RA", "Dr. Reem Alami", "Member · ICU", "19 Jun 2025"],
+  ["TS", "Tariq Suleiman", "Member · Lab", "04 Feb 2026"],
+  ["JM", "Jawaher Mutairi", "Observer · Internal Audit", "04 Feb 2026"]
+];
+
+const SUBS = [
+  ["Antimicrobial Stewardship Sub-committee", "6 members", "monthly", "active"],
+  ["Sterilization & CSSD Working Group", "4 members", "quarterly", "active"],
+  ["Outbreak Response Task Force", "5 members", "ad hoc", "review"]
+];
+
+const S = {
+  en: {
+    tasks: "Tasks", members: "Members", subs: "Sub-committees", meetings: "Meetings",
+    addMember: "Add member", newTask: "New task", link: "Link", schedule: "Schedule",
+    searchTasks: "Search tasks…", sortBy: "Due date", open: "Open", overdue: "Overdue", all: "All",
+    due: "due", overdueBy: "overdue", noDue: "no due date", joined: "joined",
+    viewAllTasks: "View all in Tasks", viewAllMembers: "Open members list", of: "of",
+    blocked: "Blocked", review: "In review", done: "Closed", closed: "closed", stageReview: "Terms Review",
+    noResults: "No matching tasks", noResultsBody: "No open tasks match this search inside this committee.",
+    clearSearch: "Clear search",
+    emptyMeetings: "No meetings recorded", emptyMeetingsBody: "Scheduled and held meetings will be listed here with date, attendance and quorum outcome.",
+    openTask: "Open task", reassign: "Reassign…", changeDue: "Change due date…", complete: "Mark complete",
+    viewProfile: "Open user record", changeRole: "Change committee role…", removeMember: "Remove from committee",
+    openRecord: "Open committee", detach: "Detach from parent"
+  },
+  ar: {
+    tasks: "المهام", members: "الأعضاء", subs: "اللجان الفرعية", meetings: "الاجتماعات",
+    addMember: "إضافة عضو", newTask: "مهمة جديدة", link: "ربط", schedule: "جدولة",
+    searchTasks: "ابحث في المهام…", sortBy: "تاريخ الاستحقاق", open: "مفتوحة", overdue: "متأخرة", all: "الكل",
+    due: "تستحق", overdueBy: "تأخر", noDue: "بلا تاريخ", joined: "انضم",
+    viewAllTasks: "عرض الكل في المهام", viewAllMembers: "فتح قائمة الأعضاء", of: "من",
+    blocked: "معلّقة", review: "قيد المراجعة", done: "مكتملة", closed: "أُنجزت", stageReview: "مراجعة اللائحة",
+    noResults: "لا مهام مطابقة", noResultsBody: "لا توجد مهام مفتوحة مطابقة للبحث في هذه اللجنة.",
+    clearSearch: "إزالة البحث",
+    emptyMeetings: "لا اجتماعات مسجلة", emptyMeetingsBody: "ستظهر هنا الاجتماعات المجدولة والمنعقدة مع التاريخ والحضور واكتمال النصاب.",
+    openTask: "فتح المهمة", reassign: "إعادة تعيين…", changeDue: "تغيير تاريخ الاستحقاق…", complete: "إنهاء المهمة",
+    viewProfile: "فتح سجل المستخدم", changeRole: "تغيير الدور…", removeMember: "إزالة من اللجنة",
+    openRecord: "فتح اللجنة", detach: "فصل عن اللجنة الأم"
+  }
+};
+
+const DATES = ["18 Sep", "24 Sep", "01 Oct", "09 Oct", "12 Jan", "21 Sep", "27 Sep", "16 Sep", "15 Oct", "03 Oct", "23 Oct", "02 Oct"];
+
+class Component extends DCLogic {
+  state = { dir: null, menu: null, q: {}, scope: {}, sort: {} };
+
+  componentDidMount() {
+    this.onDoc = () => { if (this.state.menu) this.setState({ menu: null }); };
+    document.addEventListener("click", this.onDoc, true);
+  }
+  componentWillUnmount() { if (this.onDoc) document.removeEventListener("click", this.onDoc, true); }
+
+  get dir() { return this.state.dir || this.props.dir || "ltr"; }
+
+  set(key, obj) { this.setState(s => ({ [key]: Object.assign({}, s[key], obj) })); }
+  menuToggle(key) { return (e) => { e.stopPropagation(); this.setState(s => ({ menu: s.menu === key ? null : key })); }; }
+
+  taskRows(pid, L, width) {
+    const q = (this.state.q[pid] || "").trim().toLowerCase();
+    const scope = this.state.scope[pid] || "open";
+    const sort = this.state.sort[pid] || "due";
+    let list = TASKS.map((t, i) => ({ i, title: t[0], assignee: t[1], days: t[2], status: t[3], date: dueDate(t[2], this.dir === "rtl") }));
+    if (scope === "open") list = list.filter(t => t.status !== "done");
+    if (scope === "overdue") list = list.filter(t => t.status !== "done" && t.days < 0);
+    if (q) list = list.filter(t => (t.title + " " + t.assignee).toLowerCase().indexOf(q) > -1);
+    list.sort((a, b) => sort === "assignee" ? a.assignee.localeCompare(b.assignee) : sort === "title" ? a.title.localeCompare(b.title) : a.days - b.days);
+
+    return list.map(t => {
+      const late = t.days < 0 && t.status !== "done";
+      const wide = width > 520;
+      const dueText = late ? Math.abs(t.days) + (this.dir === "rtl" ? " يوم " + L.overdueBy : "d " + L.overdueBy) : t.status === "done" ? L.closed + " " + t.date : L.due + " " + t.date;
+      const dueInk = late ? "oklch(0.5 0.16 30)" : t.status === "done" ? "oklch(0.6 0.012 250)" : "oklch(0.55 0.012 250)";
+      const chip = t.status === "blocked" ? { label: L.blocked, ink: "oklch(0.44 0.14 30)", bg: "oklch(0.96 0.03 30)", bd: "oklch(0.88 0.05 30)" }
+        : t.status === "review" ? { label: L.review, ink: "oklch(0.42 0.05 255)", bg: "oklch(0.96 0.015 255)", bd: "oklch(0.9 0.02 255)" }
+        : t.status === "done" ? { label: L.done, ink: "oklch(0.42 0.07 165)", bg: "oklch(0.96 0.03 165)", bd: "oklch(0.89 0.04 165)" } : null;
+      return {
+        rowStyle: "display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-block-end: 1px solid oklch(0.96 0.004 250); background: " + (late ? "oklch(0.995 0.012 30)" : "#fff") + ";",
+        avatar: null,
+        line1: t.title,
+        titleStyle: "font-size: 13px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+        chipLabel: chip ? chip.label : null,
+        chipStyle: chip ? "flex: none; font-size: 10.5px; font-weight: 600; color: " + chip.ink + "; background: " + chip.bg + "; border: 1px solid " + chip.bd + "; border-radius: 4px; padding: 0 5px; white-space: nowrap;" : "",
+        line2a: t.assignee,
+        sep: wide ? "" : "·",
+        line2b: wide ? "" : dueText,
+        line2bStyle: "flex: none; font-variant-numeric: tabular-nums; font-weight: " + (late ? 600 : 400) + "; color: " + dueInk + ";",
+        wide: wide,
+        wideCol: dueText,
+        wideColStyle: "flex: none; width: 150px; min-width: 0; font-size: 12.5px; font-weight: " + (late ? 600 : 400) + "; color: " + dueInk + "; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; padding-block-start: 1px;",
+        onMenu: this.menuToggle(pid + ":" + t.i),
+        menuOpen: this.state.menu === pid + ":" + t.i,
+        menuItems: [L.openTask, L.reassign, L.changeDue, L.complete].map((label, i) => ({
+          label, style: "padding: 6px 9px; border-radius: 5px; font-size: 12.5px; cursor: pointer;" + (i === 3 ? " color: oklch(0.42 0.09 165);" : "")
+        }))
+      };
+    });
+  }
+
+  renderVals() {
+    const rtl = this.dir === "rtl", L = rtl ? S.ar : S.en;
+    const btn = "background: #fff; color: oklch(0.35 0.01 250); border: 1px solid oklch(0.88 0.006 250); border-radius: 5px; padding: 4px 10px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; flex: none;";
+    const count = "font-size: 11px; font-weight: 600; color: oklch(0.45 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums; flex: none;";
+    const empty = "display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 3px; padding: 26px 20px; min-height: 150px;";
+    const body = (h) => "overflow-y: auto; max-height: " + h + "px;";
+
+    const scopeBtn = (on) => "border: 1px solid " + (on ? "oklch(0.84 0.04 250)" : "oklch(0.91 0.006 250)") + "; background: " + (on ? "oklch(0.96 0.025 250)" : "#fff") + "; color: " + (on ? "oklch(0.4 0.11 250)" : "oklch(0.5 0.012 250)") + "; border-radius: 999px; padding: 3px 9px; font-family: inherit; font-size: 11.5px; font-weight: " + (on ? 600 : 500) + "; cursor: pointer; white-space: nowrap;";
+    const sortOpt = (on) => "width: 100%; text-align: start; padding: 6px 9px; border: none; border-radius: 5px; background: " + (on ? "oklch(0.95 0.02 250)" : "none") + "; font-family: inherit; font-size: 12.5px; font-weight: " + (on ? 600 : 400) + "; color: inherit; cursor: pointer;";
+
+    const scopesFor = (pid) => {
+      const cur = this.state.scope[pid] || "open";
+      const counts = {
+        open: TASKS.filter(t => t[3] !== "done").length,
+        overdue: TASKS.filter(t => t[3] !== "done" && t[2] < 0).length,
+        all: TASKS.length
+      };
+      return [["open", L.open], ["overdue", L.overdue], ["all", L.all]].map(([k, label]) => ({
+        label, count: counts[k], style: scopeBtn(cur === k), onClick: () => this.set("scope", { [pid]: k })
+      }));
+    };
+    const sortsFor = (pid) => {
+      const cur = this.state.sort[pid] || "due";
+      return [["due", rtl ? "تاريخ الاستحقاق" : "Due date"], ["assignee", rtl ? "المسؤول" : "Assignee"], ["title", rtl ? "العنوان" : "Title"]].map(([k, label]) => ({
+        label, style: sortOpt(cur === k), onClick: (e) => { e.stopPropagation(); this.setState(s => ({ menu: null, sort: Object.assign({}, s.sort, { [pid]: k }) })); }
+      }));
+    };
+    const sortLabelFor = (pid) => {
+      const cur = this.state.sort[pid] || "due";
+      return cur === "assignee" ? (rtl ? "المسؤول" : "Assignee") : cur === "title" ? (rtl ? "العنوان" : "Title") : L.sortBy;
+    };
+
+    const openCount = TASKS.filter(t => t[3] !== "done").length;
+    const lateCount = TASKS.filter(t => t[3] !== "done" && t[2] < 0).length;
+    const scopeTotal = (pid) => {
+      const sc = this.state.scope[pid] || "open";
+      return sc === "all" ? TASKS.length : sc === "overdue" ? lateCount : openCount;
+    };
+    const openChip = openCount + " " + (rtl ? "مفتوحة" : "open");
+    const tasksRows = this.taskRows("tasks", L, 352);
+    const wideRows = this.taskRows("wide", L, 718);
+    const emptyQ = (this.state.q["tasksEmpty"] || "quorum").trim();
+
+    const memberRows = MEMBERS.map((m, i) => ({
+      rowStyle: "display: flex; align-items: flex-start; gap: 9px; padding: 8px 12px; border-block-end: 1px solid oklch(0.96 0.004 250); background: #fff;",
+      avatar: m[0], line1: m[1],
+      titleStyle: "font-size: 13px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+      chipLabel: i === 0 ? (rtl ? "رئيس" : "Chair") : null,
+      chipStyle: "flex: none; font-size: 10.5px; font-weight: 600; color: oklch(0.42 0.05 255); background: oklch(0.96 0.015 255); border: 1px solid oklch(0.9 0.02 255); border-radius: 4px; padding: 0 5px; white-space: nowrap;",
+      line2a: m[2], sep: "·", line2b: L.joined + " " + m[3],
+      line2bStyle: "flex: none; font-variant-numeric: tabular-nums; color: oklch(0.58 0.012 250);",
+      wide: false, wideCol: "",
+      onMenu: this.menuToggle("mem:" + i), menuOpen: this.state.menu === "mem:" + i,
+      menuItems: [L.viewProfile, L.changeRole, L.removeMember].map((label, j) => ({
+        label, style: "padding: 6px 9px; border-radius: 5px; font-size: 12.5px; cursor: pointer;" + (j === 2 ? " color: oklch(0.5 0.15 30);" : "")
+      }))
+    }));
+
+    const subRows = SUBS.map((s, i) => ({
+      rowStyle: "display: flex; align-items: flex-start; gap: 8px; padding: 9px 12px; border-block-end: 1px solid oklch(0.96 0.004 250); background: #fff;",
+      avatar: null, line1: s[0],
+      titleStyle: "font-size: 13px; font-weight: 500; color: oklch(0.45 0.1 250); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+      chipLabel: s[3] === "review" ? L.stageReview : null,
+      chipStyle: "flex: none; font-size: 10.5px; font-weight: 600; color: oklch(0.42 0.05 255); background: oklch(0.96 0.015 255); border: 1px solid oklch(0.9 0.02 255); border-radius: 4px; padding: 0 5px; white-space: nowrap;",
+      line2a: s[1], sep: "·", line2b: s[2],
+      line2bStyle: "flex: none; color: oklch(0.55 0.012 250);",
+      wide: false, wideCol: "",
+      onMenu: this.menuToggle("sub:" + i), menuOpen: this.state.menu === "sub:" + i,
+      menuItems: [L.openRecord, L.detach].map((label, j) => ({
+        label, style: "padding: 6px 9px; border-radius: 5px; font-size: 12.5px; cursor: pointer;" + (j === 1 ? " color: oklch(0.5 0.15 30);" : "")
+      }))
+    }));
+
+    const wrap = (w) => "flex: 0 0 " + w + "px; width: " + w + "px; max-width: 100%;";
+
+    const panels = [
+      {
+        wrapStyle: wrap(352), title: L.tasks, countLabel: openChip, countStyle: count, alert: (rtl ? lateCount + " متأخرة" : lateCount + " overdue"),
+        action: L.newTask, actionStyle: btn,
+        showToolbar: true, q: this.state.q["tasks"] || "", onSearch: (e) => this.set("q", { tasks: e.target.value }),
+        searchPlaceholder: L.searchTasks, onSortMenu: this.menuToggle("sort:tasks"), sortOpen: this.state.menu === "sort:tasks",
+        sortLabel: sortLabelFor("tasks"), sortOptions: sortsFor("tasks"),
+        showScope: true, scopes: scopesFor("tasks"),
+        hasRows: tasksRows.length > 0, rows: tasksRows, bodyStyle: body(286),
+        isNoResults: tasksRows.length === 0, isEmpty: false, emptyStyle: empty,
+        emptyTitle: L.noResults, emptyBody: L.noResultsBody, emptyAction: L.clearSearch, onClear: () => this.set("q", { tasks: "" }),
+        footer: L.viewAllTasks, footerCount: "1–" + tasksRows.length + " " + L.of + " " + scopeTotal("tasks"),
+        captionLead: "Default.", caption: "Search + sort + scope chips appear because the set exceeds 12 rows. Body scrolls ~6 rows; the footer hands off to the full page, filters intact."
+      },
+      {
+        wrapStyle: wrap(352), title: L.members, countLabel: "9", countStyle: count, alert: null,
+        action: L.addMember, actionStyle: btn,
+        showToolbar: false, showScope: false, q: "", searchPlaceholder: "", sortOptions: [], scopes: [], sortLabel: "", sortOpen: false, onSortMenu: () => {}, onSearch: () => {},
+        hasRows: true, rows: memberRows, bodyStyle: body(286),
+        isNoResults: false, isEmpty: false, emptyStyle: empty, emptyTitle: "", emptyBody: "", emptyAction: "", onClear: () => {},
+        footer: L.viewAllMembers, footerCount: (rtl ? "١–٩ من ٩" : "1–9 of 9"),
+        captionLead: "Small set.", caption: "Under 12 rows the toolbar is not rendered at all — nothing to search, nothing to sort. Avatar tier added; role is the second line."
+      },
+      {
+        wrapStyle: wrap(352), title: L.subs, countLabel: "3", countStyle: count, alert: null,
+        action: L.link, actionStyle: btn,
+        showToolbar: false, showScope: false, q: "", searchPlaceholder: "", sortOptions: [], scopes: [], sortLabel: "", sortOpen: false, onSortMenu: () => {}, onSearch: () => {},
+        hasRows: true, rows: subRows, bodyStyle: body(286),
+        isNoResults: false, isEmpty: false, emptyStyle: empty, emptyTitle: "", emptyBody: "", emptyAction: "", onClear: () => {},
+        footer: null, footerCount: "",
+        captionLead: "Fully loaded.", caption: "Everything fits, so no footer and no count range: a pagination bar that never paginates is noise. Status shows only where it differs from Active."
+      },
+      {
+        wrapStyle: wrap(352), title: L.meetings, countLabel: "0", countStyle: "font-size: 11px; font-weight: 600; color: oklch(0.5 0.012 250); background: oklch(0.95 0.004 250); border-radius: 4px; padding: 1px 6px; flex: none;", alert: null,
+        action: L.schedule, actionStyle: btn + " opacity: 0.55; cursor: not-allowed;",
+        showToolbar: false, showScope: false, q: "", searchPlaceholder: "", sortOptions: [], scopes: [], sortLabel: "", sortOpen: false, onSortMenu: () => {}, onSearch: () => {},
+        hasRows: false, rows: [], bodyStyle: body(286),
+        isNoResults: false, isEmpty: true, emptyStyle: empty,
+        emptyTitle: L.emptyMeetings, emptyBody: L.emptyMeetingsBody, emptyAction: "", onClear: () => {},
+        footer: null, footerCount: "",
+        captionLead: "Nothing yet.", caption: "Relationship exists, set is empty: title, one explanatory line, no illustration and no apology. Its action is present but disabled while the module is unbuilt."
+      },
+      {
+        wrapStyle: wrap(352), title: L.tasks, countLabel: openChip, countStyle: count, alert: null,
+        action: L.newTask, actionStyle: btn,
+        showToolbar: true, q: emptyQ, onSearch: (e) => this.set("q", { tasksEmpty: e.target.value }),
+        searchPlaceholder: L.searchTasks, onSortMenu: this.menuToggle("sort:e"), sortOpen: this.state.menu === "sort:e",
+        sortLabel: L.sortBy, sortOptions: sortsFor("tasksEmpty"),
+        showScope: true, scopes: scopesFor("tasksEmpty"),
+        hasRows: false, rows: [], bodyStyle: body(286),
+        isNoResults: true, isEmpty: false, emptyStyle: empty,
+        emptyTitle: L.noResults, emptyBody: L.noResultsBody, emptyAction: L.clearSearch,
+        onClear: () => this.set("q", { tasksEmpty: "" }),
+        footer: null, footerCount: "",
+        captionLead: "No results.", caption: "Different words, different exit: the filter is the cause, so the panel offers to undo it. Never shown where the set is genuinely empty."
+      },
+      {
+        wrapStyle: wrap(718), title: L.tasks, countLabel: openChip, countStyle: count, alert: (rtl ? lateCount + " متأخرة" : lateCount + " overdue"),
+        action: L.newTask, actionStyle: btn,
+        showToolbar: true, q: this.state.q["wide"] || "", onSearch: (e) => this.set("q", { wide: e.target.value }),
+        searchPlaceholder: L.searchTasks, onSortMenu: this.menuToggle("sort:wide"), sortOpen: this.state.menu === "sort:wide",
+        sortLabel: sortLabelFor("wide"), sortOptions: sortsFor("wide"),
+        showScope: true, scopes: scopesFor("wide"),
+        hasRows: true, rows: wideRows, bodyStyle: body(286),
+        isNoResults: false, isEmpty: false, emptyStyle: empty, emptyTitle: "", emptyBody: "", emptyAction: "", onClear: () => {},
+        footer: L.viewAllTasks, footerCount: "1–" + wideRows.length + " " + L.of + " " + scopeTotal("wide"),
+        captionLead: "Two-panel width.", caption: "Same component at 718px: the due date promotes out of the second line into its own column — the first step on the ramp back to the full page's seven."
+      }
+    ];
+
+    return {
+      dir: this.dir,
+      setLtr: () => this.setState({ dir: "ltr", menu: null }),
+      setRtl: () => this.setState({ dir: "rtl", menu: null }),
+      ltrBtnStyle: (rtl ? "padding: 5px 11px; font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer; border: none; background: #fff; color: oklch(0.5 0.012 250);" : "padding: 5px 11px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; background: oklch(0.95 0.02 250); color: oklch(0.42 0.11 250);"),
+      rtlBtnStyle: (rtl ? "padding: 5px 11px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; border: none; background: oklch(0.95 0.02 250); color: oklch(0.42 0.11 250);" : "padding: 5px 11px; font-size: 12px; font-weight: 500; font-family: inherit; cursor: pointer; border: none; background: #fff; color: oklch(0.5 0.012 250);"),
+      kept: [
+        { what: "Sort", how: "one menu of 2–3 sensible keys, not clickable column heads" },
+        { what: "Scope filter", how: "chips for the one axis that matters here (Open / Overdue / All)" },
+        { what: "Search", how: "only above ~12 rows, inline and single-field" },
+        { what: "Row actions", how: "overflow menu with worded items, always visible" },
+        { what: "Both empty states", how: "\"none yet\" and \"none matching\" stay distinct" },
+        { what: "Count", how: "in the panel header, plus a range when the set is truncated" }
+      ],
+      dropped: [
+        { what: "Pagination", how: "scroll to ~6 rows, then \"View all\" on the full page" },
+        { what: "Column chooser", how: "there are no columns — two lines with a fixed hierarchy" },
+        { what: "Bulk selection", how: "no checkbox column; multi-record work happens on the full list" },
+        { what: "Export", how: "evidence exports are page-level; the footer link carries the filter over" },
+        { what: "Multi-filter bar", how: "one scope axis only; anything richer means you wanted the full list" },
+        { what: "Column headers", how: "no header row at all — it costs a row and buys nothing at 352px" }
+      ],
+      panels
+    };
+  }
+}
+</script>
+</body>
+</html>

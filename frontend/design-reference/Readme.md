@@ -1,0 +1,1 @@
+The folder is a wholesale export from Claude Design, replaced rather than merged. The support.js is shared.
