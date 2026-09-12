@@ -31,4 +31,13 @@ export interface IListQuery {
   // predicate on Tasks — so the list component carries it and the caller's
   // source function decides what it maps to.
   scope?: string | null;
+  // ACC-78 — named filters beyond the scope chip: org unit, position, and
+  // whatever a future list needs. Kept as an open map rather than typed fields
+  // because the component must not know what any of them mean — the caller's
+  // source function maps each key to its endpoint's own parameter, exactly as
+  // it does for `scope`.
+  //
+  // A null value means "not filtered" and is dropped from the URL rather than
+  // written empty, so clearing a filter leaves a clean link.
+  filters?: Record<string, string | null>;
 }
