@@ -56,7 +56,11 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     }
 
     @if (committee(); as c) {
-      <!-- ACC-76 — built against frontend/design-reference/committee-record.
+      <!-- ACC-76 — built against
+           frontend/design-reference/AccreditMe Committee Record.dc.html.
+           (Path corrected in ACC-78: the export is a wholesale replacement per
+           its own Readme, and it moved the file out of a committee-record/
+           subfolder to the reference root.)
            That reference supplies the LAYOUT and information design; colours,
            components and i18n follow this codebase's conventions, not its raw
            HTML (tokens over oklch, p-button over <button>, Inter over IBM Plex,
