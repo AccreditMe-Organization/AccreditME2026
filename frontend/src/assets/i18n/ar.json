@@ -183,7 +183,9 @@
     "permissionsColumn": "الصلاحيات",
     "errorLoad": "فشل تحميل الأدوار.",
     "searchPlaceholder": "ابحث في الأدوار…",
-    "permissionCount": "{{count}} صلاحية"
+    "permissionCount": "{{count}} صلاحية",
+    "name": "الدور",
+    "permissions": "الصلاحيات"
   },
   "workflow": {
     "title": "قوالب سير العمل",
@@ -533,7 +535,9 @@
     },
     "searchPlaceholder": "ابحث بالاسم أو البريد الإلكتروني…",
     "noUsersBody": "ادعُ زملاءك لمنحهم صلاحية الوصول إلى هذه المؤسسة.",
-    "createdAt": "تاريخ الإضافة"
+    "createdAt": "تاريخ الإضافة",
+    "allOrgUnits": "كل الوحدات التنظيمية",
+    "allPositions": "كل المسميات الوظيفية"
   },
   "platform": {
     "tenants": "المؤسسات",
@@ -639,8 +643,12 @@
     "noResults": "لا توجد نتائج مطابقة",
     "noResultsBody": "لا يوجد ما يطابق بحثك هنا.",
     "clearSearch": "إزالة البحث",
-    "range": "{{first}}–{{last}} من {{total}}",
+    "range": "{first}-{last} من {totalRecords}",
     "errorLoad": "تعذّر تحميل هذه القائمة. يرجى المحاولة مرة أخرى.",
-    "preferencesNote": "يتم تذكّر الترتيب وحجم الصفحة على هذا الجهاز."
+    "preferencesNote": "يتم تذكّر الترتيب وحجم الصفحة على هذا الجهاز.",
+    "columns": "الأعمدة",
+    "more": "إجراءات أخرى",
+    "clearFilters": "إزالة عوامل التصفية",
+    "panelRange": "{{first}}–{{last}} من {{total}}"
   }
 }

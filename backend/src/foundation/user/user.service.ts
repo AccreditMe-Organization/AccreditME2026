@@ -81,7 +81,12 @@ export interface ListUsersFilters {
 // returns is a weak oracle over hidden values, which is the whole reason this
 // is a whitelist rather than a passthrough.
 const USER_SORT = new SortWhitelist(
-  ['name', 'email', 'status', 'createdAt'] as const,
+  // ACC-78 — lastLoginAt added: the list shows a Last login column and a
+  // sortable-looking column that rejects the sort with a 400 is worse than an
+  // unsortable one. Nulls (never signed in) sort last under Postgres DESC,
+  // which is the useful order — "who has not logged in" is a question you ask
+  // by sorting ascending.
+  ['name', 'email', 'status', 'createdAt', 'lastLoginAt'] as const,
   { column: 'name', dir: 'asc' },
 );
 

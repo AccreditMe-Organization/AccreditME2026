@@ -183,7 +183,9 @@
     "permissionsColumn": "Permissions",
     "errorLoad": "Failed to load roles.",
     "searchPlaceholder": "Search roles…",
-    "permissionCount": "{{count}} permissions"
+    "permissionCount": "{{count}} permissions",
+    "name": "Role",
+    "permissions": "Permissions"
   },
   "workflow": {
     "title": "Workflow Templates",
@@ -533,7 +535,9 @@
     },
     "searchPlaceholder": "Search by name or email…",
     "noUsersBody": "Invite colleagues to give them access to this organization.",
-    "createdAt": "Date added"
+    "createdAt": "Date added",
+    "allOrgUnits": "All org units",
+    "allPositions": "All positions"
   },
   "platform": {
     "tenants": "Tenants",
@@ -639,8 +643,12 @@
     "noResults": "No matching results",
     "noResultsBody": "Nothing here matches your search.",
     "clearSearch": "Clear search",
-    "range": "{{first}}–{{last}} of {{total}}",
+    "range": "{first}-{last} of {totalRecords}",
     "errorLoad": "This list could not be loaded. Please try again.",
-    "preferencesNote": "Sorting and page size are remembered on this device."
+    "preferencesNote": "Sorting and page size are remembered on this device.",
+    "columns": "Columns",
+    "more": "More actions",
+    "clearFilters": "Clear filters",
+    "panelRange": "{{first}}–{{last}} of {{total}}"
   }
 }

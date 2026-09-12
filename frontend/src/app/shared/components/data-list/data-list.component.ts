@@ -38,6 +38,11 @@ export interface DataListColumn {
   // Whether the column chooser may hide it. A table's identifying column
   // should not be hideable: a user list with Name hidden is a list of nothing.
   alwaysVisible?: boolean;
+  // This column's grid track. The COMPONENT builds --am-list-cols from the
+  // VISIBLE columns' widths, so hiding a column closes its gap instead of
+  // leaving an empty track — and the caller never has to recompute a grid
+  // string in step with a chooser it does not own.
+  width?: string;
 }
 
 export interface DataListScope {
@@ -82,9 +87,11 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
 // aligned for free, but it would be a small framework describing three tables
 // that share no structure — Users is seven columns, Members is an avatar and
 // two lines, Workflow Stages is an expandable row containing an editor. So the
-// consumer declares its grid ONCE via [gridTemplate], the component publishes
-// it as --am-list-cols, and both templates consume that variable. One
-// definition, two users of it, no framework.
+// consumer declares each column's width ONCE on its DataListColumn, the
+// component builds --am-list-cols from the VISIBLE ones, and both templates
+// consume that variable. One definition, two users of it, no framework — and
+// because the component owns it, hiding a column closes its track rather than
+// leaving a gap the caller would have to recompute around.
 @Component({
   selector: 'app-data-list',
   standalone: true,
@@ -365,9 +372,9 @@ export class DataListComponent<T> {
   readonly pageSize = input<number>(25);
   readonly rowsPerPageOptions = input<number[]>([10, 25, 50, 100]);
 
-  // The grid the header and rows both use. One definition, consumed through
-  // --am-list-cols, so the two cannot drift apart.
-  readonly gridTemplate = input<string>('1fr');
+  // Appended after the column tracks — the row-actions cell. Set to '' for a
+  // list whose rows have no trailing action.
+  readonly gridSuffix = input<string>('auto');
 
   // Names of the filters this list offers. Declared so a crafted URL cannot
   // introduce filter keys the list never had — see readUrlFilters.
@@ -405,6 +412,16 @@ export class DataListComponent<T> {
   private readonly reloadToken = signal(0);
 
   readonly isPage = computed(() => this.variant() === 'page');
+
+  // The single grid definition both the header row and every data row read,
+  // published as --am-list-cols. Built here rather than by the caller because
+  // the component owns which columns are hidden.
+  readonly gridTemplate = computed(() => {
+    const visible = this.columns().filter((c) => this.isColumnVisible(c.key));
+    const tracks = visible.map((c) => c.width ?? '1fr');
+    const suffix = this.gridSuffix();
+    return [...tracks, ...(suffix ? [suffix] : [])].join(' ') || '1fr';
+  });
 
   constructor() {
     this.restore();
@@ -507,7 +524,12 @@ export class DataListComponent<T> {
     // instant() is a plain call, not a signal read — currentLang() is read
     // explicitly so this re-evaluates on a language switch (ACC-55).
     this.translate.currentLang();
-    return this.translate.instant('list.range', {
+    // A SEPARATE KEY from list.range, and the two are not interchangeable:
+    // list.range is consumed by PrimeNG's paginator, which substitutes its own
+    // {first}/{last}/{totalRecords} placeholders. This one goes through
+    // ngx-translate, which substitutes {{first}}. Passing either string to the
+    // other renders the braces literally on screen.
+    return this.translate.instant('list.panelRange', {
       first,
       last: first + shown - 1,
       total: this.total(),

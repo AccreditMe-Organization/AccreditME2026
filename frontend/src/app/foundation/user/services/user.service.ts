@@ -57,6 +57,8 @@ export interface ListUsersFilters {
   sortDir?: 'asc' | 'desc';
   status?: string;
   orgUnitId?: string;
+  // ACC-78 — the reference's filter bar is status + org unit + position.
+  positionId?: string;
   search?: string;
 }
 
@@ -115,6 +117,7 @@ export class UserService {
     let params = new HttpParams();
     if (filters?.status) params = params.set('status', filters.status);
     if (filters?.orgUnitId) params = params.set('orgUnitId', filters.orgUnitId);
+    if (filters?.positionId) params = params.set('positionId', filters.positionId);
     if (filters?.search) params = params.set('search', filters.search);
     if (filters?.page) params = params.set('page', filters.page);
     if (filters?.pageSize) params = params.set('pageSize', filters.pageSize);
@@ -139,6 +142,13 @@ export class UserService {
   // real ticket, not something to paper over with a larger number.
   listAllUsers(filters?: Omit<ListUsersFilters, 'page' | 'pageSize'>): Observable<IUserDto[]> {
     return this.listUsers({ ...filters, pageSize: 200 }).pipe(map((page) => page.data));
+  }
+
+  // ACC-78 — counts behind the list's filter chips. Separate from the list
+  // because the list is already filtered: on the Invited chip its total IS the
+  // invited count, so every other chip would read zero.
+  getStatusCounts(): Observable<Record<string, number>> {
+    return this.http.get<Record<string, number>>(`${this.base}/status-counts`);
   }
 
   getById(id: string): Observable<IUserDto> {
