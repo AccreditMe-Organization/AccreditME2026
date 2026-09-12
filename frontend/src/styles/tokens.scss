@@ -42,6 +42,20 @@
   --am-account-cancelled:   #E53E3E;
   --am-account-offboarding: #718096;
 
+  // User — a PERSON's account state (ACC-78). Its own set, not folded into
+  // --am-account-* above: that scale is tenant/organization lifecycle
+  // (trial/active/suspended/cancelled/offboarding), and a user is not a
+  // tenant. Borrowing it would be the same category error the banner note
+  // below describes.
+  //
+  // Only two values are defined, and that is the point. ACTIVE is deliberately
+  // ABSENT — an active user is the unremarkable case and renders as plain
+  // text, not a chip. Colouring every row green is what made the old tables
+  // uniformly green with nothing standing out (UX review, ACC-71); colour
+  // marks the exception.
+  --am-user-invited:  #D69E2E;
+  --am-user-inactive: #718096;
+
   // Banner — fixed, always-the-same informational banners (e.g. the
   // impersonation banner). Distinct from --am-severity-* on purpose: a
   // banner like this isn't rating anything, so borrowing a severity token
