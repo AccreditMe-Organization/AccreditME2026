@@ -168,8 +168,10 @@ describe('NotificationService', () => {
 
       const results = await service.getForUser(USER_A, ORG_A, {});
 
-      expect(results).toHaveLength(1);
-      expect(results.every((n) => n.organizationId === ORG_A)).toBe(true);
+      // ACC-78 — returns the { data, total, page, pageSize } envelope now, not
+      // a bare array.
+      expect(results.data).toHaveLength(1);
+      expect(results.data.every((n) => n.organizationId === ORG_A)).toBe(true);
     });
   });
 

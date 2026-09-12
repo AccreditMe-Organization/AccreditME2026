@@ -24,6 +24,9 @@ const MOCK_NOTIFICATION: INotification = {
   createdAt: new Date('2026-01-01'),
 };
 
+// ACC-78 — the inbox returns the shared envelope now, not a bare array.
+const MOCK_PAGE = { data: [MOCK_NOTIFICATION], total: 1, page: 1, pageSize: 20 };
+
 describe('NotificationController', () => {
   let controller: NotificationController;
   let service: {
@@ -35,7 +38,7 @@ describe('NotificationController', () => {
 
   beforeEach(async () => {
     service = {
-      getForUser: jest.fn().mockResolvedValue([MOCK_NOTIFICATION]),
+      getForUser: jest.fn().mockResolvedValue(MOCK_PAGE),
       getUnreadCount: jest.fn().mockResolvedValue(2),
       markRead: jest.fn().mockResolvedValue({ ...MOCK_NOTIFICATION, status: 'READ' }),
       markAllRead: jest.fn().mockResolvedValue({ count: 2 }),
@@ -54,15 +57,40 @@ describe('NotificationController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  // ACC-78 — page-based pagination via the shared PaginationQueryDto, replacing
+  // the old limit/offset string params. `status` stays a separate @Query: it is
+  // this endpoint's own filter, not part of the shared list contract.
   it('getForUser delegates to the service, scoped by tenant and current user', async () => {
-    const result = await controller.getForUser(TENANT_ID, USER_ID, 'UNREAD', '10', '0');
+    const result = await controller.getForUser(
+      TENANT_ID,
+      USER_ID,
+      { page: 2, pageSize: 10, sortBy: 'status', sortDir: 'asc' },
+      'UNREAD',
+    );
 
     expect(service.getForUser).toHaveBeenCalledWith(USER_ID, TENANT_ID, {
       status: 'UNREAD',
-      limit: 10,
-      offset: 0,
+      page: 2,
+      pageSize: 10,
+      sortBy: 'status',
+      sortDir: 'asc',
     });
-    expect(result).toEqual([MOCK_NOTIFICATION]);
+    expect(result).toEqual(MOCK_PAGE);
+  });
+
+  // The ordinary case: no pagination params at all. Every field on the DTO is
+  // optional so an unmigrated caller keeps working, which is what made a
+  // ~18-endpoint migration tractable — asserted rather than assumed.
+  it('passes undefined pagination through when no params are supplied', async () => {
+    await controller.getForUser(TENANT_ID, USER_ID, {});
+
+    expect(service.getForUser).toHaveBeenCalledWith(USER_ID, TENANT_ID, {
+      status: undefined,
+      page: undefined,
+      pageSize: undefined,
+      sortBy: undefined,
+      sortDir: undefined,
+    });
   });
 
   it('getUnreadCount delegates to the service and wraps the result', async () => {

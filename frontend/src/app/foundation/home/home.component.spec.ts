@@ -78,10 +78,17 @@ describe('HomeComponent', () => {
         {
           provide: NotificationService,
           useValue: {
+            // ACC-78 — the inbox returns the shared { data, total, page,
+            // pageSize } envelope now, not a bare array.
             list: () =>
               opts.notificationsFail
                 ? throwError(() => new Error('boom'))
-                : of(opts.notifications ?? []),
+                : of({
+                    data: opts.notifications ?? [],
+                    total: (opts.notifications ?? []).length,
+                    page: 1,
+                    pageSize: 20,
+                  }),
           },
         },
         { provide: AuthService, useValue: { currentUser: () => ({ name: 'Dr. Yasser Al-Amri' }) } },
