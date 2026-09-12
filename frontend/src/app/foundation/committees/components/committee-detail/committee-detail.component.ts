@@ -642,7 +642,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.lookupService.getValues('committee_type').subscribe({ next: (v) => this.committeeTypes.set(v) });
     this.lookupService.getValues('committee_member_role').subscribe({ next: (v) => this.memberRoles.set(v) });
     this.userService.listAllUsers().subscribe({ next: (v) => this.users.set(v) });
-    this.roleService.listRoles().subscribe({ next: (v) => this.roles.set(v) });
+    this.roleService.listAllRoles().subscribe({ next: (v) => this.roles.set(v) });
 
     this.loadCommitteeList();
     this.loadCommittee();

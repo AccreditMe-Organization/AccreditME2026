@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { IListQuery, IPaginatedResponse } from '../../../shared/models/paginated-response';
 
 export interface RoleDto {
   id: string;
@@ -49,8 +50,22 @@ export class RoleService {
 
   // ── Roles ──────────────────────────────────────────────────────────────────
 
-  listRoles(): Observable<RoleDto[]> {
-    return this.http.get<RoleDto[]>(this.base);
+  // ACC-78 — paginated.
+  listRoles(query?: IListQuery): Observable<IPaginatedResponse<RoleDto>> {
+    let params = new HttpParams();
+    if (query?.search) params = params.set('search', query.search);
+    if (query?.page) params = params.set('page', query.page);
+    if (query?.pageSize) params = params.set('pageSize', query.pageSize);
+    if (query?.sortBy) params = params.set('sortBy', query.sortBy);
+    if (query?.sortDir) params = params.set('sortDir', query.sortDir);
+    return this.http.get<IPaginatedResponse<RoleDto>>(this.base, { params });
+  }
+
+  // ACC-78 — every role, for the six pickers that are not lists. Same reasoning
+  // as UserService.listAllUsers(): paginating the endpoint would otherwise cap
+  // each of them at the first page, silently.
+  listAllRoles(): Observable<RoleDto[]> {
+    return this.listRoles({ pageSize: 200 }).pipe(map((page) => page.data));
   }
 
   getRole(id: string): Observable<RoleDto> {

@@ -421,7 +421,7 @@ export class WorkflowStageFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.roleService.listRoles().subscribe({ next: (roles) => this.roles.set(roles) });
+    this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
     this.lookupService.getValues('committee_member_role').subscribe({
       next: (values) => this.committeeRoles.set(values),
     });

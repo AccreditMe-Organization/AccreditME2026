@@ -1,14 +1,26 @@
-import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  TemplateRef,
+  ViewChild,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
-import { TableModule } from 'primeng/table';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
-import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import { RoleService, RoleDto } from '../../services/role.service';
 import { RoleFormComponent } from '../role-form/role-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import {
+  DataListComponent,
+  DataListSortOption,
+} from '../../../../shared/components/data-list/data-list.component';
+import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
+import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
 @Component({
@@ -16,10 +28,10 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
   standalone: true,
   imports: [
     TranslatePipe,
-    TableModule,
     ButtonModule,
-    TagModule,
     TooltipModule,
+    DataListComponent,
+    StatusChipComponent,
     RoleFormComponent,
     EditDialogComponent,
   ],
@@ -39,50 +51,70 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         <p class="text-red-500">{{ error() | translate }}</p>
       }
 
-      <p-table
-        [value]="visibleRoles()"
-        [loading]="loading()"
-        scrollable
-        scrollHeight="flex"
-        styleClass="w-full"
-      >
-        <ng-template pTemplate="header">
-          <tr>
-            <th style="width: 25%">{{ 'roles.nameEn' | translate }}</th>
-            <th style="width: 20%">{{ 'roles.nameAr' | translate }}</th>
-            <th style="width: 12%">{{ 'roles.roleType' | translate }}</th>
-            <th style="width: 12%">{{ 'roles.isActive' | translate }}</th>
-            <th style="width: 16%">{{ 'roles.permissionsColumn' | translate }}</th>
-            <th style="width: 15%"></th>
-          </tr>
-        </ng-template>
+      <!-- ACC-78 — the shared list pattern. -->
+      <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden">
+        <app-data-list
+          #list
+          [source]="source"
+          [trackBy]="trackById"
+          [sortOptions]="sortOptions()"
+          [searchPlaceholder]="'roles.searchPlaceholder' | translate"
+          [emptyTitle]="'roles.noRoles' | translate"
+          persistKey="roles"
+          [urlSync]="true"
+        >
+          <ng-template #listRow let-role>
+            <div
+              class="grid items-center gap-3 px-3 py-2 border-b border-[var(--am-border)]"
+              style="grid-template-columns: 1fr auto"
+            >
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 min-w-0">
+                  <!-- BILINGUAL NAMES AS A TWO-LINE CELL, settling the two
+                       conventions the UX review found. Both names always,
+                       rather than one chosen by language: a role's Arabic name
+                       is what an Arabic-speaking admin knows it by, and an
+                       English session should still show it. -->
+                  <span
+                    class="text-[13px] font-medium truncate"
+                    [pTooltip]="role.key ?? ''"
+                    [tooltipDisabled]="!role.key"
+                  >
+                    {{ role.nameEn }}
+                  </span>
+                  @if (role.isSystem) {
+                    <span
+                      class="text-[10.5px] font-semibold px-1.5 py-px rounded shrink-0"
+                      style="color: var(--am-blue-primary);
+                             background: color-mix(in srgb, var(--am-blue-primary) 12%, transparent)"
+                    >
+                      {{ 'roles.systemBadge' | translate }}
+                    </span>
+                  }
+                  @if (!role.isActive) {
+                    <app-status-chip variant="account" value="CANCELLED" />
+                  }
+                </div>
+                <div
+                  dir="rtl"
+                  style="unicode-bidi: isolate"
+                  class="text-[11.5px] text-[var(--am-text-secondary)] truncate text-start"
+                >
+                  {{ role.nameAr }}
+                </div>
+              </div>
 
-        <ng-template pTemplate="body" let-role>
-          <tr>
-            <td>
-              <span [pTooltip]="role.key ?? ''" [tooltipDisabled]="!role.key">
-                {{ role.nameEn }}
-              </span>
-            </td>
-            <td dir="rtl">{{ role.nameAr }}</td>
-            <td>
-              <p-tag
-                [value]="(role.isSystem ? 'roles.systemBadge' : 'roles.customBadge') | translate"
-                [severity]="role.isSystem ? 'info' : 'secondary'"
-              />
-            </td>
-            <td>
-              <p-tag
-                [value]="(role.isActive ? 'common.active' : 'common.inactive') | translate"
-                [severity]="role.isActive ? 'success' : 'secondary'"
-              />
-            </td>
-            <!-- ACC-74 — permissionCount, not permissions?.length. listRoles()
-                 deliberately does not carry the permission array; binding to it
-                 rendered 0 for every role, always. -->
-            <td>{{ role.permissionCount ?? 0 }}</td>
-            <td>
-              <div class="flex gap-1 justify-end">
+              <div class="flex items-center gap-2 shrink-0">
+                <!-- ACC-74 — permissionCount, not permissions?.length. The list
+                     deliberately does not carry the permission array; binding
+                     to it rendered 0 for every role, always. -->
+                <span
+                  dir="ltr"
+                  style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
+                  class="hidden @min-[520px]/datalist:block text-xs text-[var(--am-text-secondary)] w-[110px]"
+                >
+                  {{ 'roles.permissionCount' | translate: { count: role.permissionCount ?? 0 } }}
+                </span>
                 <p-button
                   icon="pi pi-lock"
                   [text]="true"
@@ -117,18 +149,10 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                   />
                 }
               </div>
-            </td>
-          </tr>
-        </ng-template>
-
-        <ng-template pTemplate="emptymessage">
-          <tr>
-            <td colspan="6" class="text-center py-8 text-[var(--am-text-secondary)]">
-              {{ 'roles.noRoles' | translate }}
-            </td>
-          </tr>
-        </ng-template>
-      </p-table>
+            </div>
+          </ng-template>
+        </app-data-list>
+      </div>
 
       <ng-template #formTpl>
         <app-role-form
@@ -148,31 +172,54 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     </div>
   `,
 })
-export class RoleListComponent implements OnInit {
+export class RoleListComponent {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly roleService = inject(RoleService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly translate = inject(TranslateService);
 
-  readonly loading = signal(false);
-  readonly roles = signal<RoleDto[]>([]);
   readonly error = signal<string | null>(null);
+  readonly list = viewChild.required<DataListComponent<RoleDto>>('list');
 
-  // PLATFORM_ADMIN is seeded into every tenant for Step 12's impersonation flow
-  // but must never appear in the tenant-facing role picker — see plan Business Rules.
-  readonly visibleRoles = computed(() =>
-    this.roles().filter((r) => r.key !== 'PLATFORM_ADMIN'),
-  );
+  // ACC-78 — the client-side PLATFORM_ADMIN filter is GONE, not moved. The
+  // backend now excludes it in the WHERE clause, because a post-query filter
+  // and a database-side count cannot agree once the endpoint paginates: the
+  // page would come back one row short and the total would include a role this
+  // tenant can never see. Filtering again here would be harmless but would
+  // hide that the real fix is server-side.
+
+  // Arrow property, not a method: DataListComponent reads this as a signal
+  // input, so a bound method would be a new reference each change detection
+  // and refetch in a loop.
+  readonly source: DataListSource<RoleDto> = (query) =>
+    this.roleService.listRoles({
+      search: query.search,
+      page: query.page,
+      pageSize: query.pageSize,
+      sortBy: query.sortBy,
+      sortDir: query.sortDir,
+    });
+
+  readonly trackById = (role: RoleDto): string => role.id;
+
+  // BOTH bilingual names are offered, matching the backend whitelist. An
+  // Arabic reader sorting "by name" should sort by the name they are reading,
+  // not its English counterpart.
+  readonly sortOptions = computed<DataListSortOption[]>(() => {
+    this.translate.currentLang();
+    return [
+      { column: 'nameEn', label: this.translate.instant('roles.nameEn') },
+      { column: 'nameAr', label: this.translate.instant('roles.nameAr') },
+      { column: 'key', label: this.translate.instant('roles.roleType') },
+    ];
+  });
 
   readonly showFormDialog = signal(false);
   readonly editingRole = signal<RoleDto | null>(null);
   private wasCreating = false;
-
-  ngOnInit(): void {
-    this.loadRoles();
-  }
 
   openAdd(): void {
     this.editingRole.set(null);
@@ -193,7 +240,7 @@ export class RoleListComponent implements OnInit {
   onSaved(role: RoleDto): void {
     this.showFormDialog.set(false);
     const wasCreating = this.wasCreating;
-    this.loadRoles();
+    this.list().reload();
     // New roles start with zero permissions — send the admin straight into the
     // matrix to assign some, per plan Commit 8 UI notes.
     if (wasCreating) {
@@ -214,7 +261,7 @@ export class RoleListComponent implements OnInit {
       acceptButtonProps: { severity: 'danger' },
       accept: () => {
         this.roleService.deactivateRole(role.id).subscribe({
-          next: () => this.loadRoles(),
+          next: () => this.list().reload(),
           error: (err: unknown) =>
             this.error.set(extractErrorMessage(err, 'Deactivate failed')),
         });
@@ -224,24 +271,10 @@ export class RoleListComponent implements OnInit {
 
   onActivate(role: RoleDto): void {
     this.roleService.activateRole(role.id).subscribe({
-      next: () => this.loadRoles(),
+      next: () => this.list().reload(),
       error: (err: unknown) =>
         this.error.set(extractErrorMessage(err, 'Activate failed')),
     });
   }
 
-  private loadRoles(): void {
-    this.loading.set(true);
-    this.error.set(null);
-    this.roleService.listRoles().subscribe({
-      next: (roles) => {
-        this.roles.set(roles);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('roles.errorLoad');
-        this.loading.set(false);
-      },
-    });
-  }
 }

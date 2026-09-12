@@ -101,7 +101,10 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
 
     const editorDebug = fixture.debugElement.query(By.directive(WorkflowTransitionEditorComponent));
     const editor = editorDebug.componentInstance as WorkflowTransitionEditorComponent;
-    http.match(`${environment.apiUrl}/roles`).forEach((r) => r.flush([]));
+    // ACC-78 — the roles endpoint is paginated; listAllRoles() appends the cap.
+    http
+      .match((r) => r.url === `${environment.apiUrl}/roles`)
+      .forEach((r) => r.flush({ data: [], total: 0, page: 1, pageSize: 200 }));
     http.match(`${environment.apiUrl}/roles/permissions`).forEach((r) => r.flush([]));
     fixture.detectChanges();
 
@@ -132,7 +135,10 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
     fixture.detectChanges();
     http.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(template());
     fixture.detectChanges();
-    http.match(`${environment.apiUrl}/roles`).forEach((r) => r.flush([]));
+    // ACC-78 — the roles endpoint is paginated; listAllRoles() appends the cap.
+    http
+      .match((r) => r.url === `${environment.apiUrl}/roles`)
+      .forEach((r) => r.flush({ data: [], total: 0, page: 1, pageSize: 200 }));
     http.match(`${environment.apiUrl}/roles/permissions`).forEach((r) => r.flush([]));
 
     http.verify();
