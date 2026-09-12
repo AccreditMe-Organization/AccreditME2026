@@ -181,7 +181,9 @@
     "noRoles": "No roles found.",
     "noPermissions": "No permissions assigned.",
     "permissionsColumn": "Permissions",
-    "errorLoad": "Failed to load roles."
+    "errorLoad": "Failed to load roles.",
+    "searchPlaceholder": "Search roles…",
+    "permissionCount": "{{count}} permissions"
   },
   "workflow": {
     "title": "Workflow Templates",
@@ -528,7 +530,10 @@
       "errorSetup": "Failed to start two-factor authentication setup. Check your password and try again.",
       "errorVerify": "Invalid or expired code. Please try again.",
       "errorDisable": "Failed to disable two-factor authentication. Check your password and try again."
-    }
+    },
+    "searchPlaceholder": "Search by name or email…",
+    "noUsersBody": "Invite colleagues to give them access to this organization.",
+    "createdAt": "Date added"
   },
   "platform": {
     "tenants": "Tenants",
@@ -629,5 +634,13 @@
     "noOpenTasks": "You have no open tasks.",
     "notifications": "Recent Notifications",
     "noNotifications": "No recent notifications."
+  },
+  "list": {
+    "noResults": "No matching results",
+    "noResultsBody": "Nothing here matches your search.",
+    "clearSearch": "Clear search",
+    "range": "{{first}}–{{last}} of {{total}}",
+    "errorLoad": "This list could not be loaded. Please try again.",
+    "preferencesNote": "Sorting and page size are remembered on this device."
   }
 }

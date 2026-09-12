@@ -104,9 +104,19 @@ export class StatusChipComponent {
     () => `1px solid color-mix(in srgb, ${this.colorVar()} 30%, transparent)`,
   );
 
-  // Same key shape as StatusBadgeComponent. Confirm en.json/ar.json carry a
-  // matching "{variant}.{value}" key before wiring a new value in —
-  // ngx-translate renders the raw key otherwise, which must never reach a
-  // real screen.
-  readonly labelKey = computed(() => `${this.variant()}.${this.value().toLowerCase()}`);
+  // Where the labels live. Defaults to the variant name, matching
+  // StatusBadgeComponent's "{variant}.{value}" convention.
+  //
+  // OVERRIDABLE BECAUSE THE CONVENTION IS NOT UNIVERSAL, and this was found
+  // the way the component's own warning predicted: user statuses are keyed
+  // `user.status.invited`, not `user.invited`, so the default resolved to a
+  // key that does not exist and ngx-translate renders the raw key string —
+  // "user.invited" shown to a user, with nothing failing anywhere. An
+  // override is better than duplicating every status label under a second
+  // key purely to satisfy a naming rule.
+  readonly labelPrefix = input<string>('');
+
+  readonly labelKey = computed(
+    () => `${this.labelPrefix() || this.variant()}.${this.value().toLowerCase()}`,
+  );
 }
