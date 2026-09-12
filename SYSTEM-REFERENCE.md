@@ -67,7 +67,7 @@ audit's starting point, not be mistaken for having already done it.
 7. Organization Structure — ✅ complete
 8. Multi-Tenancy Conventions — ✅ complete
 9. i18n / RTL — ✅ complete
-10. Frontend Design Patterns — ✅ complete
+10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
 
@@ -3752,6 +3752,155 @@ page can place them separately, as Committee's does.
 correct fix for numerals reordering in Arabic, and the first use of it
 in this codebase. Worth adopting wherever a date or count sits inside a
 translated sentence.
+
+---
+
+### 10.10 `DataListComponent` — the Shared List Pattern (ACC-78)
+
+`frontend/src/app/shared/components/data-list/`. Search, sort,
+pagination, scope tabs, empty and error states, in one component that
+every list page projects a row template into. Established against the
+Claude Design export in `frontend/design-reference/`, proved on three
+structurally different tables: **Users** (server-side, largest),
+**Roles** (bilingual names, row actions), **Workflow Stages** (the hard
+case — client-side, manually ordered, expandable rows containing a
+further editor).
+
+**The plumbing is always present; whether the paginator RENDERS depends
+on runtime row count.** A table with six rows shows no toolbar and no
+pager. This is why a small table needs no retrofit later — the decision
+is the component's, per render, not the call site's, once.
+
+#### Contract
+
+```ts
+type DataListSource<T> = (query: IListQuery) => Observable<IPaginatedResponse<T>>;
+// IListQuery      { page, pageSize, search, sortBy, sortDir, scope }
+// IPaginatedResponse<T> { data, total, page, pageSize }   // page is 1-INDEXED
+```
+
+`clientSideSource(() => items)` adapts an array-backed list to the same
+contract, so the component has one code path rather than two.
+
+#### Properties worth knowing before using it
+
+- **`source` must be an ARROW PROPERTY, never a method.** It is read as
+  a signal input, so a bound method is a new function reference on every
+  change detection, which invalidates the computed, which refetches,
+  forever. The symptom is a network tab scrolling by itself, not an
+  error. This footgun is the single most likely way to misuse the
+  component.
+- **`clientSideSource` reads its items SYNCHRONOUSLY, via a function
+  rather than a snapshot.** Passing `items()` captures one array and the
+  list never updates; passing `() => items()` re-reads on each query.
+  Total is counted *after* filtering and *before* slicing — getting that
+  order wrong gives a pager that paginates the wrong number.
+- **`showToolbar` reads the UNFILTERED total**, deliberately. Reading
+  the current total means a search that narrows below the threshold
+  removes the search box that is doing the narrowing — an input that
+  deletes itself mid-use.
+- **A manually ordered list must pass no `sortOptions`.** Workflow
+  Stages has none permanently: its order *is* its data, and every row
+  carries reorder buttons. Offering to re-sort by name would leave those
+  buttons pointing at positions the user can no longer see. When sorting
+  is offered, row indices must be read from the underlying array, not
+  the rendered page.
+- **Persistence is split by lifetime**: what belongs in a shared link
+  (search, scope, page) goes in URL params; what is a personal habit
+  (sort, page size) goes in localStorage. URL wins where both exist,
+  because a pasted link must render what the sender saw.
+
+#### `reload()` — and why this keeps happening
+
+A query-driven component refetches when its query changes. **"The data
+changed but the query did not" has no natural trigger** — deleting a row
+or saving a dialog leaves `{page, search, sort}` identical, so nothing
+re-runs and the list silently shows stale data. Hence the explicit
+`reload()` via an internal token.
+
+**This is the third component in two tickets to need it** — ACC-76's
+stage timeline and its tasks panel were the first two, each found the
+same way, by watching a screen not update after a successful save. Any
+future component whose input is a *query* rather than *data* will need
+it too. Build it in rather than discovering it in live testing.
+
+#### Rules the backend half established
+
+Each of these was found at real cost during ACC-78 and applies to every
+endpoint that gains pagination afterwards:
+
+1. **Two tenant-isolation tests per paginated endpoint, not one** — one
+   for the page, one for the count. They are separate queries
+   (`Promise.all([count, findMany])`), so a correctly scoped page can
+   sit under a total that counts another tenant's rows. One test passing
+   proves nothing about the other query.
+2. **Audit for post-query filtering BEFORE paginating.** A
+   `.filter()` applied after the query was harmless while endpoints
+   returned everything, and becomes a defect the moment they do not: the
+   page comes back short and the total counts rows the caller may never
+   see. `PLATFORM_ADMIN` on `/roles` was exactly this — the fix is to
+   move the condition into the `WHERE` clause, not to filter again in
+   the component.
+3. **Find every non-list consumer before changing a list endpoint's
+   return shape.** Paginating `/users` silently capped ten *pickers* at
+   25 rows. `tsc` flagged the type change at each call site, and
+   unwrapping `.data` at each would have satisfied the compiler while
+   leaving every picker quietly truncated. Hence `listAllUsers()` /
+   `listAllRoles()` — a separate method for "give me all of them to
+   choose from", which is a different question from "show me a page".
+4. **`sortBy` is an allowlist per endpoint, and an unknown column is a
+   400** — not a silent fallback. A bare `orderBy` from user input is an
+   injection surface, and a silent fallback hides a broken client.
+
+#### Nothing in the toolchain catches a missing translation key
+
+Stated plainly because it cost this ticket a defect that reached a
+screen: ngx-translate renders the **raw key string** when a key is
+missing. Nothing throws, nothing logs, `tsc` and `ng build` both pass,
+and the user sees `user.invited` where a label should be.
+`StatusChipComponent` shipped exactly this — its own comment predicted
+the failure mode and it happened anyway.
+
+**Diffing en.json against ar.json by hand is not a control.** It
+depends on somebody remembering, every time, and it passed these same
+keys more than once before they were caught.
+`frontend/src/app/shared/i18n/translation-keys.spec.ts` is the control
+that now exists, and its three checks have deliberately different
+strength — parity is automatic and real; the concatenated-key registry
+is a hand-maintained list that **cannot grow by itself** and does not
+cover a new concatenation site. The general fix is a build-time static
+scan of the source, which does not exist. Read that file's own header
+before trusting it.
+
+#### A named pattern: the stale promise
+
+**A string that asserts something about the product's state goes stale
+when the state changes, and nothing fails.** Three instances found so
+far, which is enough to stop treating them as unrelated bugs:
+
+| String | Asserted | Reality when found |
+|---|---|---|
+| `assigneePickerUnavailable` | User Management not built yet | It had shipped |
+| `committee-detail.component.ts:59` | A design-reference path | Folder restructured |
+| List footer (ACC-78) | Preferences persist *per user* | localStorage — per browser |
+
+The third was caught before shipping only because the wording was
+checked against what was actually built. The rule: **a user-visible
+string making a claim about the system is a claim that needs an owner.**
+Prefer deriving the state (render the picker, or say nothing) over
+describing it in prose that no test can verify. Where prose is
+unavoidable, keep it minimal and true of the weakest case — the footer
+says "on this device", which is what localStorage does, rather than the
+design reference's "per user per list", which would need a
+user-preferences table that does not exist.
+
+#### Consumers (3)
+
+`user-list`, `role-list`, `workflow-stage-list`. **Fifteen `p-table`
+screens remain unmigrated** — a deliberate split, this ticket proved the
+pattern, a follow-up migrates the rest. `p-table` is not deprecated by
+this: it remains correct for a nested editor grid that is not a list
+page.
 
 ---
 

@@ -2392,6 +2392,16 @@ complete, not just the currently-in-review ones.
   sequence above, alongside UX-12, 13, 15, 16 and 17, rather than a
   standalone note. Do not pick this up in isolation; the whole
   workstream touches the same components.
+  **PARTIALLY RESOLVED (ACC-78)** — the shared list pattern now exists
+  (`DataListComponent`, SYSTEM-REFERENCE.md Section 10.10) and is live
+  on 3 of 18 tables: Users, Roles, Workflow Stages. Those three have
+  search, sort, pagination and scope tabs; the remaining 15 do not, and
+  a follow-up ticket migrates them. Note UX-11's fifth capability,
+  **export, is NOT addressed and is separately blocked** — the library
+  choice is still open (ACC-75, see Tech Stack), so nothing about
+  export was decided here. Read the "No table can be
+  searched…" quote above as historical: it was true when written, and
+  is now true of 15 tables rather than all 18.
 - **Field alignment/spacing inconsistency, `committee-form`'s Quorum
   and Meeting Frequency fields** — Ahmad flagged a visual
   misalignment between the two during ACC-42 testing. Not fixed as
