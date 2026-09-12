@@ -236,6 +236,20 @@ export const ROW_WIDE_BREAKPOINT_PX = 520;
         </div>
       }
 
+      @if (persistKey()) {
+        <!-- ACC-78 — says PER BROWSER, because localStorage is what was built.
+             The design reference's "per user per list" would promise
+             cross-device persistence that needs a user-preferences table and
+             does not exist. A footer claiming it would be a promise the
+             product does not keep — the same class of defect as ACC-76's
+             stale "available once User Management is set up". -->
+        <div
+          class="px-3 py-1.5 text-[11px] text-[var(--am-text-secondary)] border-t border-[var(--am-border)]"
+        >
+          {{ 'list.preferencesNote' | translate }}
+        </div>
+      }
+
       @if (showFooter()) {
         <!-- The footer appears when a FULLER DESTINATION EXISTS, not merely
              when the set is truncated. Members fits on one page and still

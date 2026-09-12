@@ -84,7 +84,12 @@ import { StatusChipComponent } from '../../../../shared/components/status-chip/s
               <div class="min-w-0">
                 <div class="flex items-center gap-2 min-w-0">
                   <span class="text-[13px] font-medium truncate">{{ user.name }}</span>
-                  <app-status-chip variant="user" [value]="user.status" />
+                  <!-- labelPrefix: user statuses are keyed user.status.*, not user.* -->
+                  <app-status-chip
+                    variant="user"
+                    labelPrefix="user.status"
+                    [value]="user.status"
+                  />
                 </div>
                 <!-- Secondary line at narrow widths; the two trailing fields
                      promote out of it into their own columns past the shared

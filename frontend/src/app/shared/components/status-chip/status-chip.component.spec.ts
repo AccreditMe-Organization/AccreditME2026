@@ -75,6 +75,21 @@ describe('StatusChipComponent (ACC-78)', () => {
     expect(render('user', 'INVITED').componentInstance.labelKey()).toBe('user.invited');
   });
 
+  // The default convention does NOT match every existing key path — user
+  // statuses live under user.status.*, not user.*. Without an override the key
+  // resolves to nothing and ngx-translate renders the raw string "user.invited"
+  // on screen, with nothing failing anywhere. This is the escape hatch, and the
+  // reason it exists.
+  it('honours a labelPrefix override for keys that do not follow the convention', () => {
+    const f = TestBed.createComponent(StatusChipComponent);
+    f.componentRef.setInput('variant', 'user');
+    f.componentRef.setInput('value', 'INVITED');
+    f.componentRef.setInput('labelPrefix', 'user.status');
+    f.detectChanges();
+
+    expect(f.componentInstance.labelKey()).toBe('user.status.invited');
+  });
+
   // An unmapped value must not render an invisible chip — the CSS var()
   // fallback resolves it to secondary text instead. Same safety property
   // StatusBadgeComponent established.
