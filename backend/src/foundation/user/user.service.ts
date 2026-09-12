@@ -9,6 +9,11 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  IPaginatedResponse,
+  paginated,
+} from '../../common/interfaces/paginated-response.interface';
+import { SortWhitelist, toSkipTake } from '../../common/utils/sort-whitelist';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
@@ -57,7 +62,24 @@ export interface ListUsersFilters {
   status?: string;
   orgUnitId?: string;
   search?: string;
+  // ACC-78 — the shared list contract.
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
 }
+
+// ACC-78 — the user list's sortable columns.
+//
+// `email` and `status` are here because a user list is genuinely sorted by
+// them. Deliberately ABSENT: every id column, `tokenVersion`, and the
+// out-of-office/acting fields — ordering by a scalar the response never
+// returns is a weak oracle over hidden values, which is the whole reason this
+// is a whitelist rather than a passthrough.
+const USER_SORT = new SortWhitelist(
+  ['name', 'email', 'status', 'createdAt'] as const,
+  { column: 'name', dir: 'asc' },
+);
 
 // ACC-45 — the single, shared "strip internal-only fields" mapper for User
 // rows crossing the HTTP response boundary. getById()/listUsers()/invite()/
@@ -132,16 +154,42 @@ export class UserService {
     private readonly orgPositionService: OrgPositionService,
   ) {}
 
-  async listUsers(organizationId: string, filters?: ListUsersFilters): Promise<IUser[]> {
-    return this.prisma.user.findMany({
-      where: {
-        organizationId,
-        status: filters?.status ? (filters.status as never) : undefined,
-        primaryOrgUnitId: filters?.orgUnitId ?? undefined,
-        name: filters?.search ? { contains: filters.search, mode: 'insensitive' } : undefined,
-      },
-      orderBy: { name: 'asc' },
-    });
+  async listUsers(
+    organizationId: string,
+    filters?: ListUsersFilters,
+  ): Promise<IPaginatedResponse<IUser>> {
+    const { skip, take, page, pageSize } = toSkipTake(filters?.page, filters?.pageSize);
+
+    const where = {
+      organizationId,
+      status: filters?.status ? (filters.status as never) : undefined,
+      primaryOrgUnitId: filters?.orgUnitId ?? undefined,
+      // ACC-78 — search now spans NAME AND EMAIL, where it previously matched
+      // name alone. Which columns a free-text search covers is the endpoint's
+      // business, not the caller's — same reasoning as the sort whitelist. On a
+      // user list, searching a name and not an email is a search that fails the
+      // most common way people look someone up.
+      ...(filters?.search
+        ? {
+            OR: [
+              { name: { contains: filters.search, mode: 'insensitive' as const } },
+              { email: { contains: filters.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        orderBy: USER_SORT.resolve(filters?.sortBy, filters?.sortDir),
+        skip,
+        take,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return paginated(data, total, page, pageSize);
   }
 
   async getById(id: string, organizationId: string): Promise<IUser> {
