@@ -4,7 +4,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
-import { TaskService, ITaskDto } from '../../services/task.service';
+import { TaskService, ITaskWithAssigneesDto } from '../../services/task.service';
 import { TaskFormComponent } from '../task-form/task-form.component';
 // ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
 // task-form is create-only (no edit flow), so this is architectural
@@ -13,13 +13,24 @@ import { TaskFormComponent } from '../task-form/task-form.component';
 // <app-task-form> directly was already immune to ACC-29's pre-fill bug.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
-// Embeddable list filtered by sourceType + sourceId — meant to be dropped
-// into a future module's detail page (e.g. an Incident detail page showing
-// its tasks). No functional module exists yet to embed it in, so it ships
-// as its own standalone routed page for now, same "temporary standalone,
-// built reusable" pattern Step 7 used for the notification bell. The create
-// dialog uses the shared EditDialogComponent pattern (ACC-39), matching
-// every other list screen's add/edit dialog.
+// The ROUTED, full-page task list, filtered by sourceType + sourceId.
+//
+// ACC-76 — this is no longer "the embeddable list meant to be dropped into a
+// module's detail page", which its header comment claimed from ACC-11 onward.
+// It never was: it renders its own page heading, h-full and
+// scrollHeight="flex", so embedded it fought its container for height and
+// brought a full table's type scale and column widths into a summary panel.
+//
+// An `embedded` mode was added and then removed the same ticket, once
+// Committee's Tasks panel was rebuilt to render its own rows on
+// RecordPanelComponent — a summary panel needs four facts, not a table's
+// column set, and equal panel heights in a row cannot survive one panel
+// bringing its own. Removed rather than left as dead configuration.
+//
+// A record page that wants a task summary should follow committee-detail's
+// shape: RecordPanelComponent plus its own rows, calling
+// TaskService.getForSource() directly. That also lets it reload after a
+// create, which this component could never be told to do.
 @Component({
   selector: 'app-task-list',
   standalone: true,
@@ -38,16 +49,30 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       <p-table [value]="tasks()" [loading]="loading()" scrollable scrollHeight="flex" styleClass="w-full">
         <ng-template pTemplate="header">
           <tr>
-            <th style="width: 40%">{{ 'task.title' | translate }}</th>
-            <th style="width: 20%">{{ 'task.priority.title' | translate }}</th>
-            <th style="width: 20%">{{ 'task.dueDate' | translate }}</th>
-            <th style="width: 20%">{{ 'task.status.title' | translate }}</th>
+            <th style="width: 34%">{{ 'task.title' | translate }}</th>
+            <th style="width: 26%">{{ 'task.assignees' | translate }}</th>
+            <th style="width: 13%">{{ 'task.priority.title' | translate }}</th>
+            <th style="width: 14%">{{ 'task.dueDate' | translate }}</th>
+            <th style="width: 13%">{{ 'task.status.title' | translate }}</th>
           </tr>
         </ng-template>
 
         <ng-template pTemplate="body" let-task>
           <tr>
             <td>{{ task.title }}</td>
+            <td>
+              <!-- ACC-58, absorbed into ACC-76: the first surface in the
+                   product that answers "who is this assigned to". -->
+              @if (task.assignees.length === 0) {
+                <span class="text-[var(--am-text-secondary)]">{{ 'task.unassigned' | translate }}</span>
+              } @else {
+                <div class="flex flex-col">
+                  @for (assignee of task.assignees; track assignee.userId) {
+                    <span>{{ assignee.userName }}</span>
+                  }
+                </div>
+              }
+            </td>
             <td>{{ ('task.priority.' + task.priority.toLowerCase()) | translate }}</td>
             <td>{{ task.dueAt ? (task.dueAt | date: 'short') : '—' }}</td>
             <td>
@@ -58,7 +83,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="4" class="text-center py-8 text-[var(--am-text-secondary)]">{{ 'task.noTasks' | translate }}</td>
+            <td colspan="5" class="text-center py-8 text-[var(--am-text-secondary)]">{{ 'task.noTasks' | translate }}</td>
           </tr>
         </ng-template>
       </p-table>
@@ -83,7 +108,7 @@ export class TaskListComponent implements OnInit {
   readonly sourceId = input<string | null>(null);
 
   readonly loading = signal(false);
-  readonly tasks = signal<ITaskDto[]>([]);
+  readonly tasks = signal<ITaskWithAssigneesDto[]>([]);
   readonly error = signal<string | null>(null);
   readonly formVisible = signal(false);
 

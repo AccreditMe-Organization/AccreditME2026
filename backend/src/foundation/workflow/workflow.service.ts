@@ -9,6 +9,7 @@ import { Queue } from 'bullmq';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
@@ -25,6 +26,7 @@ import {
 } from '../../../generated/prisma/client';
 import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-instance.interface';
 import { ValidatorConfig } from './interfaces/workflow-transition.interface';
+import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
 
@@ -49,6 +51,7 @@ export class WorkflowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly delegationLabels: DelegationLabelService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     private readonly taskService: TaskService,
@@ -131,6 +134,137 @@ export class WorkflowService {
     const instance = await this.prisma.workflowInstance.findFirst({ where: { id, organizationId } });
     if (!instance) throw new NotFoundException('Workflow instance not found');
     return this.mapInstance(instance);
+  }
+
+  // ACC-76 — the real path an object took through its workflow.
+  //
+  // Returns BOTH views — see IWorkflowStageHistory for why neither substitutes
+  // for the other. `stages` is the sequence (every template stage, in order,
+  // each carrying how many times it was entered); `visits` is the chronology
+  // (what actually happened, repeats preserved). A record that went
+  // Formation -> Terms Review -> Formation -> Terms Review appears in the
+  // first as two stages with visitCount 2, and in the second as four rows.
+  async getStageHistory(
+    instanceId: string,
+    organizationId: string,
+  ): Promise<IWorkflowStageHistory> {
+    // Scoped by id AND organizationId together, per CLAUDE.md's query shape —
+    // also the only way to learn which template to diff the visits against.
+    const instance = await this.prisma.workflowInstance.findFirst({
+      where: { id: instanceId, organizationId },
+      select: { id: true, workflowTemplateId: true },
+    });
+    if (!instance) throw new NotFoundException('Workflow instance not found');
+
+    const [visitRows, stages, transitions] = await Promise.all([
+      // WorkflowInstanceStage has NO organizationId of its own — tenancy is
+      // transitive through workflowInstance (SYSTEM-REFERENCE §8.3). Scoped
+      // relationally here as well as via the check above: belt and braces on
+      // a query that returns actor names.
+      this.prisma.workflowInstanceStage.findMany({
+        where: { workflowInstanceId: instance.id, workflowInstance: { organizationId } },
+        orderBy: { enteredAt: 'asc' },
+        include: { stage: { select: { id: true, nameEn: true, nameAr: true } } },
+      }),
+      this.prisma.workflowStage.findMany({
+        where: { workflowTemplateId: instance.workflowTemplateId },
+        orderBy: { order: 'asc' },
+        select: { id: true, nameEn: true, nameAr: true, order: true },
+      }),
+      // ACC-76 — the template's transitions, for naming what moved the record
+      // between each pair of visits. Scoped through fromStage rather than by a
+      // templateId column, which WorkflowTransition does not have.
+      this.prisma.workflowTransition.findMany({
+        where: { fromStage: { workflowTemplateId: instance.workflowTemplateId } },
+        select: { fromStageId: true, toStageId: true, labelEn: true, labelAr: true },
+      }),
+    ]);
+
+    // Keyed by from->to. A pair with MORE than one transition is recorded as
+    // null rather than picking one: no seeded template has such a pair (67
+    // transitions across 8 templates, all unique), but a tenant can create
+    // one, and naming the wrong action in a compliance trail is worse than
+    // naming none.
+    const transitionByPair = new Map<string, { labelEn: string; labelAr: string } | null>();
+    for (const transition of transitions) {
+      const key = `${transition.fromStageId}->${transition.toStageId}`;
+      transitionByPair.set(
+        key,
+        transitionByPair.has(key)
+          ? null
+          : { labelEn: transition.labelEn, labelAr: transition.labelAr },
+      );
+    }
+
+    // Two batched lookups for the whole history rather than per-row: actor
+    // names, and ACC-40's delegation stamp resolved by the same service the
+    // task list uses.
+    const actorIds = [...new Set(visitRows.map((v) => v.actorId).filter((id): id is string => !!id))];
+    const [actors, delegations] = await Promise.all([
+      actorIds.length > 0
+        ? this.prisma.user.findMany({
+            where: { id: { in: actorIds }, organizationId },
+            select: { id: true, name: true },
+          })
+        : Promise.resolve([]),
+      this.delegationLabels.resolveMany(visitRows, organizationId),
+    ]);
+    const actorNameById = new Map(actors.map((a) => [a.id, a.name]));
+
+    // Visit counts per stage, and which stage holds the OPEN visit. Both are
+    // derived from the visit rows rather than from currentStageId, which
+    // cannot distinguish two visits to the same stage.
+    const visitCountByStageId = new Map<string, number>();
+    for (const visit of visitRows) {
+      visitCountByStageId.set(visit.stageId, (visitCountByStageId.get(visit.stageId) ?? 0) + 1);
+    }
+    const openVisit = visitRows.find((v) => v.exitedAt === null);
+
+    return {
+      instanceId: instance.id,
+      stages: stages.map((stage) => ({
+        ...stage,
+        visitCount: visitCountByStageId.get(stage.id) ?? 0,
+        isCurrent: openVisit?.stageId === stage.id,
+      })),
+      visits: visitRows.map((visit, index) => {
+        // The visit BEFORE this one supplies two things this row needs and
+        // its own columns cannot: which transition brought the record here,
+        // and the comment explaining why. See IWorkflowStageVisit.
+        const previous = index > 0 ? visitRows[index - 1] : undefined;
+        const transition = previous
+          ? (transitionByPair.get(`${previous.stageId}->${visit.stageId}`) ?? null)
+          : null;
+
+        return {
+          // The instance-stage row id, not the stage id — the stage id repeats
+          // across visits and would collide as a list key.
+          id: visit.id,
+          stageId: visit.stageId,
+          stageNameEn: visit.stage.nameEn,
+          stageNameAr: visit.stage.nameAr,
+          enteredAt: visit.enteredAt,
+          exitedAt: visit.exitedAt,
+          outcome: visit.outcome,
+          actorId: visit.actorId,
+          actorName: visit.actorId ? (actorNameById.get(visit.actorId) ?? null) : null,
+          transitionLabelEn: transition?.labelEn ?? null,
+          transitionLabelAr: transition?.labelAr ?? null,
+          // The PREVIOUS visit's comment, not this row's own. A comment is
+          // written at exit, so it explains the transition INTO the next
+          // stage — see IWorkflowStageVisit for why showing it beside this
+          // row's actor was a wrong attribution rather than a cosmetic one.
+          //
+          // Known consequence, accepted: a comment written when the LAST
+          // visit is exited (cancelInstance() exits the open stage with
+          // outcome SKIPPED) has no following row to appear on. Dropping it
+          // beats showing it against the wrong event.
+          comment: previous?.comment ?? null,
+          isUnassigned: visit.isUnassigned,
+          delegation: this.delegationLabels.lookup(visit, delegations),
+        };
+      }),
+    };
   }
 
   // Plural, and returns every instance ever created for this object — one

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, finalize, shareReplay } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 
 export interface WorkflowTemplateDto {
@@ -185,8 +185,38 @@ export class WorkflowTemplateService {
     return this.http.get<WorkflowTemplateDto[]>(this.base);
   }
 
+  // ACC-76 — IN-FLIGHT COALESCING, deliberately not a cache.
+  //
+  // The problem it solves: an object-detail page has more than one consumer
+  // of the same template. WorkflowTransitionActionsComponent loads it to find
+  // the current stage's outgoing transitions, and committee-detail loaded it
+  // again, independently, for the stage label — two identical requests fired
+  // in the same change-detection cycle. Two is the point to fix that; three is
+  // when someone asks why the page makes duplicate calls.
+  //
+  // WHY NOT A CACHE. A retained cache would need invalidating on every
+  // template mutation, and the mutation methods below cannot all derive their
+  // template id (updateStage takes a stageId; removeTransition takes a
+  // transition id), so the only safe invalidation would be "clear everything
+  // on any write". That is more machinery, and it still leaves a page opened
+  // later showing a template another user has since edited. Coalescing has
+  // neither problem: the entry exists only while the request is in flight, so
+  // a later page load always re-fetches, and no write needs to know about it.
+  //
+  // finalize() before shareReplay() so the entry is dropped when the request
+  // settles — on error too, so a failure does not pin a broken observable.
+  private readonly inFlightTemplates = new Map<string, Observable<WorkflowTemplateDto>>();
+
   getTemplate(id: string): Observable<WorkflowTemplateDto> {
-    return this.http.get<WorkflowTemplateDto>(`${this.base}/${id}`);
+    const existing = this.inFlightTemplates.get(id);
+    if (existing) return existing;
+
+    const request = this.http.get<WorkflowTemplateDto>(`${this.base}/${id}`).pipe(
+      finalize(() => this.inFlightTemplates.delete(id)),
+      shareReplay({ bufferSize: 1, refCount: false }),
+    );
+    this.inFlightTemplates.set(id, request);
+    return request;
   }
 
   createTemplate(dto: CreateWorkflowTemplateDto): Observable<WorkflowTemplateDto> {

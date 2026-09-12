@@ -774,6 +774,45 @@ Full visual integration builder (n8n-style) deferred to Phase 3.
 - Escalation triggered automatically when SLA is breached
 - Task reassignment and absence coverage — see Absence and
   Departure Management section below
+- **The two creation paths have DIFFERENT LIFETIMES, and the
+  difference is deliberate.** Recorded because the behaviour is
+  correct, undocumented, and looks like a bug from the outside —
+  someone will eventually report "my task disappeared" or "my task
+  should have disappeared" depending on which half they meet first.
+
+  **Workflow-created tasks are STAGE-scoped.** They are cancelled
+  when the object leaves the stage that created them (ACC-68,
+  `TaskService.cancelForStage()`, called from `performTransition()`).
+  That is right because such a task exists to gate *that stage's*
+  transition: once the object has moved on, the work it was holding
+  up is moot. Leaving it open was the ACC-68 bug — a PENDING task
+  assigned to a real person, gating nothing, and stacking a second
+  copy on every re-entry to the stage.
+
+  **Manually created tasks are OBJECT-scoped and PERSIST.** A person
+  created them deliberately, for a reason that has nothing to do with
+  whichever stage the object happened to be sitting in at the time.
+  "Chase the lab for December's figures" does not stop mattering
+  because the committee advanced from Terms Review to Active.
+
+  **How the separation is enforced: structurally, not by a guard.**
+  `cancelForStage()` matches on `workflowInstanceId` AND
+  `sourceStageId` together. The manual path
+  (`POST /tasks` → `TaskService.create()`) sets neither — both DTO
+  fields are optional and are only ever populated by the engine's own
+  `executeCreateTask()` — so a manual task stores `null` for both and
+  cannot match. There is no "is this manual?" branch to accidentally
+  invert; the data shape does the work.
+
+  **Why this matters beyond the distinction itself: ACC-68 cancels
+  SILENTLY.** No notification, no confirmation — just an audit row per
+  task. That is the right trade for engine-generated gating work
+  nobody chose to create. It would NOT be acceptable for human-created
+  work: silently cancelling something a person deliberately recorded
+  is a different act from tidying up after the engine. So if anyone
+  ever extends cancellation to reach manual tasks, the silence has to
+  be reconsidered at the same time — the two decisions are coupled,
+  and only the first one has been made.
 
 ### Absence and Departure Management
 Full design in module-designs.md.
@@ -1980,17 +2019,66 @@ Prisma Studio.
   defect — its list silently shows "No tasks" regardless of actual
   data, since the route supplies no `sourceType`/`sourceId` and the
   component's own guard clause returns early without ever querying.
-  Task CREATION itself (the "New Task" button/form) works correctly
-  and is fully decoupled from this — creating a task always succeeds,
-  it just never appears in this specific broken list afterward.
   Do NOT add a nav link to `/tasks/all` as a quick fix — this would
   make the misleading empty-list defect easier to find, not fix it.
-  The real fix is a deliberate design pass: decide where task creation
-  and task lists genuinely belong from a business standpoint (most
-  likely embedded in Committee's detail page today, the only fully-
-  built business module, following `TaskListComponent`'s own original
-  intended pattern) once that's properly scoped — not a navigation
-  patch.
+  **The LIST half of this is now resolved (ACC-76)**: `TaskListComponent`
+  gained a real `embedded` mode and lives inside Committee's detail page,
+  which is the home its own original header comment always described.
+  **The CREATION half is also RESOLVED (ACC-76)** — and two claims made
+  about it mid-ticket were wrong, corrected here so neither is inherited:
+  - **"Manual task creation is non-functional / rejected by
+    validation" — FALSE.** `CreateTaskDto.assigneeUserIds` carries
+    `@IsArray() @IsString({each:true}) @IsNotEmpty({each:true})`, and
+    `each` validators run per element, so an empty array passes. Verified
+    by running the validator, not by reading it. The `@ArrayMinSize(1)`
+    that prompted this belongs to **`ReassignTaskDto`**, a different DTO.
+    Creating with no assignee has always succeeded, producing an
+    `UNASSIGNED` task with every tenant admin notified — a path
+    `TaskService.create()` handles deliberately, not a failure.
+  - What was genuinely missing was the **picker**, not the endpoint.
+    `task-form` posted `assigneeUserIds: []` unconditionally and showed
+    a message claiming assignee selection awaited User Management — which
+    had shipped in ACC-12, most of the project earlier. Sitting directly
+    above a Save button that disables on an empty title, it was read as
+    the reason Save was dead. It wasn't. (That
+    disabled-with-no-explanation problem is the separate app-wide gap in
+    the per-field-error-message note below, and is still open.)
+  ACC-76 added a real picker: `p-listbox` with filter, all ACTIVE users
+  selectable, optional rather than required. **Selection scope decided:
+  any active user, not just members of the source record** — the backend
+  accepts any, and a committee task can legitimately go to a department
+  head outside the committee who owes it data. Empty still creates an
+  `UNASSIGNED` task, so a caller whose role grants `tasks:create` but not
+  `users:view` can still record the work.
+  Two things it does NOT do, stated so they are not assumed: out-of-office
+  routing is not applied to a manually created task (`create()` filters on
+  `status: 'ACTIVE'` only — SYSTEM-REFERENCE §3.5), and
+  `validateEscalationTarget()` runs only when an `escalationUserId` is
+  supplied, which this form does not send.
+- **No business object in this product has a human-readable reference
+  code.** Found while building ACC-76's Committee record page against
+  a design that shows one (`QMC-014`) beside the committee's name.
+  `Committee` has no `code` column, and neither does any other
+  functional-module record — `OrgUnit.code` is the only precedent
+  anywhere, and it is tenant-entered rather than generated.
+  Deliberately NOT added as part of ACC-76: a reference code is a
+  product decision, not a layout one. CLAUDE.md already devotes a
+  whole **Document Numbering** section to what such a scheme involves
+  — `{TYPE_PREFIX}-{ORG_UNIT_CODE}-{YEAR}-{SEQUENCE}`, configurable
+  per tenant via lookup attributes, codes never reused even after
+  obsolescence — and that reasoning is not Document-specific: an
+  accreditation surveyor asking "show me the minutes of QMC-014"
+  needs the same guarantees from a committee code as from a document
+  number.
+  Real questions this needs, none of them answerable from the design:
+  is the code per-object-type or product-wide; is it tenant-editable
+  or system-generated; does it survive a rename; what happens on
+  dissolution and re-formation; and does it need to be unique across
+  tenants or only within one. Worth deciding once, for every module,
+  rather than per module as each record page is built — Meeting,
+  Document, Incident, CAPA and Audit will all want one, and
+  discovering that five times is the expensive way. Not scoped or
+  sized; recorded here so the next record page doesn't re-derive it.
 - **Platform Admin has no real navigation structure** — confirmed
   while testing ACC-39: `ai-feature-costs` and `ai-credit-packs` are
   only reachable by typing their URLs directly after a platform-admin

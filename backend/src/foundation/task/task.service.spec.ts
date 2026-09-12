@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
@@ -65,6 +66,12 @@ const mockPrisma = {
   user: {
     findMany: jest.fn(),
   },
+  // ACC-76 — DelegationLabelService resolves an ACTING_HEAD stamp's
+  // contextId against OrgUnit (and an OUT_OF_OFFICE_COVERAGE one against
+  // user, above).
+  orgUnit: {
+    findMany: jest.fn(),
+  },
   role: {
     findFirst: jest.fn(),
   },
@@ -105,12 +112,17 @@ describe('TaskService', () => {
     mockWorkingCalendar.calculateDeadline.mockResolvedValue(DateTime.fromISO('2026-02-01T12:00:00Z'));
     mockTenantService.getTaskSla.mockResolvedValue(DEFAULT_SLA);
     mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }]);
+    mockPrisma.orgUnit.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        // The REAL service, not a mock — it takes only PrismaService, and
+        // mocking it would hide the tenant scoping its own isolation test
+        // exists to prove.
+        DelegationLabelService,
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TenantService, useValue: mockTenantService },
@@ -478,6 +490,92 @@ describe('TaskService', () => {
       const result = await service.getForSource('DOCUMENT', 'doc-1', ORG_B);
 
       expect(result).toHaveLength(0);
+    });
+
+    // ACC-76 — the populated path. Before this ticket no list endpoint
+    // returned assignees at all, so nothing here ever exercised it: the
+    // isolation test above only ever asserted the EMPTY result.
+    it('returns each assignee with a resolved user name', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([
+        {
+          ...BASE_TASK,
+          assignees: [
+            { ...BASE_TASK.assignees[0], user: { id: USER_A, name: 'Sarah' } },
+          ],
+        },
+      ]);
+
+      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      expect(result[0]!.assignees).toEqual([
+        { userId: USER_A, userName: 'Sarah', delegation: null },
+      ]);
+    });
+
+    // complete() stamps removedAt rather than deleting, so without this
+    // filter a completed task would list everyone ever assigned to it as
+    // though they still were.
+    it('asks the database for active assignees only', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      const args = mockPrisma.task.findMany.mock.calls[0]![0];
+      expect(args.include.assignees.where).toEqual({ removedAt: null });
+    });
+
+    // ACC-40 §2.6.3's stamp, surfaced for the first time. The qualifier is
+    // what lets a page read "Sarah — Acting Head of Cardiology" rather than
+    // implying Sarah holds the position outright.
+    it('resolves an ACTING_HEAD assignee to its org unit', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([
+        { id: 'unit-cardiology', nameEn: 'Cardiology', nameAr: 'القلب' },
+      ]);
+      mockPrisma.task.findMany.mockResolvedValue([
+        {
+          ...BASE_TASK,
+          assignees: [
+            {
+              ...BASE_TASK.assignees[0],
+              delegationReason: 'ACTING_HEAD',
+              delegationContextId: 'unit-cardiology',
+              user: { id: USER_A, name: 'Sarah' },
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      expect(result[0]!.assignees[0]!.delegation).toEqual({
+        reason: 'ACTING_HEAD',
+        contextId: 'unit-cardiology',
+        contextLabelEn: 'Cardiology',
+        contextLabelAr: 'القلب',
+      });
+    });
+
+    // One resolve call for the whole page, not one per task — at ~110ms per
+    // round trip the difference is visible to a user.
+    it('resolves delegation labels once across every task on the page', async () => {
+      mockPrisma.orgUnit.findMany.mockResolvedValue([
+        { id: 'unit-cardiology', nameEn: 'Cardiology', nameAr: null },
+      ]);
+      const stampedAssignee = {
+        ...BASE_TASK.assignees[0],
+        delegationReason: 'ACTING_HEAD',
+        delegationContextId: 'unit-cardiology',
+        user: { id: USER_A, name: 'Sarah' },
+      };
+      mockPrisma.task.findMany.mockResolvedValue([
+        { ...BASE_TASK, id: 'task-1', assignees: [stampedAssignee] },
+        { ...BASE_TASK, id: 'task-2', assignees: [stampedAssignee] },
+        { ...BASE_TASK, id: 'task-3', assignees: [stampedAssignee] },
+      ]);
+
+      await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledTimes(1);
     });
   });
 

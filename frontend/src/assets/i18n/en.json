@@ -267,7 +267,16 @@
     "noStages": "No stages defined for this template.",
     "noTransitions": "No transitions defined for this stage.",
     "noActions": "No actions configured for this transition.",
-    "errorLoad": "Failed to load workflow data."
+    "errorLoad": "Failed to load workflow data.",
+    "stageIndicator": {
+      "unassigned": "No eligible assignee",
+      "actingHeadOf": "Acting Head of {{context}}",
+      "coveringFor": "covering for {{context}}",
+      "lifecycle": "Lifecycle",
+      "inStageDays": "in stage {{days}} days",
+      "revisited": "revisited ×{{count}}",
+      "since": "since {{date}}"
+    }
   },
   "notification": {
     "title": "Notifications",
@@ -318,6 +327,28 @@
       "joined": "Joined",
       "left": "Left",
       "role_changed": "Role Changed"
+    },
+    "lifecycle": "Lifecycle",
+    "tasks": "Tasks",
+    "subCommittees": "Sub-committees",
+    "noSubCommittees": "No sub-committees report to this committee.",
+    "meetings": "Meetings",
+    "meetingsDescription": "Attendance, quorum, decisions and action items are recorded here.",
+    "noMeetings": "No meetings recorded yet.",
+    "documents": "Documents",
+    "documentsDescription": "Terms of Reference and reports submitted to the parent body are linked here.",
+    "noDocuments": "No documents linked yet.",
+    "stageHistory": "Stage history",
+    "quorumOf": "{{quorum}} of {{total}} members",
+    "memberCount": "{{count}} members",
+    "approvedBy": "by {{name}}",
+    "frequency": {
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "quarterly": "Quarterly",
+      "biannual": "Twice yearly",
+      "annual": "Annually",
+      "as_needed": "As needed"
     }
   },
   "orgPosition": {
@@ -362,7 +393,6 @@
     "newAssignees": "New Assignees",
     "selectAssignees": "Select assignees",
     "addEvidence": "Add Evidence",
-    "assigneePickerUnavailable": "Assignee selection will be available once User Management is set up. This task will be created as unassigned and a Tenant Admin will be notified to assign it.",
     "noTasks": "No tasks found.",
     "noUnassignedTasks": "No unassigned tasks — everything has an assignee.",
     "errorLoad": "Failed to load tasks.",
@@ -388,7 +418,18 @@
       "attachment": "Attachment",
       "link": "Link",
       "internal_reference": "Internal Reference"
-    }
+    },
+    "assignees": "Assigned to",
+    "unassigned": "Unassigned",
+    "actingHeadOf": "Acting Head of {{context}}",
+    "coveringFor": "covering for {{context}}",
+    "overdueCount": "{{count}} overdue",
+    "assigneesHint": "Leave empty to create the task unassigned — tenant administrators are notified to assign it.",
+    "assigneesUnavailable": "You do not have access to the user list. The task will be created unassigned and tenant administrators will be notified to assign it.",
+    "overdueBy": "overdue {{days}}d",
+    "assigneeCount": "{{count}} assignees",
+    "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
+    "errorAction": "The action could not be completed. Please try again."
   },
   "auth": {
     "login": "Log In",

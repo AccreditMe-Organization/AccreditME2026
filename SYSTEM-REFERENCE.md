@@ -1241,6 +1241,64 @@ misconfiguration).
   in the UI surfaces a flagged stage beyond the `TENANT_ADMIN`
   notification itself; there is no dashboard/badge reading this field.
 
+### 2.14 `getStageHistory()` — Where a Record Is, Two Ways (ACC-76)
+
+`GET /workflows/instances/:id/stage-history`, gated `workflows:view`.
+Returns **both** views, because they answer different questions and
+neither substitutes for the other:
+
+- **`stages[]`** — the SEQUENCE. Every template stage, in `order`,
+  always, each with `visitCount` and `isCurrent`. What the process *is*
+  and where this record sits in it.
+- **`visits[]`** — the CHRONOLOGY. One entry per `WorkflowInstanceStage`
+  row, oldest first, **repeats preserved**. What happened to *this*
+  record.
+
+**Why a stage entered twice must appear twice.** This engine produces
+such records by design — Committee's seeded `TERMS_REVIEW → FORMATION`
+"Revise Terms" transition means a real path can read Formation → Terms
+Review → Formation → Terms Review. `WorkflowStage.order` cannot express
+that: it is a display field, not a traversal record (2.1). So the
+chronology never collapses repeats, and the sequence admits them via
+`visitCount` rather than flattening to "visited".
+
+**`isCurrent` is derived from `exitedAt`, never from
+`WorkflowInstance.currentStageId`** — with a repeat, `currentStageId`
+matches two visit rows and cannot say which is live.
+
+**Each visit's `id` is the instance-stage row id, not `stageId`** —
+stage ids repeat across visits and collide as a list key.
+
+Three fields are derived rather than stored, and the derivation is the
+interesting part:
+
+- **`transitionLabelEn`/`Ar`** — `WorkflowInstanceStage` records **no
+  transition id**. The transition is inferred from the *(previous
+  visit's stage → this visit's stage)* pair against the template's
+  transitions. Verified safe for every shipped workflow: **67
+  transitions across all 8 seeded templates, no template has two
+  transitions sharing a from/to pair.** Where a tenant later creates
+  one that does, the pair is ambiguous and both fields are **null** — a
+  blank beats a guess in a compliance trail. Null on the first visit
+  too: nothing transitioned into it.
+- **`actorName`** — resolved from `WorkflowInstanceStage.actorId`, which
+  is **who ENTERED the stage**. Written once at row creation; the exit
+  update touches only `exitedAt`/`outcome`/`comment`, so it is never
+  overwritten by whoever later left.
+- **`comment`** — carries the **PREVIOUS** visit's comment, not the
+  row's own. A comment is written by the exit update onto the row being
+  **left**, so a row's own `comment` column explains the transition
+  **out** of it while its actor and transition label describe the
+  transition **in**. Rendering all three on one line — which the first
+  cut of ACC-76 did — attributes an explanation to the wrong event and
+  the wrong person, and *looks* correct while doing so. Known
+  consequence, accepted: a comment written when the last visit is
+  exited (`cancelInstance()` exits the open stage with outcome
+  `SKIPPED`) has no following row to appear on.
+
+Consumers: `WorkflowStageIndicatorComponent` (10.9). Delegation stamps
+on each visit are resolved by `DelegationLabelService` (3.8).
+
 ---
 
 ## 3. Task System
@@ -1323,12 +1381,25 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   query for a "My Tasks" view — see Section 11 for the still-missing
   Dashboard/Home page that would surface it.
 - **`getForSource()`** — the module task-list query CLAUDE.md refers to
-  ("tasks filtered by sourceType + sourceId").
+  ("tasks filtered by sourceType + sourceId"). **The ONLY list query
+  here that returns assignees** (ACC-76), typed `ITaskWithAssignees[]`
+  rather than `ITask[]`. `getMyTasks()` needs none (every row is the
+  caller's own by construction) and `listUnassigned()` has none by
+  definition, so this stayed one endpoint's shape change rather than
+  all three. Returns ACTIVE assignees only (`removedAt: null`) — the
+  same definition of "assigned" `getMyTasks()` uses; without that
+  filter a completed task would list everyone ever assigned, since
+  `complete()` stamps rather than deletes. Each assignee carries a
+  resolved `userName` and, where present, ACC-40 §2.6.3's delegation
+  stamp resolved to a label by `DelegationLabelService` (see 3.8).
+  Before ACC-76 **no list endpoint in the product returned assignee
+  data at all** — the defect ACC-58 tracked.
 - **`complete()`** — ANY-assignee-completes semantics: the first active
   assignee to call this stamps `removedAt` on every *other* active
   `TaskAssignee` row for the same task (not deleted — a permanent
   record of who was ever assigned) and sets the task `COMPLETED`.
   Rejects (404, not 403) if the caller isn't a currently-active assignee.
+  **That 404 is the whole access control as of ACC-76** — see 3.6.
 - **`cancelForStage()`** / **`cancelForInstance()`** (ACC-68) — the
   only producers of `TaskStatus.CANCELLED` anywhere in the codebase.
   Before ACC-68 that enum value was **unreachable**: declared in
@@ -1653,10 +1724,11 @@ notification fires either (that notification path,
 ### 3.6 Permission Model
 
 ```
-tasks:view       — TaskController: getMyTasks, getForSource, getById
+tasks:view       — TaskController: getForSource, getById
+                   NOT getMyTasks — self-scoped, ungated (ACC-70)
 tasks:create     — TaskController: create
-tasks:complete   — TaskController: complete, addEvidence (both — evidence
-                   upload is gated as a completion-adjacent action, not separately)
+tasks:complete   — TaskController: addEvidence ONLY
+                   NOT complete() — self-scoped, ungated (ACC-76)
 tasks:reassign   — TaskController: reassign
 tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
                    `@Permissions()` consumer. Previously seeded into
@@ -1664,6 +1736,32 @@ tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
                    anywhere, a currently-inert permission string; no
                    longer inert as of ACC-34.
 ```
+
+**Two endpoints here carry NO permission, and the omission is load-bearing
+in both — do not "restore" either for consistency with its neighbours.**
+Both specs assert the absence explicitly for that reason.
+
+- **`getMyTasks()`** (ACC-70) — every query filters
+  `assignees.some(userId = caller)`, so it cannot reach another user's
+  work regardless of permissions. Same principle `NotificationController`
+  states for the notification inbox.
+- **`complete()`** (ACC-76) — self-scoped in exactly the same way: the
+  service 404s anyone who is not a currently-active assignee, so
+  `tasks:complete` gated nothing the service did not already enforce.
+  **It did, however, actively break the engine.** `tasks:complete` is
+  seeded to `PLATFORM_ADMIN`, `TENANT_ADMIN` and `QUALITY_MANAGER` only,
+  while the engine assigns to `BASE_USER` tenant-wide
+  (`MEETING.minutes_review`: `ROLE` / `BASE_USER` / `PARALLEL` / `ALL`).
+  So the engine handed out work its own permission model forbade
+  finishing, and `my-tasks`' Complete button 403'd for most users it was
+  shown to. Granting the permission to everyone instead would reach the
+  same enforcement while keeping a control that controls nothing.
+
+**The `tasks:complete` string itself is still seeded and still gates
+`addEvidence()`** — whether it should survive at all is part of **ACC-77**,
+which also carries the seed defects this only worked around
+(`QUALITY_OFFICER` cannot create; `tasks:manage` implies none of its
+specific strings, against ACC-44's required pattern).
 
 ### 3.7 Frontend Consumption (Static Check)
 
@@ -1673,11 +1771,11 @@ methods, one per `TaskController` endpoint:
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
 | `getMyTasks()` | `GET /tasks/my-tasks` | `my-tasks.component.ts:144` |
-| `getForSource()` | `GET /tasks` | `task-list.component.ts:104` |
+| `getForSource()` | `GET /tasks` | `task-list.component.ts` (routed page) **+ `committee-detail.component.ts` directly** (ACC-76) |
 | `getUnassigned()` | `GET /tasks/unassigned` | `unassigned-tasks.component.ts` (ACC-34) |
 | `getById()` | `GET /tasks/:id` | **ZERO frontend callers found** |
 | `create()` | `POST /tasks` | `task-form.component.ts:124` (rendered from `task-list.component.ts`, confirmed referenced there) |
-| `complete()` | `POST /tasks/:id/complete` | `my-tasks.component.ts:134` |
+| `complete()` | `POST /tasks/:id/complete` | `my-tasks.component.ts` **+ `committee-detail.component.ts`** (ACC-76) |
 | `reassign()` | `POST /tasks/:id/reassign` | `unassigned-tasks.component.ts` (ACC-34) — was zero frontend callers, closed by this ticket |
 | `addEvidence()` | `POST /tasks/:id/evidence` | **ZERO frontend callers found** |
 
@@ -1695,6 +1793,48 @@ Tasks view gave it a real caller — Absence Management Pattern 2 now has
 an operator-facing screen for Tasks, at least for the unassigned case
 (a reassignment UI reachable from an assigned task's own detail view
 still doesn't exist, since `getById()` still has zero callers).
+
+### 3.8 `DelegationLabelService` — ACC-40's Stamp, Resolved (ACC-76)
+
+`backend/src/common/services/delegation-label.service.ts`. Provided by
+`TenantModule` alongside `AuditLogService`, so any module already
+importing `TenantModule` injects it with no new wiring — both current
+consumers (`TaskModule`, `WorkflowModule`) already did.
+
+**Why it exists in `common/` rather than either module.** ACC-40 §2.6.3
+stamps the identical `delegationReason` + `delegationContextId` pair on
+**three** models — `TaskAssignee`, `WorkflowInstanceStage` and
+`WorkflowApproval`. Two consumers now resolve it and neither owns it.
+
+**Why the label is resolved server-side.** `delegationContextId` is
+**polymorphic**: an `OrgUnit` id for `ACTING_HEAD`, the covered-for
+**User's** id for `OUT_OF_OFFICE_COVERAGE`. A client cannot resolve it
+without first branching on the reason and then knowing which table each
+reason points at — duplicating that mapping at every call site and
+inviting one of them to get it wrong silently.
+
+- `resolveMany(stamps, organizationId)` — **two queries at most,
+  de-duplicated, regardless of how many stamps** arrive. Asserted by
+  test, because a regression to per-row lookups fails nothing else; it
+  is merely slow, and at ~110ms a round trip (Section 8 / ACC-60) that
+  is visible to a user.
+- **Both lookups are tenant-scoped, with their own isolation test.** A
+  `delegationContextId` is an opaque id carrying no tenant of its own,
+  so an unscoped read would resolve **another tenant's OrgUnit or User
+  name** into this tenant's UI.
+- Returns `contextLabelEn` / `contextLabelAr` as a pair even for a User
+  (one `name`, both fields carry it) so consumers render one way
+  regardless of reason. `OrgUnit.nameAr` is nullable and falls back to
+  the English name rather than null — losing the qualifier entirely is
+  worse for an Arabic reader than showing the unit in English.
+- `lookup()` returns **null** both for an unstamped row and for a
+  stamp whose referent no longer resolves in-tenant. Consumers render
+  **no qualifier**, never a raw id.
+
+Consumed by `TaskService.getForSource()` (3.2) and
+`WorkflowService.getStageHistory()` (2.14). ACC-40 shipped these fields
+fully populated and surfaced nowhere; ACC-76 is the first time they
+reach a screen.
 
 ---
 
@@ -3540,6 +3680,78 @@ field used `[filter]="true"` — this is a one-field, scoped, documented
 trade-off, not a silent gap. Revisit only if a future field genuinely
 needs real filter-search on a long, growing list — typeahead alone was
 judged sufficient for this field's own bounded list.
+
+### 10.8 `RecordPanelComponent` — the Object-Detail Panel (ACC-76)
+
+`frontend/src/app/shared/components/record-panel/`. Committee's record
+page is its first consumer; **Meeting Management is expected to reuse it
+rather than rebuild it**, which is the reason it lives in `shared/`
+rather than inside Committee.
+
+Owns the panel chrome — small-caps heading, count chip, optional second
+badge, an action slot, a fixed-height scrolling body — plus the three
+states every panel has: `loading`, `error`, `isEmpty`. The consumer
+projects its own rows, because a task list and a sub-committee list have
+nothing structural in common.
+
+- **`error` is an input, so a panel fails ALONE.** A 403 on one panel
+  renders its own message and leaves every sibling intact; nothing here
+  can blank the page.
+- **`count` is `number | null`, and null is not 0.** Null hides the chip;
+  `0` is a real, displayable answer — "Documents 0" is the entire point
+  of the empty panel.
+- **An empty panel is still a panel, deliberately.** A Committee's
+  Documents section reading "No documents linked" states something true:
+  the relationship exists (`Committee.termsOfReferenceDocumentId` is in
+  the schema) and is unpopulated. Scaffolding styling — a "coming soon"
+  ribbon — would state something different and worse, that the page is
+  unfinished. So the empty state is **visually identical** whether the
+  module ships tomorrow or has shipped with no rows. The `emptyMessage`
+  sentence is what separates the two for a reader.
+- **`bodyHeight` is a min-height, not a fixed height** (default 214px).
+  Equal heights are what make a row of panels read as a row; clipping an
+  Arabic row, which runs longer, is worse than a slightly uneven edge.
+
+**A record page should NOT embed a routed list component to fill a
+panel.** ACC-76 tried exactly that with `TaskListComponent` and reverted
+it: a routed page brings its own heading, its own type scale, its own
+`h-full`/`scrollHeight="flex"`, and its own column set, so it sat at a
+different height from its siblings in a larger font with horizontal
+scroll they did not have. It also could not be told to reload after a
+create. The pattern is: `RecordPanelComponent` + your own rows + a
+direct service call.
+
+### 10.9 `WorkflowStageIndicatorComponent` (ACC-76)
+
+`frontend/src/app/foundation/workflow/components/workflow-stage-indicator/`.
+Generic over object type, exactly like
+`WorkflowTransitionActionsComponent` beside it (10.6): takes a
+`WorkflowInstanceDto` and nothing module-specific. Renders 2.14's two
+views — a numbered stepper for the sequence, a dated list for the
+history — selectable via `show: 'both' | 'sequence' | 'history'` so a
+page can place them separately, as Committee's does.
+
+- **Takes the INSTANCE, not its id.** Load-bearing: `triggerTransition()`
+  returns an updated instance whose **id is unchanged**, so an id input
+  never notified and the history stayed stale until a manual reload.
+  Signal inputs compare by reference; the parent stores the fresh object.
+- **The stepper renders no "N of M" counter**, deliberately. Committee
+  has six stages of which two (Suspended, Dissolution Pending) are
+  **branches, not steps** — a suspended committee would read "4 of 6" and
+  look *further along* than a healthy active one. "In stage N days",
+  from the open visit, says something true instead.
+- Stage and transition names are tenant-editable data: rendered by
+  `isArabic()` selection, **never** `| translate` (9.3). For the same
+  reason `StatusBadgeComponent` (10.2) is correctly not used here.
+- Fails silently — a caller without `workflows:view` gets a 403 and the
+  component renders nothing, exactly as the plain "Current Stage" label
+  it replaced already did.
+
+**Dates and numerals inside RTL text use `dir="ltr"` +
+`unicode-bidi: isolate`** here and across Committee's record page — the
+correct fix for numerals reordering in Arabic, and the first use of it
+in this codebase. Worth adopting wherever a date or count sits inside a
+translated sentence.
 
 ---
 

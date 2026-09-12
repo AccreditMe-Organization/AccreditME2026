@@ -7,6 +7,7 @@ import { OrgPositionModule } from '../org-position/org-position.module';
 import { TenantController } from './tenant.controller';
 import { TenantService } from './tenant.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { STORAGE_PROVIDER } from '../../providers/storage/storage.provider';
 import { S3StorageProvider } from '../../providers/storage/s3-storage.provider';
 import { AI_PROVIDER } from '../../providers/ai/ai.provider';
@@ -26,6 +27,7 @@ import { BetterAuthProvider } from '../../providers/auth/better-auth.provider';
   providers: [
     TenantService,
     AuditLogService,
+    DelegationLabelService,
     { provide: STORAGE_PROVIDER, useClass: S3StorageProvider },
     { provide: AI_PROVIDER, useClass: AnthropicAiProvider },
     { provide: AUTH_PROVIDER, useClass: BetterAuthProvider },
@@ -33,6 +35,7 @@ import { BetterAuthProvider } from '../../providers/auth/better-auth.provider';
   exports: [
     TenantService,
     AuditLogService,
+    DelegationLabelService,
     STORAGE_PROVIDER,
     AI_PROVIDER,
     AUTH_PROVIDER,

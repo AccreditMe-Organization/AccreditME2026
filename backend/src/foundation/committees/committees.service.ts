@@ -7,7 +7,7 @@ import { UpdateCommitteeDto } from './dto/update-committee.dto';
 import { AddCommitteeMemberDto } from './dto/add-committee-member.dto';
 import { ChangeCommitteeMemberRoleDto } from './dto/change-committee-member-role.dto';
 import { RemoveCommitteeMemberDto } from './dto/remove-committee-member.dto';
-import { ICommittee, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
+import { ICommittee, ICommitteeListItem, ICommitteeMember, ICommitteeMembershipEvent } from './interfaces/committee.interface';
 
 @Injectable()
 export class CommitteesService {
@@ -19,10 +19,75 @@ export class CommitteesService {
 
   // ── Committee CRUD ───────────────────────────────────────────────────────────
 
-  async listCommittees(organizationId: string): Promise<ICommittee[]> {
-    return this.prisma.committee.findMany({
+  // ACC-76 — carries member count and live workflow stage, so a list row (and
+  // the sub-committees panel on a record page) can say what a committee IS
+  // without a request per row.
+  //
+  // THREE queries total, regardless of list length: the committees, one
+  // grouped count over CommitteeMember, one pass over the workflow instances
+  // for the whole id set. The per-row alternative is N+1 twice over, and at
+  // ~110ms a round trip that is visible to a user.
+  async listCommittees(organizationId: string): Promise<ICommitteeListItem[]> {
+    const committees = await this.prisma.committee.findMany({
       where: { organizationId },
       orderBy: { nameEn: 'asc' },
+    });
+    if (committees.length === 0) return [];
+
+    const committeeIds = committees.map((c) => c.id);
+
+    const [memberCounts, instances] = await Promise.all([
+      // Active members only — a departed member is not part of the committee,
+      // and CommitteeMember rows are reactivated in place rather than
+      // recreated (ACC-32), so leftAt/isActive is the only thing separating
+      // current from historical.
+      this.prisma.committeeMember.groupBy({
+        by: ['committeeId'],
+        where: { organizationId, committeeId: { in: committeeIds }, isActive: true },
+        _count: { committeeId: true },
+      }),
+      // Tenant-scoped in its own right, not merely via the id set above —
+      // a WorkflowInstance carries organizationId, so scoping it costs
+      // nothing and removes any dependence on how committeeIds was built.
+      this.prisma.workflowInstance.findMany({
+        where: { organizationId, objectType: 'COMMITTEE', objectId: { in: committeeIds } },
+        orderBy: { createdAt: 'desc' },
+        select: { objectId: true, currentStageId: true },
+      }),
+    ]);
+
+    const countByCommitteeId = new Map(
+      memberCounts.map((row) => [row.committeeId, row._count.committeeId]),
+    );
+
+    // Newest instance wins — the query is ordered createdAt desc and a
+    // committee can accumulate instances over time, same as any other object.
+    const stageIdByCommitteeId = new Map<string, string | null>();
+    for (const instance of instances) {
+      if (!stageIdByCommitteeId.has(instance.objectId)) {
+        stageIdByCommitteeId.set(instance.objectId, instance.currentStageId);
+      }
+    }
+
+    const stageIds = [...new Set([...stageIdByCommitteeId.values()].filter((id): id is string => !!id))];
+    const stages =
+      stageIds.length > 0
+        ? await this.prisma.workflowStage.findMany({
+            where: { id: { in: stageIds } },
+            select: { id: true, nameEn: true, nameAr: true },
+          })
+        : [];
+    const stageById = new Map(stages.map((s) => [s.id, s]));
+
+    return committees.map((committee) => {
+      const stageId = stageIdByCommitteeId.get(committee.id) ?? null;
+      const stage = stageId ? stageById.get(stageId) : undefined;
+      return {
+        ...committee,
+        memberCount: countByCommitteeId.get(committee.id) ?? 0,
+        currentStageNameEn: stage?.nameEn ?? null,
+        currentStageNameAr: stage?.nameAr ?? null,
+      };
     });
   }
 

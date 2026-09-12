@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/commo
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
@@ -10,6 +11,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { ITask } from './interfaces/task.interface';
+import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
 
 interface GetTasksOptions {
@@ -21,6 +23,7 @@ export class TaskService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly delegationLabels: DelegationLabelService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     @Inject(forwardRef(() => TenantService))
@@ -127,11 +130,47 @@ export class TaskService {
   }
 
   // Module task lists — CLAUDE.md's "tasks filtered by sourceType + sourceId".
-  async getForSource(sourceType: TaskSourceType, sourceId: string, organizationId: string): Promise<ITask[]> {
-    return this.prisma.task.findMany({
+  // ACC-76 — returns assignees, unlike every other list query here.
+  //
+  // This is the module-task-list query: it backs an object's own detail page
+  // ("what work does this committee have"), where the assignee is most of the
+  // point. getMyTasks() needs no assignees (every row is the caller's own by
+  // construction) and listUnassigned() has none by definition, so this stays
+  // the only list that carries them rather than a shape change across all
+  // three.
+  async getForSource(
+    sourceType: TaskSourceType,
+    sourceId: string,
+    organizationId: string,
+  ): Promise<ITaskWithAssignees[]> {
+    const tasks = await this.prisma.task.findMany({
       where: { organizationId, sourceType, sourceId },
       orderBy: { createdAt: 'desc' },
+      include: {
+        assignees: {
+          // Active assignees only. complete() stamps removedAt on everyone who
+          // did NOT complete the task rather than deleting the row, so without
+          // this filter a completed task would list everyone ever assigned as
+          // though they still were.
+          where: { removedAt: null },
+          include: { user: { select: { id: true, name: true } } },
+        },
+      },
     });
+
+    // One resolve call for the whole page, not one per task — see
+    // DelegationLabelService.resolveMany() on why that matters here.
+    const allAssignees = tasks.flatMap((task) => task.assignees);
+    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId);
+
+    return tasks.map(({ assignees, ...task }) => ({
+      ...task,
+      assignees: assignees.map((assignee) => ({
+        userId: assignee.userId,
+        userName: assignee.user.name,
+        delegation: this.delegationLabels.lookup(assignee, delegations),
+      })),
+    }));
   }
 
   // Tenant-wide — unassigned tasks have no assignees, so getMyTasks()

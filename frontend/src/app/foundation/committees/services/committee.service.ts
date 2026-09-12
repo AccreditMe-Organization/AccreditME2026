@@ -33,6 +33,19 @@ export interface CommitteeDto {
   updatedAt: string;
 }
 
+// ACC-76 — what listCommittees() returns, as distinct from a single
+// committee. Separate type rather than optional fields on CommitteeDto, for
+// the reason ACC-74 established: an optional field populated by exactly one
+// endpoint silently renders wrong at every other call site.
+export interface CommitteeListItemDto extends CommitteeDto {
+  memberCount: number;
+  // Live workflow stage, read from the engine rather than stored on the
+  // committee. Null when no instance exists. Tenant-editable data — rendered
+  // by isArabic() selection, never `| translate`.
+  currentStageNameEn: string | null;
+  currentStageNameAr: string | null;
+}
+
 export interface CommitteeMemberDto {
   id: string;
   organizationId: string;
@@ -95,8 +108,8 @@ export class CommitteeService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiUrl}/committees`;
 
-  listCommittees(): Observable<CommitteeDto[]> {
-    return this.http.get<CommitteeDto[]>(this.base);
+  listCommittees(): Observable<CommitteeListItemDto[]> {
+    return this.http.get<CommitteeListItemDto[]>(this.base);
   }
 
   getById(id: string): Observable<CommitteeDto> {
