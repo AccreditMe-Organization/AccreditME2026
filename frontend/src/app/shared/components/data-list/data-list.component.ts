@@ -9,12 +9,19 @@ import {
   signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { MessageModule } from 'primeng/message';
 import { ButtonModule } from 'primeng/button';
 import { IListQuery } from '../../models/paginated-response';
 import { DataListSource } from './data-list.source';
+import {
+  readPreferences,
+  readUrlParams,
+  urlParamsFor,
+  writePreferences,
+} from './data-list.persistence';
 
 export interface DataListSortOption {
   // Column name. Server-backed lists must use a column the endpoint's sort
@@ -253,6 +260,8 @@ export const ROW_WIDE_BREAKPOINT_PX = 520;
 })
 export class DataListComponent<T> {
   private readonly translate = inject(TranslateService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   readonly source = input.required<DataListSource<T>>();
 
@@ -276,6 +285,22 @@ export class DataListComponent<T> {
 
   readonly bodyClass = input<string>('');
 
+  // ACC-78 — persistence is OPT-IN, and off by default on purpose.
+  //
+  // A record page holds several lists at once, and a panel's momentary search
+  // is not something anyone wants surviving a reload — nor is it meaningful to
+  // share, since you would share the record's URL, not the panel's filter. So
+  // panels pass nothing and get no persistence; the full-page lists opt in.
+  //
+  // The key namespaces both the storage entry and the URL params, which is what
+  // lets three lists coexist on one page without reading each other's state.
+  readonly persistKey = input<string | null>(null);
+
+  // Requires persistKey. Separate because the two capabilities are separate:
+  // a list may want to remember a sort order without claiming ownership of the
+  // page's query string.
+  readonly urlSync = input<boolean>(false);
+
   readonly rowTemplate = contentChild.required<TemplateRef<unknown>>('listRow');
 
   readonly rows = signal<T[]>([]);
@@ -292,6 +317,39 @@ export class DataListComponent<T> {
   private readonly unfilteredTotal = signal(0);
 
   constructor() {
+    this.restore();
+
+    // Writes state out whenever it changes. Separate from the load effect so a
+    // failing write can never stop rows rendering.
+    effect(() => {
+      const key = this.persistKey();
+      if (!key) return;
+
+      const query = this.query();
+      const scope = this.activeScope();
+
+      // Preferences only — see PersistedListPreferences on why search and page
+      // are excluded.
+      writePreferences(key, {
+        sortBy: query.sortBy,
+        sortDir: query.sortDir,
+        pageSize: query.pageSize,
+        scope,
+      });
+
+      if (this.urlSync()) {
+        this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: urlParamsFor(key, query, scope),
+          queryParamsHandling: 'merge',
+          // replaceUrl so typing in the search box does not push a history
+          // entry per keystroke — the back button would otherwise walk
+          // character by character out of a search rather than leaving the page.
+          replaceUrl: true,
+        });
+      }
+    });
+
     // Reloads whenever the query changes OR the source itself does — a parent
     // whose underlying array changed hands in a new source function, and that
     // must refetch rather than leave a stale page rendered.
@@ -369,6 +427,43 @@ export class DataListComponent<T> {
       total: this.total(),
     });
   });
+
+  // Runs once, before the first load. Order is the decision here: stored
+  // preferences first, then URL params ON TOP.
+  //
+  // THE URL MUST WIN. A shared link has to show the recipient what the sharer
+  // was looking at — if the recipient's own saved sort quietly overrode it,
+  // the link would show them a different list from the one they were sent, and
+  // neither person would be able to tell.
+  private restore(): void {
+    const key = this.persistKey();
+    if (!key) return;
+
+    const prefs = readPreferences(key);
+    let query: IListQuery = {
+      page: 1,
+      sortBy: prefs.sortBy,
+      sortDir: prefs.sortDir,
+      pageSize: prefs.pageSize,
+    };
+    let scope = prefs.scope ?? null;
+
+    if (this.urlSync()) {
+      const fromUrl = readUrlParams(key, this.route.snapshot.queryParams);
+      // Only params actually present override — a link that pins a search but
+      // says nothing about sorting should leave the reader's own sort alone.
+      query = {
+        ...query,
+        ...Object.fromEntries(
+          Object.entries(fromUrl.query).filter(([, value]) => value !== undefined),
+        ),
+      };
+      if (this.route.snapshot.queryParams[`${key}.scope`] !== undefined) scope = fromUrl.scope;
+    }
+
+    this.query.set(query);
+    this.activeScope.set(scope);
+  }
 
   onSearch(event: Event): void {
     const search = (event.target as HTMLInputElement).value;
