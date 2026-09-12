@@ -231,7 +231,7 @@ export class OrgUnitHeadPanelComponent implements OnInit {
     this.orgPositionService.listPositions().subscribe({
       next: (positions) => this.headPositions.set(positions.filter((p) => p.isUnitHeadPosition)),
     });
-    this.userService.listUsers({ status: 'ACTIVE', orgUnitId: this.orgUnitId() }).subscribe({
+    this.userService.listAllUsers({ status: 'ACTIVE', orgUnitId: this.orgUnitId() }).subscribe({
       next: (users) => this.unitUsers.set(users.map((u) => ({ id: u.id, name: u.name }))),
     });
     this.load();

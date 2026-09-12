@@ -477,7 +477,7 @@ export class WorkflowStageFormComponent implements OnInit {
       return of(false);
     }
     const positionId = raw.assigneePositionId;
-    return this.userService.listUsers({ orgUnitId: raw.assigneeOrgUnitId, status: 'ACTIVE' }).pipe(
+    return this.userService.listAllUsers({ orgUnitId: raw.assigneeOrgUnitId, status: 'ACTIVE' }).pipe(
       map((users) => !users.some((u) => u.positionId === positionId)),
       // A failed lookup yields NO warning, deliberately. Listing users needs
       // users:view, which a tenant-created role holding only workflows:manage

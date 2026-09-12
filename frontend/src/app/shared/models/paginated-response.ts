@@ -25,4 +25,10 @@ export interface IListQuery {
   // built from what the endpoint advertises rather than from guessed names.
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
+  // ACC-78 — the active scope chip, if any. Frontend-only: no endpoint has a
+  // `scope` param. It is here rather than as a second argument because a scope
+  // means something different per list — `status` on Users, an open/overdue
+  // predicate on Tasks — so the list component carries it and the caller's
+  // source function decides what it maps to.
+  scope?: string | null;
 }

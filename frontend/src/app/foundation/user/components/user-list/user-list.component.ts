@@ -1,10 +1,17 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  TemplateRef,
+  ViewChild,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { TagModule } from 'primeng/tag';
 import { ConfirmationService } from 'primeng/api';
 import { UserService, IUserDto } from '../../services/user.service';
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
@@ -17,6 +24,13 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // Section 10.5), not a bug fix — the old @if(inviteVisible()) wrapping
 // <app-invite-user> directly was already immune to ACC-29's pre-fill bug.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import {
+  DataListComponent,
+  DataListScope,
+  DataListSortOption,
+} from '../../../../shared/components/data-list/data-list.component';
+import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
+import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 
 @Component({
   selector: 'app-user-list',
@@ -24,9 +38,9 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
   imports: [
     DatePipe,
     TranslatePipe,
-    TableModule,
     ButtonModule,
-    TagModule,
+    DataListComponent,
+    StatusChipComponent,
     InviteUserComponent,
     EditDialogComponent,
   ],
@@ -44,52 +58,79 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
         <p class="text-sm text-[var(--am-text-primary)]">{{ infoMessage() }}</p>
       }
 
-      <p-table [value]="users()" [loading]="loading() || deactivating()" scrollable scrollHeight="flex" styleClass="w-full">
-        <ng-template pTemplate="header">
-          <tr>
-            <th style="width: 22%">{{ 'user.name' | translate }}</th>
-            <th style="width: 22%">{{ 'user.email' | translate }}</th>
-            <th style="width: 12%">{{ 'user.status.title' | translate }}</th>
-            <th style="width: 14%">{{ 'user.position' | translate }}</th>
-            <th style="width: 14%">{{ 'user.primaryOrgUnit' | translate }}</th>
-            <th style="width: 14%">{{ 'user.lastLogin' | translate }}</th>
-            <th style="width: 4%"></th>
-          </tr>
-        </ng-template>
+      <!-- ACC-78 — the shared list pattern's first consumer.
+           persistKey + urlSync because this is a full page that owns its query
+           string; a record panel would pass neither. -->
+      <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden">
+        <app-data-list
+          #list
+          [source]="source"
+          [trackBy]="trackById"
+          [sortOptions]="sortOptions()"
+          [scopes]="scopes()"
+          [searchPlaceholder]="'user.searchPlaceholder' | translate"
+          [emptyTitle]="'user.noUsers' | translate"
+          [emptyMessage]="'user.noUsersBody' | translate"
+          persistKey="users"
+          [urlSync]="true"
+          [hasDestination]="false"
+        >
+          <ng-template #listRow let-user>
+            <div
+              class="grid items-center gap-3 px-3 py-2 border-b border-[var(--am-border)] cursor-pointer hover:bg-[var(--am-surface)]"
+              style="grid-template-columns: 1fr auto"
+              (click)="onView(user)"
+            >
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-[13px] font-medium truncate">{{ user.name }}</span>
+                  <app-status-chip variant="user" [value]="user.status" />
+                </div>
+                <!-- Secondary line at narrow widths; the two trailing fields
+                     promote out of it into their own columns past the shared
+                     breakpoint. Same component, same row template — the width
+                     of the LIST decides, not the viewport. -->
+                <div class="flex items-baseline gap-1.5 text-[11.5px] text-[var(--am-text-secondary)] min-w-0">
+                  <span class="truncate">{{ user.email }}</span>
+                  <span class="@min-[520px]/datalist:hidden">·</span>
+                  <span class="@min-[520px]/datalist:hidden truncate">
+                    {{ positionName(user.positionId) }}
+                  </span>
+                </div>
+              </div>
 
-        <ng-template pTemplate="body" let-user>
-          <tr class="cursor-pointer" (click)="onView(user)">
-            <td>{{ user.name }}</td>
-            <td>{{ user.email }}</td>
-            <td>
-              <p-tag
-                [value]="('user.status.' + user.status.toLowerCase()) | translate"
-                [severity]="statusColor(user.status)"
-              />
-            </td>
-            <td>{{ positionName(user.positionId) }}</td>
-            <td>{{ orgUnitName(user.primaryOrgUnitId) }}</td>
-            <td>{{ user.lastLoginAt ? (user.lastLoginAt | date: 'short') : '—' }}</td>
-            <td>
-              @if (user.status !== 'INACTIVE') {
-                <p-button
-                  icon="pi pi-user-minus"
-                  [text]="true"
-                  size="small"
-                  severity="danger"
-                  (onClick)="onDeactivate(user, $event)"
-                />
-              }
-            </td>
-          </tr>
-        </ng-template>
-
-        <ng-template pTemplate="emptymessage">
-          <tr>
-            <td colspan="7" class="text-center py-8 text-[var(--am-text-secondary)]">{{ 'user.noUsers' | translate }}</td>
-          </tr>
-        </ng-template>
-      </p-table>
+              <div class="flex items-center gap-3 shrink-0">
+                <span
+                  class="hidden @min-[520px]/datalist:block text-xs text-[var(--am-text-secondary)] w-[130px] truncate"
+                >
+                  {{ positionName(user.positionId) }}
+                </span>
+                <span
+                  class="hidden @min-[720px]/datalist:block text-xs text-[var(--am-text-secondary)] w-[140px] truncate"
+                >
+                  {{ orgUnitName(user.primaryOrgUnitId) }}
+                </span>
+                <span
+                  dir="ltr"
+                  style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
+                  class="hidden @min-[900px]/datalist:block text-xs text-[var(--am-text-secondary)] w-[110px]"
+                >
+                  {{ user.lastLoginAt ? (user.lastLoginAt | date: 'short') : '—' }}
+                </span>
+                @if (user.status !== 'INACTIVE') {
+                  <p-button
+                    icon="pi pi-user-minus"
+                    [text]="true"
+                    size="small"
+                    severity="danger"
+                    (onClick)="onDeactivate(user, $event)"
+                  />
+                }
+              </div>
+            </div>
+          </ng-template>
+        </app-data-list>
+      </div>
     </div>
 
     <ng-template #inviteTpl>
@@ -104,6 +145,9 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 })
 export class UserListComponent implements OnInit {
   @ViewChild('inviteTpl', { read: TemplateRef, static: true }) inviteTpl!: TemplateRef<unknown>;
+  // Required: reload() after a write is not optional, so a missing list is a
+  // bug rather than a state to tolerate.
+  readonly list = viewChild.required<DataListComponent<IUserDto>>('list');
 
   private readonly userService = inject(UserService);
   private readonly orgPositionService = inject(OrgPositionService);
@@ -112,8 +156,6 @@ export class UserListComponent implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
 
-  readonly loading = signal(false);
-  readonly users = signal<IUserDto[]>([]);
   readonly error = signal<string | null>(null);
   readonly infoMessage = signal<string | null>(null);
   readonly inviteVisible = signal(false);
@@ -121,11 +163,53 @@ export class UserListComponent implements OnInit {
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
 
+  // The list owns its own loading; this page only supplies the lookups its
+  // row template needs to render names instead of ids.
   ngOnInit(): void {
     this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
-    this.loadUsers();
   }
+
+  // An arrow property, not a method: DataListComponent reads this as a signal
+  // input, so a bound method would be a new reference on every change
+  // detection and refetch in a loop.
+  readonly source: DataListSource<IUserDto> = (query) =>
+    this.userService.listUsers({
+      search: query.search,
+      page: query.page,
+      pageSize: query.pageSize,
+      sortBy: query.sortBy,
+      sortDir: query.sortDir,
+      // The scope chip maps to THIS endpoint's own status filter. The list
+      // component carries the scope without knowing what it means.
+      status: query.scope ?? undefined,
+    });
+
+  readonly trackById = (user: IUserDto): string => user.id;
+
+  // Columns the backend's sort whitelist actually accepts — an unknown one is
+  // a 400, not a silent reorder, so these are not free-form.
+  readonly sortOptions = computed<DataListSortOption[]>(() => {
+    this.translate.currentLang();
+    return [
+      { column: 'name', label: this.translate.instant('user.name') },
+      { column: 'email', label: this.translate.instant('user.email') },
+      { column: 'status', label: this.translate.instant('user.status.title') },
+      { column: 'createdAt', label: this.translate.instant('user.createdAt'), dir: 'desc' },
+    ];
+  });
+
+  // No counts. The reference shows them, and they need a grouped count the
+  // backend does not expose — see the ticket note rather than four extra
+  // requests per page load.
+  readonly scopes = computed<DataListScope[]>(() => {
+    this.translate.currentLang();
+    return [
+      { key: 'ACTIVE', label: this.translate.instant('user.status.active') },
+      { key: 'INVITED', label: this.translate.instant('user.status.invited') },
+      { key: 'INACTIVE', label: this.translate.instant('user.status.inactive') },
+    ];
+  });
 
   positionName(positionId: string | null): string {
     if (!positionId) return '—';
@@ -137,26 +221,13 @@ export class UserListComponent implements OnInit {
     return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
-  statusColor(status: string): 'success' | 'danger' | 'warn' | 'secondary' {
-    switch (status) {
-      case 'ACTIVE':
-        return 'success';
-      case 'INACTIVE':
-        return 'danger';
-      case 'SUSPENDED':
-        return 'warn';
-      default:
-        return 'secondary';
-    }
-  }
-
   onInvite(): void {
     this.inviteVisible.set(true);
   }
 
   onInviteSaved(): void {
     this.inviteVisible.set(false);
-    this.loadUsers();
+    this.list().reload();
   }
 
   onView(user: IUserDto): void {
@@ -188,7 +259,7 @@ export class UserListComponent implements OnInit {
             this.infoMessage.set(
               this.translate.instant('user.deactivateSummary', { reassignedCount, unassignedCount }),
             );
-            this.loadUsers();
+            this.list().reload();
           },
           error: (err: unknown) => {
             this.deactivating.set(false);
@@ -199,18 +270,4 @@ export class UserListComponent implements OnInit {
     });
   }
 
-  private loadUsers(): void {
-    this.loading.set(true);
-    this.error.set(null);
-    this.userService.listUsers().subscribe({
-      next: (users) => {
-        this.users.set(users);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('user.errorLoad');
-        this.loading.set(false);
-      },
-    });
-  }
 }

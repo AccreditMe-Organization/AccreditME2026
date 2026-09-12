@@ -316,6 +316,11 @@ export class DataListComponent<T> {
   // total() because the toolbar threshold depends on it — see showToolbar.
   private readonly unfilteredTotal = signal(0);
 
+  // Bumped by reload(). Read inside the load effect purely so an external
+  // refresh re-triggers it — there is no other way to re-run an effect whose
+  // real inputs are unchanged.
+  private readonly reloadToken = signal(0);
+
   constructor() {
     this.restore();
 
@@ -355,7 +360,16 @@ export class DataListComponent<T> {
     // must refetch rather than leave a stale page rendered.
     effect(() => {
       const source = this.source();
-      const query = { ...this.query(), pageSize: this.query().pageSize ?? this.pageSize() };
+      // The active scope travels WITH the query. Without this the chips would
+      // set isFiltered() — changing which empty state shows — while never
+      // actually narrowing anything: a filter that looks applied and is not.
+      const query: IListQuery = {
+        ...this.query(),
+        pageSize: this.query().pageSize ?? this.pageSize(),
+        scope: this.activeScope(),
+      };
+
+      this.reloadToken();
 
       this.loading.set(true);
       source(query).subscribe({
@@ -463,6 +477,18 @@ export class DataListComponent<T> {
 
     this.query.set(query);
     this.activeScope.set(scope);
+  }
+
+  // Reloads without changing the query. The parent needs this after a write —
+  // inviting a user, deactivating one — and nothing in the query changes, so
+  // the load effect would not fire on its own.
+  //
+  // Added because the FIRST real consumer needed it immediately, which is the
+  // same gap ACC-76 shipped and had to fix ("the panel does not update when a
+  // new task is added"). A list component that cannot be told to refresh is
+  // incomplete, not minimal.
+  reload(): void {
+    this.reloadToken.update((n) => n + 1);
   }
 
   onSearch(event: Event): void {
