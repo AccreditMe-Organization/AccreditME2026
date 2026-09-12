@@ -1,9 +1,7 @@
 import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
-import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
-import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import {
@@ -13,6 +11,11 @@ import {
 } from '../../services/workflow-template.service';
 import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stage-form.component';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { DataListComponent } from '../../../../shared/components/data-list/data-list.component';
+import {
+  DataListSource,
+  clientSideSource,
+} from '../../../../shared/components/data-list/data-list.source';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
@@ -21,10 +24,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
   standalone: true,
   imports: [
     TranslatePipe,
-    TableModule,
     ButtonModule,
-    TagModule,
     TooltipModule,
+    DataListComponent,
     WorkflowStageFormComponent,
     WorkflowTransitionEditorComponent,
     EditDialogComponent,
@@ -46,116 +48,133 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         <p class="text-red-500">{{ error() | translate }}</p>
       }
 
-      <p-table
-        [value]="stages()"
-        [loading]="loading()"
-        dataKey="id"
-        [expandedRowKeys]="expandedRowKeys()"
-        scrollable
-        scrollHeight="flex"
-        styleClass="w-full"
-      >
-        <ng-template pTemplate="header">
-          <tr>
-            <th style="width: 3%"></th>
-            <th style="width: 18%">{{ 'workflow.nameEn' | translate }}</th>
-            <th style="width: 15%">{{ 'workflow.nameAr' | translate }}</th>
-            <th style="width: 12%">{{ 'workflow.slaWorkingHours' | translate }}</th>
-            <th style="width: 14%">{{ 'workflow.approvalMode' | translate }}</th>
-            <th style="width: 14%">{{ 'workflow.assigneeStrategy' | translate }}</th>
-            <th style="width: 10%"></th>
-            <th style="width: 14%"></th>
-          </tr>
-        </ng-template>
+      <!-- ACC-78 — the shared list pattern, on the hardest of the three
+           proving tables: expandable rows containing a further editor,
+           client-side data with no endpoint, and a MANUALLY ORDERED set.
 
-        <ng-template pTemplate="body" let-stage let-i="rowIndex">
-          <tr>
-            <td>
-              <p-button
-                [icon]="isExpanded(stage.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
-                [text]="true"
-                size="small"
-                [pRowToggler]="stage"
-              />
-            </td>
-            <td>{{ stage.nameEn }}</td>
-            <td dir="rtl">{{ stage.nameAr }}</td>
-            <td>{{ stage.slaWorkingHours ? (stage.slaWorkingHours + 'h') : '—' }}</td>
-            <td>
-              <p-tag [value]="stage.approvalMode" severity="info" />
-            </td>
-            <td>{{ stage.assigneeStrategy }}</td>
-            <td>
-              <div class="flex gap-1">
-                @if (stage.isInitial) {
-                  <p-tag [value]="'workflow.isInitial' | translate" severity="success" />
-                }
-                @if (stage.isFinal) {
-                  <p-tag [value]="'workflow.isFinal' | translate" severity="secondary" />
-                }
+           NO sortOptions, deliberately and permanently. See the note on
+           stageIndex() below: this list's order IS its data, and offering to
+           reorder it by name would break the reorder buttons sitting in every
+           row. With six stages the toolbar does not render at all, so there is
+           no search box either — which is the size rule doing its job rather
+           than a special case. -->
+      <div class="rounded-lg border border-[var(--am-border)] bg-[var(--am-card)] overflow-hidden">
+        <app-data-list
+          [source]="source"
+          [trackBy]="trackById"
+          [emptyTitle]="'workflow.noStages' | translate"
+        >
+          <ng-template #listRow let-stage>
+            <div class="border-b border-[var(--am-border)]">
+              <div
+                class="grid items-center gap-3 px-3 py-2"
+                style="grid-template-columns: auto 1fr auto"
+              >
+                <p-button
+                  [icon]="isExpanded(stage.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+                  [text]="true"
+                  size="small"
+                  (onClick)="toggleExpanded(stage.id)"
+                />
+
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-[13px] font-medium truncate">{{ stage.nameEn }}</span>
+                    @if (stage.isInitial) {
+                      <span
+                        class="text-[10.5px] font-semibold px-1.5 py-px rounded shrink-0"
+                        style="color: var(--am-status-approved);
+                               background: color-mix(in srgb, var(--am-status-approved) 12%, transparent)"
+                      >
+                        {{ 'workflow.isInitial' | translate }}
+                      </span>
+                    }
+                    @if (stage.isFinal) {
+                      <span
+                        class="text-[10.5px] font-semibold px-1.5 py-px rounded shrink-0 text-[var(--am-text-secondary)]"
+                        style="background: var(--am-surface)"
+                      >
+                        {{ 'workflow.isFinal' | translate }}
+                      </span>
+                    }
+                  </div>
+                  <div
+                    dir="rtl"
+                    style="unicode-bidi: isolate"
+                    class="text-[11.5px] text-[var(--am-text-secondary)] truncate text-start"
+                  >
+                    {{ stage.nameAr }}
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <span
+                    class="hidden @min-[520px]/datalist:block text-xs text-[var(--am-text-secondary)] w-[150px] truncate"
+                  >
+                    {{ stage.approvalMode }} · {{ stage.assigneeStrategy }}
+                  </span>
+                  <span
+                    dir="ltr"
+                    style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
+                    class="hidden @min-[720px]/datalist:block text-xs text-[var(--am-text-secondary)] w-[52px]"
+                  >
+                    {{ stage.slaWorkingHours ? stage.slaWorkingHours + 'h' : '—' }}
+                  </span>
+                  <p-button
+                    icon="pi pi-arrow-up"
+                    [text]="true"
+                    size="small"
+                    [disabled]="reordering() || stageIndex(stage) === 0"
+                    [pTooltip]="'workflow.moveUp' | translate"
+                    (onClick)="onMoveUp(stageIndex(stage))"
+                  />
+                  <p-button
+                    icon="pi pi-arrow-down"
+                    [text]="true"
+                    size="small"
+                    [disabled]="reordering() || stageIndex(stage) === stages().length - 1"
+                    [pTooltip]="'workflow.moveDown' | translate"
+                    (onClick)="onMoveDown(stageIndex(stage))"
+                  />
+                  <p-button
+                    icon="pi pi-pencil"
+                    [text]="true"
+                    size="small"
+                    [disabled]="reordering()"
+                    [pTooltip]="'workflow.editStage' | translate"
+                    (onClick)="openEdit(stage)"
+                  />
+                  <p-button
+                    icon="pi pi-trash"
+                    [text]="true"
+                    size="small"
+                    severity="danger"
+                    [disabled]="reordering()"
+                    [pTooltip]="'common.remove' | translate"
+                    (onClick)="onRemove(stage)"
+                  />
+                </div>
               </div>
-            </td>
-            <td>
-              <div class="flex gap-1 justify-end">
-                <p-button
-                  icon="pi pi-arrow-up"
-                  [text]="true"
-                  size="small"
-                  [disabled]="reordering() || i === 0"
-                  [pTooltip]="'workflow.moveUp' | translate"
-                  (onClick)="onMoveUp(i)"
-                />
-                <p-button
-                  icon="pi pi-arrow-down"
-                  [text]="true"
-                  size="small"
-                  [disabled]="reordering() || i === stages().length - 1"
-                  [pTooltip]="'workflow.moveDown' | translate"
-                  (onClick)="onMoveDown(i)"
-                />
-                <p-button
-                  icon="pi pi-pencil"
-                  [text]="true"
-                  size="small"
-                  [disabled]="reordering()"
-                  [pTooltip]="'workflow.editStage' | translate"
-                  (onClick)="openEdit(stage)"
-                />
-                <p-button
-                  icon="pi pi-trash"
-                  [text]="true"
-                  size="small"
-                  severity="danger"
-                  [disabled]="reordering()"
-                  [pTooltip]="'common.remove' | translate"
-                  (onClick)="onRemove(stage)"
-                />
-              </div>
-            </td>
-          </tr>
-        </ng-template>
 
-        <ng-template pTemplate="expandedrow" let-stage>
-          <tr>
-            <td colspan="8" class="p-3">
-              <app-workflow-transition-editor
-                [stageId]="stage.id"
-                [transitions]="stage.transitions ?? []"
-                [availableStages]="stages()"
-                (changed)="loadTemplate()"
-              />
-            </td>
-          </tr>
-        </ng-template>
-
-        <ng-template pTemplate="emptymessage">
-          <tr>
-            <td colspan="8" class="text-center py-8 text-[var(--am-text-secondary)]">
-              {{ 'workflow.noStages' | translate }}
-            </td>
-          </tr>
-        </ng-template>
-      </p-table>
+              <!-- The expansion lives INSIDE the projected row rather than in a
+                   separate expandedrow template. p-table needed dataKey,
+                   pRowToggler and expandedRowKeys to coordinate two templates;
+                   here the row owns its own disclosure, and the nested editor
+                   is simply a child of it. -->
+              @if (isExpanded(stage.id)) {
+                <div class="px-3 pb-3 bg-[var(--am-surface)]">
+                  <app-workflow-transition-editor
+                    [stageId]="stage.id"
+                    [transitions]="stage.transitions ?? []"
+                    [availableStages]="stages()"
+                    (changed)="loadTemplate()"
+                  />
+                </div>
+              }
+            </div>
+          </ng-template>
+        </app-data-list>
+      </div>
 
       <ng-template #formTpl>
         <app-workflow-stage-form
@@ -194,6 +213,34 @@ export class WorkflowStageListComponent implements OnInit {
 
   readonly templateId = computed(() => this.template()?.id ?? '');
   readonly stages = computed(() => this.template()?.stages ?? []);
+
+  // ACC-78 — client-side source: stages arrive NESTED inside getTemplate() as
+  // template.stages, and there is no GET /stages to paginate. This is the case
+  // DataListSource exists for — the component cannot tell the difference.
+  //
+  // No comparators and no default sort. This list is MANUALLY ORDERED and the
+  // order is the data; see stageIndex() below.
+  readonly source: DataListSource<WorkflowStageDto> = clientSideSource(
+    () => this.stages(),
+    { searchFields: (stage) => [stage.nameEn, stage.nameAr] },
+  );
+
+  readonly trackById = (stage: WorkflowStageDto): string => stage.id;
+
+  // The stage's position in the UNDERLYING array, not its position on screen.
+  //
+  // This matters more than it looks. onMoveUp/onMoveDown take an index into
+  // stages() and swap `order` values, so a render index would be correct only
+  // while the rendered order happens to match the array — true today, and
+  // silently false the moment anyone adds a sort option or a page size. Reading
+  // the real index makes the buttons independent of how the list is displayed.
+  stageIndex(stage: WorkflowStageDto): number {
+    return this.stages().findIndex((s) => s.id === stage.id);
+  }
+
+  toggleExpanded(stageId: string): void {
+    this.expandedRowKeys.update((keys) => ({ ...keys, [stageId]: !keys[stageId] }));
+  }
 
   // Admins never type order numbers — a new stage is appended after the
   // current highest order, in the same +10 stride the system seed data uses.
