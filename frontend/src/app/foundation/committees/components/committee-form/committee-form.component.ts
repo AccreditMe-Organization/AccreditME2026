@@ -225,7 +225,7 @@ export class CommitteeFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.lookupService.getValues('committee_type').subscribe({ next: (values) => this.committeeTypes.set(values) });
-    this.roleService.listRoles().subscribe({ next: (roles) => this.roles.set(roles) });
+    this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
     this.committeeService.listCommittees().subscribe({
       next: (committees) => {
         const currentId = this.committee()?.id;

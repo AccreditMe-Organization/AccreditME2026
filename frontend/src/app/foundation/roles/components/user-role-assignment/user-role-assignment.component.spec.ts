@@ -52,7 +52,11 @@ describe('UserRoleAssignmentComponent (ACC-26)', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${environment.apiUrl}/users/user-1/roles`).flush([]);
-    httpMock.expectOne(`${environment.apiUrl}/roles`).flush([ROLE_A]);
+    // ACC-78 — listAllRoles() asks for the page-size cap and the endpoint
+    // returns the shared envelope.
+    httpMock
+      .expectOne(`${environment.apiUrl}/roles?pageSize=200`)
+      .flush({ data: [ROLE_A], total: 1, page: 1, pageSize: 200 });
     fixture.detectChanges();
   });
 
@@ -72,7 +76,11 @@ describe('UserRoleAssignmentComponent (ACC-26)', () => {
     req.flush(null, { status: 204, statusText: 'No Content' });
 
     httpMock.expectOne(`${environment.apiUrl}/users/user-1/roles`).flush([]);
-    httpMock.expectOne(`${environment.apiUrl}/roles`).flush([ROLE_A]);
+    // ACC-78 — listAllRoles() asks for the page-size cap and the endpoint
+    // returns the shared envelope.
+    httpMock
+      .expectOne(`${environment.apiUrl}/roles?pageSize=200`)
+      .flush({ data: [ROLE_A], total: 1, page: 1, pageSize: 200 });
   });
 
   it('extracts a readable string from an array-shaped 400 response instead of storing the raw array', () => {
@@ -110,7 +118,11 @@ describe('UserRoleAssignmentComponent (ACC-26)', () => {
       component.onAssign();
       httpMock.expectOne(`${environment.apiUrl}/users/user-1/roles`).flush(null, { status: 204, statusText: 'No Content' });
       httpMock.expectOne(`${environment.apiUrl}/users/user-1/roles`).flush([]);
-      httpMock.expectOne(`${environment.apiUrl}/roles`).flush([ROLE_A]);
+      // ACC-78 — listAllRoles() asks for the page-size cap and the endpoint
+    // returns the shared envelope.
+    httpMock
+      .expectOne(`${environment.apiUrl}/roles?pageSize=200`)
+      .flush({ data: [ROLE_A], total: 1, page: 1, pageSize: 200 });
       fixture.detectChanges();
       tick();
       fixture.detectChanges();

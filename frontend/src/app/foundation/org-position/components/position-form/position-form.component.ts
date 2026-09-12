@@ -189,7 +189,7 @@ export class PositionFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.roleService.listRoles().subscribe({ next: (roles) => this.allRoles.set(roles) });
+    this.roleService.listAllRoles().subscribe({ next: (roles) => this.allRoles.set(roles) });
   }
 
   onSubmit(): void {
