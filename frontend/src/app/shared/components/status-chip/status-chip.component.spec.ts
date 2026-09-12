@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideTranslateService } from '@ngx-translate/core';
 import { StatusChipComponent, StatusChipVariant } from './status-chip.component';
+import en from '../../../../assets/i18n/en.json';
 
 // ACC-78 — the tiering is the whole point of this component, so it is what is
 // tested. Colour values are not asserted: those live in tokens.scss and change
@@ -88,6 +89,58 @@ describe('StatusChipComponent (ACC-78)', () => {
     f.detectChanges();
 
     expect(f.componentInstance.labelKey()).toBe('user.status.invited');
+  });
+
+  // ACC-78 — the assertion that would actually have caught the shipped bug.
+  //
+  // translation-keys.spec.ts checks that `user.status.invited` EXISTS. It did
+  // exist; the defect was that this component asked for `user.invited`
+  // instead. Only running the component's own key-building code against the
+  // real translation file catches that, so that is what this does.
+  //
+  // The configurations are the ones the app actually uses. That list is hand
+  // maintained — a new call site with a new prefix is not covered here.
+  describe('every configuration used in the app resolves to a real key', () => {
+    const flat = (obj: unknown, prefix = ''): Record<string, string> => {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+        if (v !== null && typeof v === 'object') Object.assign(out, flat(v, `${prefix}${k}.`));
+        else out[`${prefix}${k}`] = String(v);
+      }
+      return out;
+    };
+    const KEYS = flat(en);
+
+    const CALL_SITES: { where: string; variant: StatusChipVariant; prefix: string; values: string[] }[] = [
+      {
+        where: 'user-list',
+        variant: 'user',
+        prefix: 'user.status',
+        values: ['ACTIVE', 'INVITED', 'INACTIVE'],
+      },
+      { where: 'role-list', variant: 'account', prefix: '', values: ['CANCELLED'] },
+    ];
+
+    for (const { where, variant, prefix, values } of CALL_SITES) {
+      it(`resolves for ${where}`, () => {
+        const unresolved: string[] = [];
+
+        for (const value of values) {
+          const f = TestBed.createComponent(StatusChipComponent);
+          f.componentRef.setInput('variant', variant);
+          f.componentRef.setInput('value', value);
+          if (prefix) f.componentRef.setInput('labelPrefix', prefix);
+          f.detectChanges();
+
+          const key = f.componentInstance.labelKey();
+          if (!(key in KEYS)) unresolved.push(key);
+        }
+
+        expect(unresolved)
+          .withContext(`${where} would render these raw keys on screen: ${unresolved.join(', ')}`)
+          .toEqual([]);
+      });
+    }
   });
 
   // An unmapped value must not render an invisible chip — the CSS var()
