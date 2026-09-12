@@ -4,6 +4,8 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { NotificationService } from './notification.service';
 import { INotification } from './interfaces/notification.interface';
+import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
+import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 
 // No @Permissions() on any endpoint here, and no PermissionGuard — a user's
 // own notification inbox is not permission-gated content, it is intrinsically
@@ -17,18 +19,22 @@ import { INotification } from './interfaces/notification.interface';
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
+  // ACC-78 — page-based, returns a total, and `status` is declared ON the DTO.
+  // It was a separate @Query('status') at first, which meant any request
+  // carrying it was rejected 400 by the global pipe — latent here only because
+  // both callers pass nothing. See ListUsersQueryDto for the full account.
   @Get()
   getForUser(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
-    @Query('status') status?: 'UNREAD' | 'READ' | 'DISMISSED',
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-  ): Promise<INotification[]> {
+    @Query() query: ListNotificationsQueryDto,
+  ): Promise<IPaginatedResponse<INotification>> {
     return this.notificationService.getForUser(userId, tenantId, {
-      status,
-      limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
+      status: query.status,
+      page: query.page,
+      pageSize: query.pageSize,
+      sortBy: query.sortBy,
+      sortDir: query.sortDir,
     });
   }
 

@@ -15,6 +15,8 @@ import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IUser } from './interfaces/user.interface';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { IRole } from '../roles/interfaces/role.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
@@ -26,17 +28,47 @@ export class UserController {
 
   @Get()
   @Permissions(USERS_PERMISSIONS.VIEW)
+  // ACC-78 — ONE DTO carrying both the shared list contract and this
+  // endpoint's own filters. Separate @Query('status') parameters alongside a
+  // bare @Query() DTO looked equivalent and was not: the bare @Query() binds
+  // the whole query object, so forbidNonWhitelisted rejected every filter with
+  // a 400. See ListUsersQueryDto's own comment and user.contract.spec.ts.
   async listUsers(
     @CurrentTenant() tenantId: string,
-    @Query('status') status?: string,
-    @Query('orgUnitId') orgUnitId?: string,
-    @Query('search') search?: string,
-  ): Promise<IUser[]> {
+    @Query() query: ListUsersQueryDto,
+  ): Promise<IPaginatedResponse<IUser>> {
+    const result = await this.userService.listUsers(tenantId, {
+      status: query.status,
+      orgUnitId: query.orgUnitId,
+      positionId: query.positionId,
+      search: query.search,
+      page: query.page,
+      pageSize: query.pageSize,
+      sortBy: query.sortBy,
+      sortDir: query.sortDir,
+    });
     // ACC-45 — mapped via toSafeUser() at this HTTP boundary; see its own
     // comment in user.service.ts for why this isn't baked into
     // UserService.listUsers() itself.
-    const users = await this.userService.listUsers(tenantId, { status, orgUnitId, search });
-    return users.map(toSafeUser);
+    //
+    // ACC-78 — maps over `.data` and rebuilds the envelope rather than
+    // spreading it. Spreading would carry `data` through unmapped if the field
+    // order ever changed, which is exactly the silent-leak shape ACC-45 exists
+    // to prevent: the raw Prisma row satisfies IUser structurally, so a missed
+    // mapping compiles cleanly and leaks invitationToken at runtime.
+    return { ...result, data: result.data.map(toSafeUser) };
+  }
+
+  // ACC-78 — counts for the list's filter chips.
+  //
+  // DECLARED BEFORE @Get(':id') AND IT MUST STAY THERE. Nest matches routes in
+  // declaration order, so below that one this path would be swallowed as an id
+  // and return "user status-counts not found" — a 404 that looks like a data
+  // problem rather than a routing one.
+  @Get('status-counts')
+  @Permissions(USERS_PERMISSIONS.VIEW)
+  getStatusCounts(@CurrentTenant() tenantId: string): Promise<Record<string, number>> {
+    return this.userService.getStatusCounts(tenantId);
   }
 
   // ACC-43 — no @Permissions() decorator here on purpose, same reasoning

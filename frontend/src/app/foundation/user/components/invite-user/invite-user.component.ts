@@ -211,7 +211,7 @@ export class InviteUserComponent implements OnInit {
     // exists on both frontend and backend, this is the first consumer to
     // actually pass it. orgUnitId: undefined (no unit selected yet) keeps
     // the pre-ACC-46 unfiltered "every active user" behavior.
-    this.userService.listUsers({ status: 'ACTIVE', orgUnitId: orgUnitId ?? undefined }).subscribe({
+    this.userService.listAllUsers({ status: 'ACTIVE', orgUnitId: orgUnitId ?? undefined }).subscribe({
       next: (users) =>
         this.managers.set(
           users.map((u) => ({ id: u.id, name: u.name, primaryOrgUnitId: u.primaryOrgUnitId })),

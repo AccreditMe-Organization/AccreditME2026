@@ -617,7 +617,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   });
 
   ngOnInit(): void {
-    this.roleService.listRoles().subscribe({ next: (roles) => this.roles.set(roles) });
+    this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
     this.loadPermissions();
   }
 

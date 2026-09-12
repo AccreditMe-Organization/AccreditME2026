@@ -171,9 +171,11 @@ export class HomeComponent implements OnInit {
 
   private loadNotifications(): void {
     this.notificationsLoading.set(true);
+    // ACC-78 — unwraps the shared envelope. Like the bell, this panel wants the
+    // newest few and ignores `total`.
     this.notificationService.list(undefined, 5).subscribe({
-      next: (items) => {
-        this.notifications.set(items);
+      next: (page) => {
+        this.notifications.set(page.data);
         this.notificationsLoading.set(false);
       },
       error: () => this.notificationsLoading.set(false),

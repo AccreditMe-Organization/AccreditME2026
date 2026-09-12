@@ -23,7 +23,8 @@
     "no": "No",
     "back": "Back",
     "next": "Next",
-    "close": "Close"
+    "close": "Close",
+    "remove": "Remove"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -181,7 +182,11 @@
     "noRoles": "No roles found.",
     "noPermissions": "No permissions assigned.",
     "permissionsColumn": "Permissions",
-    "errorLoad": "Failed to load roles."
+    "errorLoad": "Failed to load roles.",
+    "searchPlaceholder": "Search roles…",
+    "permissionCount": "{{count}} permissions",
+    "name": "Role",
+    "permissions": "Permissions"
   },
   "workflow": {
     "title": "Workflow Templates",
@@ -276,7 +281,10 @@
       "inStageDays": "in stage {{days}} days",
       "revisited": "revisited ×{{count}}",
       "since": "since {{date}}"
-    }
+    },
+    "stageName": "Stage",
+    "sla": "SLA",
+    "searchStages": "Search stages…"
   },
   "notification": {
     "title": "Notifications",
@@ -528,7 +536,12 @@
       "errorSetup": "Failed to start two-factor authentication setup. Check your password and try again.",
       "errorVerify": "Invalid or expired code. Please try again.",
       "errorDisable": "Failed to disable two-factor authentication. Check your password and try again."
-    }
+    },
+    "searchPlaceholder": "Search by name or email…",
+    "noUsersBody": "Invite colleagues to give them access to this organization.",
+    "createdAt": "Date added",
+    "allOrgUnits": "All org units",
+    "allPositions": "All positions"
   },
   "platform": {
     "tenants": "Tenants",
@@ -629,5 +642,17 @@
     "noOpenTasks": "You have no open tasks.",
     "notifications": "Recent Notifications",
     "noNotifications": "No recent notifications."
+  },
+  "list": {
+    "noResults": "No matching results",
+    "noResultsBody": "Nothing here matches your search.",
+    "clearSearch": "Clear search",
+    "range": "{first}-{last} of {totalRecords}",
+    "errorLoad": "This list could not be loaded. Please try again.",
+    "preferencesNote": "Sorting and page size are remembered on this device.",
+    "columns": "Columns",
+    "more": "More actions",
+    "clearFilters": "Clear filters",
+    "panelRange": "{{first}}–{{last}} of {{total}}"
   }
 }

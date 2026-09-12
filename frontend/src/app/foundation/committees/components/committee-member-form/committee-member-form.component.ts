@@ -137,7 +137,7 @@ export class CommitteeMemberFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({ next: (users) => this.users.set(users) });
+    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({ next: (users) => this.users.set(users) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
     this.lookupService.getValues('committee_member_role').subscribe({
       next: (values) => this.memberRoles.set(values),

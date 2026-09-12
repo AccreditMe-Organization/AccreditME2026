@@ -419,7 +419,7 @@ export class UserProfileComponent implements OnInit {
   ngOnInit(): void {
     this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
-    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({
+    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({
       next: (users) =>
         this.otherUsers.set(
           users

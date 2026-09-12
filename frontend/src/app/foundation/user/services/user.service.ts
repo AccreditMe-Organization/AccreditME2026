@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { IPaginatedResponse } from '../../../shared/models/paginated-response';
 import { IOrgPositionDto } from '../../org-position/services/org-position.service';
 
 export interface IUserDto {
@@ -50,8 +51,14 @@ export interface UpdateOutOfOfficeDto {
 }
 
 export interface ListUsersFilters {
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
   status?: string;
   orgUnitId?: string;
+  // ACC-78 — the reference's filter bar is status + org unit + position.
+  positionId?: string;
   search?: string;
 }
 
@@ -104,12 +111,44 @@ export class UserService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiUrl}/users`;
 
-  listUsers(filters?: ListUsersFilters): Observable<IUserDto[]> {
+  // ACC-78 — paginated. status/orgUnitId remain this endpoint's own filters;
+  // search/page/pageSize/sort are the shared list contract.
+  listUsers(filters?: ListUsersFilters): Observable<IPaginatedResponse<IUserDto>> {
     let params = new HttpParams();
     if (filters?.status) params = params.set('status', filters.status);
     if (filters?.orgUnitId) params = params.set('orgUnitId', filters.orgUnitId);
+    if (filters?.positionId) params = params.set('positionId', filters.positionId);
     if (filters?.search) params = params.set('search', filters.search);
-    return this.http.get<IUserDto[]>(this.base, { params });
+    if (filters?.page) params = params.set('page', filters.page);
+    if (filters?.pageSize) params = params.set('pageSize', filters.pageSize);
+    if (filters?.sortBy) params = params.set('sortBy', filters.sortBy);
+    if (filters?.sortDir) params = params.set('sortDir', filters.sortDir);
+    return this.http.get<IPaginatedResponse<IUserDto>>(this.base, { params });
+  }
+
+  // ACC-78 — "every matching user", for the pickers and lookups that are not
+  // lists and must not be paginated.
+  //
+  // WHY THIS EXISTS RATHER THAN .data AT EACH CALL SITE. Ten components call
+  // listUsers() to populate a dropdown or resolve ids to names. Paginating the
+  // endpoint made every one of them silently return the FIRST PAGE — a picker
+  // quietly capped at 25 users, with no error and no visible symptom beyond a
+  // colleague missing from a list. Unwrapping .data individually would have
+  // fixed the types and left that behaviour in place, which is the worse
+  // failure: it compiles, it renders, and it is wrong.
+  //
+  // Capped at the backend's own @Max(200). A tenant with more than 200 active
+  // users has outgrown a dropdown and needs a searching picker — which is a
+  // real ticket, not something to paper over with a larger number.
+  listAllUsers(filters?: Omit<ListUsersFilters, 'page' | 'pageSize'>): Observable<IUserDto[]> {
+    return this.listUsers({ ...filters, pageSize: 200 }).pipe(map((page) => page.data));
+  }
+
+  // ACC-78 — counts behind the list's filter chips. Separate from the list
+  // because the list is already filtered: on the Invited chip its total IS the
+  // invited count, so every other chip would read zero.
+  getStatusCounts(): Observable<Record<string, number>> {
+    return this.http.get<Record<string, number>>(`${this.base}/status-counts`);
   }
 
   getById(id: string): Observable<IUserDto> {

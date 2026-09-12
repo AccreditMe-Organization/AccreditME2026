@@ -89,6 +89,17 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
       ],
     });
 
+    // ACC-78 — the role picker reads listAllRoles(), which asks for
+    // ?pageSize=200 and expects the PAGINATED ENVELOPE. Flushing a bare array
+    // here would leave `.data` undefined rather than failing loudly, so the
+    // shape matters even though the test does not read the roles.
+    const drainRoles = (http: HttpTestingController): void => {
+      http
+        .match((r) => r.url === `${environment.apiUrl}/roles`)
+        .forEach((r) => r.flush({ data: [], total: 0, page: 1, pageSize: 200 }));
+      http.match(`${environment.apiUrl}/roles/permissions`).forEach((r) => r.flush([]));
+    };
+
     const fixture = TestBed.createComponent(WorkflowStageListComponent);
     const http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
@@ -101,8 +112,7 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
 
     const editorDebug = fixture.debugElement.query(By.directive(WorkflowTransitionEditorComponent));
     const editor = editorDebug.componentInstance as WorkflowTransitionEditorComponent;
-    http.match(`${environment.apiUrl}/roles`).forEach((r) => r.flush([]));
-    http.match(`${environment.apiUrl}/roles/permissions`).forEach((r) => r.flush([]));
+    drainRoles(http);
     fixture.detectChanges();
 
     editor.openEdit(TRANSITION);
@@ -132,8 +142,11 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
     fixture.detectChanges();
     http.expectOne(`${environment.apiUrl}/workflow-templates/template-1`).flush(template());
     fixture.detectChanges();
-    http.match(`${environment.apiUrl}/roles`).forEach((r) => r.flush([]));
-    http.match(`${environment.apiUrl}/roles/permissions`).forEach((r) => r.flush([]));
+    // Drained twice, and the second time is not redundant: reopening the
+    // expanded row rebuilds the editor, which fetches its role list again.
+    drainRoles(http);
+    fixture.detectChanges();
+    drainRoles(http);
 
     http.verify();
   });

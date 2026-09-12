@@ -206,7 +206,7 @@ export class TaskFormComponent implements OnInit {
     // it, but a tenant-created role need not — hence the quiet failure: an
     // empty list renders the explanatory message and the task can still be
     // created unassigned.
-    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({
+    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({
       next: (users) => this.users.set(users),
       error: () => this.users.set([]),
     });

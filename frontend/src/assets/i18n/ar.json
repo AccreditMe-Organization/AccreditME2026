@@ -23,7 +23,8 @@
     "no": "لا",
     "back": "رجوع",
     "next": "التالي",
-    "close": "إغلاق"
+    "close": "إغلاق",
+    "remove": "إزالة"
   },
   "nav": {
     "dashboard": "لوحة التحكم",
@@ -181,7 +182,11 @@
     "noRoles": "لا توجد أدوار.",
     "noPermissions": "لا توجد صلاحيات مسندة.",
     "permissionsColumn": "الصلاحيات",
-    "errorLoad": "فشل تحميل الأدوار."
+    "errorLoad": "فشل تحميل الأدوار.",
+    "searchPlaceholder": "ابحث في الأدوار…",
+    "permissionCount": "{{count}} صلاحية",
+    "name": "الدور",
+    "permissions": "الصلاحيات"
   },
   "workflow": {
     "title": "قوالب سير العمل",
@@ -276,7 +281,10 @@
       "inStageDays": "في هذه المرحلة {{days}} يوماً",
       "revisited": "أُعيدت ×{{count}}",
       "since": "منذ {{date}}"
-    }
+    },
+    "stageName": "المرحلة",
+    "sla": "مدة الإنجاز",
+    "searchStages": "ابحث في المراحل…"
   },
   "notification": {
     "title": "الإشعارات",
@@ -528,7 +536,12 @@
       "errorSetup": "فشل بدء إعداد المصادقة الثنائية. تحقق من كلمة المرور وحاول مرة أخرى.",
       "errorVerify": "رمز غير صحيح أو منتهي الصلاحية. حاول مرة أخرى.",
       "errorDisable": "فشل إلغاء تفعيل المصادقة الثنائية. تحقق من كلمة المرور وحاول مرة أخرى."
-    }
+    },
+    "searchPlaceholder": "ابحث بالاسم أو البريد الإلكتروني…",
+    "noUsersBody": "ادعُ زملاءك لمنحهم صلاحية الوصول إلى هذه المؤسسة.",
+    "createdAt": "تاريخ الإضافة",
+    "allOrgUnits": "كل الوحدات التنظيمية",
+    "allPositions": "كل المسميات الوظيفية"
   },
   "platform": {
     "tenants": "المؤسسات",
@@ -629,5 +642,17 @@
     "noOpenTasks": "لا توجد لديك مهام مفتوحة.",
     "notifications": "الإشعارات الأخيرة",
     "noNotifications": "لا توجد إشعارات حديثة."
+  },
+  "list": {
+    "noResults": "لا توجد نتائج مطابقة",
+    "noResultsBody": "لا يوجد ما يطابق بحثك هنا.",
+    "clearSearch": "إزالة البحث",
+    "range": "{first}-{last} من {totalRecords}",
+    "errorLoad": "تعذّر تحميل هذه القائمة. يرجى المحاولة مرة أخرى.",
+    "preferencesNote": "يتم تذكّر الترتيب وحجم الصفحة على هذا الجهاز.",
+    "columns": "الأعمدة",
+    "more": "إجراءات أخرى",
+    "clearFilters": "إزالة عوامل التصفية",
+    "panelRange": "{{first}}–{{last}} من {{total}}"
   }
 }

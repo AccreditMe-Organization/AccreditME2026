@@ -1945,6 +1945,37 @@ Prisma Studio.
 
 ## Open / Deferred Items
 
+- **No tenant-user password exists anywhere in the repo, so browser
+  verification of any tenant-scoped feature requires impersonation.**
+  Found during ACC-78's rebuild, when the acceptance standard was
+  explicitly "a browser, not a test count" and there turned out to be
+  no ordinary way in.
+  `demo-seed.ts` is genesis-only since ACC-23 — it creates the platform
+  org and `PLATFORM_ADMIN` (password `Platform@123456`) and nothing
+  else. The two realistic tenants (`al-nakheel`, `al-manara`, ACC-62)
+  were provisioned through the real flows, and no credential for any of
+  their 47 users is recorded in the repo or in ACC-62's own plan file.
+  So the only routes to a tenant-scoped screen are: log in as the
+  platform admin and **impersonate** a tenant admin; reset a seeded
+  user's password directly, mutating shared dev data; or invite a new
+  user, permanently adding a row to a carefully built seed.
+  **Impersonation is the designed path and it works — but it is not
+  free.** It is audit-logged by design (ACC-13), so every verification
+  session writes `AuditLog` rows attributing the actions to whoever's
+  platform-admin account was used. That is correct behaviour recording
+  something slightly untrue: the platform admin did not do that work,
+  an agent verifying a branch did. It also means a verification pass
+  cannot exercise a genuine non-admin persona's permission gating,
+  which is exactly what "Sequence to Meeting Management" item 5 asks
+  for ("a live Quality Manager persona test — every test so far used
+  Tenant Admin").
+  Worth deciding once: either record dev credentials for the seeded
+  personas somewhere deliberate (a gitignored file, or printed by the
+  seed the way the platform admin's already are), or accept
+  impersonation and note that audit rows from verification sessions are
+  expected noise. Not scoped here — recorded so the next person does
+  not rediscover it mid-task, and so the audit entries are not later
+  read as a real platform admin poking at a tenant.
 - **Resend email domain (`accreditme.com`) is not verified** in the
   Resend dashboard — invitation/notification emails will not actually
   deliver until this is configured. Infrastructure task, not a code

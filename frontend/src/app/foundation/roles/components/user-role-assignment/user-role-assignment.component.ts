@@ -130,7 +130,7 @@ export class UserRoleAssignmentComponent implements OnChanges {
   }
 
   private loadAllRoles(): void {
-    this.roleService.listRoles().subscribe({
+    this.roleService.listAllRoles().subscribe({
       next: (roles) => this.allRoles.set(roles),
       error: () => this.error.set('roles.errorLoad'),
     });

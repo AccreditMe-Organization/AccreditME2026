@@ -141,9 +141,12 @@ export class NotificationBellComponent implements OnInit {
   private loadRecent(): void {
     this.loading.set(true);
     this.error.set(null);
+    // ACC-78 — reads `.data` off the shared envelope. The bell wants the newest
+    // few and ignores `total`; it is unaffected by the contract change beyond
+    // this one unwrap.
     this.notificationService.list(undefined, 10).subscribe({
-      next: (items) => {
-        this.recent.set(items);
+      next: (page) => {
+        this.recent.set(page.data);
         this.loading.set(false);
       },
       error: () => {

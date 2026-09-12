@@ -56,7 +56,9 @@ describe('InviteUserComponent (ACC-43)', () => {
 
     httpMock.expectOne(`${environment.apiUrl}/org-positions`).flush([ACTIVE_POSITION, INACTIVE_POSITION]);
     httpMock.expectOne(`${environment.apiUrl}/organization/units/flat`).flush([]);
-    httpMock.expectOne(`${environment.apiUrl}/users?status=ACTIVE`).flush([]);
+    httpMock
+      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
+      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
   });
 
   afterEach(() => httpMock.verify());
@@ -95,7 +97,9 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
 
     httpMock.expectOne(`${environment.apiUrl}/org-positions`).flush([ACTIVE_POSITION, HEAD_POSITION]);
     httpMock.expectOne(`${environment.apiUrl}/organization/units/flat`).flush([ROOT_UNIT, NON_ROOT_UNIT]);
-    httpMock.expectOne(`${environment.apiUrl}/users?status=ACTIVE`).flush([]);
+    httpMock
+      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
+      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
   });
 
   afterEach(() => httpMock.verify());
@@ -106,7 +110,12 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
     const managersReq = httpMock.expectOne(
       (req) => req.url === `${environment.apiUrl}/users` && req.params.get('orgUnitId') === 'unit-1',
     );
-    managersReq.flush([{ id: 'head-user', name: 'Unit Head', primaryOrgUnitId: 'unit-1' }]);
+    managersReq.flush({
+      data: [{ id: 'head-user', name: 'Unit Head', primaryOrgUnitId: 'unit-1' }],
+      total: 1,
+      page: 1,
+      pageSize: 200,
+    });
 
     const headStatusReq = httpMock.expectOne(`${environment.apiUrl}/organization/units/unit-1/head`);
     headStatusReq.flush({ holders: [{ id: 'head-user', name: 'Unit Head', positionId: 'pos-director' }], pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null });
@@ -118,7 +127,7 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
   it('does not auto-default managerId when the selected unit has no current Head', () => {
     component.form.controls.primaryOrgUnitId.setValue('unit-1');
 
-    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users` && req.params.get('orgUnitId') === 'unit-1').flush([]);
+    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users` && req.params.get('orgUnitId') === 'unit-1').flush({ data: [], total: 0, page: 1, pageSize: 200 });
     httpMock.expectOne(`${environment.apiUrl}/organization/units/unit-1/head`).flush({ holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null });
 
     expect(component.form.controls.managerId.value).toBeNull();
@@ -126,7 +135,7 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
 
   it('requires managerId for an ordinary invite by default', () => {
     component.form.patchValue({ name: 'A', email: 'a@example.com', positionId: 'pos-active', primaryOrgUnitId: 'unit-1' });
-    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users`).flush([]);
+    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users`).flush({ data: [], total: 0, page: 1, pageSize: 200 });
     httpMock.expectOne(`${environment.apiUrl}/organization/units/unit-1/head`).flush({ holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null });
 
     expect(component.form.controls.managerId.hasValidator(Validators.required)).toBe(true);
@@ -135,7 +144,7 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
 
   it('exempts managerId only when the invitee is the ROOT unit\'s own Head — narrow, not "anyone in root"', () => {
     component.form.patchValue({ name: 'A', email: 'a@example.com', positionId: 'pos-director', primaryOrgUnitId: 'unit-root' });
-    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users`).flush([]);
+    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users`).flush({ data: [], total: 0, page: 1, pageSize: 200 });
     httpMock.expectOne(`${environment.apiUrl}/organization/units/unit-root/head`).flush({ holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null });
 
     expect(component.isRootUnitHeadInvite()).toBe(true);
@@ -144,7 +153,7 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
 
   it('still requires managerId for an ordinary (non-Head) invite into the root unit', () => {
     component.form.patchValue({ name: 'A', email: 'a@example.com', positionId: 'pos-active', primaryOrgUnitId: 'unit-root' });
-    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users`).flush([]);
+    httpMock.expectOne((req) => req.url === `${environment.apiUrl}/users`).flush({ data: [], total: 0, page: 1, pageSize: 200 });
     httpMock.expectOne(`${environment.apiUrl}/organization/units/unit-root/head`).flush({ holders: [], pendingHeadUserId: null, headHandoverEffectiveDate: null, actingHeadUserId: null });
 
     expect(component.isRootUnitHeadInvite()).toBe(false);

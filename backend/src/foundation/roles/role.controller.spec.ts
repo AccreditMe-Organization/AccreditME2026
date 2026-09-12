@@ -54,7 +54,10 @@ describe('RoleController', () => {
 
   beforeEach(async () => {
     service = {
-      getRoles: jest.fn().mockResolvedValue([MOCK_ROLE]),
+      // ACC-78 — the envelope, not a bare array.
+      getRoles: jest
+        .fn()
+        .mockResolvedValue({ data: [MOCK_ROLE], total: 1, page: 1, pageSize: 25 }),
       getRoleById: jest.fn().mockResolvedValue(MOCK_ROLE),
       createRole: jest.fn().mockResolvedValue(MOCK_ROLE),
       updateRole: jest.fn().mockResolvedValue(MOCK_ROLE),
@@ -83,10 +86,23 @@ describe('RoleController', () => {
   // ── getRoles ──────────────────────────────────────────────────────────────
 
   describe('getRoles', () => {
-    it('delegates to roleService.getRoles with tenantId', async () => {
-      const result = await controller.getRoles(TENANT_ID);
-      expect(service.getRoles).toHaveBeenCalledWith(TENANT_ID);
-      expect(result).toHaveLength(1);
+    // ACC-78 — paginated via the shared PaginationQueryDto.
+    it('delegates to roleService.getRoles with tenantId and the list query', async () => {
+      const result = await controller.getRoles(TENANT_ID, {
+        search: 'quality',
+        page: 2,
+        pageSize: 10,
+        sortBy: 'nameAr',
+        sortDir: 'asc',
+      });
+      expect(service.getRoles).toHaveBeenCalledWith(TENANT_ID, {
+        search: 'quality',
+        page: 2,
+        pageSize: 10,
+        sortBy: 'nameAr',
+        sortDir: 'asc',
+      });
+      expect(result.data).toHaveLength(1);
     });
   });
 

@@ -9,6 +9,7 @@ import { OrganizationService } from '../organization/organization.service';
 import { AuthProvider } from '../../providers/auth/auth.provider';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrgPositionService } from '../org-position/org-position.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
@@ -47,6 +48,7 @@ describe('UserService', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
         count: jest.fn(),
+        groupBy: jest.fn(),
       },
       // ACC-46 Section 2.6.c — a real prisma.$transaction(async (tx) => ...)
       // call, mocked by invoking the callback with mockPrisma itself, so
@@ -159,9 +161,189 @@ describe('UserService', () => {
       );
 
       const result = await service.listUsers(ORG_A);
-      expect(result).toHaveLength(1);
-      expect(result[0]?.organizationId).toBe(ORG_A);
+      // ACC-78 — the envelope, not a bare array.
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]?.organizationId).toBe(ORG_A);
     });
+
+    // Tenant scoping has to hold on the COUNT as well as the page. If it only
+    // held on the page, a paginator would report another tenant's row total —
+    // leaking how many users that tenant has, and offering pages that come back
+    // empty. The count is a separate query, so it needs its own assertion.
+    itEnforcesTenantIsolation('listUsers count query', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(where.organizationId === ORG_A ? 12 : 0),
+      );
+
+      const result = await service.listUsers(ORG_B);
+
+      expect(result.total).toBe(0);
+      expect(mockPrisma.user.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+      );
+    });
+
+  });
+
+  // ACC-78 — counts behind the list's filter chips.
+  describe('getStatusCounts', () => {
+    it('returns every known status, at zero when the group is absent', async () => {
+      mockPrisma.user.groupBy.mockResolvedValue([
+        { status: 'ACTIVE', _count: { _all: 7 } },
+        { status: 'INVITED', _count: { _all: 2 } },
+      ]);
+
+      const counts = await service.getStatusCounts(ORG_A);
+
+      // INACTIVE and SUSPENDED were not in the grouped result at all. They must
+      // still be present: a chip that vanishes at zero is a filter bar that
+      // changes shape as it is used.
+      expect(counts).toEqual({ ACTIVE: 7, INVITED: 2, INACTIVE: 0, SUSPENDED: 0 });
+    });
+
+    it('asks the database for one grouped query, not one count per status', async () => {
+      mockPrisma.user.groupBy.mockResolvedValue([]);
+
+      await service.getStatusCounts(ORG_A);
+
+      expect(mockPrisma.user.groupBy).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.count).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('getStatusCounts grouped query', async () => {
+      mockPrisma.user.groupBy.mockImplementation(
+        ({ where }: { where: { organizationId: string } }) =>
+          Promise.resolve(
+            where.organizationId === ORG_A ? [{ status: 'ACTIVE', _count: { _all: 9 } }] : [],
+          ),
+      );
+
+      const counts = await service.getStatusCounts(ORG_B);
+
+      expect(counts.ACTIVE).toBe(0);
+      expect(mockPrisma.user.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+      );
+    });
+  });
+
+  describe('listUsers pagination', () => {
+    // ── ACC-78: pagination ─────────────────────────────────────────────────
+
+    it('returns the envelope with total from count()', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: 'u1', organizationId: ORG_A }]);
+      mockPrisma.user.count.mockResolvedValue(140);
+
+      const result = await service.listUsers(ORG_A, { page: 3, pageSize: 20 });
+
+      expect(result).toMatchObject({ total: 140, page: 3, pageSize: 20 });
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('translates page/pageSize into skip/take', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.listUsers(ORG_A, { page: 4, pageSize: 10 });
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 30, take: 10 }),
+      );
+    });
+
+    // The count must match the page's filter exactly, including this
+    // endpoint's own status/orgUnitId filters — not just the tenant scope.
+    it('counts against the same where clause as the page', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.listUsers(ORG_A, { status: 'ACTIVE', orgUnitId: 'unit-1', search: 'ahmad' });
+
+      const findWhere = mockPrisma.user.findMany.mock.calls[0]![0].where;
+      const countWhere = mockPrisma.user.count.mock.calls[0]![0].where;
+      expect(countWhere).toEqual(findWhere);
+    });
+
+    // ── ACC-78: search ─────────────────────────────────────────────────────
+
+    // The behaviour change worth pinning: search previously matched `name`
+    // alone, which fails the most common way people look someone up.
+    it('searches name AND email, not name alone', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.listUsers(ORG_A, { search: 'ahmad' });
+
+      const where = mockPrisma.user.findMany.mock.calls[0]![0].where;
+      expect(where.OR).toEqual([
+        { name: { contains: 'ahmad', mode: 'insensitive' } },
+        { email: { contains: 'ahmad', mode: 'insensitive' } },
+      ]);
+    });
+
+    it('is case-insensitive on both search columns', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.listUsers(ORG_A, { search: 'AHMAD' });
+
+      const where = mockPrisma.user.findMany.mock.calls[0]![0].where;
+      expect(where.OR.every((clause: Record<string, { mode: string }>) =>
+        Object.values(clause).every((c) => c.mode === 'insensitive'),
+      )).toBe(true);
+    });
+
+    // No search must not produce an empty OR, which would match nothing at all
+    // and silently return a blank list.
+    it('omits the OR clause entirely when no search term is given', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.listUsers(ORG_A, {});
+
+      expect(mockPrisma.user.findMany.mock.calls[0]![0].where.OR).toBeUndefined();
+    });
+
+    // ── ACC-78: sort whitelist ─────────────────────────────────────────────
+
+    it('sorts by name ascending by default', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      await service.listUsers(ORG_A, {});
+
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { name: 'asc' } }),
+      );
+    });
+
+    it('accepts each whitelisted column', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([]);
+      mockPrisma.user.count.mockResolvedValue(0);
+
+      for (const column of ['name', 'email', 'status', 'createdAt']) {
+        await service.listUsers(ORG_A, { sortBy: column, sortDir: 'desc' });
+        expect(mockPrisma.user.findMany).toHaveBeenLastCalledWith(
+          expect.objectContaining({ orderBy: { [column]: 'desc' } }),
+        );
+      }
+    });
+
+    // The security assertion, named per column rather than generically: these
+    // are the ones an attacker would actually reach for, and each must be
+    // unreachable. Ordering by a scalar the response never returns is a weak
+    // oracle over hidden values.
+    it.each(['tokenVersion', 'invitationToken', 'authUserId', 'lastLoginIp', 'id'])(
+      'refuses to sort by %s and never queries',
+      async (column) => {
+        await expect(service.listUsers(ORG_A, { sortBy: column })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.user.count).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('getById', () => {

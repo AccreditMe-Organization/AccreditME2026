@@ -13,6 +13,10 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "esModuleInterop": true,
+    // ACC-78 — lets translation-keys.spec.ts import en.json/ar.json directly
+    // and assert against them. Only specs import JSON; the app loads its
+    // translations over HTTP at runtime as before.
+    "resolveJsonModule": true,
     "sourceMap": true,
     "declaration": false,
     "experimentalDecorators": true,

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
 import { NotificationService } from './notification.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -168,8 +168,114 @@ describe('NotificationService', () => {
 
       const results = await service.getForUser(USER_A, ORG_A, {});
 
-      expect(results).toHaveLength(1);
-      expect(results.every((n) => n.organizationId === ORG_A)).toBe(true);
+      // ACC-78 — returns the { data, total, page, pageSize } envelope now, not
+      // a bare array.
+      expect(results.data).toHaveLength(1);
+      expect(results.data.every((n) => n.organizationId === ORG_A)).toBe(true);
+    });
+
+    // ── ACC-78: the envelope contract ──────────────────────────────────────
+
+    it('returns the full envelope, not a bare array', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([BASE_NOTIFICATION]);
+      mockPrisma.notification.count.mockResolvedValue(57);
+
+      const result = await service.getForUser(USER_A, ORG_A, { page: 2, pageSize: 10 });
+
+      expect(result).toEqual({
+        data: [BASE_NOTIFICATION],
+        total: 57,
+        page: 2,
+        pageSize: 10,
+      });
+    });
+
+    // `total` is the field the old limit/offset paging lacked, and the reason
+    // nothing could render a paginator against it. It must come from count(),
+    // NOT from data.length — which would only ever report the page size.
+    it('takes total from count(), not from the length of the page', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([BASE_NOTIFICATION]);
+      mockPrisma.notification.count.mockResolvedValue(57);
+
+      const result = await service.getForUser(USER_A, ORG_A, {});
+
+      expect(result.total).toBe(57);
+      expect(result.data).toHaveLength(1);
+    });
+
+    // The count must match the page's filter exactly. If they diverge, a
+    // paginator offers pages that come back empty — and the status filter is
+    // where that would happen first.
+    it('counts against the same where clause as the page, including the status filter', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([]);
+      mockPrisma.notification.count.mockResolvedValue(0);
+
+      await service.getForUser(USER_A, ORG_A, { status: 'UNREAD' });
+
+      const findWhere = mockPrisma.notification.findMany.mock.calls[0]![0].where;
+      const countWhere = mockPrisma.notification.count.mock.calls[0]![0].where;
+      expect(countWhere).toEqual(findWhere);
+      expect(countWhere).toMatchObject({ status: 'UNREAD' });
+    });
+
+    it('translates page/pageSize into skip/take', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([]);
+      mockPrisma.notification.count.mockResolvedValue(0);
+
+      await service.getForUser(USER_A, ORG_A, { page: 3, pageSize: 15 });
+
+      expect(mockPrisma.notification.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 30, take: 15 }),
+      );
+    });
+
+    it('defaults to the inbox page size of 20 when none is given', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([]);
+      mockPrisma.notification.count.mockResolvedValue(0);
+
+      const result = await service.getForUser(USER_A, ORG_A, {});
+
+      expect(result.pageSize).toBe(20);
+      expect(mockPrisma.notification.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+    });
+
+    // ── ACC-78: the sort whitelist, wired through ──────────────────────────
+
+    it('orders newest-first by default — an inbox is newest-first by nature', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([]);
+      mockPrisma.notification.count.mockResolvedValue(0);
+
+      await service.getForUser(USER_A, ORG_A, {});
+
+      expect(mockPrisma.notification.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
+      );
+    });
+
+    it('accepts a whitelisted sort column', async () => {
+      mockPrisma.notification.findMany.mockResolvedValue([]);
+      mockPrisma.notification.count.mockResolvedValue(0);
+
+      await service.getForUser(USER_A, ORG_A, { sortBy: 'status', sortDir: 'asc' });
+
+      expect(mockPrisma.notification.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { status: 'asc' } }),
+      );
+    });
+
+    // The security half, asserted at the endpoint rather than only on the
+    // utility: an unwhitelisted column must never reach Prisma's orderBy.
+    // Ordering by a scalar the endpoint never returns is a weak oracle over
+    // hidden values, and a relation field turns a typo into a 500.
+    it('rejects an unwhitelisted sort column and never queries', async () => {
+      await expect(
+        service.getForUser(USER_A, ORG_A, { sortBy: 'userId' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPrisma.notification.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.notification.count).not.toHaveBeenCalled();
     });
   });
 

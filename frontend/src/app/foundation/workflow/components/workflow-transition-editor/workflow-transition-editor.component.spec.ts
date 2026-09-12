@@ -68,7 +68,9 @@ describe('WorkflowTransitionEditorComponent (ACC-55)', () => {
     http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
 
-    http.expectOne(`${environment.apiUrl}/roles`).flush([]);
+    http
+      .expectOne(`${environment.apiUrl}/roles?pageSize=200`)
+      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
     http.expectOne(`${environment.apiUrl}/roles/permissions`).flush(PERMISSIONS);
     fixture.detectChanges();
   });

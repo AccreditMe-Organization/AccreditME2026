@@ -163,7 +163,7 @@ export class UnassignedTasksComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadTasks();
-    this.userService.listUsers({ status: 'ACTIVE' }).subscribe({ next: (users) => this.users.set(users) });
+    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({ next: (users) => this.users.set(users) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
   }
 

@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -20,6 +21,8 @@ import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { AssignPermissionsDto } from './dto/assign-permissions.dto';
 import { IRole } from './interfaces/role.interface';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { IPermission } from './interfaces/permission.interface';
 
 @Controller()
@@ -31,8 +34,18 @@ export class RoleController {
 
   @Get('roles')
   @Permissions(ROLES_PERMISSIONS.VIEW)
-  getRoles(@CurrentTenant() tenantId: string): Promise<IRole[]> {
-    return this.roleService.getRoles(tenantId);
+  // ACC-78 — paginated via the shared list contract.
+  getRoles(
+    @CurrentTenant() tenantId: string,
+    @Query() pagination: PaginationQueryDto,
+  ): Promise<IPaginatedResponse<IRole>> {
+    return this.roleService.getRoles(tenantId, {
+      search: pagination.search,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      sortBy: pagination.sortBy,
+      sortDir: pagination.sortDir,
+    });
   }
 
   // Must be declared before 'roles/:id' — Nest matches routes in declaration
