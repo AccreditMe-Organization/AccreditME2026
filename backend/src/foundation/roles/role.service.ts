@@ -4,6 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  IPaginatedResponse,
+  paginated,
+} from '../../common/interfaces/paginated-response.interface';
+import { SortWhitelist, toSkipTake } from '../../common/utils/sort-whitelist';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { Role as PrismaRole } from '../../../generated/prisma/client';
 import { IRole } from './interfaces/role.interface';
@@ -18,6 +23,29 @@ import { SYSTEM_ROLE_SEED } from './role.seed';
 // Stable key identifying the tenant-admin system role — see Business Rules,
 // "Admin lockout protection" in the Step 4 plan.
 const TENANT_ADMIN_KEY = 'TENANT_ADMIN';
+
+export interface ListRolesFilters {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
+}
+
+// ACC-78 — the role list's sortable columns.
+//
+// BOTH bilingual names are sortable rather than one synthetic "name": the
+// frontend picks nameEn or nameAr from the active language, so the sort matches
+// what the reader is actually looking at. Collapsing them into one column would
+// mean an Arabic user sorting by the English name.
+//
+// The fallback is COMPOUND — system roles first, then alphabetical — which is
+// the existing behaviour and a real UX property, not an accident. A
+// single-column fallback would have dropped the grouping silently.
+const ROLE_SORT = new SortWhitelist(
+  ['nameEn', 'nameAr', 'key', 'isSystem', 'createdAt'] as const,
+  { compound: [{ isSystem: 'desc' }, { nameEn: 'asc' }] },
+);
 
 @Injectable()
 export class RoleService {
@@ -88,21 +116,55 @@ export class RoleService {
   // stops it from even appearing as a selectable option in an ordinary
   // tenant's role-assignment UI — PlatformGuard already closes the actual
   // security gap; this just removes the confusing dead option.
-  async getRoles(organizationId: string): Promise<IRole[]> {
-    const [roles, org] = await Promise.all([
-      this.prisma.role.findMany({
-        where: { organizationId },
-        orderBy: [{ isSystem: 'desc' }, { nameEn: 'asc' }],
-      }),
-      this.prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { isPlatformOrg: true },
-      }),
-    ]);
+  async getRoles(
+    organizationId: string,
+    filters?: ListRolesFilters,
+  ): Promise<IPaginatedResponse<IRole>> {
+    const { skip, take, page, pageSize } = toSkipTake(filters?.page, filters?.pageSize);
 
-    const visibleRoles = org?.isPlatformOrg
-      ? roles
-      : roles.filter((r) => r.key !== 'PLATFORM_ADMIN');
+    // ACC-78 — the org lookup now runs FIRST rather than in parallel with the
+    // roles query, because its answer has to go into the where clause.
+    //
+    // WHY THAT MATTERS, and it is a correctness bug pagination introduces
+    // rather than a tidy-up: PLATFORM_ADMIN used to be excluded in application
+    // code, AFTER the query. Under pagination that breaks twice over — a page
+    // of 25 would return 24 rows whenever PLATFORM_ADMIN fell inside it, and
+    // count() would include a role the caller can never see, so the paginator's
+    // total and page count would both be wrong. A post-query filter and a
+    // database-side count cannot agree. The exclusion has to be in the where.
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { isPlatformOrg: true },
+    });
+
+    const where = {
+      organizationId,
+      // Same rule as before — PLATFORM_ADMIN is visible only inside the
+      // platform org — now expressed where both queries see it.
+      ...(org?.isPlatformOrg ? {} : { key: { not: 'PLATFORM_ADMIN' } }),
+      // Bilingual search: BOTH names, because a role's Arabic name is not a
+      // translation of a search term, it is the name an Arabic-speaking admin
+      // knows it by. Searching only nameEn would make the Arabic UI's search
+      // box quietly useless.
+      ...(filters?.search
+        ? {
+            OR: [
+              { nameEn: { contains: filters.search, mode: 'insensitive' as const } },
+              { nameAr: { contains: filters.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [visibleRoles, total] = await Promise.all([
+      this.prisma.role.findMany({
+        where,
+        orderBy: ROLE_SORT.resolve(filters?.sortBy, filters?.sortDir),
+        skip,
+        take,
+      }),
+      this.prisma.role.count({ where }),
+    ]);
 
     // ACC-74 — ONE grouped query for every role's count, not one query per
     // role. attachPermissions() already exists and would have been the
@@ -118,19 +180,29 @@ export class RoleService {
     // Scoped implicitly but safely: roleId is drawn from visibleRoles, which
     // is already filtered by organizationId above, so this cannot count a
     // RolePermission belonging to another tenant's role.
-    const counts = await this.prisma.rolePermission.groupBy({
-      by: ['roleId'],
-      where: { roleId: { in: visibleRoles.map((r) => r.id) } },
-      _count: { roleId: true },
-    });
+    //
+    // ACC-78 — now counts for ONE PAGE of roles rather than all of them, which
+    // is strictly less work; the grouped shape is what makes that automatic.
+    // An empty page skips the query entirely: `roleId: { in: [] }` is a
+    // guaranteed-empty result that still costs a round trip.
+    const counts =
+      visibleRoles.length > 0
+        ? await this.prisma.rolePermission.groupBy({
+            by: ['roleId'],
+            where: { roleId: { in: visibleRoles.map((r) => r.id) } },
+            _count: { roleId: true },
+          })
+        : [];
     const countByRoleId = new Map(counts.map((c) => [c.roleId, c._count.roleId]));
 
-    return visibleRoles.map((r) => ({
+    const data = visibleRoles.map((r) => ({
       ...this.mapRole(r),
       // 0 rather than undefined: a role with no permissions is a real answer,
       // and the frontend must be able to tell it from "not loaded".
       permissionCount: countByRoleId.get(r.id) ?? 0,
     }));
+
+    return paginated(data, total, page, pageSize);
   }
 
   async getRoleById(id: string, organizationId: string): Promise<IRole> {
