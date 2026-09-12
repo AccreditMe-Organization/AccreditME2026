@@ -33,6 +33,20 @@ export interface DataListScope {
   count?: number;
 }
 
+// ACC-78 — below this many rows the toolbar does not render.
+//
+// The reference says "~12". Named rather than inlined because it is a product
+// rule, not a magic number: it is the point at which a reader stops scanning a
+// list and starts searching it. Changing it is a deliberate act, and every
+// table in the app moves together.
+export const TOOLBAR_ROW_THRESHOLD = 12;
+
+// The width at which a row may promote a field out of its second line into its
+// own column. Consumers query it themselves — see the note on the body's
+// @container below — so this exists to keep every table using the same
+// breakpoint rather than each picking its own.
+export const ROW_WIDE_BREAKPOINT_PX = 520;
+
 // ACC-78 — the shared list. Built against
 // frontend/design-reference/AccreditMe Users List.dc.html and
 // .../AccreditMe Compact List Panel.dc.html.
@@ -43,7 +57,8 @@ export interface DataListScope {
 // component is mounted. A panel holding 19 tasks gets search and sort; a page
 // holding 9 rows would not. Set size is the variable, context is not — which
 // makes a single component the honest implementation rather than a clever one.
-// (The size and width responses themselves land in the next commit.)
+// See TOOLBAR_ROW_THRESHOLD and the body @container for the two responses that
+// implement it.
 //
 // ROWS ARE PROJECTED, NOT CONFIGURED. A column-config API would be a small
 // framework, and the three proving tables have nothing structurally in common:
@@ -184,13 +199,33 @@ export interface DataListScope {
           }
         </div>
       } @else {
-        <div [class]="bodyClass()">
-          @for (row of rows(); track trackBy()(row)) {
-            <ng-container
-              [ngTemplateOutlet]="rowTemplate()!"
-              [ngTemplateOutletContext]="{ $implicit: row, index: $index }"
-            />
-          }
+        <!-- ACC-78 — ROW ANATOMY RESPONDS TO WIDTH, and this is where that
+             becomes possible.
+             "@container/datalist" establishes a containment context (Tailwind
+             v4 has container queries built in — no plugin, no ResizeObserver,
+             no JS at all). A projected row is a DOM descendant of this div, so
+             a row template can write @min-[520px]/datalist: variants and get
+             the LIST's width rather than the viewport's.
+             That distinction is the point: the same table is 352px wide in a
+             record panel and full-width on its own page, at one and the same
+             viewport size. A media query cannot tell those apart; a container
+             query does not need to.
+             The component deliberately does NOT dictate the anatomy — rows are
+             projected, so only the consumer knows which field is worth
+             promoting. It supplies the context and the shared breakpoint. -->
+        <!-- The container class sits on its own wrapper rather than sharing an
+             element with [class]="bodyClass()" — a [class] binding REPLACES
+             static classes, so combining them would silently drop the
+             containment context and every @min-* variant with it. -->
+        <div class="@container/datalist">
+          <div [class]="bodyClass()">
+            @for (row of rows(); track trackBy()(row)) {
+              <ng-container
+                [ngTemplateOutlet]="rowTemplate()!"
+                [ngTemplateOutletContext]="{ $implicit: row, index: $index }"
+              />
+            }
+          </div>
         </div>
       }
 
@@ -241,9 +276,6 @@ export class DataListComponent<T> {
 
   readonly bodyClass = input<string>('');
 
-  // Overridden by the next commit's size threshold; always on for now.
-  readonly showToolbar = input<boolean>(true);
-
   readonly rowTemplate = contentChild.required<TemplateRef<unknown>>('listRow');
 
   readonly rows = signal<T[]>([]);
@@ -254,6 +286,10 @@ export class DataListComponent<T> {
   readonly activeScope = signal<string | null>(null);
 
   readonly query = signal<IListQuery>({ page: 1 });
+
+  // The size of the set BEFORE the user narrowed it. Tracked separately from
+  // total() because the toolbar threshold depends on it — see showToolbar.
+  private readonly unfilteredTotal = signal(0);
 
   constructor() {
     // Reloads whenever the query changes OR the source itself does — a parent
@@ -268,6 +304,10 @@ export class DataListComponent<T> {
         next: (page) => {
           this.rows.set(page.data);
           this.total.set(page.total);
+          // Only an UNFILTERED load tells us how big the set really is. A
+          // filtered one reports what survived the filter, which is not the
+          // question showToolbar asks.
+          if (!this.isFiltered()) this.unfilteredTotal.set(page.total);
           this.loading.set(false);
         },
         error: () => {
@@ -283,6 +323,27 @@ export class DataListComponent<T> {
   // not "the list is showing fewer rows than it could".
   readonly isFiltered = computed(
     () => !!this.query().search?.trim() || this.activeScope() !== null,
+  );
+
+  // ACC-78 — CONTROLS RESPOND TO SET SIZE, NOT TO CONTEXT.
+  //
+  // This is what makes one component serve both the full page and a record
+  // panel without an "embedded" mode. A panel holding 19 tasks gets search and
+  // sort; a page holding 9 rows does not. Under the threshold there is nothing
+  // to search and nothing worth reordering, so the toolbar is not rendered at
+  // all rather than rendered and ignored.
+  //
+  // Measured against the UNFILTERED total, and that is the whole subtlety. If
+  // it read the current total, searching 19 rows down to 2 would drop the set
+  // below the threshold and REMOVE THE SEARCH BOX THE USER IS TYPING IN —
+  // stranding them with a filter and no way to clear it. `|| isFiltered()` is
+  // belt and braces for the first render after a filter, before an unfiltered
+  // load has ever happened.
+  //
+  // No input overrides this. An escape hatch would be a per-call-site decision
+  // and the rule is precisely that there is no per-call-site decision.
+  readonly showToolbar = computed(
+    () => this.unfilteredTotal() >= TOOLBAR_ROW_THRESHOLD || this.isFiltered(),
   );
 
   readonly activeSortLabel = computed(() => {
