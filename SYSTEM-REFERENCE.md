@@ -3829,11 +3829,20 @@ it too. Build it in rather than discovering it in live testing.
 Each of these was found at real cost during ACC-78 and applies to every
 endpoint that gains pagination afterwards:
 
-1. **Two tenant-isolation tests per paginated endpoint, not one** — one
-   for the page, one for the count. They are separate queries
-   (`Promise.all([count, findMany])`), so a correctly scoped page can
-   sit under a total that counts another tenant's rows. One test passing
-   proves nothing about the other query.
+1. **The count must be PROVEN to share the page's scoping.** They are
+   separate queries (`Promise.all([findMany, count])`), so a correctly
+   scoped page can sit under a total that counts another tenant's rows,
+   and an isolation test on the page proves nothing about the count. Two
+   proofs are acceptable and all three migrated endpoints use both:
+   build **one `where` const and pass it to both queries**, then assert
+   they received the same object (`expect(countWhere).toEqual(findWhere)`
+   — notification.service.spec.ts); and/or add a **second isolation test
+   naming the count query** (`itEnforcesTenantIsolation('listUsers count
+   query', …)`). The shared const is the stronger of the two because it
+   removes the failure mode rather than detecting it — but only if
+   nothing later reintroduces a separate clause, which is what the test
+   catches. Note the CI gate matches on the literal test name, so the
+   count test must go through `itEnforcesTenantIsolation()` to be seen.
 2. **Audit for post-query filtering BEFORE paginating.** A
    `.filter()` applied after the query was harmless while endpoints
    returned everything, and becomes a defect the moment they do not: the
