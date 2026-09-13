@@ -661,5 +661,16 @@
     "more": "More actions",
     "clearFilters": "Clear filters",
     "panelRange": "{{first}}–{{last}} of {{total}}"
+  },
+  "shell": {
+    "product": {
+      "quality": "Quality",
+      "admin": "Tenant admin",
+      "platform": "Platform"
+    },
+    "navigation": "Main navigation",
+    "collapseRail": "Collapse navigation",
+    "expandRail": "Expand navigation",
+    "userMenu": "Account menu for {{name}}"
   }
 }

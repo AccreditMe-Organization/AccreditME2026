@@ -661,5 +661,16 @@
     "more": "إجراءات أخرى",
     "clearFilters": "إزالة عوامل التصفية",
     "panelRange": "{{first}}–{{last}} من {{total}}"
+  },
+  "shell": {
+    "product": {
+      "quality": "الجودة",
+      "admin": "إدارة المنشأة",
+      "platform": "المنصة"
+    },
+    "navigation": "التنقل الرئيسي",
+    "collapseRail": "طيّ الشريط",
+    "expandRail": "توسيع الشريط",
+    "userMenu": "قائمة حساب {{name}}"
   }
 }
