@@ -3,6 +3,8 @@ import { TenantController } from './tenant.controller';
 import { TenantService } from './tenant.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
+import { TENANT_PERMISSIONS } from '../../common/constants/permissions';
 
 const MOCK_TENANT_ID = 'org-test';
 const MOCK_USER_ID = 'user-test';
@@ -169,5 +171,28 @@ describe('TenantController', () => {
         MOCK_USER_ID,
       );
     });
+  });
+});
+
+// ACC-79 — the authorization split, pinned at the decorator level.
+//
+// PermissionGuard passes any handler with no @Permissions metadata, so the
+// absence of that metadata IS what makes GET /tenant/entitlements readable by
+// every signed-in user. These tests read the metadata directly, because a
+// service spec cannot see a decorator and a controller spec that calls the
+// method never runs the guard.
+//
+// Both halves are asserted. Ungating the wrong handler — or re-gating the new
+// one "for consistency" — would each pass everything else in the suite.
+describe('TenantController authorization split (ACC-79)', () => {
+  const permissionsOn = (handler: keyof TenantController): string[] | undefined =>
+    Reflect.getMetadata(PERMISSIONS_KEY, TenantController.prototype[handler]);
+
+  it('leaves GET /tenant/entitlements ungated — it is self-scoped', () => {
+    expect(permissionsOn('getEntitlements')).toBeUndefined();
+  });
+
+  it('keeps GET /tenant gated on tenant:view — it carries configuration and credits', () => {
+    expect(permissionsOn('getCurrent')).toEqual([TENANT_PERMISSIONS.VIEW]);
   });
 });

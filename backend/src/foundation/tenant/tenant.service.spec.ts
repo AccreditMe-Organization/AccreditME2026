@@ -48,6 +48,7 @@ describe('TenantService', () => {
   let service: TenantService;
   let prisma: {
     organization: { findUnique: jest.Mock; update: jest.Mock };
+    planModule: { findMany: jest.Mock };
     orgUnit: { findFirst: jest.Mock; create: jest.Mock };
     orgPosition: { findFirst: jest.Mock };
   };
@@ -71,6 +72,9 @@ describe('TenantService', () => {
       },
       orgPosition: {
         findFirst: jest.fn(),
+      },
+      planModule: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
     };
 
@@ -518,6 +522,111 @@ describe('TenantService', () => {
       expect(prisma.organization.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'org-a' } }),
       );
+    });
+  });
+  // ── ACC-79: entitlements ─────────────────────────────────────────────────
+  describe('getEntitlements', () => {
+    const orgRow = (overrides: Record<string, unknown> = {}) => ({
+      name: 'Org Alpha',
+      slug: 'alpha',
+      isPlatformOrg: false,
+      planId: null,
+      settings: { modules: { documents: true, standards: true } },
+      ...overrides,
+    });
+
+    it('returns ONLY navigation-safe fields — no configuration, limits or credits', async () => {
+      prisma.organization.findUnique.mockResolvedValue(orgRow());
+
+      const result = await service.getEntitlements('org-a');
+
+      // Exact key set, not objectContaining. The whole reason this endpoint
+      // exists separately from GET /tenant is what it must NOT carry, so an
+      // added field has to fail here rather than pass quietly.
+      expect(Object.keys(result).sort()).toEqual(['isPlatformOrg', 'modules', 'name', 'slug']);
+    });
+
+    it('asks the database for only the columns it returns, never the whole row', async () => {
+      prisma.organization.findUnique.mockResolvedValue(orgRow());
+
+      await service.getEntitlements('org-a');
+
+      const select = prisma.organization.findUnique.mock.calls[0]![0].select;
+      expect(Object.keys(select).sort()).toEqual([
+        'isPlatformOrg',
+        'name',
+        'planId',
+        'settings',
+        'slug',
+      ]);
+    });
+
+    // The null-plan path must not query PlanModule at all. Querying with
+    // planId: null would return every plan's rows in some ORMs and nothing in
+    // others; not querying removes the question.
+    it('does not read PlanModule for a tenant with no plan, and falls back to FULL', async () => {
+      prisma.organization.findUnique.mockResolvedValue(orgRow({ planId: null }));
+
+      const result = await service.getEntitlements('org-a');
+
+      expect(prisma.planModule.findMany).not.toHaveBeenCalled();
+      expect(result.modules).toEqual({ documents: 'FULL', standards: 'FULL' });
+    });
+
+    it('resolves tiers from the plan when the tenant has one', async () => {
+      prisma.organization.findUnique.mockResolvedValue(orgRow({ planId: 'plan-starter' }));
+      prisma.planModule.findMany.mockResolvedValue([
+        { moduleKey: 'documents', accessLevel: 'FULL' },
+        { moduleKey: 'standards', accessLevel: 'READ_ONLY' },
+      ]);
+
+      const result = await service.getEntitlements('org-a');
+
+      expect(result.modules).toEqual({ documents: 'FULL', standards: 'READ_ONLY' });
+    });
+
+    it('throws NotFound for an organization that does not exist', async () => {
+      prisma.organization.findUnique.mockResolvedValue(null);
+      await expect(service.getEntitlements('missing')).rejects.toThrow(NotFoundException);
+    });
+
+    // Two isolation tests, because there are two queries (SYSTEM-REFERENCE
+    // §10.10, backend rule 1). The org lookup is scoped by the caller's own
+    // id; the plan lookup must then follow THAT org's planId and no other.
+    itEnforcesTenantIsolation('getEntitlements organization lookup', async () => {
+      prisma.organization.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
+          where.id === 'org-b'
+            ? orgRow({ name: 'Org Beta', slug: 'beta', settings: { modules: { audits: true } } })
+            : orgRow(),
+        ),
+      );
+
+      const result = await service.getEntitlements('org-a');
+
+      expect(prisma.organization.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'org-a' } }),
+      );
+      expect(result.name).toBe('Org Alpha');
+      expect(result.modules).not.toHaveProperty('audits');
+    });
+
+    itEnforcesTenantIsolation('getEntitlements plan lookup', async () => {
+      prisma.organization.findUnique.mockResolvedValue(orgRow({ planId: 'plan-of-org-a' }));
+      prisma.planModule.findMany.mockImplementation(({ where }: { where: { planId: string } }) =>
+        Promise.resolve(
+          where.planId === 'plan-of-org-a'
+            ? [{ moduleKey: 'documents', accessLevel: 'READ_ONLY' }]
+            : [{ moduleKey: 'documents', accessLevel: 'FULL' }],
+        ),
+      );
+
+      const result = await service.getEntitlements('org-a');
+
+      expect(prisma.planModule.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { planId: 'plan-of-org-a' } }),
+      );
+      expect(result.modules).toEqual({ documents: 'READ_ONLY' });
     });
   });
 });
