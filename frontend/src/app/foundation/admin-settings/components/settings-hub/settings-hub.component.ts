@@ -17,7 +17,12 @@ interface SettingsCard {
 // together in one screen, plus the three genuinely new pages listed after
 // the divider (organization profile, email provider, AI settings).
 //
-// requiredPermission mirrors sidebar.component.ts's FOUNDATION_NAV_ITEMS —
+// requiredPermission mirrors core/navigation/nav-items.ts's TENANT_NAV_GROUPS
+// (ACC-79; it named sidebar.component.ts's FOUNDATION_NAV_ITEMS before that
+// list was replaced). KNOWN DUPLICATION: these seven pairs are hand-copied, not
+// read from ROUTE_PERMISSIONS, so they can drift from the rail and the guard.
+// They match today. Deriving them is the fix, left for when this hub is
+// replaced by the admin home's Configure grid rather than reworked twice —
 // reaching this hub only requires tenant:manage_config (the sidebar's own
 // Admin Settings link gate), which is not the same permission each card's
 // target page actually needs. Without this, any card whose own page

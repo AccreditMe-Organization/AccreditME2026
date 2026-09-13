@@ -150,10 +150,11 @@ describe('permissionGuard', () => {
     expect(run()).toBe(true);
   });
 
-  // admin-settings is drawn separately in the sidebar rather than from the
-  // nav list, so it is mapped via STANDALONE_ROUTE_PERMISSIONS. Without that
-  // it would have been the one permission-gated screen the guard let through.
-  it('guards admin-settings, which is gated outside the nav list', () => {
+  // admin-settings was drawn separately in the sidebar and mapped via
+  // STANDALONE_ROUTE_PERMISSIONS. Since ACC-79 it is an Administration nav
+  // item, so it is mapped from the groups like everything else — this asserts
+  // it stayed guarded through that move.
+  it('guards admin-settings', () => {
     setup({ permissions: [] });
     expect(run('admin-settings')).toEqual(router.parseUrl(LANDING_ROUTE));
 

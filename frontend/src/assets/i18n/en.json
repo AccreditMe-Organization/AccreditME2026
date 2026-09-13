@@ -46,7 +46,14 @@
     "settings": "Settings",
     "platform": "Super Admin",
     "adminSettings": "Admin Settings",
-    "home": "Home"
+    "home": "Home",
+    "myTasks": "My tasks",
+    "groups": {
+      "work": "My work",
+      "quality": "Quality management",
+      "admin": "Administration",
+      "platform": "Platform"
+    }
   },
   "organization": {
     "title": "Organization Structure",

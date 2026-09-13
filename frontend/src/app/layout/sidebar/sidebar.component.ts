@@ -1,16 +1,19 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
-// ACC-70 — both lists moved to core/navigation/nav-items.ts so the sidebar and
-// the route guards read one mapping instead of two copies.
 import {
-  FOUNDATION_NAV_ITEMS,
-  FUNCTIONAL_NAV_ITEMS,
-  STANDALONE_ROUTE_PERMISSIONS,
+  NavGroup,
   NavItem,
+  PLATFORM_NAV_GROUPS,
+  TENANT_NAV_GROUPS,
+  visibleNavGroups,
 } from '../../core/navigation/nav-items';
 
+// ACC-79 — renders whatever visibleNavGroups() returns. The sidebar makes NO
+// visibility decisions of its own: permissions, entitlements and the
+// platform/tenant split all live in core/navigation/nav-items.ts, which the
+// route guard also reads, so a link and its route cannot disagree.
 @Component({
   selector: 'app-sidebar',
   standalone: true,
@@ -22,50 +25,20 @@ import {
       [class.w-[72px]]="collapsed()"
     >
       <div class="flex flex-col gap-1 py-4 overflow-y-auto">
-        <!-- Platform admins get the Super Admin Portal only — showing the
-             tenant-scoped nav below alongside it would mix "administer other
-             tenants" with "manage the platform org's own HR/roles/workflows",
-             which isn't a real workflow this product supports (see
-             step-12-admin-portal.md's own framing of the platform org as an
-             implementation detail of PlatformGuard, not a tenant AccreditMe
-             itself operates day-to-day). Regular tenant admins are unaffected
-             — this branch never applies to them. -->
-        @if (navigationAccessService.isPlatformAdmin()) {
-          <a
-            routerLink="/platform"
-            routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
-            class="flex items-center gap-3 px-4 py-3 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
-          >
-            <i class="pi pi-shield"></i>
-            @if (!collapsed()) {
-              <span>{{ 'nav.platform' | translate }}</span>
-            }
-          </a>
-        } @else {
-          @for (item of visibleFoundationItems(); track item.route) {
+        @for (group of groups(); track group.key; let first = $first) {
+          @if (!first) {
+            <div class="my-2 border-t border-white/10"></div>
+          }
+          @for (item of group.items; track item.key) {
             <a
               [routerLink]="item.route"
               routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
-              [routerLinkActiveOptions]="{ exact: false }"
+              [routerLinkActiveOptions]="{ exact: needsExactMatch(item) }"
               class="flex items-center gap-3 px-4 py-3 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
             >
               <i [class]="item.icon"></i>
               @if (!collapsed()) {
                 <span>{{ item.labelKey | translate }}</span>
-              }
-            </a>
-          }
-
-          @if (visibleAdminSettingsLink()) {
-            <div class="my-2 border-t border-white/10"></div>
-            <a
-              routerLink="/admin-settings"
-              routerLinkActive="sidebar-active-stripe bg-[var(--am-sidebar-active)]"
-              class="flex items-center gap-3 px-4 py-3 mx-2 rounded-md text-sm hover:bg-[var(--am-sidebar-hover)] transition-colors"
-            >
-              <i class="pi pi-cog"></i>
-              @if (!collapsed()) {
-                <span>{{ 'nav.adminSettings' | translate }}</span>
               }
             </a>
           }
@@ -79,28 +52,26 @@ export class SidebarComponent {
 
   readonly collapsed = input(false);
 
-  visibleFoundationItems(): NavItem[] {
-    return FOUNDATION_NAV_ITEMS.filter(
-      (item) =>
-        !item.requiredPermission ||
-        this.navigationAccessService.hasPermission(item.requiredPermission),
-    );
-  }
+  // A computed over the service's signals, so the rail updates when access
+  // loads — including the same-tab logout→login case, where loadAccess() is
+  // re-run from AppShellComponent without a page reload.
+  readonly groups = computed<NavGroup[]>(() =>
+    visibleNavGroups(this.navigationAccessService),
+  );
 
-  visibleFunctionalItems(): NavItem[] {
-    return FUNCTIONAL_NAV_ITEMS.filter(
-      (item) =>
-        this.navigationAccessService.isModuleEnabled(item.moduleKey) &&
-        (!item.requiredPermission ||
-          this.navigationAccessService.hasPermission(item.requiredPermission)),
-    );
-  }
+  // Every route any nav item points at, across both shells.
+  private readonly allRoutes = [
+    ...TENANT_NAV_GROUPS,
+    ...PLATFORM_NAV_GROUPS,
+  ].flatMap((group) => group.items.map((item) => item.route));
 
-  // ACC-70 — reads the permission from the shared mapping rather than
-  // repeating the string, so this link and the route guarding /admin-settings
-  // cannot disagree about who may see it.
-  visibleAdminSettingsLink(): boolean {
-    const required = STANDALONE_ROUTE_PERMISSIONS.get('admin-settings');
-    return !!required && this.navigationAccessService.hasPermission(required);
+  // Exact matching only where one item's route is a PREFIX of another's.
+  // /tasks (My tasks) prefixes /tasks/unassigned, so a prefix match would light
+  // up both items on the unassigned screen. Everywhere else prefix matching is
+  // what we want — /committees/abc123 should still highlight Committees.
+  needsExactMatch(item: NavItem): boolean {
+    return this.allRoutes.some(
+      (route) => route !== item.route && route.startsWith(item.route + '/'),
+    );
   }
 }

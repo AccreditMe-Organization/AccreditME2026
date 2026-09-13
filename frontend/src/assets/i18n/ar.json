@@ -46,7 +46,14 @@
     "settings": "الإعدادات",
     "platform": "إدارة المنصة",
     "adminSettings": "إعدادات المؤسسة",
-    "home": "الرئيسية"
+    "home": "الرئيسية",
+    "myTasks": "مهامي",
+    "groups": {
+      "work": "عملي",
+      "quality": "إدارة الجودة",
+      "admin": "الإدارة",
+      "platform": "المنصة"
+    }
   },
   "organization": {
     "title": "هيكل المنظمة",
