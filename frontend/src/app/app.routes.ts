@@ -123,7 +123,9 @@ export const routes: Routes = [
       },
       {
         path: 'admin-settings',
-        canActivate: [permissionGuard],
+        // No canActivate here since ACC-79: this path has no nav item of its
+        // own, so the guard would find no mapping and allow everything. Each
+        // child guards itself — see admin-settings.routes.ts.
         loadChildren: () =>
           import('./foundation/admin-settings/admin-settings.routes').then(
             (m) => m.ADMIN_SETTINGS_ROUTES,

@@ -150,16 +150,39 @@ describe('permissionGuard', () => {
     expect(run()).toBe(true);
   });
 
-  // admin-settings was drawn separately in the sidebar and mapped via
-  // STANDALONE_ROUTE_PERMISSIONS. Since ACC-79 it is an Administration nav
-  // item, so it is mapped from the groups like everything else — this asserts
-  // it stayed guarded through that move.
-  it('guards admin-settings', () => {
+  // ACC-79 — the Admin Settings hub was removed and its four screens became
+  // rail entries. The parent path is therefore UNMAPPED, and allowed: that is
+  // why admin-settings.routes.ts puts canActivate on every child. These two
+  // tests pin both halves — if a child lost its mapping it would be allowed too.
+  it('leaves the bare admin-settings parent unmapped — its children guard themselves', () => {
     setup({ permissions: [] });
-    expect(run('admin-settings')).toEqual(router.parseUrl(LANDING_ROUTE));
+    expect(run('admin-settings')).toBe(true);
+  });
+
+  it('guards each admin-settings screen on its own permission', () => {
+    const screens = ['email-provider', 'ai-settings', 'task-sla'];
+
+    setup({ permissions: [] });
+    for (const screen of ['organization-profile', ...screens]) {
+      expect(run('admin-settings', screen))
+        .withContext(screen)
+        .toEqual(router.parseUrl(LANDING_ROUTE));
+    }
+
+    // Organization profile reads GET /tenant, so tenant:view is enough for it
+    // — and for nothing else here.
+    setup({ permissions: ['tenant:view'] });
+    expect(run('admin-settings', 'organization-profile')).toBe(true);
+    for (const screen of screens) {
+      expect(run('admin-settings', screen))
+        .withContext(screen)
+        .toEqual(router.parseUrl(LANDING_ROUTE));
+    }
 
     setup({ permissions: ['tenant:manage_config'] });
-    expect(run('admin-settings')).toBe(true);
+    for (const screen of screens) {
+      expect(run('admin-settings', screen)).withContext(screen).toBe(true);
+    }
   });
 
   // ACC-70's failure-mode decision, asserted so it cannot be quietly reverted
@@ -230,14 +253,12 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
   function loadAsZeroPermissionUser(): void {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush([]);
-    httpMock
-      .expectOne(TENANT_URL)
-      .flush({
-        name: 'Org Alpha',
-        slug: 'alpha',
-        isPlatformOrg: false,
-        modules: { documents: 'FULL' },
-      });
+    httpMock.expectOne(TENANT_URL).flush({
+      name: 'Org Alpha',
+      slug: 'alpha',
+      isPlatformOrg: false,
+      modules: { documents: 'FULL' },
+    });
   }
 
   // What ACC-70's live pass produced for Dr. Yasser Al-Amri, when the tenant
@@ -275,7 +296,11 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
       // child stands in for it here.
       'tasks/all',
       'working-calendar',
-      'admin-settings',
+      // ACC-79 — the hub is gone; each of its four screens is mapped itself.
+      'admin-settings/organization-profile',
+      'admin-settings/email-provider',
+      'admin-settings/ai-settings',
+      'admin-settings/task-sla',
     ]) {
       expect(guard(path))
         .withContext(path)
@@ -302,7 +327,11 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
       // child stands in for it here.
       'tasks/all',
       'working-calendar',
-      'admin-settings',
+      // ACC-79 — the hub is gone; each of its four screens is mapped itself.
+      'admin-settings/organization-profile',
+      'admin-settings/email-provider',
+      'admin-settings/ai-settings',
+      'admin-settings/task-sla',
     ]) {
       expect(guard(path))
         .withContext(path)
@@ -337,14 +366,12 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
     httpMock
       .expectOne(PERMISSIONS_URL)
       .flush('boom', { status: 503, statusText: 'Unavailable' });
-    httpMock
-      .expectOne(TENANT_URL)
-      .flush({
-        name: 'Org Alpha',
-        slug: 'alpha',
-        isPlatformOrg: false,
-        modules: {},
-      });
+    httpMock.expectOne(TENANT_URL).flush({
+      name: 'Org Alpha',
+      slug: 'alpha',
+      isPlatformOrg: false,
+      modules: {},
+    });
 
     expect(guard('organization')).toBe(true);
   });

@@ -175,6 +175,28 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         route: '/working-calendar',
         requiredPermission: 'org:view',
       },
+      // ── ACC-79: the four screens the Admin Settings hub used to front. ──
+      //
+      // The hub was a page of cards duplicating the rail — seven of its cards
+      // pointed at screens already listed above, with their permissions copied
+      // by hand — plus four screens that lived nowhere else. Those four now sit
+      // here and the hub is gone. Its URLs are kept (/admin-settings/...), so
+      // nothing that links to them moves.
+      //
+      // Twelve items is long for a flat list. Merging screens was considered and
+      // rejected: none of the four genuinely belong together (the reasoning is
+      // on each). The order does the work instead — people, structure, time,
+      // then the tenant's own settings.
+      //
+      // Task SLA sits beside Working calendar: SLA hours are counted through
+      // the calendar, and TaskService reads this config for real.
+      {
+        key: 'taskSla',
+        labelKey: 'nav.taskSla',
+        icon: 'pi pi-clock',
+        route: '/admin-settings/task-sla',
+        requiredPermission: 'tenant:manage_config',
+      },
       // Not in the design reference. A tasks:manage triage view: the reference's
       // nearest equivalent, "Awaiting my action", is unbuilt. Kept here rather
       // than dropped, because removing a working screen from the rail would
@@ -186,16 +208,39 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         route: '/tasks/unassigned',
         requiredPermission: 'tasks:manage',
       },
-      // KEPT, although the reference replaces it with the admin home's
-      // Configure grid. That grid belongs to the home-pages ticket, and four
-      // screens have no other door: organization-profile, email-provider,
-      // ai-settings and task-sla exist ONLY under this hub. Removing it first
-      // would leave them reachable only by typing a URL.
+      // tenant:view, not manage_config — the page reads GET /tenant. Its save
+      // is PATCH /tenant, which needs tenant:update, so a custom role holding
+      // only tenant:view sees a form whose save is refused. Pre-existing, and
+      // unreachable with the seeded roles: only TENANT_ADMIN holds any tenant:*
+      // permission.
       {
-        key: 'adminSettings',
-        labelKey: 'nav.adminSettings',
-        icon: 'pi pi-cog',
-        route: '/admin-settings',
+        key: 'organizationProfile',
+        labelKey: 'nav.organizationProfile',
+        icon: 'pi pi-id-card',
+        route: '/admin-settings/organization-profile',
+        requiredPermission: 'tenant:view',
+      },
+      // INERT TODAY, and the page says so. It stores Organization.emailConfig,
+      // which nothing reads — email still goes through the platform default
+      // (CLAUDE.md, Email Provider). Listed so the screen is not orphaned; when
+      // per-tenant email resolution is built this entry needs no change.
+      {
+        key: 'emailProvider',
+        labelKey: 'nav.emailProvider',
+        icon: 'pi pi-envelope',
+        route: '/admin-settings/email-provider',
+        requiredPermission: 'tenant:manage_config',
+      },
+      // Labelled "AI credits", not "AI settings": the page is a credit balance
+      // and an overage toggle. It holds NO provider configuration — provider
+      // selection is unbuilt (CLAUDE.md, AI provider selection) — so it was not
+      // merged with Email provider despite both sounding like provider setup.
+      // Its natural home is the reference's Plan & modules, when that exists.
+      {
+        key: 'aiCredits',
+        labelKey: 'nav.aiCredits',
+        icon: 'pi pi-microchip-ai',
+        route: '/admin-settings/ai-settings',
         requiredPermission: 'tenant:manage_config',
       },
     ],

@@ -45,7 +45,10 @@
     "workflows": "سير العمل",
     "settings": "الإعدادات",
     "platform": "إدارة المنصة",
-    "adminSettings": "إعدادات المؤسسة",
+    "taskSla": "مهلة المهام",
+    "organizationProfile": "الملف التعريفي للمؤسسة",
+    "emailProvider": "مزوّد البريد الإلكتروني",
+    "aiCredits": "أرصدة الذكاء الاصطناعي",
     "home": "الرئيسية",
     "myTasks": "مهامي",
     "groups": {
@@ -620,10 +623,9 @@
     "offboarding": "قيد الإنهاء"
   },
   "adminSettings": {
-    "title": "إعدادات المؤسسة",
     "organizationProfile": "الملف التعريفي للمؤسسة",
     "emailProvider": "مزوّد البريد الإلكتروني",
-    "aiSettings": "إعدادات الذكاء الاصطناعي",
+    "aiSettings": "أرصدة الذكاء الاصطناعي",
     "orgName": "اسم المؤسسة",
     "country": "الدولة",
     "logo": "الشعار",

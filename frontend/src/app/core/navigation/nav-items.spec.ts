@@ -7,6 +7,8 @@ import {
   isNavItemVisible,
   visibleNavGroups,
 } from './nav-items';
+import en from '../../../assets/i18n/en.json';
+import ar from '../../../assets/i18n/ar.json';
 
 // ACC-79 — the rail's visibility rule, tested without HTTP or TestBed. What a
 // user sees is computed from permissions and entitlements alone; nothing here
@@ -30,6 +32,39 @@ describe('nav-items (ACC-79)', () => {
   const ALL_TENANT_PERMISSIONS = TENANT_NAV_GROUPS.flatMap((g) => g.items)
     .map((i) => i.requiredPermission)
     .filter((p): p is string => !!p);
+
+  // A rail label is DATA — item.labelKey piped through translate — so no
+  // template check sees it, and a missing key renders as the raw key string in
+  // the rail, the breadcrumb and the tab title at once. ACC-79 added eight.
+  describe('labels', () => {
+    const lookup = (dict: unknown, key: string): unknown =>
+      key
+        .split('.')
+        .reduce<unknown>(
+          (node, part) =>
+            node && typeof node === 'object'
+              ? (node as Record<string, unknown>)[part]
+              : undefined,
+          dict,
+        );
+
+    const allGroups = [...TENANT_NAV_GROUPS, ...PLATFORM_NAV_GROUPS];
+    const keys = [
+      ...allGroups.map((g) => g.labelKey),
+      ...allGroups.flatMap((g) => g.items.map((i) => i.labelKey)),
+    ];
+
+    it('resolves every group and item label in English and Arabic', () => {
+      for (const key of keys) {
+        expect(typeof lookup(en, key))
+          .withContext(`en: ${key}`)
+          .toBe('string');
+        expect(typeof lookup(ar, key))
+          .withContext(`ar: ${key}`)
+          .toBe('string');
+      }
+    });
+  });
 
   describe('group order', () => {
     it('is My work, then Quality management, then Administration', () => {
@@ -170,10 +205,19 @@ describe('nav-items (ACC-79)', () => {
       expect(ROUTE_PERMISSIONS.get('tasks/unassigned')).toBe('tasks:manage');
     });
 
-    it('gates Admin Settings, now that it is a nav item rather than a standalone entry', () => {
-      expect(ROUTE_PERMISSIONS.get('admin-settings')).toBe(
-        'tenant:manage_config',
+    // ACC-79 — the hub is gone. Its four screens are rail items, so they are
+    // mapped from the groups; the bare parent path must NOT be, or it would
+    // silently re-impose one permission on all four.
+    it('maps each admin-settings screen, and not the removed hub', () => {
+      expect(ROUTE_PERMISSIONS.has('admin-settings')).toBe(false);
+      expect(ROUTE_PERMISSIONS.get('admin-settings/organization-profile')).toBe(
+        'tenant:view',
       );
+      for (const screen of ['email-provider', 'ai-settings', 'task-sla']) {
+        expect(ROUTE_PERMISSIONS.get(`admin-settings/${screen}`))
+          .withContext(screen)
+          .toBe('tenant:manage_config');
+      }
     });
 
     // The single-source guarantee: a link and its route cannot disagree.

@@ -45,7 +45,10 @@
     "workflows": "Workflows",
     "settings": "Settings",
     "platform": "Super Admin",
-    "adminSettings": "Admin Settings",
+    "taskSla": "Task SLA",
+    "organizationProfile": "Organization Profile",
+    "emailProvider": "Email Provider",
+    "aiCredits": "AI Credits",
     "home": "Home",
     "myTasks": "My tasks",
     "groups": {
@@ -620,10 +623,9 @@
     "offboarding": "Offboarding"
   },
   "adminSettings": {
-    "title": "Organization Settings",
     "organizationProfile": "Organization Profile",
     "emailProvider": "Email Provider",
-    "aiSettings": "AI Settings",
+    "aiSettings": "AI Credits",
     "orgName": "Organization Name",
     "country": "Country",
     "logo": "Logo",
