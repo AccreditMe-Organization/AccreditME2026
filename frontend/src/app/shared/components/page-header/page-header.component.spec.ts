@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { PageHeaderComponent } from './page-header.component';
+import { PageNameRegistry } from '../../../core/services/document-title.service';
 
 @Component({
   standalone: true,
@@ -70,5 +71,25 @@ describe('PageHeaderComponent (ACC-79)', () => {
     expect(el.querySelector('header button')!.textContent).toContain(
       'Add committee',
     );
+  });
+
+  // The browser tab names the page from this H1, so the two cannot disagree —
+  // and a record page's tab follows its title when the record loads.
+  describe('as the tab title source', () => {
+    it('registers its title, follows a change, and releases it when destroyed', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ imports: [HostComponent] });
+      const registry = TestBed.inject(PageNameRegistry);
+      const fixture = TestBed.createComponent(HostComponent);
+      fixture.detectChanges();
+      expect(registry.entry()?.text).toBe('Committees');
+
+      fixture.componentInstance.title = 'Quality Management Committee';
+      fixture.detectChanges();
+      expect(registry.entry()?.text).toBe('Quality Management Committee');
+
+      fixture.destroy();
+      expect(registry.entry()).toBeNull();
+    });
   });
 });

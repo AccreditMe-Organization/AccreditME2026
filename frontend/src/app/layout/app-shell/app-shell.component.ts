@@ -1,10 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, Injector, OnInit, inject, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { ImpersonationBannerComponent } from '../impersonation-banner/impersonation-banner.component';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { DocumentTitleService } from '../../core/services/document-title.service';
 
 // The app shell every guarded route renders inside (ACC-13) — replaces the
 // route-per-page, layout-less arrangement every prior foundation step's own
@@ -80,6 +81,12 @@ export class AppShellComponent implements OnInit {
   private readonly navigationAccessService = inject(NavigationAccessService);
 
   readonly sidebarCollapsed = signal(false);
+
+  constructor() {
+    // ACC-79 — tab titles follow the page while the shell is alive, and reset
+    // when it is destroyed (logout), so the sign-in tab names no tenant.
+    inject(DocumentTitleService).attach(inject(Injector));
+  }
 
   ngOnInit(): void {
     this.navigationAccessService.loadAccess().subscribe();

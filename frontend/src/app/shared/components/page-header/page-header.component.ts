@@ -1,4 +1,15 @@
-import { Component, input } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  effect,
+  inject,
+  input,
+  untracked,
+} from '@angular/core';
+import {
+  PageNameEntry,
+  PageNameRegistry,
+} from '../../../core/services/document-title.service';
 
 // ACC-79 — the page header, from frontend/design-reference/AccreditMe App
 // Shell.dc.html: an optional eyebrow, the H1, an optional one-line purpose,
@@ -76,4 +87,25 @@ export class PageHeaderComponent {
   readonly title = input.required<string>();
   readonly eyebrow = input<string | null>(null);
   readonly purpose = input<string | null>(null);
+
+  // The browser tab reads this H1 (DocumentTitleService), so a tab and its
+  // page say the same thing, and a record page's tab names the record. An
+  // effect, because a record page's title arrives when the record loads.
+  constructor() {
+    const registry = inject(PageNameRegistry);
+    let entry: PageNameEntry | null = null;
+    effect(() => {
+      const title = this.title();
+      // untracked: release() READS the registry's signal. Tracked, this effect
+      // would depend on the entry it writes and re-run forever — which is
+      // exactly what hung the test browser the first time.
+      untracked(() => {
+        if (entry) registry.release(entry);
+        entry = title ? registry.register(title) : null;
+      });
+    });
+    inject(DestroyRef).onDestroy(() => {
+      if (entry) registry.release(entry);
+    });
+  }
 }
