@@ -671,6 +671,7 @@
     "navigation": "Main navigation",
     "collapseRail": "Collapse navigation",
     "expandRail": "Expand navigation",
-    "userMenu": "Account menu for {{name}}"
+    "userMenu": "Account menu for {{name}}",
+    "breadcrumb": "Breadcrumb"
   }
 }
