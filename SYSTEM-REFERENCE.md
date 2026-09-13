@@ -465,6 +465,10 @@ splitting.
 truth. Harmless while that list is empty; load-bearing for whoever adds
 the first functional module, who should then decide whether `/tenant`'s
 `tenant:view` gating is still right.
+**Decided in ACC-79 — split rather than ungated.** See 1.8. Only
+`TENANT_ADMIN` holds `tenant:view`, so the rail restructure would
+otherwise have shown every non-admin none of their quality modules —
+the exact users it exists to serve.
 
 **`GET /tasks/my-tasks` carries no `@Permissions()`** (ACC-70),
 deliberately — it filters `assignees.some(userId = caller)` and is
@@ -473,6 +477,74 @@ documents for the notification inbox. Its neighbours stay gated:
 `getForSource()` and `getById()` can return any task in the tenant. A
 spec asserts the metadata directly so the decorator is not "restored"
 for consistency.
+
+### 1.8 Module Entitlements (ACC-79)
+
+**`GET /tenant/entitlements`** — ungated, self-scoped, and the source
+the shell reads to decide which functional modules a user sees.
+
+**Why a separate endpoint and not an ungated `GET /tenant`.** The test
+for ungating is the one `my-tasks` (ACC-70) and `complete()` (ACC-76)
+established: can the query reach anything that is not the caller's
+own? "Which modules does my own tenant have" passes — it is keyed on
+`@CurrentTenant()`. But `GET /tenant`'s *payload* fails a different
+test. It carries provider configuration (`authProvider`,
+`storageProvider`, `aiProvider`), plan limits (`maxUsers`,
+`maxStorageGb`), `trialEndsAt`, `status`, and the AI credit balance
+(`monthlyCredits`, `creditsUsed`, `creditsRemaining`,
+`overageEnabled`). Ungating it would have handed every `BASE_USER` the
+tenant's credit balance and storage provider. A non-admin needs
+entitlements, not configuration.
+
+So the entitlements endpoint returns **exactly four fields** —
+`name`, `slug`, `isPlatformOrg`, `modules` — through its own
+`ITenantEntitlements` type rather than a projection of `ITenant`, so a
+field added to `ITenant` cannot leak onto it. `GET /tenant` stays on
+`tenant:view`. `tenant.controller.spec.ts` reads the `@Permissions`
+metadata of **both** handlers directly, because ungating the wrong one
+— or re-gating the new one for consistency — would pass every other
+test in the suite.
+
+**Three states, resolved by `resolveModuleEntitlements()`**
+(`foundation/tenant/module-entitlements.ts`). A module is usable only
+when both halves allow it:
+
+| Source | Holds | Role |
+|---|---|---|
+| `Organization.settings.modules[key]` | boolean | tenant switched it on |
+| `PlanModule.accessLevel` (via `Organization.planId`) | `FULL` / `READ_ONLY` / `NONE` | plan tier |
+
+Before ACC-79, nothing tenant-facing joined `PlanModule` — only the
+platform plan editor read it, and `ITenant.modules` was the bare
+boolean. A plan that does not mention a module does not grant it.
+**`NONE` is omitted, not returned**: every signed-in user reads this,
+and which modules a tenant is *not* licensed for is commercial detail
+for the admin's Plan & modules page. An absent key and `NONE` mean the
+same thing to every consumer.
+
+**⚠ NULL-PLAN FALLBACK — debt, not design. Revisit once tenants carry
+plans.** `Organization.planId` is nullable ("pre-ACC-13 tenants have
+none yet") and every seeded tenant is in that state. With no plan,
+every enabled module resolves to `FULL`, via the named constant
+`NULL_PLAN_FALLBACK_ACCESS`. That was chosen for compatibility —
+resolving no-plan to `NONE` would empty every existing tenant's rail —
+not endorsed as a rule. Its concrete cost: **the first tenant put on
+Starter with `planId` still null receives Standards at `FULL` rather
+than `READ_ONLY`, and nothing says so.** `null` and `[]` are
+deliberately distinct: `[]` is a real plan granting nothing and does
+*not* fall back. `module-entitlements.spec.ts` pins the constant by
+name (verified to fail when changed). Assigning the seeded tenants to
+a Plan is a pricing decision, deliberately kept out of ACC-79.
+
+**⚠ `ModuleGuard` does not use this yet.** `common/guards/module.guard.ts`
+reads `settings.modules[key] === true` directly and ignores plan tiers
+entirely. It has **zero consumers** — no controller carries
+`@RequiresModule()` — so nothing disagrees today. But the first
+functional module shipped behind it unchanged would appear read-only in
+the rail while its API accepted writes. The resolver is a pure function
+outside `TenantService` precisely so the guard can adopt it; do that
+before the first `@RequiresModule()` lands, and give `READ_ONLY` a
+meaning for write routes at the same time.
 
 ---
 
