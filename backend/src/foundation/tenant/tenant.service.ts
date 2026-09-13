@@ -21,7 +21,14 @@ import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
 import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
-import { ITenant, ITenantConfig, IEmailConfig, ITaskSlaSettings } from './interfaces/tenant.interface';
+import {
+  ITenant,
+  ITenantConfig,
+  ITenantEntitlements,
+  IEmailConfig,
+  ITaskSlaSettings,
+} from './interfaces/tenant.interface';
+import { ModuleAccessLevel, resolveModuleEntitlements } from './module-entitlements';
 
 // ACC-46 Section 2.7.d — replaces TaskService's own old
 // DEFAULT_TASK_SLA_HOURS/FALLBACK_SLA_HOURS pair (a flat hours-per-priority
@@ -64,6 +71,49 @@ export class TenantService {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
     return this.mapToITenant(org);
+  }
+
+  // ACC-79 — what the shell needs to draw navigation, and nothing else.
+  //
+  // Scoped by the caller's own organization id, which the controller takes
+  // from @CurrentTenant() and never from the request. The Organization row is
+  // the tenant itself, so a lookup by id is the whole of the scoping; the plan
+  // modules are then read through THAT row's planId, never a planId supplied
+  // from outside. PlanModule is platform catalog data rather than tenant data,
+  // but reading another tenant's plan would still disclose which plan they are
+  // on — so the chain from caller to plan must not have a second entry point.
+  async getEntitlements(organizationId: string): Promise<ITenantEntitlements> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { name: true, slug: true, isPlatformOrg: true, settings: true, planId: true },
+    });
+    if (!org) throw new NotFoundException('Tenant not found');
+
+    // null, not [], when there is no plan. The resolver treats those two very
+    // differently: [] is "a plan that grants nothing", null is the legacy
+    // no-plan state that falls back to FULL.
+    const planModules = org.planId
+      ? await this.prisma.planModule.findMany({
+          where: { planId: org.planId },
+          select: { moduleKey: true, accessLevel: true },
+        })
+      : null;
+
+    const enabledModules =
+      (org.settings as { modules?: Record<string, boolean> } | null)?.modules ?? {};
+
+    return {
+      name: org.name,
+      slug: org.slug,
+      isPlatformOrg: org.isPlatformOrg,
+      modules: resolveModuleEntitlements(
+        enabledModules,
+        planModules?.map((m) => ({
+          moduleKey: m.moduleKey,
+          accessLevel: m.accessLevel as ModuleAccessLevel,
+        })) ?? null,
+      ),
+    };
   }
 
   async update(
