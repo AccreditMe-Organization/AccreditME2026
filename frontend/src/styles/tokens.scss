@@ -89,3 +89,26 @@
   --am-rail-avatar:       oklch(0.44 0.07 255);
   --am-rail-brand:        oklch(0.98 0.004 250);
 }
+
+// Platform shell palette (ACC-79) — overrides the rail tokens above for a
+// platform admin, from the App Shell reference's platform shell().
+//
+// Same names, different hue (320 against the tenant's 250–258). A platform
+// admin operates a different product ON tenants rather than holding a higher
+// permission tier inside one, and the chrome says so before any content does.
+// Rail only, as in the reference: the content column is identical across
+// shells, so pages never need to know which shell they are in.
+//
+// --am-rail-glyph-active and --am-rail-brand are deliberately not overridden —
+// the reference uses the same values for both shells.
+.am-rail--platform {
+  --am-rail-bg:     oklch(0.24 0.035 320);
+  --am-rail-rule:   oklch(0.33 0.04 320);
+  --am-rail-kicker: oklch(0.72 0.06 320);
+  --am-rail-ink:    oklch(0.85 0.02 320);
+  --am-rail-glyph:  oklch(0.70 0.04 320);
+  --am-rail-active: oklch(0.38 0.09 320);
+  --am-rail-hover:  oklch(0.30 0.05 320);
+  --am-rail-mark:   oklch(0.58 0.14 320);
+  --am-rail-avatar: oklch(0.42 0.09 320);
+}

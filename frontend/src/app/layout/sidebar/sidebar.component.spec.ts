@@ -123,6 +123,26 @@ describe('SidebarComponent (ACC-79)', () => {
     });
   });
 
+  // ACC-79 — the platform hue is applied by class, so the rail's tokens swap
+  // without the component branching on colour.
+  describe('shell palette', () => {
+    it('applies the platform palette to a platform admin', () => {
+      const el = render({ platformAdmin: true });
+      expect(el.querySelector('aside')!.classList).toContain(
+        'am-rail--platform',
+      );
+    });
+
+    it('keeps the tenant palette for every tenant user, admin or not', () => {
+      for (const permissions of [[], ['users:view', 'roles:view']]) {
+        const el = render({ permissions });
+        expect(el.querySelector('aside')!.classList)
+          .withContext(JSON.stringify(permissions))
+          .not.toContain('am-rail--platform');
+      }
+    });
+  });
+
   it('shows the tenant under the user, not a role name', () => {
     const el = render({ tenantName: 'Al Nakheel Specialist Hospital' });
     expect(el.textContent ?? '').toContain('Al Nakheel Specialist Hospital');

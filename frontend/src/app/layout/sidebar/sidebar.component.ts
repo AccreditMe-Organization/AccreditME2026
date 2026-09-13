@@ -39,6 +39,7 @@ import {
       class="h-full flex-none flex flex-col bg-[var(--am-rail-bg)] transition-[width] duration-200"
       [class.w-[260px]]="!collapsed()"
       [class.w-[72px]]="collapsed()"
+      [class.am-rail--platform]="isPlatformShell()"
     >
       <!-- Brand. The kicker names which face of the product this is. -->
       <div
@@ -207,13 +208,23 @@ export class SidebarComponent {
     visibleNavGroups(this.navigationAccessService),
   );
 
+  // ACC-79 — the platform palette (tokens.scss, .am-rail--platform). Derived
+  // from the groups being shown rather than asking isPlatformAdmin() again, so
+  // the hue, the kicker and the items cannot disagree about which shell this
+  // is. A platform admin IMPERSONATING a tenant gets the tenant shell: that
+  // session belongs to the tenant user, and the full-width banner is what
+  // marks it as impersonation.
+  readonly isPlatformShell = computed(() =>
+    this.groups().some((g) => g.key === 'platform'),
+  );
+
   // Which face of the product this is. The reference switches the kicker on a
   // role NAME ("Tenant admin" when role === "admin"). This product never gates
   // or labels on a role name, so it is derived from what the rail actually
   // shows: an Administration group means administering this tenant.
   readonly productLabelKey = computed(() => {
     const keys = this.groups().map((g) => g.key);
-    if (keys.includes('platform')) return 'shell.product.platform';
+    if (this.isPlatformShell()) return 'shell.product.platform';
     if (keys.includes('admin')) return 'shell.product.admin';
     return 'shell.product.quality';
   });
