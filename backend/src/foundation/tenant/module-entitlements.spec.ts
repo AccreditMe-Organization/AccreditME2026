@@ -11,8 +11,10 @@ describe('resolveModuleEntitlements (ACC-79)', () => {
   // Read NULL_PLAN_FALLBACK_ACCESS's comment before "fixing" the test.
   //
   // FULL was chosen for legacy compatibility, not as a product rule: every
-  // seeded tenant has planId null ("pre-ACC-13 tenants have none yet"), and
-  // resolving that to NONE would empty every existing tenant's rail. The cost
+  // seeded tenant has planId null ("pre-ACC-13 tenants have none yet"). Today
+  // FULL and NONE give identical results, because no tenant has any module
+  // switched on. Once modules are switched on, resolving no-plan to NONE would
+  // empty every tenant's rail — which is what FULL guards against. The cost
   // is that a tenant put on Starter with planId still unset receives Standards
   // at FULL instead of READ_ONLY. It is meant to be revisited once tenants
   // carry plans — deliberately, by someone who knows why it was FULL, which is

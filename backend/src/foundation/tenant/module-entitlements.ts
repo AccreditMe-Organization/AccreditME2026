@@ -25,9 +25,13 @@ export interface PlanModuleAccess {
 // has to be returned, and this is it: every module the tenant has enabled is
 // treated as FULL.
 //
-// That is chosen because the alternative — treating a missing plan as NONE —
-// would empty the rail of every existing tenant the moment this ships. It is
-// NOT an endorsement of "no plan means everything". Read it as a debt:
+// Why FULL and not NONE — and note the tense. TODAY THE CHOICE CHANGES
+// NOTHING: no tenant has any module switched on (every org's settings.modules
+// key is absent), so FULL and NONE produce identical, empty module lists. It
+// becomes load-bearing ONCE modules are switched on: from then, treating a
+// missing plan as NONE would empty every tenant's rail of the modules they had
+// just been given. FULL is chosen so that day does not arrive as a surprise.
+// It is NOT an endorsement of "no plan means everything". Read it as a debt:
 //
 //   The first tenant put on Starter with planId still null would receive
 //   Standards at FULL, not READ_ONLY, and nothing would say so.

@@ -526,9 +526,13 @@ same thing to every consumer.
 plans.** `Organization.planId` is nullable ("pre-ACC-13 tenants have
 none yet") and every seeded tenant is in that state. With no plan,
 every enabled module resolves to `FULL`, via the named constant
-`NULL_PLAN_FALLBACK_ACCESS`. That was chosen for compatibility —
-resolving no-plan to `NONE` would empty every existing tenant's rail —
-not endorsed as a rule. Its concrete cost: **the first tenant put on
+`NULL_PLAN_FALLBACK_ACCESS`. That was chosen for compatibility, not
+endorsed as a rule — and **its effect today is nil**: no tenant has any
+module switched on (every org's `settings.modules` key is absent, and
+the `Plan`/`PlanModule` tables hold 0 rows), so `FULL` and `NONE`
+currently produce identical rails. It becomes load-bearing **once
+modules are switched on**: from then, resolving no-plan to `NONE` would
+empty every tenant's rail of the modules it had just been given. Its concrete cost: **the first tenant put on
 Starter with `planId` still null receives Standards at `FULL` rather
 than `READ_ONLY`, and nothing says so.** `null` and `[]` are
 deliberately distinct: `[]` is a real plan granting nothing and does
