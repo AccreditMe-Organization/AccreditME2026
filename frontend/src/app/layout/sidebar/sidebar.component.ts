@@ -80,8 +80,10 @@ export class SidebarComponent {
   readonly collapsed = input(false);
 
   visibleFoundationItems(): NavItem[] {
-    return FOUNDATION_NAV_ITEMS.filter((item) =>
-      this.navigationAccessService.hasPermission(item.requiredPermission),
+    return FOUNDATION_NAV_ITEMS.filter(
+      (item) =>
+        !item.requiredPermission ||
+        this.navigationAccessService.hasPermission(item.requiredPermission),
     );
   }
 
@@ -89,7 +91,8 @@ export class SidebarComponent {
     return FUNCTIONAL_NAV_ITEMS.filter(
       (item) =>
         this.navigationAccessService.isModuleEnabled(item.moduleKey) &&
-        this.navigationAccessService.hasPermission(item.requiredPermission),
+        (!item.requiredPermission ||
+          this.navigationAccessService.hasPermission(item.requiredPermission)),
     );
   }
 

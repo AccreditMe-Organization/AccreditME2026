@@ -23,23 +23,79 @@ export interface NavItem {
   labelKey: string;
   icon: string;
   route: string;
-  requiredPermission: string;
+  // Omitted for content that is intrinsically SELF-SCOPED — a query that can
+  // only ever return the caller's own records, so no permission is needed to
+  // see it. Absent here means the route is not permission-gated at all, and
+  // it is left out of ROUTE_PERMISSIONS below. Do not omit it to make a link
+  // "just show up": the backend endpoint behind the route must be ungated for
+  // the same reason, or the page renders a wall of 403s.
+  requiredPermission?: string;
 }
 
 // Only routes that actually exist today (ACC-5–ACC-22) — meetings/
 // documents/etc. are still unbuilt and will add their own entries once
 // those modules ship, not stubbed here as dead links.
 export const FOUNDATION_NAV_ITEMS: NavItem[] = [
-  { labelKey: 'nav.organization', icon: 'pi pi-building', route: '/organization', requiredPermission: 'org:view' },
-  { labelKey: 'nav.workingCalendar', icon: 'pi pi-calendar', route: '/working-calendar', requiredPermission: 'org:view' },
-  { labelKey: 'nav.lookups', icon: 'pi pi-list', route: '/lookups', requiredPermission: 'lookups:view' },
-  { labelKey: 'nav.roles', icon: 'pi pi-shield', route: '/roles', requiredPermission: 'roles:view' },
-  { labelKey: 'nav.workflows', icon: 'pi pi-sitemap', route: '/workflows', requiredPermission: 'workflows:view' },
-  { labelKey: 'nav.orgPositions', icon: 'pi pi-briefcase', route: '/org-positions', requiredPermission: 'positions:view' },
-  { labelKey: 'nav.committees', icon: 'pi pi-flag', route: '/committees', requiredPermission: 'committees:view' },
-  { labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks', requiredPermission: 'tasks:view' },
-  { labelKey: 'nav.unassignedTasks', icon: 'pi pi-exclamation-triangle', route: '/tasks/unassigned', requiredPermission: 'tasks:manage' },
-  { labelKey: 'nav.users', icon: 'pi pi-users', route: '/users', requiredPermission: 'users:view' },
+  {
+    labelKey: 'nav.organization',
+    icon: 'pi pi-building',
+    route: '/organization',
+    requiredPermission: 'org:view',
+  },
+  {
+    labelKey: 'nav.workingCalendar',
+    icon: 'pi pi-calendar',
+    route: '/working-calendar',
+    requiredPermission: 'org:view',
+  },
+  {
+    labelKey: 'nav.lookups',
+    icon: 'pi pi-list',
+    route: '/lookups',
+    requiredPermission: 'lookups:view',
+  },
+  {
+    labelKey: 'nav.roles',
+    icon: 'pi pi-shield',
+    route: '/roles',
+    requiredPermission: 'roles:view',
+  },
+  {
+    labelKey: 'nav.workflows',
+    icon: 'pi pi-sitemap',
+    route: '/workflows',
+    requiredPermission: 'workflows:view',
+  },
+  {
+    labelKey: 'nav.orgPositions',
+    icon: 'pi pi-briefcase',
+    route: '/org-positions',
+    requiredPermission: 'positions:view',
+  },
+  {
+    labelKey: 'nav.committees',
+    icon: 'pi pi-flag',
+    route: '/committees',
+    requiredPermission: 'committees:view',
+  },
+  // ACC-79 — NO requiredPermission, matching the endpoint behind it. /tasks
+  // renders MyTasksComponent, which reads GET /tasks/my-tasks — ungated in
+  // ACC-70 because it can only return work assigned to the caller. The route
+  // kept requiring tasks:view anyway, so a user without it saw "My Open Tasks
+  // — View all" on Home and was bounced straight back to Home by the link.
+  { labelKey: 'nav.tasks', icon: 'pi pi-check-square', route: '/tasks' },
+  {
+    labelKey: 'nav.unassignedTasks',
+    icon: 'pi pi-exclamation-triangle',
+    route: '/tasks/unassigned',
+    requiredPermission: 'tasks:manage',
+  },
+  {
+    labelKey: 'nav.users',
+    icon: 'pi pi-users',
+    route: '/users',
+    requiredPermission: 'users:view',
+  },
 ];
 
 // Functional modules (ACC-17+) will be appended here as they ship, each
@@ -67,9 +123,16 @@ export const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
 // icon, below the nav list) but is still permission-gated, so it belongs in
 // the mapping even though it is not a NavItem. Without this it would be the
 // one gated screen the route guard silently allowed through.
-export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, string> = new Map([
-  ['admin-settings', 'tenant:manage_config'],
-]);
+export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, string> =
+  new Map([
+    ['admin-settings', 'tenant:manage_config'],
+    // ACC-79 — must be explicit now that /tasks itself is ungated. permissionGuard
+    // walks UP from a route to its nearest mapped ancestor, but a child route
+    // with no canActivate never runs the guard at all. With 'tasks' unmapped,
+    // this child would have become reachable by anyone — and TaskListComponent
+    // can return ANY task in the tenant, not just the caller's.
+    ['tasks/all', 'tasks:view'],
+  ]);
 
 // Route path -> required permission, for the guard. Keyed by the route path
 // WITHOUT its leading slash, matching how app.routes.ts declares children
@@ -78,8 +141,16 @@ export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, string> = new Map
 // Built from the lists above rather than hand-written, so adding a nav item
 // automatically guards its route and there is no second place to forget.
 export const ROUTE_PERMISSIONS: ReadonlyMap<string, string> = new Map([
-  ...[...FOUNDATION_NAV_ITEMS, ...FUNCTIONAL_NAV_ITEMS].map(
-    (item) => [item.route.replace(/^\//, ''), item.requiredPermission] as const,
-  ),
+  ...[...FOUNDATION_NAV_ITEMS, ...FUNCTIONAL_NAV_ITEMS]
+    // A self-scoped item has no entry — absence from this map is how the guard
+    // knows the route is not permission-gated.
+    .filter(
+      (item): item is NavItem & { requiredPermission: string } =>
+        !!item.requiredPermission,
+    )
+    .map(
+      (item) =>
+        [item.route.replace(/^\//, ''), item.requiredPermission] as const,
+    ),
   ...STANDALONE_ROUTE_PERMISSIONS,
 ]);

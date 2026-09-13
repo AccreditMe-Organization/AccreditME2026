@@ -1,8 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import {
+  ActivatedRouteSnapshot,
+  Router,
+  RouterStateSnapshot,
+  UrlTree,
+} from '@angular/router';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import {
+  HttpTestingController,
+  provideHttpClientTesting,
+} from '@angular/common/http/testing';
 import { environment } from '../../../environments/environment';
 import { permissionGuard } from './permission.guard';
 import { NavigationAccessService } from '../services/navigation-access.service';
@@ -24,7 +32,10 @@ describe('permissionGuard', () => {
     // reconfigured once it has been injected from.
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: NavigationAccessService, useValue: stub }],
+      providers: [
+        provideRouter([]),
+        { provide: NavigationAccessService, useValue: stub },
+      ],
     });
     router = TestBed.inject(Router);
   }
@@ -88,6 +99,30 @@ describe('permissionGuard', () => {
   // The two cases the hierarchy-based path resolution exists for. Both are
   // silently wrong if the guard reads routeConfig.path alone, or the
   // resolved URL, instead of rebuilding the configured path.
+  // ACC-79 — /tasks is My tasks, backed by the ungated, self-scoped
+  // GET /tasks/my-tasks. The route must not demand a permission its own
+  // endpoint does not, or "View all" on Home bounces a user straight back.
+  it('allows My tasks (/tasks) with NO permission — it is self-scoped', () => {
+    setup({ permissions: [] });
+
+    expect(run('tasks')).toBe(true);
+  });
+
+  // The hazard that unmapping 'tasks' created. /tasks/all can return ANY task
+  // in the tenant, so it must not inherit the parent's new absence of a gate.
+  it('still gates /tasks/all on tasks:view now that its parent is ungated', () => {
+    setup({ permissions: [] });
+    expect(run('tasks', 'all')).toEqual(router.parseUrl(LANDING_ROUTE));
+
+    setup({ permissions: ['tasks:view'] });
+    expect(run('tasks', 'all')).toBe(true);
+  });
+
+  it('gates /tasks/unassigned on tasks:manage ALONE, no longer on tasks:view as well', () => {
+    setup({ permissions: ['tasks:manage'] });
+    expect(run('tasks', 'unassigned')).toBe(true);
+  });
+
   it('applies a nested route’s OWN stricter permission (/tasks/unassigned needs tasks:manage)', () => {
     setup({ permissions: ['tasks:view'] });
 
@@ -196,7 +231,12 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
     httpMock.expectOne(PERMISSIONS_URL).flush([]);
     httpMock
       .expectOne(TENANT_URL)
-      .flush({ name: 'Org Alpha', slug: 'alpha', isPlatformOrg: false, modules: { documents: 'FULL' } });
+      .flush({
+        name: 'Org Alpha',
+        slug: 'alpha',
+        isPlatformOrg: false,
+        modules: { documents: 'FULL' },
+      });
   }
 
   // What ACC-70's live pass produced for Dr. Yasser Al-Amri, when the tenant
@@ -208,10 +248,12 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
   function loadAsZeroPermissionUserWithTenant403(): void {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush([]);
-    httpMock.expectOne(TENANT_URL).flush(
-      { message: 'Forbidden', error: 'Forbidden', statusCode: 403 },
-      { status: 403, statusText: 'Forbidden' },
-    );
+    httpMock
+      .expectOne(TENANT_URL)
+      .flush(
+        { message: 'Forbidden', error: 'Forbidden', statusCode: 403 },
+        { status: 403, statusText: 'Forbidden' },
+      );
   }
 
   // ACC-79 — the ACC-70 regression, re-proven against the NEW wiring. The
@@ -228,11 +270,15 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
       'lookups',
       'org-positions',
       'committees',
-      'tasks',
+      // ACC-79 — /tasks (My tasks) is self-scoped and ungated; its gated
+      // child stands in for it here.
+      'tasks/all',
       'working-calendar',
       'admin-settings',
     ]) {
-      expect(guard(path)).withContext(path).toEqual(router.parseUrl(LANDING_ROUTE));
+      expect(guard(path))
+        .withContext(path)
+        .toEqual(router.parseUrl(LANDING_ROUTE));
     }
   });
 
@@ -251,24 +297,33 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
       'lookups',
       'org-positions',
       'committees',
-      'tasks',
+      // ACC-79 — /tasks (My tasks) is self-scoped and ungated; its gated
+      // child stands in for it here.
+      'tasks/all',
       'working-calendar',
       'admin-settings',
     ]) {
-      expect(guard(path)).withContext(path).toEqual(router.parseUrl(LANDING_ROUTE));
+      expect(guard(path))
+        .withContext(path)
+        .toEqual(router.parseUrl(LANDING_ROUTE));
     }
   });
 
-  it('still allows the landing page itself to a zero-permission user', () => {
+  it('still allows the landing page and My tasks to a zero-permission user', () => {
     loadAsZeroPermissionUser();
 
     expect(guard('home')).toBe(true);
+    // ACC-79 — My tasks is self-scoped; a user with no permissions still has
+    // their own assigned work, and Home links to it.
+    expect(guard('tasks')).toBe(true);
   });
 
   it('allows a guarded route to a user who holds its permission, even when the tenant call 403s', () => {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush(['org:view']);
-    httpMock.expectOne(TENANT_URL).flush('forbidden', { status: 403, statusText: 'Forbidden' });
+    httpMock
+      .expectOne(TENANT_URL)
+      .flush('forbidden', { status: 403, statusText: 'Forbidden' });
 
     expect(guard('organization')).toBe(true);
     expect(guard('users')).toEqual(router.parseUrl(LANDING_ROUTE));
@@ -278,8 +333,17 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
   // PERMISSIONS call itself failing means the answer is genuinely unknown.
   it('falls open only when the permissions call itself fails', () => {
     service.loadAccess().subscribe();
-    httpMock.expectOne(PERMISSIONS_URL).flush('boom', { status: 503, statusText: 'Unavailable' });
-    httpMock.expectOne(TENANT_URL).flush({ name: 'Org Alpha', slug: 'alpha', isPlatformOrg: false, modules: {} });
+    httpMock
+      .expectOne(PERMISSIONS_URL)
+      .flush('boom', { status: 503, statusText: 'Unavailable' });
+    httpMock
+      .expectOne(TENANT_URL)
+      .flush({
+        name: 'Org Alpha',
+        slug: 'alpha',
+        isPlatformOrg: false,
+        modules: {},
+      });
 
     expect(guard('organization')).toBe(true);
   });
