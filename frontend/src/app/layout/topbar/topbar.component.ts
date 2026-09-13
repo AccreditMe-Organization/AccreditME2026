@@ -28,14 +28,22 @@ import { NotificationBellComponent } from '../../foundation/notification/compone
       class="h-12 flex-none flex items-center justify-between gap-3 ps-2 pe-4 bg-[var(--am-card)] border-b border-[var(--am-border)]"
     >
       <div class="flex items-center gap-1 min-w-0">
-        <!-- Labelled for assistive technology in both states: an icon-only
-             control whose meaning flips is otherwise announced as nothing. -->
+        <!-- [ariaLabel], NOT [attr.aria-label]. PrimeNG's p-button renders
+             its own inner <button> and binds that element's aria-label from
+             this input (primeng-button.mjs: [attr.aria-label]="ariaLabel ||
+             buttonProps?.ariaLabel"). An attr binding lands on the p-button
+             HOST, which is not focusable, and left the real button with no
+             accessible name — a screen reader announced it as just "button".
+             Found in commit 7's browser pass, when the control could not be
+             located by its name.
+             No aria-expanded: p-button offers no way to put it on the inner
+             element, and the label already changes with the state. -->
         <p-button
           icon="pi pi-bars"
           [text]="true"
           severity="secondary"
           size="small"
-          [attr.aria-label]="
+          [ariaLabel]="
             (collapsed() ? 'shell.expandRail' : 'shell.collapseRail')
               | translate
           "
@@ -43,7 +51,6 @@ import { NotificationBellComponent } from '../../foundation/notification/compone
             (collapsed() ? 'shell.expandRail' : 'shell.collapseRail')
               | translate
           "
-          [attr.aria-expanded]="!collapsed()"
           (onClick)="toggleSidebar.emit()"
         />
         <app-breadcrumb class="min-w-0" />
