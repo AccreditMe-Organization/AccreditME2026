@@ -29,9 +29,16 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, forkJoin, map, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
-interface TenantAccessResponse {
+// ACC-79 — mirrors the backend's ITenantEntitlements. A module that is not
+// usable by this tenant, for any reason (not built, not licensed, switched
+// off), is simply absent: the backend omits NONE rather than returning it.
+export type ModuleAccessLevel = 'FULL' | 'READ_ONLY';
+
+interface TenantEntitlementsResponse {
+  name: string;
+  slug: string;
   isPlatformOrg: boolean;
-  modules: Record<string, boolean>;
+  modules: Record<string, ModuleAccessLevel>;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -39,8 +46,11 @@ export class NavigationAccessService {
   private readonly http = inject(HttpClient);
 
   private readonly _permissions = signal<string[]>([]);
-  private readonly _modules = signal<Record<string, boolean>>({});
+  private readonly _modules = signal<Record<string, ModuleAccessLevel>>({});
   private readonly _isPlatformOrg = signal(false);
+  // ACC-79 — for the browser tab title ("Page · Tenant — AccreditMe") and the
+  // tenant label in the shell. Empty until entitlements load.
+  private readonly _tenantName = signal('');
 
   // ACC-70 — before this, a caller could not tell "loaded, and this user
   // genuinely has no permissions" from "the request failed", because
@@ -59,15 +69,18 @@ export class NavigationAccessService {
   // still resolves successfully, and a genuine platform admin is bounced to
   // /organization. ACC-21 fixed the TIMING race (guard evaluating before the
   // request resolved); it did not touch the FAILURE case.
-  private readonly _loadState = signal<'PENDING' | 'LOADED' | 'FAILED'>('PENDING');
-
-  // Tracked separately from _loadState — see hasTrustworthyTenantAccess().
-  private readonly _tenantLoadState = signal<'PENDING' | 'LOADED' | 'FORBIDDEN' | 'FAILED'>(
+  private readonly _loadState = signal<'PENDING' | 'LOADED' | 'FAILED'>(
     'PENDING',
   );
 
+  // Tracked separately from _loadState — see hasTrustworthyTenantAccess().
+  private readonly _tenantLoadState = signal<
+    'PENDING' | 'LOADED' | 'FORBIDDEN' | 'FAILED'
+  >('PENDING');
+
   readonly permissions = this._permissions.asReadonly();
   readonly modules = this._modules.asReadonly();
+  readonly tenantName = this._tenantName.asReadonly();
   readonly loadState = this._loadState.asReadonly();
 
   // Whether the permission signals reflect a real answer from the server.
@@ -90,14 +103,22 @@ export class NavigationAccessService {
   // BOTH isPlatformOrg (from /tenant) and the platform:admin permission, so a
   // guard depending on it needs to know whether each half is a real answer.
   //
-  // FORBIDDEN counts as trustworthy, and that distinction is the whole point:
-  //   - 403 is INFORMATIVE. It means the caller lacks tenant:view. Every real
-  //     platform admin holds it, so a 403 is a reliable "not a platform
-  //     admin" — treating it as unknown would let a zero-permission user
-  //     straight into /platform, which is the regression this replaces.
-  //   - 5xx or a network failure is NOT informative. The answer is genuinely
-  //     unknown, so the guard should defer to the backend rather than eject a
-  //     legitimate platform admin mid-session.
+  // ACC-79 — what changed underneath this. The tenant half used to be GET
+  // /tenant, gated on tenant:view, so a zero-permission user got a 403 on
+  // every load and "403 means not a platform admin" was the NORMAL path for
+  // most users. It now reads GET /tenant/entitlements, which is ungated: every
+  // signed-in user gets a 200 carrying a real isPlatformOrg. That is strictly
+  // better — a direct answer replaces an inference — and the zero-permission
+  // user is still denied, now because isPlatformOrg is false.
+  //
+  // FORBIDDEN still counts as trustworthy, but it is no longer expected. A 403
+  // from an endpoint that requires no permission means something is wrong with
+  // this user's tenant context, and for a guard protecting /platform, denying
+  // on an anomaly is the safe direction.
+  //
+  // 5xx or a network failure is NOT informative. The answer is genuinely
+  // unknown, so the guard should defer to the backend rather than eject a
+  // legitimate platform admin mid-session.
   hasTrustworthyTenantAccess(): boolean {
     const state = this._tenantLoadState();
     return state === 'LOADED' || state === 'FORBIDDEN';
@@ -107,8 +128,28 @@ export class NavigationAccessService {
     return this._permissions().includes(permission);
   }
 
+  // Whether the module is usable at all — FULL or READ_ONLY. This is the rail's
+  // question: a read-only module is still fully present and readable.
   isModuleEnabled(moduleKey: string): boolean {
-    return this._modules()[moduleKey] === true;
+    return this.moduleAccess(moduleKey) !== null;
+  }
+
+  // ACC-79 — null when the module is not usable by this tenant. Deliberately
+  // does not distinguish "not built" from "not licensed" from "switched off":
+  // the rail treats all three identically, and only the admin's Plan & modules
+  // page is allowed to know which is which.
+  moduleAccess(moduleKey: string): ModuleAccessLevel | null {
+    return this._modules()[moduleKey] ?? null;
+  }
+
+  // Whether write affordances should render for a module. READ_ONLY (Standards
+  // on Starter) is readable with its write controls ABSENT — and an Upgrade to
+  // edit button in their place, never a disabled control with no explanation.
+  //
+  // UX only, like every other method here. The backend must enforce READ_ONLY
+  // itself; see SYSTEM-REFERENCE §1.8 on ModuleGuard, which does not yet.
+  canWriteModule(moduleKey: string): boolean {
+    return this.moduleAccess(moduleKey) === 'FULL';
   }
 
   // Mirrors PlatformGuard's own two-part check server-side — never trust
@@ -125,13 +166,13 @@ export class NavigationAccessService {
   // The two requests recover INDEPENDENTLY — each has its own catchError
   // inside the forkJoin rather than one wrapped around it.
   //
-  // That is not a style preference. These endpoints have different
-  // authorization: /roles/my-permissions is ungated (every authenticated user
-  // gets an answer, even if that answer is an empty array), while GET /tenant
-  // requires tenant:view. With a single outer catchError, forkJoin collapsed
-  // on the first failure — so a user holding no permissions got a correct
-  // `[]` from the permissions call and then had it THROWN AWAY when /tenant
-  // returned 403, leaving loadState FAILED.
+  // That is not a style preference. With a single outer catchError, forkJoin
+  // collapses on the first failure. Before ACC-79 the tenant call was GET
+  // /tenant, gated on tenant:view, so a user holding no permissions got a
+  // correct `[]` from the permissions call and then had it THROWN AWAY when
+  // /tenant returned 403, leaving loadState FAILED. Both calls are now ungated,
+  // so that exact case no longer arises — but a transient fault on either one
+  // still must not discard the other's good answer, so the split stays.
   //
   // That broke the guards in the worst possible direction. permissionGuard
   // treats an untrustworthy load as "unknown, let the backend decide" and
@@ -145,50 +186,62 @@ export class NavigationAccessService {
   // permissions answer, and loadState means precisely one thing: whether we
   // know this user's permissions.
   loadAccess(): Observable<void> {
-    const permissions$ = this.http.get<string[]>(`${environment.apiUrl}/roles/my-permissions`).pipe(
-      tap((permissions) => {
-        this._permissions.set(permissions);
-        this._loadState.set('LOADED');
-      }),
-      catchError(() => {
-        this._permissions.set([]);
-        this._loadState.set('FAILED');
-        return of(null);
-      }),
-    );
+    const permissions$ = this.http
+      .get<string[]>(`${environment.apiUrl}/roles/my-permissions`)
+      .pipe(
+        tap((permissions) => {
+          this._permissions.set(permissions);
+          this._loadState.set('LOADED');
+        }),
+        catchError(() => {
+          this._permissions.set([]);
+          this._loadState.set('FAILED');
+          return of(null);
+        }),
+      );
 
-    // A /tenant failure is deliberately NOT reflected in loadState. It carries
-    // module-enablement and isPlatformOrg, neither of which is a statement
-    // about what this user may do.
+    // A tenant-call failure is deliberately NOT reflected in loadState. It
+    // carries module entitlements and isPlatformOrg, neither of which is a
+    // statement about what this user may do.
     //
-    // KNOWN CONSEQUENCE, and the reason FUNCTIONAL_NAV_ITEMS carries a matching
-    // note: when /tenant 403s, isModuleEnabled() answers false and
-    // isPlatformAdmin() answers false for reasons unrelated to the truth.
-    // Harmless today — FUNCTIONAL_NAV_ITEMS is empty so isModuleEnabled() has
-    // no consumers, and a user who cannot read /tenant is genuinely not a
-    // platform admin. It becomes load-bearing the first time a functional
-    // module ships behind isModuleEnabled(): that module's nav item would be
-    // hidden from a user whose /tenant call failed, whether or not the module
-    // is actually enabled. Decide then whether /tenant's tenant:view gating is
-    // right, rather than pre-emptively now.
-    const tenant$ = this.http.get<TenantAccessResponse>(`${environment.apiUrl}/tenant`).pipe(
-      tap((tenant) => {
-        this._modules.set(tenant.modules);
-        this._isPlatformOrg.set(tenant.isPlatformOrg);
-        this._tenantLoadState.set('LOADED');
-      }),
-      catchError((err: unknown) => {
-        this._modules.set({});
-        this._isPlatformOrg.set(false);
-        const status = (err as { status?: number })?.status;
-        this._tenantLoadState.set(status === 403 ? 'FORBIDDEN' : 'FAILED');
-        return of(null);
-      }),
-    );
+    // ACC-79 — reads GET /tenant/entitlements, NOT GET /tenant. This resolves
+    // the decision this comment used to defer ("decide whether /tenant's
+    // tenant:view gating is right when the first functional module ships").
+    // Only TENANT_ADMIN holds tenant:view, so reading GET /tenant left
+    // `modules` empty for every other role, and the rail restructure would
+    // have shown non-admins none of their quality modules. The backend split
+    // the endpoint rather than ungating GET /tenant, because that payload also
+    // carries provider configuration and the AI credit balance. See
+    // SYSTEM-REFERENCE §1.8.
+    //
+    // A failure here still hides every module — correctly now, since it is a
+    // fault rather than the permanent 403 most users used to receive.
+    const tenant$ = this.http
+      .get<TenantEntitlementsResponse>(
+        `${environment.apiUrl}/tenant/entitlements`,
+      )
+      .pipe(
+        tap((tenant) => {
+          this._modules.set(tenant.modules);
+          this._isPlatformOrg.set(tenant.isPlatformOrg);
+          this._tenantName.set(tenant.name);
+          this._tenantLoadState.set('LOADED');
+        }),
+        catchError((err: unknown) => {
+          this._modules.set({});
+          this._isPlatformOrg.set(false);
+          this._tenantName.set('');
+          const status = (err as { status?: number })?.status;
+          this._tenantLoadState.set(status === 403 ? 'FORBIDDEN' : 'FAILED');
+          return of(null);
+        }),
+      );
 
     // Still completes rather than erroring — every existing caller (the
     // initializer, AppShellComponent) depends on that, and a rejected
     // initializer would block the app from bootstrapping at all.
-    return forkJoin({ permissions: permissions$, tenant: tenant$ }).pipe(map(() => void 0));
+    return forkJoin({ permissions: permissions$, tenant: tenant$ }).pipe(
+      map(() => void 0),
+    );
   }
 }

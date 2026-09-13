@@ -158,7 +158,8 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
   let service: NavigationAccessService;
 
   const PERMISSIONS_URL = `${environment.apiUrl}/roles/my-permissions`;
-  const TENANT_URL = `${environment.apiUrl}/tenant`;
+  // ACC-79 — the tenant half reads the ungated entitlements endpoint.
+  const TENANT_URL = `${environment.apiUrl}/tenant/entitlements`;
 
   beforeEach(() => {
     TestBed.resetTestingModule();
@@ -188,20 +189,55 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
     ) as boolean | UrlTree;
   }
 
-  // Exactly what the live pass produced for Dr. Yasser Al-Amri:
-  //   GET /roles/my-permissions -> 200 []
-  //   GET /tenant               -> 403 "Required permission: tenant:view"
+  // What a zero-permission user's load looks like SINCE ACC-79. Both calls are
+  // ungated, so both return 200 — the entitlements call no longer 403s.
   function loadAsZeroPermissionUser(): void {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush([]);
+    httpMock
+      .expectOne(TENANT_URL)
+      .flush({ name: 'Org Alpha', slug: 'alpha', isPlatformOrg: false, modules: { documents: 'FULL' } });
+  }
+
+  // What ACC-70's live pass produced for Dr. Yasser Al-Amri, when the tenant
+  // half was GET /tenant and 403'd for everyone without tenant:view:
+  //   GET /roles/my-permissions -> 200 []
+  //   GET /tenant               -> 403 "Required permission: tenant:view"
+  // It no longer happens in normal use. Kept, because a tenant-call fault must
+  // still never discard the permissions answer and make this guard fail open.
+  function loadAsZeroPermissionUserWithTenant403(): void {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush([]);
     httpMock.expectOne(TENANT_URL).flush(
-      { message: 'Required permission: tenant:view', error: 'Forbidden', statusCode: 403 },
+      { message: 'Forbidden', error: 'Forbidden', statusCode: 403 },
       { status: 403, statusText: 'Forbidden' },
     );
   }
 
-  it('DENIES every guarded route to a zero-permission user, despite /tenant returning 403', () => {
+  // ACC-79 — the ACC-70 regression, re-proven against the NEW wiring. The
+  // realistic load is now two 200s; the zero-permission user must still be
+  // denied every guarded route, or the endpoint switch reopened the hole.
+  it('DENIES every guarded route to a zero-permission user on a normal load', () => {
     loadAsZeroPermissionUser();
+
+    for (const path of [
+      'organization',
+      'users',
+      'roles',
+      'workflows',
+      'lookups',
+      'org-positions',
+      'committees',
+      'tasks',
+      'working-calendar',
+      'admin-settings',
+    ]) {
+      expect(guard(path)).withContext(path).toEqual(router.parseUrl(LANDING_ROUTE));
+    }
+  });
+
+  it('DENIES every guarded route to a zero-permission user, even if the tenant call 403s', () => {
+    loadAsZeroPermissionUserWithTenant403();
 
     // Ahmad only tested /organization live; the others were unverified, and
     // the fail-open branch hit before any per-route logic, so all of them
@@ -229,7 +265,7 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
     expect(guard('home')).toBe(true);
   });
 
-  it('allows a guarded route to a user who holds its permission, even when /tenant 403s', () => {
+  it('allows a guarded route to a user who holds its permission, even when the tenant call 403s', () => {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush(['org:view']);
     httpMock.expectOne(TENANT_URL).flush('forbidden', { status: 403, statusText: 'Forbidden' });
@@ -243,7 +279,7 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
   it('falls open only when the permissions call itself fails', () => {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush('boom', { status: 503, statusText: 'Unavailable' });
-    httpMock.expectOne(TENANT_URL).flush({ isPlatformOrg: false, modules: {} });
+    httpMock.expectOne(TENANT_URL).flush({ name: 'Org Alpha', slug: 'alpha', isPlatformOrg: false, modules: {} });
 
     expect(guard('organization')).toBe(true);
   });

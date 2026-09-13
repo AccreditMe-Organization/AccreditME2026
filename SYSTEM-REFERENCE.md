@@ -438,7 +438,7 @@ INDEPENDENT recovery**, and that is load-bearing rather than stylistic:
 | Call | Gating | Feeds |
 |---|---|---|
 | `GET /roles/my-permissions` | none | `hasPermission()`, `loadState` |
-| `GET /tenant` | `tenant:view` | `isModuleEnabled()`, `isPlatformOrg` |
+| `GET /tenant/entitlements` (was `GET /tenant` before ACC-79) | none — self-scoped | `isModuleEnabled()`, `moduleAccess()`, `isPlatformOrg`, `tenantName` |
 
 A single outer `catchError` made `forkJoin` collapse on the first
 failure. A zero-permission user gets `200 []` from the first and **403**

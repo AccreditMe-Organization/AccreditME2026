@@ -46,28 +46,20 @@ export const FOUNDATION_NAV_ITEMS: NavItem[] = [
 // filtered through navigationAccessService.isModuleEnabled(moduleKey) —
 // none exist yet, so this list is intentionally empty for now.
 //
-// READ THIS BEFORE ADDING THE FIRST ENTRY (ACC-70).
+// RESOLVED IN ACC-79 — read before adding an entry anyway.
 //
-// isModuleEnabled() reads `modules`, which comes from GET /tenant — and that
-// endpoint requires `tenant:view`. A user who lacks it gets a 403, and
-// NavigationAccessService deliberately does NOT let that failure invalidate
-// the user's permissions (it would otherwise discard a correct answer and
-// make every route guard fail open — the ACC-70 live-pass regression). The
-// tenant call recovering on its own means `modules` is left EMPTY in that
-// case.
+// isModuleEnabled() used to read `modules` from GET /tenant, which requires
+// tenant:view. Only TENANT_ADMIN holds it, so every other role got a 403 and
+// isModuleEnabled() answered false for every module — this list was left
+// empty partly so that would stay harmless. It now reads GET
+// /tenant/entitlements, which is ungated and self-scoped, so a non-admin sees
+// the modules their tenant actually has.
 //
-// Consequence: for such a user, isModuleEnabled() answers false for every
-// module, whether or not the module is actually enabled for their tenant.
-// That is harmless while this list is empty — nothing consumes it. The first
-// entry added here makes it load-bearing: that nav item would be hidden from
-// any user whose /tenant call failed, even one holding the module's own
-// view permission.
-//
-// So when the first functional module ships, decide deliberately whether
-// GET /tenant should still require tenant:view. Module enablement shapes
-// navigation for every user, not only admins, which is an argument for
-// ungating it — but that is a real authorization change and was explicitly
-// left for whoever needs it rather than made pre-emptively here.
+// Two things still worth knowing before adding one:
+//   - isModuleEnabled() is true for READ_ONLY modules too. A read-only module
+//     belongs in the rail; use canWriteModule() to decide write affordances.
+//   - With no plan assigned, every enabled module resolves to FULL. That is a
+//     named legacy fallback, not a rule — see SYSTEM-REFERENCE §1.8.
 export const FUNCTIONAL_NAV_ITEMS: (NavItem & { moduleKey: string })[] = [];
 
 // Permission-gated routes that are NOT rendered from the lists above.
