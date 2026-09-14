@@ -67,7 +67,7 @@ audit's starting point, not be mistaken for having already done it.
 7. Organization Structure — ✅ complete
 8. Multi-Tenancy Conventions — ✅ complete
 9. i18n / RTL — ✅ complete
-10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78)
+10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
 
@@ -4148,6 +4148,138 @@ before discarding it.
 screens remain unmigrated** — a deliberate split; a follow-up migrates
 the rest. `p-table` is not deprecated by this: it remains correct for a
 nested editor grid that is not a list page.
+
+---
+
+### 10.11 The Application Shell — Rail, Breadcrumb, Page Header, Tab Title (ACC-79)
+
+Built against `frontend/design-reference/AccreditMe App Shell.dc.html`.
+Verified in a browser as platform admin, tenant admin (impersonated) in
+English and Arabic, and a zero-permission user — not only by tests.
+
+#### One model, four readers
+
+`core/navigation/nav-items.ts` holds `TENANT_NAV_GROUPS` (My work →
+Quality management → Administration) and `PLATFORM_NAV_GROUPS`. Four things
+read it, and nothing else holds a label or a permission for a nav page:
+
+| Reader | How |
+|---|---|
+| Rail (`SidebarComponent`) | `visibleNavGroups(access)` |
+| Route guard (`permissionGuard`) | `ROUTE_PERMISSIONS`, derived from the groups + `STANDALONE_ROUTE_PERMISSIONS` |
+| Breadcrumb | `resolveNavLocation(url, access)` (`nav-location.ts`) |
+| Tab title (`DocumentTitleService`) | `resolveNavLocation`, as the fallback page name |
+
+Before ACC-79 there were three copies: the sidebar's lists, route
+`data.breadcrumb`, and the Admin Settings hub's cards with hand-copied
+permissions. All three are gone.
+
+**Visibility** (`isNavItemVisible`): permission (if declared) AND module
+entitlement (if `moduleKey` declared). Never a role name. A group with no
+visible items is dropped, not rendered as a lone heading. Committees is the
+one Quality item deliberately NOT entitlement-driven (no tenant has modules
+switched on — see Section 1.8); a test pins that.
+
+**Resolution** (`resolveNavLocation`): longest route wins, matched on whole
+segments, among items THIS user can see — so `/tasks/unassigned` resolves to
+Administration, and `/users/:id` for a user without `users:view` resolves to
+nothing rather than to a section they are not in.
+
+#### The guard rule the hub removal exposed
+
+`permissionGuard` treats an unmapped path as allowed, and a child route with
+no `canActivate` never runs the guard. So **any child of a path that has no
+nav item must carry its own `canActivate: [permissionGuard]`.** When the Admin
+Settings hub's nav entry was removed, `admin-settings` became unmapped and all
+four child screens would have been open to any signed-in user.
+`admin-settings.routes.ts` now guards every child, and
+`admin-settings.routes.spec.ts` asserts the guard is wired (a mapping test
+cannot see route config). `tasks/all` is the earlier instance of the same
+shape.
+
+#### Breadcrumb — ancestry, stops at the parent
+
+| Page | Trail |
+|---|---|
+| Landing | root (plain text) |
+| Section page | root / group |
+| Below a section | root / group / section (link) |
+
+Root is the tenant's name, or "Platform" on the platform shell (whose single
+group is not repeated). It never names the current page. A record page stops
+at its section because no record has a human-readable reference code (CLAUDE.md,
+Open/Deferred). The trail is a `computed()` over the URL, tenant name,
+permissions and modules, because those land after a hard-reload navigation.
+Per-navigation `switchMap`/`catchError` isolation is kept (ACC-14).
+
+#### `PageHeaderComponent` — one H1
+
+`shared/components/page-header/`. Inputs are already-translated strings:
+`title` (required), `eyebrow`, `purpose`, `tabTitle`. Actions are projected
+(`<div pageActions>`). Every routed page except Committee's record uses it;
+Committee's identity card keeps its own H1.
+
+- **Eyebrow**: not on section pages — the reference puts the group there,
+  which the breadcrumb already shows. Child pages use it for the kind of page
+  ("Permission matrix", "Workflow stages", "Lookup values").
+- **Purpose line**: optional, and rare. It must tell the reader something
+  neither the title nor the page shows, AND state a durable rule rather than
+  the page's contents (the stale-promise pattern, Section 10.10). ACC-79 set
+  it on five pages. Home's subtitle and the permission-matrix hint were
+  removed for restating what was directly below them.
+
+#### Tab titles
+
+`Page · Tenant — AccreditMe`; `Page — AccreditMe Platform`; `AccreditMe`
+outside the shell (reset when the shell is destroyed, so a post-logout
+sign-in tab names no tenant).
+
+The page name is, in order: the name a page registered
+(`PageNameRegistry`), else the rail label from `resolveNavLocation`, else
+none. `PageHeaderComponent` registers its `tabTitle || title`; a bespoke
+header calls `registerPageName(() => name)` from its constructor. A record
+page's tab therefore shows its section until the record loads, then the
+record's name.
+
+**`registerPageName` wraps its registry calls in `untracked()`.** `release()`
+reads the registry signal; tracked, the effect depends on the entry it writes
+and re-runs forever. The first version did exactly that and hung the test
+browser — caught by the page-header spec, not by review.
+
+#### Rail palettes
+
+`--am-rail-*` tokens (oklch, from the reference). The platform shell adds
+`.am-rail--platform`, which overrides the same variables at hue 320 — a class,
+not a branch. The old `--am-sidebar-*` tokens and the green active stripe were
+removed (CLAUDE.md, Brand Design Tokens, records both as superseded).
+
+**Length.** A tenant admin's rail holds 15 items (2 + 1 + 12). At 1589×945 with
+the impersonation banner the last item ends at 705px with ~185px to spare; on a
+~720px-tall viewport the item list scrolls inside its own `overflow-y-auto`
+region. Administration will reach 14 when Setup health and Plan & modules
+exist.
+
+#### Findings recorded here because they came from the shell work
+
+- **AI Settings is a credit balance, not provider configuration.** Monthly
+  credits, remaining, used, and an overage toggle — no provider choice,
+  because provider selection is unbuilt (Section 11). Relabelled "AI credits";
+  it was NOT merged with Email provider. Its natural home is the reference's
+  Plan & modules page.
+- **Email provider is inert.** It writes `Organization.emailConfig`, which
+  only its own GET reads; email still goes through the platform default. The
+  page says so in a message (not a purpose line — it goes false when per-tenant
+  email ships). Kept in the rail so the screen is not orphaned.
+- **Organization profile loads with `tenant:view` and saves with
+  `tenant:update`.** A custom role holding only view sees a save that 403s.
+  Unreachable with seeded roles (only `TENANT_ADMIN` holds any `tenant:*`).
+
+#### Verification technique worth reusing
+
+To check Arabic/RTL without writing a user's language preference to shared
+dev data: in the dev build, `ng.getComponent(el).languageService.use('ar')` on
+any mounted component that injects `LanguageService`. It switches the session
+only. Switch back before moving on.
 
 ---
 
