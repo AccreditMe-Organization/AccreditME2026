@@ -38,6 +38,10 @@ import { DataListSource } from '../../../../shared/components/data-list/data-lis
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
+
+export type RowAction = 'transfer' | 'deactivate';
 
 // ACC-78 — the full-page table, rebuilt against
 // frontend/design-reference/AccreditMe Users List.dc.html.
@@ -65,6 +69,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
     DataListComponent,
     StatusChipComponent,
     OverlaySelectComponent,
+    TransferUserWizardComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -221,14 +226,18 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
                   [text]="true"
                   (onClick)="onView(user)"
                 />
-                <p-button
-                  icon="pi pi-ellipsis-h"
-                  size="small"
-                  [text]="true"
-                  [ariaLabel]="'list.more' | translate"
-                  [pTooltip]="'list.more' | translate"
-                  (onClick)="openRowMenu(user, $event)"
-                />
+                <!-- ACC-79 — only when the row HAS actions. It used to render
+                     on every row and open an empty box for an inactive user. -->
+                @if (rowActionsFor(user).length > 0) {
+                  <p-button
+                    icon="pi pi-ellipsis-h"
+                    size="small"
+                    [text]="true"
+                    [ariaLabel]="'list.more' | translate"
+                    [pTooltip]="'list.more' | translate"
+                    (onClick)="openRowMenu(user, $event)"
+                  />
+                }
               </div>
             </div>
           </ng-template>
@@ -246,6 +255,25 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
       [header]="'user.invite' | translate"
       [content]="inviteTpl"
     />
+
+    <!-- ACC-79 — the same wizard the user profile hosts (ACC-46), opened from
+         the row. A TemplateRef, so each opening gets a fresh wizard at step
+         one rather than the last user's half-finished state (ACC-29). -->
+    <ng-template #transferTpl>
+      @if (transferUser(); as u) {
+        <app-transfer-user-wizard
+          [userId]="u.id"
+          (saved)="onTransferSaved()"
+          (cancelled)="transferVisible.set(false)"
+        />
+      }
+    </ng-template>
+    <app-edit-dialog
+      [(visible)]="transferVisible"
+      [header]="'user.transfer.title' | translate"
+      [content]="transferTpl"
+      width="640px"
+    />
   `,
 })
 export class UserListComponent implements OnInit {
@@ -258,8 +286,11 @@ export class UserListComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
+  private readonly access = inject(NavigationAccessService);
 
   readonly list = viewChild.required<DataListComponent<IUserDto>>('list');
+  readonly transferVisible = signal(false);
+  readonly transferUser = signal<IUserDto | null>(null);
 
   readonly error = signal<string | null>(null);
   readonly infoMessage = signal<string | null>(null);
@@ -358,23 +389,55 @@ export class UserListComponent implements OnInit {
     this.positions().map((p) => ({ label: p.nameEn, value: p.id })),
   );
 
+  /**
+   * The actions this row's More menu offers — the one place that decides, read
+   * both by the menu and by whether the "…" button renders at all.
+   *
+   * Each is gated on BOTH its permission and the states the backend accepts, so
+   * the menu never offers something that would come back 403 or 409:
+   *   transfer    users:transfer, ACTIVE, and a current org unit to move from
+   *               (transferUser() rejects anything else)
+   *   deactivate  users:deactivate, and not already INACTIVE
+   *
+   * ACC-79 corrected ACC-78 here. ACC-78 left Transfer out as "filler" because
+   * the profile page also has it, but the reference puts it in this menu, and
+   * it offered Deactivate to anyone who could see the list. Still missing, and
+   * ticketed rather than built: Reactivate (INACTIVE) and Revoke invitation
+   * (INVITED), the reference's other status actions — neither has an endpoint.
+   */
+  rowActionsFor(user: IUserDto): RowAction[] {
+    const actions: RowAction[] = [];
+    if (
+      this.access.hasPermission('users:transfer') &&
+      user.status === 'ACTIVE' &&
+      !!user.primaryOrgUnitId
+    ) {
+      actions.push('transfer');
+    }
+    if (this.access.hasPermission('users:deactivate') && user.status !== 'INACTIVE') {
+      actions.push('deactivate');
+    }
+    return actions;
+  }
+
   readonly rowMenuItems = computed<MenuItem[]>(() => {
     this.translate.currentLang();
     const user = this.menuUser();
     if (!user) return [];
 
-    // Only Deactivate today, and stated rather than padded: the reference's
-    // Transfer and Manage roles both live on the user record page that Edit
-    // already opens, and Reactivate has no endpoint. Duplicating two items
-    // that navigate to the same destination would be menu filler.
-    if (user.status === 'INACTIVE') return [];
-    return [
-      {
-        label: this.translate.instant('user.deactivate'),
-        icon: 'pi pi-user-minus',
-        command: () => this.confirmDeactivate(user),
-      },
-    ];
+    return this.rowActionsFor(user).map((action): MenuItem =>
+      action === 'transfer'
+        ? {
+            label: this.translate.instant('user.transfer.menuAction'),
+            icon: 'pi pi-arrow-right-arrow-left',
+            command: () => this.openTransfer(user),
+          }
+        : {
+            label: this.translate.instant('user.deactivate'),
+            icon: 'pi pi-user-minus',
+            command: () => this.confirmDeactivate(user),
+          },
+    );
   });
 
   ngOnInit(): void {
@@ -427,6 +490,17 @@ export class UserListComponent implements OnInit {
   openRowMenu(user: IUserDto, event: Event): void {
     this.menuUser.set(user);
     this.rowMenu.toggle(event);
+  }
+
+  openTransfer(user: IUserDto): void {
+    this.infoMessage.set(null);
+    this.transferUser.set(user);
+    this.transferVisible.set(true);
+  }
+
+  onTransferSaved(): void {
+    this.transferVisible.set(false);
+    this.list().reload();
   }
 
   // Per step-09 plan Section 12, Discussion 5: shows the user's name and a

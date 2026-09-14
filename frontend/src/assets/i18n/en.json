@@ -523,7 +523,8 @@
       "errorContext": "Failed to load transfer context for the selected unit.",
       "errorReplacement": "Failed to validate the replacement.",
       "errorPosition": "Failed to validate the selected position.",
-      "errorSubmit": "Failed to complete the transfer."
+      "errorSubmit": "Failed to complete the transfer.",
+      "menuAction": "Transfer to another unit"
     },
     "status": {
       "title": "Status",
