@@ -70,6 +70,7 @@ audit's starting point, not be mistaken for having already done it.
 10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
+13. Setup Health — standing conditions (ACC-82) — design recorded, implementation in progress
 
 ---
 
@@ -5042,3 +5043,177 @@ a `p-step`'s number badge is literally its declared `[value]`, so the
 Replacement step's conditional presence shifts every step after it.
 Reuses `OverlaySelectComponent` (Section 10.7) for its pickers, not
 `p-select`. Entry point: `user-profile.component.ts`.
+
+---
+
+## 13. Setup Health — Standing Conditions (ACC-82)
+
+**Status: DESIGN, recorded before implementation** (ACC-82 acceptance
+criterion). Each subsection is updated to "built" as its commit lands;
+until then, treat this section as the contract the code is written
+against, not a description of code that exists.
+
+### 13.1 Events versus conditions — the rule this section exists for
+
+- **The notification bell holds events.** Something happened; a person
+  reads it; it ends. Read flags and dismissal belong here.
+- **Setup health holds conditions.** Derived state — true right now or
+  not — recomputed by the system, with **no read flag and no dismiss**.
+  A condition row exists because the gap is open, and closes itself when
+  the next reconciliation finds the gap gone.
+
+A repeating event stream cannot answer "what is still open". That is
+why ACC-59 (about 680 unread "Head-authority setup incomplete" rows per
+tenant, one every 15 minutes) was a symptom: a standing gap was being
+modelled as an event. **Neither surface repeats the other.** A condition
+opening creates no bell entry; the rail badge is the signal.
+
+### 13.2 Condition types shipped, and the one deferred
+
+| Type (`SetupConditionType`) | Object keyed by | Severity | Opened at | Fix destination |
+| -- | -- | -- | -- | -- |
+| `ORG_UNIT_WITHOUT_HEAD` | `OrgUnit.id` | `BLOCKS_WORK` if `isHeadFullyUnresolved` (escalation resolves no one); else `AT_RISK` (vacant but covered) | `OrgUnit.headVacantSince`, else first detection | `/organization` |
+| `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages` |
+| `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks/unassigned` |
+| `POSITION_WITHOUT_ROLE` | `OrgPosition.id` | `AT_RISK` | first detection | `/org-positions` |
+| `INVITATION_EXPIRED_HOLDING_SEAT` | `User.id` | `HYGIENE` | `User.invitationExpiresAt` | `/users?users.scope=INVITED` |
+
+**Detection rules:**
+
+- **Org unit without a head** reads the cached `OrgUnit.isHeadVacant` /
+  `isHeadFullyUnresolved` flags that `SlaMonitorProcessor` already
+  maintains (§5.5) — it does not re-derive head resolution. **Why the
+  severity split:** at design time both seeded tenants had 17 vacant
+  units and **zero** fully unresolved ones; treating every vacancy as
+  blocking would have filled the page with blocking rows while nothing
+  was blocked. Severity moves with coverage on the same row; the row's
+  `openedAt` does not change.
+- **Stage without assignee** is detected per workflow *instance*
+  (`WorkflowInstanceStage.isUnassigned`, `exitedAt: null`, §2.13) but
+  shown per *template stage*, because the fix is made once on the stage:
+  one row per `WorkflowStage`, carrying the affected-instance count.
+- **Task without owner** is `Task.status = 'UNASSIGNED'`.
+- **Position without role** is `OrgPosition.roleId = null` **with at
+  least one ACTIVE holder**. A position nobody holds affects no one and
+  is not a condition. The consequence counts holders with no `UserRole`
+  rows at all — at design time 23 of 24 active users in one seeded
+  tenant held an unmapped position and had no roles.
+- **Expired invitation holding a seat** is `status = 'INVITED'` and
+  `invitationExpiresAt < now`. The design reference's "unused for 30+
+  days" predates the 7-day invitation TTL; past expiry the invitation
+  cannot be accepted, but `invite()` still counts the row against
+  `maxUsers`.
+
+**Deferred — a known gap, not an oversight: "lookup value in use but
+deactivated".** "In use" requires a survey of every column referencing a
+`LookupValue` — `Committee.typeValueId`, `CommitteeMember.roleValueId`,
+`CommitteeMembershipEvent.roleValueId`, `Meeting.typeValueId`,
+`WorkflowStage.assigneeCommitteeRoleValueId` today, and every future
+module adds more. At design time: zero instances in either seeded
+tenant, zero hidden system values, and nothing built breaks — assignee
+resolution matches `roleValueId` without checking whether the value is
+active. A deactivation-time guard may be the better fix; that belongs
+to the follow-up, not here.
+
+**Also out:** out-of-office coverage gaps (ACC-80), which today notify
+once per assignment.
+
+### 13.3 Why age is "first detected" for two types — no on-write stamps
+
+Tasks and positions carry no timestamp for the moment they entered the
+condition. Adding one (`Task.unassignedAt`, say) would have to be set by
+**every** writer that changes a task's status — `create()`, `reassign()`,
+`reassignAllForUser()`, ACC-51 recovery and `cancelForStage()` today —
+which is the "every future writer must remember" failure mode this
+codebase keeps rediscovering. Those two types take `openedAt` from the
+first reconciliation that sees them: accurate to within one hour, and
+the UI labels it "first detected". Types whose object already carries a
+real timestamp use it.
+
+### 13.4 Model — `SetupCondition`
+
+One row per **episode** of a condition: opened, possibly re-severitied,
+cleared. A gap that closes and later reopens is a **new** row, so the
+seven-day closure history stays truthful.
+
+| Field | Meaning |
+| -- | -- |
+| `organizationId` | Tenant. Every query scopes by it. |
+| `type`, `severity` | Enums. Severity is stored, not derived at read time, so a cleared row shows the severity it had. |
+| `objectId` | The id the condition is about (see 13.2). |
+| `subject` (JSON) | Display snapshot refreshed on every pass while open — names (`nameEn`/`nameAr`), counts. Kept after clearing, so a closed row still reads correctly after its object is renamed or deleted. |
+| `openedAt` | See 13.2 / 13.3. |
+| `lastSeenAt` | The last reconciliation that found it open. |
+| `clearedAt` | Null while open. Set by reconciliation — never by a person. |
+| `snoozedUntil`, `snoozedById` | `HYGIENE` only, enforced in the service. Hides the row from the open queue and the badge until the date; does not clear it. |
+
+**At most one open row per `(organizationId, type, objectId)`.** Prisma
+cannot express a partial unique index without hand-editing a migration
+(forbidden, CLAUDE.md Prisma Rules), so this is enforced in the
+reconciler, which is the only writer. Cleared rows are **retained**; the
+page shows closures from the last seven days.
+
+### 13.5 Reconciliation — hourly, one writer
+
+- **Hourly**, as its own repeatable BullMQ job (`setup-health` queue,
+  fixed `jobId`, same idempotent-registration pattern as `sla-monitor`).
+  **Not on write:** reconciling from every mutation would mean every
+  future writer must remember to call it. Hourly is bounded staleness
+  against a seven-day window — a self-closure appearing up to an hour
+  late misleads no one — and it is one place to maintain rather than N.
+- Per tenant, per type: the type's detector returns the set of objects
+  currently in that condition, with their subjects. The reconciler then
+  - opens a row for each new object,
+  - refreshes `lastSeenAt`, `subject` and `severity` on rows still open,
+  - sets `clearedAt` on open rows whose object is no longer present.
+- **Partial-failure safety.** Each (tenant, type) pair is isolated. If a
+  detector throws, **that pair is not reconciled at all** — its open rows
+  keep their state and nothing is cleared. A clear means "evaluated and
+  found fixed", never "not evaluated". The job still reports failure, the
+  same visibility contract as `SlaMonitorProcessor` (ACC-49).
+- The 15-minute `SlaMonitorProcessor` keeps maintaining the cached flags
+  the detectors read (`isHeadVacant`, `isHeadFullyUnresolved`,
+  `WorkflowInstanceStage.isUnassigned`). It stops *notifying* about them.
+
+### 13.6 Permissions and visibility
+
+- **`setup:view`** — the page, the conditions list and the rail badge.
+- **`setup:snooze`** — the snooze action (the only write), per the ACC-44
+  action-specific pattern.
+- Seeded to `TENANT_ADMIN` through `role.seed.ts`'s `ALL` spread (new
+  tenants get both automatically) and **backfilled** for existing tenants.
+  Not to `VIEWER`: its `readOnly()` list is explicit.
+- **Never by role name.** The notifications being replaced all resolved
+  recipients through `Role.findFirst({ key: 'TENANT_ADMIN' })` — the
+  pattern ACC-77 flags.
+- **A row's Fix renders only if the viewer holds the destination's own
+  permission** (`org:manage`, `workflows:manage`, `tasks:manage`,
+  `positions:manage`, `users:view`). Without it the row still shows, with
+  a note naming what is needed — never a disabled control with no reason.
+
+### 13.7 What leaves the bell
+
+Removed (conditions, now on this page): the head-authority report
+(`sweepVacantHeadRoleMappings` → `notifyTenantAdminsOfVacantHeadRoleMappings`),
+org-unit vacancy notifications and their 2-day reminders, unassigned-stage
+admin notifications, and the "task created with no eligible assignee"
+admin notification. Kept (events): departure summaries, invitation
+acceptance conflicts, ACC-51's notification to a newly eligible assignee,
+and out-of-office routing notifications.
+
+The accumulated duplicates are removed by an approval-gated data
+migration. `OrgUnit.headFullyUnresolvedLastRemindedAt` becomes unused; it
+is left in place, because dropping a column is a destructive migration
+(CLAUDE.md, ACC-48/54) and belongs with a later cleanup.
+
+### 13.8 Surfaces
+
+- **Rail:** `Setup health`, first item under Administration, gated on
+  `setup:view`, with a badge of open, unsnoozed conditions.
+- **Page** `/setup-health`: grouped by type, groups ordered by their
+  most severe row (`BLOCKS_WORK` → `AT_RISK` → `HYGIENE`); each row shows
+  the object, the consequence, age, and one Fix; a "Cleared by itself"
+  section for the last seven days with closure dates; the time of the
+  last reconciliation.
+- **Out of scope:** the admin home's top-three slice (the home-pages
+  ticket reads from this model).
