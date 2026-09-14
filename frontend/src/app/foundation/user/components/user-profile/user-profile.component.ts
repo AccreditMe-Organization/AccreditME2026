@@ -110,57 +110,24 @@ import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-us
             />
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label for="positionId" class="text-sm font-medium">{{ 'user.position' | translate }}</label>
-            <app-overlay-select
-              formControlName="positionId"
-              [options]="positions()"
-              optionLabel="nameEn"
-              optionValue="id"
-              [showClear]="true"
-            />
-          </div>
+          @if (canEditAdminFields()) {
+            <div class="flex flex-col gap-1">
+              <label for="positionId" class="text-sm font-medium">{{ 'user.position' | translate }}</label>
+              <app-overlay-select
+                formControlName="positionId"
+                [options]="positions()"
+                optionLabel="nameEn"
+                optionValue="id"
+                [showClear]="true"
+              />
+            </div>
 
-          <div class="flex flex-col gap-1">
-            <label for="primaryOrgUnitId" class="text-sm font-medium">
-              {{ 'user.primaryOrgUnit' | translate }}
-            </label>
-            <app-overlay-select
-              formControlName="primaryOrgUnitId"
-              [options]="orgUnitCascadeOptions()"
-              optionLabel="label"
-              optionValue="value"
-              optionGroupLabel="label"
-              optionGroupChildren="items"
-              [showClear]="true"
-            />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label for="managerId" class="text-sm font-medium">{{ 'user.manager' | translate }}</label>
-            <app-overlay-select
-              formControlName="managerId"
-              [options]="otherUsers()"
-              optionLabel="name"
-              optionValue="id"
-              [showClear]="true"
-              [itemTemplate]="managerItemTpl"
-            />
-            <ng-template #managerItemTpl let-otherUser>
-              <div class="flex flex-col">
-                <span>{{ otherUser.name }}</span>
-                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
-              </div>
-            </ng-template>
-          </div>
-
-          <div class="flex gap-4">
-            <div class="flex flex-col gap-1 flex-1">
-              <label for="actingOrgUnitId" class="text-sm font-medium">
-                {{ 'user.actingOrgUnit' | translate }}
+            <div class="flex flex-col gap-1">
+              <label for="primaryOrgUnitId" class="text-sm font-medium">
+                {{ 'user.primaryOrgUnit' | translate }}
               </label>
               <app-overlay-select
-                formControlName="actingOrgUnitId"
+                formControlName="primaryOrgUnitId"
                 [options]="orgUnitCascadeOptions()"
                 optionLabel="label"
                 optionValue="value"
@@ -169,13 +136,68 @@ import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-us
                 [showClear]="true"
               />
             </div>
-            <div class="flex flex-col gap-1 flex-1">
-              <label for="actingOrgUnitUntil" class="text-sm font-medium">
-                {{ 'user.actingOrgUnitUntil' | translate }}
-              </label>
-              <p-datepicker inputId="actingOrgUnitUntil" formControlName="actingOrgUnitUntil" />
+
+            <div class="flex flex-col gap-1">
+              <label for="managerId" class="text-sm font-medium">{{ 'user.manager' | translate }}</label>
+              <app-overlay-select
+                formControlName="managerId"
+                [options]="otherUsers()"
+                optionLabel="name"
+                optionValue="id"
+                [showClear]="true"
+                [itemTemplate]="managerItemTpl"
+              />
+              <ng-template #managerItemTpl let-otherUser>
+                <div class="flex flex-col">
+                  <span>{{ otherUser.name }}</span>
+                  <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(otherUser.primaryOrgUnitId) }}</span>
+                </div>
+              </ng-template>
             </div>
-          </div>
+
+            <div class="flex gap-4">
+              <div class="flex flex-col gap-1 flex-1">
+                <label for="actingOrgUnitId" class="text-sm font-medium">
+                  {{ 'user.actingOrgUnit' | translate }}
+                </label>
+                <app-overlay-select
+                  formControlName="actingOrgUnitId"
+                  [options]="orgUnitCascadeOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  optionGroupLabel="label"
+                  optionGroupChildren="items"
+                  [showClear]="true"
+                />
+              </div>
+              <div class="flex flex-col gap-1 flex-1">
+                <label for="actingOrgUnitUntil" class="text-sm font-medium">
+                  {{ 'user.actingOrgUnitUntil' | translate }}
+                </label>
+                <p-datepicker inputId="actingOrgUnitUntil" formControlName="actingOrgUnitUntil" />
+              </div>
+            </div>
+          } @else {
+            <!-- ACC-79 — READ-ONLY AS TEXT, not hidden. ACC-43 deliberately made
+                 these five fields visible to every viewer and editable only with
+                 users:manage. Rendered as disabled pickers they came out BLANK
+                 for a non-admin: a picker labels its value from its option list,
+                 and those lists are positions:view / org:view / users:view
+                 endpoints. A read-only value has one thing to show, so it is
+                 shown as text, named by the references GET /users/:id returns. -->
+            <dl class="m-0 flex flex-col gap-4">
+              @for (field of readOnlyAdminFields(); track field.labelKey) {
+                <div class="flex flex-col gap-1">
+                  <dt class="text-sm font-medium">{{ field.labelKey | translate }}</dt>
+                  <dd
+                    class="m-0 min-h-10 flex items-center px-3 rounded-md border border-[var(--am-border)] bg-[var(--am-surface)] text-[var(--am-text-primary)]"
+                  >
+                    {{ field.value }}
+                  </dd>
+                </div>
+              }
+            </dl>
+          }
 
           <div class="flex justify-end">
             <p-button [label]="'common.save' | translate" type="submit" [loading]="savingProfile()" />
@@ -322,9 +344,14 @@ import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-us
           }
         }
 
-        <hr />
+        <!-- ACC-79 — only with roles:view. Every read inside it needs that
+             permission, so without it the section was a "Failed to load roles"
+             message beside an Assign Role control nobody could use. -->
+        @if (canViewRoles()) {
+          <hr />
 
-        <app-user-role-assignment [userId]="u.id" />
+          <app-user-role-assignment [userId]="u.id" />
+        }
 
         <p-dialog
           [visible]="transferDialogVisible()"
@@ -386,6 +413,36 @@ export class UserProfileComponent implements OnInit {
   // ignored, without any way for a client-side re-enable to bypass it.
   readonly canEditAdminFields = computed(() => this.navigationAccessService.hasPermission('users:manage'));
 
+  readonly canViewRoles = computed(() => this.navigationAccessService.hasPermission('roles:view'));
+  readonly canListUsers = computed(() => this.navigationAccessService.hasPermission('users:view'));
+
+  // ACC-79 — the five ACC-43 admin fields as label/value text, for a viewer who
+  // may not edit them. Names come from the record's own references; a bilingual
+  // name follows the reading language (SYSTEM-REFERENCE §9.3).
+  readonly readOnlyAdminFields = computed<{ labelKey: string; value: string }[]>(() => {
+    const refs = this.user()?.references;
+    const arabic = this.languageService.isArabic();
+    const bilingual = (n: { nameEn: string; nameAr: string | null } | null | undefined): string =>
+      n ? (arabic ? n.nameAr || n.nameEn : n.nameEn) : '—';
+    const until = this.user()?.actingOrgUnitUntil;
+    return [
+      { labelKey: 'user.position', value: bilingual(refs?.position) },
+      { labelKey: 'user.primaryOrgUnit', value: bilingual(refs?.primaryOrgUnit) },
+      { labelKey: 'user.manager', value: refs?.manager ?? '—' },
+      { labelKey: 'user.actingOrgUnit', value: bilingual(refs?.actingOrgUnit) },
+      {
+        labelKey: 'user.actingOrgUnitUntil',
+        value: until
+          ? new Date(until).toLocaleDateString(arabic ? 'ar' : 'en-GB', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })
+          : '—',
+      },
+    ];
+  });
+
   // MFA management only ever acts on the logged-in user (AuthController's
   // mfa/* endpoints resolve the actor from the JWT via @CurrentUser(), not
   // from this page's :id route param) — so the section only renders when
@@ -422,16 +479,25 @@ export class UserProfileComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
-    this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
-    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({
-      next: (users) =>
-        this.otherUsers.set(
-          users
-            .filter((u) => u.id !== this.userId)
-            .map((u) => ({ id: u.id, name: u.name, primaryOrgUnitId: u.primaryOrgUnitId })),
-        ),
-    });
+    // ACC-79 — each list is requested only when the viewer can read it. They
+    // feed the admin pickers; without the permission the request can only 403,
+    // and a user opening their own profile hit four of them on every load.
+    if (this.navigationAccessService.hasPermission('positions:view')) {
+      this.orgPositionService.listPositions().subscribe({ next: (positions) => this.positions.set(positions) });
+    }
+    if (this.navigationAccessService.hasPermission('org:view')) {
+      this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
+    }
+    if (this.canListUsers()) {
+      this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({
+        next: (users) =>
+          this.otherUsers.set(
+            users
+              .filter((u) => u.id !== this.userId)
+              .map((u) => ({ id: u.id, name: u.name, primaryOrgUnitId: u.primaryOrgUnitId })),
+          ),
+      });
+    }
     this.loadUser();
 
     // ACC-43 — one-time check, not a reactive effect: permissions are
@@ -443,6 +509,25 @@ export class UserProfileComponent implements OnInit {
         this.profileForm.get(field)!.disable();
       }
     }
+  }
+
+  // Save responses carry no references (only GET /users/:id does), and the
+  // fields they name cannot change through this page for a viewer who sees them
+  // as text — so the loaded names are kept rather than blanked.
+  private withReferences(u: IUserDto): IUserDto {
+    return { ...u, references: u.references ?? this.user()?.references };
+  }
+
+  // A viewer without users:view cannot load the colleague list, so the Acting
+  // user picker has no options — and without one would not even show who the
+  // CURRENT stand-in is. Seed that one entry from the record's references.
+  // Choosing someone else still needs a colleague endpoint (ticketed).
+  private seedCurrentActingUser(u: IUserDto): void {
+    if (this.canListUsers()) return;
+    const name = u.references?.actingUser ?? this.user()?.references?.actingUser;
+    this.otherUsers.set(
+      u.actingUserId && name ? [{ id: u.actingUserId, name, primaryOrgUnitId: null }] : [],
+    );
   }
 
   orgUnitName(orgUnitId: string | null): string {
@@ -463,6 +548,7 @@ export class UserProfileComponent implements OnInit {
     this.userService.getById(this.userId).subscribe({
       next: (u) => {
         this.user.set(u);
+        this.seedCurrentActingUser(u);
         this.profileForm.patchValue({
           name: u.name,
           language: u.language ?? 'en',
@@ -518,7 +604,7 @@ export class UserProfileComponent implements OnInit {
       .subscribe({
         next: (u) => {
           this.savingProfile.set(false);
-          this.user.set(u);
+          this.user.set(this.withReferences(u));
           this.savedMessage.set('user.profileSaved');
           // Live switch (ACC-19, no refresh) — only when editing your own
           // profile. An admin editing someone else's language preference
@@ -549,7 +635,8 @@ export class UserProfileComponent implements OnInit {
       .subscribe({
         next: (u) => {
           this.savingOoo.set(false);
-          this.user.set(u);
+          this.user.set(this.withReferences(u));
+          this.seedCurrentActingUser(u);
           this.savedMessage.set('user.profileSaved');
         },
         error: (err: unknown) => {

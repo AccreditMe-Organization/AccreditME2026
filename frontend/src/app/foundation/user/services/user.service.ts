@@ -5,7 +5,25 @@ import { environment } from '../../../../environments/environment';
 import { IPaginatedResponse } from '../../../shared/models/paginated-response';
 import { IOrgPositionDto } from '../../org-position/services/org-position.service';
 
+export interface IBilingualNameDto {
+  nameEn: string;
+  nameAr: string | null;
+}
+
+// ACC-79 — names for the ids on a user record. Returned by GET /users/:id
+// only, so a read-only profile can label its fields without the
+// permission-gated position, org-unit and user lists.
+export interface IUserReferenceNamesDto {
+  position: IBilingualNameDto | null;
+  primaryOrgUnit: IBilingualNameDto | null;
+  actingOrgUnit: IBilingualNameDto | null;
+  manager: string | null;
+  actingUser: string | null;
+}
+
 export interface IUserDto {
+  // Present only on GET /users/:id — list, invite and save responses omit it.
+  references?: IUserReferenceNamesDto;
   id: string;
   organizationId: string;
   email: string;
