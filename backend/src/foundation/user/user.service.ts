@@ -45,7 +45,7 @@ import { TransferUserDto } from './dto/transfer-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
-import { IUser } from './interfaces/user.interface';
+import { IBilingualName, IUser, IUserReferenceNames } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
@@ -260,6 +260,45 @@ export class UserService {
     const canView = actorPermissions.includes('users:view');
     if (!isSelf && !canView) throw new ForbiddenException();
     return this.getById(id, organizationId);
+  }
+
+  // ACC-79 — the display names for the ids on a record the caller has already
+  // been allowed to read (getByIdForViewer). See IUserReferenceNames for why.
+  //
+  // Every lookup is scoped by id AND organizationId. The ids come from the
+  // record itself, but a stale or cross-tenant id must still resolve to null,
+  // never to another tenant's row name. Unset ids cost no query.
+  async resolveReferenceNames(user: IUser, organizationId: string): Promise<IUserReferenceNames> {
+    const unitName = (id: string | null): Promise<IBilingualName | null> =>
+      id
+        ? this.prisma.orgUnit.findFirst({
+            where: { id, organizationId },
+            select: { nameEn: true, nameAr: true },
+          })
+        : Promise.resolve(null);
+    const userName = async (id: string | null): Promise<string | null> => {
+      if (!id) return null;
+      const found = await this.prisma.user.findFirst({
+        where: { id, organizationId },
+        select: { name: true },
+      });
+      return found?.name ?? null;
+    };
+
+    const [position, primaryOrgUnit, actingOrgUnit, manager, actingUser] = await Promise.all([
+      user.positionId
+        ? this.prisma.orgPosition.findFirst({
+            where: { id: user.positionId, organizationId },
+            select: { nameEn: true, nameAr: true },
+          })
+        : Promise.resolve(null),
+      unitName(user.primaryOrgUnitId),
+      unitName(user.actingOrgUnitId),
+      userName(user.managerId),
+      userName(user.actingUserId),
+    ]);
+
+    return { position, primaryOrgUnit, actingOrgUnit, manager, actingUser };
   }
 
   // ACC-46 Section 2.6.b Step 2 — automatic context load, not a user
