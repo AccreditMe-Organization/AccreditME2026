@@ -18,6 +18,7 @@ import {
   PLATFORM_PERMISSIONS,
   POSITIONS_PERMISSIONS,
   KPI_PERMISSIONS,
+  SETUP_PERMISSIONS,
 } from '../../common/constants/permissions';
 
 const ALL = [
@@ -26,6 +27,9 @@ const ALL = [
   NOTIFICATIONS_PERMISSIONS, MEETINGS_PERMISSIONS, DOCUMENTS_PERMISSIONS,
   STANDARDS_PERMISSIONS, AUDITS_PERMISSIONS, INCIDENTS_PERMISSIONS, BILLING_PERMISSIONS,
   REPORTS_PERMISSIONS, POSITIONS_PERMISSIONS, KPI_PERMISSIONS,
+  // ACC-82 — Setup health visibility. TENANT_ADMIN only, via this spread; not in
+  // VIEWER's readOnly() list, which is explicit.
+  SETUP_PERMISSIONS,
 ].flatMap((g) => Object.values(g));
 
 const readOnly = (...groups: Record<string, string>[]) =>

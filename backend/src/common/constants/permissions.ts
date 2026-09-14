@@ -132,6 +132,14 @@ export const POSITIONS_PERMISSIONS = {
   MANAGE: 'positions:manage',
 } as const;
 
+// ACC-82 — Setup health (SYSTEM-REFERENCE §13.6). VIEW only: the surface has no
+// write action — no dismiss, no read flag, and, with no Hygiene condition
+// shipping, no snooze. Replaces resolving recipients by the TENANT_ADMIN role
+// NAME, which the condition notifications it supersedes all did.
+export const SETUP_PERMISSIONS = {
+  VIEW: 'setup:view',
+} as const;
+
 export const KPI_PERMISSIONS = {
   VIEW_OWN:        'kpi:view_own',
   VIEW_DEPARTMENT: 'kpi:view_department',
