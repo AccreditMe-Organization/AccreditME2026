@@ -5068,7 +5068,7 @@ tenant, one every 15 minutes) was a symptom: a standing gap was being
 modelled as an event. **Neither surface repeats the other.** A condition
 opening creates no bell entry; the rail badge is the signal.
 
-### 13.2 Condition types shipped, and the one deferred
+### 13.2 Condition types shipped, and the two deferred
 
 | Type (`SetupConditionType`) | Object keyed by | Severity | Opened at | Fix destination |
 | -- | -- | -- | -- | -- |
@@ -5076,7 +5076,6 @@ opening creates no bell entry; the rail badge is the signal.
 | `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages` |
 | `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks/unassigned` |
 | `POSITION_WITHOUT_ROLE` | `OrgPosition.id` | `AT_RISK` | first detection | `/org-positions` |
-| `INVITATION_EXPIRED_HOLDING_SEAT` | `User.id` | `HYGIENE` | `User.invitationExpiresAt` | `/users?users.scope=INVITED` |
 
 **Detection rules:**
 
@@ -5098,11 +5097,6 @@ opening creates no bell entry; the rail badge is the signal.
   is not a condition. The consequence counts holders with no `UserRole`
   rows at all — at design time 23 of 24 active users in one seeded
   tenant held an unmapped position and had no roles.
-- **Expired invitation holding a seat** is `status = 'INVITED'` and
-  `invitationExpiresAt < now`. The design reference's "unused for 30+
-  days" predates the 7-day invitation TTL; past expiry the invitation
-  cannot be accepted, but `invite()` still counts the row against
-  `maxUsers`.
 
 **Deferred — a known gap, not an oversight: "lookup value in use but
 deactivated".** "In use" requires a survey of every column referencing a
@@ -5114,6 +5108,23 @@ tenant, zero hidden system values, and nothing built breaks — assignee
 resolution matches `roleValueId` without checking whether the value is
 active. A deactivation-time guard may be the better fix; that belongs
 to the follow-up, not here.
+
+**Excluded — stale invitations.** The design reference lists "invitation
+unused for 30+ days" as a Hygiene condition. It was narrowed during
+design to "expired and still holding a seat", then excluded outright:
+pending invitations — expired or not — are a list of invitations, which
+is a filter on Users, not a standing configuration gap. Two facts are
+recorded so the next attempt does not re-derive them:
+
+- **Expiry itself is truthful.** `AuthService.acceptInvitation()`
+  validates `User.invitationExpiresAt` directly (`invitationExpiresAt <
+  new Date()` → "Invalid or expired invitation"); Better Auth's
+  `authVerification` table is not consulted for invitations. Checked
+  during ACC-82 because the opposite had been assumed.
+- **The collision that remains.** The TTL is 7 days
+  (`INVITATION_TTL_MS`), yet `invite()` counts `INVITED` users against
+  `maxUsers` indefinitely. That is a seat-accounting question for ACC-83
+  (Reactivate / Revoke invitation), not a health condition.
 
 **Also out:** out-of-office coverage gaps (ACC-80), which today notify
 once per assignment.
@@ -5145,7 +5156,6 @@ seven-day closure history stays truthful.
 | `openedAt` | See 13.2 / 13.3. |
 | `lastSeenAt` | The last reconciliation that found it open. |
 | `clearedAt` | Null while open. Set by reconciliation — never by a person. |
-| `snoozedUntil`, `snoozedById` | `HYGIENE` only, enforced in the service. Hides the row from the open queue and the badge until the date; does not clear it. |
 
 **At most one open row per `(organizationId, type, objectId)`.** Prisma
 cannot express a partial unique index without hand-editing a migration
@@ -5178,17 +5188,17 @@ page shows closures from the last seven days.
 ### 13.6 Permissions and visibility
 
 - **`setup:view`** — the page, the conditions list and the rail badge.
-- **`setup:snooze`** — the snooze action (the only write), per the ACC-44
-  action-specific pattern.
+  The surface has no write action: no dismiss, no read flag, and — with
+  no Hygiene condition shipping — no snooze.
 - Seeded to `TENANT_ADMIN` through `role.seed.ts`'s `ALL` spread (new
-  tenants get both automatically) and **backfilled** for existing tenants.
+  tenants get it automatically) and **backfilled** for existing tenants.
   Not to `VIEWER`: its `readOnly()` list is explicit.
 - **Never by role name.** The notifications being replaced all resolved
   recipients through `Role.findFirst({ key: 'TENANT_ADMIN' })` — the
   pattern ACC-77 flags.
 - **A row's Fix renders only if the viewer holds the destination's own
   permission** (`org:manage`, `workflows:manage`, `tasks:manage`,
-  `positions:manage`, `users:view`). Without it the row still shows, with
+  `positions:manage`). Without it the row still shows, with
   a note naming what is needed — never a disabled control with no reason.
 
 ### 13.7 What leaves the bell
@@ -5206,13 +5216,22 @@ migration. `OrgUnit.headFullyUnresolvedLastRemindedAt` becomes unused; it
 is left in place, because dropping a column is a destructive migration
 (CLAUDE.md, ACC-48/54) and belongs with a later cleanup.
 
-### 13.8 Surfaces
+### 13.8 Not shipping: the Hygiene tier and snooze
+
+The design reference allows snooze on Hygiene-tier conditions only. The
+one Hygiene condition — stale invitations — was excluded (13.2), which
+leaves the tier empty. `HYGIENE`, `snoozedUntil`/`snoozedById` and a
+`setup:snooze` permission are therefore **not built**: machinery with no
+condition to act on would be decorative. They return, together, with the
+first real Hygiene condition.
+
+### 13.9 Surfaces
 
 - **Rail:** `Setup health`, first item under Administration, gated on
-  `setup:view`, with a badge of open, unsnoozed conditions.
+  `setup:view`, with a badge of open conditions.
 - **Page** `/setup-health`: grouped by type, groups ordered by their
-  most severe row (`BLOCKS_WORK` → `AT_RISK` → `HYGIENE`); each row shows
-  the object, the consequence, age, and one Fix; a "Cleared by itself"
+  most severe row (`BLOCKS_WORK` → `AT_RISK`); each row shows the
+  object, the consequence, age, and one Fix; a "Cleared by itself"
   section for the last seven days with closure dates; the time of the
   last reconciliation.
 - **Out of scope:** the admin home's top-three slice (the home-pages
