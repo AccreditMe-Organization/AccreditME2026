@@ -1,3 +1,4 @@
+import { IUser } from './interfaces/user.interface';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserService, toSafeUser } from './user.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -387,6 +388,99 @@ describe('UserService', () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });
       const result = await service.getByIdForViewer('u1', ORG_A, 'u2', ['users:view']);
       expect(result).toEqual({ id: 'u1', organizationId: ORG_A });
+    });
+  });
+
+  // ACC-79 — names for the ids on a readable record, so a read-only profile
+  // does not need the permission-gated lists to label its fields.
+  describe('resolveReferenceNames', () => {
+    const RECORD = {
+      id: 'u1',
+      organizationId: ORG_A,
+      positionId: 'pos-1',
+      primaryOrgUnitId: 'unit-1',
+      actingOrgUnitId: 'unit-2',
+      managerId: 'mgr-1',
+      actingUserId: 'act-1',
+    } as unknown as IUser;
+
+    it('resolves every referenced id to its display name, scoped by tenant', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ nameEn: 'Head of Ward', nameAr: 'رئيس الجناح' });
+      mockPrisma.orgUnit.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
+          where.id === 'unit-1'
+            ? { nameEn: 'Cardiology Unit', nameAr: 'وحدة القلب' }
+            : { nameEn: 'Critical Care Ward', nameAr: null },
+        ),
+      );
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ name: where.id === 'mgr-1' ? 'Dr. Layla Al-Harbi' : 'Dr. Omar Siddiqui' }),
+      );
+
+      const result = await service.resolveReferenceNames(RECORD, ORG_A);
+
+      expect(result).toEqual({
+        position: { nameEn: 'Head of Ward', nameAr: 'رئيس الجناح' },
+        primaryOrgUnit: { nameEn: 'Cardiology Unit', nameAr: 'وحدة القلب' },
+        actingOrgUnit: { nameEn: 'Critical Care Ward', nameAr: null },
+        manager: 'Dr. Layla Al-Harbi',
+        actingUser: 'Dr. Omar Siddiqui',
+      });
+      expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
+        where: { id: 'pos-1', organizationId: ORG_A },
+        select: { nameEn: true, nameAr: true },
+      });
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
+        where: { id: 'unit-1', organizationId: ORG_A },
+        select: { nameEn: true, nameAr: true },
+      });
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'mgr-1', organizationId: ORG_A },
+        select: { name: true },
+      });
+    });
+
+    // Returns only names — never the referenced row, which would carry fields
+    // the viewer has no right to (a manager's email, tokenVersion, ...).
+    it('selects names only from the referenced rows', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      await service.resolveReferenceNames(RECORD, ORG_A);
+      for (const call of [
+        ...mockPrisma.orgPosition.findFirst.mock.calls,
+        ...mockPrisma.orgUnit.findFirst.mock.calls,
+        ...mockPrisma.user.findFirst.mock.calls,
+      ]) {
+        expect(Object.keys(call[0].select).every((k) => ['name', 'nameEn', 'nameAr'].includes(k))).toBe(true);
+      }
+    });
+
+    it('costs no query for an unset id', async () => {
+      const bare = { id: 'u1', organizationId: ORG_A, positionId: null, primaryOrgUnitId: null, actingOrgUnitId: null, managerId: null, actingUserId: null } as unknown as IUser;
+      const result = await service.resolveReferenceNames(bare, ORG_A);
+      expect(result).toEqual({ position: null, primaryOrgUnit: null, actingOrgUnit: null, manager: null, actingUser: null });
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // Every referenced row exists — but under ORG_B. Queried under ORG_A, the
+      // tenant-scoped where clauses must resolve each to null rather than leak
+      // another tenant's position, unit or person name.
+      // Behaves like the real table: a query WITHOUT a tenant filter finds the
+      // row. Only a correctly scoped query (organizationId: ORG_A) misses it.
+      const inOrgB = <T>(row: T) =>
+        ({ where }: { where: { organizationId?: string } }) =>
+          Promise.resolve(where.organizationId === undefined || where.organizationId === ORG_B ? row : null);
+      mockPrisma.orgPosition.findFirst.mockImplementation(inOrgB({ nameEn: 'Other tenant position', nameAr: null }));
+      mockPrisma.orgUnit.findFirst.mockImplementation(inOrgB({ nameEn: 'Other tenant unit', nameAr: null }));
+      mockPrisma.user.findFirst.mockImplementation(inOrgB({ name: 'Other tenant person' }));
+
+      const result = await service.resolveReferenceNames(RECORD, ORG_A);
+
+      expect(result).toEqual({ position: null, primaryOrgUnit: null, actingOrgUnit: null, manager: null, actingUser: null });
     });
   });
 

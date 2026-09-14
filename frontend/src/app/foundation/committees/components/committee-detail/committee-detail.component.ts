@@ -24,6 +24,7 @@ import { RoleService, RoleDto } from '../../../roles/services/role.service';
 import { WorkflowService, WorkflowInstanceDto } from '../../../workflow/services/workflow.service';
 import { WorkflowTransitionActionsComponent } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { LanguageService } from '../../../../core/services/language.service';
+import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AuthService } from '../../../../core/services/auth.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -526,6 +527,16 @@ export class CommitteeDetailComponent implements OnInit {
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
 
   readonly committee = signal<CommitteeDto | null>(null);
+
+  constructor() {
+    // ACC-79 — the browser tab names the committee. This page's H1 lives in its
+    // own identity card rather than PageHeaderComponent, so it registers the
+    // name directly — in the reader's language, since a tab has room for one.
+    registerPageName(() => {
+      const c = this.committee();
+      return c ? this.displayName(c) : null;
+    });
+  }
   readonly members = signal<CommitteeMemberDto[]>([]);
   readonly membershipEvents = signal<CommitteeMembershipEventDto[]>([]);
   readonly membersLoading = signal(false);

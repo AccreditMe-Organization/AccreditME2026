@@ -47,7 +47,7 @@ export const appConfig: ApplicationConfig = {
     // PrimeNG component to the light color scheme: tokens.scss's brand
     // tokens are only defined for a light surface, and the dark sidebar is
     // a fixed design element rendered by our own SidebarComponent (reads
-    // --am-sidebar-bg directly, not a themed PrimeNG surface), so it stays
+    // the --am-rail-* tokens directly, not a themed PrimeNG surface), so it stays
     // dark regardless of this setting — there's no real dark-mode feature
     // to switch to yet.
     provideAnimationsAsync(),

@@ -36,21 +36,6 @@ body {
   color: var(--am-text-primary);
 }
 
-// RTL support — activated by [dir="rtl"] on <html>
-[dir='rtl'] {
-  .sidebar-active-stripe {
-    border-right: 3px solid var(--am-green-accent);
-    border-left: none;
-  }
-}
-
-[dir='ltr'] {
-  .sidebar-active-stripe {
-    border-left: 3px solid var(--am-green-accent);
-    border-right: none;
-  }
-}
-
 // PrimeNG scrollable table
 .p-datatable-scrollable {
   .p-datatable-wrapper {

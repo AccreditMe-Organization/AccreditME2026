@@ -35,6 +35,21 @@ export interface ITenant {
   updatedAt: Date;
 }
 
+// ACC-79 — the navigation-safe slice of a tenant, readable by every signed-in
+// user of it. Deliberately NOT a subset projection of ITenant with fields left
+// undefined: a separate type means a field cannot leak onto this endpoint by
+// someone adding it to ITenant. Provider configuration, plan limits, trial
+// dates and AI credit balances stay on GET /tenant behind tenant:view.
+export interface ITenantEntitlements {
+  name: string;
+  slug: string;
+  // Mirrors PlatformGuard's organization half. The frontend still requires
+  // platform:admin as well before treating anyone as a platform admin.
+  isPlatformOrg: boolean;
+  // Absent key = the module is not usable by this tenant, for any reason.
+  modules: Record<string, 'FULL' | 'READ_ONLY'>;
+}
+
 export interface ITenantConfig {
   authProvider: 'LOCAL' | 'AZURE_AD' | 'GOOGLE';
   storageProvider: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';

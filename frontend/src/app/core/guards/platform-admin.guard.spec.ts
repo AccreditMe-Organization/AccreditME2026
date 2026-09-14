@@ -17,7 +17,8 @@ describe('platformAdminGuard', () => {
   let service: NavigationAccessService;
 
   const PERMISSIONS_URL = `${environment.apiUrl}/roles/my-permissions`;
-  const TENANT_URL = `${environment.apiUrl}/tenant`;
+  // ACC-79 — the tenant half reads the ungated entitlements endpoint.
+  const TENANT_URL = `${environment.apiUrl}/tenant/entitlements`;
 
   beforeEach(() => {
     TestBed.resetTestingModule();
@@ -41,7 +42,8 @@ describe('platformAdminGuard', () => {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush(permissions);
     const req = httpMock.expectOne(TENANT_URL);
-    if (tenant.ok) req.flush({ isPlatformOrg: tenant.isPlatformOrg, modules: {} });
+    if (tenant.ok)
+      req.flush({ name: 'Org Alpha', slug: 'alpha', isPlatformOrg: tenant.isPlatformOrg, modules: {} });
     else req.flush('err', { status: tenant.status, statusText: 'Error' });
   }
 
@@ -74,7 +76,7 @@ describe('platformAdminGuard', () => {
 
   // The live bug ACC-70 found and fixed: a transient fault is not an answer,
   // so a real platform admin must not be ejected mid-session.
-  it('falls open when /tenant fails with a 5xx — the answer is unknown', () => {
+  it('falls open when the tenant call fails with a 5xx — the answer is unknown', () => {
     load(['platform:admin'], { ok: false, status: 503 });
 
     expect(guard()).toBe(true);
@@ -83,7 +85,7 @@ describe('platformAdminGuard', () => {
   it('falls open when the permissions call itself fails', () => {
     service.loadAccess().subscribe();
     httpMock.expectOne(PERMISSIONS_URL).flush('err', { status: 500, statusText: 'Error' });
-    httpMock.expectOne(TENANT_URL).flush({ isPlatformOrg: true, modules: {} });
+    httpMock.expectOne(TENANT_URL).flush({ name: 'Org Alpha', slug: 'alpha', isPlatformOrg: true, modules: {} });
 
     expect(guard()).toBe(true);
   });

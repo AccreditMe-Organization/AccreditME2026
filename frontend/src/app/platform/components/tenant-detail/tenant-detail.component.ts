@@ -12,11 +12,12 @@ import { StatusBadgeComponent } from '../../../shared/components/status-badge/st
 import { CardComponent } from '../../../shared/components/card/card.component';
 import { PlatformTenantService, IPlatformTenantDetail } from '../../services/platform-tenant.service';
 import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-tenant-detail',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     ReactiveFormsModule,
     TranslatePipe,
     DatePipe,
@@ -29,6 +30,19 @@ import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
   ],
   template: `
     <div class="flex flex-col gap-6 max-w-3xl">
+      <!-- ACC-79 — the header comes first, above the messages. The slug and
+           plan are facts about this tenant, not a purpose line, so they stay a
+           line of their own under it. -->
+      @if (tenant(); as t) {
+        <div>
+          <app-page-header [title]="t.name">
+            <div pageActions>
+              <app-status-badge variant="account" [value]="t.status" />
+            </div>
+          </app-page-header>
+          <p class="text-sm text-[var(--am-text-secondary)]">{{ t.slug }} · {{ t.planName ?? '—' }}</p>
+        </div>
+      }
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />
       }
@@ -37,13 +51,6 @@ import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
       }
 
       @if (tenant(); as t) {
-        <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-xl font-semibold">{{ t.name }}</h2>
-            <p class="text-sm text-[var(--am-text-secondary)]">{{ t.slug }} · {{ t.planName ?? '—' }}</p>
-          </div>
-          <app-status-badge variant="account" [value]="t.status" />
-        </div>
 
         <div class="grid grid-cols-2 gap-4">
           <app-card>

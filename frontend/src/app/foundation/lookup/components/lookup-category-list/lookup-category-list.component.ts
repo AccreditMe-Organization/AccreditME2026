@@ -6,16 +6,18 @@ import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
 import { LookupService, LookupCategoryDto } from '../../services/lookup.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-lookup-category-list',
   standalone: true,
-  imports: [TranslatePipe, TableModule, TagModule, TooltipModule],
+  imports: [PageHeaderComponent, TranslatePipe, TableModule, TagModule, TooltipModule],
   template: `
     <div class="flex flex-col h-full gap-4">
-      <div class="flex justify-between items-center">
-        <h2 class="text-xl font-semibold">{{ 'lookup.title' | translate }}</h2>
-      </div>
+      <app-page-header
+        [title]="'lookup.title' | translate"
+        [purpose]="'lookup.purpose' | translate"
+      />
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>

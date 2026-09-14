@@ -13,6 +13,7 @@ import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stag
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { LanguageService } from '../../../../core/services/language.service';
 import {
   DataListColumn,
   DataListComponent,
@@ -21,11 +22,12 @@ import {
   DataListSource,
   clientSideSource,
 } from '../../../../shared/components/data-list/data-list.source';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-workflow-stage-list',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     TranslatePipe,
     ButtonModule,
     TooltipModule,
@@ -37,15 +39,19 @@ import {
   template: `
     <div class="flex flex-col h-full gap-4">
 
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ template()?.nameEn }}</h2>
-        <p-button
-          icon="pi pi-plus"
-          [label]="'workflow.addStage' | translate"
-          [disabled]="reordering()"
-          (onClick)="openAdd()"
-        />
-      </div>
+      <app-page-header
+        [title]="templateName()"
+        [eyebrow]="'workflow.stagesEyebrow' | translate"
+      >
+        <div pageActions>
+          <p-button
+            icon="pi pi-plus"
+            [label]="'workflow.addStage' | translate"
+            [disabled]="reordering()"
+            (onClick)="openAdd()"
+          />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>
@@ -235,6 +241,16 @@ export class WorkflowStageListComponent implements OnInit {
   readonly loading = signal(false);
   readonly reordering = signal(false);
   readonly template = signal<WorkflowTemplateDto | null>(null);
+
+  private readonly languageService = inject(LanguageService);
+
+  // Tenant data, so chosen by language rather than translated (SYSTEM-REFERENCE
+  // §9.3). The header showed nameEn in both languages before ACC-79.
+  readonly templateName = computed(() => {
+    const template = this.template();
+    if (!template) return '';
+    return this.languageService.isArabic() ? template.nameAr || template.nameEn : template.nameEn;
+  });
   readonly error = signal<string | null>(null);
   readonly showFormDialog = signal(false);
   readonly editingStage = signal<WorkflowStageDto | null>(null);

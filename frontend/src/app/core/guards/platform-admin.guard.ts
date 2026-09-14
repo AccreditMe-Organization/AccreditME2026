@@ -22,10 +22,12 @@ export const platformAdminGuard: CanActivateFn = () => {
   // platform admin. Deferring to the backend's own PlatformGuard — which
   // re-checks on every request — is the safe response to an unknown answer.
   //
-  // Note hasTrustworthyTenantAccess() counts a 403 as trustworthy, so a
-  // zero-permission user (403 on /tenant) is still correctly DENIED here
-  // rather than falling through. That case was the ACC-70 live-pass
-  // regression; only a genuine fault falls open.
+  // A zero-permission user must still be DENIED here rather than falling
+  // through — that case was the ACC-70 live-pass regression. It used to be
+  // denied because GET /tenant 403'd and a 403 counts as trustworthy. Since
+  // ACC-79 the tenant half reads the ungated GET /tenant/entitlements, so that
+  // user gets a 200 with a real isPlatformOrg: false and is denied on that
+  // instead. Only a genuine fault (5xx, network) falls open.
   if (
     !navigationAccessService.hasTrustworthyPermissions() ||
     !navigationAccessService.hasTrustworthyTenantAccess()

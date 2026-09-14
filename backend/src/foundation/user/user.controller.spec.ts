@@ -13,6 +13,7 @@ describe('UserController', () => {
     listUsers: jest.Mock;
     getById: jest.Mock;
     getByIdForViewer: jest.Mock;
+    resolveReferenceNames: jest.Mock;
     getTransferContext: jest.Mock;
     validateTransferReplacement: jest.Mock;
     validateTransferPosition: jest.Mock;
@@ -32,6 +33,13 @@ describe('UserController', () => {
       listUsers: jest.fn().mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 25 }),
       getById: jest.fn().mockResolvedValue({ id: USER_ID }),
       getByIdForViewer: jest.fn().mockResolvedValue({ id: USER_ID }),
+      resolveReferenceNames: jest.fn().mockResolvedValue({
+        position: null,
+        primaryOrgUnit: null,
+        actingOrgUnit: null,
+        manager: null,
+        actingUser: null,
+      }),
       getTransferContext: jest.fn().mockResolvedValue({
         hasActiveDirectReports: false,
         availablePositions: [],
@@ -89,6 +97,22 @@ describe('UserController', () => {
       sortBy: 'email',
       sortDir: 'desc',
     });
+  });
+
+  // ACC-79 — the read-only profile labels its fields from these, not from the
+  // permission-gated lists.
+  it('getById returns the reference names for the record it was allowed to read', async () => {
+    const references = {
+      position: { nameEn: 'Head of Ward', nameAr: null },
+      primaryOrgUnit: null,
+      actingOrgUnit: null,
+      manager: 'Dr. Layla Al-Harbi',
+      actingUser: null,
+    };
+    service.resolveReferenceNames.mockResolvedValue(references);
+    const result = await controller.getById(USER_ID, TENANT_ID, USER_ID, []);
+    expect(service.resolveReferenceNames).toHaveBeenCalledWith({ id: USER_ID }, TENANT_ID);
+    expect(result.references).toEqual(references);
   });
 
   it('getById delegates to UserService.getByIdForViewer with actor context', async () => {

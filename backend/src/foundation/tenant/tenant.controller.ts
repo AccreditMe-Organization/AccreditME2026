@@ -19,7 +19,13 @@ import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
 import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
-import { ITenant, ITenantConfig, IEmailConfig, ITaskSlaSettings } from './interfaces/tenant.interface';
+import {
+  ITenant,
+  ITenantConfig,
+  ITenantEntitlements,
+  IEmailConfig,
+  ITaskSlaSettings,
+} from './interfaces/tenant.interface';
 
 @Controller('tenant')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -30,6 +36,34 @@ export class TenantController {
   @Permissions(TENANT_PERMISSIONS.VIEW)
   getCurrent(@CurrentTenant() tenantId: string): Promise<ITenant> {
     return this.tenantService.findById(tenantId);
+  }
+
+  // ACC-79 — deliberately NOT @Permissions(TENANT_PERMISSIONS.VIEW).
+  //
+  // "Which modules does my own tenant have" is intrinsically self-scoped, the
+  // same shape as GET /tasks/my-tasks (ACC-70) and POST /tasks/:id/complete
+  // (ACC-76): the query is keyed on the caller's own organization id from
+  // @CurrentTenant(), so it cannot reach any other tenant regardless of what
+  // the caller holds. See TenantService.getEntitlements().
+  //
+  // Why this is a separate endpoint rather than ungating GET /tenant above:
+  // that payload carries provider configuration (auth, storage, AI), plan
+  // limits, trial dates and the tenant's AI credit balance. A BASE_USER needs
+  // entitlements, not configuration. Ungating it wholesale would have handed
+  // every signed-in user the tenant's credit balance and storage provider.
+  //
+  // What gating GET /tenant cost before this existed: only TENANT_ADMIN holds
+  // tenant:view, so every other role got a 403, NavigationAccessService left
+  // `modules` empty by design (ACC-70), and isModuleEnabled() answered false
+  // for every module. Harmless while no navigation item was module-gated;
+  // fatal the moment one was, because the users the rail restructure exists
+  // to serve would have seen none of their quality modules.
+  //
+  // PermissionGuard still runs at class level and passes when no metadata is
+  // present; TenantGuard still authenticates and populates @CurrentTenant().
+  @Get('entitlements')
+  getEntitlements(@CurrentTenant() tenantId: string): Promise<ITenantEntitlements> {
+    return this.tenantService.getEntitlements(tenantId);
   }
 
   @Patch()

@@ -2,7 +2,7 @@
 //
 // Before this existed, translate.use() was never called anywhere in the
 // app (confirmed via a full grep during planning), and the RTL CSS rules
-// already in styles.scss ([dir='rtl']/[dir='ltr'] on sidebar-active-stripe)
+// then in styles.scss ([dir='rtl']/[dir='ltr'] on sidebar-active-stripe, removed ACC-79)
 // were permanently inert since nothing ever set the dir attribute on
 // <html> — the same "written, never wired" situation ACC-15 found with
 // Tailwind before its Commit 1.

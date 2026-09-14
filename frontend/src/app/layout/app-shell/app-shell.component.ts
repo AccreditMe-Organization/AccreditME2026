@@ -1,10 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, Injector, OnInit, inject, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
-import { BreadcrumbComponent } from '../breadcrumb/breadcrumb.component';
+import { ImpersonationBannerComponent } from '../impersonation-banner/impersonation-banner.component';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { DocumentTitleService } from '../../core/services/document-title.service';
 
 // The app shell every guarded route renders inside (ACC-13) — replaces the
 // route-per-page, layout-less arrangement every prior foundation step's own
@@ -25,16 +26,27 @@ import { NavigationAccessService } from '../../core/services/navigation-access.s
     ConfirmDialogModule,
     TopbarComponent,
     SidebarComponent,
-    BreadcrumbComponent,
+    ImpersonationBannerComponent,
   ],
   template: `
+    <!-- ACC-79 — the App Shell reference's layout. The rail runs the full
+         window height beside a content column whose own top bar carries the
+         rail toggle, breadcrumb and bell. The impersonation banner sits above
+         BOTH, full width: it is the one indicator that every action is being
+         taken as someone else, so it never shrinks into a column. -->
     <div class="h-screen flex flex-col">
-      <app-topbar (toggleSidebar)="sidebarCollapsed.set(!sidebarCollapsed())" />
-      <div class="flex flex-1 overflow-hidden">
+      <app-impersonation-banner />
+      <div class="flex flex-1 min-h-0">
         <app-sidebar [collapsed]="sidebarCollapsed()" />
-        <div class="flex-1 flex flex-col overflow-hidden">
-          <app-breadcrumb />
-          <main class="flex-1 overflow-auto p-4" (wheel)="onWheel($event)">
+        <div class="flex-1 min-w-0 flex flex-col">
+          <app-topbar
+            [collapsed]="sidebarCollapsed()"
+            (toggleSidebar)="sidebarCollapsed.set(!sidebarCollapsed())"
+          />
+          <main
+            class="flex-1 min-h-0 overflow-auto p-4"
+            (wheel)="onWheel($event)"
+          >
             <router-outlet />
           </main>
         </div>
@@ -70,6 +82,12 @@ export class AppShellComponent implements OnInit {
 
   readonly sidebarCollapsed = signal(false);
 
+  constructor() {
+    // ACC-79 — tab titles follow the page while the shell is alive, and reset
+    // when it is destroyed (logout), so the sign-in tab names no tenant.
+    inject(DocumentTitleService).attach(inject(Injector));
+  }
+
   ngOnInit(): void {
     this.navigationAccessService.loadAccess().subscribe();
   }
@@ -87,7 +105,8 @@ export class AppShellComponent implements OnInit {
 
     const atTop = listContainer.scrollTop <= 0;
     const atBottom =
-      listContainer.scrollTop + listContainer.clientHeight >= listContainer.scrollHeight;
+      listContainer.scrollTop + listContainer.clientHeight >=
+      listContainer.scrollHeight;
 
     if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
       event.preventDefault();

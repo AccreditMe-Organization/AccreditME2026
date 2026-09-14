@@ -8,6 +8,8 @@ import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { RoleService, RoleDto, PermissionDto } from '../../services/role.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { LanguageService } from '../../../../core/services/language.service';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 interface ModuleGroup {
   module: string;
@@ -21,23 +23,26 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
 @Component({
   selector: 'app-role-permission-matrix',
   standalone: true,
-  imports: [FormsModule, TranslatePipe, ButtonModule, CheckboxModule, TagModule, MessageModule],
+  imports: [PageHeaderComponent, FormsModule, TranslatePipe, ButtonModule, CheckboxModule, TagModule, MessageModule],
   template: `
     <div class="flex flex-col h-full gap-4">
 
-      <div class="flex items-center gap-3">
-        <p-button icon="pi pi-arrow-left" [text]="true" size="small" (onClick)="goBack()" />
-        @if (role()) {
-          <h2 class="text-xl font-semibold me-auto">
-            {{ role()!.nameEn }} — {{ 'roles.permissionMatrix' | translate }}
-          </h2>
-          @if (role()!.isSystem) {
-            <p-tag [value]="'roles.systemBadge' | translate" severity="info" />
-          }
-        }
-      </div>
-
-      <p class="text-sm text-[var(--am-text-secondary)]">{{ 'roles.permissionMatrixHint' | translate }}</p>
+      <!-- ACC-79 — no back arrow (the breadcrumb links Roles), and no hint line:
+           "Check every action this role should be allowed to perform" restated
+           what a permission matrix is. The role's name is the H1; what kind of
+           page this is goes in the eyebrow. -->
+      @if (role()) {
+        <app-page-header
+          [title]="roleName()"
+          [eyebrow]="'roles.permissionMatrix' | translate"
+        >
+          <div pageActions>
+            @if (role()!.isSystem) {
+              <p-tag [value]="'roles.systemBadge' | translate" severity="info" />
+            }
+          </div>
+        </app-page-header>
+      }
 
       @if (isHighImpact()) {
         <p-message severity="warn" [text]="'roles.adminRoleWarning' | translate" />
@@ -110,6 +115,16 @@ export class RolePermissionMatrixComponent implements OnInit {
   readonly saveError = signal<string | null>(null);
 
   readonly role = signal<RoleDto | null>(null);
+
+  private readonly languageService = inject(LanguageService);
+
+  // Tenant data, so chosen by language rather than translated (SYSTEM-REFERENCE
+  // §9.3). The header showed nameEn in both languages before ACC-79.
+  readonly roleName = computed(() => {
+    const role = this.role();
+    if (!role) return '';
+    return this.languageService.isArabic() ? role.nameAr || role.nameEn : role.nameEn;
+  });
   readonly allPermissions = signal<PermissionDto[]>([]);
   readonly selectedKeys = signal<Set<string>>(new Set());
 

@@ -8,18 +8,17 @@ import { SelectButtonModule } from 'primeng/selectbutton';
 import { FormsModule } from '@angular/forms';
 import { TaskService, ITaskDto } from '../../services/task.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 const STATUS_OPTIONS = ['PENDING', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED'] as const;
 
 @Component({
   selector: 'app-my-tasks',
   standalone: true,
-  imports: [DatePipe, TranslatePipe, TableModule, ButtonModule, TagModule, SelectButtonModule, FormsModule],
+  imports: [PageHeaderComponent, DatePipe, TranslatePipe, TableModule, ButtonModule, TagModule, SelectButtonModule, FormsModule],
   template: `
     <div class="flex flex-col h-full gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'task.myTasks' | translate }}</h2>
-      </div>
+      <app-page-header [title]="'task.myTasks' | translate" />
 
       <p-selectButton
         [options]="statusOptions"

@@ -8,17 +8,16 @@ import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-workflow-template-list',
   standalone: true,
-  imports: [TranslatePipe, TableModule, ButtonModule, TagModule, TooltipModule],
+  imports: [PageHeaderComponent, TranslatePipe, TableModule, ButtonModule, TagModule, TooltipModule],
   template: `
     <div class="flex flex-col h-full gap-4">
 
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'workflow.title' | translate }}</h2>
-      </div>
+      <app-page-header [title]="'workflow.title' | translate" />
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>

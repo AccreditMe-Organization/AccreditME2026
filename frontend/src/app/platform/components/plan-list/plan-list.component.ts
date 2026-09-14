@@ -6,17 +6,19 @@ import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IPlan } from '../../services/plan.service';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-plan-list',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, TableModule, ButtonModule, TagModule, MessageModule],
+  imports: [PageHeaderComponent, RouterLink, TranslatePipe, TableModule, ButtonModule, TagModule, MessageModule],
   template: `
     <div class="flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'platform.plans' | translate }}</h2>
-        <p-button icon="pi pi-plus" [label]="'platform.addPlan' | translate" routerLink="/platform/plans/create" />
-      </div>
+      <app-page-header [title]="'platform.plans' | translate">
+        <div pageActions>
+          <p-button icon="pi pi-plus" [label]="'platform.addPlan' | translate" routerLink="/platform/plans/create" />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

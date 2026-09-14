@@ -1,7 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 
 // Extracts the card pattern that was already duplicated inline in
-// settings-hub.component.ts (p-4 rounded-md bg-[var(--am-card)] border
+// settings-hub.component.ts, since removed (ACC-79) (p-4 rounded-md bg-[var(--am-card)] border
 // border-[var(--am-border)]) — see step-15-design-foundation.md Section 1.
 @Component({
   selector: 'app-card',
@@ -14,7 +14,7 @@ import { Component, computed, input } from '@angular/core';
 })
 export class CardComponent {
   // Adds the hover-border-highlight + pointer cursor treatment already used
-  // for clickable settings-hub cards — false renders a static, non-interactive card.
+  // for clickable cards (committee-list) — false renders a static, non-interactive card.
   readonly linkable = input(false);
 
   readonly containerClasses = computed(() => {

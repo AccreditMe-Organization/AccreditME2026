@@ -10,11 +10,12 @@ import { OrgUnitFormComponent } from '../org-unit-form/org-unit-form.component';
 import { OrgUnitHeadPanelComponent } from '../org-unit-head-panel/org-unit-head-panel.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-org-unit-tree',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     TranslatePipe,
     TreeTableModule,
     ButtonModule,
@@ -25,14 +26,15 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     EditDialogComponent,
   ],
   template: `
-    <div class="flex justify-between items-center mb-4">
-      <h2 class="text-xl font-semibold">{{ 'organization.title' | translate }}</h2>
-      <p-button
-        icon="pi pi-plus"
-        [label]="'organization.addUnit' | translate"
-        (onClick)="onAdd()"
-      />
-    </div>
+    <app-page-header [title]="'organization.title' | translate">
+      <div pageActions>
+        <p-button
+          icon="pi pi-plus"
+          [label]="'organization.addUnit' | translate"
+          (onClick)="onAdd()"
+        />
+      </div>
+    </app-page-header>
 
     @if (error()) {
       <p class="text-red-500 mb-4">{{ error() | translate }}</p>

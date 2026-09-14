@@ -1518,6 +1518,11 @@ Prisma Studio.
   showing only Super Admin. Platform admins are operators of the
   product, not users of it — nothing in this product has them managing
   their own org's HR/roles/workflows day to day.
+  **Separation still holds; the single "Super Admin" link is SUPERSEDED
+  (ACC-79).** The platform rail now lists every built platform screen
+  (Tenants, Plans, AI credit packs, AI feature costs, Platform settings)
+  under its own palette, and the tenant list above changed shape too —
+  see SYSTEM-REFERENCE.md Section 10.11.
 - **PrimeNG v21 theming is provider-based** (`providePrimeNG()` + a
   theme preset registered in `app.config.ts`'s providers array), NOT a
   CSS import in `angular.json` — the old
@@ -1530,7 +1535,20 @@ Prisma Studio.
   not via loose `:root` CSS variables alone — PrimeNG components never
   read plain CSS custom properties directly, only PrimeNG's own
   generated `--p-*` tokens.
-- `BreadcrumbComponent` must build from
+- **SUPERSEDED IN PART (ACC-79) — read this note before the rule below.**
+  The snapshot-walking and `routeConfig.data` constraints applied while
+  the breadcrumb built its trail by walking the route tree and reading
+  `data.breadcrumb` off each route. It no longer does either: ACC-79
+  resolves the trail from the nav model (`resolveNavLocation()`), and
+  every `data: { breadcrumb }` entry was removed from the routes. There
+  is no route tree walked, so the lazy-route timing crash and the
+  inherited-data duplication cannot occur. Do NOT reintroduce
+  route-data labels to "fix" a missing crumb — add or correct the nav
+  item instead. **The last sentence of the rule STILL HOLDS:** the
+  per-navigation `switchMap` + `catchError` isolation is kept, because
+  a throwing `.subscribe(nextFn)` still ends the subscription for good.
+  Original rule, true for ACC-13/14 through ACC-78:
+  `BreadcrumbComponent` must build from
   `router.routerState.snapshot.root` (the fully-resolved
   `ActivatedRouteSnapshot` tree, computed before any component
   activates) and read each route's own `routeConfig.data` — never the
@@ -1554,6 +1572,11 @@ Prisma Studio.
   routing to make Home a real parent just to get this; instead
   hardcode a first "Home" entry in `BreadcrumbComponent` pointing at
   `/`.
+  **SUPERSEDED (ACC-79).** Neither half applies now. The trail's root is
+  the tenant's own name (or "Platform"), linking to the landing page,
+  and the breadcrumb is ancestry that stops at the parent — it never
+  names the current page, which the H1 owns. Routing was not
+  restructured. See SYSTEM-REFERENCE.md Section 10.11.
 
 ## Key Architecture Decisions (ACC-16 through ACC-21)
 
@@ -1893,6 +1916,19 @@ Prisma Studio.
   on the same fact), so reading it inside the computed is the whole fix.
   Prefer `TranslatePipe` in the template; `instant()` is only for labels built
   outside it (option lists, `ConfirmationService` messages).
+  **SUPERSEDED as a requirement (ACC-79) — the premise is no longer true on
+  the installed version.** On `@ngx-translate/core` v18, `instant()` reads the
+  translation store's own signals (`_translations`, `_currentLang` in
+  `fesm2022`), so a `computed()` calling it already re-evaluates on a language
+  switch. Verified by mutation, not by reading: ACC-79 removed the explicit
+  `currentLang()` read from `DocumentTitleService.documentTitle` and its
+  language-switch test still passed. The rule was written against the
+  behaviour ACC-55 observed, and is kept here with that date rather than
+  deleted. Existing explicit reads (`DocumentTitleService`,
+  `committee-detail`) are harmless and were left in place; they hold if a
+  future version stops tracking inside `instant()`. Do not add new ones
+  believing they are required — and re-verify with a mutation test after any
+  ngx-translate major upgrade.
 
 ---
 
@@ -1940,6 +1976,57 @@ Prisma Studio.
   The general principle for future modules: where a step is mechanical, an
   action type may do it; where it is a judgement — especially one with
   regulatory, retention, or safety consequences — it gets a task and a person.
+
+---
+
+## Key Architecture Decisions (ACC-79)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 10.11 (the shell) and
+Section 1.8 (module entitlements). The decisions, briefly:
+
+- **The nav model (`core/navigation/nav-items.ts`) is the single source for
+  the rail, the route guard, the breadcrumb and the browser tab title.** A
+  page that is missing from any of those is fixed by correcting its nav
+  item — never by adding a second label list (route `data`, a hub page's
+  card array) that can drift from it.
+- **Administration is gated per item, never on a role name.** A group
+  renders when at least one of its items does, so a custom role holding one
+  admin permission gets a one-item Administration group.
+- **The Admin Settings hub was removed.** It duplicated seven rail items
+  with hand-copied permissions and fronted four screens that lived nowhere
+  else; those four are now rail items. "AI Settings" is labelled **AI
+  credits** — the page is a credit balance and an overage toggle with no
+  provider configuration, because provider selection is unbuilt.
+- **A child route of a path that has no nav item must carry its own
+  `canActivate`.** `permissionGuard` allows an unmapped path, and a child
+  with no `canActivate` never runs the guard. Removing the hub's nav entry
+  would have left all four admin-settings screens open to any signed-in
+  user; each child is now guarded and a test pins it. Same shape as
+  `tasks/all` (8b17d17).
+- **The breadcrumb is ancestry and stops at the parent; the H1 owns the page
+  name; the tab title reads the H1.** A purpose line under the H1 is optional
+  and most pages have none — see `PageHeaderComponent` for the two tests a
+  line must pass.
+- **The top bar's EN / ع toggle is a SESSION reading mode, not the saved
+  language preference, and must never write it.** It calls
+  `LanguageService.use()` only; a reload or the next sign-in returns to the
+  saved preference. The saved preference (profile Language field) is a
+  settings action with server-side effects — notification emails are sent in
+  it — so a reviewer flipping to English to read something must not start
+  receiving English email or lose their organisation's default.
+- **UI language and document language are unrelated, and always will be.**
+  Settled by Ahmad as a rule, not left open. UI language controls the chrome,
+  and which of a record's two stored names (`nameEn`/`nameAr`) is shown for
+  tenant data. A document's language is a property of the file, not of who is
+  reading it: an Arabic-speaking reviewer opening an English policy sees an
+  English policy, with the interface around it in Arabic. **Document
+  Management inherits this as a decision** — it must not derive a document's
+  displayed language from the reader's UI language, nor offer a UI-language
+  switch as the way to reach a document's original.
+- **Every user can open their own profile.** `users/:id` uses
+  `ownProfileGuard` (own id always allowed, anyone else's needs `users:view`);
+  before this the list's `users:view` requirement bounced non-admins from
+  their own profile, leaving "My Profile" in the user menu dead.
 
 ---
 
@@ -2110,7 +2197,12 @@ Prisma Studio.
   Document, Incident, CAPA and Audit will all want one, and
   discovering that five times is the expensive way. Not scoped or
   sized; recorded here so the next record page doesn't re-derive it.
-- **Platform Admin has no real navigation structure** — confirmed
+- **RESOLVED (ACC-79)** — the platform rail lists all five built
+  platform screens, and the investigation below found no others:
+  every route in `platform.routes.ts` is either a rail item, a child
+  of one (create/detail pages), or the bare path redirecting to
+  Tenants. Kept for the history.
+  **Platform Admin has no real navigation structure** — confirmed
   while testing ACC-39: `ai-feature-costs` and `ai-credit-packs` are
   only reachable by typing their URLs directly after a platform-admin
   login; `sidebar.component.ts` shows platform admins exactly one link
@@ -2464,6 +2556,31 @@ complete, not just the currently-in-review ones.
   the review before starting this, and scope this to the gap it
   leaves rather than repeating the walk. Workstream 5 (Forms &
   display conventions) is where most of its findings landed.
+- **Small display and translation defects found during ACC-79's browser
+  pass — for workstream 5 (Forms & display conventions), NOT to be
+  ticketed one by one.** Each is small; together they are the kind of
+  thing that workstream exists to sweep. Locations verified, not
+  remembered:
+  - **Hardcoded English labels on Working calendar** —
+    `calendar-config.component.ts`: "From" and "To" (working hours),
+    "Country code (e.g. SA, AE, GB)" and "Year" (AI holiday suggestion).
+    They render in English in an Arabic session.
+  - **Raw enum values in the My tasks status filter** ("PENDING",
+    "IN_PROGRESS", ...). The translation keys exist
+    (`task.status.*`) and the component supplies a translating template —
+    but as a bare `<ng-template let-status>`. `p-selectButton` only picks
+    up a template named `item` (`#item` / `pTemplate="item"`, per
+    `primeng-selectbutton.mjs`), so the template is silently ignored and
+    PrimeNG renders the option values. A one-attribute fix; the lesson is
+    that an unnamed PrimeNG template fails with no error.
+  - **Working calendar has two different Arabic names.** `nav.workingCalendar`
+    is "التقويم الرسمي" (rail, breadcrumb) and `workingCalendar.title` is
+    "التقويم الوظيفي" (page H1, and therefore the tab title). English uses
+    "Working Calendar" for both.
+  - **The Lookup values page's extensible tag reads just "Yes"**
+    (`lookup.extensibleYes`). The same key is fine in the category table,
+    under an "Extensible" column; beside the page title it has no column to
+    explain it. The tag needs its own label ("Extensible"), not a bare Yes.
 - **Local development points at SHARED infrastructure that a live
   Railway deployment also depends on — both the dev database and the
   dev Redis queue.** Confirmed twice, in two structurally different
@@ -2711,6 +2828,25 @@ Layout: Top bar 64px + Sidebar 260px collapsible + Main content fills remaining 
 Tables use PrimeNG scrollable with scrollHeight="flex" — no page scroll on data tables.
 Active sidebar item shows 3px green left stripe as visual anchor.
 Status pills use semantic colors distinct from brand colors.
+
+**SUPERSEDED (ACC-79) — the layout line, the green stripe, and the three
+`--am-sidebar-*` tokens above.** Recorded as a decision rather than
+silently overwritten, so nobody finds the old rule and reapplies it:
+- **Layout** is now: a full-height rail (260px open, 72px collapsed)
+  beside a content column whose own 48px top bar carries the rail toggle,
+  breadcrumb and bell. The impersonation banner sits above both, full
+  width. Built against `frontend/design-reference/AccreditMe App
+  Shell.dc.html`.
+- **The active rail item is a filled background, not a 3px green stripe.**
+  The reference marks the active item that way, in the rail's own palette,
+  and the rebuilt rail follows it. The `.sidebar-active-stripe` CSS — by
+  then carried by no element — was removed.
+- **`--am-sidebar-bg/-hover/-active` were removed** — nothing read them.
+  The rail reads `--am-rail-*`, which come in two palettes (tenant, and
+  platform under `.am-rail--platform`), because the platform shell is a
+  different product and its chrome says so.
+The table and status-pill lines still hold. Full detail: SYSTEM-REFERENCE.md
+Section 10.11.
 
 ---
 

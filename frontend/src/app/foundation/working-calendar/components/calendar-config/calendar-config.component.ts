@@ -12,6 +12,7 @@ import {
   AiHolidaySuggestion,
 } from '../../services/working-calendar.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 // ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
 // routed-page-under-<main> context; also re-verification target #2 (plan
 // §6) — ACC-38's earlier "PASS" tested a mechanism since confirmed to give
@@ -57,7 +58,7 @@ interface SuggestionState extends AiHolidaySuggestion {
 @Component({
   selector: 'app-calendar-config',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     ReactiveFormsModule,
     FormsModule,
     RouterLink,
@@ -68,22 +69,30 @@ interface SuggestionState extends AiHolidaySuggestion {
     DividerModule,
   ],
   template: `
-    <div class="flex items-center justify-between mb-6" style="max-width: 680px">
-      <h2 class="text-xl font-semibold">{{ 'workingCalendar.title' | translate }}</h2>
-      <p-button
-        [label]="'workingCalendar.holidays' | translate"
-        icon="pi pi-calendar-plus"
-        severity="secondary"
-        [outlined]="true"
-        routerLink="/working-calendar/holidays"
-      />
+    <!-- Same 680px as the form below, so the Holidays action sits over the
+         form it belongs to rather than at the far edge of a wide screen. -->
+    <div class="mb-3 max-w-[680px]">
+      <app-page-header
+        [title]="'workingCalendar.title' | translate"
+        [purpose]="'workingCalendar.purpose' | translate"
+      >
+        <div pageActions>
+          <p-button
+            [label]="'workingCalendar.holidays' | translate"
+            icon="pi pi-calendar-plus"
+            severity="secondary"
+            [outlined]="true"
+            routerLink="/working-calendar/holidays"
+          />
+        </div>
+      </app-page-header>
     </div>
 
     @if (loadError()) {
       <p class="text-red-500 mb-4">{{ loadError() | translate }}</p>
     }
 
-    <div class="flex flex-col gap-6" style="max-width: 680px">
+    <div class="flex flex-col gap-6 max-w-[680px]">
 
       <!-- Working Days -->
       <section class="flex flex-col gap-3">

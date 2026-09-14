@@ -67,7 +67,7 @@ audit's starting point, not be mistaken for having already done it.
 7. Organization Structure — ✅ complete
 8. Multi-Tenancy Conventions — ✅ complete
 9. i18n / RTL — ✅ complete
-10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78)
+10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
 
@@ -438,7 +438,7 @@ INDEPENDENT recovery**, and that is load-bearing rather than stylistic:
 | Call | Gating | Feeds |
 |---|---|---|
 | `GET /roles/my-permissions` | none | `hasPermission()`, `loadState` |
-| `GET /tenant` | `tenant:view` | `isModuleEnabled()`, `isPlatformOrg` |
+| `GET /tenant/entitlements` (was `GET /tenant` before ACC-79) | none — self-scoped | `isModuleEnabled()`, `moduleAccess()`, `isPlatformOrg`, `tenantName` |
 
 A single outer `catchError` made `forkJoin` collapse on the first
 failure. A zero-permission user gets `200 []` from the first and **403**
@@ -465,6 +465,10 @@ splitting.
 truth. Harmless while that list is empty; load-bearing for whoever adds
 the first functional module, who should then decide whether `/tenant`'s
 `tenant:view` gating is still right.
+**Decided in ACC-79 — split rather than ungated.** See 1.8. Only
+`TENANT_ADMIN` holds `tenant:view`, so the rail restructure would
+otherwise have shown every non-admin none of their quality modules —
+the exact users it exists to serve.
 
 **`GET /tasks/my-tasks` carries no `@Permissions()`** (ACC-70),
 deliberately — it filters `assignees.some(userId = caller)` and is
@@ -473,6 +477,78 @@ documents for the notification inbox. Its neighbours stay gated:
 `getForSource()` and `getById()` can return any task in the tenant. A
 spec asserts the metadata directly so the decorator is not "restored"
 for consistency.
+
+### 1.8 Module Entitlements (ACC-79)
+
+**`GET /tenant/entitlements`** — ungated, self-scoped, and the source
+the shell reads to decide which functional modules a user sees.
+
+**Why a separate endpoint and not an ungated `GET /tenant`.** The test
+for ungating is the one `my-tasks` (ACC-70) and `complete()` (ACC-76)
+established: can the query reach anything that is not the caller's
+own? "Which modules does my own tenant have" passes — it is keyed on
+`@CurrentTenant()`. But `GET /tenant`'s *payload* fails a different
+test. It carries provider configuration (`authProvider`,
+`storageProvider`, `aiProvider`), plan limits (`maxUsers`,
+`maxStorageGb`), `trialEndsAt`, `status`, and the AI credit balance
+(`monthlyCredits`, `creditsUsed`, `creditsRemaining`,
+`overageEnabled`). Ungating it would have handed every `BASE_USER` the
+tenant's credit balance and storage provider. A non-admin needs
+entitlements, not configuration.
+
+So the entitlements endpoint returns **exactly four fields** —
+`name`, `slug`, `isPlatformOrg`, `modules` — through its own
+`ITenantEntitlements` type rather than a projection of `ITenant`, so a
+field added to `ITenant` cannot leak onto it. `GET /tenant` stays on
+`tenant:view`. `tenant.controller.spec.ts` reads the `@Permissions`
+metadata of **both** handlers directly, because ungating the wrong one
+— or re-gating the new one for consistency — would pass every other
+test in the suite.
+
+**Three states, resolved by `resolveModuleEntitlements()`**
+(`foundation/tenant/module-entitlements.ts`). A module is usable only
+when both halves allow it:
+
+| Source | Holds | Role |
+|---|---|---|
+| `Organization.settings.modules[key]` | boolean | tenant switched it on |
+| `PlanModule.accessLevel` (via `Organization.planId`) | `FULL` / `READ_ONLY` / `NONE` | plan tier |
+
+Before ACC-79, nothing tenant-facing joined `PlanModule` — only the
+platform plan editor read it, and `ITenant.modules` was the bare
+boolean. A plan that does not mention a module does not grant it.
+**`NONE` is omitted, not returned**: every signed-in user reads this,
+and which modules a tenant is *not* licensed for is commercial detail
+for the admin's Plan & modules page. An absent key and `NONE` mean the
+same thing to every consumer.
+
+**⚠ NULL-PLAN FALLBACK — debt, not design. Revisit once tenants carry
+plans.** `Organization.planId` is nullable ("pre-ACC-13 tenants have
+none yet") and every seeded tenant is in that state. With no plan,
+every enabled module resolves to `FULL`, via the named constant
+`NULL_PLAN_FALLBACK_ACCESS`. That was chosen for compatibility, not
+endorsed as a rule — and **its effect today is nil**: no tenant has any
+module switched on (every org's `settings.modules` key is absent, and
+the `Plan`/`PlanModule` tables hold 0 rows), so `FULL` and `NONE`
+currently produce identical rails. It becomes load-bearing **once
+modules are switched on**: from then, resolving no-plan to `NONE` would
+empty every tenant's rail of the modules it had just been given. Its concrete cost: **the first tenant put on
+Starter with `planId` still null receives Standards at `FULL` rather
+than `READ_ONLY`, and nothing says so.** `null` and `[]` are
+deliberately distinct: `[]` is a real plan granting nothing and does
+*not* fall back. `module-entitlements.spec.ts` pins the constant by
+name (verified to fail when changed). Assigning the seeded tenants to
+a Plan is a pricing decision, deliberately kept out of ACC-79.
+
+**⚠ `ModuleGuard` does not use this yet.** `common/guards/module.guard.ts`
+reads `settings.modules[key] === true` directly and ignores plan tiers
+entirely. It has **zero consumers** — no controller carries
+`@RequiresModule()` — so nothing disagrees today. But the first
+functional module shipped behind it unchanged would appear read-only in
+the rail while its API accepted writes. The resolver is a pure function
+outside `TenantService` precisely so the guard can adopt it; do that
+before the first `@RequiresModule()` lands, and give `READ_ONLY` a
+meaning for write routes at the same time.
 
 ---
 
@@ -4075,6 +4151,184 @@ nested editor grid that is not a list page.
 
 ---
 
+### 10.11 The Application Shell — Rail, Breadcrumb, Page Header, Tab Title (ACC-79)
+
+Built against `frontend/design-reference/AccreditMe App Shell.dc.html`.
+Verified in a browser as platform admin, tenant admin (impersonated) in
+English and Arabic, and a zero-permission user — not only by tests.
+
+#### One model, four readers
+
+`core/navigation/nav-items.ts` holds `TENANT_NAV_GROUPS` (My work →
+Quality management → Administration) and `PLATFORM_NAV_GROUPS`. Four things
+read it, and nothing else holds a label or a permission for a nav page:
+
+| Reader | How |
+|---|---|
+| Rail (`SidebarComponent`) | `visibleNavGroups(access)` |
+| Route guard (`permissionGuard`) | `ROUTE_PERMISSIONS`, derived from the groups + `STANDALONE_ROUTE_PERMISSIONS` |
+| Breadcrumb | `resolveNavLocation(url, access)` (`nav-location.ts`) |
+| Tab title (`DocumentTitleService`) | `resolveNavLocation`, as the fallback page name |
+
+Before ACC-79 there were three copies: the sidebar's lists, route
+`data.breadcrumb`, and the Admin Settings hub's cards with hand-copied
+permissions. All three are gone.
+
+**Visibility** (`isNavItemVisible`): permission (if declared) AND module
+entitlement (if `moduleKey` declared). Never a role name. A group with no
+visible items is dropped, not rendered as a lone heading. Committees is the
+one Quality item deliberately NOT entitlement-driven (no tenant has modules
+switched on — see Section 1.8); a test pins that.
+
+**Resolution** (`resolveNavLocation`): longest route wins, matched on whole
+segments, among items THIS user can see — so `/tasks/unassigned` resolves to
+Administration, and `/users/:id` for a user without `users:view` resolves to
+nothing rather than to a section they are not in.
+
+#### The guard rule the hub removal exposed
+
+`permissionGuard` treats an unmapped path as allowed, and a child route with
+no `canActivate` never runs the guard. So **any child of a path that has no
+nav item must carry its own `canActivate: [permissionGuard]`.** When the Admin
+Settings hub's nav entry was removed, `admin-settings` became unmapped and all
+four child screens would have been open to any signed-in user.
+`admin-settings.routes.ts` now guards every child, and
+`admin-settings.routes.spec.ts` asserts the guard is wired (a mapping test
+cannot see route config). `tasks/all` is the earlier instance of the same
+shape.
+
+#### Breadcrumb — ancestry, stops at the parent
+
+| Page | Trail |
+|---|---|
+| Landing | root (plain text) |
+| Section page | root / group |
+| Below a section | root / group / section (link) |
+
+Root is the tenant's name, or "Platform" on the platform shell (whose single
+group is not repeated). It never names the current page. A record page stops
+at its section because no record has a human-readable reference code (CLAUDE.md,
+Open/Deferred). The trail is a `computed()` over the URL, tenant name,
+permissions and modules, because those land after a hard-reload navigation.
+Per-navigation `switchMap`/`catchError` isolation is kept (ACC-14).
+
+#### `PageHeaderComponent` — one H1
+
+`shared/components/page-header/`. Inputs are already-translated strings:
+`title` (required), `eyebrow`, `purpose`, `tabTitle`. Actions are projected
+(`<div pageActions>`). Every routed page except Committee's record uses it;
+Committee's identity card keeps its own H1.
+
+- **Eyebrow**: not on section pages — the reference puts the group there,
+  which the breadcrumb already shows. Child pages use it for the kind of page
+  ("Permission matrix", "Workflow stages", "Lookup values").
+- **Purpose line**: optional, and rare. It must tell the reader something
+  neither the title nor the page shows, AND state a durable rule rather than
+  the page's contents (the stale-promise pattern, Section 10.10). ACC-79 set
+  it on five pages. Home's subtitle and the permission-matrix hint were
+  removed for restating what was directly below them.
+
+#### Tab titles
+
+`Page · Tenant — AccreditMe`; `Page — AccreditMe Platform`; `AccreditMe`
+outside the shell (reset when the shell is destroyed, so a post-logout
+sign-in tab names no tenant).
+
+The page name is, in order: the name a page registered
+(`PageNameRegistry`), else the rail label from `resolveNavLocation`, else
+none. `PageHeaderComponent` registers its `tabTitle || title`; a bespoke
+header calls `registerPageName(() => name)` from its constructor. A record
+page's tab therefore shows its section until the record loads, then the
+record's name.
+
+**`registerPageName` wraps its registry calls in `untracked()`.** `release()`
+reads the registry signal; tracked, the effect depends on the entry it writes
+and re-runs forever. The first version did exactly that and hung the test
+browser — caught by the page-header spec, not by review.
+
+#### Language toggle — session reading mode
+
+`layout/language-toggle/`, in the top bar before the bell. EN / ع, native
+buttons with `aria-pressed`, each labelled in its own language. Calls
+`LanguageService.use()` and nothing else: direction, `lang`, rail, breadcrumb,
+H1s and the tab title all follow immediately (verified live, no reload). It
+writes **no** saved preference — a spec asserts it sends no request — because
+the saved preference (`User.language`, set on the profile form) is read
+server-side for notification email language. A reload or sign-in returns to
+the saved preference. UI language never decides a document's language
+(CLAUDE.md, Key Architecture Decisions ACC-79).
+
+The page-level references (Users List, Committee Record) place this toggle in
+the top bar; the App Shell reference moved its RTL button into its demo
+control bar, which is why the first shell build had none.
+
+#### Own profile
+
+`users/:id` uses `ownProfileGuard`: the signed-in user's own id is always
+allowed, anyone else's falls through to `permissionGuard` (`users:view`). Until
+ACC-79 the `users:view` guard sat on the parent route and bounced non-admins
+from their own profile.
+
+**What reaching the page exposed, and how it was handled.** The page was built
+for admins and fired four requests a non-admin could only get 403s from. Now:
+
+- The position, org-unit and user lists are requested only with
+  `positions:view` / `org:view` / `users:view`.
+- The five ACC-43 admin fields stay VISIBLE to every viewer — that was a
+  deliberate ACC-43 decision, not an oversight — and are editable pickers only
+  with `users:manage`. For anyone else they render as text. A disabled picker
+  labels its value from its option list, so without the gated list it rendered
+  blank; hiding the fields would have undone ACC-43 instead of fixing it.
+- The names come from `GET /users/:id`, which returns `references` beside the
+  record: position, primary and acting unit (bilingual), manager and acting user.
+  `UserService.resolveReferenceNames()` scopes every lookup by id and
+  `organizationId` and selects names only.
+- The role section renders only with `roles:view`.
+- **Still open, ticketed:** a non-admin can set out-of-office dates but cannot
+  choose a stand-in — the picker needs a colleague list, and none is readable
+  without `users:view`. The current stand-in, if any, is shown from
+  `references`. That picker was never scoped to the user's org unit: it has
+  listed all ACTIVE users tenant-wide since ACC-12, with ACC-37 adding each
+  person's unit as a sub-label. The org-unit-scoped picker that does exist is
+  ACC-46's manager picker (invite form, transfer wizard).
+
+#### Rail palettes
+
+`--am-rail-*` tokens (oklch, from the reference). The platform shell adds
+`.am-rail--platform`, which overrides the same variables at hue 320 — a class,
+not a branch. The old `--am-sidebar-*` tokens and the green active stripe were
+removed (CLAUDE.md, Brand Design Tokens, records both as superseded).
+
+**Length.** A tenant admin's rail holds 15 items (2 + 1 + 12). At 1589×945 with
+the impersonation banner the last item ends at 705px with ~185px to spare; on a
+~720px-tall viewport the item list scrolls inside its own `overflow-y-auto`
+region. Administration will reach 14 when Setup health and Plan & modules
+exist.
+
+#### Findings recorded here because they came from the shell work
+
+- **AI Settings is a credit balance, not provider configuration.** Monthly
+  credits, remaining, used, and an overage toggle — no provider choice,
+  because provider selection is unbuilt (Section 11). Relabelled "AI credits";
+  it was NOT merged with Email provider. Its natural home is the reference's
+  Plan & modules page.
+- **Email provider is inert.** It writes `Organization.emailConfig`, which
+  only its own GET reads; email still goes through the platform default. The
+  page says so in a message (not a purpose line — it goes false when per-tenant
+  email ships). Kept in the rail so the screen is not orphaned.
+- **Organization profile loads with `tenant:view` and saves with
+  `tenant:update`.** A custom role holding only view sees a save that 403s.
+  Unreachable with seeded roles (only `TENANT_ADMIN` holds any `tenant:*`).
+
+#### Verification technique worth reusing
+
+To check Arabic/RTL without writing a user's language preference to shared
+dev data: in the dev build, `ng.getComponent(el).languageService.use('ar')` on
+any mounted component that injects `LanguageService`. It switches the session
+only. Switch back before moving on.
+
+---
+
 ## 11. Known Cross-Cutting Gaps
 
 **✅ Complete — built incrementally as each of Sections 1–10 above was
@@ -4441,6 +4695,13 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
 
 ### 12.3 `UserService` Methods
 
+- **`resolveReferenceNames(user, organizationId)`** (ACC-79) — display names
+  for the ids on a record the caller was already allowed to read: position,
+  primary and acting org unit (`{ nameEn, nameAr }`), manager and acting user
+  (name). Every lookup scoped by id AND `organizationId`, names selected only,
+  no query for an unset id. `GET /users/:id` returns the result as `references`
+  beside the record — the only endpoint that does. Exists so the profile page's
+  read-only fields can be labelled without the permission-gated lists (10.11).
 - **`invite()`** — enforces `Organization.maxUsers` (unchanged from
   before). Generates the 24-byte hex `invitationToken`, 7-day TTL,
   sends the `EMAIL`-channel notification (unchanged).

@@ -44,14 +44,14 @@ export const routes: Routes = [
         // holding no permissions at all, so guarding it would make it the
         // thing it exists to prevent.
         path: 'home',
-        data: { breadcrumb: 'nav.home' },
         loadComponent: () =>
-          import('./foundation/home/home.component').then((m) => m.HomeComponent),
+          import('./foundation/home/home.component').then(
+            (m) => m.HomeComponent,
+          ),
       },
       {
         path: 'organization',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.organization' },
         loadChildren: () =>
           import('./foundation/organization/organization.routes').then(
             (m) => m.ORGANIZATION_ROUTES,
@@ -60,7 +60,6 @@ export const routes: Routes = [
       {
         path: 'working-calendar',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.workingCalendar' },
         loadChildren: () =>
           import('./foundation/working-calendar/working-calendar.routes').then(
             (m) => m.WORKING_CALENDAR_ROUTES,
@@ -69,7 +68,6 @@ export const routes: Routes = [
       {
         path: 'lookups',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.lookups' },
         loadChildren: () =>
           import('./foundation/lookup/lookup.routes').then(
             (m) => m.LOOKUP_ROUTES,
@@ -78,16 +76,12 @@ export const routes: Routes = [
       {
         path: 'roles',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.roles' },
         loadChildren: () =>
-          import('./foundation/roles/roles.routes').then(
-            (m) => m.ROLES_ROUTES,
-          ),
+          import('./foundation/roles/roles.routes').then((m) => m.ROLES_ROUTES),
       },
       {
         path: 'workflows',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.workflows' },
         loadChildren: () =>
           import('./foundation/workflow/workflow.routes').then(
             (m) => m.WORKFLOW_ROUTES,
@@ -96,7 +90,6 @@ export const routes: Routes = [
       {
         path: 'org-positions',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.orgPositions' },
         loadChildren: () =>
           import('./foundation/org-position/org-position.routes').then(
             (m) => m.ORG_POSITION_ROUTES,
@@ -105,7 +98,6 @@ export const routes: Routes = [
       {
         path: 'committees',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.committees' },
         loadChildren: () =>
           import('./foundation/committees/committees.routes').then(
             (m) => m.COMMITTEE_ROUTES,
@@ -114,28 +106,28 @@ export const routes: Routes = [
       {
         path: 'tasks',
         canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.tasks' },
         loadChildren: () =>
           import('./foundation/tasks/tasks.routes').then((m) => m.TASKS_ROUTES),
       },
       {
         path: 'users',
-        canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.users' },
+        // No canActivate here since ACC-79: on the parent it also gated a
+        // user's OWN profile on users:view. Each child guards itself — see
+        // user.routes.ts.
         loadChildren: () =>
           import('./foundation/user/user.routes').then((m) => m.USER_ROUTES),
       },
       {
         path: 'platform',
-        data: { breadcrumb: 'nav.platform' },
         canActivate: [platformAdminGuard],
         loadChildren: () =>
           import('./platform/platform.routes').then((m) => m.PLATFORM_ROUTES),
       },
       {
         path: 'admin-settings',
-        canActivate: [permissionGuard],
-        data: { breadcrumb: 'nav.adminSettings' },
+        // No canActivate here since ACC-79: this path has no nav item of its
+        // own, so the guard would find no mapping and allow everything. Each
+        // child guards itself — see admin-settings.routes.ts.
         loadChildren: () =>
           import('./foundation/admin-settings/admin-settings.routes').then(
             (m) => m.ADMIN_SETTINGS_ROUTES,

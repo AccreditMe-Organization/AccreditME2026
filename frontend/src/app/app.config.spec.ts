@@ -48,7 +48,7 @@ describe('initializeSession (ACC-21 — ordering guarantee)', () => {
     // not attempted in parallel, closing the exact race ACC-21 fixes.
     const meReq = httpMock.expectOne(`${environment.apiUrl}/auth/me`);
     httpMock.expectNone(`${environment.apiUrl}/roles/my-permissions`);
-    httpMock.expectNone(`${environment.apiUrl}/tenant`);
+    httpMock.expectNone(`${environment.apiUrl}/tenant/entitlements`);
 
     tick();
     expect(resolved).toBeFalse();
@@ -65,11 +65,11 @@ describe('initializeSession (ACC-21 — ordering guarantee)', () => {
     // NOW the permission calls should have gone out -- but the initializer's
     // promise must still not have resolved while they're outstanding.
     const permsReq = httpMock.expectOne(`${environment.apiUrl}/roles/my-permissions`);
-    const tenantReq = httpMock.expectOne(`${environment.apiUrl}/tenant`);
+    const tenantReq = httpMock.expectOne(`${environment.apiUrl}/tenant/entitlements`);
     expect(resolved).toBeFalse();
 
     permsReq.flush(['platform:admin']);
-    tenantReq.flush({ isPlatformOrg: true, modules: {} });
+    tenantReq.flush({ name: 'Org Alpha', slug: 'alpha', isPlatformOrg: true, modules: {} });
     tick();
 
     expect(resolved).toBeTrue();
@@ -91,6 +91,6 @@ describe('initializeSession (ACC-21 — ordering guarantee)', () => {
 
     expect(resolved).toBeTrue();
     httpMock.expectNone(`${environment.apiUrl}/roles/my-permissions`);
-    httpMock.expectNone(`${environment.apiUrl}/tenant`);
+    httpMock.expectNone(`${environment.apiUrl}/tenant/entitlements`);
   }));
 });

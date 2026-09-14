@@ -1,102 +1,71 @@
-import { Component, computed, inject, output } from '@angular/core';
-import { Router } from '@angular/router';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { Component, input, output } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
-import { MenuModule } from 'primeng/menu';
-import { MenuItem } from 'primeng/api';
-import { AuthService } from '../../core/services/auth.service';
-import { LANDING_ROUTE } from '../../core/navigation/landing-route';
-import { PlatformTenantService } from '../../platform/services/platform-tenant.service';
+import { TooltipModule } from 'primeng/tooltip';
+import { BreadcrumbComponent } from '../breadcrumb/breadcrumb.component';
 import { NotificationBellComponent } from '../../foundation/notification/components/notification-bell/notification-bell.component';
+import { LanguageToggleComponent } from '../language-toggle/language-toggle.component';
 
+// ACC-79 — the top bar of the CONTENT COLUMN, per the App Shell reference:
+// rail toggle and breadcrumb on the start side, notification bell on the end.
+//
+// It used to span the full width above the rail, carrying the brand, the
+// user's name and their menu. The brand and the user now live in the rail
+// (its header and footer), so the rail runs the full height of the window.
+// The impersonation banner moved OUT to ImpersonationBannerComponent, because
+// it must stay full-width above everything rather than sit in this column.
 @Component({
   selector: 'app-topbar',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, MenuModule, NotificationBellComponent],
+  imports: [
+    TranslatePipe,
+    ButtonModule,
+    TooltipModule,
+    BreadcrumbComponent,
+    NotificationBellComponent,
+    LanguageToggleComponent,
+  ],
   template: `
-    @if (authService.impersonatedBy(); as impersonator) {
-      <div class="h-9 flex items-center justify-center gap-3 px-4 bg-[var(--am-banner-info)] text-white text-sm">
-        <span>{{ 'platform.impersonatingBanner' | translate: { admin: impersonator.name } }}</span>
-        <button
-          type="button"
-          class="underline font-medium"
-          (click)="onEndImpersonation()"
-        >
-          {{ 'platform.endImpersonation' | translate }}
-        </button>
-      </div>
-    }
-
     <header
-      class="h-16 flex items-center justify-between px-4 bg-[var(--am-card)] border-b border-[var(--am-border)]"
+      class="h-12 flex-none flex items-center justify-between gap-3 ps-2 pe-4 bg-[var(--am-card)] border-b border-[var(--am-border)]"
     >
-      <div class="flex items-center gap-3">
-        <p-button icon="pi pi-bars" [text]="true" (onClick)="toggleSidebar.emit()" />
-        <span class="font-semibold text-lg text-[var(--am-blue-primary)]">AccreditMe</span>
+      <div class="flex items-center gap-1 min-w-0">
+        <!-- [ariaLabel], NOT [attr.aria-label]. PrimeNG's p-button renders
+             its own inner <button> and binds that element's aria-label from
+             this input (primeng-button.mjs: [attr.aria-label]="ariaLabel ||
+             buttonProps?.ariaLabel"). An attr binding lands on the p-button
+             HOST, which is not focusable, and left the real button with no
+             accessible name — a screen reader announced it as just "button".
+             Found in commit 7's browser pass, when the control could not be
+             located by its name.
+             No aria-expanded: p-button offers no way to put it on the inner
+             element, and the label already changes with the state. -->
+        <p-button
+          icon="pi pi-bars"
+          [text]="true"
+          severity="secondary"
+          size="small"
+          [ariaLabel]="
+            (collapsed() ? 'shell.expandRail' : 'shell.collapseRail')
+              | translate
+          "
+          [pTooltip]="
+            (collapsed() ? 'shell.expandRail' : 'shell.collapseRail')
+              | translate
+          "
+          (onClick)="toggleSidebar.emit()"
+        />
+        <app-breadcrumb class="min-w-0" />
       </div>
 
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-3 flex-none">
+        <app-language-toggle />
         <app-notification-bell />
-        @if (authService.currentUser(); as user) {
-          <button
-            type="button"
-            class="flex items-center gap-2 text-sm text-[var(--am-text-secondary)] hover:text-[var(--am-text-primary)] transition-colors"
-            (click)="userMenu.toggle($event)"
-          >
-            <span>{{ user.name }}</span>
-            <i class="pi pi-angle-down text-xs"></i>
-          </button>
-          <p-menu #userMenu [model]="userMenuItems()" [popup]="true" />
-        }
       </div>
     </header>
   `,
 })
 export class TopbarComponent {
+  readonly collapsed = input(false);
   readonly toggleSidebar = output<void>();
-
-  readonly authService = inject(AuthService);
-  private readonly platformTenantService = inject(PlatformTenantService);
-  private readonly router = inject(Router);
-  private readonly translate = inject(TranslateService);
-
-  // Rebuilds on language change — TranslateService.currentLang is read as a
-  // signal here (same mechanism notification-bell.component.ts's isArabic()
-  // relies on), and MenuItem labels are plain strings (not template-bound),
-  // so they need translate.instant() rather than the | translate pipe.
-  readonly userMenuItems = computed<MenuItem[]>(() => {
-    void this.translate.currentLang();
-    const user = this.authService.currentUser();
-    return [
-      {
-        label: this.translate.instant('user.myProfile'),
-        icon: 'pi pi-user',
-        command: () => user && void this.router.navigate(['/users', user.id]),
-      },
-      {
-        label: this.translate.instant('auth.logout'),
-        icon: 'pi pi-sign-out',
-        command: () => this.onLogout(),
-      },
-    ];
-  });
-
-  onLogout(): void {
-    this.authService.logout().subscribe({
-      next: () => void this.router.navigate(['/login']),
-      error: () => void this.router.navigate(['/login']),
-    });
-  }
-
-  onEndImpersonation(): void {
-    // Full reload, not router.navigate() — same reasoning as
-    // TenantDetailComponent.onImpersonate(): the cookie changes server-side,
-    // so every in-memory signal needs a fresh APP_INITIALIZER boot.
-    this.platformTenantService.endImpersonation().subscribe({
-      next: () => { window.location.href = '/platform/tenants'; },
-      // ACC-70 — LANDING_ROUTE rather than '/organization', which the user
-      // being returned to may hold no permission for.
-      error: () => { window.location.href = LANDING_ROUTE; },
-    });
-  }
 }

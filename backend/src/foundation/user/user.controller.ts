@@ -14,7 +14,7 @@ import { TransferUserDto } from './dto/transfer-user.dto';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
-import { IUser } from './interfaces/user.interface';
+import { IUser, IUserReferenceNames } from './interfaces/user.interface';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { IRole } from '../roles/interfaces/role.interface';
@@ -87,10 +87,13 @@ export class UserController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
-  ): Promise<IUser> {
+  ): Promise<IUser & { references: IUserReferenceNames }> {
     // ACC-45 — see listUsers() above.
     const user = await this.userService.getByIdForViewer(id, tenantId, actorId, actorPermissions);
-    return toSafeUser(user);
+    // ACC-79 — names for the ids on the record, so a read-only profile can show
+    // them without the permission-gated lists (see IUserReferenceNames).
+    const references = await this.userService.resolveReferenceNames(user, tenantId);
+    return { ...toSafeUser(user), references };
   }
 
   @Post('invite')

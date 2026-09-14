@@ -1,6 +1,5 @@
 import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
@@ -13,11 +12,12 @@ import {
 import { PublicHolidayFormComponent } from '../public-holiday-form/public-holiday-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-public-holiday-list',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     FormsModule,
     TranslatePipe,
     TableModule,
@@ -28,18 +28,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
     EditDialogComponent,
   ],
   template: `
-    <div class="flex justify-between items-center mb-4">
-      <div class="flex items-center gap-3">
-        <p-button
-          icon="pi pi-arrow-left"
-          [text]="true"
-          size="small"
-          [ariaLabel]="'workingCalendar.title' | translate"
-          (onClick)="goBack()"
-        />
-        <h2 class="text-xl font-semibold">{{ 'workingCalendar.holidays' | translate }}</h2>
-      </div>
-      <div class="flex gap-3 items-center">
+    <!-- ACC-79 — no back arrow: the breadcrumb links Working calendar. -->
+    <app-page-header [title]="'workingCalendar.holidays' | translate">
+      <div pageActions class="flex gap-3 items-center">
         <p-select
           [options]="yearOptions"
           optionLabel="label"
@@ -53,7 +44,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
           (onClick)="openForm(null)"
         />
       </div>
-    </div>
+    </app-page-header>
 
     @if (error()) {
       <p class="text-red-500 mb-4">{{ error() | translate }}</p>
@@ -140,7 +131,6 @@ export class PublicHolidayListComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly svc = inject(WorkingCalendarService);
-  private readonly router = inject(Router);
 
   readonly loading = signal(false);
   readonly holidays = signal<PublicHolidayDto[]>([]);
@@ -156,12 +146,6 @@ export class PublicHolidayListComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadHolidays();
-  }
-
-  goBack(): void {
-    // Absolute path, not relativeTo — see ACC-16 (NG04002 on relative '..'
-    // navigation across this route's lazy-loaded boundary).
-    void this.router.navigate(['/working-calendar']);
   }
 
   onYearChange(year: number): void {

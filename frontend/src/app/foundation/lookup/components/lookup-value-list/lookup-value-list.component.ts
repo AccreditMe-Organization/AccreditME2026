@@ -1,5 +1,5 @@
 import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
-import { Router, ActivatedRoute } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -12,11 +12,12 @@ import { LookupValueFormComponent } from '../lookup-value-form/lookup-value-form
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-lookup-value-list',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     FormsModule,
     TranslatePipe,
     TableModule,
@@ -30,16 +31,13 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
   template: `
     <div class="flex flex-col h-full gap-4">
 
-      <!-- Header -->
-      <div class="flex items-center gap-3">
-        <p-button
-          icon="pi pi-arrow-left"
-          [text]="true"
-          size="small"
-          (onClick)="goBack()"
-        />
-        @if (category()) {
-          <h2 class="text-xl font-semibold me-auto">{{ displayLabel(category()!) }}</h2>
+      <!-- ACC-79 — no back arrow: the breadcrumb links Lookups, one step up. -->
+      @if (category()) {
+        <app-page-header
+          [title]="displayLabel(category()!)"
+          [eyebrow]="'lookup.valuesEyebrow' | translate"
+        >
+          <div pageActions class="flex items-center gap-3">
           <p-tag
             [value]="(category()!.isSystem ? 'lookup.typeSystem' : 'lookup.typeTenant') | translate"
             [severity]="category()!.isSystem ? 'info' : 'secondary'"
@@ -55,8 +53,9 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
               (onClick)="openAdd()"
             />
           }
-        }
-      </div>
+          </div>
+        </app-page-header>
+      }
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>
@@ -229,7 +228,6 @@ export class LookupValueListComponent implements OnInit {
   @ViewChild('overrideFormTpl', { read: TemplateRef, static: true }) overrideFormTpl!: TemplateRef<unknown>;
 
   private readonly lookupService = inject(LookupService);
-  private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly languageService = inject(LanguageService);
 
@@ -344,12 +342,6 @@ export class LookupValueListComponent implements OnInit {
           this.overrideSaving.set(false);
         },
       });
-  }
-
-  goBack(): void {
-    // Absolute path, not relativeTo — see ACC-16 (NG04002 on relative '..'
-    // navigation across this route's lazy-loaded boundary).
-    void this.router.navigate(['/lookups']);
   }
 
   private loadCategory(): void {

@@ -7,21 +7,23 @@ import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { StatusBadgeComponent } from '../../../shared/components/status-badge/status-badge.component';
 import { PlatformTenantService, IPlatformTenantSummary } from '../../services/platform-tenant.service';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-tenant-list',
   standalone: true,
-  imports: [RouterLink, TranslatePipe, TableModule, ButtonModule, MessageModule, StatusBadgeComponent],
+  imports: [PageHeaderComponent, RouterLink, TranslatePipe, TableModule, ButtonModule, MessageModule, StatusBadgeComponent],
   template: `
     <div class="flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'platform.tenants' | translate }}</h2>
-        <p-button
-          icon="pi pi-plus"
-          [label]="'platform.createTenant' | translate"
-          routerLink="/platform/tenants/create"
-        />
-      </div>
+      <app-page-header [title]="'platform.tenants' | translate">
+        <div pageActions>
+          <p-button
+            icon="pi pi-plus"
+            [label]="'platform.createTenant' | translate"
+            routerLink="/platform/tenants/create"
+          />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

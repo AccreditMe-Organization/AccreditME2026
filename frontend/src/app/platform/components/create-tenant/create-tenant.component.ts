@@ -9,14 +9,15 @@ import { MessageModule } from 'primeng/message';
 import { PlatformTenantService } from '../../services/platform-tenant.service';
 import { PlanService, IPlan } from '../../services/plan.service';
 import { extractErrorMessage } from '../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-create-tenant',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, InputTextModule, SelectModule, ButtonModule, MessageModule],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, InputTextModule, SelectModule, ButtonModule, MessageModule],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
-      <h2 class="text-xl font-semibold">{{ 'platform.createTenant' | translate }}</h2>
+      <app-page-header [title]="'platform.createTenant' | translate" />
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

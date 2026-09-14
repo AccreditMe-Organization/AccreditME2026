@@ -1,24 +1,36 @@
 import { Routes } from '@angular/router';
 import { permissionGuard } from '../../core/guards/permission.guard';
 
-// ACC-70 — 'unassigned' carries its own guard because the shared mapping
-// declares a STRICTER permission for it (tasks:manage) than for its parent
-// (tasks:view). The parent's guard runs first and still applies, so
-// tasks:view is effectively a prerequisite for reaching this child — that
-// follows from the route nesting, whereas the sidebar lists the two as
-// siblings. No seeded role holds tasks:manage without tasks:view, so nothing
-// is excluded today; a tenant-created custom role could be, which is why the
-// nesting is recorded here rather than left to be rediscovered.
+// ACC-79 — the parent path ('', My tasks) requires NO permission, matching
+// GET /tasks/my-tasks, which ACC-70 ungated because it is self-scoped. The
+// parent route keeps its canActivate, so re-adding a mapping for 'tasks' would
+// take effect without touching this file.
+//
+// Every child that is NOT self-scoped therefore needs its OWN guard. A child
+// without canActivate never runs the guard at all, and inheriting from the
+// parent no longer protects anything:
+//   - 'all'        -> tasks:view   (can return any task in the tenant)
+//   - 'unassigned' -> tasks:manage (administrative triage view)
+//
+// This also retires a quirk ACC-70 recorded here: while the parent required
+// tasks:view, that was an implicit prerequisite for 'unassigned' too, which
+// could have excluded a custom role holding tasks:manage alone. It no longer
+// is — each child now requires exactly its own permission.
 export const TASKS_ROUTES: Routes = [
   {
     path: '',
     loadComponent: () =>
-      import('./components/my-tasks/my-tasks.component').then((m) => m.MyTasksComponent),
+      import('./components/my-tasks/my-tasks.component').then(
+        (m) => m.MyTasksComponent,
+      ),
   },
   {
     path: 'all',
+    canActivate: [permissionGuard],
     loadComponent: () =>
-      import('./components/task-list/task-list.component').then((m) => m.TaskListComponent),
+      import('./components/task-list/task-list.component').then(
+        (m) => m.TaskListComponent,
+      ),
   },
   {
     path: 'unassigned',

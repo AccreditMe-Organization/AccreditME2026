@@ -7,6 +7,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IAiCreditPack } from '../../services/plan.service';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 // ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
 // Unlike every other item in this ticket, this screen is genuinely
 // create-only: only openAdd() exists, no edit affordance in the table row
@@ -19,13 +20,14 @@ import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit
 @Component({
   selector: 'app-ai-credit-pack-list',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, MessageModule, EditDialogComponent],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, MessageModule, EditDialogComponent],
   template: `
     <div class="flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'platform.aiCreditPacks' | translate }}</h2>
-        <p-button icon="pi pi-plus" [label]="'platform.addAiCreditPack' | translate" (onClick)="openAdd()" />
-      </div>
+      <app-page-header [title]="'platform.aiCreditPacks' | translate">
+        <div pageActions>
+          <p-button icon="pi pi-plus" [label]="'platform.addAiCreditPack' | translate" (onClick)="openAdd()" />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />
