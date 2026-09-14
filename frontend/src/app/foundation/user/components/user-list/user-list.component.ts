@@ -225,6 +225,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
                   icon="pi pi-ellipsis-h"
                   size="small"
                   [text]="true"
+                  [ariaLabel]="'list.more' | translate"
                   [pTooltip]="'list.more' | translate"
                   (onClick)="openRowMenu(user, $event)"
                 />
