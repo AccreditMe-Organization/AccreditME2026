@@ -111,7 +111,9 @@ export const routes: Routes = [
       },
       {
         path: 'users',
-        canActivate: [permissionGuard],
+        // No canActivate here since ACC-79: on the parent it also gated a
+        // user's OWN profile on users:view. Each child guards itself — see
+        // user.routes.ts.
         loadChildren: () =>
           import('./foundation/user/user.routes').then((m) => m.USER_ROUTES),
       },
