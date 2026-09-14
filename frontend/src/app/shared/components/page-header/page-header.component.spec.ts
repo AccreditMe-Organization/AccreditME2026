@@ -7,7 +7,7 @@ import { PageNameRegistry } from '../../../core/services/document-title.service'
   standalone: true,
   imports: [PageHeaderComponent],
   template: `
-    <app-page-header [title]="title" [eyebrow]="eyebrow" [purpose]="purpose">
+    <app-page-header [title]="title" [eyebrow]="eyebrow" [purpose]="purpose" [tabTitle]="tabTitle">
       <div pageActions><button type="button">Add committee</button></div>
     </app-page-header>
   `,
@@ -16,6 +16,7 @@ class HostComponent {
   title = 'Committees';
   eyebrow: string | null = null;
   purpose: string | null = null;
+  tabTitle: string | null = null;
 }
 
 // ACC-79 — the header's contract: one H1, and nothing rendered for what a page
@@ -90,6 +91,22 @@ describe('PageHeaderComponent (ACC-79)', () => {
 
       fixture.destroy();
       expect(registry.entry()).toBeNull();
+    });
+
+    // Home's H1 is a greeting; its tab must still say which page it is.
+    it('registers tabTitle instead of the H1 when one is given', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ imports: [HostComponent] });
+      const registry = TestBed.inject(PageNameRegistry);
+      const fixture = TestBed.createComponent(HostComponent);
+      fixture.componentInstance.title = 'Good morning, Layla';
+      fixture.componentInstance.tabTitle = 'Home';
+      fixture.detectChanges();
+
+      expect(registry.entry()?.text).toBe('Home');
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('h1')!.textContent!.trim(),
+      ).toBe('Good morning, Layla');
     });
   });
 });

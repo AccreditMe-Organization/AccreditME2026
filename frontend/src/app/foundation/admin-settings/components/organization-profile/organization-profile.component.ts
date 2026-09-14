@@ -5,14 +5,15 @@ import { InputTextModule } from 'primeng/inputtext';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TenantService } from '../../../tenant/services/tenant.service';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-organization-profile',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, InputTextModule, ButtonModule, MessageModule],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, InputTextModule, ButtonModule, MessageModule],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
-      <h2 class="text-xl font-semibold">{{ 'adminSettings.organizationProfile' | translate }}</h2>
+      <app-page-header [title]="'adminSettings.organizationProfile' | translate" />
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

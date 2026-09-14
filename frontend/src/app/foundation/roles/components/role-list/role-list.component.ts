@@ -23,11 +23,12 @@ import {
 } from '../../../../shared/components/data-list/data-list.component';
 import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-role-list',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     TranslatePipe,
     ButtonModule,
     MenuModule,
@@ -40,14 +41,15 @@ import { StatusChipComponent } from '../../../../shared/components/status-chip/s
   template: `
     <div class="flex flex-col h-full gap-4">
 
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'roles.title' | translate }}</h2>
-        <p-button
-          icon="pi pi-plus"
-          [label]="'roles.addRole' | translate"
-          (onClick)="openAdd()"
-        />
-      </div>
+      <app-page-header [title]="'roles.title' | translate">
+        <div pageActions>
+          <p-button
+            icon="pi pi-plus"
+            [label]="'roles.addRole' | translate"
+            (onClick)="openAdd()"
+          />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>

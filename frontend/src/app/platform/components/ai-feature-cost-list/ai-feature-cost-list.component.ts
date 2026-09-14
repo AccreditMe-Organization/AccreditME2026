@@ -7,6 +7,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IAiFeatureCost } from '../../services/plan.service';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 // ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
 // Genuine edit flow (openAdd()/openEdit() both present), but already
 // immune to ACC-29's bug: inline form (no separate *-form.component.ts),
@@ -18,13 +19,14 @@ import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit
 @Component({
   selector: 'app-ai-feature-cost-list',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, MessageModule, EditDialogComponent],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, MessageModule, EditDialogComponent],
   template: `
     <div class="flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'platform.aiFeatureCosts' | translate }}</h2>
-        <p-button icon="pi pi-plus" [label]="'platform.addAiFeatureCost' | translate" (onClick)="openAdd()" />
-      </div>
+      <app-page-header [title]="'platform.aiFeatureCosts' | translate">
+        <div pageActions>
+          <p-button icon="pi pi-plus" [label]="'platform.addAiFeatureCost' | translate" (onClick)="openAdd()" />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

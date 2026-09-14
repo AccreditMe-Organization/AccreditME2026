@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { CardComponent } from '../../../../shared/components/card/card.component';
 import { TenantService, ITaskSlaSettings } from '../../../tenant/services/tenant.service';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 // ACC-46 Section 2.7.c/2.7.d — one card per TaskPriority, three numeric
 // fields per card. LOW->CRITICAL order matches task-form.component.ts's
@@ -16,11 +17,13 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 @Component({
   selector: 'app-task-sla-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, InputNumberModule, ButtonModule, MessageModule, CardComponent],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, InputNumberModule, ButtonModule, MessageModule, CardComponent],
   template: `
     <div class="flex flex-col gap-4">
-      <h2 class="text-xl font-semibold">{{ 'adminSettings.taskSla' | translate }}</h2>
-      <p class="text-sm text-[var(--am-text-secondary)]">{{ 'adminSettings.taskSlaNote' | translate }}</p>
+      <app-page-header
+        [title]="'adminSettings.taskSla' | translate"
+        [purpose]="'adminSettings.taskSlaNote' | translate"
+      />
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

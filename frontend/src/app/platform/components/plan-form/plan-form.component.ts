@@ -10,6 +10,7 @@ import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IPlanModule, KNOWN_MODULE_KEYS, PlanModuleAccessLevel } from '../../services/plan.service';
 import { extractErrorMessage } from '../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 
 const ACCESS_LEVEL_OPTIONS = [
   { label: 'FULL', value: 'FULL' },
@@ -20,12 +21,10 @@ const ACCESS_LEVEL_OPTIONS = [
 @Component({
   selector: 'app-plan-form',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, TranslatePipe, InputTextModule, InputNumberModule, CheckboxModule, SelectModule, ButtonModule, MessageModule],
+  imports: [PageHeaderComponent, ReactiveFormsModule, FormsModule, TranslatePipe, InputTextModule, InputNumberModule, CheckboxModule, SelectModule, ButtonModule, MessageModule],
   template: `
     <div class="flex flex-col gap-6 max-w-2xl">
-      <h2 class="text-xl font-semibold">
-        {{ (isEditing() ? 'platform.editPlan' : 'platform.addPlan') | translate }}
-      </h2>
+      <app-page-header [title]="(isEditing() ? 'platform.editPlan' : 'platform.addPlan') | translate" />
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

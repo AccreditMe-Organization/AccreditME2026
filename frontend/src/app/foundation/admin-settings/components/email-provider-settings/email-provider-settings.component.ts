@@ -5,6 +5,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TenantService } from '../../../tenant/services/tenant.service';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 // ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
 // routed-page-under-<main> context. See CLAUDE.md's PrimeNG-components-only
 // exception note and overlay-select.component.ts for the full mechanism.
@@ -26,11 +27,14 @@ const PROVIDER_OPTIONS = [
 @Component({
   selector: 'app-email-provider-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, OverlaySelectComponent, TextareaModule, ButtonModule, MessageModule],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, OverlaySelectComponent, TextareaModule, ButtonModule, MessageModule],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
-      <h2 class="text-xl font-semibold">{{ 'adminSettings.emailProvider' | translate }}</h2>
-      <p class="text-sm text-[var(--am-text-secondary)]">{{ 'adminSettings.emailProviderNote' | translate }}</p>
+      <app-page-header [title]="'adminSettings.emailProvider' | translate" />
+      <!-- ACC-79 — deliberately NOT the header's purpose line. It goes false the
+           day per-tenant email ships, and it is a warning a reader must not
+           skim past, so it renders as a message. -->
+      <p-message severity="info" [text]="'adminSettings.emailProviderNote' | translate" />
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

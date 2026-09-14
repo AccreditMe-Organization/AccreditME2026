@@ -9,6 +9,7 @@ import { TaskService, ITaskDto } from '../tasks/services/task.service';
 import { NotificationService, NotificationDto } from '../notification/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
+import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
 
 // HomeComponent — ACC-70. The post-login landing page.
 //
@@ -37,15 +38,16 @@ import { LanguageService } from '../../core/services/language.service';
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [DatePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
+  imports: [PageHeaderComponent, DatePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
   template: `
     <div class="flex flex-col gap-6">
-      <div>
-        <h2 class="text-xl font-semibold">
-          {{ 'home.greeting' | translate: { name: userName() } }}
-        </h2>
-        <p class="text-sm text-[var(--am-text-secondary)]">{{ 'home.subtitle' | translate }}</p>
-      </div>
+      <!-- ACC-79 — no purpose line. "Your open work and recent activity"
+           described what is directly below it, which is the first test a
+           purpose line fails (see PageHeaderComponent). -->
+      <app-page-header
+        [title]="'home.greeting' | translate: { name: userName() }"
+        [tabTitle]="'nav.home' | translate"
+      />
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <app-card>

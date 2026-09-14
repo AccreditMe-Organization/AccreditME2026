@@ -138,7 +138,9 @@
     "fieldKeyHint": "Lowercase letters, numbers, and underscores only (e.g. document_policy)",
     "fieldLabelEn": "Label (English)",
     "fieldLabelAr": "Label (Arabic)",
-    "fieldSortOrder": "Sort Order"
+    "fieldSortOrder": "Sort Order",
+    "purpose": "System values ship with AccreditMe and are shared by every organization. Here they can be hidden or relabelled, never deleted.",
+    "valuesEyebrow": "Lookup values"
   },
   "workingCalendar": {
     "title": "Working Calendar",
@@ -166,7 +168,8 @@
     "suggestHolidays": "Suggest Holidays with AI",
     "aiSuggesting": "AI is generating suggestions...",
     "aiSuggestionsTitle": "AI-Suggested Holidays",
-    "aiSuggestionsHint": "Review each suggestion. Accept the ones that apply to your organization."
+    "aiSuggestionsHint": "Review each suggestion. Accept the ones that apply to your organization.",
+    "purpose": "Task and workflow due dates are counted in working time against this calendar."
   },
   "roles": {
     "title": "Roles & Permissions",
@@ -183,7 +186,6 @@
     "activateRole": "Activate Role",
     "managePermissions": "Manage Permissions",
     "permissionMatrix": "Permission Matrix",
-    "permissionMatrixHint": "Check every action this role should be allowed to perform.",
     "adminRoleWarning": "Removing permissions from this role affects every user currently assigned to it.",
     "systemRoleKeyLocked": "This role's identifier cannot be changed. All other fields, including its permissions, may be edited for your organization.",
     "assignedUsers": "Assigned Users",
@@ -294,7 +296,8 @@
     },
     "stageName": "Stage",
     "sla": "SLA",
-    "searchStages": "Search stages…"
+    "searchStages": "Search stages…",
+    "stagesEyebrow": "Workflow stages"
   },
   "notification": {
     "title": "Notifications",
@@ -391,7 +394,8 @@
     "noPositions": "No positions defined yet.",
     "systemBadge": "Default",
     "customBadge": "Custom",
-    "errorLoad": "Failed to load positions."
+    "errorLoad": "Failed to load positions.",
+    "purpose": "A position is defined once for the whole organization and held by people in specific units."
   },
   "task": {
     "title": "Title",
@@ -447,7 +451,8 @@
     "overdueBy": "overdue {{days}}d",
     "assigneeCount": "{{count}} assignees",
     "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
-    "errorAction": "The action could not be completed. Please try again."
+    "errorAction": "The action could not be completed. Please try again.",
+    "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned."
   },
   "auth": {
     "login": "Log In",
@@ -645,7 +650,6 @@
   },
   "home": {
     "greeting": "Welcome back, {{name}}",
-    "subtitle": "Your open work and recent activity",
     "myTasks": "My Open Tasks",
     "viewAll": "View all",
     "noOpenTasks": "You have no open tasks.",

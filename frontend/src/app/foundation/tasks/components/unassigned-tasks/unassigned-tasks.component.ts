@@ -12,6 +12,7 @@ import { UserService, IUserDto } from '../../../user/services/user.service';
 import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 // Tenant-wide view of tasks with status: UNASSIGNED — my-tasks/task-list
 // can never surface these (both are scoped to an assignee or a source
@@ -21,7 +22,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 @Component({
   selector: 'app-unassigned-tasks',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     DatePipe,
     TranslatePipe,
     ReactiveFormsModule,
@@ -34,9 +35,10 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'task.unassignedTasks' | translate }}</h2>
-      </div>
+      <app-page-header
+        [title]="'task.unassignedTasks' | translate"
+        [purpose]="'task.unassignedPurpose' | translate"
+      />
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>

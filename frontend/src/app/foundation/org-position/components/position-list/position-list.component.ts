@@ -9,11 +9,12 @@ import { OrgPositionService, IOrgPositionDto } from '../../services/org-position
 import { PositionFormComponent } from '../position-form/position-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-position-list',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     TranslatePipe,
     TableModule,
     ButtonModule,
@@ -25,14 +26,18 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
   template: `
     <div class="flex flex-col h-full gap-4">
 
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'orgPosition.title' | translate }}</h2>
-        <p-button
-          [label]="'orgPosition.addPosition' | translate"
-          icon="pi pi-plus"
-          (onClick)="onAdd()"
-        />
-      </div>
+      <app-page-header
+        [title]="'orgPosition.title' | translate"
+        [purpose]="'orgPosition.purpose' | translate"
+      >
+        <div pageActions>
+          <p-button
+            [label]="'orgPosition.addPosition' | translate"
+            icon="pi pi-plus"
+            (onClick)="onAdd()"
+          />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>

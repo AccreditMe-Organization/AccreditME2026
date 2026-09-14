@@ -22,6 +22,7 @@ import { AuthService, MfaSetupResult } from '../../../../core/services/auth.serv
 import { LanguageService } from '../../../../core/services/language.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 // ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on most fields
 // in this file: routed-page-under-<main> context. `language` (2 options)
 // stayed on p-select at the time — below the scroll-chaining threshold —
@@ -53,7 +54,7 @@ import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-us
 @Component({
   selector: 'app-user-profile',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     ReactiveFormsModule,
     TranslatePipe,
     InputTextModule,
@@ -69,6 +70,16 @@ import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-us
   ],
   template: `
     <div class="flex flex-col gap-6 p-6 max-w-2xl">
+      <!-- ACC-79 — the header comes first, above the messages. -->
+      @if (user(); as u) {
+        <app-page-header [title]="u.name">
+          <div pageActions>
+            @if (canTransfer()) {
+              <p-button [label]="'user.transfer.action' | translate" severity="secondary" (onClick)="transferDialogVisible.set(true)" />
+            }
+          </div>
+        </app-page-header>
+      }
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />
       }
@@ -77,12 +88,6 @@ import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-us
       }
 
       @if (user(); as u) {
-        <div class="flex items-center justify-between">
-          <h2 class="text-xl font-semibold">{{ u.name }}</h2>
-          @if (canTransfer()) {
-            <p-button [label]="'user.transfer.action' | translate" severity="secondary" (onClick)="transferDialogVisible.set(true)" />
-          }
-        </div>
 
         <form [formGroup]="profileForm" (ngSubmit)="onSubmitProfile()" class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">

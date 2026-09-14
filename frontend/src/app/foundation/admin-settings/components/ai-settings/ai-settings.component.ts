@@ -5,6 +5,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
 import { CardComponent } from '../../../../shared/components/card/card.component';
 import { TenantService, ITenant } from '../../../tenant/services/tenant.service';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 // Read-only credit display — a Platform Admin sets the allocation via the
 // Super Admin Portal, not the tenant admin. The only write action here is
@@ -13,10 +14,10 @@ import { TenantService, ITenant } from '../../../tenant/services/tenant.service'
 @Component({
   selector: 'app-ai-settings',
   standalone: true,
-  imports: [FormsModule, TranslatePipe, CheckboxModule, MessageModule, CardComponent],
+  imports: [PageHeaderComponent, FormsModule, TranslatePipe, CheckboxModule, MessageModule, CardComponent],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
-      <h2 class="text-xl font-semibold">{{ 'adminSettings.aiSettings' | translate }}</h2>
+      <app-page-header [title]="'adminSettings.aiSettings' | translate" />
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />

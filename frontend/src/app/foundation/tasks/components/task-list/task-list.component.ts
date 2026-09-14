@@ -6,6 +6,7 @@ import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { TaskService, ITaskWithAssigneesDto } from '../../services/task.service';
 import { TaskFormComponent } from '../task-form/task-form.component';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 // ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
 // task-form is create-only (no edit flow), so this is architectural
 // consistency with the required pattern going forward (SYSTEM-REFERENCE.md
@@ -34,13 +35,14 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 @Component({
   selector: 'app-task-list',
   standalone: true,
-  imports: [DatePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, EditDialogComponent],
+  imports: [PageHeaderComponent, DatePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, EditDialogComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'task.allTasks' | translate }}</h2>
-        <p-button [label]="'task.newTask' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
-      </div>
+      <app-page-header [title]="'task.allTasks' | translate">
+        <div pageActions>
+          <p-button [label]="'task.newTask' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>

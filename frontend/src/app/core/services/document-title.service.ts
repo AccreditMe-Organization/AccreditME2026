@@ -6,6 +6,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { NavigationEnd, Router } from '@angular/router';
@@ -79,6 +80,32 @@ export class PageNameRegistry {
   release(entry: PageNameEntry): void {
     if (this._entry() === entry) this._entry.set(null);
   }
+}
+
+/**
+ * Registers a page's name for the browser tab for as long as the calling
+ * component lives. Call from a constructor (injection context).
+ *
+ * PageHeaderComponent uses this. A page with a bespoke header of its own — the
+ * Committee record page, whose H1 sits inside its identity card — calls it
+ * directly with the same text its H1 shows.
+ */
+export function registerPageName(name: () => string | null): void {
+  const registry = inject(PageNameRegistry);
+  let entry: PageNameEntry | null = null;
+  effect(() => {
+    const text = name();
+    // untracked: release() READS the registry's signal. Tracked, this effect
+    // would depend on the entry it writes and re-run forever — which is
+    // exactly what hung the test browser the first time.
+    untracked(() => {
+      if (entry) registry.release(entry);
+      entry = text ? registry.register(text) : null;
+    });
+  });
+  inject(DestroyRef).onDestroy(() => {
+    if (entry) registry.release(entry);
+  });
 }
 
 @Injectable({ providedIn: 'root' })

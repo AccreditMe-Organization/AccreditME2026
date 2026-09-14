@@ -9,17 +9,19 @@ import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.s
 import { LanguageService } from '../../../../core/services/language.service';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 @Component({
   selector: 'app-committee-list',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, TagModule, CardComponent, CommitteeFormComponent, EditDialogComponent],
+  imports: [PageHeaderComponent, TranslatePipe, ButtonModule, TagModule, CardComponent, CommitteeFormComponent, EditDialogComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'committee.title' | translate }}</h2>
-        <p-button [label]="'committee.addCommittee' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
-      </div>
+      <app-page-header [title]="'committee.title' | translate">
+        <div pageActions>
+          <p-button [label]="'committee.addCommittee' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>

@@ -6,6 +6,7 @@ import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { PlatformSettingsService } from '../../services/platform-settings.service';
+import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 
 const SEVERITY_OPTIONS = [
   { label: 'Info', value: 'info' },
@@ -15,10 +16,10 @@ const SEVERITY_OPTIONS = [
 @Component({
   selector: 'app-platform-settings',
   standalone: true,
-  imports: [ReactiveFormsModule, TranslatePipe, InputTextModule, SelectModule, ButtonModule, MessageModule],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, InputTextModule, SelectModule, ButtonModule, MessageModule],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
-      <h2 class="text-xl font-semibold">{{ 'platform.platformSettings' | translate }}</h2>
+      <app-page-header [title]="'platform.platformSettings' | translate" />
       <p class="text-sm text-[var(--am-text-secondary)]">{{ 'platform.announcement' | translate }}</p>
 
       @if (error()) {

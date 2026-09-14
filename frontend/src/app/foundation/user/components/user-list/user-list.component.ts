@@ -37,6 +37,7 @@ import {
 import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 // ACC-78 — the full-page table, rebuilt against
 // frontend/design-reference/AccreditMe Users List.dc.html.
@@ -52,7 +53,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 @Component({
   selector: 'app-user-list',
   standalone: true,
-  imports: [
+  imports: [PageHeaderComponent, 
     DatePipe,
     TranslatePipe,
     ButtonModule,
@@ -67,10 +68,11 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-xl font-semibold">{{ 'user.title' | translate }}</h2>
-        <p-button [label]="'user.invite' | translate" icon="pi pi-plus" (onClick)="onInvite()" />
-      </div>
+      <app-page-header [title]="'user.title' | translate">
+        <div pageActions>
+          <p-button [label]="'user.invite' | translate" icon="pi pi-plus" (onClick)="onInvite()" />
+        </div>
+      </app-page-header>
 
       @if (error()) {
         <p class="text-red-500">{{ error() | translate }}</p>
