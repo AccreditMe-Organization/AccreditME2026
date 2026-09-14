@@ -2007,6 +2007,26 @@ Section 1.8 (module entitlements). The decisions, briefly:
   name; the tab title reads the H1.** A purpose line under the H1 is optional
   and most pages have none — see `PageHeaderComponent` for the two tests a
   line must pass.
+- **The top bar's EN / ع toggle is a SESSION reading mode, not the saved
+  language preference, and must never write it.** It calls
+  `LanguageService.use()` only; a reload or the next sign-in returns to the
+  saved preference. The saved preference (profile Language field) is a
+  settings action with server-side effects — notification emails are sent in
+  it — so a reviewer flipping to English to read something must not start
+  receiving English email or lose their organisation's default.
+- **UI language and document language are unrelated, and always will be.**
+  Settled by Ahmad as a rule, not left open. UI language controls the chrome,
+  and which of a record's two stored names (`nameEn`/`nameAr`) is shown for
+  tenant data. A document's language is a property of the file, not of who is
+  reading it: an Arabic-speaking reviewer opening an English policy sees an
+  English policy, with the interface around it in Arabic. **Document
+  Management inherits this as a decision** — it must not derive a document's
+  displayed language from the reader's UI language, nor offer a UI-language
+  switch as the way to reach a document's original.
+- **Every user can open their own profile.** `users/:id` uses
+  `ownProfileGuard` (own id always allowed, anyone else's needs `users:view`);
+  before this the list's `users:view` requirement bounced non-admins from
+  their own profile, leaving "My Profile" in the user menu dead.
 
 ---
 

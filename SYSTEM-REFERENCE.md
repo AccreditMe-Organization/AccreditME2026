@@ -4246,6 +4246,33 @@ reads the registry signal; tracked, the effect depends on the entry it writes
 and re-runs forever. The first version did exactly that and hung the test
 browser — caught by the page-header spec, not by review.
 
+#### Language toggle — session reading mode
+
+`layout/language-toggle/`, in the top bar before the bell. EN / ع, native
+buttons with `aria-pressed`, each labelled in its own language. Calls
+`LanguageService.use()` and nothing else: direction, `lang`, rail, breadcrumb,
+H1s and the tab title all follow immediately (verified live, no reload). It
+writes **no** saved preference — a spec asserts it sends no request — because
+the saved preference (`User.language`, set on the profile form) is read
+server-side for notification email language. A reload or sign-in returns to
+the saved preference. UI language never decides a document's language
+(CLAUDE.md, Key Architecture Decisions ACC-79).
+
+The page-level references (Users List, Committee Record) place this toggle in
+the top bar; the App Shell reference moved its RTL button into its demo
+control bar, which is why the first shell build had none.
+
+#### Own profile
+
+`users/:id` uses `ownProfileGuard`: the signed-in user's own id is always
+allowed, anyone else's falls through to `permissionGuard` (`users:view`). Until
+ACC-79 the `users:view` guard sat on the parent route and bounced non-admins
+from their own profile. **Known remaining gaps on that page for a non-admin**
+(recorded, not fixed here): its Position / Primary org unit / Manager fields
+render blank because their option lists are admin-only endpoints, the Acting
+user picker is empty for the same reason, and the role-assignment section
+shows "Failed to load roles." Four requests 403 on load.
+
 #### Rail palettes
 
 `--am-rail-*` tokens (oklch, from the reference). The platform shell adds
