@@ -71,7 +71,7 @@ interface SuggestionState extends AiHolidaySuggestion {
   template: `
     <!-- Same 680px as the form below, so the Holidays action sits over the
          form it belongs to rather than at the far edge of a wide screen. -->
-    <div class="mb-3" style="max-width: 680px">
+    <div class="mb-3 max-w-[680px]">
       <app-page-header
         [title]="'workingCalendar.title' | translate"
         [purpose]="'workingCalendar.purpose' | translate"
@@ -92,7 +92,7 @@ interface SuggestionState extends AiHolidaySuggestion {
       <p class="text-red-500 mb-4">{{ loadError() | translate }}</p>
     }
 
-    <div class="flex flex-col gap-6" style="max-width: 680px">
+    <div class="flex flex-col gap-6 max-w-[680px]">
 
       <!-- Working Days -->
       <section class="flex flex-col gap-3">

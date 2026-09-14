@@ -184,7 +184,7 @@ import {
       .am-rail-item--active,
       .am-rail-item--active:hover {
         background: var(--am-rail-active);
-        color: #fff;
+        color: var(--am-rail-brand);
         font-weight: 600;
       }
       .am-rail-item--active .am-rail-glyph {
