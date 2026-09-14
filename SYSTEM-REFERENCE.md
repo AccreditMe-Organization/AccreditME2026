@@ -4267,11 +4267,30 @@ control bar, which is why the first shell build had none.
 `users/:id` uses `ownProfileGuard`: the signed-in user's own id is always
 allowed, anyone else's falls through to `permissionGuard` (`users:view`). Until
 ACC-79 the `users:view` guard sat on the parent route and bounced non-admins
-from their own profile. **Known remaining gaps on that page for a non-admin**
-(recorded, not fixed here): its Position / Primary org unit / Manager fields
-render blank because their option lists are admin-only endpoints, the Acting
-user picker is empty for the same reason, and the role-assignment section
-shows "Failed to load roles." Four requests 403 on load.
+from their own profile.
+
+**What reaching the page exposed, and how it was handled.** The page was built
+for admins and fired four requests a non-admin could only get 403s from. Now:
+
+- The position, org-unit and user lists are requested only with
+  `positions:view` / `org:view` / `users:view`.
+- The five ACC-43 admin fields stay VISIBLE to every viewer — that was a
+  deliberate ACC-43 decision, not an oversight — and are editable pickers only
+  with `users:manage`. For anyone else they render as text. A disabled picker
+  labels its value from its option list, so without the gated list it rendered
+  blank; hiding the fields would have undone ACC-43 instead of fixing it.
+- The names come from `GET /users/:id`, which returns `references` beside the
+  record: position, primary and acting unit (bilingual), manager and acting user.
+  `UserService.resolveReferenceNames()` scopes every lookup by id and
+  `organizationId` and selects names only.
+- The role section renders only with `roles:view`.
+- **Still open, ticketed:** a non-admin can set out-of-office dates but cannot
+  choose a stand-in — the picker needs a colleague list, and none is readable
+  without `users:view`. The current stand-in, if any, is shown from
+  `references`. That picker was never scoped to the user's org unit: it has
+  listed all ACTIVE users tenant-wide since ACC-12, with ACC-37 adding each
+  person's unit as a sub-label. The org-unit-scoped picker that does exist is
+  ACC-46's manager picker (invite form, transfer wizard).
 
 #### Rail palettes
 
@@ -4676,6 +4695,13 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
 
 ### 12.3 `UserService` Methods
 
+- **`resolveReferenceNames(user, organizationId)`** (ACC-79) — display names
+  for the ids on a record the caller was already allowed to read: position,
+  primary and acting org unit (`{ nameEn, nameAr }`), manager and acting user
+  (name). Every lookup scoped by id AND `organizationId`, names selected only,
+  no query for an unset id. `GET /users/:id` returns the result as `references`
+  beside the record — the only endpoint that does. Exists so the profile page's
+  read-only fields can be labelled without the permission-gated lists (10.11).
 - **`invite()`** — enforces `Organization.maxUsers` (unchanged from
   before). Generates the 24-byte hex `invitationToken`, 7-day TTL,
   sends the `EMAIL`-channel notification (unchanged).
