@@ -4,6 +4,7 @@ import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import { BreadcrumbComponent } from '../breadcrumb/breadcrumb.component';
 import { NotificationBellComponent } from '../../foundation/notification/components/notification-bell/notification-bell.component';
+import { LanguageToggleComponent } from '../language-toggle/language-toggle.component';
 
 // ACC-79 — the top bar of the CONTENT COLUMN, per the App Shell reference:
 // rail toggle and breadcrumb on the start side, notification bell on the end.
@@ -22,6 +23,7 @@ import { NotificationBellComponent } from '../../foundation/notification/compone
     TooltipModule,
     BreadcrumbComponent,
     NotificationBellComponent,
+    LanguageToggleComponent,
   ],
   template: `
     <header
@@ -56,7 +58,8 @@ import { NotificationBellComponent } from '../../foundation/notification/compone
         <app-breadcrumb class="min-w-0" />
       </div>
 
-      <div class="flex items-center gap-2 flex-none">
+      <div class="flex items-center gap-3 flex-none">
+        <app-language-toggle />
         <app-notification-bell />
       </div>
     </header>

@@ -677,6 +677,7 @@
     "collapseRail": "Collapse navigation",
     "expandRail": "Expand navigation",
     "userMenu": "Account menu for {{name}}",
-    "breadcrumb": "Breadcrumb"
+    "breadcrumb": "Breadcrumb",
+    "interfaceLanguage": "Interface language"
   }
 }

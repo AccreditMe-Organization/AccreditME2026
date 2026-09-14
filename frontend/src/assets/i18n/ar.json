@@ -677,6 +677,7 @@
     "collapseRail": "طيّ الشريط",
     "expandRail": "توسيع الشريط",
     "userMenu": "قائمة حساب {{name}}",
-    "breadcrumb": "مسار التنقل"
+    "breadcrumb": "مسار التنقل",
+    "interfaceLanguage": "لغة الواجهة"
   }
 }
