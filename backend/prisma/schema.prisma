@@ -322,6 +322,7 @@ model Organization {
   taskEvidence       TaskEvidence[]
   notifications      Notification[]
   setupConditions    SetupCondition[]
+  setupConditionRuns SetupConditionRun[]
   committees         Committee[]
   meetings           Meeting[]
   auditLogs          AuditLog[]
@@ -1220,6 +1221,35 @@ model SetupCondition {
   @@index([organizationId])
   @@index([organizationId, clearedAt])
   @@index([organizationId, type, objectId])
+}
+
+// When each (tenant, condition type) was last evaluated, and whether that
+// evaluation succeeded. One row per pair, upserted by the reconciler on every
+// attempt.
+//
+// Exists so the API can answer "when was this computed" per type, and say
+// plainly when it cannot: a type whose last attempt failed, or whose last success
+// is older than the reconciliation cadence allows, is reported as such rather
+// than presenting its open rows as current. A single computed-at timestamp would
+// hide exactly that case — a row stale because its sweep failed.
+//
+// lastError is for operators reading the database, never returned by the API:
+// an exception message can carry internal detail.
+model SetupConditionRun {
+  id              String             @id @default(cuid())
+  organizationId  String
+  type            SetupConditionType
+  lastAttemptedAt DateTime
+  lastSucceededAt DateTime?
+  lastFailedAt    DateTime?
+  lastError       String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
 }
 
 // ---------------------------------------------------------------------------
