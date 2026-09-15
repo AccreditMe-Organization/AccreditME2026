@@ -13,6 +13,7 @@ import { AuthService } from './core/services/auth.service';
 import { NavigationAccessService } from './core/services/navigation-access.service';
 import { AccreditMePreset } from './core/theme/accreditme-preset';
 import { providePluralAwareTranslateLoader } from './core/formatting/plural-catalog';
+import { provideDatePickerLocale } from './core/formatting/date-picker-locale';
 import { routes } from './app.routes';
 
 // Exported (not inlined into provideAppInitializer below) so it can be unit
@@ -62,6 +63,8 @@ export const appConfig: ApplicationConfig = {
         options: { darkModeSelector: false },
       },
     }),
+    // ACC-94 — date pickers display in the UI language and the app's date format.
+    provideDatePickerLocale(),
     // App-wide, registered once — every component pays down its
     // window.confirm() TODO by injecting this directly rather than each
     // providing its own instance (Step 9, Section 12 Discussion 5).

@@ -791,5 +791,19 @@
         "other": "{{count}} open items cannot advance: no one can act on this stage."
       }
     }
+  },
+  "datePicker": {
+    "today": "Today",
+    "clear": "Clear",
+    "chooseDate": "Choose date",
+    "chooseMonth": "Choose month",
+    "chooseYear": "Choose year",
+    "prevDecade": "Previous decade",
+    "nextDecade": "Next decade",
+    "prevYear": "Previous year",
+    "nextYear": "Next year",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "weekHeader": "Wk"
   }
 }

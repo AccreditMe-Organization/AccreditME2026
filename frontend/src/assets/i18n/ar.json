@@ -827,5 +827,19 @@
         "other": "{{count}} عنصر مفتوح لا يمكنه التقدم: لا أحد يستطيع التصرف في هذه المرحلة."
       }
     }
+  },
+  "datePicker": {
+    "today": "اليوم",
+    "clear": "مسح",
+    "chooseDate": "اختر التاريخ",
+    "chooseMonth": "اختر الشهر",
+    "chooseYear": "اختر السنة",
+    "prevDecade": "العقد السابق",
+    "nextDecade": "العقد التالي",
+    "prevYear": "السنة السابقة",
+    "nextYear": "السنة التالية",
+    "prevMonth": "الشهر السابق",
+    "nextMonth": "الشهر التالي",
+    "weekHeader": "أسبوع"
   }
 }
