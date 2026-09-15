@@ -7,6 +7,7 @@ import { MessageModule } from 'primeng/message';
 import { CardComponent } from '../../../../shared/components/card/card.component';
 import { TenantService, ITaskSlaSettings } from '../../../tenant/services/tenant.service';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 // ACC-46 Section 2.7.c/2.7.d — one card per TaskPriority, three numeric
 // fields per card. LOW->CRITICAL order matches task-form.component.ts's
@@ -17,7 +18,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
 @Component({
   selector: 'app-task-sla-settings',
   standalone: true,
-  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, InputNumberModule, ButtonModule, MessageModule, CardComponent],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, InputNumberModule, InputNumberLatinDigits, ButtonModule, MessageModule, CardComponent],
   template: `
     <div class="flex flex-col gap-4">
       <app-page-header

@@ -13,6 +13,7 @@ import { PlatformTenantService, IPlatformTenantDetail } from '../../services/pla
 import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { AmDatePipe, FormatService } from '../../../core/formatting';
+import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
 
 @Component({
   selector: 'app-tenant-detail',
@@ -24,6 +25,7 @@ import { AmDatePipe, FormatService } from '../../../core/formatting';
     ButtonModule,
     CheckboxModule,
     InputNumberModule,
+    InputNumberLatinDigits,
     MessageModule,
     StatusBadgeComponent,
     CardComponent,

@@ -11,6 +11,8 @@
 //     toLocale*String(), new Intl.*, | number / percent / currency and their pipes)
 //   - names a plural key ('plural.…'), which only FormatService.count / amCount
 //     may resolve — through | translate it finds nothing (plural-catalog.ts)
+//   - uses p-inputNumber or p-paginator without the directive that pins their
+//     digits to Latin (latin-digits.ts)
 //
 // Spec files are not scanned: they may construct Intl formatters to state the
 // platform facts a test depends on.
@@ -36,6 +38,22 @@ const RULES = [
   { pattern: /['"`]plural\./, message: "names a plural key; resolve counted strings with amCount / FormatService.count" },
 ];
 
+// PrimeNG components that format digits with the BROWSER's locale unless told
+// otherwise (core/formatting/latin-digits.ts). Checked per file, not per line:
+// a tag can span lines, and the directive is imported once per component.
+const FILE_RULES = [
+  {
+    uses: /<p-input-?number\b/i,
+    requires: 'InputNumberLatinDigits',
+    message: 'uses p-inputNumber without InputNumberLatinDigits; its digits would follow the browser locale',
+  },
+  {
+    uses: /<p-paginator\b/,
+    requires: 'PaginatorLatinDigits',
+    message: 'uses p-paginator without PaginatorLatinDigits; its page numbers would follow the browser locale',
+  },
+];
+
 function* sourceFiles(dir) {
   for (const entry of readdirSync(dir)) {
     const path = join(dir, entry);
@@ -49,7 +67,13 @@ function* sourceFiles(dir) {
 
 const violations = [];
 for (const file of sourceFiles(appDir)) {
-  const lines = readFileSync(file, 'utf8').split(/\r?\n/);
+  const source = readFileSync(file, 'utf8');
+  for (const { uses, requires, message } of FILE_RULES) {
+    if (uses.test(source) && !source.includes(requires)) {
+      violations.push(`${relative(root, file)}: ${message}`);
+    }
+  }
+  const lines = source.split(/\r?\n/);
   lines.forEach((line, index) => {
     for (const { pattern, message } of RULES) {
       if (pattern.test(line)) {

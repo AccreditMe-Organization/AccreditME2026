@@ -2119,6 +2119,14 @@ authoritative time-zone field); decisions and evidence in
   `formatDate`, `toLocale*String`, `new Intl.*` or the Angular number pipes
   in a component. A REQUIRED pattern, same status as `EditDialogComponent` —
   and enforced, not advised: `npm run check:formatting` fails CI.
+- **PrimeNG components that write digits need the Latin-digits directive.**
+  `p-inputNumber` and `p-paginator` format with the BROWSER's locale unless
+  `locale` is set, so a browser set to `ar-SA` shows "١" in an English session.
+  Import `InputNumberLatinDigits` / `PaginatorLatinDigits` from
+  `core/formatting/latin-digits` in any component using either tag; the scan
+  fails a file that does not. Any PrimeNG component added later that formats
+  numbers or dates with `Intl` needs the same check — grep its source for
+  `this.locale` before assuming the layer covers it.
 - **What drives what, none of it the browser's:** words follow the UI
   language; digits are **Latin in both languages** (Ahmad's decision); the
   **time zone is the tenant's** (the working calendar's, see below); the

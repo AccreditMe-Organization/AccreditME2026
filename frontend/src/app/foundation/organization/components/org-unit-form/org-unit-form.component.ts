@@ -21,6 +21,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // applies here specifically — verified against this tenant's live
 // buildOrgUnitCascadeOptions() output, not a fixture.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 @Component({
   selector: 'app-org-unit-form',
@@ -33,6 +34,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
     TextareaModule,
     OverlaySelectComponent,
     InputNumberModule,
+    InputNumberLatinDigits,
     TooltipModule,
   ],
   template: `

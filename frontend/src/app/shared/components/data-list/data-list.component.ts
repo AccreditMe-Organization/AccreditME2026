@@ -26,6 +26,7 @@ import {
   urlParamsFor,
   writePreferences,
 } from './data-list.persistence';
+import { PaginatorLatinDigits } from '../../../core/formatting/latin-digits';
 
 export interface DataListColumn {
   // Stable identity: the persisted hidden-column set and the header/row
@@ -119,6 +120,7 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
     MessageModule,
     ButtonModule,
     PaginatorModule,
+    PaginatorLatinDigits,
     TooltipModule,
   ],
   template: `

@@ -19,6 +19,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 // EditDialogComponent context. See CLAUDE.md's PrimeNG-components-only
 // exception note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 type ReportingToMode = 'none' | 'committee' | 'role';
 
@@ -32,6 +33,7 @@ type ReportingToMode = 'none' | 'committee' | 'role';
     InputTextModule,
     TextareaModule,
     InputNumberModule,
+    InputNumberLatinDigits,
     SelectButtonModule,
     ButtonModule,
     OverlaySelectComponent,

@@ -13,6 +13,7 @@ import { RoleService, RoleDto } from '../../../roles/services/role.service';
 // scroll-chaining bug is reachable. See CLAUDE.md's PrimeNG-components-only
 // exception note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 @Component({
   selector: 'app-position-form',
@@ -22,6 +23,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
     TranslatePipe,
     InputTextModule,
     InputNumberModule,
+    InputNumberLatinDigits,
     CheckboxModule,
     ButtonModule,
     MessageModule,

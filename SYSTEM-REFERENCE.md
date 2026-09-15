@@ -3274,6 +3274,15 @@ date, a time span, a number or a count into text.
   only: a picker's value stays Gregorian, and how a picked day becomes a stored
   instant is ACC-96. A picker already showing a value keeps its input text until
   the value changes; its popup's names update at once.
+* `InputNumberLatinDigits`, `PaginatorLatinDigits` (`latin-digits.ts`) — host
+  directives on `p-inputNumber` and `p-paginator`, the two PrimeNG components
+  that write digits themselves, with `new Intl.NumberFormat(this.locale)`. Left
+  unset, `locale` is the browser's, so a browser set to `ar-SA` showed page
+  link "١" beside "1-24 of 24" in an English session. The directives pin
+  `LATIN_DIGITS_LOCALE`; one locale serves both languages, since Arabic with
+  Latin digits gives the same number text as English. Imported by path, not
+  from the index, so PrimeNG's InputNumber and Paginator stay out of the
+  initial bundle.
 
 **Rules the layer settles:**
 
@@ -3304,7 +3313,9 @@ date, a time span, a number or a count into text.
 (`npm run check:formatting`, CI frontend job, after the type check) fails on
 `| date`, `DatePipe`, `formatDate(`, `toLocale*String(`, `new Intl.`, the
 Angular number pipes, or a `'plural.'` key anywhere in `src/app` outside
-`core/formatting/` (spec files excepted). It reported 35 violations against
+`core/formatting/` (spec files excepted), and on a file that uses
+`p-inputNumber` or `p-paginator` without its Latin-digits directive (checked
+per file, so a multi-line tag is caught). It reported 35 violations against
 `dev` at `fc8adcb` before the migration. The translation-file rules are specs
 (§9.4).
 

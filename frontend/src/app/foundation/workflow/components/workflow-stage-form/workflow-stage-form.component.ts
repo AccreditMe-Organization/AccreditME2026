@@ -45,6 +45,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // OverlaySelectComponent's CDK-based positioning does not share this bug —
 // see CLAUDE.md's Open/Deferred Items for the full investigation.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 const APPROVAL_MODES = [
   { label: 'SINGLE', value: 'SINGLE' },
@@ -94,6 +95,7 @@ const ASSIGNEE_STRATEGIES = [
     InputTextModule,
     TextareaModule,
     InputNumberModule,
+    InputNumberLatinDigits,
     CheckboxModule,
     MessageModule,
     OverlaySelectComponent,

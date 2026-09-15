@@ -674,8 +674,21 @@ zone differs from the browser's.
   behind every `/users` response.
 * **A fresh login asks `/auth/me` once more**, because the login response
   carries no display context and widening it was not part of D2.
-* **The list range string needed no change.** Its numbers are JavaScript
-  numbers, which are always Latin, and it matches PrimeNG's paginator beside it.
+* **The list range string held; the digits beside it did not.** Found in the
+  browser pass (condition 4), not by the inventory, which scanned for the app's
+  OWN formatting calls. The range text ("1-24 of 24", and the panel's
+  `list.panelRange`) is built from JavaScript numbers with `String()`, always
+  Latin. But `p-paginator`'s page links and rows-per-page options, and every
+  `p-inputNumber`, format with `new Intl.NumberFormat(this.locale)` inside
+  PrimeNG, and an unset `locale` is the **browser's**. An English session in a
+  browser set to `ar-SA` showed "1-24 of 24" beside "١" and "٢٥" (screenshot
+  before the fix). Fixed in a 15th commit, outside the approved 14: host
+  directives in `core/formatting/latin-digits.ts` pin `locale` on both
+  components (one fixed locale serves both languages — Arabic with Latin digits
+  gives the same text as English), imported by the ten `p-inputNumber`
+  components and `DataListComponent`; the scan fails a file that uses either tag
+  without its directive. Spec proves which locale PrimeNG built its formatter
+  from, with a control, and fails when the directive does nothing.
 * **The due summary moved into `task-due-summary.ts`** so the "overdue 0d" fix
   could be tested without a Committee record component spec, which does not
   exist.
