@@ -160,6 +160,13 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
         working-directory: frontend
+      # ACC-94 — dates, numbers and counted strings go through
+      # src/app/core/formatting only. A Karma spec cannot scan source (no
+      # filesystem in the browser), so this rule is a build step. Cheap, so it
+      # runs before the tests.
+      - name: Formatting rule
+        run: npm run check:formatting
+        working-directory: frontend
       # ACC-47 — the actual gap this ticket exists to close: this frontend
       # job never ran any test-runner step before, at any point in this
       # repo's history (confirmed via full commit-history audit, not a
