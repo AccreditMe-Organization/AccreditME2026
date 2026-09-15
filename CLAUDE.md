@@ -932,6 +932,7 @@ lookups:view                lookups:manage
 workflows:view              workflows:manage
 billing:view                billing:manage
 reports:view                reports:export
+setup:view
 platform:admin              platform:impersonate
 ```
 
@@ -1169,7 +1170,9 @@ ai-processing       All AI API calls for document generation
 email-delivery      All outbound emails via Resend
 file-processing     Virus scan + MIME validation after upload
 data-retention      Nightly check for records approaching retention expiry
-sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations
+sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
+                    recompute cached org-unit vacancy and stage-reachability flags
+setup-health        Hourly — reconcile Setup health conditions (ACC-82)
 notification-digest Daily digest emails for digest-mode users
 data-export         Tenant data export packages (async, notified when ready)
 report-scheduler    Scheduled automated report generation and email delivery
@@ -2030,6 +2033,70 @@ Section 1.8 (module entitlements). The decisions, briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-82)
+
+Full detail: SYSTEM-REFERENCE.md Section 13 (Setup health) and Section 5.5
+(head vacancy). The decisions, briefly:
+
+- **Cached derived state needs exactly one recomputer, running on a
+  schedule; anything a person reads to make a decision resolves live.**
+  A REQUIRED rule, recorded because this has now cost us twice. Entry-time
+  refreshes ("every writer must remember to call X") may stay, to make a
+  change visible sooner, but correctness never rests on them.
+  **Worked example — `OrgUnit.isHeadVacant`.** It was refreshed only at
+  entry time, and the SLA sweep walked only units already flagged. One
+  write path skipped the refresh — `acceptInvitation()`, after `invite()`
+  had flagged the unit while the new Head was still INVITED — and nothing
+  re-derived the flag, so on dev **32 of the 34 units flagged vacant had an
+  active Head**. The same design hides genuinely vacant units whenever a
+  Head leaves by a path that skips the refresh. Fixed by making the sweep
+  recompute every active unit each pass (two reads per tenant, not one per
+  unit) and adding the missing refresh. The cache had only ever been read
+  by notification code, so no work was misrouted — but every
+  "Head-authority setup incomplete" report had been listing units that had
+  heads. The earlier instance of the same shape was ACC-51/52: stage
+  recovery keyed off a one-time flag transition, lost for good when the
+  transition was consumed. When adding any cached flag, name its scheduled
+  recomputer in the same change.
+- **The bell holds events; Setup health holds conditions.** An event
+  happened, is read and ends. A condition is derived state that exists
+  while its cause is true, with no read flag and no dismiss, and clears
+  itself on the next reconciliation after the cause is fixed. **A condition
+  never creates a bell entry.** ACC-82 removed the head-authority report,
+  the org-unit vacancy notifications and reminders, the unassigned-stage
+  admin notification and the unassigned-task admin notification; the
+  flags they came from are still maintained. Events stay (departures,
+  invitation conflicts, assignee notifications, out-of-office routing).
+  New standing gaps belong on Setup health, not in the bell.
+- **Setup health reconciles hourly, on its own queue, with one writer.**
+  `SetupConditionReconciler` is the only writer of `SetupCondition` and
+  `SetupConditionRun`. **A failed check never clears a condition** — rows
+  stay as last confirmed, and the response says per type whether its
+  check is CURRENT, OVERDUE (older than 2 hours), FAILED or NEVER_RUN.
+  Verify it locally by invoking the reconciler in-process, never by
+  enqueueing (shared Redis).
+- **Visibility is `setup:view`** (seeded to TENANT_ADMIN, backfilled). A
+  row's Fix shows only when the viewer holds both the destination route's
+  permission and the one its save needs; otherwise a note says what is
+  needed.
+- **A Fix names one object and opens it.** Destinations read a one-time
+  query parameter (`injectFixLinkParam()`), and name the object in their
+  dialog title.
+- **Shipped three condition types, deliberately not more.**
+  `POSITION_WITHOUT_ROLE` is deferred — `OrgPosition.roleId` grants nothing
+  on an ordinary position, and saving it on a head position does not reach
+  current holders (ACC-84), so its Fix was decorative. "Lookup value in use
+  but deactivated" is deferred until the referencing columns are surveyed.
+  Stale invitations are excluded: pending invitations are a filter on
+  Users, not a condition. Each is recorded with its reason in SYSTEM-REFERENCE
+  §13.2, so none reads as an oversight.
+- **The accumulated notifications are purged after deploy**, by
+  `npm run cleanup:acc82-condition-data` (dry run by default; refuses if
+  the count is far from the 1,489 reviewed), not before: older code still
+  running keeps writing them.
+
+---
+
 ## Open / Deferred Items
 
 - **No tenant-user password exists anywhere in the repo, so browser
@@ -2151,8 +2218,9 @@ Section 1.8 (module entitlements). The decisions, briefly:
     by running the validator, not by reading it. The `@ArrayMinSize(1)`
     that prompted this belongs to **`ReassignTaskDto`**, a different DTO.
     Creating with no assignee has always succeeded, producing an
-    `UNASSIGNED` task with every tenant admin notified — a path
-    `TaskService.create()` handles deliberately, not a failure.
+    `UNASSIGNED` task — a path `TaskService.create()` handles
+    deliberately, not a failure. (Until ACC-82 it also notified every
+    tenant admin; it now appears on Setup health instead.)
   - What was genuinely missing was the **picker**, not the endpoint.
     `task-form` posted `assigneeUserIds: []` unconditionally and showed
     a message claiming assignee selection awaited User Management — which
@@ -2416,7 +2484,8 @@ complete, not just the currently-in-review ones.
    - **UX-01** (no home page; users land on an admin screen) —
      **delivered by ACC-70**, merged `40c0ec4`.
    - **UX-07** (notifications flooded with one repeated,
-     unactionable alert) — **is ACC-59**, already ticketed.
+     unactionable alert) — **delivered by ACC-82** (Setup health),
+     which absorbed ACC-59; ACC-59 is closed as its duplicate.
    - **UX-08, UX-09** — fold into the object-detail pattern above.
    - **UX-10** — a second sighting of Phase 3's "Visual workflow
      canvas (draw.io)", already decided and deferred. See that entry.
