@@ -1,5 +1,5 @@
 import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { AmDateTimePipe } from '../../../../core/formatting';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -24,7 +24,7 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
   selector: 'app-unassigned-tasks',
   standalone: true,
   imports: [PageHeaderComponent, 
-    DatePipe,
+    AmDateTimePipe,
     TranslatePipe,
     ReactiveFormsModule,
     TableModule,
@@ -59,7 +59,7 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
           <tr>
             <td><p-tag [value]="task.sourceType" severity="warn" /></td>
             <td>{{ task.title }}</td>
-            <td>{{ task.createdAt | date: 'short' }}</td>
+            <td>{{ task.createdAt | amDateTime }}</td>
             <td>
               <p-button
                 [label]="'task.reassign' | translate"

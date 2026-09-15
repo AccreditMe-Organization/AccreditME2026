@@ -1,5 +1,5 @@
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { AmDateTimePipe } from '../../../../core/formatting';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { catchError, interval, of, startWith, switchMap } from 'rxjs';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -14,7 +14,7 @@ const POLL_INTERVAL_MS = 30000;
 @Component({
   selector: 'app-notification-bell',
   standalone: true,
-  imports: [DatePipe, TranslatePipe, ButtonModule, BadgeModule, PopoverModule],
+  imports: [AmDateTimePipe, TranslatePipe, ButtonModule, BadgeModule, PopoverModule],
   template: `
     <div class="relative inline-flex">
       <p-button
@@ -65,7 +65,7 @@ const POLL_INTERVAL_MS = 30000;
                 <span class="text-sm">
                   {{ isArabic() && item.titleAr ? item.titleAr : item.titleEn }}
                 </span>
-                <span class="text-xs text-surface-400">{{ item.createdAt | date: 'short' }}</span>
+                <span class="text-xs text-surface-400">{{ item.createdAt | amDateTime }}</span>
               </div>
             }
           </div>

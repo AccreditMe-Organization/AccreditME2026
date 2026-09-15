@@ -1,5 +1,5 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { AmDateTimePipe } from '../../core/formatting';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -38,7 +38,7 @@ import { PageHeaderComponent } from '../../shared/components/page-header/page-he
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [PageHeaderComponent, DatePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
+  imports: [PageHeaderComponent, AmDateTimePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- ACC-79 — no purpose line. "Your open work and recent activity"
@@ -69,7 +69,7 @@ import { PageHeaderComponent } from '../../shared/components/page-header/page-he
             <ng-template pTemplate="body" let-task>
               <tr>
                 <td>{{ task.title }}</td>
-                <td>{{ task.dueAt ? (task.dueAt | date: 'mediumDate') : '—' }}</td>
+                <td>{{ task.dueAt | amDateTime }}</td>
                 <td>
                   <p-tag
                     [value]="'task.status.' + task.status.toLowerCase() | translate"
@@ -105,7 +105,7 @@ import { PageHeaderComponent } from '../../shared/components/page-header/page-he
                     {{ notificationTitle(item) }}
                   </span>
                   <span class="text-xs text-[var(--am-text-secondary)]">
-                    {{ item.createdAt | date: 'short' }}
+                    {{ item.createdAt | amDateTime }}
                   </span>
                 </li>
               }
