@@ -5,6 +5,9 @@ import { provideTranslateService } from '@ngx-translate/core';
 import { SidebarComponent } from './sidebar.component';
 import { AuthService } from '../../core/services/auth.service';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { environment } from '../../../environments/environment';
 
 // ACC-79 — the rail's own behaviour. WHICH items appear is nav-items.spec.ts's
 // job; this covers what the rail derives and how it presents groups.
@@ -17,6 +20,7 @@ describe('SidebarComponent (ACC-79)', () => {
     name?: string;
     tenantName?: string;
     collapsed?: boolean;
+    extraProviders?: unknown[];
   }): HTMLElement {
     const access: Partial<NavigationAccessService> = {
       hasPermission: (p: string) => (opts.permissions ?? []).includes(p),
@@ -42,6 +46,7 @@ describe('SidebarComponent (ACC-79)', () => {
         provideTranslateService(),
         { provide: NavigationAccessService, useValue: access },
         { provide: AuthService, useValue: auth },
+        ...((opts.extraProviders ?? []) as never[]),
       ],
     });
     fixture = TestBed.createComponent(SidebarComponent);
@@ -146,5 +151,66 @@ describe('SidebarComponent (ACC-79)', () => {
   it('shows the tenant under the user, not a role name', () => {
     const el = render({ tenantName: 'Al Nakheel Specialist Hospital' });
     expect(el.textContent ?? '').toContain('Al Nakheel Specialist Hospital');
+  });
+
+  // ACC-82 — the Setup health count on the rail.
+  describe('Setup health badge', () => {
+    const SUMMARY_URL = `${environment.apiUrl}/setup-health/summary`;
+    let http: HttpTestingController;
+
+    const renderWithHttp = (opts: Parameters<typeof render>[0]): HTMLElement => {
+      const el = render({ ...opts, extraProviders: [provideHttpClient(), provideHttpClientTesting()] });
+      http = TestBed.inject(HttpTestingController);
+      return el;
+    };
+
+    const flushSummary = (open: number, blocksWork: number): void => {
+      http.expectOne(SUMMARY_URL).flush({ open, blocksWork });
+      fixture.detectChanges();
+    };
+
+    const badge = (el: HTMLElement) => el.querySelector('a[href="/setup-health"] .am-rail-badge');
+
+    afterEach(() => http.verify());
+
+    it('shows the open count on the item', () => {
+      const el = renderWithHttp({ permissions: ['setup:view'] });
+      flushSummary(25, 0);
+
+      expect(badge(el)?.textContent).toContain('25');
+      expect(badge(el)?.classList).not.toContain('am-rail-badge--alert');
+    });
+
+    // Red is kept for a count that includes something blocking work.
+    it('uses the alert tone only when a condition blocks work', () => {
+      const el = renderWithHttp({ permissions: ['setup:view'] });
+      flushSummary(3, 1);
+
+      expect(badge(el)?.classList).toContain('am-rail-badge--alert');
+    });
+
+    it('shows no badge when nothing is open', () => {
+      const el = renderWithHttp({ permissions: ['setup:view'] });
+      flushSummary(0, 0);
+
+      expect(badge(el)).toBeNull();
+    });
+
+    // The item is gated on setup:view, and so is the request: the rail must
+    // never ask for a count the user would be refused.
+    it('never requests the count for a user without setup:view', () => {
+      renderWithHttp({ permissions: ['users:view', 'roles:view'] });
+
+      http.expectNone(SUMMARY_URL);
+    });
+
+    it('carries the count in the label when the rail is collapsed', () => {
+      const el = renderWithHttp({ permissions: ['setup:view'], collapsed: true });
+      flushSummary(7, 0);
+
+      expect(el.querySelector('a[href="/setup-health"]')?.getAttribute('aria-label')).toContain(
+        'shell.badge.setupHealth',
+      );
+    });
   });
 });

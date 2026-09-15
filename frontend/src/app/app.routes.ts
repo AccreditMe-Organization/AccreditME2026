@@ -110,6 +110,15 @@ export const routes: Routes = [
           import('./foundation/tasks/tasks.routes').then((m) => m.TASKS_ROUTES),
       },
       {
+        // ACC-82 — setup:view, via the nav item's ROUTE_PERMISSIONS entry.
+        path: 'setup-health',
+        canActivate: [permissionGuard],
+        loadComponent: () =>
+          import(
+            './foundation/setup-health/components/setup-health-page/setup-health-page.component'
+          ).then((m) => m.SetupHealthPageComponent),
+      },
+      {
         path: 'users',
         // No canActivate here since ACC-79: on the parent it also gated a
         // user's OWN profile on users:view. Each child guards itself — see

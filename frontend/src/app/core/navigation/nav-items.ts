@@ -50,6 +50,10 @@ export interface NavItem {
   // "just show up": the backend endpoint behind the route must be ungated for
   // the same reason, or the page renders a wall of 403s.
   requiredPermission?: string;
+  // A live count shown on the item. Names a source the sidebar knows how to
+  // read; the count is fetched only while the item is visible, so it can never
+  // request an endpoint the user lacks the permission for.
+  badge?: 'setupHealth';
   // Present ONLY on an entitlement-driven functional module. The item renders
   // only when NavigationAccessService.isModuleEnabled(moduleKey) — true for
   // FULL and READ_ONLY alike, because a read-only module is fully present and
@@ -126,6 +130,17 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
     key: 'admin',
     labelKey: 'nav.groups.admin',
     items: [
+      // ACC-82 — first, as in the reference: it is the one Administration item
+      // that is about what is wrong NOW rather than a screen to configure. Its
+      // badge counts open conditions (SYSTEM-REFERENCE §13.9).
+      {
+        key: 'setupHealth',
+        labelKey: 'nav.setupHealth',
+        icon: 'pi pi-heart',
+        route: '/setup-health',
+        requiredPermission: 'setup:view',
+        badge: 'setupHealth',
+      },
       {
         key: 'users',
         labelKey: 'nav.users',

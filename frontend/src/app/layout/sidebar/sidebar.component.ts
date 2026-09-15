@@ -1,5 +1,7 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { catchError, interval, of, startWith, switchMap } from 'rxjs';
+import { SetupHealthService } from '../../foundation/setup-health/services/setup-health.service';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MenuModule } from 'primeng/menu';
 import { TooltipModule } from 'primeng/tooltip';
@@ -13,6 +15,8 @@ import {
   TENANT_NAV_GROUPS,
   visibleNavGroups,
 } from '../../core/navigation/nav-items';
+
+const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
 // ACC-79 — the rail, built against
 // frontend/design-reference/AccreditMe App Shell.dc.html.
@@ -90,14 +94,12 @@ import {
                 routerLinkActive
                 #rla="routerLinkActive"
                 [routerLinkActiveOptions]="{ exact: needsExactMatch(item) }"
-                class="am-rail-item w-full flex items-center gap-[10px] px-[10px] py-[7px] mb-px rounded-md text-[13px] no-underline"
+                class="am-rail-item relative w-full flex items-center gap-[10px] px-[10px] py-[7px] mb-px rounded-md text-[13px] no-underline"
                 [class.justify-center]="collapsed()"
                 [class.am-rail-item--active]="rla.isActive"
                 [attr.aria-current]="rla.isActive ? 'page' : null"
-                [attr.aria-label]="
-                  collapsed() ? (item.labelKey | translate) : null
-                "
-                [pTooltip]="collapsed() ? (item.labelKey | translate) : ''"
+                [attr.aria-label]="collapsed() ? collapsedLabel(item) : null"
+                [pTooltip]="collapsed() ? collapsedLabel(item) : ''"
                 tooltipPosition="right"
               >
                 <i
@@ -112,6 +114,26 @@ import {
                   >
                     {{ item.labelKey | translate }}
                   </span>
+                }
+                @if (badgeFor(item); as badge) {
+                  @if (!collapsed()) {
+                    <span
+                      class="am-rail-badge ms-auto flex-none min-w-[19px] text-center text-[10.5px] font-bold rounded-full px-[6px] py-px tabular-nums"
+                      [class.am-rail-badge--alert]="badge.alert"
+                    >
+                      <span aria-hidden="true">{{ badge.count }}</span>
+                      <span class="sr-only">{{
+                        'shell.badge.setupHealth' | translate: { count: badge.count }
+                      }}</span>
+                    </span>
+                  } @else {
+                    <!-- Collapsed, a dot; the count is in the label and tooltip. -->
+                    <span
+                      class="am-rail-badge absolute top-[5px] end-[14px] w-[7px] h-[7px] rounded-full"
+                      [class.am-rail-badge--alert]="badge.alert"
+                      aria-hidden="true"
+                    ></span>
+                  }
                 }
               </a>
             }
@@ -190,6 +212,14 @@ import {
       .am-rail-item--active .am-rail-glyph {
         color: var(--am-rail-glyph-active);
       }
+      .am-rail-badge {
+        background: var(--am-rail-badge-bg);
+        color: var(--am-rail-badge-ink);
+      }
+      .am-rail-badge--alert {
+        background: var(--am-rail-badge-alert-bg);
+        color: var(--am-rail-badge-alert-ink);
+      }
     `,
   ],
 })
@@ -207,6 +237,51 @@ export class SidebarComponent {
   readonly groups = computed<NavGroup[]>(() =>
     visibleNavGroups(this.navigationAccessService),
   );
+
+  private readonly setupHealthService = inject(SetupHealthService);
+
+  // ACC-82 — polls the Setup health counts only while the item is on the rail,
+  // i.e. only for a user holding setup:view, so the rail never requests an
+  // endpoint that would refuse the user. Conditions are reconciled hourly, so a
+  // five-minute poll is ample; opening the page refreshes the count at once.
+  private readonly showsSetupHealth = computed(() =>
+    this.groups().some((g) => g.items.some((i) => i.badge === 'setupHealth')),
+  );
+
+  constructor() {
+    effect((onCleanup) => {
+      if (!this.showsSetupHealth()) {
+        untracked(() => this.setupHealthService.clear());
+        return;
+      }
+      const subscription = interval(BADGE_POLL_INTERVAL_MS)
+        .pipe(
+          startWith(0),
+          // A failed poll keeps the last count rather than ending polling.
+          switchMap(() =>
+            this.setupHealthService.getSummary().pipe(catchError(() => of(null))),
+          ),
+        )
+        .subscribe();
+      onCleanup(() => subscription.unsubscribe());
+    });
+  }
+
+  // Zero shows nothing: a badge reading 0 is noise on every healthy tenant.
+  badgeFor(item: NavItem): { count: number; alert: boolean } | null {
+    if (item.badge !== 'setupHealth') return null;
+    const summary = this.setupHealthService.summary();
+    if (!summary || summary.open === 0) return null;
+    return { count: summary.open, alert: summary.blocksWork > 0 };
+  }
+
+  collapsedLabel(item: NavItem): string {
+    const label = this.translate.instant(item.labelKey);
+    const badge = this.badgeFor(item);
+    return badge
+      ? `${label} — ${this.translate.instant('shell.badge.setupHealth', { count: badge.count })}`
+      : label;
+  }
 
   // ACC-79 — the platform palette (tokens.scss, .am-rail--platform). Derived
   // from the groups being shown rather than asking isPlatformAdmin() again, so
