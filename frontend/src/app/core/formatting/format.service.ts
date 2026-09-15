@@ -23,8 +23,10 @@
 // Every method reads FormatContext's signals, so calling one inside a
 // computed() re-evaluates on a language, zone or calendar change.
 import { Injectable, inject } from '@angular/core';
-import { TranslateService } from '@ngx-translate/core';
+import { TranslateParser, TranslateService } from '@ngx-translate/core';
 import { DisplayCalendar, DisplayLanguage, FormatContext } from './format-context';
+import { PluralCatalog } from './plural-catalog';
+import { PluralKey } from './plural-key';
 
 export const EMPTY_VALUE = '—';
 
@@ -45,6 +47,9 @@ type Parts = Partial<Record<Intl.DateTimeFormatPartTypes, string>>;
 export class FormatService {
   private readonly context = inject(FormatContext);
   private readonly translate = inject(TranslateService);
+  private readonly parser = inject(TranslateParser);
+  private readonly catalog = inject(PluralCatalog);
+  private readonly pluralRules = new Map<string, Intl.PluralRules>();
 
   // Intl formatters are costly to construct and cheap to reuse; pipes call these
   // on every change-detection pass.
@@ -114,6 +119,22 @@ export class FormatService {
     return this.numberFormat(LOCALE[language], {}).format(value);
   }
 
+  // A counted string (decision D1): the form Intl.PluralRules picks for the
+  // UI language — six categories in Arabic, two in English — with {{count}}
+  // formatted in Latin digits. Keys come only from the translation files'
+  // "plural" sections, which ngx-translate never receives (plural-catalog.ts),
+  // so this is the only way to render one. A key with no forms shows the key
+  // itself, as ngx-translate does for a missing key.
+  count(key: PluralKey, n: number | null | undefined, params: Record<string, unknown> = {}): string {
+    const { language } = this.snapshot();
+    const forms = this.catalog.forms(language, key);
+    if (n === null || n === undefined || !Number.isFinite(n)) return EMPTY_VALUE;
+    if (!forms) return key;
+    const category = this.pluralRule(LOCALE[language]).select(n);
+    const template = forms[category] ?? forms.other ?? key;
+    return this.parser.interpolate(template, { ...params, count: this.number(n) }) ?? template;
+  }
+
   // Which clock dates are shown in, for screens where that is not obvious —
   // e.g. platform screens, which show the signed-in session's zone rather than
   // each tenant's. "Asia/Riyadh (GMT+3)".
@@ -178,6 +199,15 @@ export class FormatService {
       this.numberFormats.set(key, format);
     }
     return format;
+  }
+
+  private pluralRule(locale: string): Intl.PluralRules {
+    let rule = this.pluralRules.get(locale);
+    if (!rule) {
+      rule = new Intl.PluralRules(locale);
+      this.pluralRules.set(locale, rule);
+    }
+    return rule;
   }
 
   private relativeFormat(locale: string, numeric: 'auto' | 'always'): Intl.RelativeTimeFormat {

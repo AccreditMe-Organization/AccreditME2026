@@ -17,6 +17,8 @@
 import { Pipe, PipeTransform, inject } from '@angular/core';
 import { FormatContext } from './format-context';
 import { DateInput, FormatService } from './format.service';
+import { PluralCatalog } from './plural-catalog';
+import { PluralKey } from './plural-key';
 
 abstract class ContextAwarePipe<T> implements PipeTransform {
   protected readonly format = inject(FormatService);
@@ -72,6 +74,28 @@ export class AmRelativePipe extends ContextAwarePipe<DateInput> {
 export class AmDurationPipe extends ContextAwarePipe<number | null | undefined> {
   protected render(value: number | null | undefined): string {
     return this.format.duration(value);
+  }
+}
+
+// {{ openCount | amCount: 'shell.openConditions' }}
+// {{ reassigned | amCount: 'user.tasksReassigned' : { name: user.name } }}
+@Pipe({ name: 'amCount', pure: false })
+export class AmCountPipe implements PipeTransform {
+  private readonly format = inject(FormatService);
+  private readonly context = inject(FormatContext);
+  private readonly catalog = inject(PluralCatalog);
+  private lastKey: string | null = null;
+  private lastValue = '';
+
+  transform(n: number | null | undefined, key: PluralKey, params?: Record<string, unknown>): string {
+    // Read, not peeked — the catalogue too, so a count rendered before its
+    // language file arrived updates when the file does.
+    const memo = [n, key, JSON.stringify(params ?? {}), this.context.language(), this.catalog.revision()].join('|');
+    if (memo !== this.lastKey) {
+      this.lastKey = memo;
+      this.lastValue = this.format.count(key, n, params);
+    }
+    return this.lastValue;
   }
 }
 
