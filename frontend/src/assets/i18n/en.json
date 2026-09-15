@@ -739,7 +739,8 @@
     }
   },
   "format": {
-    "lessThanMinute": "less than a minute"
+    "lessThanMinute": "less than a minute",
+    "shownInZone": "Dates shown in {{zone}}"
   },
   "plural": {
     "role": {

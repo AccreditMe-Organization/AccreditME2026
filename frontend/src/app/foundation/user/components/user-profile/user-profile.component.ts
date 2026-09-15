@@ -38,6 +38,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // dialog (see the wizard's own header comment / plan Section 2.6.b.1 for
 // why not EditDialogComponent).
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
+import { FormatService } from '../../../../core/formatting';
 
 // Embeds UserRoleAssignmentComponent for real for the first time — it was
 // built in Step 6 as "a minimal stopgap until Step 9 ships a proper user
@@ -383,6 +384,7 @@ export class UserProfileComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translateService = inject(TranslateService);
   private readonly route = inject(ActivatedRoute);
+  private readonly format = inject(FormatService);
 
   readonly userId = this.route.snapshot.paramMap.get('id')!;
 
@@ -432,13 +434,7 @@ export class UserProfileComponent implements OnInit {
       { labelKey: 'user.actingOrgUnit', value: bilingual(refs?.actingOrgUnit) },
       {
         labelKey: 'user.actingOrgUnitUntil',
-        value: until
-          ? new Date(until).toLocaleDateString(arabic ? 'ar' : 'en-GB', {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric',
-            })
-          : '—',
+        value: this.format.date(until),
       },
     ];
   });

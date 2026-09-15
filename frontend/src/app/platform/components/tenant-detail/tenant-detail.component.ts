@@ -1,6 +1,5 @@
 import { LANDING_ROUTE } from '../../../core/navigation/landing-route';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -13,6 +12,7 @@ import { CardComponent } from '../../../shared/components/card/card.component';
 import { PlatformTenantService, IPlatformTenantDetail } from '../../services/platform-tenant.service';
 import { KNOWN_MODULE_KEYS } from '../../services/plan.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+import { AmDatePipe, FormatService } from '../../../core/formatting';
 
 @Component({
   selector: 'app-tenant-detail',
@@ -20,7 +20,7 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
   imports: [PageHeaderComponent, 
     ReactiveFormsModule,
     TranslatePipe,
-    DatePipe,
+    AmDatePipe,
     ButtonModule,
     CheckboxModule,
     InputNumberModule,
@@ -59,7 +59,15 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
           </app-card>
           <app-card>
             <p class="text-sm text-[var(--am-text-secondary)]">{{ 'platform.createdAt' | translate }}</p>
-            <p class="text-2xl font-semibold">{{ t.createdAt | date: 'mediumDate' }}</p>
+            <p class="text-2xl font-semibold">{{ t.createdAt | amDate }}</p>
+            <!-- ACC-94 — platform screens show the signed-in session's zone, not
+                 the tenant's: a fleet list in six tenant zones could not be
+                 compared. Labelled so nobody guesses whose clock it is. Revisit
+                 if a platform screen ever shows tenant-operational times (SLA
+                 breaches, working hours), which belong to the tenant's day. -->
+            <p class="text-xs text-[var(--am-text-secondary)] m-0 mt-1">
+              {{ 'format.shownInZone' | translate: { zone: format.zoneLabel() } }}
+            </p>
           </app-card>
         </div>
 
@@ -126,6 +134,8 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
 })
 export class TenantDetailComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
+  // Public: the template labels which zone dates are shown in (ACC-94).
+  readonly format = inject(FormatService);
   private readonly platformTenantService = inject(PlatformTenantService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);

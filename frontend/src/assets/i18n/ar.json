@@ -739,7 +739,8 @@
     }
   },
   "format": {
-    "lessThanMinute": "أقل من دقيقة"
+    "lessThanMinute": "أقل من دقيقة",
+    "shownInZone": "التواريخ بتوقيت {{zone}}"
   },
   "plural": {
     "role": {

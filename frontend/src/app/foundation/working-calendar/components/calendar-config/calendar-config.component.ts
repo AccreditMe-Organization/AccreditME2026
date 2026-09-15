@@ -20,6 +20,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 // PrimeNG-components-only exception note and overlay-select.component.ts
 // for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { AmDatePipe } from '../../../../core/formatting';
 
 const GCC_DAYS = [0, 1, 2, 3, 4];
 const WESTERN_DAYS = [1, 2, 3, 4, 5];
@@ -63,6 +64,7 @@ interface SuggestionState extends AiHolidaySuggestion {
     FormsModule,
     RouterLink,
     TranslatePipe,
+    AmDatePipe,
     ButtonModule,
     OverlaySelectComponent,
     DatePickerModule,
@@ -227,7 +229,7 @@ interface SuggestionState extends AiHolidaySuggestion {
                 />
                 <span class="flex flex-col gap-1">
                   <span class="font-medium">{{ s.nameEn }}{{ s.nameAr ? ' (' + s.nameAr + ')' : '' }}</span>
-                  <span class="text-sm text-[var(--am-text-secondary)]">{{ s.date }}{{ s.isRecurring ? ' · Recurring' : '' }}</span>
+                  <span class="text-sm text-[var(--am-text-secondary)]">{{ s.date | amDate }}@if (s.isRecurring) { · {{ 'workingCalendar.recurring' | translate }}}</span>
                 </span>
               </label>
             }

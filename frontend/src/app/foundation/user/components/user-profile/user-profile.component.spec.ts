@@ -12,6 +12,7 @@ import { UserProfileComponent } from './user-profile.component';
 import { AuthService } from '../../../../core/services/auth.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { provideFormatTesting } from '../../../../core/formatting/testing';
 
 // ACC-79 — a user without admin permissions opening their OWN profile, which
 // the route guard used to prevent. Before these fixes the page fired four
@@ -57,6 +58,9 @@ describe('UserProfileComponent for a viewer without admin permissions (ACC-79)',
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en' }),
+        // ACC-94 — dates go through the formatting layer; its zone and calendar
+        // are set here rather than read from the AuthService stub.
+        provideFormatTesting(),
         ConfirmationService,
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: ME }) } } },
         {
