@@ -1039,6 +1039,12 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       actingHeadUserId: string | null;
     };
     type Holder = { organizationId: string; primaryOrgUnitId: string };
+    type HolderCountArgs = { where: { organizationId?: string } };
+    type UnitReadArgs = { where?: { isActive?: boolean } } | undefined;
+    type UnitWriteArgs = {
+      where: { id: string; organizationId: string };
+      data: Partial<Unit> & { headVacantSince?: Date | null };
+    };
 
     const unit = (overrides: Partial<Unit> & Pick<Unit, 'id'>): Unit => ({
       organizationId: ORG_A,
@@ -1057,7 +1063,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
             : units.filter((u) => where.organizationId === undefined || u.organizationId === where.organizationId),
         ),
       );
-      mockPrisma.user.groupBy.mockImplementation(({ where }: any) => {
+      mockPrisma.user.groupBy.mockImplementation(({ where }: HolderCountArgs) => {
         const counts = new Map<string, number>();
         for (const h of holders) {
           if (where.organizationId !== undefined && h.organizationId !== where.organizationId) continue;
@@ -1067,8 +1073,12 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       });
     }
 
+    const unitWrites = (): UnitWriteArgs[] =>
+      (mockPrisma.orgUnit.updateMany.mock.calls as [UnitWriteArgs][]).map(([arg]) => arg);
     const writesFor = (id: string) =>
-      mockPrisma.orgUnit.updateMany.mock.calls.filter(([arg]: any) => arg.where.id === id).map(([arg]: any) => arg.data);
+      unitWrites()
+        .filter((arg) => arg.where.id === id)
+        .map((arg) => arg.data);
 
     it('reads two queries per tenant however many units it has, and never walks a unit with its own Head', async () => {
       givenTenants(
@@ -1083,7 +1093,9 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       await runProcess();
 
-      const vacancyUnitReads = mockPrisma.orgUnit.findMany.mock.calls.filter(([arg]: any) => arg?.where?.isActive !== undefined);
+      const vacancyUnitReads = (mockPrisma.orgUnit.findMany.mock.calls as [UnitReadArgs][]).filter(
+        ([arg]) => arg?.where?.isActive !== undefined,
+      );
       expect(vacancyUnitReads).toEqual([
         [
           {
@@ -1211,7 +1223,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(writesFor('unit-b')).toEqual([{ isHeadVacant: false, headVacantSince: null, isHeadFullyUnresolved: false }]);
       expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-a', ORG_A);
       expect(mockOrganizationService.resolveActingHeadForOrgUnit).not.toHaveBeenCalledWith('unit-a', 'org-b-id');
-      for (const [arg] of mockPrisma.orgUnit.updateMany.mock.calls as any[]) {
+      for (const arg of unitWrites()) {
         expect(arg.where.organizationId).toBe(arg.where.id === 'unit-a' ? ORG_A : 'org-b-id');
       }
     });
