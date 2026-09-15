@@ -222,6 +222,30 @@ describe('translation keys (ACC-78)', () => {
     });
   });
 
+  // ACC-94 — Ahmad's decision: Latin digits everywhere, in both languages. The
+  // formatting layer pins them for everything it formats; this covers digits
+  // typed into the translation files, where "آخر ٧ أيام" once sat beside a
+  // Latin "7" on the same page.
+  describe('digits', () => {
+    const ARABIC_INDIC = /[٠-٩۰-۹]/;
+
+    it('uses no Arabic-Indic digits in either file, including plural forms', () => {
+      const pluralTexts = (leaves: Record<string, Json>, language: string) =>
+        Object.entries(leaves).flatMap(([key, forms]) =>
+          Object.entries(forms).map(([category, text]) => [`${language}:plural.${key}.${category}`, String(text)]),
+        );
+      const offenders = [
+        ...Object.entries(EN).map(([key, text]) => [`en:${key}`, text]),
+        ...Object.entries(AR).map(([key, text]) => [`ar:${key}`, text]),
+        ...pluralTexts(EN_PLURAL, 'en'),
+        ...pluralTexts(AR_PLURAL, 'ar'),
+      ]
+        .filter(([, text]) => ARABIC_INDIC.test(text))
+        .map(([key, text]) => `${key}: ${text}`);
+      expect(offenders).withContext('write digits as 0-9 in both languages').toEqual([]);
+    });
+  });
+
   describe('keys built by string concatenation', () => {
     for (const { site, prefix, values } of CONCATENATED_KEYS) {
       it(`resolves every ${prefix}.* value used by ${site}`, () => {
