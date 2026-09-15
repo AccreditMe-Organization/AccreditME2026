@@ -757,5 +757,8 @@
       "none": "Nothing has cleared in the last 7 days.",
       "note": "Shown so you can see a fix landed, and so a surveyor can see when a gap closed. Each entry drops off after 7 days."
     }
+  },
+  "format": {
+    "lessThanMinute": "less than a minute"
   }
 }
