@@ -6,11 +6,12 @@ import { environment } from '../../../../environments/environment';
 // ACC-82 — Setup health (SYSTEM-REFERENCE §13). Read-only: a condition is
 // derived state, so there is nothing to dismiss, snooze or mark read.
 
+// The types the API reports. POSITION_WITHOUT_ROLE exists in the backend enum
+// but is deferred (backend DEFERRED_SETUP_CONDITION_TYPES) and never returned.
 export type SetupConditionType =
   | 'ORG_UNIT_WITHOUT_HEAD'
   | 'STAGE_WITHOUT_ASSIGNEE'
-  | 'TASK_WITHOUT_OWNER'
-  | 'POSITION_WITHOUT_ROLE';
+  | 'TASK_WITHOUT_OWNER';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -32,8 +33,6 @@ export interface SetupConditionSubject {
   templateNameEn?: string;
   templateNameAr?: string | null;
   affectedInstances?: number;
-  activeHolders?: number;
-  holdersWithNoRoles?: number;
 }
 
 export interface SetupConditionDto {

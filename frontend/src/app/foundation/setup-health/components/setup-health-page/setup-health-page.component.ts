@@ -29,7 +29,7 @@ import {
 //     a check can fail or be late. A failed check never clears rows, so the
 //     rows stay as last confirmed, and the page names the time (§13.5).
 //   - WHAT AN AGE MEANS. Units and stages record when they entered the
-//     condition; tasks and positions do not, so theirs is "first detected".
+//     condition; tasks do not, so theirs is "first detected".
 
 export type SeverityFilter = 'ALL' | SetupConditionSeverity;
 
@@ -38,7 +38,6 @@ const TYPE_ORDER: SetupConditionType[] = [
   'ORG_UNIT_WITHOUT_HEAD',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
-  'POSITION_WITHOUT_ROLE',
 ];
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = { BLOCKS_WORK: 0, AT_RISK: 1 };
@@ -76,12 +75,6 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         queryParams: { reassign: condition.objectId },
         permissions: ['tasks:manage', 'tasks:reassign'],
       };
-    case 'POSITION_WITHOUT_ROLE':
-      return {
-        link: ['/org-positions'],
-        queryParams: { edit: condition.objectId },
-        permissions: ['positions:view', 'positions:manage'],
-      };
   }
 }
 
@@ -91,6 +84,8 @@ export interface ConditionRow {
   objectName: string;
   context: string | null;
   consequence: string;
+  // What to check, where the condition cannot say which cause applies.
+  hint: string | null;
   age: string;
   openedAt: string;
   fix: { label: string; link: string[]; queryParams: Record<string, string> } | null;
@@ -205,6 +200,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
                       <span class="block text-[11.5px] text-[var(--am-text-secondary)] text-pretty">{{
                         row.consequence
                       }}</span>
+                      @if (row.hint) {
+                        <span class="block text-[11.5px] text-[var(--am-text-primary)] text-pretty">{{ row.hint }}</span>
+                      }
                     </span>
                     <span
                       class="flex-none w-[150px] text-[11.5px] text-[var(--am-text-secondary)] tabular-nums"
@@ -460,6 +458,11 @@ export class SetupHealthPageComponent implements OnInit {
       objectName: this.objectName(condition),
       context: this.context(condition),
       consequence: this.consequence(condition),
+      // A stage is unreachable because of its assignee OR a transition's
+      // trigger, and the condition does not record which (§13.2) — so the row
+      // says to check both rather than implying one.
+      hint:
+        condition.type === 'STAGE_WITHOUT_ASSIGNEE' ? this.translate.instant('setupHealth.hint.STAGE_WITHOUT_ASSIGNEE') : null,
       age: this.age(condition),
       openedAt: condition.openedAt,
       fix:
@@ -499,10 +502,6 @@ export class SetupHealthPageComponent implements OnInit {
         return t(s.affectedInstances === 1 ? 'stageOne' : 'stageMany', { count: s.affectedInstances ?? 0 });
       case 'TASK_WITHOUT_OWNER':
         return t('task');
-      case 'POSITION_WITHOUT_ROLE':
-        return (s.holdersWithNoRoles ?? 0) > 0
-          ? t('positionNoRoles', { holders: s.activeHolders ?? 0, noRoles: s.holdersWithNoRoles })
-          : t('positionHolders', { holders: s.activeHolders ?? 0 });
     }
   }
 

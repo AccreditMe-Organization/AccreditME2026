@@ -10,7 +10,6 @@ import { PositionFormComponent } from '../position-form/position-form.component'
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
-import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 
 @Component({
   selector: 'app-position-list',
@@ -212,10 +211,6 @@ export class PositionListComponent implements OnInit {
     });
   }
 
-  // ACC-82 — a Setup health Fix link (?edit=<id>) opens that position's edit
-  // dialog, where its role is mapped.
-  private readonly fixLinkEdit = injectFixLinkParam('edit');
-
   loadPositions(): void {
     this.loading.set(true);
     this.error.set(null);
@@ -223,9 +218,6 @@ export class PositionListComponent implements OnInit {
       next: (positions) => {
         this.positions.set(positions);
         this.loading.set(false);
-        const editId = this.fixLinkEdit();
-        const target = editId ? positions.find((p) => p.id === editId) : undefined;
-        if (target) this.onEdit(target);
       },
       error: () => {
         this.error.set('orgPosition.errorLoad');

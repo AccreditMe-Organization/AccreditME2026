@@ -32,7 +32,7 @@ const condition = (overrides: Partial<SetupConditionDto> & Pick<SetupConditionDt
 });
 
 const current = (computedAt = minutesAgo(10)): SetupConditionFreshnessDto[] =>
-  (['ORG_UNIT_WITHOUT_HEAD', 'STAGE_WITHOUT_ASSIGNEE', 'TASK_WITHOUT_OWNER', 'POSITION_WITHOUT_ROLE'] as const).map(
+  (['ORG_UNIT_WITHOUT_HEAD', 'STAGE_WITHOUT_ASSIGNEE', 'TASK_WITHOUT_OWNER'] as const).map(
     (type) => ({ type, status: 'CURRENT', computedAt }),
   );
 
@@ -46,7 +46,6 @@ const EN = {
       ORG_UNIT_WITHOUT_HEAD: 'Org unit without a head',
       STAGE_WITHOUT_ASSIGNEE: 'Workflow stage with no resolvable assignee',
       TASK_WITHOUT_OWNER: 'Task with no actionable owner',
-      POSITION_WITHOUT_ROLE: 'Position with no role mapped',
     },
     context: { template: 'Workflow: {{name}}' },
     consequence: {
@@ -55,9 +54,8 @@ const EN = {
       stageOne: '1 open item',
       stageMany: '{{count}} open items',
       task: 'no one assigned',
-      positionHolders: '{{holders}} holders',
-      positionNoRoles: '{{holders}} holders, {{noRoles}} with no roles',
     },
+    hint: { STAGE_WITHOUT_ASSIGNEE: 'check the assignee and each transition trigger' },
     age: {
       openToday: 'Open since today',
       openOneDay: 'Open 1 day',
@@ -70,13 +68,11 @@ const EN = {
       ORG_UNIT_WITHOUT_HEAD: 'Assign head',
       STAGE_WITHOUT_ASSIGNEE: 'Review stage',
       TASK_WITHOUT_OWNER: 'Reassign',
-      POSITION_WITHOUT_ROLE: 'Map role',
     },
     fixNeeds: {
       ORG_UNIT_WITHOUT_HEAD: 'needs org manage',
       STAGE_WITHOUT_ASSIGNEE: 'needs workflows manage',
       TASK_WITHOUT_OWNER: 'needs tasks manage',
-      POSITION_WITHOUT_ROLE: 'needs positions manage',
     },
     freshness: {
       failed: '{{type}}: failed, as of {{when}}',
@@ -99,8 +95,6 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     'workflows:manage',
     'tasks:manage',
     'tasks:reassign',
-    'positions:view',
-    'positions:manage',
   ];
 
   function render(health: SetupHealthDto): SetupHealthPageComponent {
@@ -133,8 +127,8 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
   it('groups by type, orders groups by their most severe row, and gives each group that severity', () => {
     const page = render({
       open: [
-        condition({ id: 'pos', type: 'POSITION_WITHOUT_ROLE', subject: { nameEn: 'Director', activeHolders: 2 } }),
-        condition({ id: 'unit-risk', type: 'ORG_UNIT_WITHOUT_HEAD' }),
+        condition({ id: 'unit-risk-1', type: 'ORG_UNIT_WITHOUT_HEAD' }),
+        condition({ id: 'unit-risk-2', type: 'ORG_UNIT_WITHOUT_HEAD' }),
         condition({
           id: 'task',
           type: 'TASK_WITHOUT_OWNER',
@@ -143,10 +137,10 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
           subject: { title: 'Chase figures' },
         }),
         condition({
-          id: 'unit-block',
-          type: 'ORG_UNIT_WITHOUT_HEAD',
+          id: 'stage',
+          type: 'STAGE_WITHOUT_ASSIGNEE',
           severity: 'BLOCKS_WORK',
-          subject: { nameEn: 'Pharmacy', escalationResolves: false },
+          subject: { nameEn: 'Terms Review', templateId: 'tpl-1', affectedInstances: 1 },
         }),
       ],
       recentlyCleared: [],
@@ -154,9 +148,11 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     });
 
     expect(page.groups().map((g) => [g.type, g.severity, g.rows.length])).toEqual([
-      ['ORG_UNIT_WITHOUT_HEAD', 'BLOCKS_WORK', 2],
+      // Blocking groups first (in type order), then the at-risk unit group,
+      // even though units come first in type order.
+      ['STAGE_WITHOUT_ASSIGNEE', 'BLOCKS_WORK', 1],
       ['TASK_WITHOUT_OWNER', 'BLOCKS_WORK', 1],
-      ['POSITION_WITHOUT_ROLE', 'AT_RISK', 1],
+      ['ORG_UNIT_WITHOUT_HEAD', 'AT_RISK', 2],
     ]);
   });
 
@@ -193,7 +189,6 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
           subject: { nameEn: 'Terms Review', templateId: 'tpl-1', templateNameEn: 'Committee', affectedInstances: 3 },
         }),
         condition({ id: 'task', type: 'TASK_WITHOUT_OWNER', objectId: 'task-1', subject: { title: 'T' } }),
-        condition({ id: 'pos', type: 'POSITION_WITHOUT_ROLE', objectId: 'pos-1', subject: { nameEn: 'P' } }),
       ],
       recentlyCleared: [],
       freshness: current(),
@@ -212,7 +207,6 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
         queryParams: { stage: 'stage-1' },
       });
       expect(rows['task']!.fix).toEqual({ label: 'Reassign', link: ['/tasks/unassigned'], queryParams: { reassign: 'task-1' } });
-      expect(rows['pos']!.fix).toEqual({ label: 'Map role', link: ['/org-positions'], queryParams: { edit: 'pos-1' } });
       expect(Object.values(rows).every((r) => r.fixNeeds === null)).toBe(true);
     });
 
@@ -228,7 +222,16 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
       expect(rows['task']!.fix).toBeNull();
       expect(rows['task']!.fixNeeds).toBe('needs tasks manage');
       expect(rows['stage']!.fix).not.toBeNull();
-      expect(rows['pos']!.fix).not.toBeNull();
+    });
+
+    // §13.2 — the condition does not record whether the assignee or a trigger
+    // is the cause, so only the stage row tells the admin to check both.
+    it('tells the admin to check both the assignee and the triggers on a stage row, and only there', () => {
+      const rows = rowsById(render(health()));
+
+      expect(rows['stage']!.hint).toBe('check the assignee and each transition trigger');
+      expect(rows['unit']!.hint).toBeNull();
+      expect(rows['task']!.hint).toBeNull();
     });
   });
 
@@ -238,7 +241,8 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     const page = render({
       open: [
         condition({ id: 'unit', openedAt: daysAgo(9.2) }),
-        condition({ id: 'pos', type: 'POSITION_WITHOUT_ROLE', ageBasis: 'FIRST_DETECTED', openedAt: daysAgo(1.5), subject: { nameEn: 'P' } }),
+        condition({ id: 'stage', type: 'STAGE_WITHOUT_ASSIGNEE', openedAt: daysAgo(1.5), subject: { nameEn: 'S', templateId: 't' } }),
+        condition({ id: 'task-old', type: 'TASK_WITHOUT_OWNER', ageBasis: 'FIRST_DETECTED', openedAt: daysAgo(1.5), subject: { title: 'T1' } }),
         condition({ id: 'task', type: 'TASK_WITHOUT_OWNER', ageBasis: 'FIRST_DETECTED', openedAt: minutesAgo(30), subject: { title: 'T' } }),
       ],
       recentlyCleared: [],
@@ -248,7 +252,8 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     const ages = Object.fromEntries(page.groups().flatMap((g) => g.rows).map((r) => [r.id, r.age]));
     expect(ages).toEqual({
       unit: 'Open 9 days',
-      pos: 'First detected 1 day ago',
+      stage: 'Open 1 day',
+      'task-old': 'First detected 1 day ago',
       task: 'First detected today',
     });
   });
@@ -285,7 +290,6 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
           { type: 'ORG_UNIT_WITHOUT_HEAD', status: 'FAILED', computedAt: minutesAgo(180) },
           { type: 'STAGE_WITHOUT_ASSIGNEE', status: 'OVERDUE', computedAt: minutesAgo(150) },
           { type: 'TASK_WITHOUT_OWNER', status: 'NEVER_RUN', computedAt: null },
-          { type: 'POSITION_WITHOUT_ROLE', status: 'FAILED', computedAt: null },
         ],
       });
 
@@ -293,10 +297,18 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
         'Org unit without a head: failed, as of 3 h ago',
         'Workflow stage with no resolvable assignee: overdue since 3 h ago',
         'Task with no actionable owner: never run',
-        'Position with no role mapped: never succeeded',
       ]);
       // An empty page must not read as "nothing needs fixing" when checks did not run.
       expect(page.emptyMessageKey()).toBe('setupHealth.emptyUnconfirmed');
+    });
+
+    it('says a type that has never succeeded has nothing confirmed', () => {
+      const freshness = current();
+      freshness[2] = { type: 'TASK_WITHOUT_OWNER', status: 'FAILED', computedAt: null };
+
+      const page = render({ open: [], recentlyCleared: [], freshness });
+
+      expect(page.freshnessNotices()).toEqual(['Task with no actionable owner: never succeeded']);
     });
 
     it('reports the OLDEST confirmation, so the toolbar never overstates freshness', () => {
