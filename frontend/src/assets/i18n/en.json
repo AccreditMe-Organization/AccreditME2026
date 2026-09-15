@@ -710,11 +710,9 @@
     },
     "age": {
       "openToday": "Opened in the last 24 hours",
-      "openOneDay": "Open 1 day",
-      "openDays": "Open {{count}} days",
+      "open": "Open {{duration}}",
       "detectedToday": "First detected in the last 24 hours",
-      "detectedOneDay": "First detected 1 day ago",
-      "detectedDays": "First detected {{count}} days ago"
+      "detected": "First detected {{relative}}"
     },
     "fix": {
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
@@ -727,16 +725,10 @@
       "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks."
     },
     "freshness": {
-      "failed": "{{type}}: the last check failed. Its rows are as last confirmed {{when}}.",
+      "failed": "{{type}}: the last check failed. Its rows are as last confirmed on {{when}}.",
       "failedNever": "{{type}}: no check has succeeded yet, so an empty list for it does not mean nothing is wrong.",
       "overdue": "{{type}}: not checked since {{when}}. Its rows may be out of date.",
       "neverRun": "{{type}}: not checked yet, so an empty list for it does not mean nothing is wrong."
-    },
-    "relative": {
-      "justNow": "just now",
-      "minutes": "{{count}} min ago",
-      "hours": "{{count}} h ago",
-      "days": "{{count}} days ago"
     },
     "cleared": {
       "title": "Cleared by itself",

@@ -197,11 +197,6 @@ describe('translation keys (ACC-78)', () => {
     // only until their components migrate (ACC-94 commits 8 and 10); the list
     // must end empty.
     const PENDING_TIME_QUANTITY_MIGRATION: string[] = [
-      'setupHealth.age.openDays',
-      'setupHealth.age.detectedDays',
-      'setupHealth.relative.minutes',
-      'setupHealth.relative.hours',
-      'setupHealth.relative.days',
       'workflow.stageIndicator.inStageDays',
       'task.overdueBy',
     ];
