@@ -224,31 +224,93 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     }
   }
 
-  // ACC-40 Section 2.5.1 — drift-after-entry re-check, same shape as
-  // sweepUnassignedStages() above: refreshOrgUnitHeadVacancy()'s entry-time
-  // check only re-runs the escalation walk when the UNIT'S OWN direct
-  // holder count changes, so it can't catch an ancestor's coverage
-  // disappearing while THIS unit's own vacancy state never changes (e.g. a
-  // parent unit's Acting Head is cleared while a grandchild sits vacant the
-  // whole time). Only considers units already isHeadVacant: true — a unit
-  // that currently has its own direct holder is never fully-unresolved by
-  // definition, so re-walking it here would be wasted work.
+  // ACC-82 — the scheduled RECOMPUTER of OrgUnit.isHeadVacant /
+  // headVacantSince / isHeadFullyUnresolved, for every ACTIVE unit, every pass.
   //
-  // ACC-82 — maintains the flag only. The first "no resolvable Head"
-  // notification and its 2-day reminders were removed: a fully unresolved
-  // unit is a standing condition that Setup health lists as BLOCKS_WORK
-  // until it is fixed (SYSTEM-REFERENCE §13.7).
+  // Before ACC-82 this step walked only units ALREADY flagged vacant and only
+  // ever updated isHeadFullyUnresolved, so isHeadVacant itself was never
+  // re-derived: it was right only if every write path remembered to call
+  // refreshOrgUnitHeadVacancy() at the right moment. They did not.
+  // acceptInvitation() never called it after invite() had flagged the unit
+  // (the new Head was still INVITED), which left 32 of 34 "vacant" units on dev
+  // with an active Head; and the same design hides a genuinely vacant unit
+  // whenever its Head leaves by a path that skips the refresh. The entry-time
+  // refresh stays (it makes a change visible immediately); this pass is what
+  // guarantees the flag is correct within 15 minutes whatever happened.
+  //
+  // Two reads per tenant, not one per unit — the database is remote (CLAUDE.md,
+  // region note), and unit counts grow with the tenant:
+  //   1. the tenant's ACTIVE units with their cached flags and acting head
+  //   2. ONE grouped count of ACTIVE users holding an ACTIVE head-conferring
+  //      position, by primaryOrgUnitId — the same holder definition as
+  //      refreshOrgUnitHeadVacancy()
+  // Writes happen only where a value actually changes.
+  //
+  // The escalation walk (resolveActingHeadForOrgUnit — a query per ancestor)
+  // runs only where the answer can matter:
+  //   - a unit becoming vacant (false→true), to set isHeadFullyUnresolved;
+  //   - a unit STILL vacant, to catch an ancestor's coverage changing while the
+  //     unit's own state does not (ACC-40 §2.5.1's drift check, kept — without
+  //     it isHeadFullyUnresolved would itself become stale cached state).
+  // A unit with its own Head is never walked.
+  //
+  // Notifies no one: a vacant unit is a Setup health condition (§13.7).
   private async sweepOrgUnitVacancies(): Promise<void> {
-    const vacantUnits = await this.prisma.orgUnit.findMany({ where: { isHeadVacant: true } });
+    const organizations = await this.prisma.organization.findMany({ select: { id: true } });
 
-    for (const orgUnit of vacantUnits) {
-      const pool = await this.organizationService.resolveActingHeadForOrgUnit(orgUnit.id, orgUnit.organizationId);
+    for (const { id: organizationId } of organizations) {
+      await this.recomputeOrgUnitVacancies(organizationId);
+    }
+  }
+
+  private async recomputeOrgUnitVacancies(organizationId: string): Promise<void> {
+    const units = await this.prisma.orgUnit.findMany({
+      where: { organizationId, isActive: true },
+      select: { id: true, isHeadVacant: true, isHeadFullyUnresolved: true, actingHeadUserId: true },
+    });
+    if (units.length === 0) return;
+
+    const holderCounts = await this.prisma.user.groupBy({
+      by: ['primaryOrgUnitId'],
+      where: {
+        organizationId,
+        status: 'ACTIVE',
+        primaryOrgUnitId: { not: null },
+        position: { isUnitHeadPosition: true, isActive: true },
+      },
+      _count: { _all: true },
+    });
+    const unitsWithAHead = new Set(holderCounts.map((row) => row.primaryOrgUnitId));
+
+    for (const orgUnit of units) {
+      const isNowVacant = !unitsWithAHead.has(orgUnit.id) && !orgUnit.actingHeadUserId;
+
+      if (!isNowVacant) {
+        if (orgUnit.isHeadVacant || orgUnit.isHeadFullyUnresolved) {
+          await this.prisma.orgUnit.updateMany({
+            where: { id: orgUnit.id, organizationId },
+            data: { isHeadVacant: false, headVacantSince: null, isHeadFullyUnresolved: false },
+          });
+        }
+        continue;
+      }
+
+      const pool = await this.organizationService.resolveActingHeadForOrgUnit(orgUnit.id, organizationId);
       const isNowFullyUnresolved = pool.length === 0;
 
-      // Read from the row as fetched at the top of this pass, so an unchanged
-      // unit costs no write.
-      const wasFullyUnresolved = orgUnit.isHeadFullyUnresolved;
+      if (!orgUnit.isHeadVacant) {
+        // Became vacant without the entry-time refresh noticing. headVacantSince
+        // is when this pass found it — the moment it actually happened was not
+        // recorded by whatever path caused it.
+        await this.prisma.orgUnit.updateMany({
+          where: { id: orgUnit.id, organizationId },
+          data: { isHeadVacant: true, headVacantSince: new Date(), isHeadFullyUnresolved: isNowFullyUnresolved },
+        });
+        continue;
+      }
 
+      // Still vacant: only the escalation answer can have changed.
+      const wasFullyUnresolved = orgUnit.isHeadFullyUnresolved;
       if (wasFullyUnresolved === isNowFullyUnresolved) {
         continue;
       }
@@ -273,16 +335,16 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         // same sweep pass regardless of the order these two run in. Adding a
         // parallel notification here would either duplicate that one or
         // announce work that does not exist.
-        await this.prisma.orgUnit.update({
-          where: { id: orgUnit.id },
+        await this.prisma.orgUnit.updateMany({
+          where: { id: orgUnit.id, organizationId },
           data: { isHeadFullyUnresolved: false },
         });
         continue;
       }
 
-      // Newly fully unresolved (sweep-discovered, not caught at entry time).
-      await this.prisma.orgUnit.update({
-        where: { id: orgUnit.id },
+      // Newly fully unresolved — an ancestor's coverage went away.
+      await this.prisma.orgUnit.updateMany({
+        where: { id: orgUnit.id, organizationId },
         data: { isHeadFullyUnresolved: true },
       });
     }
