@@ -192,27 +192,21 @@ describe('translation keys (ACC-78)', () => {
       'workflow.stageIndicator.revisited': '"×3" — a multiplier sign, no noun',
     };
 
-    // Time quantities do not become plural objects: they move to the layer's
-    // duration and relative formats, which pluralise by construction. Listed
-    // only until their components migrate (ACC-94 commits 8 and 10); the list
-    // must end empty.
-    const PENDING_TIME_QUANTITY_MIGRATION: string[] = [
-      'workflow.stageIndicator.inStageDays',
-      'task.overdueBy',
-    ];
+    // Time quantities never become plural objects: they go through the layer's
+    // duration and relative formats, which pluralise by construction.
 
     it('carries no counted number outside the plural section', () => {
       const offenders = [...Object.entries(EN), ...Object.entries(AR)]
         .filter(
           ([key, text]) =>
-            COUNTED.test(text) && !(key in NUMBER_ONLY) && !PENDING_TIME_QUANTITY_MIGRATION.includes(key),
+            COUNTED.test(text) && !(key in NUMBER_ONLY),
         )
         .map(([key, text]) => `${key}: ${text}`);
       expect(offenders).withContext('move these into "plural", or format them through the layer').toEqual([]);
     });
 
-    it('lists only exceptions that still exist, so the lists cannot go stale', () => {
-      const stale = [...Object.keys(NUMBER_ONLY), ...PENDING_TIME_QUANTITY_MIGRATION].filter((key) => !(key in EN));
+    it('lists only exceptions that still exist, so the list cannot go stale', () => {
+      const stale = Object.keys(NUMBER_ONLY).filter((key) => !(key in EN));
       expect(stale).toEqual([]);
     });
   });

@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import {
   WorkflowService,
@@ -7,6 +6,7 @@ import {
   WorkflowStageHistoryDto,
 } from '../../services/workflow.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { AmDatePipe, FormatService } from '../../../../core/formatting';
 import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
 
 // ACC-76 — where a record is in its workflow, answered two ways, in one
@@ -37,7 +37,7 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
 @Component({
   selector: 'app-workflow-stage-indicator',
   standalone: true,
-  imports: [DatePipe, TranslatePipe],
+  imports: [AmDatePipe, TranslatePipe],
   template: `
     @if (history(); as h) {
       @if (show() !== 'history') {
@@ -127,7 +127,7 @@ import { ResolvedDelegationDto } from '../../../tasks/services/task.service';
                 style="unicode-bidi: isolate"
                 class="text-[11.5px] text-start text-[var(--am-text-secondary)]"
               >
-                {{ visit.enteredAt | date: 'dd MMM y' }}
+                {{ visit.enteredAt | amDate }}
               </span>
 
               <span class="text-[12.5px] min-w-0">
@@ -165,6 +165,7 @@ export class WorkflowStageIndicatorComponent {
   private readonly workflowService = inject(WorkflowService);
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   // Takes the INSTANCE, not its id. Load-bearing: triggerTransition() returns
   // an updated instance whose ID IS UNCHANGED, so an id input never notified
@@ -203,17 +204,21 @@ export class WorkflowStageIndicatorComponent {
   // at the top. The sequence above already carries the forward reading.
   readonly orderedHistory = computed(() => [...(this.history()?.visits ?? [])].reverse());
 
-  // "in stage 214 days", from the open visit. Calendar days, deliberately not
-  // WorkingCalendarService: this is how long something has sat, not an SLA or
-  // a due date, and a reader counting back on a calendar expects calendar days.
+  // "in stage 214 days", from the open visit. Elapsed time, deliberately not
+  // WorkingCalendarService: this is how long something has sat, not an SLA or a
+  // due date. ACC-94: counted in 24-hour periods by the formatting layer (a
+  // comment here once said calendar days, which the code never did), with the
+  // same minutes/hours/days thresholds as every other elapsed time. English
+  // reads "in stage 3 days"; Arabic "دخلت هذه المرحلة قبل 3 أيام", because after
+  // a preposition the Arabic dual and plural take the genitive, which only the
+  // relative format gives.
   readonly timeInStage = computed(() => {
     const open = this.history()?.visits.find((v) => v.exitedAt === null);
     if (!open) return null;
-    const days = Math.floor((Date.now() - new Date(open.enteredAt).getTime()) / 86_400_000);
-    // instant() is a plain call, not a signal read — currentLang() is read
-    // explicitly so this re-evaluates on a language switch (ACC-55).
-    this.translate.currentLang();
-    return this.translate.instant('workflow.stageIndicator.inStageDays', { days });
+    return this.translate.instant('workflow.stageIndicator.inStage', {
+      duration: this.format.elapsed(open.enteredAt),
+      relative: this.format.relative(open.enteredAt),
+    });
   });
 
   private stageEntry(stageId: string) {
@@ -234,10 +239,7 @@ export class WorkflowStageIndicatorComponent {
     }
     const first = visits[0];
     if (!first) return '—';
-    const date = new Date(first.enteredAt).toLocaleDateString(
-      this.languageService.isArabic() ? 'ar' : 'en-GB',
-      { day: '2-digit', month: 'short', year: 'numeric' },
-    );
+    const date = this.format.date(first.enteredAt);
     return isCurrent
       ? this.translate.instant('workflow.stageIndicator.since', { date })
       : date;

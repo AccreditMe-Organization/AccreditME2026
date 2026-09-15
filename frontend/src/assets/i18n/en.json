@@ -288,7 +288,7 @@
       "actingHeadOf": "Acting Head of {{context}}",
       "coveringFor": "covering for {{context}}",
       "lifecycle": "Lifecycle",
-      "inStageDays": "in stage {{days}} days",
+      "inStage": "in stage {{duration}}",
       "revisited": "revisited ×{{count}}",
       "since": "since {{date}}"
     },
@@ -443,7 +443,7 @@
     "coveringFor": "covering for {{context}}",
     "assigneesHint": "Leave empty to create the task unassigned — tenant administrators are notified to assign it.",
     "assigneesUnavailable": "You do not have access to the user list. The task will be created unassigned and tenant administrators will be notified to assign it.",
-    "overdueBy": "overdue {{days}}d",
+    "overdueBy": "Overdue {{duration}}",
     "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
     "errorAction": "The action could not be completed. Please try again.",
     "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned.",
