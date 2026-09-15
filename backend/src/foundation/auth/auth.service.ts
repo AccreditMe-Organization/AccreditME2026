@@ -17,6 +17,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 // Aliased — the Fetch API's global `Response`/`Headers` (used for Better
@@ -88,6 +89,7 @@ const MFA_SETUP_SESSION_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   private readonly auth: ReturnType<typeof createBetterAuthInstance>;
 
   // Bridges setupMfa() -> verifySetupMfa() without ever exposing Better
@@ -473,6 +475,22 @@ export class AuthService {
         invitationExpiresAt: null,
       },
     });
+
+    // ACC-82 — now ACTIVE, the user counts as their unit's Head if their
+    // position confers it. invite() refreshed the unit while they were INVITED
+    // (not counted), so without this the unit stayed flagged vacant.
+    //
+    // A failure here must not fail the acceptance: the account is already
+    // active, and SlaMonitorProcessor recomputes every active unit's vacancy on
+    // its next pass, so the flag is corrected within 15 minutes regardless.
+    try {
+      await this.userService.refreshHeadVacancyAfterActivation(user);
+    } catch (err) {
+      this.logger.error(
+        `Head vacancy refresh after accepting an invitation failed for user ${user.id}; the next SLA sweep will correct it.`,
+        err instanceof Error ? err.stack : undefined,
+      );
+    }
 
     await this.auditLog.log({
       tenantId: user.organizationId,

@@ -72,7 +72,11 @@ describe('AuthService', () => {
   let mockAuditLog: { log: jest.Mock };
   let mockNotification: { create: jest.Mock };
   let mockLoginAttemptService: { record: jest.Mock; isLocked: jest.Mock; isNewIp: jest.Mock };
-  let mockUserService: { validatePositionAssignment: jest.Mock; notifyTenantAdminsOfInviteAcceptanceConflict: jest.Mock };
+  let mockUserService: {
+    validatePositionAssignment: jest.Mock;
+    notifyTenantAdminsOfInviteAcceptanceConflict: jest.Mock;
+    refreshHeadVacancyAfterActivation: jest.Mock;
+  };
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = 'test-jwt-secret';
@@ -102,6 +106,7 @@ describe('AuthService', () => {
     mockUserService = {
       validatePositionAssignment: jest.fn().mockResolvedValue(undefined),
       notifyTenantAdminsOfInviteAcceptanceConflict: jest.fn().mockResolvedValue(undefined),
+      refreshHeadVacancyAfterActivation: jest.fn().mockResolvedValue(undefined),
     };
 
     service = new AuthService(
@@ -442,6 +447,51 @@ describe('AuthService', () => {
           invitationExpiresAt: null,
         },
       });
+    });
+
+    // ACC-82 — the unit must be re-evaluated once the user is ACTIVE; the full
+    // invite→accept outcome is pinned in invitation-head-vacancy.regression.spec.ts.
+    it('refreshes the head vacancy of the accepting user’s unit after activating them', async () => {
+      const invited = {
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        primaryOrgUnitId: 'unit-1',
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      };
+      mockPrisma.user.findFirst.mockResolvedValue(invited);
+      mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
+
+      await service.acceptInvitation({ token: 'valid-token', password: 'newpassword123' });
+
+      expect(mockUserService.refreshHeadVacancyAfterActivation).toHaveBeenCalledWith(invited);
+      expect(mockPrisma.user.update.mock.invocationCallOrder[0]).toBeLessThan(
+        mockUserService.refreshHeadVacancyAfterActivation.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it('still completes the acceptance when the vacancy refresh fails — the next sweep corrects the flag', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        primaryOrgUnitId: 'unit-1',
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      });
+      mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
+      mockUserService.refreshHeadVacancyAfterActivation.mockRejectedValue(new Error('connection reset'));
+      jest.spyOn(service['logger'], 'error').mockImplementation(() => undefined);
+
+      await expect(
+        service.acceptInvitation({ token: 'valid-token', password: 'newpassword123' }),
+      ).resolves.toBeUndefined();
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { event: 'invitation_accepted' } }),
+      );
     });
 
     // ACC-46 Section 2.1, Layer 2 — defense in depth on top of Layer 1
