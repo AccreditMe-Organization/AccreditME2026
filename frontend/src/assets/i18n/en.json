@@ -721,10 +721,10 @@
       "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it."
     },
     "age": {
-      "openToday": "Open since today",
+      "openToday": "Opened in the last 24 hours",
       "openOneDay": "Open 1 day",
       "openDays": "Open {{count}} days",
-      "detectedToday": "First detected today",
+      "detectedToday": "First detected in the last 24 hours",
       "detectedOneDay": "First detected 1 day ago",
       "detectedDays": "First detected {{count}} days ago"
     },

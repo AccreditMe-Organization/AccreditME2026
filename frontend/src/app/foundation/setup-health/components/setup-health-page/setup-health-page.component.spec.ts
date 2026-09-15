@@ -57,10 +57,10 @@ const EN = {
     },
     hint: { STAGE_WITHOUT_ASSIGNEE: 'check the assignee and each transition trigger' },
     age: {
-      openToday: 'Open since today',
+      openToday: 'Opened in the last 24 hours',
       openOneDay: 'Open 1 day',
       openDays: 'Open {{count}} days',
-      detectedToday: 'First detected today',
+      detectedToday: 'First detected in the last 24 hours',
       detectedOneDay: 'First detected 1 day ago',
       detectedDays: 'First detected {{count}} days ago',
     },
@@ -254,7 +254,7 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
       unit: 'Open 9 days',
       stage: 'Open 1 day',
       'task-old': 'First detected 1 day ago',
-      task: 'First detected today',
+      task: 'First detected in the last 24 hours',
     });
   });
 
