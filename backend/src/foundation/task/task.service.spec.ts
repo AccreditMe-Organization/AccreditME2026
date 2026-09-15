@@ -167,7 +167,10 @@ describe('TaskService', () => {
       expect(mockWorkingCalendar.calculateDeadline).toHaveBeenCalledWith(expect.any(DateTime), 4, ORG_A);
     });
 
-    it('creates status UNASSIGNED and no TaskAssignee rows when the resolved assignee list is empty', async () => {
+    // ACC-82 — an UNASSIGNED task no longer pages every Tenant Admin; it is a
+    // Setup health condition (SYSTEM-REFERENCE §13.7). An admin is mocked so
+    // "nobody notified" proves the removal rather than an empty admin list.
+    it('creates status UNASSIGNED and no TaskAssignee rows when the resolved assignee list is empty, notifying no one', async () => {
       mockPrisma.user.findMany.mockResolvedValue([]); // no active users resolved
       mockPrisma.task.create.mockResolvedValue({ ...BASE_TASK, status: 'UNASSIGNED', assignees: [] });
       mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
@@ -182,10 +185,7 @@ describe('TaskService', () => {
       expect(mockPrisma.task.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'UNASSIGNED', assignees: undefined }) }),
       );
-      expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'admin-1' }),
-        ORG_A,
-      );
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
 
     it('logs to audit trail on creation', async () => {

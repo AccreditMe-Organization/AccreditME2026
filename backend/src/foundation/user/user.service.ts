@@ -908,8 +908,8 @@ export class UserService {
   // precedent in this codebase. Reuses the exact
   // Role.findFirst({ key: 'TENANT_ADMIN' }) → UserRole.findMany() →
   // NotificationService.create() chain already used by
-  // notifyTenantAdminsOfCoverageGap()/notifyTenantAdminsOfUnassignedStage()
-  // in workflow.service.ts, rather than a new mechanism. The actual fix
+  // notifyTenantAdminsOfCoverageGap() in workflow.service.ts, rather than a
+  // new mechanism. The actual fix
   // happens through the already-fully-wired user-profile.component.ts edit
   // form — no new UI needed for the fix itself, only this notification.
   async notifyTenantAdminsOfIncompleteProfiles(organizationId: string): Promise<void> {

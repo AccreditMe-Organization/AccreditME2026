@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { NotificationService } from '../notification/notification.service';
 import { OrganizationService } from '../organization/organization.service';
 import { CreateOrgPositionDto } from './dto/create-org-position.dto';
 import { UpdateOrgPositionDto } from './dto/update-org-position.dto';
@@ -14,10 +13,6 @@ export class OrgPositionService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly organizationService: OrganizationService,
-    // NotificationModule is @Global() — no explicit import needed in
-    // org-position.module.ts, same precedent as RolesModule for
-    // PERMISSION_RESOLVER.
-    private readonly notificationService: NotificationService,
   ) {}
 
   // Upserts the 10 org-wide default positions for one tenant. Idempotent —
@@ -285,76 +280,10 @@ export class OrgPositionService {
     });
   }
 
-  // ACC-40 Section 2.9e — remediation report, matching 2.4's exact
-  // three-part chain (Role.findFirst(TENANT_ADMIN) -> UserRole.findMany()
-  // -> NotificationService.create() per admin), same "a report, not a
-  // script" framing: the correct role to map to a position is exactly as
-  // undecidable programmatically as the correct position/org-unit
-  // mapping for a user was in 2.4.
-  //
-  // Surfaces two related-but-not-strictly-joined signals together, not
-  // one filtered query: (i) OrgUnit rows currently isHeadVacant: true
-  // (2.5's existing cache), and (ii) isUnitHeadPosition: true positions
-  // currently roleId: null. A head-conferring position is a tenant-wide
-  // catalog entry, not scoped to one OrgUnit -- there is no single
-  // well-defined "this vacant unit's head-conferring position" to join
-  // against for a unit that has never had any holder at all. Reported
-  // together because they're the same class of configuration gap
-  // ("head-authority setup incomplete") -- a human Tenant Admin reading
-  // both lists already knows which positions are used in which units
-  // and can correlate them, which a database join cannot do reliably.
-  async notifyTenantAdminsOfVacantHeadRoleMappings(organizationId: string): Promise<void> {
-    const vacantUnits = await this.prisma.orgUnit.findMany({
-      where: { organizationId, isHeadVacant: true },
-      select: { nameEn: true },
-    });
-    const unmappedPositions = await this.prisma.orgPosition.findMany({
-      where: { organizationId, isUnitHeadPosition: true, roleId: null },
-      select: { nameEn: true },
-    });
-    if (vacantUnits.length === 0 && unmappedPositions.length === 0) return;
-
-    const adminRole = await this.prisma.role.findFirst({
-      where: { organizationId, key: 'TENANT_ADMIN' },
-    });
-    if (!adminRole) return;
-
-    const adminUserRoles = await this.prisma.userRole.findMany({
-      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
-    });
-
-    const bodyEnParts: string[] = [];
-    const bodyArParts: string[] = [];
-    if (vacantUnits.length > 0) {
-      bodyEnParts.push(
-        `${vacantUnits.length} org unit(s) have no Head: ${vacantUnits.map((u) => u.nameEn).join(', ')}.`,
-      );
-      bodyArParts.push(
-        `${vacantUnits.length} وحدة تنظيمية بلا رئيس: ${vacantUnits.map((u) => u.nameEn).join(', ')}.`,
-      );
-    }
-    if (unmappedPositions.length > 0) {
-      bodyEnParts.push(
-        `${unmappedPositions.length} Head-conferring position(s) have no mapped role: ${unmappedPositions.map((p) => p.nameEn).join(', ')}.`,
-      );
-      bodyArParts.push(
-        `${unmappedPositions.length} مسمى وظيفي يمنح صلاحية الرئاسة بلا دور مرتبط: ${unmappedPositions.map((p) => p.nameEn).join(', ')}.`,
-      );
-    }
-
-    for (const userRole of adminUserRoles) {
-      await this.notificationService.create(
-        {
-          userId: userRole.userId,
-          titleEn: 'Head-authority setup incomplete',
-          titleAr: 'إعداد صلاحية الرئاسة غير مكتمل',
-          bodyEn: bodyEnParts.join(' '),
-          bodyAr: bodyArParts.join(' '),
-        },
-        organizationId,
-      );
-    }
-  }
+  // ACC-82 — notifyTenantAdminsOfVacantHeadRoleMappings() (ACC-40 2.9e) was
+  // removed. Its "Head-authority setup incomplete" report is now two Setup
+  // health conditions, ORG_UNIT_WITHOUT_HEAD and POSITION_WITHOUT_ROLE, each
+  // listed once and cleared when fixed (SYSTEM-REFERENCE §13.7).
 
   // ACC-40 Section 2.1 — a head-conferring position that permits multiple
   // simultaneous holders would recreate the exact ambiguity ("who is the

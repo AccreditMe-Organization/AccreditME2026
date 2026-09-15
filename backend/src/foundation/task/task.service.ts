@@ -87,14 +87,11 @@ export class TaskService {
       after: task as unknown as Record<string, unknown>,
     });
 
-    if (isUnassigned) {
-      await this.notifyTenantAdmins(
-        organizationId,
-        'Task created with no eligible assignee',
-        `"${task.title}" has no eligible assignee and needs to be assigned manually.`,
-        task,
-      );
-    } else {
+    // ACC-82 — an UNASSIGNED task no longer notifies every Tenant Admin. It is a
+    // Setup health condition (TASK_WITHOUT_OWNER), listed until someone is
+    // assigned (SYSTEM-REFERENCE §13.7). Assignees are still told: that is an
+    // event, addressed to the person who has to act.
+    if (!isUnassigned) {
       for (const userId of eligibleAssigneeIds) {
         await this.notificationService.create(
           {
@@ -719,34 +716,5 @@ export class TaskService {
       select: { id: true },
     });
     return users.map((u) => u.id);
-  }
-
-  private async notifyTenantAdmins(
-    organizationId: string,
-    titleEn: string,
-    bodyEn: string,
-    task: { id: string },
-  ): Promise<void> {
-    const adminRole = await this.prisma.role.findFirst({
-      where: { organizationId, key: 'TENANT_ADMIN' },
-    });
-    if (!adminRole) return;
-
-    const userRoles = await this.prisma.userRole.findMany({
-      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
-    });
-
-    for (const userRole of userRoles) {
-      await this.notificationService.create(
-        {
-          userId: userRole.userId,
-          titleEn,
-          bodyEn,
-          objectType: 'Task',
-          objectId: task.id,
-        },
-        organizationId,
-      );
-    }
   }
 }

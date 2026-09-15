@@ -19,10 +19,6 @@ import {
   WorkflowInstance as PrismaWorkflowInstance,
 } from '../../../generated/prisma/client';
 
-// ACC-40 Section 2.5.1 — the 2-day interval between periodic
-// "still fully unresolved" reminders, named so it's easy to find/adjust.
-const HEAD_VACANCY_REMINDER_INTERVAL_MS = 2 * 24 * 60 * 60 * 1000;
-
 interface EscalationRule {
   afterHours: number;
   notifyRoleId?: string;
@@ -55,19 +51,17 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     private readonly orgPositionService: OrgPositionService,
     // Same module (WorkflowModule provides both) — no forwardRef needed.
     // ACC-28 Section 2.5.1: reuses WorkflowService's own
-    // resolveUnassignedBlockingTransitions()/resolveUnreachableTriggerConditionTransitions()/
-    // notifyTenantAdminsOfUnassignedStage() rather than duplicating that
-    // resolution logic here.
+    // resolveUnassignedBlockingTransitions()/resolveUnreachableTriggerConditionTransitions()
+    // rather than duplicating that resolution logic here.
     private readonly workflowService: WorkflowService,
     // ACC-40 Section 2.3 — automatic handover completion (Phase 5 commit 5)
     // reuses OrgUnitHeadService.completeHandoverAutomatically() rather than
     // duplicating that logic here, same precedent as workflowService above.
     private readonly orgUnitHeadService: OrgUnitHeadService,
     // ACC-40 Section 2.5.1 — sweepOrgUnitVacancies() reuses
-    // OrganizationService.resolveActingHeadForOrgUnit()/
-    // notifyTenantAdminsOfOrgUnitVacancy() rather than duplicating that
-    // resolution/notification logic here, same precedent as workflowService
-    // above.
+    // OrganizationService.resolveActingHeadForOrgUnit() rather than
+    // duplicating that resolution logic here, same precedent as
+    // workflowService above.
     private readonly organizationService: OrganizationService,
     // ACC-46 Section 2.7.e — needed for the real tier-based escalation
     // firing logic (Commit 4): each sweep reads the tenant's own
@@ -107,7 +101,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // the shared database.
   //
   // Isolation is safe here because the steps are genuinely independent —
-  // verified, not assumed: all seven return Promise<void>, none consumes
+  // verified, not assumed: all of them return Promise<void>, none consumes
   // another's return value, and each re-reads live state at its own start
   // (the only shared input is `now`, passed by value). A step failing is
   // therefore indistinguishable, to every later step, from that step simply
@@ -135,10 +129,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       this.sweepExpiredActingOrgUnitAssignments(now),
     );
     await this.runIsolatedStep('sweepDueHandovers', failedSteps, () => this.sweepDueHandovers(now));
-    await this.runIsolatedStep('sweepOrgUnitVacancies', failedSteps, () => this.sweepOrgUnitVacancies(now));
-    await this.runIsolatedStep('sweepVacantHeadRoleMappings', failedSteps, () =>
-      this.sweepVacantHeadRoleMappings(),
-    );
+    await this.runIsolatedStep('sweepOrgUnitVacancies', failedSteps, () => this.sweepOrgUnitVacancies());
 
     // Every step has now run regardless of what failed. Surfacing the failure
     // to BullMQ is the last act, never a short-circuit.
@@ -242,25 +233,23 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // whole time). Only considers units already isHeadVacant: true — a unit
   // that currently has its own direct holder is never fully-unresolved by
   // definition, so re-walking it here would be wasted work.
-  private async sweepOrgUnitVacancies(now: Date): Promise<void> {
+  //
+  // ACC-82 — maintains the flag only. The first "no resolvable Head"
+  // notification and its 2-day reminders were removed: a fully unresolved
+  // unit is a standing condition that Setup health lists as BLOCKS_WORK
+  // until it is fixed (SYSTEM-REFERENCE §13.7).
+  private async sweepOrgUnitVacancies(): Promise<void> {
     const vacantUnits = await this.prisma.orgUnit.findMany({ where: { isHeadVacant: true } });
 
     for (const orgUnit of vacantUnits) {
       const pool = await this.organizationService.resolveActingHeadForOrgUnit(orgUnit.id, orgUnit.organizationId);
       const isNowFullyUnresolved = pool.length === 0;
 
-      // wasFullyUnresolved read from the row as fetched at the top of this
-      // sweep pass — the precise condition that prevents a duplicate
-      // notification when this sweep re-evaluates a unit the entry-time
-      // check already flagged and notified about minutes earlier.
+      // Read from the row as fetched at the top of this pass, so an unchanged
+      // unit costs no write.
       const wasFullyUnresolved = orgUnit.isHeadFullyUnresolved;
 
       if (wasFullyUnresolved === isNowFullyUnresolved) {
-        // No transition — still fully unresolved is the only case where
-        // there's more to do: check the 2-day reminder cadence.
-        if (isNowFullyUnresolved) {
-          await this.maybeSendVacancyReminder(orgUnit, now);
-        }
         continue;
       }
 
@@ -286,73 +275,25 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         // announce work that does not exist.
         await this.prisma.orgUnit.update({
           where: { id: orgUnit.id },
-          data: { isHeadFullyUnresolved: false, headFullyUnresolvedLastRemindedAt: null },
+          data: { isHeadFullyUnresolved: false },
         });
         continue;
       }
 
-      // Newly fully unresolved (sweep-discovered, not caught at entry time)
-      // — notify immediately, same first-notification wording as
-      // refreshOrgUnitHeadVacancy()'s own entry-time transition.
+      // Newly fully unresolved (sweep-discovered, not caught at entry time).
       await this.prisma.orgUnit.update({
         where: { id: orgUnit.id },
-        data: { isHeadFullyUnresolved: true, headFullyUnresolvedLastRemindedAt: now },
+        data: { isHeadFullyUnresolved: true },
       });
-      await this.organizationService.notifyTenantAdminsOfOrgUnitVacancy(
-        orgUnit.organizationId,
-        orgUnit,
-        false,
-      );
     }
   }
 
-  private async maybeSendVacancyReminder(
-    orgUnit: { id: string; organizationId: string; nameEn: string; headVacantSince: Date | null; headFullyUnresolvedLastRemindedAt: Date | null },
-    now: Date,
-  ): Promise<void> {
-    const lastReminded = orgUnit.headFullyUnresolvedLastRemindedAt;
-    if (lastReminded && now.getTime() - lastReminded.getTime() < HEAD_VACANCY_REMINDER_INTERVAL_MS) {
-      return;
-    }
-
-    await this.prisma.orgUnit.update({
-      where: { id: orgUnit.id },
-      data: { headFullyUnresolvedLastRemindedAt: now },
-    });
-    await this.organizationService.notifyTenantAdminsOfOrgUnitVacancy(orgUnit.organizationId, orgUnit, true);
-  }
-
-  // ACC-43 — wires OrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings()
-  // (2.9e) into this existing sweep. That method existed and was unit-tested
-  // since ACC-40 Phase 12 but was never called from anywhere in the running
-  // app — found during ACC-43's live verification pass. Reuses the existing
-  // method rather than duplicating its query/notification logic, same
-  // precedent as sweepDueHandovers()/sweepOrgUnitVacancies() above. Two
-  // lightweight distinct-organizationId queries up front, rather than
-  // calling the (no-op-if-nothing-to-report) method once per tenant
-  // regardless — avoids paying its full query cost for every tenant with
-  // nothing to report, every 15 minutes.
-  private async sweepVacantHeadRoleMappings(): Promise<void> {
-    const vacantUnitOrgs = await this.prisma.orgUnit.findMany({
-      where: { isHeadVacant: true },
-      select: { organizationId: true },
-      distinct: ['organizationId'],
-    });
-    const unmappedPositionOrgs = await this.prisma.orgPosition.findMany({
-      where: { isUnitHeadPosition: true, roleId: null },
-      select: { organizationId: true },
-      distinct: ['organizationId'],
-    });
-
-    const organizationIds = new Set([
-      ...vacantUnitOrgs.map((u) => u.organizationId),
-      ...unmappedPositionOrgs.map((p) => p.organizationId),
-    ]);
-
-    for (const organizationId of organizationIds) {
-      await this.orgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings(organizationId);
-    }
-  }
+  // ACC-82 — sweepVacantHeadRoleMappings() was removed from here. It sent the
+  // "Head-authority setup incomplete" report to every Tenant Admin on every
+  // 15-minute pass for every tenant with a vacant unit or an unmapped head
+  // position — ~680 identical unread entries per tenant on dev. Both halves are
+  // now Setup health conditions (ORG_UNIT_WITHOUT_HEAD, POSITION_WITHOUT_ROLE),
+  // listed once and cleared when fixed (SYSTEM-REFERENCE §13.7).
 
   // ACC-40 Section 2.7 — the simplest sweep step this file adds: unlike
   // sweepUnassignedStages()/sweepOverdueTasks() above, actingOrgUnitId
@@ -428,26 +369,19 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       // recovered again, permanently, with nothing left to pick it up
       // (sweepOverdueTasks() excludes UNASSIGNED outright).
       //
-      // Concern 1 — flag state + admin notification. STILL strictly
-      // transition-gated, byte-for-byte the same behavior as before: the row
-      // is only written when the value actually changes, and only a
-      // false→true transition pages an admin. Repeat sweeps of an
-      // already-flagged stage still write nothing and notify nobody, which
-      // is exactly what the original guard existed to protect.
+      // Concern 1 — flag state. Strictly transition-gated: the row is only
+      // written when the value actually changes, so repeat sweeps of an
+      // already-flagged stage write nothing.
+      //
+      // ACC-82 — a false→true transition no longer pages admins. An
+      // unreachable stage is a Setup health condition (STAGE_WITHOUT_ASSIGNEE),
+      // read from this flag and listed until the stage is fixed
+      // (SYSTEM-REFERENCE §13.7).
       if (wasUnassigned !== isNowUnassigned) {
         await this.prisma.workflowInstanceStage.update({
           where: { id: instanceStage.id },
           data: { isUnassigned: isNowUnassigned, unassignedAt: isNowUnassigned ? new Date() : null },
         });
-
-        if (isNowUnassigned) {
-          await this.workflowService.notifyTenantAdminsOfUnassignedStage(
-            organizationId,
-            instanceStage.workflowInstance,
-            instanceStage.stage,
-            blocking,
-          );
-        }
       }
 
       // Concern 2 — task recovery. Now keyed on the stage's ACTUAL current
@@ -471,8 +405,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     }
   }
 
-  // ACC-51 — the recovery counterpart to notifyTenantAdminsOfUnassignedStage()
-  // above. Resolves the pool that just became reachable and hands it to
+  // ACC-51 — unassigned-stage recovery. Resolves the pool that just became
+  // reachable and hands it to
   // TaskService, which owns the actual assignment/notification business logic
   // (this processor orchestrates; it never hand-rolls task writes).
   //
