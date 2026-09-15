@@ -51,8 +51,8 @@ export type SetupConditionDetector = (
 // syncHeadAuthorityRoleGrant, OrgUnitHeadService). For an ordinary position it
 // grants nothing, and saving a role on a head position does not grant it to
 // the people already holding it. So "Map role" cleared the row while the
-// consequence it stated stayed true. Unblocked by the Backlog ticket that makes
-// a saved head-position role reach its current holders; the type then returns
+// consequence it stated stayed true. Unblocked by ACC-84 (a saved
+// head-position role reaching its current holders); the type then returns
 // narrowed to head-conferring positions, with a new detector.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
