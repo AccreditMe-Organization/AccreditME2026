@@ -61,6 +61,18 @@
   // used, now under its own correct name instead of --am-severity-medium.
   --am-banner-info: #D69E2E;
 
+  // Setup health condition severity (ACC-82), from the App Shell reference's
+  // SEV table. Its own set, not --am-severity-*: that scale rates a finding or
+  // an incident (critical…low); these say whether a configuration gap stops
+  // work now or only puts it at risk — a different question with two answers.
+  --am-condition-blocks-ink:    oklch(0.42 0.15 30);
+  --am-condition-blocks-bg:     oklch(0.96 0.03 30);
+  --am-condition-blocks-border: oklch(0.88 0.05 30);
+  --am-condition-risk-ink:      oklch(0.42 0.09 75);
+  --am-condition-risk-bg:       oklch(0.96 0.05 85);
+  --am-condition-risk-border:   oklch(0.88 0.06 85);
+  --am-condition-cleared:       oklch(0.55 0.10 165);
+
   // Rail — the application shell's navigation (ACC-79), taken from
   // frontend/design-reference/AccreditMe App Shell.dc.html's tenant palette.
   //
@@ -86,6 +98,12 @@
   --am-rail-mark:         oklch(0.62 0.13 250);
   --am-rail-avatar:       oklch(0.44 0.07 255);
   --am-rail-brand:        oklch(0.98 0.004 250);
+  // A count on a rail item (ACC-82, Setup health). The alert tone is reserved
+  // for a count that includes something blocking work.
+  --am-rail-badge-bg:       oklch(0.36 0.03 258);
+  --am-rail-badge-ink:      oklch(0.90 0.012 255);
+  --am-rail-badge-alert-bg: oklch(0.55 0.16 30);
+  --am-rail-badge-alert-ink: #fff;
 }
 
 // Platform shell palette (ACC-79) — overrides the rail tokens above for a
@@ -109,4 +127,6 @@
   --am-rail-hover:  oklch(0.30 0.05 320);
   --am-rail-mark:   oklch(0.58 0.14 320);
   --am-rail-avatar: oklch(0.42 0.09 320);
+  --am-rail-badge-bg:  oklch(0.34 0.05 320);
+  --am-rail-badge-ink: oklch(0.90 0.03 320);
 }
