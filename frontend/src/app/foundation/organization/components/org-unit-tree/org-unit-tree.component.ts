@@ -11,6 +11,7 @@ import { OrgUnitHeadPanelComponent } from '../org-unit-head-panel/org-unit-head-
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 
 @Component({
   selector: 'app-org-unit-tree',
@@ -212,6 +213,11 @@ export class OrgUnitTreeComponent implements OnInit {
     });
   }
 
+  // ACC-82 — a Setup health Fix link (?head=<unitId>) opens that unit's head
+  // panel, where a head or an acting head is assigned. Only for a unit that is
+  // in the tree and active, matching the row button's own disabled rule.
+  private readonly fixLinkHead = injectFixLinkParam('head');
+
   private loadTree(): void {
     this.loading.set(true);
     this.error.set(null);
@@ -219,12 +225,24 @@ export class OrgUnitTreeComponent implements OnInit {
       next: (units) => {
         this.treeNodes.set(this.toTreeNodes(units));
         this.loading.set(false);
+        const unitId = this.fixLinkHead();
+        const target = unitId ? this.findUnit(units, unitId) : undefined;
+        if (target?.isActive) this.onManageHead(target);
       },
       error: () => {
         this.error.set('Failed to load organization units');
         this.loading.set(false);
       },
     });
+  }
+
+  private findUnit(units: OrgUnitDto[], id: string): OrgUnitDto | undefined {
+    for (const unit of units) {
+      if (unit.id === id) return unit;
+      const inChildren = unit.children?.length ? this.findUnit(unit.children, id) : undefined;
+      if (inChildren) return inChildren;
+    }
+    return undefined;
   }
 
   private toTreeNodes(units: OrgUnitDto[]): TreeNode<OrgUnitDto>[] {

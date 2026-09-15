@@ -23,6 +23,7 @@ import {
   clientSideSource,
 } from '../../../../shared/components/data-list/data-list.source';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 
 @Component({
   selector: 'app-workflow-stage-list',
@@ -416,6 +417,12 @@ export class WorkflowStageListComponent implements OnInit {
     });
   }
 
+  // ACC-82 — a Setup health Fix link (?stage=<id>) expands that stage's row.
+  // Expanded, not its edit dialog: the condition does not record whether the
+  // stage is unreachable because of its assignee (the edit dialog) or a
+  // transition's trigger (the expanded panel), and the row shows both.
+  private readonly fixLinkStage = injectFixLinkParam('stage');
+
   loadTemplate(): void {
     const id = this.route.snapshot.paramMap.get('templateId');
     if (!id) return;
@@ -426,6 +433,10 @@ export class WorkflowStageListComponent implements OnInit {
         this.template.set(template);
         this.loading.set(false);
         this.reordering.set(false);
+        const stageId = this.fixLinkStage();
+        if (stageId && template.stages?.some((s) => s.id === stageId)) {
+          this.expandedRowKeys.update((keys) => ({ ...keys, [stageId]: true }));
+        }
       },
       error: () => {
         this.error.set('workflow.errorLoad');

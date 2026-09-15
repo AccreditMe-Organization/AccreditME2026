@@ -13,6 +13,7 @@ import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-u
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 
 // Tenant-wide view of tasks with status: UNASSIGNED — my-tasks/task-list
 // can never surface these (both are scoped to an assignee or a source
@@ -174,6 +175,11 @@ export class UnassignedTasksComponent implements OnInit {
     return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
+  // ACC-82 — a Setup health Fix link (?reassign=<taskId>) opens that task's
+  // reassign dialog. A task that has since been assigned is no longer listed,
+  // so nothing opens.
+  private readonly fixLinkReassign = injectFixLinkParam('reassign');
+
   loadTasks(): void {
     this.loading.set(true);
     this.error.set(null);
@@ -181,6 +187,9 @@ export class UnassignedTasksComponent implements OnInit {
       next: (tasks) => {
         this.tasks.set(tasks);
         this.loading.set(false);
+        const taskId = this.fixLinkReassign();
+        const target = taskId ? tasks.find((t) => t.id === taskId) : undefined;
+        if (target) this.onOpenReassign(target);
       },
       error: () => {
         this.error.set('task.errorLoad');
