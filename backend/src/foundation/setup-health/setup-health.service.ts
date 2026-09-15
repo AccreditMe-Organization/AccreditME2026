@@ -4,6 +4,7 @@ import type {
   SetupConditionSeverity,
   SetupConditionType,
 } from '../../../generated/prisma/client';
+import type { ActiveSetupConditionType } from './setup-condition.detectors';
 import {
   ISetupCondition,
   ISetupConditionFreshness,
@@ -19,25 +20,25 @@ import {
 export const OVERDUE_AFTER_MS = 2 * 60 * 60 * 1000;
 export const RECENTLY_CLEARED_DAYS = 7;
 
-// Every type, in page order. Kept here rather than read from the enum object,
-// which does not exist under Jest's generated-client stub.
-export const SETUP_CONDITION_TYPES: SetupConditionType[] = [
+// Every REPORTED type, in page order — deferred types are excluded
+// (DEFERRED_SETUP_CONDITION_TYPES). Kept as a literal rather than read from the
+// enum object, which does not exist under Jest's generated-client stub; typed
+// so that listing a deferred type here is a compile error.
+export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'ORG_UNIT_WITHOUT_HEAD',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
-  'POSITION_WITHOUT_ROLE',
 ];
 
 // §13.3. Per type, because it follows from what each detector can read: units
-// carry headVacantSince and stage instances unassignedAt; tasks and positions
-// carry nothing. (If a unit's headVacantSince were ever null, its age would also
-// be first detection — the flag and the timestamp are written together by the
-// same sweep, so that is not expected.)
-const AGE_BASIS: Record<SetupConditionType, SetupConditionAgeBasis> = {
+// carry headVacantSince and stage instances unassignedAt; tasks carry nothing.
+// (If a unit's headVacantSince were ever null, its age would also be first
+// detection — the flag and the timestamp are written together by the same
+// sweep, so that is not expected.)
+const AGE_BASIS: Record<ActiveSetupConditionType, SetupConditionAgeBasis> = {
   ORG_UNIT_WITHOUT_HEAD: 'OBJECT',
   STAGE_WITHOUT_ASSIGNEE: 'OBJECT',
   TASK_WITHOUT_OWNER: 'FIRST_DETECTED',
-  POSITION_WITHOUT_ROLE: 'FIRST_DETECTED',
 };
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = {
@@ -68,18 +69,22 @@ export class SetupHealthService {
       now.getTime() - RECENTLY_CLEARED_DAYS * 24 * 60 * 60 * 1000,
     );
 
+    // Every query is limited to reported types. A deferred type is never
+    // reconciled, so any row of it is frozen: showing it would present a
+    // condition nothing can clear.
+    const type = { in: SETUP_CONDITION_TYPES };
     const [openRows, clearedRows, runs] = await Promise.all([
       this.prisma.setupCondition.findMany({
-        where: { organizationId, clearedAt: null },
+        where: { organizationId, type, clearedAt: null },
         select: CONDITION_SELECT,
       }),
       this.prisma.setupCondition.findMany({
-        where: { organizationId, clearedAt: { gte: clearedSince } },
+        where: { organizationId, type, clearedAt: { gte: clearedSince } },
         select: CONDITION_SELECT,
         orderBy: { clearedAt: 'desc' },
       }),
       this.prisma.setupConditionRun.findMany({
-        where: { organizationId },
+        where: { organizationId, type },
         select: { type: true, lastSucceededAt: true, lastFailedAt: true },
       }),
     ]);
@@ -108,17 +113,25 @@ export class SetupHealthService {
   // The rail badge. Counts every open row, including those of a type whose last
   // evaluation failed: they are the last known truth, not resolved.
   async getSummary(organizationId: string): Promise<ISetupHealthSummary> {
+    const type = { in: SETUP_CONDITION_TYPES };
     const [open, blocksWork] = await Promise.all([
       this.prisma.setupCondition.count({
-        where: { organizationId, clearedAt: null },
+        where: { organizationId, type, clearedAt: null },
       }),
       this.prisma.setupCondition.count({
-        where: { organizationId, clearedAt: null, severity: 'BLOCKS_WORK' },
+        where: {
+          organizationId,
+          type,
+          clearedAt: null,
+          severity: 'BLOCKS_WORK',
+        },
       }),
     ]);
     return { open, blocksWork };
   }
 
+  // Rows arrive already filtered to reported types (the query's type: { in }),
+  // so the narrowing below restates that filter rather than guessing.
   private toCondition(row: {
     id: string;
     type: SetupConditionType;
@@ -131,7 +144,7 @@ export class SetupHealthService {
   }): ISetupCondition {
     return {
       id: row.id,
-      type: row.type,
+      type: row.type as ActiveSetupConditionType,
       severity: row.severity,
       objectId: row.objectId,
       subject:
@@ -139,14 +152,14 @@ export class SetupHealthService {
           ? (row.subject as Record<string, unknown>)
           : {},
       openedAt: row.openedAt,
-      ageBasis: AGE_BASIS[row.type],
+      ageBasis: AGE_BASIS[row.type as ActiveSetupConditionType],
       lastSeenAt: row.lastSeenAt,
       clearedAt: row.clearedAt,
     };
   }
 
   private freshnessOf(
-    type: SetupConditionType,
+    type: ActiveSetupConditionType,
     run:
       { lastSucceededAt: Date | null; lastFailedAt: Date | null } | undefined,
     now: Date,

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { SetupConditionType } from '../../../generated/prisma/client';
 import {
+  ActiveSetupConditionType,
   DetectedCondition,
   SetupConditionDetectors,
 } from './setup-condition.detectors';
@@ -24,13 +24,18 @@ import {
 //
 // Each pair is isolated: one type failing, or one tenant failing, does not stop
 // the rest (the same contract as SlaMonitorProcessor, ACC-49).
+//
+// Only types with a detector are reconciled. A deferred type
+// (DEFERRED_SETUP_CONDITION_TYPES) is never touched here, so rows it left
+// behind stay frozen — the read side excludes them, and ACC-82's one-off
+// cleanup script deletes them.
 
 // Operators read lastError in the database; it is never returned by the API.
 // Bounded so a pathological message cannot bloat the row.
 const MAX_ERROR_LENGTH = 1000;
 
 export interface ReconcileTypeResult {
-  type: SetupConditionType;
+  type: ActiveSetupConditionType;
   outcome: 'SUCCEEDED' | 'FAILED';
   opened: number;
   refreshed: number;
@@ -39,7 +44,7 @@ export interface ReconcileTypeResult {
 
 export interface ReconcileAllResult {
   tenants: number;
-  failed: { organizationId: string; type: SetupConditionType }[];
+  failed: { organizationId: string; type: ActiveSetupConditionType }[];
 }
 
 @Injectable()
@@ -74,7 +79,9 @@ export class SetupConditionReconciler {
     now: Date = new Date(),
   ): Promise<ReconcileTypeResult[]> {
     const results: ReconcileTypeResult[] = [];
-    const types = Object.keys(this.detectors.byType) as SetupConditionType[];
+    const types = Object.keys(
+      this.detectors.byType,
+    ) as ActiveSetupConditionType[];
 
     for (const type of types) {
       results.push(await this.reconcileType(organizationId, type, now));
@@ -84,7 +91,7 @@ export class SetupConditionReconciler {
 
   async reconcileType(
     organizationId: string,
-    type: SetupConditionType,
+    type: ActiveSetupConditionType,
     now: Date,
   ): Promise<ReconcileTypeResult> {
     const failedResult: ReconcileTypeResult = {
@@ -126,7 +133,7 @@ export class SetupConditionReconciler {
   // every row as it was rather than half-reconciled.
   private async apply(
     organizationId: string,
-    type: SetupConditionType,
+    type: ActiveSetupConditionType,
     detected: DetectedCondition[],
     now: Date,
   ): Promise<Pick<ReconcileTypeResult, 'opened' | 'refreshed' | 'cleared'>> {
@@ -208,7 +215,7 @@ export class SetupConditionReconciler {
   // whatever it last had — which the API already reports as stale.
   private async recordFailure(
     organizationId: string,
-    type: SetupConditionType,
+    type: ActiveSetupConditionType,
     now: Date,
     message: string,
   ): Promise<void> {

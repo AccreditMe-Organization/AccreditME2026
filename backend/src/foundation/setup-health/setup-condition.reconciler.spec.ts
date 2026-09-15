@@ -1,10 +1,10 @@
 import { SetupConditionReconciler } from './setup-condition.reconciler';
 import {
+  ActiveSetupConditionType,
   DetectedCondition,
   SetupConditionDetectors,
 } from './setup-condition.detectors';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { SetupConditionType } from '../../../generated/prisma/client';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const ORG_A = 'cmtr9x7zq0000ocp1am2rs14o';
@@ -211,7 +211,7 @@ const detected = (
 
 describe('SetupConditionReconciler (ACC-82)', () => {
   let db: ReturnType<typeof buildDb>;
-  let byType: Record<SetupConditionType, jest.Mock>;
+  let byType: Record<ActiveSetupConditionType, jest.Mock>;
   let reconciler: SetupConditionReconciler;
 
   beforeEach(() => {
@@ -220,7 +220,6 @@ describe('SetupConditionReconciler (ACC-82)', () => {
       ORG_UNIT_WITHOUT_HEAD: jest.fn().mockResolvedValue([]),
       STAGE_WITHOUT_ASSIGNEE: jest.fn().mockResolvedValue([]),
       TASK_WITHOUT_OWNER: jest.fn().mockResolvedValue([]),
-      POSITION_WITHOUT_ROLE: jest.fn().mockResolvedValue([]),
     };
     reconciler = new SetupConditionReconciler(
       db.prisma as unknown as PrismaService,
@@ -499,7 +498,7 @@ describe('SetupConditionReconciler (ACC-82)', () => {
   describe('reconcileTenant / reconcileAll', () => {
     it('reconciles every type, and one failing type does not stop the others', async () => {
       byType.STAGE_WITHOUT_ASSIGNEE.mockRejectedValue(new Error('boom'));
-      byType.POSITION_WITHOUT_ROLE.mockResolvedValue([detected('pos-1')]);
+      byType.TASK_WITHOUT_OWNER.mockResolvedValue([detected('task-1')]);
 
       const results = await reconciler.reconcileTenant(ORG_A, T1);
 
@@ -507,11 +506,32 @@ describe('SetupConditionReconciler (ACC-82)', () => {
         ['ORG_UNIT_WITHOUT_HEAD', 'SUCCEEDED'],
         ['STAGE_WITHOUT_ASSIGNEE', 'FAILED'],
         ['TASK_WITHOUT_OWNER', 'SUCCEEDED'],
-        ['POSITION_WITHOUT_ROLE', 'SUCCEEDED'],
       ]);
       expect(db.rows()).toEqual([
-        expect.objectContaining({ objectId: 'pos-1' }),
+        expect.objectContaining({ objectId: 'task-1' }),
       ]);
+    });
+
+    // ACC-82 — a deferred type has no detector, so nothing reconciles it: its
+    // leftover rows are neither refreshed nor cleared (the read side hides them).
+    it('never touches rows of a deferred type', async () => {
+      db.seed({
+        organizationId: ORG_A,
+        objectId: 'pos-1',
+        type: 'POSITION_WITHOUT_ROLE',
+      });
+
+      const results = await reconciler.reconcileTenant(ORG_A, T1);
+
+      expect(results.map((r) => r.type)).not.toContain('POSITION_WITHOUT_ROLE');
+      expect(db.rows()).toEqual([
+        expect.objectContaining({
+          type: 'POSITION_WITHOUT_ROLE',
+          clearedAt: null,
+          lastSeenAt: T0,
+        }),
+      ]);
+      expect(db.run(ORG_A, 'POSITION_WITHOUT_ROLE')).toBeUndefined();
     });
 
     it('reconciles every tenant except the platform org, and reports failed pairs', async () => {

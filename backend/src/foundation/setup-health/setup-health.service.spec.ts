@@ -40,12 +40,14 @@ interface Run {
 
 type ConditionWhere = {
   organizationId?: string;
+  type?: { in: string[] };
   clearedAt?: null | { gte: Date };
   severity?: string;
 };
 
 const matches = (r: Row, w: ConditionWhere) =>
   (w.organizationId === undefined || r.organizationId === w.organizationId) &&
+  (w.type === undefined || w.type.in.includes(r.type)) &&
   (w.severity === undefined || r.severity === w.severity) &&
   (w.clearedAt === undefined ||
     (w.clearedAt === null
@@ -108,14 +110,20 @@ describe('SetupHealthService (ACC-82)', () => {
         ),
       },
       setupConditionRun: {
-        findMany: jest.fn(({ where }: { where: { organizationId?: string } }) =>
-          Promise.resolve(
-            runs.filter(
-              (r) =>
-                where.organizationId === undefined ||
-                r.organizationId === where.organizationId,
+        findMany: jest.fn(
+          ({
+            where,
+          }: {
+            where: { organizationId?: string; type?: { in: string[] } };
+          }) =>
+            Promise.resolve(
+              runs.filter(
+                (r) =>
+                  (where.organizationId === undefined ||
+                    r.organizationId === where.organizationId) &&
+                  (where.type === undefined || where.type.in.includes(r.type)),
+              ),
             ),
-          ),
         ),
       },
     };
@@ -166,7 +174,6 @@ describe('SetupHealthService (ACC-82)', () => {
         row({ id: 'unit', type: 'ORG_UNIT_WITHOUT_HEAD' }),
         row({ id: 'stage', type: 'STAGE_WITHOUT_ASSIGNEE' }),
         row({ id: 'task', type: 'TASK_WITHOUT_OWNER' }),
-        row({ id: 'position', type: 'POSITION_WITHOUT_ROLE' }),
       ];
 
       const { open } = await service.getHealth(ORG_A, NOW);
@@ -175,7 +182,6 @@ describe('SetupHealthService (ACC-82)', () => {
         unit: 'OBJECT',
         stage: 'OBJECT',
         task: 'FIRST_DETECTED',
-        position: 'FIRST_DETECTED',
       });
     });
 
@@ -255,13 +261,13 @@ describe('SetupHealthService (ACC-82)', () => {
       runs = [
         {
           organizationId: ORG_A,
-          type: 'POSITION_WITHOUT_ROLE',
+          type: 'TASK_WITHOUT_OWNER',
           lastSucceededAt: hoursAgo(5),
           lastFailedAt: hoursAgo(1),
         },
       ];
-      expect(await freshnessOf('POSITION_WITHOUT_ROLE')).toEqual({
-        type: 'POSITION_WITHOUT_ROLE',
+      expect(await freshnessOf('TASK_WITHOUT_OWNER')).toEqual({
+        type: 'TASK_WITHOUT_OWNER',
         status: 'FAILED',
         computedAt: hoursAgo(5),
       });
@@ -271,12 +277,12 @@ describe('SetupHealthService (ACC-82)', () => {
       runs = [
         {
           organizationId: ORG_A,
-          type: 'POSITION_WITHOUT_ROLE',
+          type: 'TASK_WITHOUT_OWNER',
           lastSucceededAt: null,
           lastFailedAt: hoursAgo(1),
         },
       ];
-      expect(await freshnessOf('POSITION_WITHOUT_ROLE')).toMatchObject({
+      expect(await freshnessOf('TASK_WITHOUT_OWNER')).toMatchObject({
         status: 'FAILED',
         computedAt: null,
       });
@@ -286,12 +292,12 @@ describe('SetupHealthService (ACC-82)', () => {
       runs = [
         {
           organizationId: ORG_A,
-          type: 'POSITION_WITHOUT_ROLE',
+          type: 'TASK_WITHOUT_OWNER',
           lastSucceededAt: hoursAgo(0.5),
           lastFailedAt: hoursAgo(1.5),
         },
       ];
-      expect(await freshnessOf('POSITION_WITHOUT_ROLE')).toMatchObject({
+      expect(await freshnessOf('TASK_WITHOUT_OWNER')).toMatchObject({
         status: 'CURRENT',
       });
     });
@@ -308,6 +314,56 @@ describe('SetupHealthService (ACC-82)', () => {
       expect(await service.getSummary(ORG_A)).toEqual({
         open: 3,
         blocksWork: 1,
+      });
+    });
+  });
+
+  // ACC-82 — POSITION_WITHOUT_ROLE is deferred. Its leftover rows are never
+  // reconciled again, so reporting them would show conditions nothing clears.
+  describe('deferred types', () => {
+    beforeEach(() => {
+      rows = [
+        row({ id: 'unit', type: 'ORG_UNIT_WITHOUT_HEAD' }),
+        row({
+          id: 'pos-open',
+          type: 'POSITION_WITHOUT_ROLE',
+          severity: 'BLOCKS_WORK',
+        }),
+        row({
+          id: 'pos-cleared',
+          type: 'POSITION_WITHOUT_ROLE',
+          clearedAt: hoursAgo(1),
+        }),
+      ];
+      runs = [
+        {
+          organizationId: ORG_A,
+          type: 'POSITION_WITHOUT_ROLE',
+          lastSucceededAt: hoursAgo(9),
+          lastFailedAt: null,
+        },
+      ];
+    });
+
+    it('reports no open or cleared row, and no freshness, for a deferred type', async () => {
+      const { open, recentlyCleared, freshness } = await service.getHealth(
+        ORG_A,
+        NOW,
+      );
+
+      expect(open.map((c) => c.id)).toEqual(['unit']);
+      expect(recentlyCleared).toEqual([]);
+      expect(freshness.map((f) => f.type)).toEqual([
+        'ORG_UNIT_WITHOUT_HEAD',
+        'STAGE_WITHOUT_ASSIGNEE',
+        'TASK_WITHOUT_OWNER',
+      ]);
+    });
+
+    it('leaves a deferred type out of the badge counts', async () => {
+      expect(await service.getSummary(ORG_A)).toEqual({
+        open: 1,
+        blocksWork: 0,
       });
     });
   });

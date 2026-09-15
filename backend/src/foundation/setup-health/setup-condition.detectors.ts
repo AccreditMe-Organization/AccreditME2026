@@ -41,21 +41,43 @@ export type SetupConditionDetector = (
   organizationId: string,
 ) => Promise<DetectedCondition[]>;
 
+// Types that exist in the enum but are NOT detected, reconciled or reported.
+// The enum value is kept (removing it would be a destructive migration, and it
+// comes back); leaving a type here is the only way to have no detector for it.
+//
+// POSITION_WITHOUT_ROLE — deferred in ACC-82 (SYSTEM-REFERENCE §13.2).
+// OrgPosition.roleId is read only for head-conferring positions, and only when
+// someone is appointed or made acting head (UserService.
+// syncHeadAuthorityRoleGrant, OrgUnitHeadService). For an ordinary position it
+// grants nothing, and saving a role on a head position does not grant it to
+// the people already holding it. So "Map role" cleared the row while the
+// consequence it stated stayed true. Unblocked by the Backlog ticket that makes
+// a saved head-position role reach its current holders; the type then returns
+// narrowed to head-conferring positions, with a new detector.
+export const DEFERRED_SETUP_CONDITION_TYPES = [
+  'POSITION_WITHOUT_ROLE',
+] as const satisfies readonly SetupConditionType[];
+
+export type ActiveSetupConditionType = Exclude<
+  SetupConditionType,
+  (typeof DEFERRED_SETUP_CONDITION_TYPES)[number]
+>;
+
 @Injectable()
 export class SetupConditionDetectors {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Exhaustive by construction: adding a SetupConditionType without a detector
-  // is a compile error here, not a type that silently never opens.
-  readonly byType: Record<SetupConditionType, SetupConditionDetector> = {
+  // Exhaustive by construction: a SetupConditionType that is neither deferred
+  // above nor given a detector here is a compile error, not a type that silently
+  // never opens. Taking a type off the deferred list makes its missing detector
+  // a compile error in the same way.
+  readonly byType: Record<ActiveSetupConditionType, SetupConditionDetector> = {
     ORG_UNIT_WITHOUT_HEAD: (organizationId) =>
       this.orgUnitsWithoutHead(organizationId),
     STAGE_WITHOUT_ASSIGNEE: (organizationId) =>
       this.stagesWithoutAssignee(organizationId),
     TASK_WITHOUT_OWNER: (organizationId) =>
       this.tasksWithoutOwner(organizationId),
-    POSITION_WITHOUT_ROLE: (organizationId) =>
-      this.positionsWithoutRole(organizationId),
   };
 
   // Vacant (no head position holder) ACTIVE units. Severity follows coverage:
@@ -183,46 +205,6 @@ export class SetupConditionDetectors {
         sourceType: task.sourceType,
         sourceId: task.sourceId,
         dueAt: task.dueAt ? task.dueAt.toISOString() : null,
-      },
-    }));
-  }
-
-  // ACTIVE positions with no mapped role that someone ACTIVE actually holds. A
-  // position nobody holds affects no one and is not a condition. holdersWithNoRoles
-  // is the consequence the page states — a holder may still have roles assigned
-  // directly, so "holders get no permissions" is only claimed for those with none.
-  async positionsWithoutRole(
-    organizationId: string,
-  ): Promise<DetectedCondition[]> {
-    const positions = await this.prisma.orgPosition.findMany({
-      where: {
-        organizationId,
-        isActive: true,
-        roleId: null,
-        users: { some: { organizationId, status: 'ACTIVE' } },
-      },
-      select: {
-        id: true,
-        nameEn: true,
-        nameAr: true,
-        users: {
-          where: { organizationId, status: 'ACTIVE' },
-          select: { userRoles: { select: { id: true }, take: 1 } },
-        },
-      },
-    });
-
-    return positions.map((position) => ({
-      objectId: position.id,
-      severity: 'AT_RISK' as const,
-      openedAt: null,
-      subject: {
-        nameEn: position.nameEn,
-        nameAr: position.nameAr,
-        activeHolders: position.users.length,
-        holdersWithNoRoles: position.users.filter(
-          (u) => u.userRoles.length === 0,
-        ).length,
       },
     }));
   }

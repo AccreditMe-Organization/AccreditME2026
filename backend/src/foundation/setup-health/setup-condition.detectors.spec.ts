@@ -1,4 +1,7 @@
-import { SetupConditionDetectors } from './setup-condition.detectors';
+import {
+  DEFERRED_SETUP_CONDITION_TYPES,
+  SetupConditionDetectors,
+} from './setup-condition.detectors';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
@@ -16,7 +19,6 @@ describe('SetupConditionDetectors (ACC-82)', () => {
     orgUnit: { findMany: jest.Mock };
     workflowInstanceStage: { findMany: jest.Mock };
     task: { findMany: jest.Mock };
-    orgPosition: { findMany: jest.Mock };
   };
   let detectors: SetupConditionDetectors;
 
@@ -25,7 +27,6 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       orgUnit: { findMany: jest.fn().mockResolvedValue([]) },
       workflowInstanceStage: { findMany: jest.fn().mockResolvedValue([]) },
       task: { findMany: jest.fn().mockResolvedValue([]) },
-      orgPosition: { findMany: jest.fn().mockResolvedValue([]) },
     };
     detectors = new SetupConditionDetectors(prisma as unknown as PrismaService);
   });
@@ -42,13 +43,21 @@ describe('SetupConditionDetectors (ACC-82)', () => {
         ),
       );
 
-  it('covers every condition type with a detector', () => {
+  it('covers every condition type with a detector, except the deferred ones', () => {
     expect(Object.keys(detectors.byType).sort()).toEqual([
       'ORG_UNIT_WITHOUT_HEAD',
-      'POSITION_WITHOUT_ROLE',
       'STAGE_WITHOUT_ASSIGNEE',
       'TASK_WITHOUT_OWNER',
     ]);
+  });
+
+  // ACC-82 — deferred, not forgotten: the enum value stays, and returns narrowed
+  // to head-conferring positions once a saved role reaches current holders.
+  it('defers POSITION_WITHOUT_ROLE, and gives no deferred type a detector', () => {
+    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
+    for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
+      expect(Object.keys(detectors.byType)).not.toContain(type);
+    }
   });
 
   describe('orgUnitsWithoutHead', () => {
@@ -247,69 +256,6 @@ describe('SetupConditionDetectors (ACC-82)', () => {
         ]),
       );
       expect(await detectors.tasksWithoutOwner(ORG_A)).toEqual([]);
-    });
-  });
-
-  describe('positionsWithoutRole', () => {
-    it('queries active, unmapped positions held by an active user of the tenant', async () => {
-      await detectors.positionsWithoutRole(ORG_A);
-      const args = prisma.orgPosition.findMany.mock.calls[0][0];
-      expect(args.where).toEqual({
-        organizationId: ORG_A,
-        isActive: true,
-        roleId: null,
-        users: { some: { organizationId: ORG_A, status: 'ACTIVE' } },
-      });
-      // Holders are counted within the tenant too, not just the position.
-      expect(args.select.users.where).toEqual({
-        organizationId: ORG_A,
-        status: 'ACTIVE',
-      });
-    });
-
-    // "Holders get no permissions" is only true of holders with no roles at all.
-    it('counts holders, and separately those with no roles', async () => {
-      prisma.orgPosition.findMany.mockResolvedValue([
-        {
-          id: 'pos-director',
-          nameEn: 'Director',
-          nameAr: 'مدير عام',
-          users: [
-            { userRoles: [] },
-            { userRoles: [] },
-            { userRoles: [{ id: 'ur-1' }] },
-          ],
-        },
-      ]);
-
-      expect(await detectors.positionsWithoutRole(ORG_A)).toEqual([
-        {
-          objectId: 'pos-director',
-          severity: 'AT_RISK',
-          openedAt: null,
-          subject: {
-            nameEn: 'Director',
-            nameAr: 'مدير عام',
-            activeHolders: 3,
-            holdersWithNoRoles: 2,
-          },
-        },
-      ]);
-    });
-
-    itEnforcesTenantIsolation('positionsWithoutRole', async () => {
-      prisma.orgPosition.findMany.mockImplementation(
-        tenantTable([
-          {
-            organizationId: ORG_B,
-            id: 'pos-b',
-            nameEn: 'Other tenant position',
-            nameAr: null,
-            users: [{ userRoles: [] }],
-          },
-        ]),
-      );
-      expect(await detectors.positionsWithoutRole(ORG_A)).toEqual([]);
     });
   });
 });

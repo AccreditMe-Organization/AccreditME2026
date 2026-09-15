@@ -1,7 +1,5 @@
-import type {
-  SetupConditionSeverity,
-  SetupConditionType,
-} from '../../../../generated/prisma/client';
+import type { SetupConditionSeverity } from '../../../../generated/prisma/client';
+import type { ActiveSetupConditionType } from '../setup-condition.detectors';
 
 // ACC-82 — SYSTEM-REFERENCE §13. The Setup health read model.
 
@@ -13,7 +11,7 @@ export type SetupConditionAgeBasis = 'OBJECT' | 'FIRST_DETECTED';
 
 export interface ISetupCondition {
   id: string;
-  type: SetupConditionType;
+  type: ActiveSetupConditionType;
   severity: SetupConditionSeverity;
   objectId: string;
   // Display snapshot written by the detector; shape per type in §13.2.
@@ -35,7 +33,7 @@ export type SetupConditionFreshnessStatus =
   'CURRENT' | 'OVERDUE' | 'FAILED' | 'NEVER_RUN';
 
 export interface ISetupConditionFreshness {
-  type: SetupConditionType;
+  type: ActiveSetupConditionType;
   status: SetupConditionFreshnessStatus;
   // When this type's rows were last confirmed: the last successful evaluation.
   computedAt: Date | null;
