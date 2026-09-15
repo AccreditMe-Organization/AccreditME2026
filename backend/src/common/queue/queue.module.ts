@@ -20,6 +20,10 @@ import { BullModule } from '@nestjs/bullmq';
       },
     }),
     BullModule.registerQueue({ name: 'sla-monitor' }),
+    // ACC-82 — hourly Setup health reconciliation. No defaultJobOptions, like
+    // sla-monitor: a failed run does not retry, it stays visible in the failed
+    // list and the next hourly run tries again.
+    BullModule.registerQueue({ name: 'setup-health' }),
     BullModule.registerQueue({
       name: 'email-delivery',
       defaultJobOptions: {
