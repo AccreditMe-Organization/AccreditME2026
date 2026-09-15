@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { WorkingCalendarService } from './working-calendar.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,37 @@ describe('WorkingCalendarService', () => {
         }),
       });
       expect(result.workingDays).toEqual([0, 1, 2, 3, 4]);
+    });
+  });
+
+  // ── getEffectiveTimeZone (ACC-94) ─────────────────────────────────────────────
+
+  describe('getEffectiveTimeZone', () => {
+    it("returns the calendar row's zone, reading only that column for the tenant", async () => {
+      await expect(service.getEffectiveTimeZone(ORG_B)).resolves.toBe('Europe/London');
+      expect(mockPrisma.workingCalendar.findUnique).toHaveBeenCalledWith({
+        where: { organizationId: ORG_B },
+        select: { timezone: true },
+      });
+    });
+
+    it('returns the GCC default when the tenant has no calendar, and creates none', async () => {
+      await expect(service.getEffectiveTimeZone('org-without-calendar')).resolves.toBe('Asia/Riyadh');
+      expect(mockPrisma.workingCalendar.create).not.toHaveBeenCalled();
+    });
+
+    it('matches the zone getOrCreate() would store for a tenant without a calendar', async () => {
+      mockPrisma.workingCalendar.create.mockImplementationOnce(({ data }: { data: typeof CAL_A }) =>
+        Promise.resolve({ ...CAL_A, ...data }),
+      );
+      const effective = await service.getEffectiveTimeZone('org-without-calendar');
+      const created = await service.getOrCreate('org-without-calendar');
+      expect(effective).toBe(created.timezone);
+    });
+
+    itEnforcesTenantIsolation('getEffectiveTimeZone', async () => {
+      await expect(service.getEffectiveTimeZone(ORG_A)).resolves.toBe('Asia/Riyadh');
+      await expect(service.getEffectiveTimeZone(ORG_B)).resolves.toBe('Europe/London');
     });
   });
 
