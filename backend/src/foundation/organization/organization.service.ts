@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { NotificationService } from '../notification/notification.service';
 import { IOrgUnit } from './interfaces/org-unit.interface';
 import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
@@ -16,7 +15,6 @@ export class OrganizationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
-    private readonly notificationService: NotificationService,
   ) {}
 
   async getTree(organizationId: string): Promise<IOrgUnit[]> {
@@ -107,13 +105,18 @@ export class OrganizationService {
   // checkAndFlagUnassignedStage()'s exact role: whenever a change could
   // plausibly affect a unit's derived head-holder count, re-run the
   // holder query, update isHeadVacant/headVacantSince, and — only on a
-  // genuine false→true transition — run the escalation walk once. Only a
-  // fully-exhausted result notifies Tenant Admins at this point; a
-  // partial result (an ancestor covers it) is silent, matching "partial
-  // vacancy never blocks or notifies." No-op (not a throw) when the unit
-  // doesn't exist — this is a background-consistency helper, not a
-  // user-facing action; a caller passing a stale/already-deleted id
-  // should not fail the surrounding mutation it's attached to.
+  // genuine false→true transition — run the escalation walk once to set
+  // isHeadFullyUnresolved. No-op (not a throw) when the unit doesn't
+  // exist — this is a background-consistency helper, not a user-facing
+  // action; a caller passing a stale/already-deleted id should not fail
+  // the surrounding mutation it's attached to.
+  //
+  // ACC-82 — notifies no one. A vacant unit is a standing condition, not an
+  // event: Setup health reads these flags and lists the unit until it has a
+  // head (SYSTEM-REFERENCE §13.7). The first notification and its 2-day
+  // reminders were removed with it, so headFullyUnresolvedLastRemindedAt is
+  // no longer written; the column stays until a destructive-migration
+  // cleanup.
   async refreshOrgUnitHeadVacancy(orgUnitId: string, organizationId: string): Promise<void> {
     const orgUnit = await this.prisma.orgUnit.findFirst({ where: { id: orgUnitId, organizationId } });
     if (!orgUnit) return;
@@ -139,7 +142,6 @@ export class OrganizationService {
           isHeadVacant: false,
           headVacantSince: null,
           isHeadFullyUnresolved: false,
-          headFullyUnresolvedLastRemindedAt: null,
         },
       });
       return;
@@ -147,69 +149,15 @@ export class OrganizationService {
 
     // Newly vacant — run the escalation walk exactly once.
     const pool = await this.resolveActingHeadForOrgUnit(orgUnitId, organizationId);
-    const isFullyUnresolved = pool.length === 0;
-    const now = new Date();
 
     await this.prisma.orgUnit.update({
       where: { id: orgUnitId },
       data: {
         isHeadVacant: true,
-        headVacantSince: now,
-        isHeadFullyUnresolved: isFullyUnresolved,
-        headFullyUnresolvedLastRemindedAt: isFullyUnresolved ? now : null,
+        headVacantSince: new Date(),
+        isHeadFullyUnresolved: pool.length === 0,
       },
     });
-
-    if (isFullyUnresolved) {
-      await this.notifyTenantAdminsOfOrgUnitVacancy(organizationId, { ...orgUnit, headVacantSince: now }, false);
-    }
-  }
-
-  // ACC-40 Section 2.5.1 — reuses notifyTenantAdminsOfCoverageGap()'s/
-  // notifyTenantAdminsOfUnassignedStage()'s exact query shape
-  // (Role.findFirst TENANT_ADMIN → UserRole.findMany → one
-  // NotificationService.create() per admin), not a new mechanism. Called
-  // from both refreshOrgUnitHeadVacancy() above (the first notification,
-  // on the entry-time false→true transition) and
-  // SlaMonitorProcessor.sweepOrgUnitVacancies() (Phase 6 commit 3, both
-  // the sweep-discovered first notification and the periodic reminder) —
-  // isReminder selects between the two wordings, the reminder stating the
-  // actual elapsed duration from headVacantSince rather than a generic
-  // repeat.
-  async notifyTenantAdminsOfOrgUnitVacancy(
-    organizationId: string,
-    orgUnit: { id: string; nameEn: string; headVacantSince: Date | null },
-    isReminder: boolean,
-  ): Promise<void> {
-    const adminRole = await this.prisma.role.findFirst({ where: { organizationId, key: 'TENANT_ADMIN' } });
-    if (!adminRole) return;
-
-    const adminUserRoles = await this.prisma.userRole.findMany({
-      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
-    });
-
-    const elapsedDays = orgUnit.headVacantSince
-      ? Math.floor((Date.now() - orgUnit.headVacantSince.getTime()) / (24 * 60 * 60 * 1000))
-      : 0;
-
-    const bodyEn = isReminder
-      ? `"${orgUnit.nameEn}" has been unresolved for ${elapsedDays} day(s) — nobody can act as its Head, including via escalation to a parent unit.`
-      : `"${orgUnit.nameEn}" has no Head and no one can act on its behalf, including via escalation to a parent unit. Assign a Head or configure Acting Head coverage.`;
-
-    for (const userRole of adminUserRoles) {
-      await this.notificationService.create(
-        {
-          userId: userRole.userId,
-          titleEn: isReminder
-            ? 'Reminder: org unit still has no resolvable Head'
-            : 'Org unit has no resolvable Head',
-          bodyEn,
-          objectType: 'OrgUnit',
-          objectId: orgUnit.id,
-        },
-        organizationId,
-      );
-    }
   }
 
   async create(

@@ -1579,61 +1579,18 @@ export class WorkflowService {
     return blocking;
   }
 
-  // Reuses notifyTenantAdminsOfCoverageGap()'s exact query shape above
-  // (Role.findFirst TENANT_ADMIN → UserRole.findMany → one
-  // NotificationService.create() per admin) rather than a new mechanism.
-  // Public: also called from SlaMonitorProcessor's sweep on a fresh
-  // false→true transition (plan Section 2.5.1).
-  async notifyTenantAdminsOfUnassignedStage(
-    organizationId: string,
-    instance: PrismaWorkflowInstance,
-    stage: PrismaWorkflowStage,
-    blockingTransitions: PrismaWorkflowTransition[],
-  ): Promise<void> {
-    const adminRole = await this.prisma.role.findFirst({ where: { organizationId, key: 'TENANT_ADMIN' } });
-    if (!adminRole) return;
-
-    const userRoles = await this.prisma.userRole.findMany({
-      where: { roleId: adminRole.id, user: { organizationId, status: 'ACTIVE' } },
-    });
-
-    // Committee's own name resolved via resolveObjectSubjectLabel() — an
-    // instance/objectId alone isn't actionable for an admin deciding what
-    // to fix. Previously keyed off stage.committeeId here, which is a
-    // different field (COMMITTEE-assigneeStrategy pool resolution) that no
-    // seeded stage ever sets — confirmed dead in practice, this resolution
-    // never actually fired (ACC-34). instance.objectId is the correct key.
-    const resolvedLabel = await this.resolveObjectSubjectLabel(instance, organizationId);
-    const subjectLabel =
-      resolvedLabel !== instance.objectType
-        ? `${resolvedLabel} (${instance.objectType})`
-        : `${instance.objectType} ${instance.objectId}`;
-    const transitionLabels = blockingTransitions.map((t) => t.labelEn).join(', ');
-
-    for (const userRole of userRoles) {
-      await this.notificationService.create(
-        {
-          userId: userRole.userId,
-          titleEn: 'Workflow stage unreachable — no eligible assignee',
-          // Generic enough to cover both resolution paths that feed
-          // `blockingTransitions` (empty/unqualified ASSIGNEE_POOL, or an
-          // unheld triggerRoleId / deactivated triggerUserId) without
-          // claiming a specific cause the message can't actually verify.
-          bodyEn: `In "${stage.nameEn}" for ${subjectLabel}, nobody can currently trigger: ${transitionLabels}. Assign someone eligible or update the transition's trigger configuration to unblock this stage.`,
-          objectType: instance.objectType,
-          objectId: instance.objectId,
-        },
-        organizationId,
-      );
-    }
-  }
-
   // Entry-time check (plan Section 2.5) — called once, right after a new
   // WorkflowInstanceStage row is created (startInstance() for the initial
   // stage, performTransition() for every subsequent one). Freshly-created
   // rows always start isUnassigned: false (schema default), so this only
   // ever performs a false→true transition — the sweep-side symmetric
   // set/clear logic lives in SlaMonitorProcessor, not here.
+  //
+  // ACC-82 — sets the flag and notifies no one. The "Workflow stage
+  // unreachable — no eligible assignee" admin notification was removed: an
+  // unreachable stage is a Setup health condition (STAGE_WITHOUT_ASSIGNEE),
+  // reported once per template stage rather than once per instance entering
+  // it (SYSTEM-REFERENCE §13.7).
   private async checkAndFlagUnassignedStage(
     stage: PrismaWorkflowStage,
     instanceStageId: string,
@@ -1642,15 +1599,12 @@ export class WorkflowService {
   ): Promise<void> {
     const poolBlocking = await this.resolveUnassignedBlockingTransitions(stage, instance, organizationId);
     const triggerBlocking = await this.resolveUnreachableTriggerConditionTransitions(stage, organizationId);
-    const blocking = [...poolBlocking, ...triggerBlocking];
-    if (blocking.length === 0) return;
+    if (poolBlocking.length === 0 && triggerBlocking.length === 0) return;
 
     await this.prisma.workflowInstanceStage.update({
       where: { id: instanceStageId },
       data: { isUnassigned: true, unassignedAt: new Date() },
     });
-
-    await this.notifyTenantAdminsOfUnassignedStage(organizationId, instance, stage, blocking);
   }
 
   // Sizes the eligible-approver pool for PARALLEL/SEQUENTIAL threshold checks

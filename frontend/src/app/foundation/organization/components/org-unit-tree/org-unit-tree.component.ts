@@ -1,6 +1,6 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { TreeNode } from 'primeng/api';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TreeTableModule } from 'primeng/treetable';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -11,6 +11,8 @@ import { OrgUnitHeadPanelComponent } from '../org-unit-head-panel/org-unit-head-
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
+import { LanguageService } from '../../../../core/services/language.service';
 
 @Component({
   selector: 'app-org-unit-tree',
@@ -139,7 +141,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
     </ng-template>
     <app-edit-dialog
       [(visible)]="headPanelVisible"
-      [header]="'orgUnitHead.manageHead' | translate"
+      [header]="headPanelHeader()"
       [content]="headPanelTpl"
     />
   `,
@@ -149,6 +151,8 @@ export class OrgUnitTreeComponent implements OnInit {
   @ViewChild('headPanelTpl', { read: TemplateRef, static: true }) headPanelTpl!: TemplateRef<unknown>;
 
   private readonly orgUnitService = inject(OrgUnitService);
+  private readonly translate = inject(TranslateService);
+  private readonly languageService = inject(LanguageService);
 
   readonly loading = signal(false);
   readonly treeNodes = signal<TreeNode<OrgUnitDto>[]>([]);
@@ -160,6 +164,16 @@ export class OrgUnitTreeComponent implements OnInit {
 
   readonly headPanelVisible = signal(false);
   readonly managingHeadUnitId = signal<string | null>(null);
+  // ACC-82 — the panel names its unit. A Setup health Fix opens it directly
+  // from a list of many units, and "Manage Head" alone does not say which.
+  private readonly managingHeadUnit = signal<OrgUnitDto | null>(null);
+  readonly headPanelHeader = computed(() => {
+    const unit = this.managingHeadUnit();
+    if (!unit) return this.translate.instant('orgUnitHead.manageHead');
+    // Tenant data: chosen by language, never translated (SYSTEM-REFERENCE §9.3).
+    const name = (this.languageService.isArabic() && unit.nameAr) || unit.nameEn;
+    return this.translate.instant('orgUnitHead.manageHeadNamed', { unit: name });
+  });
 
   ngOnInit(): void {
     this.loadTree();
@@ -171,6 +185,7 @@ export class OrgUnitTreeComponent implements OnInit {
 
   onManageHead(unit: OrgUnitDto): void {
     this.managingHeadUnitId.set(unit.id);
+    this.managingHeadUnit.set(unit);
     this.headPanelVisible.set(true);
   }
 
@@ -212,6 +227,11 @@ export class OrgUnitTreeComponent implements OnInit {
     });
   }
 
+  // ACC-82 — a Setup health Fix link (?head=<unitId>) opens that unit's head
+  // panel, where a head or an acting head is assigned. Only for a unit that is
+  // in the tree and active, matching the row button's own disabled rule.
+  private readonly fixLinkHead = injectFixLinkParam('head');
+
   private loadTree(): void {
     this.loading.set(true);
     this.error.set(null);
@@ -219,12 +239,24 @@ export class OrgUnitTreeComponent implements OnInit {
       next: (units) => {
         this.treeNodes.set(this.toTreeNodes(units));
         this.loading.set(false);
+        const unitId = this.fixLinkHead();
+        const target = unitId ? this.findUnit(units, unitId) : undefined;
+        if (target?.isActive) this.onManageHead(target);
       },
       error: () => {
         this.error.set('Failed to load organization units');
         this.loading.set(false);
       },
     });
+  }
+
+  private findUnit(units: OrgUnitDto[], id: string): OrgUnitDto | undefined {
+    for (const unit of units) {
+      if (unit.id === id) return unit;
+      const inChildren = unit.children?.length ? this.findUnit(unit.children, id) : undefined;
+      if (inChildren) return inChildren;
+    }
+    return undefined;
   }
 
   private toTreeNodes(units: OrgUnitDto[]): TreeNode<OrgUnitDto>[] {

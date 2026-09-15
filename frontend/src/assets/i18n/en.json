@@ -49,6 +49,7 @@
     "aiCredits": "AI Credits",
     "home": "Home",
     "myTasks": "My Tasks",
+    "setupHealth": "Setup health",
     "groups": {
       "work": "My work",
       "quality": "Quality management",
@@ -102,7 +103,8 @@
     "actingHeadCoveringFor": "Covering For (optional)",
     "actingHeadAssign": "Assign Acting Head",
     "errorLoad": "Failed to load Head status.",
-    "errorSave": "Failed to save changes."
+    "errorSave": "Failed to save changes.",
+    "manageHeadNamed": "Manage Head — {{unit}}"
   },
   "lookup": {
     "title": "Lookup Categories",
@@ -295,7 +297,8 @@
     "stageName": "Stage",
     "sla": "SLA",
     "searchStages": "Search stages…",
-    "stagesEyebrow": "Workflow stages"
+    "stagesEyebrow": "Workflow stages",
+    "triggerRoleUnknown": "Unknown role"
   },
   "notification": {
     "title": "Notifications",
@@ -450,7 +453,8 @@
     "assigneeCount": "{{count}} assignees",
     "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
     "errorAction": "The action could not be completed. Please try again.",
-    "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned."
+    "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned.",
+    "reassignNamed": "Reassign “{{title}}”"
   },
   "auth": {
     "login": "Log In",
@@ -678,6 +682,80 @@
     "expandRail": "Expand navigation",
     "userMenu": "Account menu for {{name}}",
     "breadcrumb": "Breadcrumb",
-    "interfaceLanguage": "Interface language"
+    "interfaceLanguage": "Interface language",
+    "badge": {
+      "setupHealth": "{{count}} open conditions"
+    }
+  },
+  "setupHealth": {
+    "title": "Setup health",
+    "purpose": "Standing conditions only an administrator can fix. Each one closes by itself once its cause is fixed — there is nothing to dismiss or mark read.",
+    "errorLoad": "Setup health could not be loaded.",
+    "checked": "Checked {{when}}",
+    "empty": "Nothing needs fixing.",
+    "emptyFiltered": "No open conditions at this severity.",
+    "emptyUnconfirmed": "No open conditions were found by the checks that ran. See the notice above for the ones that did not.",
+    "filter": {
+      "all": "All"
+    },
+    "severity": {
+      "BLOCKS_WORK": "Blocks work",
+      "AT_RISK": "At risk"
+    },
+    "types": {
+      "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
+      "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
+      "TASK_WITHOUT_OWNER": "Task with no actionable owner"
+    },
+    "context": {
+      "template": "Workflow: {{name}}"
+    },
+    "consequence": {
+      "unitCovered": "No head. Work routed to its head escalates to a parent unit or an acting head in the meantime.",
+      "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
+      "stageOne": "1 open item cannot advance: no one can act on this stage.",
+      "stageMany": "{{count}} open items cannot advance: no one can act on this stage.",
+      "task": "No one is assigned, so it is in no one’s task list."
+    },
+    "hint": {
+      "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it."
+    },
+    "age": {
+      "openToday": "Opened in the last 24 hours",
+      "openOneDay": "Open 1 day",
+      "openDays": "Open {{count}} days",
+      "detectedToday": "First detected in the last 24 hours",
+      "detectedOneDay": "First detected 1 day ago",
+      "detectedDays": "First detected {{count}} days ago"
+    },
+    "fix": {
+      "ORG_UNIT_WITHOUT_HEAD": "Assign head",
+      "STAGE_WITHOUT_ASSIGNEE": "Review stage",
+      "TASK_WITHOUT_OWNER": "Reassign"
+    },
+    "fixNeeds": {
+      "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
+      "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
+      "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks."
+    },
+    "freshness": {
+      "failed": "{{type}}: the last check failed. Its rows are as last confirmed {{when}}.",
+      "failedNever": "{{type}}: no check has succeeded yet, so an empty list for it does not mean nothing is wrong.",
+      "overdue": "{{type}}: not checked since {{when}}. Its rows may be out of date.",
+      "neverRun": "{{type}}: not checked yet, so an empty list for it does not mean nothing is wrong."
+    },
+    "relative": {
+      "justNow": "just now",
+      "minutes": "{{count}} min ago",
+      "hours": "{{count}} h ago",
+      "days": "{{count}} days ago"
+    },
+    "cleared": {
+      "title": "Cleared by itself",
+      "window": "Last 7 days",
+      "at": "Cleared {{date}}",
+      "none": "Nothing has cleared in the last 7 days.",
+      "note": "Shown so you can see a fix landed, and so a surveyor can see when a gap closed. Each entry drops off after 7 days."
+    }
   }
 }

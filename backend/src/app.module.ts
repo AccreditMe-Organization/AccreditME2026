@@ -15,6 +15,7 @@ import { TaskModule } from './foundation/task/task.module';
 import { CommitteesModule } from './foundation/committees/committees.module';
 import { AuthModule } from './foundation/auth/auth.module';
 import { UserModule } from './foundation/user/user.module';
+import { SetupHealthModule } from './foundation/setup-health/setup-health.module';
 import { PlanModule } from './platform/plan/plan.module';
 import { PlatformModule } from './platform/tenant/platform.module';
 
@@ -45,6 +46,7 @@ import { PlatformModule } from './platform/tenant/platform.module';
     CommitteesModule,
     AuthModule,
     UserModule,
+    SetupHealthModule,
     PlanModule,
     PlatformModule,
   ],

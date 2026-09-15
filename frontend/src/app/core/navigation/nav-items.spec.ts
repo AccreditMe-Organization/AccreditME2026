@@ -96,6 +96,26 @@ describe('nav-items (ACC-79)', () => {
     });
   });
 
+  // ACC-82 — Setup health leads Administration, and only setup:view shows it.
+  describe('Setup health', () => {
+    it('is the first Administration item for a holder of setup:view, with its badge', () => {
+      const admin = visibleNavGroups(access({ permissions: ALL_TENANT_PERMISSIONS })).find((g) => g.key === 'admin');
+      expect(admin?.items[0]).toEqual(
+        jasmine.objectContaining({ key: 'setupHealth', route: '/setup-health', badge: 'setupHealth' }),
+      );
+    });
+
+    it('is absent without setup:view, even with every other admin permission', () => {
+      const permissions = ALL_TENANT_PERMISSIONS.filter((p) => p !== 'setup:view');
+      const items = visibleNavGroups(access({ permissions })).flatMap((g) => g.items.map((i) => i.key));
+      expect(items).not.toContain('setupHealth');
+    });
+
+    it('guards its route with setup:view', () => {
+      expect(ROUTE_PERMISSIONS.get('setup-health')).toBe('setup:view');
+    });
+  });
+
   describe('Administration is gated per item, never on a role', () => {
     it('shows the group to a custom role holding a single admin permission', () => {
       const groups = visibleNavGroups(

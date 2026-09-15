@@ -70,6 +70,7 @@ audit's starting point, not be mistaken for having already done it.
 10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
+13. Setup Health — standing conditions (ACC-82) — ✅ built (13.10 = the cached-state rule)
 
 ---
 
@@ -1220,26 +1221,21 @@ misconfiguration).
   called once right after a new `WorkflowInstanceStage` row is created
   (`startInstance()` for the initial stage, `performTransition()` for
   every subsequent one). If any blocking transition is found: sets
-  `isUnassigned: true, unassignedAt: now()` on that row and calls
-  `notifyTenantAdminsOfUnassignedStage()`.
-- **`notifyTenantAdminsOfUnassignedStage()`** (public) — mirrors
-  `notifyTenantAdminsOfCoverageGap()`'s own query shape (`Role.findFirst
-  TENANT_ADMIN` → `UserRole.findMany` → one `NotificationService.create()`
-  per admin), not a new mechanism. Names the specific transition
-  (`labelEn`) and instance (`objectType`/`objectId`, plus the
-  Committee's own `nameEn` resolved via a join when `stage.committeeId`
-  is set).
+  `isUnassigned: true, unassignedAt: now()` on that row.
+- **No admin notification — removed in ACC-82.**
+  `notifyTenantAdminsOfUnassignedStage()` (entry-time and sweep) paged
+  every Tenant Admin per instance entering an unreachable stage. An
+  unreachable stage is a standing condition, now listed once per template
+  stage by Setup health (§13.2, §13.7); this flag is what it reads.
 - **Drift-after-entry re-check** — `SlaMonitorProcessor.sweepUnassignedStages()`
   (private), added to the existing 15-minute repeatable job alongside
   `sweepOverdueTasks()`, not a new queue. For every open (`exitedAt:
   null`) `WorkflowInstanceStage`: re-runs
   `resolveUnassignedBlockingTransitions()`, compares the freshly
   computed result against `isUnassigned` **as read at the top of this
-  sweep pass** (`wasUnassigned`), and only writes + notifies on an
-  explicit `wasUnassigned === false && isNowUnassigned === true`
-  transition — skips the write entirely when nothing changed. This is
-  what prevents a duplicate notification when the sweep re-evaluates a
-  stage the entry-time check already flagged minutes earlier.
+  sweep pass** (`wasUnassigned`), and writes only when the value
+  changes — skips the write entirely when nothing changed. (Until ACC-82
+  the `false → true` write also paged admins; it no longer does.)
 - **Recovery behavior — corrected as of ACC-51.** The `true → false`
   clear-on-recovery case is still silent **for Tenant Admins**
   (deliberately: nobody should be paged about a problem that just
@@ -2271,12 +2267,18 @@ authority here" generally, not just for workflow purposes:
    empty at every level) → `[]`, "fully unresolved."
 
 No caching inside this method — every call re-walks from scratch.
-`isHeadVacant`/`isHeadFullyUnresolved` (5.5) are a separate,
-write-time-maintained cache of this query's outcome for cheap reads —
-never a substitute for calling it when a real, current answer is
-needed (every real consumer — Head-management methods, the workflow
-engine's `ORG_UNIT_HEAD` cases, the delegation stamp — calls the live
-query, never the cache).
+`isHeadVacant`/`isHeadFullyUnresolved` (5.5) are a separate cache of this
+query's outcome for cheap reads — never a substitute for calling it when a
+real, current answer is needed. Every real consumer — Head-management
+methods, the workflow engine's `ORG_UNIT_HEAD` cases, task Head escalation
+(`resolveHeadEscalationTargets()`), `invite()`'s staffing block
+(`hasDirectOrActingHead()`), the delegation stamp — calls the live query,
+never the cache. **Verified in ACC-82 across the code and its whole git
+history:** the cache has only ever been read by notification/report code
+(the vacancy notifications and reminders, the head-authority report, the
+sweep that sent them) and, since ACC-82, Setup health. So when the cache
+was wrong (5.5), no work was misrouted; what was wrong were admin
+notifications and, briefly, Setup health rows.
 
 ### 5.4 Deliberate Handover (`OrgUnitHeadService`, `org-unit-head.service.ts`)
 
@@ -2333,28 +2335,52 @@ entry-time check, called from every Head-management method above, from
 triggering this call; a brand-new invite into a Head-vacant unit was
 never picked up until some later, unrelated profile update happened to
 touch that unit) whenever they touch a user's
-`positionId`/`primaryOrgUnitId`. Re-runs the direct-holder count;
-on a genuine `false→true` vacancy transition, runs 5.3's escalation
-walk exactly once and sets `isHeadVacant`/`headVacantSince`/
-`isHeadFullyUnresolved`. Only a **fully-exhausted** result (escalation
-found nobody at any ancestor level either) notifies Tenant Admins
-(`notifyTenantAdminsOfOrgUnitVacancy()`, `:179` — same
-`Role.findFirst(TENANT_ADMIN)` → `UserRole.findMany()` →
-`NotificationService.create()` chain as every other admin-notification
-method in this codebase) — a partial vacancy covered by an ancestor's
-Acting Head is silent, matching the plan's "partial vacancy never
-blocks or notifies" resolution.
+`positionId`/`primaryOrgUnitId`, and — since ACC-82 —
+`AuthService.acceptInvitation()` (via
+`UserService.refreshHeadVacancyAfterActivation()`), after the user
+becomes ACTIVE. Re-runs the direct-holder count; on a genuine
+`false→true` vacancy transition, runs 5.3's escalation walk exactly once
+and sets `isHeadVacant`/`headVacantSince`/`isHeadFullyUnresolved`. It
+notifies no one: the vacancy notification and its reminders were removed
+in ACC-82 (§13.7).
 
-`SlaMonitorProcessor.sweepOrgUnitVacancies()`
-(`sla-monitor.processor.ts:146`) is the drift-after-entry re-check —
-same architectural role as `sweepUnassignedStages()` (Section 2.13),
-one level deeper: `isHeadVacant` alone can't answer "is this STILL
-fully-unresolved" (it captures only this unit's own direct-holder
-count, not whether an ancestor's Acting Head now covers it), so
-`isHeadFullyUnresolved` is checked separately and can flip
-independently of `isHeadVacant`. Sends a reminder notification every 2
-days (`headFullyUnresolvedLastRemindedAt`) while still fully
-unresolved, silently clears both flags on recovery. Same processor's
+**`SlaMonitorProcessor.sweepOrgUnitVacancies()` is the scheduled
+recomputer, and what correctness rests on** (ACC-82). Every 15 minutes,
+per tenant, for every ACTIVE unit it re-derives `isHeadVacant`,
+`headVacantSince` and `isHeadFullyUnresolved`, with **two reads per
+tenant** — the units, and one grouped count of ACTIVE users holding an
+ACTIVE head-conferring position by `primaryOrgUnitId` (the same holder
+definition as the entry-time refresh) — and writes only what changed. The
+escalation walk runs only for a unit becoming vacant and for a unit that
+stays vacant (the ancestor-drift check: an ancestor's Acting Head can
+come or go while this unit's own state never changes); a unit with its own
+Head is never walked. **Known cost: one escalation walk per vacant unit per
+pass** — a query per ancestor level, every 15 minutes — so a tenant with many
+vacant units makes this step proportionally slower. That is deliberate:
+severity (`isHeadFullyUnresolved`) is derived state too, and a stale severity
+is the same defect as a stale flag. Measured on dev after the correction
+(41 active units, 3 orgs, 3 vacant): the steady-state pass writes nothing and
+makes 7 reads plus 3 walks — about 2.1 s from a Middle East client against the
+Frankfurt database, round-trip dominated; a worker beside the database pays a
+fraction of that. The corrective first pass (32 writes) took about 16 s from
+the same client. The entry-time refresh above stays, so a change
+shows at once; the sweep guarantees the cache is right within 15 minutes
+whatever path changed it (the rule, §13.10).
+
+**History — why the recompute exists.** Until ACC-82 the refresh was
+entry-time only and the sweep walked only units already flagged, updating
+only `isHeadFullyUnresolved`. Nothing ever re-derived `isHeadVacant`
+itself, so any write path that skipped the refresh left the flag wrong
+indefinitely, **in both directions**. `invite()` refreshed while the new
+Head was still INVITED (not counted — the flag reads vacant) and
+`acceptInvitation()` never refreshed after activation: on dev, **32 of the
+34 units flagged vacant had an active Head**. The same design hides a
+genuinely vacant unit whenever its Head leaves by a path that skips the
+refresh. The first recompute pass took dev from 34 flagged units to 2.
+Since the cache was only ever read by notification code and Setup health
+(5.3), no escalation or assignment was misrouted by it; the admin
+notifications built on it — including every "Head-authority setup
+incomplete" report — listed units that had heads. Same processor's
 `sweepDueHandovers()` (`:127`) fires 5.4's automatic handover
 completion; `sweepExpiredActingOrgUnitAssignments()` (`:215`) clears
 5.7's user-level acting-for-a-unit assignment on expiry (a pure scoping
@@ -2515,14 +2541,25 @@ position they intended to grant a role granted none. Two fixes, ACC-43:
 `position-form.component.ts` shows a non-blocking inline warning when
 `isUnitHeadPosition && !roleId` (save is never blocked, matching the
 plan's own design); and `OrgPositionService.notifyTenantAdminsOfVacantHeadRoleMappings()`
-(`org-position.service.ts:208`) — which existed and was unit-tested
-since ACC-40 Phase 12 but was never called from anywhere in the running
-app — is now wired into `SlaMonitorProcessor`'s existing 15-minute
-sweep (`sweepVacantHeadRoleMappings()`, `sla-monitor.processor.ts:211`).
-The sweep reports two related-but-not-joined signals together per
-tenant: `OrgUnit` rows currently `isHeadVacant: true`, and
-`isUnitHeadPosition: true` positions currently `roleId: null` — same
-admin-notification chain as every other method in this section.
+was wired into the 15-minute sweep (`sweepVacantHeadRoleMappings()`),
+reporting `isHeadVacant: true` units and `isUnitHeadPosition: true`
+positions with `roleId: null`. **Both were removed in ACC-82** (§13.7):
+the report repeated every 15 minutes, and its unit list was built on the
+stale vacancy cache (5.5).
+
+**What `roleId` does and does not do — verified in ACC-82.** It is read
+in exactly two places, both guarded by `isUnitHeadPosition && roleId`:
+`UserService.syncHeadAuthorityRoleGrant()` (appointment or position
+change) and `OrgUnitHeadService`'s acting-head grant. So:
+
+- On an **ordinary** position, `roleId` grants nothing to anyone.
+  Permissions come only from `UserRole` rows (`RoleService.getUserPermissions()`).
+- On a **head-conferring** position, **saving** a role
+  (`OrgPositionService.updatePosition()`) writes `roleId` only — current
+  holders do not receive it; only the next appointment or acting
+  assignment does. Changing or clearing it likewise leaves current holders'
+  grants as they were. ACC-84 tracks this, and Setup health's
+  `POSITION_WITHOUT_ROLE` stays deferred until it ships (§13.2).
 
 ### 5.11 Mandatory `positionId`/`primaryOrgUnitId` and Existing-Tenant Remediation
 
@@ -5042,3 +5079,314 @@ a `p-step`'s number badge is literally its declared `[value]`, so the
 Replacement step's conditional presence shifts every step after it.
 Reuses `OverlaySelectComponent` (Section 10.7) for its pickers, not
 `p-select`. Entry point: `user-profile.component.ts`.
+
+---
+
+## 13. Setup Health — Standing Conditions (ACC-82)
+
+**Status: built (ACC-82).** Verified in a browser per role; see 13.11 for
+what is known to be incomplete.
+
+### 13.1 Events versus conditions — the rule this section exists for
+
+- **The notification bell holds events.** Something happened; a person
+  reads it; it ends. Read flags and dismissal belong here.
+- **Setup health holds conditions.** Derived state — true right now or
+  not — recomputed by the system, with **no read flag and no dismiss**.
+  A condition row exists because the gap is open, and closes itself when
+  the next reconciliation finds the gap gone.
+
+A repeating event stream cannot answer "what is still open". That is
+why ACC-59 (about 680 unread "Head-authority setup incomplete" rows per
+tenant, one every 15 minutes) was a symptom: a standing gap was being
+modelled as an event. **Neither surface repeats the other.** A condition
+opening creates no bell entry; the rail badge is the signal.
+
+### 13.2 Condition types shipped, and what was deferred or excluded
+
+| Type (`SetupConditionType`) | Object keyed by | Severity | Opened at | Fix opens |
+| -- | -- | -- | -- | -- |
+| `ORG_UNIT_WITHOUT_HEAD` | `OrgUnit.id` | `BLOCKS_WORK` if `isHeadFullyUnresolved` (escalation resolves no one); else `AT_RISK` (vacant but covered) | `OrgUnit.headVacantSince` | `/organization?head=<id>` — that unit's head panel |
+| `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages?stage=<id>` — the stage list with that stage expanded |
+| `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks/unassigned?reassign=<id>` — that task's reassign dialog |
+| ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
+
+The Fix link's parameter is read once by the destination and removed from
+the URL (`injectFixLinkParam()`, `shared/utils/fix-link.util.ts`), so a
+reload does not reopen the dialog.
+
+**Detection rules:**
+
+- **Org unit without a head** reads the cached `OrgUnit.isHeadVacant` /
+  `isHeadFullyUnresolved` / `headVacantSince`. Since ACC-82 those are
+  recomputed for every ACTIVE unit on every 15-minute SLA sweep (§5.5), so
+  the cache is at most 15 minutes behind the live head query. **Before that
+  fix it was not trustworthy at all** — see §5.5's history: on dev 32 of the
+  34 units it listed had an active Head. **Why the severity split:** at
+  design time both seeded tenants had zero fully unresolved units; treating
+  every vacancy as blocking would fill the page with blocking rows while
+  nothing was blocked. Severity moves with coverage on the same row; the
+  row's `openedAt` does not change.
+- **Stage without assignee** is detected per workflow *instance*
+  (`WorkflowInstanceStage.isUnassigned`, `exitedAt: null`, §2.13) but
+  shown per *template stage*, because the fix is made once on the stage:
+  one row per `WorkflowStage`, carrying the affected-instance count. The
+  condition does **not** record whether the stage is unreachable because
+  of its assignee or a transition's trigger, so the row tells the admin to
+  check both, and the transitions table names each ROLE_BASED transition's
+  trigger role.
+- **Task without owner** is `Task.status = 'UNASSIGNED'`. Known gap: an
+  open task whose only remaining assignee is inactive is not UNASSIGNED
+  and is not detected (ACC-86; zero such tasks on dev at build time).
+
+**Deferred — `POSITION_WITHOUT_ROLE`.** Built, then deferred before
+shipping. It flagged ACTIVE positions with no `roleId` that someone ACTIVE
+holds, saying their holders get no permissions from the position, with
+"Map role" as the Fix. But `OrgPosition.roleId` is read only for
+head-conferring positions, and only when someone is appointed or made
+acting head (§5.10): for an ordinary position it grants nothing, and saving
+a role on a head position does not grant it to the current holders. The
+Fix therefore cleared the row while its stated consequence stayed true.
+The enum value is kept (removing it would be a destructive migration). The
+type is listed in `DEFERRED_SETUP_CONDITION_TYPES`
+(`setup-condition.detectors.ts`), has no detector, and is excluded from
+every read — page, badge and freshness — so leftover rows stay invisible
+until the ACC-82 cleanup script deletes them. **Unblocked by ACC-84**
+(a saved head-position role reaching current holders); the type then
+returns narrowed to head-conferring positions, with a new detector.
+Removing it from the deferred list makes the missing detector a compile
+error.
+
+**Deferred — "lookup value in use but deactivated".** "In use" requires a
+survey of every column referencing a `LookupValue` —
+`Committee.typeValueId`, `CommitteeMember.roleValueId`,
+`CommitteeMembershipEvent.roleValueId`, `Meeting.typeValueId`,
+`WorkflowStage.assigneeCommitteeRoleValueId` today, and every future
+module adds more. At design time: zero instances in either seeded tenant,
+zero hidden system values, and nothing built breaks — assignee resolution
+matches `roleValueId` without checking whether the value is active. A
+deactivation-time guard may be the better fix; that belongs to the
+follow-up, not here.
+
+**Excluded — stale invitations.** The design reference lists "invitation
+unused for 30+ days" as a Hygiene condition. It was narrowed during
+design to "expired and still holding a seat", then excluded outright:
+pending invitations — expired or not — are a list of invitations, which
+is a filter on Users, not a standing configuration gap. Two facts are
+recorded so the next attempt does not re-derive them:
+
+- **Expiry itself is truthful.** `AuthService.acceptInvitation()`
+  validates `User.invitationExpiresAt` directly (`invitationExpiresAt <
+  new Date()` → "Invalid or expired invitation"); Better Auth's
+  `authVerification` table is not consulted for invitations. Checked
+  during ACC-82 because the opposite had been assumed.
+- **The collision that remains.** The TTL is 7 days
+  (`INVITATION_TTL_MS`), yet `invite()` counts `INVITED` users against
+  `maxUsers` indefinitely. That is a seat-accounting question for ACC-83
+  (Reactivate / Revoke invitation), not a health condition.
+
+**Also out:** out-of-office coverage gaps (ACC-80), which today notify
+once per assignment.
+
+### 13.3 What an age means — "open" versus "first detected"
+
+Tasks carry no timestamp for the moment they entered the condition.
+Adding one (`Task.unassignedAt`, say) would have to be set by **every**
+writer that changes a task's status — `create()`, `reassign()`,
+`reassignAllForUser()`, ACC-51 recovery and `cancelForStage()` today —
+which is the "every future writer must remember" failure mode this
+codebase keeps rediscovering. Tasks take `openedAt` from the first
+reconciliation that sees them: accurate to within one hour, and the page
+labels it "First detected". Units and stages use their object's own
+timestamp and read "Open N days" (`ISetupCondition.ageBasis`, set per type
+by `SetupHealthService`).
+
+Two precisions, so the wording is not over-read:
+
+- **Ages count whole 24-hour periods** since `openedAt`, not calendar days,
+  so the youngest bucket reads "in the last 24 hours" rather than "today"
+  (which could have described something opened late the previous day).
+- **A unit the sweep finds vacant** without the entry-time refresh having
+  noticed gets `headVacantSince` = the moment the sweep found it, because
+  the path that caused the vacancy recorded nothing.
+
+Timestamps are stored UTC in `timestamp without time zone` columns and read
+as UTC by Prisma; raw `node-pg` parses those columns as local time, which is
+a trap for ad-hoc scripts, not for the app (checked in ACC-82).
+
+### 13.4 Model — `SetupCondition` and `SetupConditionRun`
+
+`SetupCondition` — one row per **episode** of a condition: opened,
+possibly re-severitied, cleared. A gap that closes and later reopens is a
+**new** row, so the seven-day closure history stays truthful.
+
+| Field | Meaning |
+| -- | -- |
+| `organizationId` | Tenant. Every query scopes by it. |
+| `type`, `severity` | Enums. Severity is stored, not derived at read time, so a cleared row shows the severity it had. |
+| `objectId` | The id the condition is about (see 13.2). Not a foreign key — the row outlives its object. |
+| `subject` (JSON) | Display snapshot refreshed on every pass while open — names (`nameEn`/`nameAr`), counts. Kept after clearing, so a closed row still reads correctly after its object is renamed or deleted. |
+| `openedAt` | See 13.2 / 13.3. |
+| `lastSeenAt` | The last reconciliation that found it open. |
+| `clearedAt` | Null while open. Set by reconciliation — never by a person. |
+
+**At most one open row per `(organizationId, type, objectId)`.** Prisma
+cannot express a partial unique index without hand-editing a migration
+(forbidden, CLAUDE.md Prisma Rules), so this is enforced in the
+reconciler, which is the only writer: if a duplicate ever exists, the
+earliest-opened row is kept and later ones are deleted rather than cleared,
+so they never appear as a false self-closure. Cleared rows are
+**retained**; the page shows closures from the last seven days.
+
+`SetupConditionRun` — one row per `(organizationId, type)`, unique:
+`lastAttemptedAt`, `lastSucceededAt`, `lastFailedAt`, `lastError`
+(operator-only, bounded to 1,000 characters, **never returned by the
+API**). It is what lets the page say when a type's rows were last
+confirmed.
+
+### 13.5 Reconciliation — hourly, one writer
+
+- **Hourly**, as its own repeatable BullMQ job (`setup-health` queue,
+  `SetupHealthProcessor`, fixed `jobId: 'setup-health-repeat'`). **Not on
+  write:** reconciling from every mutation would mean every future writer
+  must remember to call it. **Its own queue**, not a step in the SLA
+  sweep, so neither can take the other down (ACC-48).
+- Per tenant (the platform org is skipped), per reported type
+  (`SetupConditionReconciler`):
+  1. upsert the run row's `lastAttemptedAt`;
+  2. run the type's detector (read-only);
+  3. **in one transaction** open a row for each new object, refresh
+     `lastSeenAt`/`subject`/`severity` on rows still open, set `clearedAt`
+     on open rows whose object is no longer present;
+  4. set `lastSucceededAt` and clear `lastError`.
+- **Failure never clears.** Each (tenant, type) pair is isolated. If the
+  detector throws or the transaction fails, no condition row changes — the
+  open rows stay as the last known truth — and `lastFailedAt`/`lastError`
+  are recorded. A clear means "evaluated and found fixed", never "not
+  evaluated". The job still fails if any pair failed, naming the pairs —
+  the same visibility contract as `SlaMonitorProcessor` (ACC-49).
+- **Freshness, per type, in every response** (`SetupHealthService`):
+
+  | Status | When | What the page says |
+  | -- | -- | -- |
+  | `CURRENT` | last success within 2 hours (`OVERDUE_AFTER_MS`) | "Checked N ago" (the oldest confirmation across types) |
+  | `OVERDUE` | last success older than 2 hours | the type's rows may be out of date, as of that time |
+  | `FAILED` | the latest attempt failed | rows are as last confirmed at `computedAt`; if it never succeeded, an empty list means nothing |
+  | `NEVER_RUN` | no evaluation has finished | an empty list for the type means nothing |
+
+- The 15-minute `SlaMonitorProcessor` maintains the cached state the
+  detectors read — `OrgUnit.isHeadVacant`/`headVacantSince`/
+  `isHeadFullyUnresolved` (recomputed for every active unit, §5.5) and
+  `WorkflowInstanceStage.isUnassigned` (§2.13) — and **notifies no one**
+  about either.
+- Verify locally by invoking the processor or reconciler in-process, never
+  by enqueueing: local development shares Redis with a deployed worker
+  (CLAUDE.md, shared infrastructure).
+
+### 13.6 Permissions and visibility
+
+- **`setup:view`** — the page, both endpoints (`GET /setup-health`,
+  `GET /setup-health/summary`) and the rail badge. The surface has no write
+  action: no dismiss, no read flag, and — with no Hygiene condition
+  shipping — no snooze. The rail requests the count only while the item is
+  visible, so a user without the permission never receives a 403 from it.
+- Seeded to `TENANT_ADMIN` through `role.seed.ts`'s `ALL` spread (new
+  tenants get it automatically) and **backfilled** for existing tenants
+  (`npm run backfill:setup-view-permission`). Not to `VIEWER`: its
+  `readOnly()` list is explicit.
+- **Never by role name.** The notifications being replaced all resolved
+  recipients through `Role.findFirst({ key: 'TENANT_ADMIN' })` — the
+  pattern ACC-77 flags.
+- **A row's Fix renders only if the viewer holds both the destination
+  route's permission and the one its save needs**: `org:view` +
+  `org:manage`; `workflows:view` + `workflows:manage`; `tasks:manage` +
+  `tasks:reassign`. Without them the row still shows, with a note naming
+  what is needed — never a disabled control with no reason.
+
+### 13.7 What left the bell
+
+Removed (conditions, now on this page): the head-authority report
+(`sweepVacantHeadRoleMappings` → `notifyTenantAdminsOfVacantHeadRoleMappings`),
+org-unit vacancy notifications and their 2-day reminders
+(`notifyTenantAdminsOfOrgUnitVacancy`), unassigned-stage admin
+notifications (`notifyTenantAdminsOfUnassignedStage`, entry-time and
+sweep), and the "task created with no eligible assignee" admin
+notification (`TaskService.notifyTenantAdmins`). Kept (events): departure
+summaries, invitation acceptance conflicts, ACC-51's notification to a
+newly eligible assignee, a task's own assignment notifications, and
+out-of-office routing notifications.
+
+**The accumulated duplicates** are removed by a one-off script,
+`npm run cleanup:acc82-condition-data` (`prisma/cleanup-acc82-condition-data.ts`),
+run **after ACC-82's merge has deployed**, because a server still on the
+older code keeps writing them. Dry run by default; `-- --execute` deletes,
+in one transaction, the notifications with the removed titles, the
+deferred `POSITION_WITHOUT_ROLE` rows, and the **cleared**
+`ORG_UNIT_WITHOUT_HEAD` rows (13.11) — open ones are untouched. Each delete
+has its own guard, evaluated inside the transaction: notifications within 5%
+of the expected count (1,489 reviewed; if older code kept writing past the
+guard, raise the expected number rather than widening the tolerance), and
+exactly 32 cleared unit rows. Every delete must remove exactly what was
+counted, or the whole run rolls back. No table has a
+foreign key to `Notification`; its only readers are the bell/home page and
+the email processor's single-row read at send time.
+
+`OrgUnit.headFullyUnresolvedLastRemindedAt` is no longer written; it is
+left in place, because dropping a column is a destructive migration
+(CLAUDE.md, ACC-48/54) and belongs with a later cleanup.
+
+### 13.8 Not shipping: the Hygiene tier and snooze
+
+The design reference allows snooze on Hygiene-tier conditions only. The
+one Hygiene condition — stale invitations — was excluded (13.2), which
+leaves the tier empty. `HYGIENE`, `snoozedUntil`/`snoozedById` and a
+`setup:snooze` permission are therefore **not built**: machinery with no
+condition to act on would be decorative. They return, together, with the
+first real Hygiene condition. The reference's "Export as evidence" is
+unbuilt and not shown.
+
+### 13.9 Surfaces
+
+- **Rail:** `Setup health`, first item under Administration, gated on
+  `setup:view`, with a badge of open conditions — the alert tone only when
+  one of them blocks work; nothing at zero; a dot and a labelled count when
+  the rail is collapsed. Polled every 5 minutes; opening the page updates
+  it at once.
+- **Page** `/setup-health` (`SetupHealthPageComponent`): severity filter
+  with counts; groups ordered by their most severe row, then type; each row
+  shows the object (tenant data by language), a context line for stages
+  (the workflow), the consequence, a check-both hint for stages, the age
+  (13.3), and one Fix or a permission note; a notice naming every type
+  whose check failed, is overdue or never ran; "Checked N ago" from the
+  oldest confirmation; a "Cleared by itself" section for the last seven
+  days with closure times.
+- **Destinations** name the object they were opened for: the reassign
+  dialog is titled with the task, the head panel with the unit.
+- **Out of scope:** the admin home's top-three slice (the home-pages
+  ticket reads from this model).
+
+### 13.10 The cached-state rule, and its worked example
+
+**Cached derived state needs exactly one recomputer, running on a
+schedule; anything a person reads to make a decision resolves live.**
+Entry-time refreshes may be kept to make a change visible sooner, but
+they are never what correctness rests on.
+
+`OrgUnit.isHeadVacant` is the example (§5.5): maintained only at entry
+time, it was wrong for 32 of 34 units on dev because one write path
+(`acceptInvitation()`) skipped the refresh, and nothing re-derived it.
+Setup health reads such caches only because a scheduled recomputer now
+owns each of them; the Fix destinations the admin acts on (head panel,
+transitions, reassign) resolve live.
+
+### 13.11 Known incomplete
+
+- **A trigger-role cause cannot be fixed from the stage Fix.** The Edit
+  Transition dialog has no trigger-role field (the API accepts it) — ACC-85.
+  The table now names the role.
+- **Inactive-assignee tasks are not detected** — ACC-86.
+- **ACC-82's own vacancy correction left false history on dev.** When the
+  recompute fixed the 32 stale flags, reconciliation cleared the 32
+  matching rows, so each seeded tenant's "Cleared by itself" showed 16
+  closures of gaps that never existed. The post-deploy cleanup script
+  deletes exactly those cleared rows (13.7).

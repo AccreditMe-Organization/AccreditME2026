@@ -214,6 +214,24 @@ enum NotificationStatus {
   DISMISSED
 }
 
+// ACC-82 — Setup health. The four condition types that ship (SYSTEM-REFERENCE
+// §13.2). Two are deliberately absent — recorded deferrals, not missing values:
+// "lookup value in use but deactivated" and stale invitations.
+enum SetupConditionType {
+  ORG_UNIT_WITHOUT_HEAD
+  STAGE_WITHOUT_ASSIGNEE
+  TASK_WITHOUT_OWNER
+  POSITION_WITHOUT_ROLE
+}
+
+// No HYGIENE tier yet: the only hygiene condition (stale invitations) was
+// excluded, and a tier with no members — plus the snooze machinery that exists
+// only for it — would be decorative. Both return with the first real one.
+enum SetupConditionSeverity {
+  BLOCKS_WORK
+  AT_RISK
+}
+
 enum LookupLayer {
   SYSTEM
   TENANT
@@ -303,6 +321,8 @@ model Organization {
   tasks              Task[]
   taskEvidence       TaskEvidence[]
   notifications      Notification[]
+  setupConditions    SetupCondition[]
+  setupConditionRuns SetupConditionRun[]
   committees         Committee[]
   meetings           Meeting[]
   auditLogs          AuditLog[]
@@ -1159,6 +1179,77 @@ model Notification {
   @@index([status])
   @@index([createdAt])
   @@index([userId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Setup Health (ACC-82) — SYSTEM-REFERENCE §13
+// ---------------------------------------------------------------------------
+
+// One row per EPISODE of a standing condition: opened, possibly re-severitied,
+// cleared. A gap that closes and later reopens is a new row, so the seven-day
+// closure history stays truthful.
+//
+// Written ONLY by the hourly reconciler. There is no read flag and no dismiss:
+// a row is open because the condition is true, and clearedAt is set only when a
+// reconciliation evaluates the condition and finds it gone — never by a person,
+// and never because an evaluation failed.
+//
+// At most one OPEN row per (organizationId, type, objectId). Prisma cannot
+// express a partial unique index without hand-editing the migration (forbidden),
+// so the reconciler enforces it; the composite index below serves that lookup.
+model SetupCondition {
+  id             String                 @id @default(cuid())
+  organizationId String
+  type           SetupConditionType
+  // Stored, not derived at read time, so a cleared row keeps the severity it had.
+  severity       SetupConditionSeverity
+  // The id the condition is about: OrgUnit, WorkflowStage, Task or OrgPosition,
+  // per type. Not a foreign key — the object may be renamed or deleted while the
+  // closure history must survive.
+  objectId       String
+  // Display snapshot refreshed on every pass while open (names, counts), so a
+  // closed row still reads correctly after its object changes.
+  subject        Json
+  openedAt       DateTime
+  lastSeenAt     DateTime
+  clearedAt      DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, clearedAt])
+  @@index([organizationId, type, objectId])
+}
+
+// When each (tenant, condition type) was last evaluated, and whether that
+// evaluation succeeded. One row per pair, upserted by the reconciler on every
+// attempt.
+//
+// Exists so the API can answer "when was this computed" per type, and say
+// plainly when it cannot: a type whose last attempt failed, or whose last success
+// is older than the reconciliation cadence allows, is reported as such rather
+// than presenting its open rows as current. A single computed-at timestamp would
+// hide exactly that case — a row stale because its sweep failed.
+//
+// lastError is for operators reading the database, never returned by the API:
+// an exception message can carry internal detail.
+model SetupConditionRun {
+  id              String             @id @default(cuid())
+  organizationId  String
+  type            SetupConditionType
+  lastAttemptedAt DateTime
+  lastSucceededAt DateTime?
+  lastFailedAt    DateTime?
+  lastError       String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
 }
 
 // ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ import {
   provideTranslateLoader,
   TranslateNoOpLoader,
 } from '@ngx-translate/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { ConfirmationService } from 'primeng/api';
 import { By } from '@angular/platform-browser';
 import { environment } from '../../../../../environments/environment';
@@ -84,7 +84,10 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
         ConfirmationService,
         {
           provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: { get: () => 'template-1' } } },
+          // queryParamMap — ACC-82's Fix link reads it; this test passes none.
+          useValue: {
+            snapshot: { paramMap: { get: () => 'template-1' }, queryParamMap: convertToParamMap({}) },
+          },
         },
       ],
     });

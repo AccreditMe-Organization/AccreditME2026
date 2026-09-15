@@ -3214,76 +3214,17 @@ describe('WorkflowService', () => {
     });
   });
 
-  describe('notifyTenantAdminsOfUnassignedStage (ACC-28 Section 2.5)', () => {
-    const STAGE_WITH_COMMITTEE = { ...COMMITTEE_STAGE, nameEn: 'Chairman Review' };
-    const BLOCKING = [makeTransition({ id: 't-blocked', labelEn: 'Approve', triggerCondition: 'ASSIGNEE_POOL' })];
-
-    // ACC-34 — regression test proving resolveObjectSubjectLabel()'s
-    // instance.objectId-keyed resolution is now genuinely reachable.
-    // Previously keyed off stage.committeeId, which no seeded stage ever
-    // sets (confirmed by grepping workflow.seed.ts) — this exact
-    // notification, with a COMMITTEE-typed instance, would NOT have
-    // resolved a real name before this fix even though STAGE_WITH_COMMITTEE
-    // has a committeeId set, because nothing ever passed a stage with
-    // committeeId populated in practice.
-    it('notifies every active TENANT_ADMIN, naming the transition and the committee', async () => {
-      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
-      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }, { userId: 'admin-2' }]);
-      mockPrisma.committee.findFirst.mockResolvedValue({ nameEn: 'Quality Committee' });
-
-      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, COMMITTEE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
-
-      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
-        where: { id: COMMITTEE_INSTANCE.objectId, organizationId: ORG_A },
-        select: { nameEn: true },
-      });
-      expect(mockNotificationService.create).toHaveBeenCalledTimes(2);
-      const [firstCallArgs] = mockNotificationService.create.mock.calls[0] as [{ bodyEn: string; userId: string }];
-      expect(firstCallArgs.userId).toBe('admin-1');
-      expect(firstCallArgs.bodyEn).toContain('Approve');
-      expect(firstCallArgs.bodyEn).toContain('Quality Committee');
-    });
-
-    it('falls back to objectType/objectId for a non-COMMITTEE instance, even when the stage has a committeeId set', async () => {
-      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
-      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
-
-      // STAGE_WITH_COMMITTEE (committeeId set) deliberately paired with a
-      // non-COMMITTEE instance — proves resolution is keyed off
-      // instance.objectType, not merely "does the stage have a committeeId".
-      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
-
-      expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
-      const [callArgs] = mockNotificationService.create.mock.calls[0] as [{ bodyEn: string }];
-      expect(callArgs.bodyEn).toContain(BASE_INSTANCE.objectType);
-      expect(callArgs.bodyEn).toContain(BASE_INSTANCE.objectId);
-    });
-
-    it('does nothing when no TENANT_ADMIN role exists for the tenant', async () => {
-      mockPrisma.role.findFirst.mockResolvedValue(null);
-
-      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, BASE_INSTANCE as never, SINGLE_STAGE as never, BLOCKING as never);
-
-      expect(mockNotificationService.create).not.toHaveBeenCalled();
-    });
-
-    it('should NOT return records belonging to a different tenant', async () => {
-      mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
-      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]);
-
-      await service.notifyTenantAdminsOfUnassignedStage(ORG_A, COMMITTEE_INSTANCE as never, STAGE_WITH_COMMITTEE as never, BLOCKING as never);
-
-      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
-      );
-      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
-      );
-    });
-  });
+  // ACC-82 — notifyTenantAdminsOfUnassignedStage() and its tests were removed
+  // with the "Workflow stage unreachable" admin notification. An unreachable
+  // stage is a Setup health condition (STAGE_WITHOUT_ASSIGNEE), tested in
+  // setup-condition.detectors.spec.ts (SYSTEM-REFERENCE §13.7).
 
   describe('startInstance — unassigned-stage detection wiring (ACC-28 Section 2.5)', () => {
-    it('flags the newly-created stage and notifies Tenant Admins when its ASSIGNEE_POOL transition is unreachable', async () => {
+    // ACC-82 — flagging is unchanged; the admin notification that used to
+    // accompany it is gone (SYSTEM-REFERENCE §13.7). The TENANT_ADMIN mocks
+    // are kept deliberately: with admins present to page, "no unreachable
+    // notification" proves the removal rather than an empty admin list.
+    it('flags the newly-created stage, and notifies no Tenant Admin, when its ASSIGNEE_POOL transition is unreachable', async () => {
       const roleStage = { ...SINGLE_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
       const createdStage = { ...BASE_INSTANCE_STAGE, id: 'fresh-instance-stage' };
 
@@ -3312,8 +3253,8 @@ describe('WorkflowService', () => {
         where: { id: 'fresh-instance-stage' },
         data: { isUnassigned: true, unassignedAt: expect.any(Date) },
       });
-      expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'admin-1', titleEn: expect.stringContaining('unreachable') }),
+      expect(mockNotificationService.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-1' }),
         ORG_A,
       );
     });
@@ -3344,7 +3285,7 @@ describe('WorkflowService', () => {
       );
       mockPrisma.userRole.count.mockResolvedValue(0); // nobody holds role-chairman
       mockPrisma.role.findFirst.mockResolvedValue({ id: 'admin-role-id' });
-      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]); // TENANT_ADMIN lookup
+      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-1' }]); // an admin who could have been paged
 
       await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
 
@@ -3352,18 +3293,17 @@ describe('WorkflowService', () => {
         where: { id: 'fresh-instance-stage' },
         data: { isUnassigned: true, unassignedAt: expect.any(Date) },
       });
-      expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'admin-1', titleEn: expect.stringContaining('unreachable') }),
+      expect(mockNotificationService.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ titleEn: expect.stringContaining('unreachable') }),
         ORG_A,
       );
     });
 
-    // ACC-33 item 9 — genuine union proof: both resolvers report a DIFFERENT
-    // blocking transition simultaneously; both labels must survive into the
-    // single notification, proving concatenation ([...poolBlocking,
-    // ...triggerBlocking]) rather than one overwriting/masking the other
-    // (e.g. an `||` fallback or last-write-wins assignment would drop one).
-    it('preserves BOTH blocking transitions when the ASSIGNEE_POOL resolver and the trigger-condition resolver each flag a different transition on the same stage', async () => {
+    // ACC-33 item 9 — both resolvers report a DIFFERENT blocking transition
+    // simultaneously. This used to assert both labels in the admin
+    // notification; ACC-82 removed that notification, so the only observable
+    // left is the flag, written exactly once.
+    it('flags the stage once when the ASSIGNEE_POOL resolver and the trigger-condition resolver each flag a different transition', async () => {
       const roleStage = { ...SINGLE_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
       const createdStage = { ...BASE_INSTANCE_STAGE, id: 'fresh-instance-stage' };
       const assigneePoolTransition = makeTransition({
@@ -3399,11 +3339,16 @@ describe('WorkflowService', () => {
 
       await service.startInstance('DOCUMENT', 'object-1', ORG_A, ACTOR);
 
-      const [callArgs] = mockNotificationService.create.mock.calls.find(
-        ([arg]: [{ titleEn: string }]) => arg.titleEn.includes('unreachable'),
-      ) as [{ bodyEn: string }];
-      expect(callArgs.bodyEn).toContain('Approve (pool)');
-      expect(callArgs.bodyEn).toContain('Escalate (role)');
+      const flagWrites = mockPrisma.workflowInstanceStage.update.mock.calls.filter(
+        ([arg]: [{ data: { isUnassigned?: boolean } }]) => arg.data.isUnassigned === true,
+      );
+      expect(flagWrites).toEqual([
+        [{ where: { id: 'fresh-instance-stage' }, data: { isUnassigned: true, unassignedAt: expect.any(Date) } }],
+      ]);
+      expect(mockNotificationService.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ titleEn: expect.stringContaining('unreachable') }),
+        ORG_A,
+      );
     });
 
     it('does not flag the stage when startInstance has no outgoing ASSIGNEE_POOL transitions (default fixture behavior)', async () => {

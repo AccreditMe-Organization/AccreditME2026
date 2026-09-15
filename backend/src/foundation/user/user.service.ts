@@ -902,14 +902,27 @@ export class UserService {
     return user;
   }
 
+  // ACC-82 — the other half of invite()'s refresh above. The invited user
+  // becomes ACTIVE only at acceptance, which is the moment they start counting
+  // as their unit's Head; without a refresh here the unit stayed flagged vacant
+  // until something unrelated touched it. Called by
+  // AuthService.acceptInvitation() after the status flip.
+  async refreshHeadVacancyAfterActivation(user: {
+    primaryOrgUnitId: string | null;
+    organizationId: string;
+  }): Promise<void> {
+    if (!user.primaryOrgUnitId) return;
+    await this.organizationService.refreshOrgUnitHeadVacancy(user.primaryOrgUnitId, user.organizationId);
+  }
+
   // ACC-40 Section 2.4 — a remediation REPORT, not a data-transformation
   // script: which position/org unit an existing active user belongs to is
   // not programmatically derivable, unlike every existing backfill-*.ts
   // precedent in this codebase. Reuses the exact
   // Role.findFirst({ key: 'TENANT_ADMIN' }) → UserRole.findMany() →
   // NotificationService.create() chain already used by
-  // notifyTenantAdminsOfCoverageGap()/notifyTenantAdminsOfUnassignedStage()
-  // in workflow.service.ts, rather than a new mechanism. The actual fix
+  // notifyTenantAdminsOfCoverageGap() in workflow.service.ts, rather than a
+  // new mechanism. The actual fix
   // happens through the already-fully-wired user-profile.component.ts edit
   // form — no new UI needed for the fix itself, only this notification.
   async notifyTenantAdminsOfIncompleteProfiles(organizationId: string): Promise<void> {

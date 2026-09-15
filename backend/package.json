@@ -20,7 +20,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:demo": "ts-node -r tsconfig-paths/register prisma/demo-seed.ts",
-    "seed:realistic": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/seed/seed-realistic.ts"
+    "seed:realistic": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/seed/seed-realistic.ts",
+    "backfill:setup-view-permission": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-setup-view-permission.ts",
+    "cleanup:acc82-condition-data": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/cleanup-acc82-condition-data.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

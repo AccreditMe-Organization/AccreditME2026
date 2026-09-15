@@ -35,6 +35,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // to ACC-29's bug (editForm.reset() runs imperatively in openEdit(), no
 // separate *-form.component.ts involved).
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { LanguageService } from '../../../../core/services/language.service';
 
 // ACC-55 — hierarchy-mode shape for OverlaySelectComponent:
 //   optionGroupChildren="permissions"  optionGroupLabel="module"
@@ -128,6 +129,11 @@ const TRIGGER_CONDITIONS = [
             <td>{{ stageName(transition.toStageId) }}</td>
             <td>
               <p-tag [value]="transition.triggerCondition" severity="info" />
+              <!-- ACC-82 — which role can fire it. ROLE_BASED alone does not say, and
+                   a Setup health stage Fix lands here looking for exactly that. -->
+              @if (triggerRoleLabel(transition); as roleLabel) {
+                <span class="ms-2 text-sm text-[var(--am-text-primary)]">{{ roleLabel }}</span>
+              }
               @if (transition.isApprovalPath) {
                 <p-tag [value]="'workflow.approvalPath' | translate" severity="success" />
               }
@@ -435,6 +441,19 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
 
   readonly triggerConditions = TRIGGER_CONDITIONS;
   readonly roles = signal<RoleDto[]>([]);
+  private readonly languageService = inject(LanguageService);
+
+  // ACC-82 — the name of the role a ROLE_BASED transition is restricted to,
+  // for the table. Role names are tenant data (a custom role's name is typed by
+  // an admin), so they are chosen by language, not translated. A triggerRoleId
+  // that matches no known role is said plainly rather than hidden: it is
+  // exactly the case that leaves a stage unfireable.
+  triggerRoleLabel(transition: WorkflowTransitionDto): string | null {
+    if (transition.triggerCondition !== 'ROLE_BASED' || !transition.triggerRoleId) return null;
+    const role = this.roles().find((r) => r.id === transition.triggerRoleId);
+    if (!role) return this.translateService.instant('workflow.triggerRoleUnknown');
+    return (this.languageService.isArabic() && role.nameAr) || role.nameEn;
+  }
 
   // ── ACC-55: requiredPermission picker ──────────────────────────────────────
   // 72 permission strings across 19 modules. Flat that is unusable, and

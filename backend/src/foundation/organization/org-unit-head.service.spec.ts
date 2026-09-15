@@ -6,7 +6,6 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
 import { RoleService } from '../roles/role.service';
 import { OrganizationService } from './organization.service';
-import { NotificationService } from '../notification/notification.service';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -994,11 +993,10 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
       orgPosition: { findFirst: jest.fn() },
       user: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0), update: jest.fn().mockResolvedValue({}) },
       orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
-      role: { findFirst: jest.fn().mockResolvedValue(null) }, // no TENANT_ADMIN role — short-circuits before any notification call
+      role: { findFirst: jest.fn().mockResolvedValue(null) },
       userRole: { findMany: jest.fn() },
     };
     const realMockAuditLog = { log: jest.fn() };
-    const realMockNotificationService = { create: jest.fn() };
     const realMockUserService = {
       validatePositionAssignment: jest.fn(),
       syncHeadAuthorityRoleGrant: jest.fn(),
@@ -1017,7 +1015,6 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
     const realOrganizationService = new OrganizationService(
       realMockPrisma as unknown as PrismaService,
       realMockAuditLog as unknown as AuditLogService,
-      realMockNotificationService as unknown as NotificationService,
     );
     const realMockRoleService = {
       grantRoleViaHeadAuthority: jest.fn(),
