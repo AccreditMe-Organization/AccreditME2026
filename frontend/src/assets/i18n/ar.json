@@ -296,7 +296,8 @@
     "stageName": "المرحلة",
     "sla": "مدة الإنجاز",
     "searchStages": "ابحث في المراحل…",
-    "stagesEyebrow": "مراحل سير العمل"
+    "stagesEyebrow": "مراحل سير العمل",
+    "triggerRoleUnknown": "دور غير معروف"
   },
   "notification": {
     "title": "الإشعارات",

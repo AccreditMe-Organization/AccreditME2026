@@ -20,6 +20,7 @@ import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { WorkflowTransitionEditorComponent } from './workflow-transition-editor.component';
 import { WorkflowTransitionDto } from '../../services/workflow-template.service';
+import { LanguageService } from '../../../../core/services/language.service';
 
 const EXISTING: WorkflowTransitionDto = {
   id: 'transition-1',
@@ -309,5 +310,77 @@ describe('WorkflowTransitionEditorComponent (ACC-55)', () => {
     const req = http.expectOne(`${TRANSITIONS_URL}/transition-1`);
     expect(req.request.body.requiredPermission).toBeNull();
     req.flush({ transition: { ...EXISTING, requiredPermission: null }, permissionWarning: null });
+  });
+});
+
+// ACC-82 — the transitions table names the role a ROLE_BASED transition is
+// restricted to. "ROLE_BASED" alone did not say which transition a Setup
+// health stage Fix had landed on to repair.
+describe('WorkflowTransitionEditorComponent — trigger role in the table (ACC-82)', () => {
+  const ROLE = {
+    id: 'role-auditor',
+    organizationId: 'org-a',
+    key: 'AUDITOR',
+    nameEn: 'Auditor',
+    nameAr: 'مدقق',
+    description: null,
+    isSystem: true,
+    isActive: true,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  function render(transitions: WorkflowTransitionDto[], arabic = false): HTMLElement {
+    TestBed.configureTestingModule({
+      imports: [WorkflowTransitionEditorComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        ConfirmationService,
+        { provide: LanguageService, useValue: { isArabic: () => arabic } },
+      ],
+    });
+    const fixture = TestBed.createComponent(WorkflowTransitionEditorComponent);
+    fixture.componentRef.setInput('stageId', 'stage-1');
+    fixture.componentRef.setInput('transitions', transitions);
+    fixture.componentRef.setInput('availableStages', []);
+    const http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+    http
+      .expectOne(`${environment.apiUrl}/roles?pageSize=200`)
+      .flush({ data: [ROLE], total: 1, page: 1, pageSize: 200 });
+    http.expectOne(`${environment.apiUrl}/roles/permissions`).flush(PERMISSIONS);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const rowText = (el: HTMLElement) =>
+    Array.from(el.querySelectorAll('tbody tr')).map((tr) => (tr.textContent ?? '').replace(/\s+/g, ' ').trim());
+
+  it('shows the role’s name beside ROLE_BASED', () => {
+    const el = render([{ ...EXISTING, triggerRoleId: 'role-auditor' }]);
+    expect(rowText(el)[0]).toContain('ROLE_BASED');
+    expect(el.querySelector('tbody tr td:nth-child(3) span.ms-2')?.textContent?.trim()).toBe('Auditor');
+  });
+
+  it('shows the Arabic name in an Arabic session', () => {
+    const el = render([{ ...EXISTING, triggerRoleId: 'role-auditor' }], true);
+    expect(rowText(el)[0]).toContain('مدقق');
+  });
+
+  // The case that leaves a stage unfireable must not look like "no role".
+  it('says the role is unknown when the id matches no role', () => {
+    const el = render([{ ...EXISTING, triggerRoleId: 'role-deleted' }]);
+    expect(rowText(el)[0]).toContain('workflow.triggerRoleUnknown');
+  });
+
+  it('adds nothing when a ROLE_BASED transition has no role, or the condition is not role-based', () => {
+    const el = render([
+      { ...EXISTING, id: 't-no-role', triggerRoleId: null },
+      { ...EXISTING, id: 't-any', triggerCondition: 'ANY_AUTHENTICATED', triggerRoleId: 'role-auditor' },
+    ]);
+    expect(rowText(el)[0]).not.toContain('Auditor');
+    expect(rowText(el)[1]).not.toContain('Auditor');
   });
 });

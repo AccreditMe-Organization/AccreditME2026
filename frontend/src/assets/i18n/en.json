@@ -296,7 +296,8 @@
     "stageName": "Stage",
     "sla": "SLA",
     "searchStages": "Search stages…",
-    "stagesEyebrow": "Workflow stages"
+    "stagesEyebrow": "Workflow stages",
+    "triggerRoleUnknown": "Unknown role"
   },
   "notification": {
     "title": "Notifications",
