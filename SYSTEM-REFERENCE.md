@@ -3313,7 +3313,8 @@ date, a time span, a number or a count into text.
 (`npm run check:formatting`, CI frontend job, after the type check) fails on
 `| date`, `DatePipe`, `formatDate(`, `toLocale*String(`, `new Intl.`, the
 Angular number pipes, or a `'plural.'` key anywhere in `src/app` outside
-`core/formatting/` (spec files excepted), and on a file that uses
+`core/formatting/` (spec files excepted), on a date picker `dateFormat`
+(which would override the app-wide picker format), and on a file that uses
 `p-inputNumber` or `p-paginator` without its Latin-digits directive (checked
 per file, so a multi-line tag is caught). It reported 35 violations against
 `dev` at `fc8adcb` before the migration. The translation-file rules are specs

@@ -699,6 +699,12 @@ zone differs from the browser's.
   Windows also pruned `react` / `react-dom` peers that `@prisma/studio-core`
   requires (the drift CLAUDE.md warns about). Only the `moment` and
   `moment-hijri` entries were removed; `npm ci` accepts both lockfiles.
+* **The public holiday form's picker overrode the app-wide format** with
+  `dateFormat="yy-mm-dd"` — the only override in the app, so its dialog showed
+  "2026-01-01" while the list beside it showed "1 Jan 2026". Found in the
+  browser pass. The form control holds a `Date` and builds its ISO string in
+  code (`dateToIso`), so the attribute was display only; removed in a 16th
+  commit, and the scan now fails any `dateFormat` binding.
 * **A picker already showing a value keeps its input text in the old language**
   until the value changes; PrimeNG re-renders only the popup's names on a
   translation change.

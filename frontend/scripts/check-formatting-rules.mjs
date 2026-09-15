@@ -11,6 +11,8 @@
 //     toLocale*String(), new Intl.*, | number / percent / currency and their pipes)
 //   - names a plural key ('plural.…'), which only FormatService.count / amCount
 //     may resolve — through | translate it finds nothing (plural-catalog.ts)
+//   - sets a date picker's dateFormat, which would override the app-wide
+//     "15 Sep 2026" display (date-picker-locale.ts)
 //   - uses p-inputNumber or p-paginator without the directive that pins their
 //     digits to Latin (latin-digits.ts)
 //
@@ -36,6 +38,7 @@ const RULES = [
   { pattern: /\|\s*(number|percent|currency)\b/, message: 'formats a number with an Angular pipe; use amNumber' },
   { pattern: /\b(DecimalPipe|PercentPipe|CurrencyPipe)\b/, message: 'imports an Angular number pipe; use amNumber' },
   { pattern: /['"`]plural\./, message: "names a plural key; resolve counted strings with amCount / FormatService.count" },
+  { pattern: /\[?dateFormat\]?\s*=/, message: 'overrides the date picker format; provideDatePickerLocale() sets it app-wide' },
 ];
 
 // PrimeNG components that format digits with the BROWSER's locale unless told
