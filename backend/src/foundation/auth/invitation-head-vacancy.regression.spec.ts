@@ -54,26 +54,41 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
     invitationExpiresAt: Date | null;
   };
 
-  const HEAD_POSITION = { id: 'pos-head', isUnitHeadPosition: true, isActive: true };
+  const HEAD_POSITION = {
+    id: 'pos-head',
+    isUnitHeadPosition: true,
+    isActive: true,
+  };
 
   let units: UnitRow[];
   let users: UserRow[];
   let auth: AuthService;
   let organizationService: OrganizationService;
 
-  const holdsHeadPosition = (u: UserRow, w: { position?: { isUnitHeadPosition?: boolean; isActive?: boolean } }) =>
+  const holdsHeadPosition = (
+    u: UserRow,
+    w: { position?: { isUnitHeadPosition?: boolean; isActive?: boolean } },
+  ) =>
     !w.position ||
     (u.positionId === HEAD_POSITION.id &&
-      (w.position.isUnitHeadPosition === undefined || w.position.isUnitHeadPosition === HEAD_POSITION.isUnitHeadPosition) &&
-      (w.position.isActive === undefined || w.position.isActive === HEAD_POSITION.isActive));
+      (w.position.isUnitHeadPosition === undefined ||
+        w.position.isUnitHeadPosition === HEAD_POSITION.isUnitHeadPosition) &&
+      (w.position.isActive === undefined ||
+        w.position.isActive === HEAD_POSITION.isActive));
 
   const userMatches = (u: UserRow, w: Record<string, unknown>) =>
-    (w['organizationId'] === undefined || u.organizationId === w['organizationId']) &&
-    (w['primaryOrgUnitId'] === undefined || u.primaryOrgUnitId === w['primaryOrgUnitId']) &&
+    (w['organizationId'] === undefined ||
+      u.organizationId === w['organizationId']) &&
+    (w['primaryOrgUnitId'] === undefined ||
+      u.primaryOrgUnitId === w['primaryOrgUnitId']) &&
     (w['status'] === undefined || u.status === w['status']) &&
-    (w['invitationToken'] === undefined || u.invitationToken === w['invitationToken']) &&
+    (w['invitationToken'] === undefined ||
+      u.invitationToken === w['invitationToken']) &&
     (w['id'] === undefined || u.id === w['id']) &&
-    holdsHeadPosition(u, w as { position?: { isUnitHeadPosition?: boolean; isActive?: boolean } });
+    holdsHeadPosition(
+      u,
+      w as { position?: { isUnitHeadPosition?: boolean; isActive?: boolean } },
+    );
 
   beforeEach(() => {
     units = [
@@ -103,17 +118,41 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
 
     const prisma = {
       orgUnit: {
-        findFirst: jest.fn(({ where }: { where: { id: string; organizationId: string } }) =>
-          Promise.resolve(units.find((u) => u.id === where.id && u.organizationId === where.organizationId) ?? null),
+        findFirst: jest.fn(
+          ({ where }: { where: { id: string; organizationId: string } }) =>
+            Promise.resolve(
+              units.find(
+                (u) =>
+                  u.id === where.id &&
+                  u.organizationId === where.organizationId,
+              ) ?? null,
+            ),
         ),
-        update: jest.fn(({ where, data }: { where: { id: string }; data: Partial<UnitRow> }) => {
-          const unit = units.find((u) => u.id === where.id)!;
-          Object.assign(unit, data);
-          return Promise.resolve({ ...unit });
-        }),
+        update: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: { id: string };
+            data: Partial<UnitRow>;
+          }) => {
+            const unit = units.find((u) => u.id === where.id)!;
+            Object.assign(unit, data);
+            return Promise.resolve({ ...unit });
+          },
+        ),
         updateMany: jest.fn(
-          ({ where, data }: { where: { id: string; organizationId: string }; data: Partial<UnitRow> }) => {
-            const hit = units.filter((u) => u.id === where.id && u.organizationId === where.organizationId);
+          ({
+            where,
+            data,
+          }: {
+            where: { id: string; organizationId: string };
+            data: Partial<UnitRow>;
+          }) => {
+            const hit = units.filter(
+              (u) =>
+                u.id === where.id && u.organizationId === where.organizationId,
+            );
             hit.forEach((u) => Object.assign(u, data));
             return Promise.resolve({ count: hit.length });
           },
@@ -124,16 +163,28 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
           Promise.resolve(users.find((u) => userMatches(u, where)) ?? null),
         ),
         findMany: jest.fn(({ where }: { where: Record<string, unknown> }) =>
-          Promise.resolve(users.filter((u) => userMatches(u, where)).map((u) => ({ id: u.id }))),
+          Promise.resolve(
+            users
+              .filter((u) => userMatches(u, where))
+              .map((u) => ({ id: u.id })),
+          ),
         ),
         count: jest.fn(({ where }: { where: Record<string, unknown> }) =>
           Promise.resolve(users.filter((u) => userMatches(u, where)).length),
         ),
-        update: jest.fn(({ where, data }: { where: { id: string }; data: Partial<UserRow> }) => {
-          const user = users.find((u) => u.id === where.id)!;
-          Object.assign(user, data);
-          return Promise.resolve({ ...user });
-        }),
+        update: jest.fn(
+          ({
+            where,
+            data,
+          }: {
+            where: { id: string };
+            data: Partial<UserRow>;
+          }) => {
+            const user = users.find((u) => u.id === where.id)!;
+            Object.assign(user, data);
+            return Promise.resolve({ ...user });
+          },
+        ),
       },
     };
     const auditLog = { log: jest.fn() };
@@ -169,7 +220,10 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
     expect(units[0]).toMatchObject({ isHeadVacant: true });
 
     // Step 2 — the invitation is accepted.
-    await auth.acceptInvitation({ token: 'invite-token', password: 'a-long-enough-password' });
+    await auth.acceptInvitation({
+      token: 'invite-token',
+      password: 'a-long-enough-password',
+    });
     expect(users[0]!.status).toBe('ACTIVE');
 
     // The unit has an active Head now, so it must not read as vacant.
@@ -184,7 +238,10 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
     users[0]!.positionId = 'pos-ordinary';
     await organizationService.refreshOrgUnitHeadVacancy(UNIT, ORG);
 
-    await auth.acceptInvitation({ token: 'invite-token', password: 'a-long-enough-password' });
+    await auth.acceptInvitation({
+      token: 'invite-token',
+      password: 'a-long-enough-password',
+    });
 
     expect(units[0]).toMatchObject({ isHeadVacant: true });
   });
