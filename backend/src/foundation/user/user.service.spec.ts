@@ -372,6 +372,37 @@ describe('UserService', () => {
     });
   });
 
+  describe('getHijriDisplay (ACC-94)', () => {
+    it("reads only the preference, scoped to the caller's tenant", async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ hijriDisplay: true });
+      await expect(service.getHijriDisplay('u1', ORG_A)).resolves.toBe(true);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'u1', organizationId: ORG_A },
+        select: { hijriDisplay: true },
+      });
+    });
+
+    it('throws NotFoundException for a nonexistent user id', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+      await expect(service.getHijriDisplay('u1', ORG_A)).rejects.toThrow(NotFoundException);
+    });
+
+    itEnforcesTenantIsolation('getHijriDisplay', async () => {
+      mockPrisma.user.findFirst.mockImplementation(
+        ({ where }: { where: { id?: string; organizationId?: string } }) =>
+          Promise.resolve(
+            [{ id: 'u1', organizationId: ORG_B, hijriDisplay: true }].find(
+              (u) =>
+                (where.id === undefined || u.id === where.id) &&
+                (where.organizationId === undefined || u.organizationId === where.organizationId),
+            ) ?? null,
+          ),
+      );
+
+      await expect(service.getHijriDisplay('u1', ORG_A)).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('getByIdForViewer', () => {
     it('allows self-view with zero permissions (ACC-43)', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'u1', organizationId: ORG_A });

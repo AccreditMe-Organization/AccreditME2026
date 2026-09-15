@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { UserService } from '../user/user.service';
+import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 
 // AuthController imports the real AuthService module for its DI token even
@@ -35,7 +36,8 @@ describe('AuthController', () => {
     getPublicUserById: jest.Mock;
     resolveLanguage: jest.Mock;
   };
-  let userService: { getById: jest.Mock };
+  let userService: { getById: jest.Mock; getHijriDisplay: jest.Mock };
+  let workingCalendarService: { getEffectiveTimeZone: jest.Mock };
 
   const req = {} as any;
   const res = {} as any;
@@ -58,6 +60,10 @@ describe('AuthController', () => {
     };
     userService = {
       getById: jest.fn().mockResolvedValue({ id: 'user-1', email: 'a@example.com', name: 'A User', language: null }),
+      getHijriDisplay: jest.fn().mockResolvedValue(false),
+    };
+    workingCalendarService = {
+      getEffectiveTimeZone: jest.fn().mockResolvedValue('Asia/Riyadh'),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -65,6 +71,7 @@ describe('AuthController', () => {
       providers: [
         { provide: AuthService, useValue: service },
         { provide: UserService, useValue: userService },
+        { provide: WorkingCalendarService, useValue: workingCalendarService },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -79,7 +86,30 @@ describe('AuthController', () => {
     expect(userService.getById).toHaveBeenCalledWith('user-1', 'org-1');
     expect(service.getPublicUserById).not.toHaveBeenCalled();
     expect(service.resolveLanguage).toHaveBeenCalledWith(null, 'org-1');
-    expect(result).toEqual({ id: 'user-1', email: 'a@example.com', name: 'A User', language: 'en', impersonatedBy: null });
+    expect(result).toEqual({
+      id: 'user-1',
+      email: 'a@example.com',
+      name: 'A User',
+      language: 'en',
+      timeZone: 'Asia/Riyadh',
+      hijriDisplay: false,
+      impersonatedBy: null,
+    });
+  });
+
+  // ACC-94 (D2) — the display context. The zone comes from the working calendar
+  // (the SLA engine's zone, D3), never from Organization.timezone; the calendar
+  // preference is the user's own. Both are read for the caller's tenant.
+  it("getMe returns the working-calendar time zone and the user's Hijri preference for the caller's tenant", async () => {
+    workingCalendarService.getEffectiveTimeZone.mockResolvedValue('Asia/Dubai');
+    userService.getHijriDisplay.mockResolvedValue(true);
+
+    const result = await controller.getMe('user-1', 'org-1', undefined);
+
+    expect(workingCalendarService.getEffectiveTimeZone).toHaveBeenCalledWith('org-1');
+    expect(userService.getHijriDisplay).toHaveBeenCalledWith('user-1', 'org-1');
+    expect(result.timeZone).toBe('Asia/Dubai');
+    expect(result.hijriDisplay).toBe(true);
   });
 
   it('getMe resolves impersonatedBy via AuthService.getPublicUserById when the session is impersonated', async () => {

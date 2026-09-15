@@ -243,6 +243,18 @@ export class UserService {
     return user;
   }
 
+  // ACC-94 (D2) — the calendar preference GET /auth/me returns for display.
+  // A dedicated read rather than a field on IUser: IUser feeds toSafeUser(),
+  // the allowlist behind every /users response, which this must not widen.
+  async getHijriDisplay(id: string, organizationId: string): Promise<boolean> {
+    const user = await this.prisma.user.findFirst({
+      where: { id, organizationId },
+      select: { hijriDisplay: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return user.hijriDisplay;
+  }
+
   // ACC-43 — the HTTP-facing self-or-view entry point for GET /users/:id.
   // Deliberately NOT folded into getById() itself: getById() is reused
   // internally (updateProfile()/updateOutOfOffice()/deactivate() below,
