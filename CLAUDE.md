@@ -57,7 +57,9 @@ Tier 3 — On-premises / private cloud (future)
 - PDF generation: LibreOffice headless (Docker sidecar)
 - Virus scanning: ClamAV (Docker sidecar)
 - Date handling: Luxon (all timezone operations)
-- Hijri calendar: moment-hijri
+- Hijri calendar: the platform's Intl (`islamic-umalqura`) through the display
+  formatting layer — no library. moment-hijri was listed here from scaffold,
+  never imported, and removed in ACC-94.
 
 ### Frontend
 - Framework: Angular 18+ (standalone components)
@@ -1042,7 +1044,8 @@ Deletion certificate (signed PDF) issued after confirmed deletion.
 - All DB timestamps: UTC only — no exceptions
 - Luxon for all timezone conversion in NestJS
 - Tenant timezone configured in settings
-- Hijri calendar display toggle per user — moment-hijri for conversion
+- Hijri calendar display toggle per user — Intl `islamic-umalqura` via the
+  formatting layer (ACC-94); no screen sets the preference yet (ACC-98)
 - Source of truth always Gregorian UTC — Hijri is display only
 
 ### Working Calendar
@@ -2100,6 +2103,61 @@ Full detail: SYSTEM-REFERENCE.md Section 13 (Setup health) and Section 5.5
 - **Escalation walks run for every vacant unit on every sweep** — a known
   cost that grows with vacant units, accepted because stale severity is the
   same defect as a stale flag.
+
+---
+
+## Key Architecture Decisions (ACC-94)
+
+Full detail: SYSTEM-REFERENCE.md Section 9.6 (the layer) and 9.7 (the
+authoritative time-zone field); decisions and evidence in
+`backend/Plans/step-94-formatting-layer.md`. The rule, briefly:
+
+- **Dates, numbers and counted strings are displayed ONLY through
+  `frontend/src/app/core/formatting/`, by meaning.** `amDate` /
+  `amDateTime` / `amRelative` / `amDuration` / `amNumber` / `amCount` in
+  templates, `FormatService` in TypeScript. Never `| date`, `DatePipe`,
+  `formatDate`, `toLocale*String`, `new Intl.*` or the Angular number pipes
+  in a component. A REQUIRED pattern, same status as `EditDialogComponent` —
+  and enforced, not advised: `npm run check:formatting` fails CI.
+- **What drives what, none of it the browser's:** words follow the UI
+  language; digits are **Latin in both languages** (Ahmad's decision); the
+  **time zone is the tenant's** (the working calendar's, see below); the
+  **calendar is the user's** (`User.hijriDisplay`). A browser zone is where a
+  reader happens to be — rendering "today" in it is how a task already overdue
+  reads "due today".
+- **One format per meaning:** date "15 Sep 2026", date-time "15 Sep 2026,
+  14:05" (24-hour), relative "3 days ago", duration "5 hours". Month as a word,
+  day first — "9/15/26" reads as 9 October in the GCC. A missing or unparseable
+  value renders "—", never the raw string. Due dates are always date-time.
+- **A counted string is a plural object in the translation files' `plural`
+  section, with EVERY category the language has** — six for Arabic, two for
+  English — never a count branch in a component and never one fixed form. The
+  plural section is kept out of ngx-translate by a loader, so a plural key
+  cannot be rendered through `| translate`. Time quantities never need a
+  plural object: they go through `duration` / `relative`, which pluralise by
+  construction.
+- **Arabic after a preposition needs the genitive**, which only `relative`
+  gives ("قبل يومين"); `duration` is nominative ("يومان"). Pass both to the
+  translation and let each language use the one its grammar needs.
+- **Built-in plurals, not ICU (D1).** A messageformat compiler measured 75.7 kB
+  and compiles messages with `new Function`, which would need `unsafe-eval` in
+  any Content-Security-Policy — the stronger reason. Revisit only when a real
+  sentence needs an ICU `select` (gender, say), weighed against that sentence.
+- **`WorkingCalendar.timezone` is the tenant's time zone (D3)** — the zone the
+  SLA engine computes due dates in, so the screen and the engine cannot
+  disagree. `Organization.timezone` is read by nothing that computes a date.
+  Two fields holding one fact is the ACC-82 stale-flag shape; merging them is
+  ACC-97.
+- **Hijri is display only (D4):** Hijri first, Gregorian in brackets, from the
+  platform's `Intl` Umm al-Qura calendar. Anything a person types or picks,
+  and anything machine-readable, stays Gregorian.
+- **Platform screens use the signed-in session's zone, labelled on screen** —
+  a fleet list in six tenant zones cannot be compared. Revisit if a platform
+  screen ever shows tenant-operational times (SLA breaches, working hours),
+  which belong to the tenant's day.
+- **Server-built text is not covered.** Notification and email bodies are
+  stored text built on the backend and bypass the layer, and "due in 2 days"
+  there would disagree with an SLA counted in working days. ACC-95.
 
 ---
 

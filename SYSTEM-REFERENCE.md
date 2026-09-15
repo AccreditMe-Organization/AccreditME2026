@@ -66,7 +66,7 @@ audit's starting point, not be mistaken for having already done it.
 6. Lookup System — ✅ complete
 7. Organization Structure — ✅ complete
 8. Multi-Tenancy Conventions — ✅ complete
-9. i18n / RTL — ✅ complete
+9. i18n / RTL — ✅ complete (9.6 = the display formatting layer, ACC-94; 9.7 = the authoritative time-zone field)
 10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
@@ -3186,13 +3186,34 @@ No call site found anywhere using `isArabic()`/`isRtl()` to conditionally
 render static translated UI copy — that class of text uses
 `| translate` throughout, consistent with the intended separation.
 
-### 9.4 Translation File Parity — Static Check Only
+### 9.4 Translation File Checks — Real Controls Since ACC-78 and ACC-94
 
-`frontend/src/assets/i18n/en.json` and `ar.json` are both exactly **486
-lines**. Suggestive of key parity, not a proof (a line-count match
-doesn't guarantee identical key sets) — a real key-diff was not run for
-this document; flagged as a cheap follow-up check, not claimed as
-verified.
+**SUPERSEDED — this section once said parity was a static line count only.**
+That stopped being true in ACC-78, which added
+`frontend/src/app/shared/i18n/translation-keys.spec.ts`, and ACC-94 extended it.
+What the spec now enforces over both files, needing no maintained list except
+where stated:
+
+* **Parity:** every key in one file is in the other, and no value is empty.
+  Keys under the top-level `plural` section (§9.6) are compared as units, not
+  flattened, because Arabic and English legitimately define different plural
+  categories.
+* **Plural categories:** each counted string defines exactly the categories
+  `Intl.PluralRules` gives the language — six for Arabic (`zero one two few
+  many other`), two for English. No runtime fallback to `other` is relied on
+  for Arabic.
+* **No counted number outside `plural`:** a placeholder named `count`, `days`,
+  `hours`, `minutes`, `total` or `…Count` fails unless the key is one of two
+  number-only exceptions listed in the spec with their reason
+  (`list.panelRange`, `workflow.stageIndicator.revisited`), and the spec
+  checks those still exist.
+* **Latin digits:** no Arabic-Indic digit anywhere, plural forms included.
+* The concatenated-key registry (ACC-78) is still a maintained list, weaker
+  than the rest, as its own header says.
+
+The source-level half of the rule — nothing formats a date outside the layer —
+cannot be a Karma spec (no filesystem in the browser). It is a CI build step,
+`npm run check:formatting` (§9.6).
 
 ### 9.5 What's Explicitly Not Covered Here
 
@@ -3204,6 +3225,114 @@ for this document. ACC-19 itself only verified the underlying mechanism
 against a representative sample (nav shell, one form, one table), per
 CLAUDE.md's own account, which this section's findings are consistent
 with, not a contradiction of.
+
+### 9.6 The Display Formatting Layer (ACC-94)
+
+`frontend/src/app/core/formatting/`. Plan and decisions:
+`backend/Plans/step-94-formatting-layer.md`. The one place the app turns a
+date, a time span, a number or a count into text.
+
+**What drives what** — each from its own source, none from the browser:
+
+| Aspect | Driven by | Source |
+| -- | -- | -- |
+| Words (month names, "ago") | UI language | `TranslateService.currentLang()` |
+| Digits | Fixed: Latin, both languages | the layer pins `numberingSystem` |
+| Time zone (which day an instant is) | The tenant | working-calendar zone, `GET /auth/me` → `AuthService.displayPreferences` (§9.7) |
+| Calendar (Gregorian / Hijri) | The user | `User.hijriDisplay`, same response |
+| Plural form | UI language + the number | `Intl.PluralRules` |
+
+**Pieces:**
+
+* `FormatContext` — the three inputs as signals. `SessionFormatContext` reads
+  the session; `TestFormatContext` (`provideFormatTesting()`) lets a spec set
+  the zone and calendar and switch language the app's way. Defaults before
+  `/auth/me` answers: `Asia/Riyadh` (the backend's `GCC_DEFAULT`) and
+  Gregorian.
+* `FormatService` — by meaning, never by format string:
+  `date` "15 Sep 2026", `dateTime` "15 Sep 2026, 14:05" (24-hour),
+  `relative` "3 days ago" / "قبل 3 أيام", `duration` "5 hours" / "5 ساعات",
+  `elapsed(from, to)`, `number`, `count(key, n, params)`, and `zoneLabel()`
+  "Asia/Riyadh (GMT+3)". Every method reads the context signals, so it
+  re-evaluates inside a `computed()` (the ACC-55 concern is met by
+  construction, and is specced). Arabic formats as `ar-SA`, whose default digits
+  are Arabic-Indic, so the Latin pin is load-bearing and a spec fails without it.
+* Pipes, impure: `amDate`, `amDateTime`, `amRelative`, `amDuration`,
+  `amNumber`, `amCount`. They read the context signals on every call — the
+  memo reads them before reusing text — which is what keeps an OnPush view
+  current on a language switch. A memo that skipped the read would silently
+  unsubscribe the view; `format.pipes.spec.ts` proves it with an OnPush host.
+* **Counted strings** live in each translation file's top-level `plural`
+  section. `PluralSplittingLoader` (`providePluralAwareTranslateLoader()`,
+  after the HTTP loader in `app.config.ts`) strips that section before
+  ngx-translate sees it and hands it to `PluralCatalog`. So a plural key
+  through `| translate` finds nothing — there is no object to render as
+  "[object Object]". `PluralKey` is derived from `en.json` at compile time, so
+  a mistyped key fails `ng build`.
+* `provideDatePickerLocale()` — PrimeNG date pickers display "15 Sep 2026" and
+  Intl month and day names in the UI language, week starting Sunday. Display
+  only: a picker's value stays Gregorian, and how a picked day becomes a stored
+  instant is ACC-96. A picker already showing a value keeps its input text until
+  the value changes; its popup's names update at once.
+
+**Rules the layer settles:**
+
+* **Empty value:** null, undefined, an empty string or an unparseable value
+  renders "—", never the raw input.
+* **Elapsed time:** under a minute "less than a minute"; under 60 minutes,
+  minutes; under 48 hours, hours; otherwise whole days — floored, so nothing
+  reads "0 days" and "5 hours late" never means 4 h 31 min.
+* **Absolute or relative:** absolute for anything a person acts on or cites
+  (due dates, effective dates, closure dates, stale-check times); relative only
+  for recency and age summaries, with the absolute value reachable.
+* **Arabic grammar after a preposition:** `duration` gives the nominative
+  ("يومان", "ساعتان"), `relative` the genitive ("قبل يومين"). A translation
+  whose duration follows a preposition uses `{{relative}}`; one in a
+  nominative position (label: value) uses `{{duration}}`. Call sites pass
+  both and each language uses the one its grammar needs — e.g. Setup health
+  "Open {{duration}}" / "فُتحت {{relative}}", overdue "Overdue {{duration}}" /
+  "متأخرة: {{duration}}".
+* **Hijri (D4):** `islamic-umalqura` via Intl — no library — checked against
+  published Umm al-Qura dates for 1447–1448. Display only: Hijri first,
+  Gregorian in brackets. The preference has no screen that sets it (ACC-98).
+* **Platform screens** use the signed-in session's zone, not each tenant's (a
+  fleet list in six tenant zones could not be compared), and say which on
+  screen (`format.shownInZone`). Revisit if a platform screen shows
+  tenant-operational times such as SLA breaches or working hours.
+
+**Enforcement:** `frontend/scripts/check-formatting-rules.mjs`
+(`npm run check:formatting`, CI frontend job, after the type check) fails on
+`| date`, `DatePipe`, `formatDate(`, `toLocale*String(`, `new Intl.`, the
+Angular number pipes, or a `'plural.'` key anywhere in `src/app` outside
+`core/formatting/` (spec files excepted). It reported 35 violations against
+`dev` at `fc8adcb` before the migration. The translation-file rules are specs
+(§9.4).
+
+**Not covered — server-built text.** Notification and email bodies are built
+on the backend and stored; they do not pass through this layer. ACC-95,
+including why "due in 2 days" would disagree with an SLA counted in working
+days.
+
+### 9.7 The Tenant's Time Zone — Which Field Is Authoritative (ACC-94, D3)
+
+Two fields hold the tenant's time zone:
+
+| Field | Edited by | Read by |
+| -- | -- | -- |
+| `WorkingCalendar.timezone` | Working Calendar screen | **`WorkingCalendarService.calculateDeadline()`** (every SLA due date), **`SlaMonitorProcessor.isWithinWorkingHours()`**, and **all frontend date display** (via `GET /auth/me`) |
+| `Organization.timezone` | tenant create / update DTOs | returned by `GET /tenant`; **nothing that computes a date** |
+
+**`WorkingCalendar.timezone` is authoritative.** Display uses the zone the SLA
+engine computes in, so "due" on screen and "due" in the engine cannot disagree.
+`WorkingCalendarService.getEffectiveTimeZone()` resolves it **read-only**: the
+calendar row's zone, or `GCC_DEFAULT.timezone` when the tenant has none — the
+value `getOrCreate()` would store — without creating a row, because
+`GET /auth/me` must not write.
+
+Known gap, not fixed here: `getOrCreate()` seeds a new calendar from
+`GCC_DEFAULT`, ignoring `Organization.timezone`, so a tenant created in
+`Asia/Dubai` gets a Riyadh calendar. Two fields holding one fact is the shape
+that produced ACC-82's stale vacancy flag. **ACC-97.**
 
 ---
 

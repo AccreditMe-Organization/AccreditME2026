@@ -1,7 +1,9 @@
 # ACC-94 — One Formatting Layer for Dates, Numbers and Plurals
 
-**Status: PLAN APPROVED by Ahmad on 2026-09-15, with conditions (§0).** The commit
-sequence (§10) is proposed and awaiting approval. No implementation has started.
+**Status: IMPLEMENTED on 2026-09-15, 14 commits as approved (§10).** The plan was
+approved with conditions (§0), and the sequence with four more (§12). §12 also
+records where the implementation deviated from this plan, and why. Awaiting the
+browser pass and /ready-to-pr.
 Branch: `feature/ACC-94-formatting-layer` (from `dev` at `fc8adcb`).
 
 This sets a rule every future module copies (Documents and Meetings first), so
@@ -638,3 +640,60 @@ zone differs from the browser's.
    change beyond D2 for one field (tenant created date). **Flagged for Ahmad:**
    reverse it if the viewed tenant's zone matters there.
 3. **A tenant-level Hijri default** belongs to ACC-98, which owns the preference.
+
+---
+
+## 12. As implemented
+
+### Conditions attached to the sequence's approval (2026-09-15)
+
+| # | Condition | How it was met |
+| -- | -- | -- |
+| — | Platform screens: label the zone on screen; revisit if they show tenant-operational times | Tenant detail shows `format.shownInZone` ("Dates shown in Asia/Riyadh (GMT+3)") under its date, with the revisit note in the template comment, CLAUDE.md and SYSTEM-REFERENCE §9.6 |
+| 1 | The layer is signal-aware, not pipes only | Every `FormatService` method reads the context signals; specs prove a `computed()` re-evaluates on a language, zone or calendar change, and mutation-tested (making the language read untracked fails them). Pipes stay current in OnPush views, proven with an OnPush host of memoised pipes (making the memo's read untracked fails it) |
+| 2 | Parity spec updated in the same commit that introduces plural sections | Commit 6 (`162db76`) introduced both |
+| 3 | Check what else imports moment / moment-hijri, including the backend | Nothing imported either, in either package; the backend also declared `moment-hijri`, unused. Removed from both (commit 13). CLAUDE.md's two mentions changed in commit 14 |
+| 4 | Browser pass list, screenshotted | See the report before /ready-to-pr |
+
+### Where the implementation deviates from this plan
+
+* **Arabic ages and elapsed times use `relative`, not `duration`, after a
+  preposition.** Not foreseen in §4: `duration` gives the Arabic nominative
+  ("يومان"), which is wrong after "منذ"; `relative` gives the genitive ("قبل
+  يومين"). Setup health's Arabic age reads "فُتحت قبل 7 أيام" rather than the
+  "قائمة منذ 7 أيام" the defect report used as its example; the plural form is
+  what was wrong, and both are correct. Call sites pass both placeholders and
+  each language's string uses the one its grammar needs. Recorded as a rule.
+* **Setup health ages from 24 to 48 hours read in hours** ("Open 30 hours"), not
+  "Open 1 day": the layer's single elapsed-time rule. Under 24 hours keeps
+  ACC-82's sentence.
+* **Freshness notices show an absolute date and time**, not a relative one:
+  "not checked since 3 hours ago" reads badly, and a stale check is acted on.
+* **The Hijri preference is read with its own query** (`UserService.getHijriDisplay`),
+  not added to `IUser`, because `IUser` feeds `toSafeUser()`, the allowlist
+  behind every `/users` response.
+* **A fresh login asks `/auth/me` once more**, because the login response
+  carries no display context and widening it was not part of D2.
+* **The list range string needed no change.** Its numbers are JavaScript
+  numbers, which are always Latin, and it matches PrimeNG's paginator beside it.
+* **The due summary moved into `task-due-summary.ts`** so the "overdue 0d" fix
+  could be tested without a Committee record component spec, which does not
+  exist.
+* **Bundle:** the initial bundle went from 813.62 kB to **810.00 kB** (−3.62 kB).
+  The layer added about 7 kB to start-up (the rail uses it); removing every
+  `DatePipe` let Angular's date-formatting code be tree-shaken out.
+* **The backend lockfile was edited, not regenerated.** `npm uninstall` on
+  Windows also pruned `react` / `react-dom` peers that `@prisma/studio-core`
+  requires (the drift CLAUDE.md warns about). Only the `moment` and
+  `moment-hijri` entries were removed; `npm ci` accepts both lockfiles.
+* **A picker already showing a value keeps its input text in the old language**
+  until the value changes; PrimeNG re-renders only the popup's names on a
+  translation change.
+
+### Defect tests, run against the unmodified code first
+
+| Defect | Test | Output before the fix |
+| -- | -- | -- |
+| 1. Arabic plural | `setup-health-page.component.spec.ts` — "words Arabic ages with the correct plural form for each count" | `'قائمة منذ 7 يومًا'`, `'قائمة منذ 100 يومًا'`, `'اكتُشفت أول مرة قبل 7 يومًا'` … (1 failed, 16 passed) |
+| 2. Digits | `translation-keys.spec.ts` — "uses no Arabic-Indic digits in either file" | `ar:setupHealth.cleared.window: آخر ٧ أيام`, `…cleared.none`, `…cleared.note` (1 failed) |
+| 3. Date format and zone | `my-tasks.component.spec.ts` — due dates | `'9/16/26, 12:30 AM'` for a New York, a Riyadh and an Arabic session alike (3 failed) |
