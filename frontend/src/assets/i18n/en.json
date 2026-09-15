@@ -103,7 +103,8 @@
     "actingHeadCoveringFor": "Covering For (optional)",
     "actingHeadAssign": "Assign Acting Head",
     "errorLoad": "Failed to load Head status.",
-    "errorSave": "Failed to save changes."
+    "errorSave": "Failed to save changes.",
+    "manageHeadNamed": "Manage Head — {{unit}}"
   },
   "lookup": {
     "title": "Lookup Categories",
@@ -452,7 +453,8 @@
     "assigneeCount": "{{count}} assignees",
     "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
     "errorAction": "The action could not be completed. Please try again.",
-    "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned."
+    "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned.",
+    "reassignNamed": "Reassign “{{title}}”"
   },
   "auth": {
     "login": "Log In",

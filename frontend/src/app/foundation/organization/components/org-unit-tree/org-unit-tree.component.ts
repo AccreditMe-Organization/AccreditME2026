@@ -1,6 +1,6 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { TreeNode } from 'primeng/api';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TreeTableModule } from 'primeng/treetable';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -12,6 +12,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
+import { LanguageService } from '../../../../core/services/language.service';
 
 @Component({
   selector: 'app-org-unit-tree',
@@ -140,7 +141,7 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
     </ng-template>
     <app-edit-dialog
       [(visible)]="headPanelVisible"
-      [header]="'orgUnitHead.manageHead' | translate"
+      [header]="headPanelHeader()"
       [content]="headPanelTpl"
     />
   `,
@@ -150,6 +151,8 @@ export class OrgUnitTreeComponent implements OnInit {
   @ViewChild('headPanelTpl', { read: TemplateRef, static: true }) headPanelTpl!: TemplateRef<unknown>;
 
   private readonly orgUnitService = inject(OrgUnitService);
+  private readonly translate = inject(TranslateService);
+  private readonly languageService = inject(LanguageService);
 
   readonly loading = signal(false);
   readonly treeNodes = signal<TreeNode<OrgUnitDto>[]>([]);
@@ -161,6 +164,16 @@ export class OrgUnitTreeComponent implements OnInit {
 
   readonly headPanelVisible = signal(false);
   readonly managingHeadUnitId = signal<string | null>(null);
+  // ACC-82 — the panel names its unit. A Setup health Fix opens it directly
+  // from a list of many units, and "Manage Head" alone does not say which.
+  private readonly managingHeadUnit = signal<OrgUnitDto | null>(null);
+  readonly headPanelHeader = computed(() => {
+    const unit = this.managingHeadUnit();
+    if (!unit) return this.translate.instant('orgUnitHead.manageHead');
+    // Tenant data: chosen by language, never translated (SYSTEM-REFERENCE §9.3).
+    const name = (this.languageService.isArabic() && unit.nameAr) || unit.nameEn;
+    return this.translate.instant('orgUnitHead.manageHeadNamed', { unit: name });
+  });
 
   ngOnInit(): void {
     this.loadTree();
@@ -172,6 +185,7 @@ export class OrgUnitTreeComponent implements OnInit {
 
   onManageHead(unit: OrgUnitDto): void {
     this.managingHeadUnitId.set(unit.id);
+    this.managingHeadUnit.set(unit);
     this.headPanelVisible.set(true);
   }
 

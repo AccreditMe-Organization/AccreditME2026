@@ -1,7 +1,7 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
@@ -134,7 +134,7 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
     <app-edit-dialog
       [visible]="reassignVisible()"
       (visibleChange)="reassignVisible.set($event)"
-      [header]="'task.reassign' | translate"
+      [header]="reassignHeader()"
       [content]="reassignFormTpl"
       width="520px"
     />
@@ -147,6 +147,7 @@ export class UnassignedTasksComponent implements OnInit {
   private readonly taskService = inject(TaskService);
   private readonly userService = inject(UserService);
   private readonly orgUnitService = inject(OrgUnitService);
+  private readonly translate = inject(TranslateService);
 
   readonly loading = signal(false);
   readonly tasks = signal<ITaskDto[]>([]);
@@ -157,7 +158,17 @@ export class UnassignedTasksComponent implements OnInit {
   readonly reassignVisible = signal(false);
   readonly reassigning = signal(false);
   readonly reassignError = signal<string | null>(null);
-  private reassignTarget: ITaskDto | null = null;
+  // ACC-82 — a signal so the dialog header can name the task. A Setup health
+  // Fix opens this dialog straight from a list of many rows, and the admin
+  // needs to see which task they are about to reassign.
+  private readonly reassignTarget = signal<ITaskDto | null>(null);
+  readonly reassignHeader = computed(() => {
+    const task = this.reassignTarget();
+    // Task titles are user-entered data, shown as typed.
+    return task
+      ? this.translate.instant('task.reassignNamed', { title: task.title })
+      : this.translate.instant('task.reassign');
+  });
 
   readonly reassignForm = this.fb.group({
     newAssigneeUserIds: [[] as string[], [Validators.required, Validators.minLength(1)]],
@@ -199,14 +210,15 @@ export class UnassignedTasksComponent implements OnInit {
   }
 
   onOpenReassign(task: ITaskDto): void {
-    this.reassignTarget = task;
+    this.reassignTarget.set(task);
     this.reassignError.set(null);
     this.reassignForm.reset({ newAssigneeUserIds: [], reason: '' });
     this.reassignVisible.set(true);
   }
 
   onSubmitReassign(): void {
-    if (this.reassignForm.invalid || !this.reassignTarget) {
+    const target = this.reassignTarget();
+    if (this.reassignForm.invalid || !target) {
       this.reassignForm.markAllAsTouched();
       return;
     }
@@ -215,7 +227,7 @@ export class UnassignedTasksComponent implements OnInit {
 
     const value = this.reassignForm.getRawValue();
     this.taskService
-      .reassign(this.reassignTarget.id, {
+      .reassign(target.id, {
         newAssigneeUserIds: value.newAssigneeUserIds!,
         reason: value.reason!,
       })

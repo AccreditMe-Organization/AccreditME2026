@@ -6,7 +6,7 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
+import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader, TranslateService } from '@ngx-translate/core';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
 import { UnassignedTasksComponent } from './unassigned-tasks.component';
@@ -114,6 +114,17 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
 
     expect(component.reassignVisible()).toBe(false);
     expect(component.tasks()).toEqual([]);
+  });
+
+  // ACC-82 — a Setup health Fix opens this dialog from a list of many rows; the
+  // header has to say which task it is for.
+  it('names the task in the reassign dialog header', () => {
+    const translate = TestBed.inject(TranslateService);
+    translate.setTranslation('en', { task: { reassignNamed: 'Reassign “{{title}}”' } }, true);
+
+    component.onOpenReassign(UNASSIGNED_TASK);
+
+    expect(component.reassignHeader()).toBe('Reassign “Review incident report”');
   });
 
   it('does not submit when the reassign form is invalid (no assignees, no reason)', () => {
