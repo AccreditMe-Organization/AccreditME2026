@@ -2354,7 +2354,16 @@ definition as the entry-time refresh) — and writes only what changed. The
 escalation walk runs only for a unit becoming vacant and for a unit that
 stays vacant (the ancestor-drift check: an ancestor's Acting Head can
 come or go while this unit's own state never changes); a unit with its own
-Head is never walked. The entry-time refresh above stays, so a change
+Head is never walked. **Known cost: one escalation walk per vacant unit per
+pass** — a query per ancestor level, every 15 minutes — so a tenant with many
+vacant units makes this step proportionally slower. That is deliberate:
+severity (`isHeadFullyUnresolved`) is derived state too, and a stale severity
+is the same defect as a stale flag. Measured on dev after the correction
+(41 active units, 3 orgs, 3 vacant): the steady-state pass writes nothing and
+makes 7 reads plus 3 walks — about 2.1 s from a Middle East client against the
+Frankfurt database, round-trip dominated; a worker beside the database pays a
+fraction of that. The corrective first pass (32 writes) took about 16 s from
+the same client. The entry-time refresh above stays, so a change
 shows at once; the sweep guarantees the cache is right within 15 minutes
 whatever path changed it (the rule, §13.10).
 
@@ -5194,8 +5203,9 @@ by `SetupHealthService`).
 
 Two precisions, so the wording is not over-read:
 
-- **"Today" means under 24 hours**, not the calendar day: the age is whole
-  24-hour periods since `openedAt`.
+- **Ages count whole 24-hour periods** since `openedAt`, not calendar days,
+  so the youngest bucket reads "in the last 24 hours" rather than "today"
+  (which could have described something opened late the previous day).
 - **A unit the sweep finds vacant** without the entry-time refresh having
   noticed gets `headVacantSince` = the moment the sweep found it, because
   the path that caused the vacancy recorded nothing.
@@ -5310,9 +5320,14 @@ out-of-office routing notifications.
 `npm run cleanup:acc82-condition-data` (`prisma/cleanup-acc82-condition-data.ts`),
 run **after ACC-82's merge has deployed**, because a server still on the
 older code keeps writing them. Dry run by default; `-- --execute` deletes,
-in one transaction, the notifications with the removed titles and the
-deferred `POSITION_WITHOUT_ROLE` rows, and refuses to run if the
-notification count is more than 5% from the 1,489 reviewed. No table has a
+in one transaction, the notifications with the removed titles, the
+deferred `POSITION_WITHOUT_ROLE` rows, and the **cleared**
+`ORG_UNIT_WITHOUT_HEAD` rows (13.11) — open ones are untouched. Each delete
+has its own guard, evaluated inside the transaction: notifications within 5%
+of the expected count (1,489 reviewed; if older code kept writing past the
+guard, raise the expected number rather than widening the tolerance), and
+exactly 32 cleared unit rows. Every delete must remove exactly what was
+counted, or the whole run rolls back. No table has a
 foreign key to `Notification`; its only readers are the bell/home page and
 the email processor's single-row read at send time.
 
@@ -5372,5 +5387,6 @@ transitions, reassign) resolve live.
 - **Inactive-assignee tasks are not detected** — ACC-86.
 - **ACC-82's own vacancy correction left false history on dev.** When the
   recompute fixed the 32 stale flags, reconciliation cleared the 32
-  matching rows, so each seeded tenant's "Cleared by itself" shows 16
-  closures of gaps that never existed, for seven days.
+  matching rows, so each seeded tenant's "Cleared by itself" showed 16
+  closures of gaps that never existed. The post-deploy cleanup script
+  deletes exactly those cleared rows (13.7).

@@ -2091,9 +2091,15 @@ Full detail: SYSTEM-REFERENCE.md Section 13 (Setup health) and Section 5.5
   Users, not a condition. Each is recorded with its reason in SYSTEM-REFERENCE
   §13.2, so none reads as an oversight.
 - **The accumulated notifications are purged after deploy**, by
-  `npm run cleanup:acc82-condition-data` (dry run by default; refuses if
-  the count is far from the 1,489 reviewed), not before: older code still
-  running keeps writing them.
+  `npm run cleanup:acc82-condition-data`, not before: older code still
+  running keeps writing them. Dry run by default. In one transaction it also
+  deletes the deferred position rows and the 32 cleared "org unit without a
+  head" rows that the stale cache had invented. Each delete has its own
+  guard, and a drifted notification count means raising the expected
+  number, never widening the tolerance.
+- **Escalation walks run for every vacant unit on every sweep** — a known
+  cost that grows with vacant units, accepted because stale severity is the
+  same defect as a stale flag.
 
 ---
 
