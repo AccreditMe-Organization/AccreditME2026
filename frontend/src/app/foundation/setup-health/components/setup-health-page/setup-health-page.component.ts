@@ -6,6 +6,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { FormatService } from '../../../../core/formatting';
 import {
   SetupConditionDto,
   SetupConditionFreshnessDto,
@@ -321,6 +322,7 @@ export class SetupHealthPageComponent implements OnInit {
   private readonly access = inject(NavigationAccessService);
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -499,7 +501,7 @@ export class SetupHealthPageComponent implements OnInit {
       case 'ORG_UNIT_WITHOUT_HEAD':
         return t(s.escalationResolves === false ? 'unitUncovered' : 'unitCovered');
       case 'STAGE_WITHOUT_ASSIGNEE':
-        return t(s.affectedInstances === 1 ? 'stageOne' : 'stageMany', { count: s.affectedInstances ?? 0 });
+        return this.format.count('setupHealth.stageItemsBlocked', s.affectedInstances ?? 0);
       case 'TASK_WITHOUT_OWNER':
         return t('task');
     }

@@ -24,12 +24,14 @@ import {
 import { DataListSource } from '../../../../shared/components/data-list/data-list.source';
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { AmCountPipe } from '../../../../core/formatting';
 
 @Component({
   selector: 'app-role-list',
   standalone: true,
   imports: [PageHeaderComponent, 
     TranslatePipe,
+    AmCountPipe,
     ButtonModule,
     MenuModule,
     TooltipModule,
@@ -152,7 +154,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
                   style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
                   class="text-xs text-[var(--am-text-secondary)] text-start"
                 >
-                  {{ 'roles.permissionCount' | translate: { count: role.permissionCount ?? 0 } }}
+                  {{ role.permissionCount ?? 0 | amCount: 'role.permissions' }}
                 </span>
               }
 

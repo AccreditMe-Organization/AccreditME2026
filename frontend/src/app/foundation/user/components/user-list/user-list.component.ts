@@ -40,6 +40,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
+import { FormatService } from '../../../../core/formatting';
 
 export type RowAction = 'transfer' | 'deactivate';
 
@@ -285,6 +286,7 @@ export class UserListComponent implements OnInit {
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
   private readonly router = inject(Router);
   private readonly access = inject(NavigationAccessService);
 
@@ -520,9 +522,10 @@ export class UserListComponent implements OnInit {
         this.userService.deactivate(user.id).subscribe({
           next: ({ reassignedCount, unassignedCount }) => {
             this.infoMessage.set(
+              // Two counts, two plural forms: one rule cannot agree with both.
               this.translate.instant('user.deactivateSummary', {
-                reassignedCount,
-                unassignedCount,
+                reassigned: this.format.count('user.tasksReassigned', reassignedCount),
+                flagged: this.format.count('user.tasksFlaggedUnassigned', unassignedCount),
               }),
             );
             this.list().reload();

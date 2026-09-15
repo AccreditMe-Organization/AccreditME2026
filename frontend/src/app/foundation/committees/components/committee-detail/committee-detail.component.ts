@@ -27,6 +27,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AuthService } from '../../../../core/services/auth.service';
+import { FormatService } from '../../../../core/formatting';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
@@ -523,6 +524,7 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly authService = inject(AuthService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
 
@@ -571,9 +573,8 @@ export class CommitteeDetailComponent implements OnInit {
   // committee. Either number alone is half the picture: a quorum of 5 means
   // something different on a committee of 9 than on one of 5.
   readonly quorumSummary = computed(() =>
-    this.translate.instant('committee.quorumOf', {
+    this.format.count('committee.quorumOf', this.members().length, {
       quorum: this.committee()?.quorumCount ?? 0,
-      total: this.members().length,
     }),
   );
 
@@ -582,8 +583,7 @@ export class CommitteeDetailComponent implements OnInit {
   readonly overdueBadge = computed(() => {
     const overdue = this.tasks().filter((t) => this.isOverdue(t)).length;
     if (!overdue) return null;
-    this.translate.currentLang();
-    return this.translate.instant('task.overdueCount', { count: overdue });
+    return this.format.count('task.overdue', overdue);
   });
 
   // A task that is finished or cancelled is not overdue however old its due
@@ -615,7 +615,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.translate.currentLang();
     if (task.assignees.length === 0) return this.translate.instant('task.unassigned');
     if (task.assignees.length <= 2) return task.assignees.map((a) => a.userName).join(', ');
-    return this.translate.instant('task.assigneeCount', { count: task.assignees.length });
+    return this.format.count('task.assignees', task.assignees.length);
   }
 
   // PANEL-LEVEL PERMISSION GATING. An action is shown only where the caller
@@ -697,7 +697,7 @@ export class CommitteeDetailComponent implements OnInit {
   // (ACC-76), so a sub-committee row costs no query of its own.
   subCommitteeMeta(sub: CommitteeListItemDto): string {
     this.translate.currentLang();
-    const members = this.translate.instant('committee.memberCount', { count: sub.memberCount });
+    const members = this.format.count('committee.members', sub.memberCount);
     const frequency = this.translate.instant(`committee.frequency.${sub.meetingFrequency.toLowerCase()}`);
     return `${members} · ${frequency}`;
   }
