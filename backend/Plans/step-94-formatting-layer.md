@@ -1,9 +1,20 @@
 # ACC-94 — One Formatting Layer for Dates, Numbers and Plurals
 
-**Status: IMPLEMENTED on 2026-09-15, 14 commits as approved (§10).** The plan was
-approved with conditions (§0), and the sequence with four more (§12). §12 also
-records where the implementation deviated from this plan, and why. Awaiting the
-browser pass and /ready-to-pr.
+**Status: IMPLEMENTED on 2026-09-15, 14 commits as approved (§10), plus 3 the
+browser pass added — 17 on the branch.** The plan was approved with conditions
+(§0), and the sequence with four more (§12). §12 also records where the
+implementation deviated from this plan, and why.
+
+The three additions, none of them in the approved sequence, each recorded in §12
+with what was found:
+
+| Commit | Why it exists |
+| -- | -- |
+| `fix(ui)`: pin PrimeNG number digits to Latin | `p-paginator` and `p-inputNumber` format inside PrimeNG, with the **browser's** locale — an `ar-SA` browser showed "١" beside "1-24 of 24" in an English session. The source scan never saw it, because it looks for the app's own formatting calls |
+| `fix(calendar)`: show the holiday date picker in the app-wide format | `dateFormat="yy-mm-dd"` on one picker, the only override in the app, showing "2026-01-01" beside a list showing "1 Jan 2026" |
+| `docs`: impersonation is development-only | Ahmad's decision (ACC-99), prompted by the audit-attribution gap this ticket's browser pass found; also adds the `.playwright-mcp/` cleanup step to /ready-to-pr |
+
+Browser pass complete (§12, condition 4), verified by Ahmad as well.
 Branch: `feature/ACC-94-formatting-layer` (from `dev` at `fc8adcb`).
 
 This sets a rule every future module copies (Documents and Meetings first), so
