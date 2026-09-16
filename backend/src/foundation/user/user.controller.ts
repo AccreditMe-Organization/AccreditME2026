@@ -217,13 +217,19 @@ export class UserController {
 
   // ── Migrated from RoleController (Step 9) — same paths, same behavior ──
 
+  // ACC-101 — roles:view is necessary and no longer sufficient: the caller must
+  // also be able to see the user whose roles these are (themself, or
+  // users:view). Reading a colleague's roles is reading what that colleague is
+  // permitted to do.
   @Get(':userId/roles')
   @Permissions(ROLES_PERMISSIONS.VIEW)
   getUserRoles(
     @Param('userId') userId: string,
     @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IRole[]> {
-    return this.userService.getUserRoles(userId, tenantId);
+    return this.userService.getUserRolesForViewer(userId, tenantId, actorId, actorPermissions);
   }
 
   @Post(':userId/roles')

@@ -15,6 +15,7 @@ import {
 } from '../../common/interfaces/paginated-response.interface';
 import { SortWhitelist, toSkipTake } from '../../common/utils/sort-whitelist';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { USERS_PERMISSIONS } from '../../common/constants/permissions';
 import { NotificationService } from '../notification/notification.service';
 import { RoleService } from '../roles/role.service';
 import { TaskService } from '../task/task.service';
@@ -1465,6 +1466,37 @@ export class UserService {
 
   async getUserRoles(userId: string, organizationId: string): Promise<IRole[]> {
     return this.roleService.getUserRoles(userId, organizationId);
+  }
+
+  // ACC-101 — the route-facing read. roles:view says a caller may read role
+  // assignments; it does not say WHOSE. The record these belong to is a person,
+  // readable when the caller is that person or holds users:view, so that is the
+  // rule here too: you may read the roles of a user whose record you may read.
+  //
+  // Not ObjectVisibilityService: that registry answers "which permission does
+  // this object TYPE need", and a person's visibility is self-OR-permission,
+  // which no type permission expresses. The same check
+  // getByIdForViewer() makes (ACC-43), rather than a second notion of who a
+  // user is.
+  //
+  // The permission is checked BEFORE the user is read, so the refusal is
+  // identical for a real colleague and an invented id — existence-neutral, and
+  // therefore free to name the permission that would have been required.
+  async getUserRolesForViewer(
+    userId: string,
+    organizationId: string,
+    actorId: string,
+    actorPermissions: readonly string[],
+  ): Promise<IRole[]> {
+    const isSelf = actorId === userId;
+    if (!isSelf && !actorPermissions.includes(USERS_PERMISSIONS.VIEW)) {
+      throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.VIEW}`);
+    }
+    // Confirms the user exists in this tenant before their roles are read — a
+    // colleague from another tenant must 404 rather than return an empty list
+    // that reads as "this person holds no roles".
+    await this.getById(userId, organizationId);
+    return this.getUserRoles(userId, organizationId);
   }
 
   async assignRoleToUser(

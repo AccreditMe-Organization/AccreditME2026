@@ -6,6 +6,8 @@ import { PermissionGuard } from '../../common/guards/permission.guard';
 
 const TENANT_ID = 'tenant-test';
 const USER_ID = 'user-test';
+// ACC-101 — who is asking, distinct from whose roles are asked for.
+const ACTOR_ID = 'actor-test';
 
 describe('UserController', () => {
   let controller: UserController;
@@ -23,6 +25,7 @@ describe('UserController', () => {
     updateOutOfOffice: jest.Mock;
     deactivate: jest.Mock;
     getUserRoles: jest.Mock;
+    getUserRolesForViewer: jest.Mock;
     assignRoleToUser: jest.Mock;
     removeRoleFromUser: jest.Mock;
   };
@@ -53,6 +56,7 @@ describe('UserController', () => {
       updateOutOfOffice: jest.fn().mockResolvedValue({ id: USER_ID }),
       deactivate: jest.fn().mockResolvedValue({ reassignedCount: 0, unassignedCount: 0 }),
       getUserRoles: jest.fn().mockResolvedValue([]),
+      getUserRolesForViewer: jest.fn().mockResolvedValue([]),
       assignRoleToUser: jest.fn().mockResolvedValue(undefined),
       removeRoleFromUser: jest.fn().mockResolvedValue(undefined),
     };
@@ -171,9 +175,15 @@ describe('UserController', () => {
     expect(service.deactivate).toHaveBeenCalledWith(USER_ID, TENANT_ID, 'admin-1');
   });
 
-  it('getUserRoles delegates to UserService.getUserRoles', async () => {
-    await controller.getUserRoles(USER_ID, TENANT_ID);
-    expect(service.getUserRoles).toHaveBeenCalledWith(USER_ID, TENANT_ID);
+  // ACC-101 — the route reads through the viewer-aware method, forwarding who
+  // is asking as well as what they hold. The refusal itself is proven at the
+  // route in user-roles-parent-visibility.spec.ts.
+  it('getUserRoles delegates to the viewer-aware read, forwarding the caller', async () => {
+    await controller.getUserRoles(USER_ID, TENANT_ID, ACTOR_ID, ['roles:view', 'users:view']);
+    expect(service.getUserRolesForViewer).toHaveBeenCalledWith(USER_ID, TENANT_ID, ACTOR_ID, [
+      'roles:view',
+      'users:view',
+    ]);
   });
 
   it('assignRoleToUser delegates to UserService.assignRoleToUser', async () => {
