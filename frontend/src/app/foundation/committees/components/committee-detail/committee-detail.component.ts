@@ -1,7 +1,6 @@
 import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { DatePipe } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
@@ -27,6 +26,8 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { registerPageName } from '../../../../core/services/document-title.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { AuthService } from '../../../../core/services/auth.service';
+import { AmDatePipe, FormatService } from '../../../../core/formatting';
+import { isTaskOverdue, taskDueSummary } from './task-due-summary';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
@@ -37,7 +38,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
   standalone: true,
   imports: [
     TranslatePipe,
-    DatePipe,
+    AmDatePipe,
     ButtonModule,
     TagModule,
     MessageModule,
@@ -448,7 +449,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                   style="unicode-bidi: isolate"
                   class="text-[11.5px] whitespace-nowrap text-[var(--am-text-secondary)]"
                 >
-                  {{ event.effectiveDate | date: 'dd MMM y' }}
+                  {{ event.effectiveDate | amDate }}
                 </span>
               </div>
             }
@@ -523,6 +524,7 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly authService = inject(AuthService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   readonly committeeId = this.route.snapshot.paramMap.get('id')!;
 
@@ -571,9 +573,8 @@ export class CommitteeDetailComponent implements OnInit {
   // committee. Either number alone is half the picture: a quorum of 5 means
   // something different on a committee of 9 than on one of 5.
   readonly quorumSummary = computed(() =>
-    this.translate.instant('committee.quorumOf', {
+    this.format.count('committee.quorumOf', this.members().length, {
       quorum: this.committee()?.quorumCount ?? 0,
-      total: this.members().length,
     }),
   );
 
@@ -582,30 +583,16 @@ export class CommitteeDetailComponent implements OnInit {
   readonly overdueBadge = computed(() => {
     const overdue = this.tasks().filter((t) => this.isOverdue(t)).length;
     if (!overdue) return null;
-    this.translate.currentLang();
-    return this.translate.instant('task.overdueCount', { count: overdue });
+    return this.format.count('task.overdue', overdue);
   });
 
-  // A task that is finished or cancelled is not overdue however old its due
-  // date — the state that matters is "still owed and past due".
+  // See task-due-summary.ts (ACC-94): "Overdue 5 hours" or the due date and time.
   isOverdue(task: ITaskWithAssigneesDto): boolean {
-    if (!task.dueAt || task.status === 'COMPLETED' || task.status === 'CANCELLED') return false;
-    return new Date(task.dueAt).getTime() < Date.now();
+    return isTaskOverdue(task);
   }
 
-  // "overdue 6d" or a plain date. The elapsed form is used only when overdue
-  // because that is when the magnitude changes what a reader does about it.
   dueSummary(task: ITaskWithAssigneesDto): string {
-    if (!task.dueAt) return '—';
-    this.translate.currentLang();
-    if (this.isOverdue(task)) {
-      const days = Math.floor((Date.now() - new Date(task.dueAt).getTime()) / 86_400_000);
-      return this.translate.instant('task.overdueBy', { days });
-    }
-    return new Date(task.dueAt).toLocaleDateString(this.languageService.isArabic() ? 'ar' : 'en-GB', {
-      day: '2-digit',
-      month: 'short',
-    });
+    return taskDueSummary(task, this.format, this.translate);
   }
 
   // Names come resolved from the backend (ACC-76), so this needs no user
@@ -615,7 +602,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.translate.currentLang();
     if (task.assignees.length === 0) return this.translate.instant('task.unassigned');
     if (task.assignees.length <= 2) return task.assignees.map((a) => a.userName).join(', ');
-    return this.translate.instant('task.assigneeCount', { count: task.assignees.length });
+    return this.format.count('task.assignees', task.assignees.length);
   }
 
   // PANEL-LEVEL PERMISSION GATING. An action is shown only where the caller
@@ -697,7 +684,7 @@ export class CommitteeDetailComponent implements OnInit {
   // (ACC-76), so a sub-committee row costs no query of its own.
   subCommitteeMeta(sub: CommitteeListItemDto): string {
     this.translate.currentLang();
-    const members = this.translate.instant('committee.memberCount', { count: sub.memberCount });
+    const members = this.format.count('committee.members', sub.memberCount);
     const frequency = this.translate.instant(`committee.frequency.${sub.meetingFrequency.toLowerCase()}`);
     return `${members} · ${frequency}`;
   }

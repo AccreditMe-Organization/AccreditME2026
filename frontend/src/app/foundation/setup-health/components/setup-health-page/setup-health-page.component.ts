@@ -1,11 +1,11 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TooltipModule } from 'primeng/tooltip';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import {
   SetupConditionDto,
   SetupConditionFreshnessDto,
@@ -111,7 +111,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 @Component({
   selector: 'app-setup-health-page',
   standalone: true,
-  imports: [PageHeaderComponent, DatePipe, RouterLink, TranslatePipe, TooltipModule],
+  imports: [PageHeaderComponent, AmDateTimePipe, RouterLink, TranslatePipe, TooltipModule],
   template: `
     <div class="flex flex-col gap-3">
       <app-page-header
@@ -206,7 +206,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
                     </span>
                     <span
                       class="flex-none w-[150px] text-[11.5px] text-[var(--am-text-secondary)] tabular-nums"
-                      [pTooltip]="(row.openedAt | date: 'medium') ?? ''"
+                      [pTooltip]="row.openedAt | amDateTime"
                       tooltipPosition="top"
                       >{{ row.age }}</span
                     >
@@ -259,7 +259,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
                 <span class="flex-none text-xs text-[var(--am-condition-cleared)]" aria-hidden="true">✓</span>
                 <span class="flex-[1_1_300px] min-w-0 text-[12.5px] text-pretty">{{ item.text }}</span>
                 <span class="flex-none text-[11.5px] text-[var(--am-text-secondary)]">
-                  {{ 'setupHealth.cleared.at' | translate: { date: (item.clearedAt | date: 'medium') } }}
+                  {{ 'setupHealth.cleared.at' | translate: { date: (item.clearedAt | amDateTime) } }}
                 </span>
               </li>
             } @empty {
@@ -321,6 +321,7 @@ export class SetupHealthPageComponent implements OnInit {
   private readonly access = inject(NavigationAccessService);
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -422,7 +423,7 @@ export class SetupHealthPageComponent implements OnInit {
       .map((t) => new Date(t).getTime());
     if (times.length === 0) return null;
     return this.translate.instant('setupHealth.checked', {
-      when: this.relativeTime(new Date(Math.min(...times))),
+      when: this.format.relative(new Date(Math.min(...times)), this.loadedAt()),
     });
   });
 
@@ -499,22 +500,33 @@ export class SetupHealthPageComponent implements OnInit {
       case 'ORG_UNIT_WITHOUT_HEAD':
         return t(s.escalationResolves === false ? 'unitUncovered' : 'unitCovered');
       case 'STAGE_WITHOUT_ASSIGNEE':
-        return t(s.affectedInstances === 1 ? 'stageOne' : 'stageMany', { count: s.affectedInstances ?? 0 });
+        return this.format.count('setupHealth.stageItemsBlocked', s.affectedInstances ?? 0);
       case 'TASK_WITHOUT_OWNER':
         return t('task');
     }
   }
 
+  // ACC-94 — under a day keeps ACC-82's sentence ("in the last 24 hours");
+  // beyond it the age comes from the formatting layer, which pluralises
+  // correctly in both languages. Both forms are passed: English reads "Open 7
+  // days" (duration), Arabic "فُتحت قبل 7 أيام" (relative), because after a
+  // preposition the Arabic dual and plural take the genitive, which only the
+  // relative format gives ("قبل يومين", not "يومان").
   private age(condition: SetupConditionDto): string {
-    const days = Math.max(0, Math.floor((this.loadedAt().getTime() - new Date(condition.openedAt).getTime()) / DAY_MS));
+    const elapsed = this.loadedAt().getTime() - new Date(condition.openedAt).getTime();
     const basis = condition.ageBasis === 'FIRST_DETECTED' ? 'detected' : 'open';
-    const size = days === 0 ? 'Today' : days === 1 ? 'OneDay' : 'Days';
-    return this.translate.instant(`setupHealth.age.${basis}${size}`, { count: days });
+    if (elapsed < DAY_MS) return this.translate.instant(`setupHealth.age.${basis}Today`);
+    return this.translate.instant(`setupHealth.age.${basis}`, {
+      duration: this.format.duration(elapsed),
+      relative: this.format.relative(condition.openedAt, this.loadedAt()),
+    });
   }
 
   private freshnessNotice(f: SetupConditionFreshnessDto): string {
     const type = this.translate.instant(`setupHealth.types.${f.type}`);
-    const when = f.computedAt ? this.relativeTime(new Date(f.computedAt)) : null;
+    // Absolute: a stale check is something a person acts on, and "not checked
+    // since 3 hours ago" reads badly in both languages.
+    const when = f.computedAt ? this.format.dateTime(f.computedAt) : null;
     const key =
       f.status === 'FAILED'
         ? when
@@ -526,12 +538,4 @@ export class SetupHealthPageComponent implements OnInit {
     return this.translate.instant(`setupHealth.freshness.${key}`, { type, when });
   }
 
-  private relativeTime(at: Date): string {
-    const minutes = Math.max(0, Math.round((this.loadedAt().getTime() - at.getTime()) / 60000));
-    if (minutes < 1) return this.translate.instant('setupHealth.relative.justNow');
-    if (minutes < 60) return this.translate.instant('setupHealth.relative.minutes', { count: minutes });
-    const hours = Math.round(minutes / 60);
-    if (hours < 48) return this.translate.instant('setupHealth.relative.hours', { count: hours });
-    return this.translate.instant('setupHealth.relative.days', { count: Math.round(hours / 24) });
-  }
 }

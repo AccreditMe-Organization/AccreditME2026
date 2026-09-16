@@ -12,6 +12,8 @@ import { authInterceptor } from './core/interceptors/auth.interceptor';
 import { AuthService } from './core/services/auth.service';
 import { NavigationAccessService } from './core/services/navigation-access.service';
 import { AccreditMePreset } from './core/theme/accreditme-preset';
+import { providePluralAwareTranslateLoader } from './core/formatting/plural-catalog';
+import { provideDatePickerLocale } from './core/formatting/date-picker-locale';
 import { routes } from './app.routes';
 
 // Exported (not inlined into provideAppInitializer below) so it can be unit
@@ -41,6 +43,10 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withInterceptors([authInterceptor])),
     provideTranslateService({ lang: 'en' }),
     provideTranslateHttpLoader({ prefix: './assets/i18n/', suffix: '.json' }),
+    // ACC-94 — must follow the HTTP loader: it replaces that loader binding to
+    // move each file's "plural" section out of ngx-translate and into the plural
+    // catalogue, so a counted string cannot be rendered through | translate.
+    providePluralAwareTranslateLoader(),
     // PrimeNG's provider-based theming (v18+) — component styling does not
     // exist at all without this (was missing since scaffold, see
     // fix/primeng-theme-provider). darkModeSelector: false pins every
@@ -57,6 +63,8 @@ export const appConfig: ApplicationConfig = {
         options: { darkModeSelector: false },
       },
     }),
+    // ACC-94 — date pickers display in the UI language and the app's date format.
+    provideDatePickerLocale(),
     // App-wide, registered once — every component pays down its
     // window.confirm() TODO by injecting this directly rather than each
     // providing its own instance (Step 9, Section 12 Discussion 5).

@@ -5,6 +5,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { ImpersonatedBy } from '../../common/decorators/impersonated-by.decorator';
 import { UserService } from '../user/user.service';
+import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
@@ -28,6 +29,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly userService: UserService,
+    private readonly workingCalendarService: WorkingCalendarService,
   ) {}
 
   // Session-restore endpoint (Step 9 follow-up) — reads the access_token
@@ -45,8 +47,16 @@ export class AuthController {
     const impersonatedBy = impersonatedByUserId
       ? await this.authService.getPublicUserById(impersonatedByUserId)
       : null;
-    const language = await this.authService.resolveLanguage(user.language, organizationId);
-    return { id: user.id, email: user.email, name: user.name, language, impersonatedBy };
+    // ACC-94 (D2) — timeZone and hijriDisplay join language as the display
+    // context: the zone is the one the SLA engine computes due dates in
+    // (WorkingCalendarService, decision D3), the calendar is the user's own.
+    // Additive and read-only; nothing here writes.
+    const [language, timeZone, hijriDisplay] = await Promise.all([
+      this.authService.resolveLanguage(user.language, organizationId),
+      this.workingCalendarService.getEffectiveTimeZone(organizationId),
+      this.userService.getHijriDisplay(userId, organizationId),
+    ]);
+    return { id: user.id, email: user.email, name: user.name, language, timeZone, hijriDisplay, impersonatedBy };
   }
 
   @Post('login')

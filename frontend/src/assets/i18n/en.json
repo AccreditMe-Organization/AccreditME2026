@@ -196,7 +196,6 @@
     "permissionsColumn": "Permissions",
     "errorLoad": "Failed to load roles.",
     "searchPlaceholder": "Search roles…",
-    "permissionCount": "{{count}} permissions",
     "name": "Role",
     "permissions": "Permissions"
   },
@@ -207,7 +206,6 @@
     "isDefault": "Default",
     "setDefault": "Set as Default",
     "deactivateTemplate": "Deactivate Template",
-    "stageCount": "{{count}} stages",
     "stages": "Stages",
     "addStage": "Add Stage",
     "editStage": "Edit Stage",
@@ -290,7 +288,7 @@
       "actingHeadOf": "Acting Head of {{context}}",
       "coveringFor": "covering for {{context}}",
       "lifecycle": "Lifecycle",
-      "inStageDays": "in stage {{days}} days",
+      "inStage": "in stage {{duration}}",
       "revisited": "revisited ×{{count}}",
       "since": "since {{date}}"
     },
@@ -304,7 +302,6 @@
     "title": "Notifications",
     "markAllRead": "Mark All as Read",
     "noNotifications": "No notifications yet.",
-    "unreadCount": "{{count}} unread",
     "justNow": "Just now",
     "errorLoad": "Failed to load notifications."
   },
@@ -361,8 +358,6 @@
     "documentsDescription": "Terms of Reference and reports submitted to the parent body are linked here.",
     "noDocuments": "No documents linked yet.",
     "stageHistory": "Stage history",
-    "quorumOf": "{{quorum}} of {{total}} members",
-    "memberCount": "{{count}} members",
     "approvedBy": "by {{name}}",
     "frequency": {
       "weekly": "Weekly",
@@ -446,11 +441,9 @@
     "unassigned": "Unassigned",
     "actingHeadOf": "Acting Head of {{context}}",
     "coveringFor": "covering for {{context}}",
-    "overdueCount": "{{count}} overdue",
     "assigneesHint": "Leave empty to create the task unassigned — tenant administrators are notified to assign it.",
     "assigneesUnavailable": "You do not have access to the user list. The task will be created unassigned and tenant administrators will be notified to assign it.",
-    "overdueBy": "overdue {{days}}d",
-    "assigneeCount": "{{count}} assignees",
+    "overdueBy": "Overdue {{duration}}",
     "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
     "errorAction": "The action could not be completed. Please try again.",
     "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned.",
@@ -492,7 +485,7 @@
     "actingUser": "Acting User",
     "deactivate": "Deactivate",
     "deactivateConfirm": "Deactivate {{name}}? Their sessions will be revoked immediately and their open tasks will be reassigned to their acting user or flagged for manual reassignment.",
-    "deactivateSummary": "{{reassignedCount}} task(s) reassigned, {{unassignedCount}} task(s) flagged as unassigned.",
+    "deactivateSummary": "{{reassigned}}, {{flagged}}.",
     "profileSaved": "Changes saved.",
     "noUsers": "No users found.",
     "errorLoad": "Failed to load user.",
@@ -682,10 +675,7 @@
     "expandRail": "Expand navigation",
     "userMenu": "Account menu for {{name}}",
     "breadcrumb": "Breadcrumb",
-    "interfaceLanguage": "Interface language",
-    "badge": {
-      "setupHealth": "{{count}} open conditions"
-    }
+    "interfaceLanguage": "Interface language"
   },
   "setupHealth": {
     "title": "Setup health",
@@ -713,8 +703,6 @@
     "consequence": {
       "unitCovered": "No head. Work routed to its head escalates to a parent unit or an acting head in the meantime.",
       "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
-      "stageOne": "1 open item cannot advance: no one can act on this stage.",
-      "stageMany": "{{count}} open items cannot advance: no one can act on this stage.",
       "task": "No one is assigned, so it is in no one’s task list."
     },
     "hint": {
@@ -722,11 +710,9 @@
     },
     "age": {
       "openToday": "Opened in the last 24 hours",
-      "openOneDay": "Open 1 day",
-      "openDays": "Open {{count}} days",
+      "open": "Open {{duration}}",
       "detectedToday": "First detected in the last 24 hours",
-      "detectedOneDay": "First detected 1 day ago",
-      "detectedDays": "First detected {{count}} days ago"
+      "detected": "First detected {{relative}}"
     },
     "fix": {
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
@@ -739,16 +725,10 @@
       "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks."
     },
     "freshness": {
-      "failed": "{{type}}: the last check failed. Its rows are as last confirmed {{when}}.",
+      "failed": "{{type}}: the last check failed. Its rows are as last confirmed on {{when}}.",
       "failedNever": "{{type}}: no check has succeeded yet, so an empty list for it does not mean nothing is wrong.",
       "overdue": "{{type}}: not checked since {{when}}. Its rows may be out of date.",
       "neverRun": "{{type}}: not checked yet, so an empty list for it does not mean nothing is wrong."
-    },
-    "relative": {
-      "justNow": "just now",
-      "minutes": "{{count}} min ago",
-      "hours": "{{count}} h ago",
-      "days": "{{count}} days ago"
     },
     "cleared": {
       "title": "Cleared by itself",
@@ -757,5 +737,73 @@
       "none": "Nothing has cleared in the last 7 days.",
       "note": "Shown so you can see a fix landed, and so a surveyor can see when a gap closed. Each entry drops off after 7 days."
     }
+  },
+  "format": {
+    "lessThanMinute": "less than a minute",
+    "shownInZone": "Dates shown in {{zone}}"
+  },
+  "plural": {
+    "role": {
+      "permissions": {
+        "one": "{{count}} permission",
+        "other": "{{count}} permissions"
+      }
+    },
+    "committee": {
+      "members": {
+        "one": "{{count}} member",
+        "other": "{{count}} members"
+      },
+      "quorumOf": {
+        "one": "{{quorum}} of {{count}} member",
+        "other": "{{quorum}} of {{count}} members"
+      }
+    },
+    "task": {
+      "overdue": {
+        "one": "{{count}} overdue",
+        "other": "{{count}} overdue"
+      },
+      "assignees": {
+        "one": "{{count}} assignee",
+        "other": "{{count}} assignees"
+      }
+    },
+    "user": {
+      "tasksReassigned": {
+        "one": "{{count}} task reassigned",
+        "other": "{{count}} tasks reassigned"
+      },
+      "tasksFlaggedUnassigned": {
+        "one": "{{count}} task flagged as unassigned",
+        "other": "{{count}} tasks flagged as unassigned"
+      }
+    },
+    "shell": {
+      "openConditions": {
+        "one": "{{count}} open condition",
+        "other": "{{count}} open conditions"
+      }
+    },
+    "setupHealth": {
+      "stageItemsBlocked": {
+        "one": "{{count}} open item cannot advance: no one can act on this stage.",
+        "other": "{{count}} open items cannot advance: no one can act on this stage."
+      }
+    }
+  },
+  "datePicker": {
+    "today": "Today",
+    "clear": "Clear",
+    "chooseDate": "Choose date",
+    "chooseMonth": "Choose month",
+    "chooseYear": "Choose year",
+    "prevDecade": "Previous decade",
+    "nextDecade": "Next decade",
+    "prevYear": "Previous year",
+    "nextYear": "Next year",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "weekHeader": "Wk"
   }
 }

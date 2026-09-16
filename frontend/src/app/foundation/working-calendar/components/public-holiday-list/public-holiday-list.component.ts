@@ -13,6 +13,7 @@ import { PublicHolidayFormComponent } from '../public-holiday-form/public-holida
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { AmDatePipe } from '../../../../core/formatting';
 
 @Component({
   selector: 'app-public-holiday-list',
@@ -20,6 +21,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
   imports: [PageHeaderComponent, 
     FormsModule,
     TranslatePipe,
+    AmDatePipe,
     TableModule,
     ButtonModule,
     TagModule,
@@ -71,7 +73,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
         <tr>
           <td>{{ holiday.nameEn }}</td>
           <td dir="rtl">{{ holiday.nameAr ?? '—' }}</td>
-          <td>{{ holiday.date }}</td>
+          <td>{{ holiday.date | amDate }}</td>
           <td>
             @if (holiday.isRecurring) {
               <p-tag

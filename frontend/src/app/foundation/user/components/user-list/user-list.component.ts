@@ -8,7 +8,6 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { DatePipe } from '@angular/common';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -40,6 +39,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
+import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 
 export type RowAction = 'transfer' | 'deactivate';
 
@@ -58,7 +58,7 @@ export type RowAction = 'transfer' | 'deactivate';
   selector: 'app-user-list',
   standalone: true,
   imports: [PageHeaderComponent, 
-    DatePipe,
+    AmDateTimePipe,
     TranslatePipe,
     ButtonModule,
     MenuModule,
@@ -212,7 +212,7 @@ export type RowAction = 'transfer' | 'deactivate';
                   style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
                   class="text-xs text-[var(--am-text-secondary)] text-start"
                 >
-                  {{ user.lastLoginAt ? (user.lastLoginAt | date: 'short') : '—' }}
+                  {{ user.lastLoginAt | amDateTime }}
                 </span>
               }
 
@@ -285,6 +285,7 @@ export class UserListComponent implements OnInit {
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
   private readonly router = inject(Router);
   private readonly access = inject(NavigationAccessService);
 
@@ -520,9 +521,10 @@ export class UserListComponent implements OnInit {
         this.userService.deactivate(user.id).subscribe({
           next: ({ reassignedCount, unassignedCount }) => {
             this.infoMessage.set(
+              // Two counts, two plural forms: one rule cannot agree with both.
               this.translate.instant('user.deactivateSummary', {
-                reassignedCount,
-                unassignedCount,
+                reassigned: this.format.count('user.tasksReassigned', reassignedCount),
+                flagged: this.format.count('user.tasksFlaggedUnassigned', unassignedCount),
               }),
             );
             this.list().reload();

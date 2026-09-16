@@ -7,6 +7,7 @@ import { TaskService } from '../tasks/services/task.service';
 import { NotificationService } from '../notification/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
+import { provideFormatTesting } from '../../core/formatting/testing';
 
 // ACC-70 — this component had no spec when first written, so nothing compiled
 // its template, and a `{{ item.title }}` binding against a DTO that carries
@@ -68,6 +69,9 @@ describe('HomeComponent', () => {
         provideRouter([]),
         provideTranslateService({ lang: 'en' }),
         provideTranslateLoader(TranslateNoOpLoader),
+        // ACC-94 — dates go through the formatting layer, whose zone and calendar
+        // this sets directly rather than through the AuthService stub below.
+        provideFormatTesting(),
         {
           provide: TaskService,
           useValue: {

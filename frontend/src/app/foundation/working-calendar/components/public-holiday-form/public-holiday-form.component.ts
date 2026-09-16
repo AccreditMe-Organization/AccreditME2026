@@ -47,7 +47,6 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         <p-datepicker
           id="date"
           formControlName="date"
-          dateFormat="yy-mm-dd"
           [showIcon]="true"
           styleClass="w-full"
         />

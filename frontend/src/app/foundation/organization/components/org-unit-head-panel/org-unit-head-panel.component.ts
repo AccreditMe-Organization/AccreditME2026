@@ -15,6 +15,7 @@ import {
 import { OrgPositionService, IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { UserService } from '../../../user/services/user.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { AmDatePipe } from '../../../../core/formatting';
 
 // ACC-40 Section 2.2/2.3 — this panel renders purely from
 // OrgUnitHeadService.getHeadStatus()'s LIVE derivation (holders,
@@ -26,6 +27,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
   imports: [
     ReactiveFormsModule,
     TranslatePipe,
+    AmDatePipe,
     ButtonModule,
     SelectModule,
     DatePickerModule,
@@ -52,7 +54,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
             <strong>{{ holderName(s.pendingHeadUserId) }}</strong>
           </p>
           <p class="text-sm text-[var(--am-text-secondary)]">
-            {{ 'orgUnitHead.effectiveDate' | translate }}: {{ s.headHandoverEffectiveDate }}
+            {{ 'orgUnitHead.effectiveDate' | translate }}: {{ s.headHandoverEffectiveDate | amDate }}
           </p>
           <div class="flex gap-2">
             <p-button

@@ -15,11 +15,12 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
 // Architectural consistency with SYSTEM-REFERENCE.md Section 10.5's
 // required pattern, not a bug fix.
 import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit-dialog.component';
+import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
 
 @Component({
   selector: 'app-ai-feature-cost-list',
   standalone: true,
-  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, MessageModule, EditDialogComponent],
+  imports: [PageHeaderComponent, ReactiveFormsModule, TranslatePipe, TableModule, ButtonModule, InputTextModule, InputNumberModule, InputNumberLatinDigits, MessageModule, EditDialogComponent],
   template: `
     <div class="flex flex-col gap-4">
       <app-page-header [title]="'platform.aiFeatureCosts' | translate">

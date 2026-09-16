@@ -26,7 +26,17 @@ export interface PublicUser {
 // never null.
 export interface MeResponse extends PublicUser {
   language: string;
+  // ACC-94 (D2) — the display context. timeZone is the tenant's working-calendar
+  // zone (the one the SLA engine computes due dates in); hijriDisplay is the
+  // user's own calendar preference. Both are display-only.
+  timeZone: string;
+  hijriDisplay: boolean;
   impersonatedBy: { id: string; email: string; name: string } | null;
+}
+
+export interface DisplayPreferences {
+  timeZone: string;
+  hijriDisplay: boolean;
 }
 
 // language (ACC-19) is only present on the success branch — mirrors the
@@ -71,6 +81,11 @@ export class AuthService {
   private readonly _impersonatedBy = signal<MeResponse['impersonatedBy']>(null);
   readonly impersonatedBy = this._impersonatedBy.asReadonly();
 
+  // ACC-94 — null until /auth/me has answered; the formatting layer then uses
+  // its own defaults (Asia/Riyadh, Gregorian), which match the backend's.
+  private readonly _displayPreferences = signal<DisplayPreferences | null>(null);
+  readonly displayPreferences = this._displayPreferences.asReadonly();
+
   isAuthenticated(): boolean {
     return this._currentUser() !== null;
   }
@@ -90,10 +105,7 @@ export class AuthService {
   logout(): Observable<{ success: true }> {
     return this.http
       .post<{ success: true }>(`${this.baseUrl}/logout`, {})
-      .pipe(tap(() => {
-        this._currentUser.set(null);
-        this._impersonatedBy.set(null);
-      }));
+      .pipe(tap(() => this.clearSession()));
   }
 
   acceptInvitation(token: string, password: string): Observable<void> {
@@ -134,6 +146,7 @@ export class AuthService {
   clearSession(): void {
     this._currentUser.set(null);
     this._impersonatedBy.set(null);
+    this._displayPreferences.set(null);
   }
 
   // Called once via APP_INITIALIZER on app startup — currentUser is
@@ -154,10 +167,10 @@ export class AuthService {
       tap((response) => {
         this._currentUser.set({ id: response.id, email: response.email, name: response.name });
         this._impersonatedBy.set(response.impersonatedBy);
+        this.applyDisplayPreferences(response);
       }),
       catchError(() => {
-        this._currentUser.set(null);
-        this._impersonatedBy.set(null);
+        this.clearSession();
         return of(null);
       }),
       map(() => void 0),
@@ -172,7 +185,22 @@ export class AuthService {
     const user = result.user;
     return this.languageService.use(result.language ?? 'en').pipe(
       tap(() => this._currentUser.set(user)),
+      // ACC-94 — the login response carries no display context, and widening it
+      // was not part of decision D2. /auth/me is asked once instead, so dates
+      // are in the tenant's zone from the first screen rather than after a
+      // reload. Its failure must not fail a login that has already succeeded:
+      // the layer's defaults apply until the next restore.
+      switchMap(() =>
+        this.http.get<MeResponse>(`${this.baseUrl}/me`).pipe(
+          tap((me) => this.applyDisplayPreferences(me)),
+          catchError(() => of(null)),
+        ),
+      ),
       map(() => result),
     );
+  }
+
+  private applyDisplayPreferences(me: MeResponse): void {
+    this._displayPreferences.set({ timeZone: me.timeZone, hijriDisplay: me.hijriDisplay });
   }
 }

@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { UserModule } from '../user/user.module';
+import { WorkingCalendarModule } from '../working-calendar/working-calendar.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { LoginAttemptService } from './login-attempt.service';
@@ -12,9 +13,10 @@ import { LoginAttemptService } from './login-attempt.service';
 // guarded individually. NotificationModule is @Global(), so no explicit
 // import is needed here for AuthService's NotificationService dependency.
 // UserModule does not import AuthModule (checked — only app.module.ts does),
-// so this is a plain import, no forwardRef needed.
+// so this is a plain import, no forwardRef needed. WorkingCalendarModule
+// (ACC-94, GET /auth/me's time zone) is the same: it does not import AuthModule.
 @Module({
-  imports: [PrismaModule, forwardRef(() => TenantModule), UserModule],
+  imports: [PrismaModule, forwardRef(() => TenantModule), UserModule, WorkingCalendarModule],
   controllers: [AuthController],
   providers: [AuthService, LoginAttemptService],
   exports: [AuthService],

@@ -1,5 +1,5 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { AmDateTimePipe } from '../../../../core/formatting';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
@@ -15,7 +15,7 @@ const STATUS_OPTIONS = ['PENDING', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED'] as con
 @Component({
   selector: 'app-my-tasks',
   standalone: true,
-  imports: [PageHeaderComponent, DatePipe, TranslatePipe, TableModule, ButtonModule, TagModule, SelectButtonModule, FormsModule],
+  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, ButtonModule, TagModule, SelectButtonModule, FormsModule],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'task.myTasks' | translate" />
@@ -56,7 +56,7 @@ const STATUS_OPTIONS = ['PENDING', 'IN_PROGRESS', 'OVERDUE', 'COMPLETED'] as con
                 [severity]="priorityColor(task.priority)"
               />
             </td>
-            <td>{{ task.dueAt ? (task.dueAt | date: 'short') : '—' }}</td>
+            <td>{{ task.dueAt | amDateTime }}</td>
             <td>
               <p-tag
                 [value]="('task.status.' + task.status.toLowerCase()) | translate"

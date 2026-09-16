@@ -3,9 +3,13 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
+import en from '../../../../../assets/i18n/en.json';
+import ar from '../../../../../assets/i18n/ar.json';
 import { environment } from '../../../../../environments/environment';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
+import { FormatService } from '../../../../core/formatting';
 import {
   SetupConditionDto,
   SetupConditionFreshnessDto,
@@ -13,7 +17,8 @@ import {
 } from '../../services/setup-health.service';
 import { SetupHealthPageComponent } from './setup-health-page.component';
 
-// ACC-82 — Setup health page (SYSTEM-REFERENCE §13.9).
+// ACC-82 — Setup health page (SYSTEM-REFERENCE §13.9). Since ACC-94 against
+// the real en.json and ar.json, so every assertion is text a user sees.
 
 const NOW = new Date();
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
@@ -36,54 +41,6 @@ const current = (computedAt = minutesAgo(10)): SetupConditionFreshnessDto[] =>
     (type) => ({ type, status: 'CURRENT', computedAt }),
   );
 
-// Real (English) interpolation, so assertions read like the page does.
-const EN = {
-  setupHealth: {
-    checked: 'Checked {{when}}',
-    severity: { BLOCKS_WORK: 'Blocks work', AT_RISK: 'At risk' },
-    filter: { all: 'All' },
-    types: {
-      ORG_UNIT_WITHOUT_HEAD: 'Org unit without a head',
-      STAGE_WITHOUT_ASSIGNEE: 'Workflow stage with no resolvable assignee',
-      TASK_WITHOUT_OWNER: 'Task with no actionable owner',
-    },
-    context: { template: 'Workflow: {{name}}' },
-    consequence: {
-      unitCovered: 'covered',
-      unitUncovered: 'uncovered',
-      stageOne: '1 open item',
-      stageMany: '{{count}} open items',
-      task: 'no one assigned',
-    },
-    hint: { STAGE_WITHOUT_ASSIGNEE: 'check the assignee and each transition trigger' },
-    age: {
-      openToday: 'Opened in the last 24 hours',
-      openOneDay: 'Open 1 day',
-      openDays: 'Open {{count}} days',
-      detectedToday: 'First detected in the last 24 hours',
-      detectedOneDay: 'First detected 1 day ago',
-      detectedDays: 'First detected {{count}} days ago',
-    },
-    fix: {
-      ORG_UNIT_WITHOUT_HEAD: 'Assign head',
-      STAGE_WITHOUT_ASSIGNEE: 'Review stage',
-      TASK_WITHOUT_OWNER: 'Reassign',
-    },
-    fixNeeds: {
-      ORG_UNIT_WITHOUT_HEAD: 'needs org manage',
-      STAGE_WITHOUT_ASSIGNEE: 'needs workflows manage',
-      TASK_WITHOUT_OWNER: 'needs tasks manage',
-    },
-    freshness: {
-      failed: '{{type}}: failed, as of {{when}}',
-      failedNever: '{{type}}: never succeeded',
-      overdue: '{{type}}: overdue since {{when}}',
-      neverRun: '{{type}}: never run',
-    },
-    relative: { justNow: 'just now', minutes: '{{count}} min ago', hours: '{{count}} h ago', days: '{{count}} days ago' },
-  },
-};
-
 describe('SetupHealthPageComponent (ACC-82)', () => {
   let permissions: Set<string>;
   let arabic: boolean;
@@ -105,17 +62,22 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
         { provide: NavigationAccessService, useValue: { hasPermission: (p: string) => permissions.has(p) } },
         { provide: LanguageService, useValue: { isArabic: () => arabic } },
       ],
     });
-    TestBed.inject(TranslateService).setTranslation('en', EN);
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(arabic ? 'ar' : 'en');
     const fixture = TestBed.createComponent(SetupHealthPageComponent);
     fixture.detectChanges();
     TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/setup-health`).flush(health);
     fixture.detectChanges();
     return fixture.componentInstance;
   }
+
+  const rowsById = (page: SetupHealthPageComponent) =>
+    Object.fromEntries(page.groups().flatMap((g) => g.rows).map((r) => [r.id, r]));
 
   beforeEach(() => {
     permissions = new Set(ALL_FIX_PERMISSIONS);
@@ -194,9 +156,6 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
       freshness: current(),
     });
 
-    const rowsById = (page: SetupHealthPageComponent) =>
-      Object.fromEntries(page.groups().flatMap((g) => g.rows).map((r) => [r.id, r]));
-
     it('links each row to the object it names', () => {
       const rows = rowsById(render(health()));
 
@@ -218,9 +177,9 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
       const rows = rowsById(render(health()));
 
       expect(rows['unit']!.fix).toBeNull();
-      expect(rows['unit']!.fixNeeds).toBe('needs org manage');
+      expect(rows['unit']!.fixNeeds).toBe('Fixing this needs permission to manage the organization structure.');
       expect(rows['task']!.fix).toBeNull();
-      expect(rows['task']!.fixNeeds).toBe('needs tasks manage');
+      expect(rows['task']!.fixNeeds).toBe('Fixing this needs permission to manage and reassign tasks.');
       expect(rows['stage']!.fix).not.toBeNull();
     });
 
@@ -229,9 +188,16 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     it('tells the admin to check both the assignee and the triggers on a stage row, and only there', () => {
       const rows = rowsById(render(health()));
 
-      expect(rows['stage']!.hint).toBe('check the assignee and each transition trigger');
+      expect(rows['stage']!.hint).toBe(
+        'The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.',
+      );
       expect(rows['unit']!.hint).toBeNull();
       expect(rows['task']!.hint).toBeNull();
+    });
+
+    it('counts the blocked items with the correct plural form', () => {
+      const rows = rowsById(render(health()));
+      expect(rows['stage']!.consequence).toBe('3 open items cannot advance: no one can act on this stage.');
     });
   });
 
@@ -241,8 +207,8 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     const page = render({
       open: [
         condition({ id: 'unit', openedAt: daysAgo(9.2) }),
-        condition({ id: 'stage', type: 'STAGE_WITHOUT_ASSIGNEE', openedAt: daysAgo(1.5), subject: { nameEn: 'S', templateId: 't' } }),
-        condition({ id: 'task-old', type: 'TASK_WITHOUT_OWNER', ageBasis: 'FIRST_DETECTED', openedAt: daysAgo(1.5), subject: { title: 'T1' } }),
+        condition({ id: 'stage', type: 'STAGE_WITHOUT_ASSIGNEE', openedAt: daysAgo(2.5), subject: { nameEn: 'S', templateId: 't' } }),
+        condition({ id: 'task-old', type: 'TASK_WITHOUT_OWNER', ageBasis: 'FIRST_DETECTED', openedAt: daysAgo(4.5), subject: { title: 'T1' } }),
         condition({ id: 'task', type: 'TASK_WITHOUT_OWNER', ageBasis: 'FIRST_DETECTED', openedAt: minutesAgo(30), subject: { title: 'T' } }),
       ],
       recentlyCleared: [],
@@ -252,9 +218,40 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     const ages = Object.fromEntries(page.groups().flatMap((g) => g.rows).map((r) => [r.id, r.age]));
     expect(ages).toEqual({
       unit: 'Open 9 days',
-      stage: 'Open 1 day',
-      'task-old': 'First detected 1 day ago',
+      stage: 'Open 2 days',
+      'task-old': 'First detected 4 days ago',
       task: 'First detected in the last 24 hours',
+    });
+  });
+
+  // ACC-94 — DEFECT 1. Arabic has six plural categories, and a count from 3 to
+  // 10 takes the plural: "7 أيام", not "7 يومًا". The page used one fixed form
+  // for every count of two or more. After a preposition the dual takes the
+  // genitive too ("قبل يومين", not "يومان"), so the age reads as "…قبل" through
+  // the layer's relative format, which gets both right.
+  it('words Arabic ages with the correct plural form for each count', () => {
+    arabic = true;
+    const page = render({
+      open: [
+        condition({ id: 'two', openedAt: daysAgo(2.2) }),
+        condition({ id: 'three', openedAt: daysAgo(3.2) }),
+        condition({ id: 'seven', openedAt: daysAgo(7.2) }),
+        condition({ id: 'eleven', openedAt: daysAgo(11.2) }),
+        condition({ id: 'hundred', openedAt: daysAgo(100.2) }),
+        condition({ id: 'detected', type: 'TASK_WITHOUT_OWNER', ageBasis: 'FIRST_DETECTED', openedAt: daysAgo(7.2), subject: { title: 'T' } }),
+      ],
+      recentlyCleared: [],
+      freshness: current(),
+    });
+
+    const ages = Object.fromEntries(page.groups().flatMap((g) => g.rows).map((r) => [r.id, r.age]));
+    expect(ages).toEqual({
+      two: 'فُتحت قبل يومين',
+      three: 'فُتحت قبل 3 أيام',
+      seven: 'فُتحت قبل 7 أيام',
+      eleven: 'فُتحت قبل 11 يومًا',
+      hundred: 'فُتحت قبل 100 يوم',
+      detected: 'اكتُشفت أول مرة قبل 7 أيام',
     });
   });
 
@@ -278,25 +275,30 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
       const page = render({ open: [], recentlyCleared: [], freshness: current(minutesAgo(12)) });
 
       expect(page.freshnessNotices()).toEqual([]);
-      expect(page.lastChecked()).toBe('Checked 12 min ago');
+      expect(page.lastChecked()).toBe('Checked 12 minutes ago');
       expect(page.emptyMessageKey()).toBe('setupHealth.empty');
     });
 
     it('names each type that failed, is overdue or never ran — including types with no open rows', () => {
+      const failedAt = minutesAgo(180);
+      const overdueAt = minutesAgo(150);
       const page = render({
         open: [],
         recentlyCleared: [],
         freshness: [
-          { type: 'ORG_UNIT_WITHOUT_HEAD', status: 'FAILED', computedAt: minutesAgo(180) },
-          { type: 'STAGE_WITHOUT_ASSIGNEE', status: 'OVERDUE', computedAt: minutesAgo(150) },
+          { type: 'ORG_UNIT_WITHOUT_HEAD', status: 'FAILED', computedAt: failedAt },
+          { type: 'STAGE_WITHOUT_ASSIGNEE', status: 'OVERDUE', computedAt: overdueAt },
           { type: 'TASK_WITHOUT_OWNER', status: 'NEVER_RUN', computedAt: null },
         ],
       });
+      // An absolute date and time (ACC-94): the layer's own format, specced in
+      // format.service.spec.ts.
+      const format = TestBed.inject(FormatService);
 
       expect(page.freshnessNotices()).toEqual([
-        'Org unit without a head: failed, as of 3 h ago',
-        'Workflow stage with no resolvable assignee: overdue since 3 h ago',
-        'Task with no actionable owner: never run',
+        `Org unit without a head: the last check failed. Its rows are as last confirmed on ${format.dateTime(failedAt)}.`,
+        `Workflow stage with no resolvable assignee: not checked since ${format.dateTime(overdueAt)}. Its rows may be out of date.`,
+        'Task with no actionable owner: not checked yet, so an empty list for it does not mean nothing is wrong.',
       ]);
       // An empty page must not read as "nothing needs fixing" when checks did not run.
       expect(page.emptyMessageKey()).toBe('setupHealth.emptyUnconfirmed');
@@ -308,7 +310,9 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
 
       const page = render({ open: [], recentlyCleared: [], freshness });
 
-      expect(page.freshnessNotices()).toEqual(['Task with no actionable owner: never succeeded']);
+      expect(page.freshnessNotices()).toEqual([
+        'Task with no actionable owner: no check has succeeded yet, so an empty list for it does not mean nothing is wrong.',
+      ]);
     });
 
     it('reports the OLDEST confirmation, so the toolbar never overstates freshness', () => {
@@ -317,7 +321,7 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
 
       const page = render({ open: [], recentlyCleared: [], freshness });
 
-      expect(page.lastChecked()).toBe('Checked 50 min ago');
+      expect(page.lastChecked()).toBe('Checked 50 minutes ago');
     });
   });
 

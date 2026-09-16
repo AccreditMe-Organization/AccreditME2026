@@ -34,6 +34,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 // This migration is architectural consistency with SYSTEM-REFERENCE.md
 // Section 10.5's required pattern, not a bug fix.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 const ACTION_TYPES = [
   { label: 'CREATE_TASK', value: 'CREATE_TASK' },
@@ -58,6 +59,7 @@ const ACTION_TYPES = [
     InputTextModule,
     TextareaModule,
     InputNumberModule,
+    InputNumberLatinDigits,
     SelectModule,
     CheckboxModule,
     OverlaySelectComponent,

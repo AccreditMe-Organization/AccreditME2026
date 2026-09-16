@@ -7,6 +7,7 @@ import { MenuModule } from 'primeng/menu';
 import { TooltipModule } from 'primeng/tooltip';
 import { MenuItem } from 'primeng/api';
 import { AuthService } from '../../core/services/auth.service';
+import { AmCountPipe, FormatService } from '../../core/formatting';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import {
   NavGroup,
@@ -35,6 +36,7 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
     RouterLink,
     RouterLinkActive,
     TranslatePipe,
+    AmCountPipe,
     MenuModule,
     TooltipModule,
   ],
@@ -123,7 +125,7 @@ const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
                     >
                       <span aria-hidden="true">{{ badge.count }}</span>
                       <span class="sr-only">{{
-                        'shell.badge.setupHealth' | translate: { count: badge.count }
+                        badge.count | amCount: 'shell.openConditions'
                       }}</span>
                     </span>
                   } @else {
@@ -228,6 +230,7 @@ export class SidebarComponent {
   readonly authService = inject(AuthService);
   private readonly router = inject(Router);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
 
   readonly collapsed = input(false);
 
@@ -279,7 +282,7 @@ export class SidebarComponent {
     const label = this.translate.instant(item.labelKey);
     const badge = this.badgeFor(item);
     return badge
-      ? `${label} — ${this.translate.instant('shell.badge.setupHealth', { count: badge.count })}`
+      ? `${label} — ${this.format.count('shell.openConditions', badge.count)}`
       : label;
   }
 

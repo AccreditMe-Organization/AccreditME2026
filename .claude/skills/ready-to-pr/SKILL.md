@@ -2,7 +2,7 @@
 name: ready-to-pr
 description: Final verification and pull request creation for AccreditMe. Invoke manually with /ready-to-pr when all feature work is complete and committed, before opening a PR to dev.
 disable-model-invocation: true
-allowed-tools: Bash(git status) Bash(git branch) Bash(git log --oneline *) Bash(git diff *) Bash(git push *) Bash(npx tsc --noEmit) Bash(npx jest *) Bash(git stash list) Read Glob Grep mcp__github__createPullRequest mcp__github__listPullRequests mcp__linear-server__updateIssue mcp__linear-server__getIssue
+allowed-tools: Bash(git status) Bash(git branch) Bash(git log --oneline *) Bash(git diff *) Bash(git push *) Bash(npx tsc --noEmit) Bash(npx jest *) Bash(git stash list) Bash(ls .playwright-mcp*) Bash(rm -rf .playwright-mcp/*) Read Glob Grep mcp__github__createPullRequest mcp__github__listPullRequests mcp__linear-server__updateIssue mcp__linear-server__getIssue
 ---
 
 # AccreditMe — Ready to PR
@@ -44,6 +44,27 @@ Instruct user to commit or discard them before proceeding.
 
 If on main or dev — STOP.
 This skill only opens PRs from feature or fix branches.
+
+---
+
+## Step 1b — Clear the Playwright Output Folder
+
+Every browser pass writes screenshots, page snapshots and console logs
+to `.playwright-mcp/` at the repo root. It is gitignored, so none of it
+reaches the repo and `git status` in Step 1 stays clean either way —
+this is disk clutter, not a leak. It accumulates silently: one ticket's
+verification left **1436 files, 16 MB**.
+
+```bash
+ls .playwright-mcp 2>/dev/null | wc -l
+rm -rf .playwright-mcp/*
+```
+
+- [ ] `.playwright-mcp/` is empty (the folder itself may stay)
+
+Anything from the browser pass that is worth KEEPING — screenshots
+cited in a report, a saved failure trace — belongs in the session
+scratchpad, not here. Copy it there BEFORE clearing, not after.
 
 ---
 

@@ -46,8 +46,34 @@ const flatten = (obj: unknown, prefix = ''): Record<string, string> => {
   return out;
 };
 
-const EN = flatten(en);
-const AR = flatten(ar);
+// ACC-94 — counted strings live under a top-level "plural" section, one object
+// of plural categories per string, which ngx-translate never receives (see
+// core/formatting/plural-catalog.ts). They are checked as units below; the flat
+// maps hold everything ngx-translate does receive.
+type Json = Record<string, unknown>;
+const withoutPlural = (file: Json): Json =>
+  Object.fromEntries(Object.entries(file).filter(([key]) => key !== 'plural'));
+
+const pluralLeaves = (node: unknown, prefix = ''): Record<string, Json> => {
+  const out: Record<string, Json> = {};
+  if (node === null || typeof node !== 'object') return out;
+  for (const [key, value] of Object.entries(node as Json)) {
+    const path = `${prefix}${key}`;
+    if (value !== null && typeof value === 'object' && 'other' in (value as Json)) {
+      out[path] = value as Json;
+    } else if (value !== null && typeof value === 'object') {
+      Object.assign(out, pluralLeaves(value, `${path}.`));
+    } else {
+      out[path] = { notAPluralObject: String(value) };
+    }
+  }
+  return out;
+};
+
+const EN = flatten(withoutPlural(en as Json));
+const AR = flatten(withoutPlural(ar as Json));
+const EN_PLURAL = pluralLeaves((en as Json)['plural']);
+const AR_PLURAL = pluralLeaves((ar as Json)['plural']);
 
 // Every place in the app that builds a key by string concatenation, with the
 // values it can produce. Found by grepping for `'prefix.' +` and for template
@@ -119,6 +145,93 @@ describe('translation keys (ACC-78)', () => {
         ...Object.entries(AR).filter(([, v]) => v.trim() === '').map(([k]) => `ar:${k}`),
       ];
       expect(empty).withContext(`empty: ${empty.join(', ')}`).toEqual([]);
+    });
+  });
+
+  // ACC-94, decision D1. Plural keys are compared as units, and each language
+  // must define exactly the categories its plural rules produce — six for
+  // Arabic, two for English — taken from Intl.PluralRules rather than
+  // hard-coded, so this follows CLDR. No runtime fallback to "other" is relied
+  // on for Arabic: a missing category fails here.
+  describe('counted strings (plural section)', () => {
+    it('has the same plural keys in both files', () => {
+      expect(Object.keys(AR_PLURAL).sort()).toEqual(Object.keys(EN_PLURAL).sort());
+    });
+
+    for (const [language, leaves] of [
+      ['en', EN_PLURAL],
+      ['ar', AR_PLURAL],
+    ] as const) {
+      it(`defines exactly the ${language} plural categories for every counted string`, () => {
+        const expected = [...new Intl.PluralRules(language).resolvedOptions().pluralCategories].sort();
+        const wrong = Object.entries(leaves)
+          .filter(([, forms]) => JSON.stringify(Object.keys(forms).sort()) !== JSON.stringify(expected))
+          .map(([key, forms]) => `${key}: [${Object.keys(forms).join(', ')}]`);
+        expect(wrong).withContext(`${language} needs [${expected.join(', ')}]`).toEqual([]);
+      });
+
+      it(`has no empty ${language} plural form`, () => {
+        const empty = Object.entries(leaves).flatMap(([key, forms]) =>
+          Object.entries(forms)
+            .filter(([, text]) => typeof text !== 'string' || text.trim() === '')
+            .map(([category]) => `${key}.${category}`),
+        );
+        expect(empty).toEqual([]);
+      });
+    }
+
+    // A counted number outside the plural section is the defect this ticket
+    // removes: one fixed form for every count ("1 open conditions", "7 يومًا").
+    // Matched by placeholder name, so it needs no list of keys.
+    const COUNTED = /\{\{\s*(count|days|hours|minutes|total|\w+Count)\s*\}\}/;
+
+    // Numbers with no counted noun: nothing to agree with. Adding one needs a
+    // reason here.
+    const NUMBER_ONLY: Record<string, string> = {
+      'list.panelRange': '"1–25 of 120" — a range, no noun',
+      'workflow.stageIndicator.revisited': '"×3" — a multiplier sign, no noun',
+    };
+
+    // Time quantities never become plural objects: they go through the layer's
+    // duration and relative formats, which pluralise by construction.
+
+    it('carries no counted number outside the plural section', () => {
+      const offenders = [...Object.entries(EN), ...Object.entries(AR)]
+        .filter(
+          ([key, text]) =>
+            COUNTED.test(text) && !(key in NUMBER_ONLY),
+        )
+        .map(([key, text]) => `${key}: ${text}`);
+      expect(offenders).withContext('move these into "plural", or format them through the layer').toEqual([]);
+    });
+
+    it('lists only exceptions that still exist, so the list cannot go stale', () => {
+      const stale = Object.keys(NUMBER_ONLY).filter((key) => !(key in EN));
+      expect(stale).toEqual([]);
+    });
+  });
+
+  // ACC-94 — Ahmad's decision: Latin digits everywhere, in both languages. The
+  // formatting layer pins them for everything it formats; this covers digits
+  // typed into the translation files, where "آخر ٧ أيام" once sat beside a
+  // Latin "7" on the same page.
+  describe('digits', () => {
+    const ARABIC_INDIC = /[٠-٩۰-۹]/;
+
+    it('uses no Arabic-Indic digits in either file, including plural forms', () => {
+      const pluralTexts = (leaves: Record<string, Json>, language: string) =>
+        Object.entries(leaves).flatMap(([key, forms]) =>
+          Object.entries(forms).map(([category, text]) => [`${language}:plural.${key}.${category}`, String(text)]),
+        );
+      const offenders = [
+        ...Object.entries(EN).map(([key, text]) => [`en:${key}`, text]),
+        ...Object.entries(AR).map(([key, text]) => [`ar:${key}`, text]),
+        ...pluralTexts(EN_PLURAL, 'en'),
+        ...pluralTexts(AR_PLURAL, 'ar'),
+      ]
+        .filter(([, text]) => ARABIC_INDIC.test(text))
+        .map(([key, text]) => `${key}: ${text}`);
+      expect(offenders).withContext('write digits as 0-9 in both languages').toEqual([]);
     });
   });
 

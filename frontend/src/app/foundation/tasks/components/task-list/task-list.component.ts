@@ -1,5 +1,5 @@
 import { Component, OnInit, TemplateRef, ViewChild, inject, input, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { AmDateTimePipe } from '../../../../core/formatting';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
@@ -35,7 +35,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 @Component({
   selector: 'app-task-list',
   standalone: true,
-  imports: [PageHeaderComponent, DatePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, EditDialogComponent],
+  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, EditDialogComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'task.allTasks' | translate">
@@ -76,7 +76,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
               }
             </td>
             <td>{{ ('task.priority.' + task.priority.toLowerCase()) | translate }}</td>
-            <td>{{ task.dueAt ? (task.dueAt | date: 'short') : '—' }}</td>
+            <td>{{ task.dueAt | amDateTime }}</td>
             <td>
               <p-tag [value]="('task.status.' + task.status.toLowerCase()) | translate" />
             </td>

@@ -7,6 +7,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import en from '../../../assets/i18n/en.json';
+import { loadTranslationsForTest } from '../../core/formatting/testing';
 import { environment } from '../../../environments/environment';
 
 // ACC-79 — the rail's own behaviour. WHICH items appear is nav-items.spec.ts's
@@ -36,6 +38,7 @@ describe('SidebarComponent (ACC-79)', () => {
         email: 'x@y.test',
         name: opts.name ?? 'Dr. Yasser Al-Amri',
       }).asReadonly(),
+      displayPreferences: signal(null).asReadonly(),
     } as Partial<AuthService>;
 
     TestBed.resetTestingModule();
@@ -173,11 +176,13 @@ describe('SidebarComponent (ACC-79)', () => {
 
     afterEach(() => http.verify());
 
-    it('shows the open count on the item', () => {
+    it('shows the open count on the item, with a pluralised label for screen readers', () => {
       const el = renderWithHttp({ permissions: ['setup:view'] });
+      loadTranslationsForTest({ en });
       flushSummary(25, 0);
 
       expect(badge(el)?.textContent).toContain('25');
+      expect(badge(el)?.querySelector('.sr-only')?.textContent?.trim()).toBe('25 open conditions');
       expect(badge(el)?.classList).not.toContain('am-rail-badge--alert');
     });
 
@@ -187,6 +192,15 @@ describe('SidebarComponent (ACC-79)', () => {
       flushSummary(3, 1);
 
       expect(badge(el)?.classList).toContain('am-rail-badge--alert');
+    });
+
+    // ACC-94 — the rail read "1 open conditions" before counted strings had plural forms.
+    it('says 1 open condition, not 1 open conditions', () => {
+      const el = renderWithHttp({ permissions: ['setup:view'] });
+      loadTranslationsForTest({ en });
+      flushSummary(1, 0);
+
+      expect(badge(el)?.querySelector('.sr-only')?.textContent?.trim()).toBe('1 open condition');
     });
 
     it('shows no badge when nothing is open', () => {
@@ -206,10 +220,11 @@ describe('SidebarComponent (ACC-79)', () => {
 
     it('carries the count in the label when the rail is collapsed', () => {
       const el = renderWithHttp({ permissions: ['setup:view'], collapsed: true });
+      loadTranslationsForTest({ en });
       flushSummary(7, 0);
 
       expect(el.querySelector('a[href="/setup-health"]')?.getAttribute('aria-label')).toContain(
-        'shell.badge.setupHealth',
+        '7 open conditions',
       );
     });
   });
