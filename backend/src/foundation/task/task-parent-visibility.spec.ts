@@ -30,6 +30,7 @@ import { App } from 'supertest/types';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
+import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { TenantService } from '../tenant/tenant.service';
@@ -87,6 +88,9 @@ describe('Child list gated by its parent (ACC-101)', () => {
       providers: [
         TaskService,
         DelegationLabelService,
+        // REAL, not a stub: the refusal under test is this service's, and a
+        // stub here would leave the test asserting its own mock.
+        ObjectVisibilityService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: { log: jest.fn() } },
         { provide: NotificationService, useValue: { create: jest.fn() } },
