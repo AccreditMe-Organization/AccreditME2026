@@ -2202,6 +2202,22 @@ authoritative time-zone field); decisions and evidence in
   expected noise. Not scoped here — recorded so the next person does
   not rediscover it mid-task, and so the audit entries are not later
   read as a real platform admin poking at a tenant.
+  **DECIDED (Ahmad, 2026-09-16) — impersonation is a DEVELOPMENT
+  CONVENIENCE and must not reach production.** A platform admin is
+  outside the customer's organisation and must never be able to sign in
+  as their tenant admin and read their quality data. It is removed
+  before the first customer (**ACC-99**), replaced by a
+  support-initiated password reset for the tenant admin — which needs
+  its own audit trail: who reset it, when, and the customer's admin
+  being told. Everything above stays true of the development period
+  only, and the browser-verification problem it describes is then
+  answered by the same password-reset path rather than by impersonation.
+  **Corollary — do not build anything to make impersonation safer.** An
+  impersonated write is attributed to the impersonated user with no
+  marker naming the platform admin (`AuditLog` has no such field, and
+  `metadata` is null on those rows) — real, and confirmed in ACC-94's
+  browser pass, but it is evidence on ACC-99, not a gap to close, since
+  the feature is going away.
 - **Resend email domain (`accreditme.com`) is not verified** in the
   Resend dashboard — invitation/notification emails will not actually
   deliver until this is configured. Infrastructure task, not a code
