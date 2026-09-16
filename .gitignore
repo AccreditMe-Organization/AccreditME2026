@@ -26,3 +26,8 @@ Thumbs.db
 # ACC-75 — npm audit report written by the CI dependency gate.
 # Build artifact, never committed.
 audit.json
+
+# Ahmad's own folder — where the Claude desktop app saves documents it
+# produces for him. His working material, not project source. Keep it out
+# of git; do not delete it.
+Claude outputs/

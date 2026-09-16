@@ -175,6 +175,28 @@ sequence-vs-history question we'd gone back and forth on twice; the compact list
 variant established that controls respond to set size and row anatomy responds
 to width, which turned two components into one.
 
+**A source grep cannot tell you whether a test is covered by the
+tenant-isolation CI gate. Run the gate.** The gate is a Jest
+`--testNamePattern` on one exact string, and CLAUDE.md records a recurring
+failure class where a correct cross-tenant test sits under a name the gate never
+matches, so it passes locally and is invisible to CI. The natural check —
+grepping the diff for that string — is wrong in *both* directions now:
+`itEnforcesTenantIsolation(suffix, fn)`
+(`backend/src/common/testing/tenant-isolation.ts`) composes the gate string at
+**runtime**, so a test that is properly covered shows nothing to a grep.
+
+This came up on ACC-94: grepping the branch diff for the gate's literal string
+returned nothing, which looks exactly like the known failure class. The two new
+tenant-scoped queries were in fact covered, through the helper. The right check
+is `npx jest --testNamePattern="should NOT return records belonging to a
+different tenant"` and reading the passing count, or counting
+`itEnforcesTenantIsolation(` calls against the new queries — never searching the
+diff for the sentence.
+
+Worth knowing beyond this one gate: **any check whose key is assembled at
+runtime is invisible to static search**, and the helper exists precisely to stop
+the mislabelling problem, so it will keep producing this false alarm.
+
 ---
 
 ## 4. Linear and GitHub conventions
