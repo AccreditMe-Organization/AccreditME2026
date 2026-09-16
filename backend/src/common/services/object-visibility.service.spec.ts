@@ -75,6 +75,56 @@ describe('ObjectVisibilityService (ACC-101)', () => {
     expect(mockPrisma.meeting.findFirst).toHaveBeenCalled();
   });
 
+  // The read-first shape. Both refusal causes must collapse to one answer, or
+  // the status pair rebuilds the existence oracle the check exists to close.
+  describe('assertCanViewOrNotFound', () => {
+    const NOT_FOUND = 'Task not found';
+
+    it('reports a caller who lacks the permission as not-found, in the caller own terms', async () => {
+      await expect(
+        service.assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['tasks:view'], NOT_FOUND),
+      ).rejects.toThrow(new NotFoundException(NOT_FOUND));
+    });
+
+    it('reports a missing parent identically, so the two cannot be told apart', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      const lacksPermission = await service
+        .assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['tasks:view'], NOT_FOUND)
+        .catch((e: Error) => e);
+      const parentMissing = await service
+        .assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['committees:view'], NOT_FOUND)
+        .catch((e: Error) => e);
+
+      expect((lacksPermission as NotFoundException).getResponse()).toEqual(
+        (parentMissing as NotFoundException).getResponse(),
+      );
+    });
+
+    it('names neither the parent type nor the permission, which would rebuild the oracle in the body', async () => {
+      const error = await service
+        .assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['tasks:view'], NOT_FOUND)
+        .catch((e: Error) => e);
+
+      expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain('COMMITTEE');
+      expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain('committees:view');
+    });
+
+    it('lets an unexpected failure surface as itself, rather than reporting it as a missing record', async () => {
+      mockPrisma.committee.findFirst.mockRejectedValue(new Error('connection terminated'));
+
+      await expect(
+        service.assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['committees:view'], NOT_FOUND),
+      ).rejects.toThrow('connection terminated');
+    });
+
+    it('admits an entitled caller, same as the check-first form', async () => {
+      await expect(
+        service.assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['committees:view'], NOT_FOUND),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   itEnforcesTenantIsolation('ObjectVisibilityService.assertCanView', async () => {
     mockPrisma.committee.findFirst.mockImplementation(
       ({ where }: { where: { id: string; organizationId: string } }) =>

@@ -93,6 +93,43 @@ export class ObjectVisibilityService {
       throw new NotFoundException(`${objectType} not found`);
     }
   }
+
+  // ACC-101 — the same rule for the OTHER shape of endpoint, where the parent
+  // is knowable only from the row, so the record must be read before it can be
+  // checked.
+  //
+  // THE READ IS UNAVOIDABLE THERE, SO THE REFUSAL MUST NOT BE DISTINGUISHABLE
+  // FROM NOT-FOUND. assertCanView() above answers 403 for "you lack the
+  // permission" and 404 for "no such parent", which is right when the caller
+  // named the parent themselves — but on a read-first endpoint that pair is an
+  // existence oracle: a caller holding an id from a link, a log or an export
+  // would learn that the record exists and is hidden from them, which is the
+  // fact the check exists to withhold.
+  //
+  // NOT-FOUND is the chosen shape for both, because it is the answer that
+  // discloses nothing. The message is the caller's own — "Task not found",
+  // "Workflow instance not found" — never the parent's type or the permission
+  // that would have been required, either of which would rebuild the oracle in
+  // the body after closing it in the status.
+  async assertCanViewOrNotFound(
+    objectType: string,
+    objectId: string,
+    organizationId: string,
+    viewerPermissions: readonly string[],
+    notFoundMessage: string,
+  ): Promise<void> {
+    try {
+      await this.assertCanView(objectType, objectId, organizationId, viewerPermissions);
+    } catch (error) {
+      // Only the two refusals this service raises are translated. Anything else
+      // — a dropped connection, a Prisma fault — must surface as itself rather
+      // than be reported to the caller as a missing record.
+      if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        throw new NotFoundException(notFoundMessage);
+      }
+      throw error;
+    }
+  }
 }
 
 interface ParentRule {

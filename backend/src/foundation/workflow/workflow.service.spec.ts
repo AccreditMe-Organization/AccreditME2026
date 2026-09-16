@@ -290,7 +290,10 @@ describe('WorkflowService', () => {
         // ACC-101 — permissive stub: these tests exercise the ENGINE, which
         // acts on its own behalf and has no viewer. The parent check is proven
         // at the route, in workflow-parent-visibility.spec.ts.
-        { provide: ObjectVisibilityService, useValue: { assertCanView: jest.fn() } },
+        {
+          provide: ObjectVisibilityService,
+          useValue: { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() },
+        },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TaskService, useValue: mockTaskService },

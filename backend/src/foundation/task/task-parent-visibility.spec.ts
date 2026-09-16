@@ -66,12 +66,18 @@ describe('Child list gated by its parent (ACC-101)', () => {
   let app: INestApplication<App>;
   // Mutable so each test picks its own subject without rebuilding the app.
   let callerPermissions: string[];
+  // Held so a test can make the same id resolve to nothing, for the
+  // hidden-versus-missing comparison.
+  let prismaRef: { task: { findMany: jest.Mock; findFirst: jest.Mock } };
 
   beforeEach(async () => {
     callerPermissions = [];
 
     const prisma = {
-      task: { findMany: jest.fn().mockResolvedValue([TASK_ROW]) },
+      task: {
+        findMany: jest.fn().mockResolvedValue([TASK_ROW]),
+        findFirst: jest.fn().mockResolvedValue(TASK_ROW),
+      },
       // The committee EXISTS and belongs to this tenant: the refusal under test
       // must be about entitlement, never about a missing record.
       committee: {
@@ -82,6 +88,7 @@ describe('Child list gated by its parent (ACC-101)', () => {
       orgUnit: { findMany: jest.fn().mockResolvedValue([]) },
       user: { findMany: jest.fn().mockResolvedValue([{ id: 'user-absent', name: 'Ahmad Al-Najjar' }]) },
     };
+    prismaRef = prisma as unknown as typeof prismaRef;
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [TaskController],
@@ -141,6 +148,43 @@ describe('Child list gated by its parent (ACC-101)', () => {
     expect(response.body.message).toContain('committees:view');
     expect(JSON.stringify(response.body)).not.toContain('Sara Al-Otaibi');
     expect(JSON.stringify(response.body)).not.toContain('Ahmad Al-Najjar');
+  });
+
+  // THE OTHER SHAPE OF ENDPOINT. GET /tasks/:id cannot check before reading —
+  // a task's parent is only knowable from the row — so its refusal is shaped as
+  // NOT-FOUND, identical to an id with nothing behind it. Otherwise a caller
+  // holding a task id from a link, a log or an export learns the task exists
+  // and is hidden from them, which is the fact the check exists to withhold.
+  //
+  // The whole response is compared, not the status: a body naming the parent
+  // type or the required permission would rebuild the oracle in the body after
+  // closing it in the status.
+  it('answers identically for a task hidden behind its parent and a task that does not exist', async () => {
+    callerPermissions = ['tasks:view'];
+    prismaRef.task.findFirst.mockResolvedValue(TASK_ROW);
+
+    const hidden = await request(app.getHttpServer()).get(`/tasks/${TASK_ROW.id}`);
+
+    prismaRef.task.findFirst.mockResolvedValue(null);
+    const missing = await request(app.getHttpServer()).get('/tasks/no-such-task');
+
+    expect(hidden.status).toBe(404);
+    expect(hidden.status).toBe(missing.status);
+    expect(hidden.body).toEqual(missing.body);
+    expect(JSON.stringify(hidden.body)).not.toContain('committees:view');
+    expect(JSON.stringify(hidden.body)).not.toContain('Sara Al-Otaibi');
+  });
+
+  // CONTROL — the same read succeeds for a caller entitled to the parent, so
+  // the 404 above is a refusal rather than a broken fixture.
+  it('serves the single task to a caller who can see its parent', async () => {
+    callerPermissions = ['tasks:view', 'committees:view'];
+    prismaRef.task.findFirst.mockResolvedValue(TASK_ROW);
+
+    const response = await request(app.getHttpServer()).get(`/tasks/${TASK_ROW.id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.id).toBe(TASK_ROW.id);
   });
 
   // CONTROL 1 — the child gate still works, and refuses with its own message.

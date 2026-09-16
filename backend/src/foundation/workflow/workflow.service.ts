@@ -153,11 +153,14 @@ export class WorkflowService {
     viewerPermissions: readonly string[],
   ): Promise<IWorkflowInstance> {
     const instance = await this.getInstanceById(id, organizationId);
-    await this.objectVisibility.assertCanView(
+    // Read-first, so the refusal is shaped as not-found — see
+    // ObjectVisibilityService.assertCanViewOrNotFound() for why.
+    await this.objectVisibility.assertCanViewOrNotFound(
       instance.objectType,
       instance.objectId,
       organizationId,
       viewerPermissions,
+      'Workflow instance not found',
     );
     return instance;
   }
@@ -188,11 +191,15 @@ export class WorkflowService {
     });
     if (!instance) throw new NotFoundException('Workflow instance not found');
 
-    await this.objectVisibility.assertCanView(
+    // Same not-found shaping as getInstanceByIdForViewer(): the instance had to
+    // be read to learn its object, so a distinguishable refusal would confirm
+    // that an instance with this id exists.
+    await this.objectVisibility.assertCanViewOrNotFound(
       instance.objectType,
       instance.objectId,
       organizationId,
       viewerPermissions,
+      'Workflow instance not found',
     );
 
     const [visitRows, stages, transitions] = await Promise.all([

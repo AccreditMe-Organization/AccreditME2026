@@ -57,6 +57,9 @@ const INSTANCE_ROW = {
 describe('Workflow reads gated by their parent object (ACC-101)', () => {
   let app: INestApplication<App>;
   let callerPermissions: string[];
+  // Held so a test can make the same id resolve to nothing, for the
+  // hidden-versus-missing comparison below.
+  let prismaRef: { workflowInstance: { findFirst: jest.Mock; findMany: jest.Mock } };
 
   beforeEach(async () => {
     callerPermissions = [];
@@ -97,6 +100,7 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
       },
       meeting: { findFirst: jest.fn().mockResolvedValue(null) },
     };
+    prismaRef = prisma as unknown as typeof prismaRef;
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [WorkflowController],
@@ -161,17 +165,55 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
     it("refuses a committee's stage history, and discloses no actor name", async () => {
       const response = await stageHistory();
 
-      expect(response.status).toBe(403);
-      expect(response.body.message).toContain('committees:view');
+      // 404, not 403 — read-first, so the refusal is shaped as not-found.
+      expect(response.status).toBe(404);
       expect(JSON.stringify(response.body)).not.toContain('Dr. Hessa Al-Dosari');
+      expect(JSON.stringify(response.body)).not.toContain('committees:view');
     });
 
     it('refuses the instance row itself, which names the object it belongs to', async () => {
       const response = await instanceById();
 
-      expect(response.status).toBe(403);
-      expect(response.body.message).toContain('committees:view');
+      expect(response.status).toBe(404);
       expect(JSON.stringify(response.body)).not.toContain(COMMITTEE_ID);
+      expect(JSON.stringify(response.body)).not.toContain('committees:view');
+    });
+  });
+
+  // THE ORACLE TEST. Both reads above must load the row before they can learn
+  // which object it belongs to, so the refusal has to be indistinguishable from
+  // not-found — otherwise a caller holding an id from a link, a log or an
+  // export learns the record exists and is hidden from them.
+  //
+  // Compares the WHOLE response, not the status: a body naming the parent type
+  // or the required permission would rebuild the oracle after the status closed
+  // it.
+  describe('a hidden record is indistinguishable from one that does not exist', () => {
+    beforeEach(() => {
+      callerPermissions = ['workflows:view'];
+    });
+
+    it('answers identically for an instance that exists behind a hidden parent and one that does not exist', async () => {
+      const hidden = await instanceById();
+
+      // Same caller, same endpoint, an id with nothing behind it.
+      prismaRef.workflowInstance.findFirst.mockResolvedValue(null);
+      const missing = await request(app.getHttpServer()).get('/workflows/instances/no-such-instance');
+
+      expect(hidden.status).toBe(missing.status);
+      expect(hidden.body).toEqual(missing.body);
+    });
+
+    it('answers identically for stage history, hidden versus missing', async () => {
+      const hidden = await stageHistory();
+
+      prismaRef.workflowInstance.findFirst.mockResolvedValue(null);
+      const missing = await request(app.getHttpServer()).get(
+        '/workflows/instances/no-such-instance/stage-history',
+      );
+
+      expect(hidden.status).toBe(missing.status);
+      expect(hidden.body).toEqual(missing.body);
     });
   });
 

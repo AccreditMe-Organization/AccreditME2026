@@ -134,7 +134,10 @@ describe('TaskService', () => {
         // task-parent-visibility.spec.ts. A real one here would refuse every
         // 'DOCUMENT'-sourced fixture below (no Document module exists to own
         // them) and turn data assertions into authorization assertions.
-        { provide: ObjectVisibilityService, useValue: { assertCanView: jest.fn() } },
+        {
+          provide: ObjectVisibilityService,
+          useValue: { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() },
+        },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TenantService, useValue: mockTenantService },
