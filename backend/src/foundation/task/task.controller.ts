@@ -98,8 +98,10 @@ export class TaskController {
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
     @CurrentUserPermissions() actorPermissions: string[],
+    // Named in the refusal log, which records what the 404 conceals.
+    @CurrentUser() actorId: string,
   ): Promise<ITask> {
-    return this.taskService.getByIdForViewer(id, tenantId, actorPermissions);
+    return this.taskService.getByIdForViewer(id, tenantId, actorPermissions, actorId);
   }
 
   @Post()

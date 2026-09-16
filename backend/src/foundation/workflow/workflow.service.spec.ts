@@ -20,6 +20,7 @@ const ORG_A = 'org-a-id';
 // ACC-101 — the permission set the route hands the service. The visibility
 // check is proven in workflow-parent-visibility.spec.ts; here it is stubbed.
 const VIEWER_PERMISSIONS = ['workflows:view', 'committees:view'];
+const VIEWER_ID = 'viewer-id';
 const ORG_B = 'org-b-id';
 const ACTOR = 'actor-id';
 
@@ -483,7 +484,7 @@ describe('WorkflowService', () => {
         visit('is-4', 'stage-terms', '2026-01-04T09:00:00Z', null),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.visits).toHaveLength(4);
       expect(result.visits.map((v) => v.stageId)).toEqual([
@@ -508,7 +509,7 @@ describe('WorkflowService', () => {
         visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', null),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.visits.filter((v) => v.exitedAt === null)).toHaveLength(1);
       expect(result.visits.find((v) => v.exitedAt === null)!.id).toBe('is-2');
@@ -522,7 +523,7 @@ describe('WorkflowService', () => {
         visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', null),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.stages.map((s) => s.id)).toEqual([
         'stage-formation',
@@ -543,7 +544,7 @@ describe('WorkflowService', () => {
         visit('is-4', 'stage-terms', '2026-01-04T09:00:00Z', null),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.stages.map((s) => s.visitCount)).toEqual([2, 2, 0]);
       // Current is the stage holding the OPEN visit — the second Terms Review,
@@ -556,7 +557,7 @@ describe('WorkflowService', () => {
         visit('is-1', 'stage-formation', '2026-01-01T09:00:00Z', '2026-01-02T09:00:00Z'),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.stages.some((s) => s.isCurrent)).toBe(false);
     });
@@ -564,7 +565,7 @@ describe('WorkflowService', () => {
     it('returns the full sequence even for an instance with no visits yet', async () => {
       mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.stages.length).toBe(3);
       expect(result.stages.every((s) => s.visitCount === 0 && !s.isCurrent)).toBe(true);
@@ -580,7 +581,7 @@ describe('WorkflowService', () => {
         visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', null, { actorId: 'user-gone' }),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.visits[0]!.actorName).toBe('Sarah');
       expect(result.visits[1]!.actorName).toBeNull();
@@ -602,7 +603,7 @@ describe('WorkflowService', () => {
         }),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.visits[0]!.delegation).toEqual({
         reason: 'ACTING_HEAD',
@@ -619,7 +620,7 @@ describe('WorkflowService', () => {
     it('scopes the visit query relationally, not just via the parent check', async () => {
       mockPrisma.workflowInstanceStage.findMany.mockResolvedValue([]);
 
-      await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(mockPrisma.workflowInstanceStage.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -662,7 +663,7 @@ describe('WorkflowService', () => {
         visit('is-4', 'stage-terms', '2026-01-04T09:00:00Z', null),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.visits.map((v) => v.transitionLabelEn)).toEqual([
         // The first visit was not transitioned into — the instance started there.
@@ -693,7 +694,7 @@ describe('WorkflowService', () => {
         visit('is-2', 'stage-terms', '2026-01-02T09:00:00Z', null),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result.visits[1]!.transitionLabelEn).toBeNull();
       expect(result.visits[1]!.transitionLabelAr).toBeNull();
@@ -724,7 +725,7 @@ describe('WorkflowService', () => {
         }),
       ]);
 
-      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS);
+      const result = await service.getStageHistory('instance-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       // "scope unclear" explains the Revise Terms transition, which Ahmad
       // fired and which landed on Formation.
@@ -748,7 +749,7 @@ describe('WorkflowService', () => {
         ),
       );
 
-      await expect(service.getStageHistory('instance-1', ORG_B, VIEWER_PERMISSIONS)).rejects.toThrow(NotFoundException);
+      await expect(service.getStageHistory('instance-1', ORG_B, VIEWER_PERMISSIONS, VIEWER_ID)).rejects.toThrow(NotFoundException);
       // Never reached the history at all — not merely filtered afterwards.
       expect(mockPrisma.workflowInstanceStage.findMany).not.toHaveBeenCalled();
     });

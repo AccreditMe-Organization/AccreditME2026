@@ -151,6 +151,7 @@ export class WorkflowService {
     id: string,
     organizationId: string,
     viewerPermissions: readonly string[],
+    viewerId: string,
   ): Promise<IWorkflowInstance> {
     const instance = await this.getInstanceById(id, organizationId);
     // Read-first, so the refusal is shaped as not-found — see
@@ -161,6 +162,7 @@ export class WorkflowService {
       organizationId,
       viewerPermissions,
       'Workflow instance not found',
+      viewerId,
     );
     return instance;
   }
@@ -177,6 +179,7 @@ export class WorkflowService {
     instanceId: string,
     organizationId: string,
     viewerPermissions: readonly string[],
+    viewerId: string,
   ): Promise<IWorkflowStageHistory> {
     // Scoped by id AND organizationId together, per CLAUDE.md's query shape —
     // also the only way to learn which template to diff the visits against.
@@ -200,6 +203,7 @@ export class WorkflowService {
       organizationId,
       viewerPermissions,
       'Workflow instance not found',
+      viewerId,
     );
 
     const [visitRows, stages, transitions] = await Promise.all([

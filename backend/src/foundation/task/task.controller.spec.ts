@@ -152,9 +152,9 @@ describe('TaskController', () => {
   });
 
   it('getById delegates to the viewer-aware read, forwarding the caller permissions', async () => {
-    const result = await controller.getById('task-1', TENANT_ID, VIEWER_PERMISSIONS);
+    const result = await controller.getById('task-1', TENANT_ID, VIEWER_PERMISSIONS, USER_ID);
 
-    expect(service.getByIdForViewer).toHaveBeenCalledWith('task-1', TENANT_ID, VIEWER_PERMISSIONS);
+    expect(service.getByIdForViewer).toHaveBeenCalledWith('task-1', TENANT_ID, VIEWER_PERMISSIONS, USER_ID);
     expect(result).toEqual(MOCK_TASK);
   });
 

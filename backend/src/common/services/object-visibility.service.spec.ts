@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../testing/tenant-isolation';
@@ -108,6 +108,35 @@ describe('ObjectVisibilityService (ACC-101)', () => {
 
       expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain('COMMITTEE');
       expect(JSON.stringify((error as NotFoundException).getResponse())).not.toContain('committees:view');
+    });
+
+    // The response conceals the refusal; the log must not. Otherwise someone
+    // walking ids and someone following a dead bookmark are indistinguishable
+    // to the operators too, which is the ACC-91/ACC-93 silent-failure shape.
+    it('records the refusal in the log, naming the viewer, the object and the cause', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await service
+        .assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['tasks:view'], NOT_FOUND, 'user-7')
+        .catch(() => undefined);
+
+      const line = warn.mock.calls[0]![0] as string;
+      expect(line).toContain('user-7');
+      expect(line).toContain(COMMITTEE_ID);
+      expect(line).toContain('not entitled to the parent');
+      warn.mockRestore();
+    });
+
+    it('distinguishes the two causes in the log, though the caller sees one answer', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+
+      await service
+        .assertCanViewOrNotFound('COMMITTEE', COMMITTEE_ID, ORG_A, ['committees:view'], NOT_FOUND, 'user-7')
+        .catch(() => undefined);
+
+      expect(warn.mock.calls[0]![0] as string).toContain('parent not found');
+      warn.mockRestore();
     });
 
     it('lets an unexpected failure surface as itself, rather than reporting it as a missing record', async () => {

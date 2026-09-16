@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../constants/permissions';
 
@@ -26,6 +26,8 @@ import { COMMITTEES_PERMISSIONS, MEETINGS_PERMISSIONS } from '../constants/permi
 // wiring.
 @Injectable()
 export class ObjectVisibilityService {
+  private readonly logger = new Logger(ObjectVisibilityService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   // One entry per object type that can own children. Keyed by the string both
@@ -117,6 +119,7 @@ export class ObjectVisibilityService {
     organizationId: string,
     viewerPermissions: readonly string[],
     notFoundMessage: string,
+    viewerId?: string,
   ): Promise<void> {
     try {
       await this.assertCanView(objectType, objectId, organizationId, viewerPermissions);
@@ -125,6 +128,28 @@ export class ObjectVisibilityService {
       // — a dropped connection, a Prisma fault — must surface as itself rather
       // than be reported to the caller as a missing record.
       if (error instanceof ForbiddenException || error instanceof NotFoundException) {
+        // THE RESPONSE CONCEALS THIS; THE LOG MUST NOT. A translated 404 is
+        // indistinguishable from a stale link to the caller, and that is the
+        // point — but it must not also be invisible to the operators, or
+        // someone walking ids and someone following a dead bookmark stay
+        // permanently indistinguishable to us as well. Same silent-failure
+        // shape as ACC-91/ACC-93.
+        //
+        // A LOG LINE, NOT AN AUDIT ROW, deliberately:
+        //   - AuditLog records MUTATIONS with before/after, is append-only, is
+        //     retained three years and is included in the tenant's own data
+        //     export. A refused READ is none of those things.
+        //   - It is also attacker-writable by construction: anyone probing ids
+        //     can append rows to a table nothing may delete, inside the
+        //     tenant's export. That is a denial-of-service on the audit trail.
+        // If refused reads ever need to reach the tenant rather than the
+        // operators, that is a security-events feature with its own retention
+        // decision — not a quiet reuse of AuditLog.
+        this.logger.warn(
+          `Visibility refusal: viewer ${viewerId ?? 'unknown'} in org ${organizationId} ` +
+            `was refused ${objectType} ${objectId}; answered "${notFoundMessage}". ` +
+            `Cause: ${error instanceof ForbiddenException ? 'not entitled to the parent' : 'parent not found'}.`,
+        );
         throw new NotFoundException(notFoundMessage);
       }
       throw error;

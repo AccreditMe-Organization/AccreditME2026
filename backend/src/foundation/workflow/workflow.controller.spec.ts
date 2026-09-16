@@ -80,11 +80,12 @@ describe('WorkflowController', () => {
     // ACC-101 — the route reads through the viewer-aware method; the plain
     // getInstanceById() stays for internal callers.
     it('delegates to the viewer-aware read, forwarding the caller permissions', async () => {
-      const result = await controller.getInstanceById('instance-1', TENANT_ID, VIEWER_PERMISSIONS);
+      const result = await controller.getInstanceById('instance-1', TENANT_ID, VIEWER_PERMISSIONS, ACTOR_ID);
       expect(service.getInstanceByIdForViewer).toHaveBeenCalledWith(
         'instance-1',
         TENANT_ID,
         VIEWER_PERMISSIONS,
+        ACTOR_ID,
       );
       expect(result).toEqual(MOCK_INSTANCE);
     });

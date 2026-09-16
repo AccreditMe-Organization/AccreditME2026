@@ -224,6 +224,7 @@ export class TaskService {
     id: string,
     organizationId: string,
     viewerPermissions: readonly string[],
+    viewerId: string,
   ): Promise<ITask> {
     const task = await this.getById(id, organizationId);
     await this.objectVisibility.assertCanViewOrNotFound(
@@ -232,6 +233,7 @@ export class TaskService {
       organizationId,
       viewerPermissions,
       'Task not found',
+      viewerId,
     );
     return task;
   }

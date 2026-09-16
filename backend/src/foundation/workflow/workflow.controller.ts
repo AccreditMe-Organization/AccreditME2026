@@ -28,8 +28,10 @@ export class WorkflowController {
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
     @CurrentUserPermissions() actorPermissions: string[],
+    // Named in the refusal log, which records what the 404 conceals.
+    @CurrentUser() actorId: string,
   ): Promise<IWorkflowInstance> {
-    return this.workflowService.getInstanceByIdForViewer(id, tenantId, actorPermissions);
+    return this.workflowService.getInstanceByIdForViewer(id, tenantId, actorPermissions, actorId);
   }
 
   @Get('instances')
@@ -58,8 +60,9 @@ export class WorkflowController {
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
     @CurrentUserPermissions() actorPermissions: string[],
+    @CurrentUser() actorId: string,
   ): Promise<IWorkflowStageHistory> {
-    return this.workflowService.getStageHistory(id, tenantId, actorPermissions);
+    return this.workflowService.getStageHistory(id, tenantId, actorPermissions, actorId);
   }
 
   // No class-level @Permissions — the required permission is data-driven
