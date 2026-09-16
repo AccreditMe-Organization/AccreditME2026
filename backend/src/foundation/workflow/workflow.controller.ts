@@ -20,11 +20,16 @@ export class WorkflowController {
 
   @Get('instances/:id')
   @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
+  // ACC-101 — workflows:view is necessary and no longer sufficient on all three
+  // reads below: each is scoped to an object, and the caller must be able to
+  // see that object. The permission set goes to the service, which owns the
+  // check (it needs the record to know which parent applies).
   getInstanceById(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IWorkflowInstance> {
-    return this.workflowService.getInstanceById(id, tenantId);
+    return this.workflowService.getInstanceByIdForViewer(id, tenantId, actorPermissions);
   }
 
   @Get('instances')
@@ -33,8 +38,9 @@ export class WorkflowController {
     @Query('objectType') objectType: string,
     @Query('objectId') objectId: string,
     @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IWorkflowInstance[]> {
-    return this.workflowService.getInstancesByObject(objectType, objectId, tenantId);
+    return this.workflowService.getInstancesByObject(objectType, objectId, tenantId, actorPermissions);
   }
 
   // ACC-76 — the object-detail stage indicator's data.
@@ -51,8 +57,9 @@ export class WorkflowController {
   getStageHistory(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IWorkflowStageHistory> {
-    return this.workflowService.getStageHistory(id, tenantId);
+    return this.workflowService.getStageHistory(id, tenantId, actorPermissions);
   }
 
   // No class-level @Permissions — the required permission is data-driven

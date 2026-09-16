@@ -8,6 +8,9 @@ import { IWorkflowInstance, IWorkflowApproval } from './interfaces/workflow-inst
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
 const TENANT_ID = 'tenant-test';
+// ACC-101 — the permission set the route hands the service. The visibility
+// check is proven in workflow-parent-visibility.spec.ts; here it is stubbed.
+const VIEWER_PERMISSIONS = ['workflows:view', 'committees:view'];
 const ACTOR_ID = 'actor-test';
 
 const MOCK_INSTANCE: IWorkflowInstance = {
@@ -41,6 +44,7 @@ describe('WorkflowController', () => {
   let controller: WorkflowController;
   let service: {
     getInstanceById: jest.Mock;
+    getInstanceByIdForViewer: jest.Mock;
     getInstancesByObject: jest.Mock;
     triggerTransition: jest.Mock;
     submitApproval: jest.Mock;
@@ -50,6 +54,7 @@ describe('WorkflowController', () => {
   beforeEach(async () => {
     service = {
       getInstanceById: jest.fn().mockResolvedValue(MOCK_INSTANCE),
+      getInstanceByIdForViewer: jest.fn().mockResolvedValue(MOCK_INSTANCE),
       getInstancesByObject: jest.fn().mockResolvedValue([MOCK_INSTANCE]),
       triggerTransition: jest.fn().mockResolvedValue(MOCK_INSTANCE),
       submitApproval: jest.fn().mockResolvedValue(MOCK_APPROVAL),
@@ -72,17 +77,28 @@ describe('WorkflowController', () => {
   afterEach(() => jest.clearAllMocks());
 
   describe('getInstanceById', () => {
-    it('delegates to workflowService.getInstanceById', async () => {
-      const result = await controller.getInstanceById('instance-1', TENANT_ID);
-      expect(service.getInstanceById).toHaveBeenCalledWith('instance-1', TENANT_ID);
+    // ACC-101 — the route reads through the viewer-aware method; the plain
+    // getInstanceById() stays for internal callers.
+    it('delegates to the viewer-aware read, forwarding the caller permissions', async () => {
+      const result = await controller.getInstanceById('instance-1', TENANT_ID, VIEWER_PERMISSIONS);
+      expect(service.getInstanceByIdForViewer).toHaveBeenCalledWith(
+        'instance-1',
+        TENANT_ID,
+        VIEWER_PERMISSIONS,
+      );
       expect(result).toEqual(MOCK_INSTANCE);
     });
   });
 
   describe('getInstancesByObject', () => {
-    it('delegates to workflowService.getInstancesByObject with query params', async () => {
-      const result = await controller.getInstancesByObject('DOCUMENT', 'object-1', TENANT_ID);
-      expect(service.getInstancesByObject).toHaveBeenCalledWith('DOCUMENT', 'object-1', TENANT_ID);
+    it('delegates to workflowService.getInstancesByObject with query params and caller permissions', async () => {
+      const result = await controller.getInstancesByObject('DOCUMENT', 'object-1', TENANT_ID, VIEWER_PERMISSIONS);
+      expect(service.getInstancesByObject).toHaveBeenCalledWith(
+        'DOCUMENT',
+        'object-1',
+        TENANT_ID,
+        VIEWER_PERMISSIONS,
+      );
       expect(result).toEqual([MOCK_INSTANCE]);
     });
   });
