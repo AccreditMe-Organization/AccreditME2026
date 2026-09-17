@@ -133,9 +133,26 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       'Baseline full-user role — view assigned work and enter own KPI data. ' +
       'Deliberately not named "Staff" — see Business Rules for why, and how this ' +
       'differs from the "Staff member" portal-only user type (Step 17b).',
+    // ACC-101 — tasks:view REMOVED, and its absence is load-bearing.
+    //
+    // It reads like the permission that lets someone see their own work, and it
+    // is not. GET /tasks/my-tasks carries NO permission at all (ACC-70): it is
+    // self-scoped by construction, filtering on the caller's own assignee rows.
+    // What tasks:view actually gates is the tenant-wide reads —
+    // GET /tasks?sourceType=…&sourceId=… and GET /tasks/:id — which can return
+    // ANY task in the tenant, with assignee names and delegation labels on it.
+    //
+    // Granting that to the role every ordinary staff member gets meant every
+    // staff member could read any committee's task list, given its id. The
+    // parent check added in this ticket closes the disclosure; removing it here
+    // stops the baseline role from claiming an administrative read it never
+    // needed. A BASE_USER loses nothing they use: their own tasks still arrive
+    // through my-tasks, and the My Tasks rail item carries no permission either.
+    //
+    // The exact set below is pinned in role.seed.spec.ts. Add nothing here
+    // without deciding it belongs to everyone in the tenant.
     permissions: [
       DOCUMENTS_PERMISSIONS.VIEW,
-      TASKS_PERMISSIONS.VIEW,
       MEETINGS_PERMISSIONS.VIEW,
       KPI_PERMISSIONS.VIEW_OWN,
       KPI_PERMISSIONS.ENTER_DATA,
