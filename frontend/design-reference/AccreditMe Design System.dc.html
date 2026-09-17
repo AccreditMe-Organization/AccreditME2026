@@ -1,0 +1,1799 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: #CBD5E0; border: 3px solid #fff; border-radius: 6px; }
+  input::placeholder, textarea::placeholder { color: #8A94A6; }
+  @keyframes shimmer { 0% { background-position: -260px 0; } 100% { background-position: 260px 0; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-block-end: 14px;">
+    <div style="min-width: 0;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · Brief 1</div>
+      <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">The system</h1>
+      <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 92ch; text-wrap: pretty;">Tokens, components and states, extracted from the four existing artboards and corrected where they were wrong. Buildable from PrimeNG + Tailwind with no new dependency. Arabic is shown beside English wherever it needs a different decision, not a mirror.</p>
+    </div>
+    <nav style="display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; min-width: 0;">
+      <a href="#s1" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">1 Tokens</a>
+      <a href="#s2" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">2 Type</a>
+      <a href="#s3" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">3 Colour rules</a>
+      <a href="#s4" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">4 Relation field</a>
+      <a href="#s5" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">5 State display</a>
+      <a href="#s6" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">6 Controls</a>
+      <a href="#s7" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">7 Dialogs &amp; pickers</a>
+      <a href="#s8" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">8 Feedback</a>
+      <a href="#s9" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">9 Accessibility</a>
+      <a href="#s10" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">10 Variant form</a>
+      <a href="#s11" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #2D3748; background: #fff; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">11 Repeating rows</a>
+      <a href="#changelog" style="text-decoration: none; font-size: 12px; font-weight: 500; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 999px; padding: 5px 11px;">What changed</a>
+    </nav>
+  </div>
+
+  <section id="s1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">Token sheet</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Every value below is a CSS custom property, consumed by both Tailwind config and the PrimeNG theme layer. Nothing in a component is a literal.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px;">
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Brand &amp; neutrals</div>
+        <sc-for list="{{ brandTokens }}" as="t" hint-placeholder-count="12">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; border-block-end: 1px solid #F0F3F7;">
+            <span style="{{ t.swatch }}"></span>
+            <span style="flex: 1 1 auto; min-width: 0;">
+              <span style="display: block; font-size: 12.5px; font-weight: 600;">{{ t.name }}</span>
+              <span style="display: block; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ t.use }}</span>
+            </span>
+            <span dir="ltr" style="flex: none; font-size: 11.5px; color: #4A5568; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace;">{{ t.value }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Semantic — state, severity, feedback</div>
+        <sc-for list="{{ semanticTokens }}" as="t" hint-placeholder-count="8">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; border-block-end: 1px solid #F0F3F7;">
+            <span style="{{ t.swatch }}">{{ t.sample }}</span>
+            <span style="flex: 1 1 auto; min-width: 0;">
+              <span style="display: block; font-size: 12.5px; font-weight: 600;">{{ t.name }}</span>
+              <span style="display: block; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ t.use }}</span>
+            </span>
+            <span dir="ltr" style="flex: none; font-size: 11.5px; color: #4A5568; font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; text-align: end;">{{ t.value }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-block-start: 18px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Space — 2px base, 4px rhythm</div>
+        <div style="display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap;">
+          <sc-for list="{{ spaceTokens }}" as="s" hint-placeholder-count="9">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+              <span style="{{ s.bar }}"></span>
+              <span dir="ltr" style="font-size: 10.5px; color: #5A6779; font-variant-numeric: tabular-nums;">{{ s.label }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">The base unit is 2px and layout moves in a 4px rhythm; 2 and 6 exist only for the sub-component gaps a 36px row needs (dot-to-label, chip padding). Panels pad 12–16. Table cells pad 8 / 12. Form rows gap 12. Section gap 12. Nothing uses 10 or 18 — the odd values in the current build are why two panels never line up.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779; margin-block-end: 10px;">Radius, border, elevation</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+          <span style="width: 54px; height: 36px; border: 1px solid #E2E8F0; border-radius: 4px; background: #F4F7FA; display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #5A6779;">4 · control</span>
+          <span style="width: 54px; height: 36px; border: 1px solid #E2E8F0; border-radius: 6px; background: #F4F7FA; display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #5A6779;">6 · button</span>
+          <span style="width: 54px; height: 36px; border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #5A6779;">8 · card</span>
+          <span style="width: 54px; height: 36px; border: 1px solid #E2E8F0; border-radius: 999px; background: #F4F7FA; display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #5A6779;">pill</span>
+          <span style="width: 78px; height: 36px; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; box-shadow: 0 12px 28px rgba(16,24,40,0.14); display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: #5A6779;">overlay</span>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">Cards carry a border and no shadow. Shadow means “floating above, dismissible” — overlays, dialogs, menus only. One shadow token in the whole system.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779; margin-block-end: 10px;">Density — one dial, three settings</div>
+        <sc-for list="{{ densityRows }}" as="d" hint-placeholder-count="3">
+          <div style="display: grid; grid-template-columns: 96px 1fr; gap: 10px; padding: 5px 0; border-block-end: 1px solid #F0F3F7;">
+            <span style="font-size: 12.5px; font-weight: 600;">{{ d.name }}</span>
+            <span style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ d.spec }}</span>
+          </div>
+        </sc-for>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">Default is Compact — these are eight-hour tools, and a 36px row shows 22 rows where 48px shows 16. Comfortable exists only for tablet and is chosen by pointer type, not by the user.</div>
+      </div>
+    </div>
+
+    <div style="margin-block-start: 16px; border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 11px 13px;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 5px;">Changed from today</div>
+      <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;"><strong>#718096 is retired as a text colour.</strong> It measures 4.53:1 on white — nominally AA — but every place it is actually used is on #F4F7FA, where it drops to about 4.2:1 and fails. Secondary text becomes <strong>#5A6779</strong> (5.4:1 on surface). #8A94A6 survives for non-text only: placeholder glyphs, disabled icons, dividers. <strong>#8DC63F is removed from state colour entirely</strong> — it is a brand green, it reads celebratory, and at 13px it cannot carry text. Success uses #067647. The accent survives on charts, KPI sparklines and the login page.</div>
+    </div>
+  </section>
+
+  <section id="s2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">Type specimen — English and Arabic</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">One scale, two font stacks, four Arabic-specific rules.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 18px;">
+      <div>
+        <div style="display: flex; align-items: baseline; gap: 8px; margin-block-end: 10px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779;">Latin</span>
+          <span style="font-size: 11.5px; color: #8A94A6;">system-ui / Helvetica Neue, tabular numerals</span>
+        </div>
+        <sc-for list="{{ typeScale }}" as="t" hint-placeholder-count="8">
+          <div style="display: grid; grid-template-columns: 1fr 132px; gap: 12px; align-items: baseline; padding: 7px 0; border-block-end: 1px solid #F0F3F7;">
+            <span style="{{ t.enStyle }}">{{ t.enSample }}</span>
+            <span dir="ltr" style="font-size: 11px; color: #5A6779; font-variant-numeric: tabular-nums; text-align: end;">{{ t.spec }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div>
+        <div style="display: flex; align-items: baseline; gap: 8px; margin-block-end: 10px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779;">Arabic</span>
+          <span style="font-size: 11.5px; color: #8A94A6;">IBM Plex Sans Arabic · +1px, +2px line-height, letter-spacing 0</span>
+        </div>
+        <sc-for list="{{ typeScale }}" as="t" hint-placeholder-count="8">
+          <div dir="rtl" style="display: grid; grid-template-columns: 1fr 132px; gap: 12px; align-items: baseline; padding: 7px 0; border-block-end: 1px solid #F0F3F7;">
+            <span style="{{ t.arStyle }}">{{ t.arSample }}</span>
+            <span dir="ltr" style="font-size: 11px; color: #5A6779; font-variant-numeric: tabular-nums; text-align: end; unicode-bidi: isolate;">{{ t.arSpec }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(292px, 1fr)); gap: 12px; margin-block-start: 18px;">
+      <sc-for list="{{ arabicRules }}" as="r" hint-placeholder-count="4">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 13px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #2E6FA3; margin-block-end: 6px;">{{ r.title }}</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ r.body }}</div>
+          <sc-if value="{{ r.demoWrong }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 10px;">
+              <div style="flex: 1 1 130px; border: 1px solid #FECDCA; background: #FEF3F2; border-radius: 6px; padding: 7px 9px;">
+                <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #B42318; margin-block-end: 4px;">No</div>
+                <div dir="rtl" style="{{ r.wrongStyle }}">{{ r.demoWrong }}</div>
+              </div>
+              <div style="flex: 1 1 130px; border: 1px solid #ABEFC6; background: #ECFDF3; border-radius: 6px; padding: 7px 9px;">
+                <div style="font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #067647; margin-block-end: 4px;">Yes</div>
+                <div dir="rtl" style="{{ r.rightStyle }}">{{ r.demoRight }}</div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 13px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Numerals, dates, times — identical in both languages</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;">
+          <div><div style="font-size: 11px; color: #5A6779;">Date</div><div dir="ltr" style="font-size: 13px; font-variant-numeric: tabular-nums;">15 Sep 2026</div></div>
+          <div><div style="font-size: 11px; color: #5A6779;">Time</div><div dir="ltr" style="font-size: 13px; font-variant-numeric: tabular-nums;">14:30</div></div>
+          <div><div style="font-size: 11px; color: #5A6779;">Hijri user (opt-in)</div><div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13.5px; font-variant-numeric: tabular-nums;">4 ربيع الآخر 1448 (15 Sep 2026)</div></div>
+          <div><div style="font-size: 11px; color: #5A6779;">Count</div><div dir="ltr" style="font-size: 13px; font-variant-numeric: tabular-nums;">1–25 of 312</div></div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Latin digits everywhere, <code style="font-size: 11px;">font-variant-numeric: tabular-nums</code> on every numeric cell so columns of figures align. Any run of Latin digits or a Gregorian date inside Arabic text is wrapped in <code style="font-size: 11px;">dir="ltr"; unicode-bidi: isolate</code> — without it the bracketed Gregorian date reorders and “(15 Sep 2026)” renders with its parentheses swapped.</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 13px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Weights, and what they mean</div>
+        <div style="display: flex; flex-direction: column; gap: 5px;">
+          <div style="display: flex; gap: 10px; align-items: baseline;"><span style="width: 74px; flex: none; font-size: 11.5px; color: #5A6779;">400</span><span style="font-size: 13px;">Body, table values, everything by default</span></div>
+          <div style="display: flex; gap: 10px; align-items: baseline;"><span style="width: 74px; flex: none; font-size: 11.5px; color: #5A6779;">500</span><span style="font-size: 13px; font-weight: 500;">The identifying value in a row — a name, a title</span></div>
+          <div style="display: flex; gap: 10px; align-items: baseline;"><span style="width: 74px; flex: none; font-size: 11.5px; color: #5A6779;">600</span><span style="font-size: 13px; font-weight: 600;">Headings, column labels, primary button</span></div>
+          <div style="display: flex; gap: 10px; align-items: baseline;"><span style="width: 74px; flex: none; font-size: 11.5px; color: #5A6779;">700</span><span style="font-size: 13px; font-weight: 700;">Micro-labels only, at 11px with tracking</span></div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Three weights per screen maximum. No italics anywhere: Arabic has no true italic and the synthesised slant is illegible at 12px, so emphasis is weight or colour, never slant — including in English, so the two languages stay structurally identical.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">Colour, and when it is allowed</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The palette is the easy half. The rule is the half that fixes the screens.</span>
+    </div>
+
+    <div style="border: 1px solid #2E6FA3; border-radius: 8px; overflow: hidden; margin-block-end: 16px;">
+      <div style="background: #E4EEF6; padding: 11px 14px; border-block-end: 1px solid #C5DAEA;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 4px;">The rule</div>
+        <div style="font-size: 14.5px; font-weight: 600; color: #1F5480; text-wrap: pretty;">Colour marks the exception, never the category. If every row in a column can carry it, none of them may.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 0;">
+        <sc-for list="{{ colourRules }}" as="c" hint-placeholder-count="4">
+          <div style="padding: 11px 14px; border-inline-end: 1px solid #E2E8F0; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 4px;">{{ c.title }}</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ c.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 16px;">
+      <div style="border: 1px solid #FECDCA; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 9px 13px; background: #FEF3F2; border-block-end: 1px solid #FECDCA; display: flex; align-items: baseline; gap: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B42318;">Today</span>
+          <span style="font-size: 12px; color: #7A271A;">every cell a pill — 11 chips in 5 rows, nothing readable</span>
+        </div>
+        <div style="padding: 4px 0;">
+          <div style="display: flex; gap: 10px; padding: 6px 13px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">
+            <span style="flex: 2 1 0; min-width: 0;">User</span><span style="flex: 1 1 0;">Status</span><span style="flex: 1 1 0;">Type</span><span style="flex: none; width: 66px;">Active</span>
+          </div>
+          <sc-for list="{{ badBefore }}" as="r" hint-placeholder-count="5">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 7px 13px; border-block-start: 1px solid #F0F3F7;">
+              <span style="flex: 2 1 0; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.name }}</span>
+              <span style="flex: 1 1 0; min-width: 0;"><span style="{{ r.c1 }}">{{ r.v1 }}</span></span>
+              <span style="flex: 1 1 0; min-width: 0;"><span style="{{ r.c2 }}">{{ r.v2 }}</span></span>
+              <span style="flex: none; width: 66px;"><span style="{{ r.c3 }}">{{ r.v3 }}</span></span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="border: 1px solid #ABEFC6; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 9px 13px; background: #ECFDF3; border-block-end: 1px solid #ABEFC6; display: flex; align-items: baseline; gap: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #067647;">Rule applied</span>
+          <span style="font-size: 12px; color: #05603A;">2 chips in 5 rows — and you can see which rows they are</span>
+        </div>
+        <div style="padding: 4px 0;">
+          <div style="display: flex; gap: 10px; padding: 6px 13px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">
+            <span style="flex: 2 1 0; min-width: 0;">User</span><span style="flex: 1 1 0;">Status</span><span style="flex: 1 1 0;">Type</span><span style="flex: none; width: 66px;">Active</span>
+          </div>
+          <sc-for list="{{ goodAfter }}" as="r" hint-placeholder-count="5">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 7px 13px; border-block-start: 1px solid #F0F3F7;">
+              <span style="flex: 2 1 0; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.name }}</span>
+              <span style="flex: 1 1 0; min-width: 0;"><span style="{{ r.c1 }}">{{ r.v1 }}</span></span>
+              <span style="flex: 1 1 0; min-width: 0; font-size: 12.5px; color: #4A5568;">{{ r.v2 }}</span>
+              <span style="flex: none; width: 66px; font-size: 12.5px; color: #4A5568;">{{ r.v3 }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding: 9px 13px; border-block-start: 1px solid #E2E8F0; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">“Active” is the expected value, so it is plain text — a reader scanning for problems is not looking for it. “Yes / System” are taxonomy, never coloured. Invited and Inactive are departures from the norm, so they carry weight and a tint. One saturated chip per row, maximum.</div>
+      </div>
+    </div>
+
+    <div style="margin-block-start: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px;">
+      <sc-for list="{{ chipSpecimens }}" as="g" hint-placeholder-count="4">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 11px 13px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">{{ g.title }}</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-block-end: 8px;">
+            <sc-for list="{{ g.chips }}" as="c" hint-placeholder-count="3">
+              <span style="{{ c.style }}"><sc-if value="{{ c.dot }}" hint-placeholder-val="{{ false }}"><span style="{{ c.dotStyle }}"></span></sc-if>{{ c.label }}</span>
+            </sc-for>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ g.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="s4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">The relation field</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">One component for every pointer from one record to another — three access states, four contexts.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; margin-block-end: 18px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 13px 15px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 10px;">Anatomy — four slots, always in this order</div>
+        <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 10px 12px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px;">
+          <span style="flex: none; color: #5A6779; font-size: 13px;">◇</span>
+          <a href="#s4" style="font-size: 14px; font-weight: 500; text-decoration: none;">Quality &amp; Patient Safety Council</a>
+          <span style="display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;">Active · 3/4</span>
+          <span style="flex: none; color: #2E6FA3; font-size: 12px;">→</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-block-start: 10px;">
+          <div><div style="font-size: 11.5px; font-weight: 600;">1 · Type marker</div><div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">A glyph, not a word. “COMMITTEE” shouted in caps beside the name is redundant next to the field label.</div></div>
+          <div><div style="font-size: 11.5px; font-weight: 600;">2 · Name</div><div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">In the reader's language, falling back to the other with a language tag rather than showing blank.</div></div>
+          <div><div style="font-size: 11.5px; font-weight: 600;">3 · State</div><div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Only if the target has one, and only in its §5 form. Suppressed in dense lists of one type.</div></div>
+          <div><div style="font-size: 11.5px; font-weight: 600;">4 · Affordance</div><div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">A real <code style="font-size: 11px;">&lt;a href&gt;</code> so middle-click and Open-in-new-tab work. Arrow mirrors in RTL.</div></div>
+        </div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 10px 14px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Three access states — the server decides, the interface only renders</div>
+        <sc-for list="{{ accessSpec }}" as="a" hint-placeholder-count="3">
+          <div style="display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 11px 14px; border-block-end: 1px solid #F0F3F7;">
+            <span style="min-width: 0;">
+              <span style="display: block; font-size: 12.5px; font-weight: 700; color: #2D3748;">{{ a.key }}</span>
+              <span style="display: block; font-size: 11px; color: #8A94A6; font-family: ui-monospace, Menlo, monospace;">{{ a.api }}</span>
+            </span>
+            <span style="min-width: 0;">
+              <span style="display: block; margin-block-end: 6px;">{{ a.demo }}</span>
+              <span style="display: block; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ a.note }}</span>
+            </span>
+          </div>
+        </sc-for>
+        <div style="padding: 10px 14px; background: #F4F7FA; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">The three renderings differ in <strong>texture and interactivity</strong>, not colour alone: a link, an underdotted plain value, and a hatched type word. Greyscale-legible, and unambiguous to a surveyor reading over a shoulder.</div>
+      </div>
+    </div>
+
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 9px;">Four contexts · each access state</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-block-end: 16px;">
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 8px;">A · Inline, in running text</div>
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <div style="font-size: 13px; color: #4A5568; text-wrap: pretty;">Escalated by <a href="#s4" style="font-weight: 500; text-decoration: none;">Nora Al-Otaibi</a> to <a href="#s4" style="font-weight: 500; text-decoration: none;">Quality &amp; Patient Safety Council</a> on 14 Jan 2025.</div>
+          <div style="font-size: 13px; color: #4A5568; text-wrap: pretty;">Escalated by <span title="You can see this name but cannot open the record. Requires: Users · read" style="font-weight: 500; color: #2D3748; border-block-end: 1px dashed #A7B2C2; cursor: help;">Nora Al-Otaibi</span> to <span title="You can see this name but cannot open the record. Requires: Committees · read" style="font-weight: 500; color: #2D3748; border-block-end: 1px dashed #A7B2C2; cursor: help;">Quality &amp; Patient Safety Council</span> on 14 Jan 2025.</div>
+          <div style="font-size: 13px; color: #4A5568; text-wrap: pretty;">Escalated by <span title="Restricted — a user record exists here that you may not see." style="display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: #5A6779; background: repeating-linear-gradient(135deg,#F4F7FA 0 4px,#E9EEF4 4px 8px); border: 1px solid #8A94A6; border-radius: 4px; padding: 0 7px; cursor: help;">a user</span> to <span title="Restricted — a committee exists here that you may not see." style="display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: #5A6779; background: repeating-linear-gradient(135deg,#F4F7FA 0 4px,#E9EEF4 4px 8px); border: 1px solid #8A94A6; border-radius: 4px; padding: 0 7px; cursor: help;">a committee</span> on 14 Jan 2025.</div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Inline is the one context with no type glyph and no state — the sentence supplies both, and glyphs inside a line of prose break the reading rhythm.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 8px;">B · Table cell</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+          <div style="display: flex; gap: 10px; padding: 7px 11px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">
+            <span style="flex: 1.4 1 0; min-width: 0;">Task</span><span style="flex: 1 1 0; min-width: 0;">Committee</span><span style="flex: none; width: 74px;">Due</span>
+          </div>
+          <sc-for list="{{ tableCells }}" as="r" hint-placeholder-count="3">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-block-end: 1px solid #F0F3F7;">
+              <span style="flex: 1.4 1 0; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.task }}</span>
+              <span style="flex: 1 1 0; min-width: 0;">{{ r.cell }}</span>
+              <span dir="ltr" style="flex: none; width: 74px; font-size: 12.5px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ r.due }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">In a column of one known type the glyph is dropped — the header already says Committee. Restricted cells keep the row's height and the column's width, so the table never develops a ragged edge where permissions bite.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 8px;">C · Record header (the big form)</div>
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 11px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 3px;">Parent committee</div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="color: #5A6779; font-size: 13px;">◇</span>
+              <a href="#s4" style="font-size: 15px; font-weight: 500; text-decoration: none;">Quality &amp; Patient Safety Council</a>
+              <span style="display: inline-flex; font-size: 11px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;">Active · 3/4</span>
+              <span style="color: #2E6FA3; font-size: 12px;">→</span>
+            </div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 11px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 3px;">Reporting line</div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="color: #8A94A6; font-size: 13px;">◷</span>
+              <span title="You can see this name but cannot open the record. Requires: Org positions · read" style="font-size: 15px; font-weight: 500; color: #2D3748; border-block-end: 1px dashed #A7B2C2; cursor: help;">Chief Medical Officer</span>
+              <span style="font-size: 11px; color: #5A6779; background: #F1F4F8; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 7px;">name only</span>
+            </div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 11px; background: repeating-linear-gradient(135deg,#FCFDFE 0 5px,#F4F7FA 5px 10px);">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 3px;">Escalates to</div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="color: #8A94A6; font-size: 13px;">◇</span>
+              <span style="font-size: 15px; color: #5A6779;">A committee</span>
+              <span style="font-size: 11px; font-weight: 600; color: #5A6779; background: #fff; border: 1px solid #8A94A6; border-radius: 4px; padding: 1px 7px;">restricted</span>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">At header scale the state gets a written qualifier — “name only”, “restricted” — because a header is the one place a reader stops and asks why. The hatch moves to the field's ground, so the field reads as present-but-withheld at a glance.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 8px;">D · A list of many (compact panel)</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 11px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Members</span>
+            <span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #fff; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">9</span>
+          </div>
+          <sc-for list="{{ listRows }}" as="r" hint-placeholder-count="5">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-block-end: 1px solid #F0F3F7;">
+              <span style="{{ r.avatarStyle }}">{{ r.initials }}</span>
+              <span style="flex: 1 1 auto; min-width: 0;">
+                <span style="display: block; min-width: 0;">{{ r.name }}</span>
+                <span style="display: block; font-size: 11.5px; color: #5A6779;">{{ r.role }}</span>
+              </span>
+            </div>
+          </sc-for>
+          <div style="padding: 7px 11px; font-size: 11.5px; color: #5A6779; background: #F4F7FA; text-wrap: pretty;">2 of 9 members are restricted for your role</div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">The count stays truthful — 9 means 9. Restricted members occupy their rows rather than being filtered out, because a membership list that silently shortens is a compliance defect, and quorum arithmetic against a hidden denominator is worse than a hatched row.</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-block-end: 14px;">
+      <div style="grid-column: 1 / -1; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 13px 15px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">A page with holes in it — the five rules</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+          <sc-for list="{{ holeRules }}" as="h" hint-placeholder-count="5">
+            <div style="background: #fff; border: 1px solid #C5DAEA; border-radius: 6px; padding: 10px 12px;">
+              <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ h.title }}</div>
+              <div style="font-size: 11.5px; color: #4A5568; text-wrap: pretty;">{{ h.body }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Worked example — the Committee record seen by a department head</span>
+        <span style="font-size: 11.5px; color: #5A6779;">3 restricted relations, one notice, zero broken layout</span>
+      </div>
+      <div style="padding: 13px 15px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid #C5DAEA; background: #E4EEF6; border-radius: 6px; margin-block-end: 12px;">
+          <span style="flex: none; color: #1F5480; font-size: 13px;">ⓘ</span>
+          <span style="flex: 1 1 320px; min-width: 0; font-size: 12.5px; color: #1F5480; text-wrap: pretty;"><strong>3 related records on this page are restricted for your role.</strong> They are shown in place so the record stays complete; you cannot open them.</span>
+          <a href="#s4" style="flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none;">What can I see?</a>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 0; border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+          <sc-for list="{{ holeFields }}" as="f" hint-placeholder-count="6">
+            <div style="{{ f.wrapStyle }}">
+              <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 3px;">{{ f.label }}</div>
+              <div style="min-width: 0;">{{ f.value }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">Note what does <em style="font-style: normal; font-weight: 600;">not</em> happen: no field disappears, no field collapses to “—”, no per-field warning icon, and the two-column grid keeps its rhythm. The single page-level notice is the only new element, and it appears once however many relations are restricted.</div>
+      </div>
+    </div>
+
+    <div style="margin-block-start: 14px; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+      <div style="padding: 10px 14px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Arabic — same component, three different decisions</div>
+      <div dir="rtl" style="padding: 13px 15px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 11px;">
+            <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 3px;">اللجنة الأم</div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="color: #5A6779; font-size: 13px;">◇</span>
+              <a href="#s4" style="font-size: 15px; font-weight: 500; text-decoration: none;">مجلس الجودة وسلامة المرضى</a>
+              <span style="display: inline-flex; font-size: 12px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 1px 7px;">نشطة · <span dir="ltr" style="font-variant-numeric: tabular-nums; unicode-bidi: isolate;">3/4</span></span>
+              <span style="color: #2E6FA3; font-size: 12px;">←</span>
+            </div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 11px;">
+            <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 3px;">خط الرفع</div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="color: #8A94A6; font-size: 13px;">◷</span>
+              <span title="يمكنك رؤية الاسم دون فتح السجل. يتطلب: المسميات الوظيفية · قراءة" style="font-size: 15px; font-weight: 500; color: #2D3748; border-block-end: 1px dashed #A7B2C2; cursor: help;">الرئيس التنفيذي الطبي</span>
+              <span style="font-size: 12px; color: #5A6779; background: #F1F4F8; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 7px;">الاسم فقط</span>
+            </div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 11px; background: repeating-linear-gradient(-135deg,#FCFDFE 0 5px,#F4F7FA 5px 10px);">
+            <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 3px;">تُرفع إلى</div>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="color: #8A94A6; font-size: 13px;">◇</span>
+              <span style="font-size: 15px; color: #5A6779;">إحدى اللجان</span>
+              <span style="font-size: 12px; font-weight: 600; color: #5A6779; background: #fff; border: 1px solid #8A94A6; border-radius: 4px; padding: 1px 7px;">مقيّد</span>
+            </div>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-block-start: 12px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">١ · النوع المقيّد يُصاغ نحويًا</div>
+            <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">«A committee» لا تُترجم حرفيًا. العربية بلا أداة تنكير، فالصيغة هي «إحدى اللجان» / «أحد المستخدمين» — تحتاج قائمة نصوص مستقلة لكل نوع، لا قالبًا واحدًا.</div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">٢ · الهاشور ينعكس</div>
+            <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">زاوية التظليل تُقلب (135° ← -135°) مع اتجاه القراءة، وإلا بدا النمط مائلًا ضد النص. وكذلك السهم: → يصبح ←.</div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">٣ · الترقيم يُعزل</div>
+            <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">«3/4» داخل نص عربي يحتاج <span dir="ltr" style="unicode-bidi: isolate; font-family: ui-monospace, monospace; font-size: 11px;">dir="ltr"</span> وإلا انقلب إلى «4/3» — وهي مرحلة مختلفة تمامًا.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s5" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">State display — three ideas, three shapes</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">They look different because they answer different questions. Today all three are one pill, so they answer none.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-block-end: 16px;">
+      <sc-for list="{{ stateKinds }}" as="k" hint-placeholder-count="3">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
+          <div style="padding: 10px 13px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 12.5px; font-weight: 600;">{{ k.title }}</div>
+            <div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ k.question }}</div>
+          </div>
+          <div style="padding: 12px 13px; display: flex; flex-wrap: wrap; gap: 7px; align-items: center; border-block-end: 1px solid #F0F3F7;">
+            <sc-for list="{{ k.samples }}" as="s" hint-placeholder-count="3">
+              <span style="{{ s.style }}"><sc-if value="{{ s.dot }}" hint-placeholder-val="{{ false }}"><span style="{{ s.dotStyle }}"></span></sc-if>{{ s.label }}</span>
+            </sc-for>
+          </div>
+          <div style="padding: 11px 13px; flex: 1 1 auto;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 5px;">Form</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty; margin-block-end: 8px;">{{ k.form }}</div>
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 5px;">Why</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ k.why }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 14px;">
+      <div style="grid-column: 1 / -1; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 14px;">
+          <div style="min-width: 0;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 9px;">All three on one row, as they will actually appear</div>
+            <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+              <div style="display: flex; gap: 10px; padding: 7px 11px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">
+                <span style="flex: 1.6 1 0; min-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Committee</span><span style="flex: none; width: 128px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Stage</span><span style="flex: none; width: 82px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Status</span><span style="flex: none; width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Attention</span>
+              </div>
+              <sc-for list="{{ tripleRows }}" as="r" hint-placeholder-count="4">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-block-end: 1px solid #F0F3F7;">
+                  <span style="flex: 1.6 1 0; min-width: 150px; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.name }}</span>
+                  <span style="flex: none; width: 128px;"><span style="{{ r.stageStyle }}">{{ r.stage }}</span></span>
+                  <span style="flex: none; width: 82px;"><span style="{{ r.statusStyle }}"><sc-if value="{{ r.statusDot }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.status }}</span></span>
+                  <span style="flex: none; width: 104px;"><sc-if value="{{ r.sev }}" hint-placeholder-val="{{ false }}"><span style="{{ r.sevStyle }}">{{ r.sev }}</span></sc-if></span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Three state columns coexist without competing: squares advance, dots describe, fills demand. The Attention column is empty on most rows — that emptiness is the signal, and it is why nothing else in the row may be filled.</div>
+          </div>
+
+          <div style="min-width: 0;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 9px;">Greyscale test — the same four rows with all hue removed</div>
+            <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden; filter: grayscale(1);">
+              <sc-for list="{{ tripleRows }}" as="r" hint-placeholder-count="4">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 7px 11px; border-block-end: 1px solid #F0F3F7;">
+                  <span style="flex: 1.6 1 0; min-width: 150px; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.name }}</span>
+                  <span style="flex: none; width: 128px;"><span style="{{ r.stageStyle }}">{{ r.stage }}</span></span>
+                  <span style="flex: none; width: 82px;"><span style="{{ r.statusStyle }}"><sc-if value="{{ r.statusDot }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.status }}</span></span>
+                  <span style="flex: none; width: 104px;"><sc-if value="{{ r.sev }}" hint-placeholder-val="{{ false }}"><span style="{{ r.sevStyle }}">{{ r.sev }}</span></sc-if></span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Still readable: shape, border, weight and wording survive. This is the acceptance test for any new state added later — if it only works in colour, it is not finished.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px; grid-column: 1 / -1;">
+        <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 6px;">Where we disagree with the current build</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">A workflow stage is not a status and must stop looking like one. A stage is <strong>a position in a known sequence</strong> — it is only meaningful with the sequence attached, which is why the chip carries <code style="font-size: 11px;">n/total</code> and why the full stepper lives in the record header. “Terms Review” alone tells a reader nothing about whether that is early, late, or a regression. Status, by contrast, is a <strong>closed set with an expected member</strong>, so the expected member gets no decoration at all. Severity is the <strong>only</strong> one of the three that asserts someone must act, so it is the only one allowed a fill — and a severity chip without a consequence sentence beside it is incomplete.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s6" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 6</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">Controls, every state</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Control height 32 (compact) / 36 (form) / 40 (coarse pointer). Label above, always — never placeholder-as-label.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 13px 15px; margin-block-end: 14px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-block-end: 11px;">
+        <span style="font-size: 12.5px; font-weight: 600;">The canonical field — all seven states</span>
+        <span style="font-size: 11.5px; color: #5A6779;">every other control inherits these exact borders, rings and inks</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 12px;">
+        <sc-for list="{{ canonicalStates }}" as="s" hint-placeholder-count="7">
+          <div>
+            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-block-end: 5px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">{{ s.state }}</span>
+              <span style="font-size: 10.5px; color: #8A94A6; font-family: ui-monospace, Menlo, monospace;">{{ s.attr }}</span>
+            </div>
+            <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">{{ s.label }}</label>
+            <div style="{{ s.boxStyle }}">
+              <span style="{{ s.textStyle }}">{{ s.text }}</span>
+              <sc-if value="{{ s.glyph }}" hint-placeholder-val="{{ false }}"><span style="{{ s.glyphStyle }}">{{ s.glyph }}</span></sc-if>
+            </div>
+            <div style="{{ s.helpStyle }}">{{ s.help }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-block-start: 13px;">
+        <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; padding: 10px 12px;">
+          <div style="font-size: 12px; font-weight: 600; color: #1F5480; margin-block-end: 3px;">Read-only is a first-class state, not disabled</div>
+          <div style="font-size: 11.5px; color: #4A5568; text-wrap: pretty;">These screens are read far more than edited, so the read-only field <strong>drops its border and background entirely</strong> and renders as a label-over-value pair. A bordered box that cannot be typed into invites clicking; a plain value does not. Disabled keeps the box — it means “editable, but not now”, and it always has a reason in helper text.</div>
+        </div>
+        <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; padding: 10px 12px;">
+          <div style="font-size: 12px; font-weight: 600; color: #1F5480; margin-block-end: 3px;">The darker border, compensated</div>
+          <div style="font-size: 11.5px; color: #4A5568; text-wrap: pretty;">#8A94A6 at rest is heavier than the #CBD5E0 it replaces, and a six-field form drawn at the old spacing reads like a grid of boxes. The compensation is <strong>ground and rhythm, not a lighter border</strong>: fields stay #FFFFFF on a #F4F7FA card so each box separates by fill as well as line, form row gap goes 12 → 16 above four fields, and field-group boxes are dropped in favour of a label and a rule. The border is a contrast requirement and is not available to trade.</div>
+        </div>
+        <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 6px; padding: 10px 12px;">
+          <div style="font-size: 12px; font-weight: 600; color: #B54708; margin-block-end: 3px;">Error replaces helper text, never stacks with it</div>
+          <div style="font-size: 11.5px; color: #4A5568; text-wrap: pretty;">One message slot under every field, reserved in the layout at all times so validation never shifts the form. Validate on blur; re-validate per keystroke only <em style="font-style: normal; font-weight: 600;">after</em> the first error, so the user sees recovery without being nagged mid-typing. On submit: focus the first invalid field, and add a summary above the form only when more than three fields fail.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px; margin-block-end: 14px;">
+      <sc-for list="{{ controlGallery }}" as="c" hint-placeholder-count="8">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-block-end: 10px;">
+            <span style="font-size: 12.5px; font-weight: 600;">{{ c.name }}</span>
+            <span style="font-size: 11px; color: #8A94A6; font-family: ui-monospace, Menlo, monospace;">{{ c.prime }}</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <sc-for list="{{ c.states }}" as="s" hint-placeholder-count="3">
+              <div style="flex: 1 1 150px; min-width: 140px;">
+                <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6; margin-block-end: 4px;">{{ s.state }}</div>
+                <div style="{{ s.boxStyle }}">
+                  <span style="{{ s.textStyle }}">{{ s.text }}</span>
+                  <sc-if value="{{ s.glyph }}" hint-placeholder-val="{{ false }}"><span style="{{ s.glyphStyle }}">{{ s.glyph }}</span></sc-if>
+                </div>
+                <sc-if value="{{ s.help }}" hint-placeholder-val="{{ false }}"><div style="{{ s.helpStyle }}">{{ s.help }}</div></sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">{{ c.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-block-end: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 10px;">Selection controls</div>
+        <sc-for list="{{ selectionControls }}" as="g" hint-placeholder-count="3">
+          <div style="margin-block-end: 11px;">
+            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6; margin-block-end: 6px;">{{ g.name }}</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 14px;">
+              <sc-for list="{{ g.variants }}" as="v" hint-placeholder-count="4">
+                <span style="display: inline-flex; align-items: center; gap: 7px; min-height: 22px;">
+                  <span style="{{ v.controlStyle }}">{{ v.mark }}</span>
+                  <span style="{{ v.textStyle }}">{{ v.text }}</span>
+                </span>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+        <div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Hit area is 32×32 around a 16px box — the visual stays dense, the target does not. The toggle is reserved for settings that apply immediately with no save step; anything inside a form that needs saving is a checkbox, because a toggle that does not take effect until Save is a lie.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 10px;">Buttons — hierarchy and states</div>
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <sc-for list="{{ buttonRows }}" as="b" hint-placeholder-count="5">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+              <span style="flex: none; width: 78px; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6;">{{ b.name }}</span>
+              <sc-for list="{{ b.variants }}" as="v" hint-placeholder-count="4">
+                <button style="{{ v.style }}">{{ v.label }}</button>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">One primary per view — the page header's action, or a dialog's confirm. Destructive is never primary-filled in a list; it is a text button in the row menu and becomes filled only inside its confirmation dialog, where it is the intended act. Loading disables the button and keeps its label with a spinner: a button that changes width mid-submit moves the cursor's target.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 10px;">Icon buttons, tabs, tooltips</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-block-end: 11px;">
+          <button aria-label="Edit user" title="Edit user" style="width: 32px; height: 32px; border: 1px solid #8A94A6; background: #fff; border-radius: 6px; color: #4A5568; font-size: 13px; cursor: pointer;">✎</button>
+          <button aria-label="Transfer to another unit" title="Transfer to another unit" style="width: 32px; height: 32px; border: 1px solid #8A94A6; background: #fff; border-radius: 6px; color: #4A5568; font-size: 13px; cursor: pointer;">⇄</button>
+          <button aria-label="More actions for Nora Al-Otaibi" title="More actions" style="width: 32px; height: 32px; border: 1px solid #8A94A6; background: #fff; border-radius: 6px; color: #4A5568; font-size: 14px; cursor: pointer;">⋯</button>
+          <button aria-label="Deactivate user" title="Deactivate user" disabled="disabled" style="width: 32px; height: 32px; border: 1px solid #E2E8F0; background: #F4F7FA; border-radius: 6px; color: #8A94A6; font-size: 13px; cursor: not-allowed;">⊘</button>
+          <span style="font-size: 11.5px; color: #5A6779;">— 32×32 at compact density (40×40 on coarse pointers), 6px gap</span>
+        </div>
+        <div style="display: flex; align-items: stretch; gap: 0; border-block-end: 1px solid #E2E8F0; margin-block-end: 11px;">
+          <span style="padding: 7px 12px; font-size: 13px; font-weight: 600; color: #1F5480; border-block-end: 2px solid #2E6FA3; margin-block-end: -1px;">Details</span>
+          <span style="padding: 7px 12px; font-size: 13px; color: #4A5568; cursor: pointer;">Members <span style="font-size: 11px; color: #5A6779; font-variant-numeric: tabular-nums;">9</span></span>
+          <span style="padding: 7px 12px; font-size: 13px; color: #4A5568; cursor: pointer;">History</span>
+          <span style="padding: 7px 12px; font-size: 13px; color: #8A94A6; cursor: not-allowed;">Meetings</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start;">
+          <div style="max-width: 240px; background: #1E2A38; color: #fff; border-radius: 6px; padding: 7px 9px; font-size: 12px; line-height: 1.4; overflow-wrap: break-word; word-break: normal; text-wrap: pretty;">Transfer to another unit — moves this user and reassigns their open tasks.</div>
+          <div style="flex: 1 1 200px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Tooltip max-width 240px, wrapping at word boundaries only — <code style="font-size: 11px;">word-break: normal</code> plus <code style="font-size: 11px;">overflow-wrap: break-word</code>, which is the fix for today's mid-word split at the screen edge. It flips side at the viewport boundary rather than clipping. The <code style="font-size: 11px;">aria-label</code> and the tooltip read from one string, so a label can never drift from what is shown, and no meaning lives in the tooltip alone.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+      <div style="padding: 10px 14px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Arabic — the control set mirrored, with the two things that are not mirroring</div>
+      <div dir="rtl" style="padding: 13px 15px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px;">
+          <div>
+            <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">اسم اللجنة</label>
+            <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+              <span style="flex: 1 1 auto; font-size: 14px;">لجنة مكافحة العدوى</span>
+            </div>
+            <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 4px;">الاسم كما يظهر في السجلات</div>
+          </div>
+          <div>
+            <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">تاريخ التشكيل</label>
+            <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+              <span dir="ltr" style="flex: 1 1 auto; font-size: 14px; font-variant-numeric: tabular-nums; unicode-bidi: isolate; text-align: start;">14 Jan 2025</span>
+              <span style="color: #5A6779; font-size: 13px;">▢</span>
+            </div>
+            <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 4px;">لمستخدم التقويم الهجري: 14 رجب 1446 (14 Jan 2025)</div>
+          </div>
+          <div>
+            <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">النصاب</label>
+            <div style="display: flex; align-items: stretch; height: 36px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; overflow: hidden;">
+              <button style="width: 32px; border: none; border-inline-end: 1px solid #E2E8F0; background: #F4F7FA; color: #4A5568; font-size: 14px; cursor: pointer;">−</button>
+              <span dir="ltr" style="flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-size: 14px; font-variant-numeric: tabular-nums;">5</span>
+              <button style="width: 32px; border: none; border-inline-start: 1px solid #E2E8F0; background: #F4F7FA; color: #4A5568; font-size: 14px; cursor: pointer;">+</button>
+            </div>
+            <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 4px;">من 9 أعضاء</div>
+          </div>
+          <div>
+            <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">التكرار</label>
+            <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+              <span style="flex: 1 1 auto; font-size: 14px;">شهريًا</span>
+              <span style="color: #5A6779; font-size: 10px;">▼</span>
+            </div>
+            <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 4px;">اكتب للبحث في القائمة</div>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-block-start: 13px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">١ · الأرقام والتواريخ لا تنعكس</div>
+            <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">حقل العدد يعكس ترتيب زرّي «−» و«+» مع الاتجاه، لكن الرقم نفسه يبقى LTR معزولًا. والتاريخ «14 Jan 2025» يبقى كما هو داخل حقل عربي — وإلا قرأه المستخدم 2025 Jan 14.</div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">٢ · التلميح النصي أطول بنحو ٢٠٪</div>
+            <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">النص العربي يشغل مساحة أكبر عند الترجمة، فلا يُقاس عرض أي زر أو عمود بالنص الإنجليزي. الأزرار تتمدد بالمحتوى، والأعمدة لها حد أدنى لا عرض ثابت.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s7" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 7</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">Dialogs and pickers</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Designed so the overlay-closes-on-ancestor-scroll limitation cannot be reached, not merely avoided.</span>
+    </div>
+
+    <div style="border: 1px solid #B42318; border-radius: 8px; overflow: hidden; margin-block-end: 16px;">
+      <div style="background: #FEF3F2; padding: 11px 14px; border-block-end: 1px solid #FECDCA;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B42318; margin-block-end: 4px;">The invariant</div>
+        <div style="font-size: 14.5px; font-weight: 600; color: #7A271A; text-wrap: pretty;">No floating panel may ever be opened from inside a scrollable container. Either the container does not scroll, or the panel does not float.</div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+        <sc-for list="{{ dialogRules }}" as="d" hint-placeholder-count="4">
+          <div style="padding: 11px 14px; border-inline-end: 1px solid #E2E8F0; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 4px;">{{ d.title }}</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.body }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px;">
+      <div>
+        <div style="display: flex; align-items: baseline; gap: 8px; margin-block-end: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #B42318;">Today</span>
+          <span style="font-size: 12px; color: #5A6779;">overlay inside a scrolling body — clipped, and closes as you reach for a day</span>
+        </div>
+        <div style="border: 1px solid #FECDCA; border-radius: 8px; background: #FEF3F2; padding: 12px;">
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;">
+              <span style="font-size: 13.5px; font-weight: 600;">Schedule meeting</span>
+              <span style="color: #8A94A6; font-size: 12px;">✕</span>
+            </div>
+            <div style="height: 168px; overflow: hidden; position: relative; padding: 11px 12px;">
+              <div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Committee</div>
+              <div style="height: 36px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; display: flex; align-items: center; padding: 0 10px; font-size: 13px; margin-block-end: 10px;">Infection Prevention &amp; Control</div>
+              <div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Date</div>
+              <div style="height: 36px; border: 1px solid #2E6FA3; border-radius: 4px; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 13px;"><span>14 Sep 2026</span><span style="color: #5A6779;">▢</span></div>
+              <div style="position: absolute; inset-inline-start: 12px; inset-inline-end: 12px; top: 132px; background: #fff; border: 1px solid #8A94A6; border-radius: 6px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); padding: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #5A6779; margin-block-end: 6px;"><span>September 2026</span><span>‹ ›</span></div>
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; font-size: 10.5px; color: #8A94A6; text-align: center;">
+                  <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                </div>
+                <div style="height: 40px; background: linear-gradient(#fff, #fff);"></div>
+              </div>
+              <div style="position: absolute; inset-inline: 0; bottom: 0; height: 26px; background: linear-gradient(rgba(254,243,242,0), #FEF3F2);"></div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 9px 12px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <span style="font-size: 12.5px; color: #4A5568;">Cancel</span><span style="font-size: 12.5px; font-weight: 600; color: #2E6FA3;">Save</span>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #7A271A; margin-block-start: 9px; text-wrap: pretty;">The panel is cut off below the weekday row, the days are unreachable, and scrolling to reach them dismisses it. There is no user path to entering a date.</div>
+        </div>
+      </div>
+
+      <div>
+        <div style="display: flex; align-items: baseline; gap: 8px; margin-block-end: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #067647;">Specified</span>
+          <span style="font-size: 12px; color: #5A6779;">typed date first, calendar expands in flow — nothing floats, nothing can close</span>
+        </div>
+        <div style="border: 1px solid #ABEFC6; border-radius: 8px; background: #ECFDF3; padding: 12px;">
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;">
+              <span style="font-size: 13.5px; font-weight: 600;">Schedule meeting</span>
+              <button aria-label="Close dialog" style="border: none; background: none; color: #5A6779; font-size: 12px; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 11px 12px;">
+              <div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Committee</div>
+              <div style="height: 36px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 13px; margin-block-end: 10px;"><span>Infection Prevention &amp; Control</span><span style="font-size: 11.5px; color: #2E6FA3; font-weight: 600;">Change…</span></div>
+              <div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Date</div>
+              <div style="display: flex; align-items: center; gap: 8px; height: 36px; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18); border-radius: 4px; background: #fff; padding: 0 10px;">
+                <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">14 Sep 2026</span>
+                <span style="font-size: 11px; color: #5A6779;">DD MMM YYYY</span>
+                <span style="color: #2E6FA3; font-size: 13px;">▢</span>
+              </div>
+              <div style="border: 1px solid #C5DAEA; border-radius: 6px; background: #F2F7FB; padding: 9px; margin-block-start: 7px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #1F5480; font-weight: 600; margin-block-end: 7px;"><span>September 2026</span><span style="letter-spacing: 0.2em;">‹ ›</span></div>
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center;">
+                  <sc-for list="{{ calCells }}" as="c" hint-placeholder-count="21">
+                    <span style="{{ c.style }}">{{ c.label }}</span>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 9px 12px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <button style="background: #fff; border: 1px solid #8A94A6; border-radius: 6px; padding: 6px 13px; font-family: inherit; font-size: 12.5px; font-weight: 500; color: #2D3748; cursor: pointer;">Cancel</button>
+              <button style="background: #2E6FA3; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 13px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #fff; cursor: pointer;">Schedule</button>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #05603A; margin-block-start: 9px; text-wrap: pretty;">The calendar is part of the form's flow — it pushes the footer down instead of floating over it. Keyboard users can type the date and never open it. The dialog body is capped so that with the calendar open it still needs no scroll; the committee field opens a <strong>picker dialog</strong>, its own layer, because our select has no search field.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">The searchable picker — a dialog, not a dropdown</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+          <div style="padding: 9px 11px; border-block-end: 1px solid #E2E8F0; display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 13px; font-weight: 600;">Select committee</span>
+            <span style="font-size: 11.5px; color: #5A6779; font-variant-numeric: tabular-nums;">22 available</span>
+          </div>
+          <div style="padding: 9px 11px; border-block-end: 1px solid #E2E8F0; background: #F4F7FA;">
+            <div style="display: flex; align-items: center; gap: 7px; height: 32px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; padding: 0 9px;">
+              <span style="color: #8A94A6; font-size: 12px;">⌕</span><span style="font-size: 12.5px; color: #8A94A6;">Search 22 committees…</span>
+            </div>
+          </div>
+          <sc-for list="{{ pickerRows }}" as="p" hint-placeholder-count="4">
+            <div style="{{ p.rowStyle }}">
+              <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ p.name }}</span>
+              <span style="{{ p.chipStyle }}">{{ p.chip }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Above roughly 15 options, or wherever the user cannot be expected to know the exact name, the control is a picker dialog with a real search field — solving the no-search-in-select limitation without adding a library. Under 15, it stays a plain select with typeahead. The threshold is written into the component, not left to each screen.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">Dialog geometry — one shape, three sizes</div>
+        <sc-for list="{{ dialogSizes }}" as="d" hint-placeholder-count="3">
+          <div style="display: grid; grid-template-columns: 96px 1fr; gap: 10px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;">
+            <span style="font-size: 12.5px; font-weight: 600;">{{ d.name }}</span>
+            <span style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ d.spec }}</span>
+          </div>
+        </sc-for>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">Header and footer never scroll. If content with all pickers open exceeds the body cap, the interaction is <strong>not a dialog</strong> — it becomes a stepped dialog or a page. This is the rule that makes the platform limitation unreachable: no dialog body ever both scrolls and contains a picker.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">Overlays that are still allowed</div>
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;"><strong>Only through the CDK overlay with a reposition scroll strategy.</strong> Toolbar filters and the column chooser may stay floating panels <em style="font-style: normal; font-weight: 600;">only</em> when mounted via our existing <code style="font-size: 11px;">OverlaySelectComponent</code> route — never a raw <code style="font-size: 11px;">p-select</code> or <code style="font-size: 11px;">p-overlaypanel</code>. PrimeNG's <code style="font-size: 11px;">ConnectedOverlayScrollHandler</code> dismisses on <em style="font-style: normal; font-weight: 600;">any</em> ancestor scroll event, whether or not the trigger moved, so a <code style="font-size: 11px;">position: sticky</code> toolbar does not save it — reposition-on-scroll does.</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;"><strong>Row action menus.</strong> Short, no nested picker, and re-opening costs one click — a scroll-close here is a nuisance, not a dead end. They may use the default handler and close on scroll.</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;"><strong>Never inside a dialog body, and never a raw overlay inside a scrolling panel body</strong> (the compact list panels). Those get inline expansion or a picker dialog instead.</div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">Stated as an engineering rule: the overlay component <strong>refuses to mount inside a scrollable ancestor unless it is using the reposition strategy</strong>, and throws in development when it is not. The earlier phrasing — refuse any scrollable ancestor but the document — would have rejected a legitimate toolbar overlay on every page whose list scrolls in a container. A rule that only lives in a document gets broken on the eleventh screen; this one fails the build.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s8" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 8</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">Feedback and absence</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Six outcomes of one request, and none of them may be confused with another.</span>
+    </div>
+
+    <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 12px 14px; margin-block-end: 14px;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 9px;">One state machine, applied to every list, panel and record</div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 7px;">
+        <sc-for list="{{ machine }}" as="m" hint-placeholder-count="7">
+          <span style="display: flex; align-items: center; gap: 7px;">
+            <span style="{{ m.style }}">{{ m.label }}</span>
+            <sc-if value="{{ m.arrow }}" hint-placeholder-val="{{ false }}"><span style="color: #8A94A6; font-size: 12px;">{{ m.arrow }}</span></sc-if>
+          </span>
+        </sc-for>
+      </div>
+      <div style="font-size: 12px; color: #4A5568; margin-block-start: 10px; text-wrap: pretty;"><strong>The bug this fixes:</strong> one screen today renders its empty state while the request is still in flight, so an admin sees “No users yet” on a tenant with 312 users. The rule is now mechanical — <strong>an empty state requires a completed response with a count of zero.</strong> <code style="font-size: 11px;">undefined</code> is loading and renders a skeleton; <code style="font-size: 11px;">[]</code> is empty and renders a reason. A component may not treat the two alike, and the list component takes a discriminated status rather than an array it has to guess about.</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-block-end: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">Loading — skeletons that match the final anatomy</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 11px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Members</span>
+            <span style="{{ skel.chip }}"></span>
+          </div>
+          <sc-for list="{{ skeletonRows }}" as="s" hint-placeholder-count="5">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 8px 11px; border-block-end: 1px solid #F0F3F7;">
+              <span style="{{ skel.avatar }}"></span>
+              <span style="flex: 1 1 auto; min-width: 0;">
+                <span style="{{ s.line1 }}"></span>
+                <span style="{{ s.line2 }}"></span>
+              </span>
+              <span style="{{ s.meta }}"></span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">The skeleton is the row, minus its content: same heights, same columns, same count as the last page size the user saw — so nothing reflows when data lands. No centred spinner for an initial load; a spinner means “in place, refreshing”. Suppressed under 200ms so a fast response never flashes, and capped at 8 seconds before it becomes the error state with a retry.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">Two different emptinesses</div>
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 16px 14px; text-align: center;">
+            <div style="width: 30px; height: 30px; border-radius: 7px; border: 1px dashed #CBD5E0; background: #F4F7FA; margin: 0 auto 6px;"></div>
+            <div style="font-size: 13px; font-weight: 600;">No members yet</div>
+            <div style="font-size: 12px; color: #5A6779; max-width: 40ch; margin: 2px auto 0; text-wrap: pretty;">A committee needs at least 3 members before it can leave Formation.</div>
+            <button style="margin-block-start: 9px; background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 13px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;">Add first member</button>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 16px 14px; text-align: center;">
+            <div style="font-size: 13px; font-weight: 600;">No members match “zahrani”</div>
+            <div style="font-size: 12px; color: #5A6779; max-width: 42ch; margin: 2px auto 0; text-wrap: pretty;">This committee has 9 members; none match the current search and the Observer filter.</div>
+            <button style="margin-block-start: 9px; background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 6px 13px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;">Clear search and filters</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Different words, different exit, different illustration policy: “none yet” gets the dashed mark and a creating action; “none matching” gets no mark at all — it is a transient consequence of the user's own filter, and decorating it implies a bigger problem than a stray query. Both name a number so the reader knows the set is not broken.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">Error, and permission denied</div>
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <div style="border: 1px solid #FECDCA; background: #FEF3F2; border-radius: 6px; padding: 11px 12px;">
+            <div style="display: flex; align-items: baseline; gap: 7px;">
+              <span style="color: #B42318; font-weight: 700; font-size: 13px;">!</span>
+              <span style="min-width: 0;">
+                <span style="display: block; font-size: 13px; font-weight: 600; color: #7A271A;">Members could not be loaded</span>
+                <span style="display: block; font-size: 12px; color: #4A5568; margin-block-start: 2px; text-wrap: pretty;">The request timed out. Nothing has changed — this is a read.</span>
+              </span>
+            </div>
+            <div style="display: flex; gap: 7px; margin-block-start: 9px;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 5px; padding: 5px 11px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;">Retry</button>
+              <button style="background: transparent; color: #5A6779; border: none; padding: 5px 4px; font-family: inherit; font-size: 12.5px; cursor: pointer;">Copy error ID · 7f31c</button>
+            </div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 14px 12px; text-align: center; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px);">
+            <div style="font-size: 13px; font-weight: 600;">You do not have access to Membership history</div>
+            <div style="font-size: 12px; color: #5A6779; max-width: 44ch; margin: 2px auto 0; text-wrap: pretty;">Requires <strong>Committees · audit</strong>. Your administrator is Nora Al-Otaibi.</div>
+            <button style="margin-block-start: 9px; background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 6px 13px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;">Request access</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Errors state whether anything changed — on a read, saying so out loud stops the user re-submitting. They carry a copyable ID because support cannot act on “it broke”. A permission wall appears only where the user followed a link to something gated; a panel they simply lack rights to is absent (shell rule), and it names the permission and the person who can grant it, because “contact your administrator” is not actionable in a 300-person hospital.</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 12px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">Partial failure — the page survives its panels</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 10px;">
+            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">Members</div>
+            <div style="font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; margin-block-start: 2px;">9</div>
+          </div>
+          <div style="border: 1px solid #FECDCA; background: #FEF3F2; border-radius: 6px; padding: 9px 10px;">
+            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #B42318;">Tasks</div>
+            <div style="display: flex; align-items: baseline; gap: 6px; margin-block-start: 2px;">
+              <span style="font-size: 20px; font-weight: 600; color: #8A94A6;">—</span>
+              <span style="font-size: 11.5px; font-weight: 600; color: #B42318; cursor: pointer; text-decoration: underline;">Retry</span>
+            </div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 9px 10px;">
+            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">Sub-committees</div>
+            <div style="font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; margin-block-start: 2px;">3</div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Each panel owns its own request and its own outcome — a failed Tasks call must not blank a record page a surveyor is reading. The failed tile shows <strong>“—”, never 0</strong>: a zero is a claim about the data, and claiming zero open tasks on a compliance record when you do not know is the worst available answer. Retry is local and does not refetch the healthy panels.</div>
+      </div>
+
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 9px;">Long names and long text — both languages</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px;">
+            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6; margin-block-end: 3px;">Table cell · one line, ellipsis, full value in title</div>
+            <div style="max-width: 300px; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Hospital-Acquired Infection Surveillance and Antimicrobial Resistance Steering Sub-committee">Hospital-Acquired Infection Surveillance and Antimicrobial Resistance Steering Sub-committee</div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px;">
+            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6; margin-block-end: 3px;">Record header · wraps to 2 lines, then ellipsis</div>
+            <div style="max-width: 360px; font-size: 20px; font-weight: 600; line-height: 1.22; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-wrap: pretty;">Hospital-Acquired Infection Surveillance and Antimicrobial Resistance Steering Sub-committee</div>
+          </div>
+          <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+            <div style="font-size: 11.5px; font-weight: 700; color: #8A94A6; margin-block-end: 3px;">العربية · قطع عند حدود الكلمة فقط</div>
+            <div style="max-width: 360px; font-size: 19px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: normal; overflow-wrap: break-word;">اللجنة الفرعية التوجيهية لمراقبة العدوى المكتسبة في المستشفيات ومقاومة مضادات الميكروبات</div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Truncation always has a recovery: <code style="font-size: 11px;">title</code> on the element, and the full value in the record it links to. Never <code style="font-size: 11px;">word-break: break-all</code> — it severs Arabic joins and makes the name unpronounceable. Buttons and columns size from content with a minimum, never a fixed width, because Arabic runs about 20% longer than the English that was used to eyeball the layout.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s9" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 9</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">Accessibility baseline — WCAG 2.2 AA</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Written as acceptance criteria, because this is procured against, not admired.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 10px 13px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Measured pairs — every combination the system permits</div>
+        <div style="display: flex; gap: 10px; padding: 7px 13px; background: #FBFCFD; border-block-end: 1px solid #E2E8F0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6;">
+          <span style="flex: 1.6 1 0;">Pair</span><span style="flex: none; width: 62px;">Ratio</span><span style="flex: none; width: 54px;">Target</span><span style="flex: none; width: 46px;">Verdict</span>
+        </div>
+        <sc-for list="{{ contrastRows }}" as="c" hint-placeholder-count="9">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 13px; border-block-end: 1px solid #F0F3F7;">
+            <span style="flex: 1.6 1 0; min-width: 0; display: flex; align-items: center; gap: 8px;">
+              <span style="{{ c.chipStyle }}">Aa</span>
+              <span style="min-width: 0; font-size: 12px; color: #4A5568; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.pair }}</span>
+            </span>
+            <span dir="ltr" style="flex: none; width: 62px; font-size: 12.5px; font-variant-numeric: tabular-nums; font-weight: 500;">{{ c.ratio }}</span>
+            <span dir="ltr" style="flex: none; width: 54px; font-size: 11.5px; color: #5A6779; font-variant-numeric: tabular-nums;">{{ c.target }}</span>
+            <span style="{{ c.verdictStyle }}">{{ c.verdict }}</span>
+          </div>
+        </sc-for>
+        <div style="padding: 9px 13px; background: #F4F7FA; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Body text 4.5:1, text at 18px+/600 3:1, and — the one most often missed — <strong>3:1 for non-text</strong>: control borders, the dot in a status, the hatch edge on a restricted field, the focus ring. <strong>#E2E8F0 and #CBD5E0 are dividers, never control borders</strong> — at 1.49:1 on white #CBD5E0 fails 1.4.11 outright, which is what every field in the build is drawn with today. Controls sit at <strong>#8A94A6</strong> on white, <strong>#5A6779</strong> on surface and on hover; disabled controls may stay at #E2E8F0 because 1.4.11 exempts them. These ratios are asserted in CI against the token values — a token change that breaks a pair fails the build, so this table cannot drift from the code by hand.</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 10px;">Focus — one treatment, everywhere, never removed</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2E6FA3;">On primary</button>
+            <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 500; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2E6FA3;">On secondary</button>
+            <span style="display: inline-flex; align-items: center; background: #1E2A38; border-radius: 6px; padding: 7px 13px; color: #fff; font-size: 13px; box-shadow: 0 0 0 2px #1E2A38, 0 0 0 4px #9CC5E4;">On the dark rail</span>
+            <a href="#s9" style="font-size: 13px; font-weight: 500; border-radius: 3px; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2E6FA3;">On a link</a>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">2px ring at 2px offset, drawn with a matching-ground inner ring so it reads on white, on surface and on the sidebar — on the dark rail the ring lightens to #9CC5E4 to hold 3:1 against #1E2A38. <code style="font-size: 11px;">:focus-visible</code>, so it appears for keyboard and not for mouse. Rows, table cells and the relation field are focusable in reading order; the rail has a skip-to-content link as the first tab stop.</div>
+        </div>
+
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 10px;">Naming, semantics, announcements</div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <sc-for list="{{ a11yRules }}" as="r" hint-placeholder-count="7">
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; font-size: 12px;">
+                <span style="color: #2E6FA3; font-weight: 700;">·</span>
+                <span style="text-wrap: pretty; color: #4A5568;"><strong>{{ r.title }}</strong> {{ r.body }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 6px;">Known debt, stated plainly</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">The frontend has one <code style="font-size: 11px;">aria-label</code> in it today, so every icon-only control — and there are many in every table row — is unnamed to a screen reader, and the row menus are unreachable by keyboard. Form labels at #718096 fail on the surface they sit on. Neither is fixable screen by screen: both are properties of the shared row, field and icon-button components specified here. Fixing those three components fixes all eighteen lists at once, which is the argument for doing this before the seven new modules land rather than after.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s10" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-start: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 10</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">The variant form</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">One choice decides which other fields exist. Three of the product's hardest forms are instances, and none of them had a pattern.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-block-end: 14px;">
+      <sc-for list="{{ variantDemo }}" as="v" hint-placeholder-count="3">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #8A94A6; margin-block-end: 9px;">{{ v.caption }}</div>
+          <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Who may fire this transition</label>
+          <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+            <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ v.kind }}</span>
+            <span style="flex: none; color: #5A6779; font-size: 10px;">▼</span>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">5 kinds — a select, never a radio group</div>
+          <div style="border-block-start: 1px dashed #E2E8F0; margin-block: 10px 11px;"></div>
+          <div style="{{ v.slotStyle }}">
+            <sc-if value="{{ v.fieldLabel }}" hint-placeholder-val="{{ false }}">
+              <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">{{ v.fieldLabel }}</label>
+              <div style="{{ v.fieldStyle }}">
+                <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: {{ v.fieldInk }};">{{ v.fieldValue }}</span>
+                <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">{{ v.fieldAction }}</span>
+              </div>
+              <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">{{ v.fieldHelp }}</div>
+            </sc-if>
+            <sc-if value="{{ v.sentence }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; align-items: flex-start; gap: 8px;">
+                <span style="flex: none; color: #1F5480;">ⓘ</span>
+                <span style="font-size: 12.5px; color: #1F5480; text-wrap: pretty;">{{ v.sentence }}</span>
+              </div>
+            </sc-if>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">{{ v.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 9px;">Specification</div>
+        <sc-for list="{{ variantSpec }}" as="s" hint-placeholder-count="7">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;">
+            <span style="color: #2E6FA3; font-weight: 700;">·</span>
+            <span style="color: #4A5568; text-wrap: pretty;"><strong>{{ s.k }}</strong> {{ s.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 7px;">Switching kinds after values are entered</div>
+        <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Fields that exist in both kinds and mean the same thing <strong>keep their values</strong> — matched by name and type, declared in the variant map rather than guessed. Fields belonging only to the old kind are <strong>held in session memory, not destroyed</strong>: switching back restores them with no prompt, which is what makes exploring the kinds free. <strong>Switching kinds is therefore never destructive and never confirmed</strong> — a prompt warning about values that are demonstrably restorable only teaches users to click through prompts. The single discard is on submit: only the active kind's values are sent, and the held memory goes with the form.</div>
+      </div>
+      <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 7px;">Write-once secrets — a system rule, not a screen's problem</div>
+        <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Any secret (a webhook signing secret, an API key, an SMTP password) is entered once and never rendered again. Empty state: a password-type field with “Paste the signing secret”. Once set: the field is replaced by the read-only pair <strong>“Secret · set 14 Sep 2026”</strong> with a single <strong>Replace</strong> text button that reopens an empty field, and a Remove in the row menu. No reveal control, no masked placeholder pretending to hold the value, and the value never appears in an export, a tooltip or the audit trail — the trail records “secret replaced by N. Al-Otaibi”, not the secret.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s11" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-start: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 16px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Artboard 11</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">The repeating row group</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">An ordered list the user adds to, removes from and reorders inside a form — escalation chains, transition actions.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 14px;">
+      <div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Escalation steps</span>
+              <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #4A5568; background: #fff; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px; font-variant-numeric: tabular-nums;">3 of 4</span>
+            </div>
+            <span style="font-size: 11.5px; color: #5A6779;">each step must be later than the one before</span>
+          </div>
+          <div style="display: flex; gap: 10px; padding: 6px 12px; background: #FBFCFD; border-block-end: 1px solid #F0F3F7;">
+            <span style="flex: none; width: 46px;"></span>
+            <span style="flex: 1 1 0; min-width: 96px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">After</span>
+            <span style="flex: 1.6 1 0; min-width: 120px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">Notify</span>
+            <span style="flex: none; width: 30px;"></span>
+          </div>
+          <sc-for list="{{ rowGroup }}" as="r" hint-placeholder-count="3">
+            <div style="{{ r.rowStyle }}">
+              <span style="flex: none; width: 46px; display: flex; align-items: center; gap: 5px;">
+                <button aria-label="{{ r.handleLabel }}" style="width: 22px; height: 26px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #5A6779; font-size: 11px; cursor: grab;">⣿</button>
+                <span dir="ltr" style="font-size: 11.5px; font-weight: 600; color: #5A6779; font-variant-numeric: tabular-nums;">{{ r.n }}</span>
+              </span>
+              <span style="flex: 1 1 0; min-width: 96px;">
+                <span style="{{ r.numFieldStyle }}">
+                  <span dir="ltr" style="flex: 1 1 auto; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums;">{{ r.days }}</span>
+                  <span style="flex: none; display: flex; align-items: center; gap: 10px; padding-inline: 8px; border-inline-start: 1px solid #E2E8F0; background: #F4F7FA; color: #4A5568; font-size: 12px;">− +</span>
+                </span>
+                <sc-if value="{{ r.error }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 11.5px; font-weight: 500; color: #B42318; margin-block-start: 4px;">{{ r.error }}</span></sc-if>
+              </span>
+              <span style="flex: 1.6 1 0; min-width: 120px;">
+                <span style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 9px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.target }}</span>
+                  <span style="flex: none; color: #5A6779; font-size: 10px;">▼</span>
+                </span>
+              </span>
+              <span style="flex: none; width: 30px; display: flex; justify-content: flex-end;">
+                <button aria-label="{{ r.removeLabel }}" style="width: 26px; height: 26px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #B42318; font-size: 12px; cursor: pointer;">✕</button>
+              </span>
+            </div>
+          </sc-for>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-block-start: 1px solid #F0F3F7;">
+            <button style="background: #fff; color: #2E6FA3; border: 1px dashed #8A94A6; border-radius: 5px; padding: 5px 11px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;">+ Add step</button>
+            <span style="font-size: 11.5px; color: #5A6779;">1 more allowed — the chain stops at 4</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-block-start: 10px;">
+          <div style="flex: 1 1 200px; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 5px;">Empty</div>
+            <div style="border: 1px dashed #CBD5E0; border-radius: 6px; padding: 14px 12px; text-align: center;">
+              <div style="font-size: 12.5px; font-weight: 600;">No escalation steps</div>
+              <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 2px; text-wrap: pretty;">Overdue tasks stay with the assignee and nobody else is told.</div>
+              <button style="margin-block-start: 8px; background: #fff; color: #2E6FA3; border: 1px solid #8A94A6; border-radius: 5px; padding: 5px 11px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;">+ Add first step</button>
+            </div>
+          </div>
+          <div style="flex: 1 1 200px; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 5px;">Reordering by keyboard</div>
+            <div style="display: flex; align-items: center; gap: 8px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; padding: 8px 10px;">
+              <span style="flex: none; width: 22px; height: 26px; border: 1px solid #2E6FA3; border-radius: 4px; background: #fff; color: #1F5480; font-size: 11px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);">⣿</span>
+              <span style="font-size: 12px; color: #1F5480; text-wrap: pretty;">“Step 2 of 3, picked up. Use up and down arrows to move, Space to drop.”</span>
+            </div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 7px; text-wrap: pretty;">The handle is a real button, not a drag-only affordance; Move up / Move down also appear in each row's menu, because drag is unusable on a tablet during an audit.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 9px;">Specification</div>
+          <sc-for list="{{ rowGroupSpec }}" as="s" hint-placeholder-count="8">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;">
+              <span style="color: #2E6FA3; font-weight: 700;">·</span>
+              <span style="color: #4A5568; text-wrap: pretty;"><strong>{{ s.k }}</strong> {{ s.v }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 7px;">What happens to the dialog cap as rows are added</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">This is where a capped body breaks, so the answer is explicit. <strong>A group whose maximum is three rows may live in a dialog</strong>: the cap is sized for three rows plus the add button, and the Add button disables at the maximum with the reason beside it. <strong>A group whose maximum is four or more does not belong in a dialog at all</strong> — it belongs on a page or in a wizard step, where there is no cap to defend. The escalation chain (max 4) is therefore a settings-page group; a transition's actions (max 3 per transition) are a dialog group. The one thing never permitted: a group that scrolls inside a capped dialog body. It would put selects and pickers inside a scrollable ancestor, which is exactly the platform fault artboard 7 exists to make unreachable.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="changelog" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-start: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Revisions 2–3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">What changed</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Diff against the first export. Corrections and two added patterns — no new colour, space or type step.</span>
+    </div>
+    <sc-for list="{{ changelog }}" as="c" hint-placeholder-count="5">
+      <div style="display: grid; grid-template-columns: 148px 1fr; gap: 12px; padding: 9px 0; border-block-end: 1px solid #F0F3F7;">
+        <span style="min-width: 0;">
+          <span style="display: block; font-size: 12.5px; font-weight: 600;">{{ c.area }}</span>
+          <span style="display: block; font-size: 11px; color: #8A94A6;">{{ c.where }}</span>
+        </span>
+        <span style="min-width: 0; font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ c.body }}</span>
+      </div>
+    </sc-for>
+  </section>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+const MONO = "ui-monospace, Menlo, monospace";
+
+class Component extends DCLogic {
+  state = {};
+
+  renderVals() {
+    const sw = (c, border) => "flex: none; width: 34px; height: 26px; border-radius: 5px; background: " + c + "; border: 1px solid " + (border || "rgba(16,24,40,0.12)") + ";";
+    const chipSw = (ink, bg, bd) => "flex: none; width: 34px; height: 26px; border-radius: 5px; background: " + bg + "; border: 1px solid " + bd + "; color: " + ink + "; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;";
+
+    const chip = (label, ink, bg, bd, weight, dot) => ({
+      label, dot: !!dot,
+      dotStyle: "width: 6px; height: 6px; border-radius: 50%; background: " + (dot || "transparent") + "; flex: none;",
+      style: "display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: " + (weight || 600) + "; color: " + ink + "; background: " + bg + "; border: 1px solid " + bd + "; border-radius: 999px; padding: 2px 9px; white-space: nowrap;"
+    });
+    const plain = (label) => ({ label, dot: false, dotStyle: "", style: "display: inline-flex; align-items: center; font-size: 12.5px; color: #4A5568;" });
+
+    const R = React.createElement;
+    const clampOne = { display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+    const linkRel = (name, size, cell) => R("a", {
+      href: "#s4", title: cell ? name : undefined,
+      style: Object.assign({ fontSize: (size || 13) + "px", fontWeight: 500, color: "#2E6FA3", textDecoration: "none" }, cell ? clampOne : {})
+    }, name);
+    const namedRel = (name, size, cell) => R("span", {
+      title: cell ? name + " — you can see this name but cannot open the record." : "You can see this name but cannot open the record.", tabIndex: 0,
+      style: Object.assign({ fontSize: (size || 13) + "px", fontWeight: 500, color: "#2D3748", borderBottom: "1px dashed #A7B2C2", cursor: "help" }, cell ? clampOne : {})
+    }, name);
+    const hiddenRel = (typeWord, size, cell) => R("span", {
+      title: "Restricted — a record exists here that you may not see.", tabIndex: 0,
+      style: Object.assign({ display: "inline-flex", alignItems: "center", maxWidth: "100%", fontSize: ((size || 13) - 0.5) + "px", color: "#5A6779", background: "repeating-linear-gradient(135deg,#F4F7FA 0 4px,#E9EEF4 4px 8px)", border: "1px solid #CBD5E0", borderRadius: "4px", padding: "0 7px", cursor: "help" }, cell ? { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } : {})
+    }, typeWord);
+
+    const FIELD = "display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border-radius: 4px; box-sizing: border-box;";
+    const box = {
+      rest: FIELD + " border: 1px solid #8A94A6; background: #fff;",
+      focus: FIELD + " border: 1px solid #2E6FA3; background: #fff; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);",
+      disabled: FIELD + " border: 1px solid #E2E8F0; background: #F4F7FA;",
+      readonly: "display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0; border: none; background: none; box-sizing: border-box;",
+      error: FIELD + " border: 1px solid #B42318; background: #fff; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);",
+      loading: FIELD + " border: 1px solid #8A94A6; background: #fff;"
+    };
+    const txt = {
+      value: "flex: 1 1 auto; min-width: 0; font-size: 13px; color: #2D3748; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+      placeholder: "flex: 1 1 auto; min-width: 0; font-size: 13px; color: #8A94A6;",
+      disabled: "flex: 1 1 auto; min-width: 0; font-size: 13px; color: #8A94A6;",
+      readonly: "flex: 1 1 auto; min-width: 0; font-size: 14px; color: #2D3748; font-weight: 500;",
+      caret: "flex: 1 1 auto; min-width: 0; font-size: 13px; color: #2D3748; border-inline-end: 1.5px solid #2E6FA3; padding-inline-end: 1px;"
+    };
+    const help = {
+      base: "font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px; text-wrap: pretty;",
+      error: "font-size: 11.5px; color: #B42318; font-weight: 500; margin-block-start: 4px; min-height: 17px; text-wrap: pretty;"
+    };
+    const glyph = { style: "flex: none; color: #5A6779; font-size: 12px;", muted: "flex: none; color: #8A94A6; font-size: 12px;", spin: "flex: none; width: 13px; height: 13px; border: 2px solid #CBD5E0; border-top-color: #2E6FA3; border-radius: 50%; animation: spin 0.8s linear infinite;" };
+    const st = (state, attr, label, boxStyle, textStyle, text, helpText, helpStyle, g, gStyle) => ({
+      state, attr, label, boxStyle, textStyle, text, help: helpText, helpStyle: helpStyle || help.base, glyph: g || null, glyphStyle: gStyle || glyph.style
+    });
+    const mini = (state, boxStyle, textStyle, text, g, gStyle, helpText, helpStyle) => ({
+      state, boxStyle, textStyle, text, glyph: g || null, glyphStyle: gStyle || glyph.style, help: helpText || null, helpStyle: helpStyle || help.base
+    });
+
+    const bar = (w, h, c) => "display: block; width: " + w + "; height: " + h + "px; border-radius: 3px; background: linear-gradient(90deg,#EDF1F6 0%,#F7F9FB 40%,#EDF1F6 80%); background-size: 260px 100%; animation: shimmer 1.3s linear infinite;";
+    const mStep = (label, tone, arrow) => ({
+      label, arrow: arrow || null,
+      style: "display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; border-radius: 6px; padding: 5px 10px; white-space: nowrap; "
+        + (tone === "danger" ? "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;"
+          : tone === "warn" ? "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;"
+          : tone === "ok" ? "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;"
+          : tone === "info" ? "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;"
+          : "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;")
+    });
+    const cRow = (pair, ratio, target, pass, chipStyle) => ({
+      pair, ratio, target, verdict: pass ? "AA" : "fail", chipStyle,
+      verdictStyle: "flex: none; width: 46px; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1px 6px; text-align: center; "
+        + (pass ? "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;" : "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;")
+    });
+    const cChip = (ink, bg) => "flex: none; width: 26px; height: 20px; border-radius: 4px; background: " + bg + "; color: " + ink + "; border: 1px solid rgba(16,24,40,0.1); font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center;";
+
+    const vField = "display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;";
+    return {
+      variantDemo: [
+        { caption: "Kind with a field", kind: "Role-based", slotStyle: "min-height: 78px;", fieldLabel: "Role", fieldStyle: vField, fieldValue: "Quality Director", fieldInk: "#2D3748", fieldAction: "Change…", fieldHelp: "11 roles — select, not a picker", sentence: null,
+          note: "The variant's own field sits in a fixed slot below the selector. The slot is the height of the tallest variant, so switching never moves the footer." },
+        { caption: "Kind with no field", kind: "Anyone signed in", slotStyle: "min-height: 78px; display: flex; align-items: flex-start; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; padding: 10px 11px;", fieldLabel: null, fieldStyle: "", fieldValue: "", fieldInk: "", fieldAction: "", fieldHelp: "",
+          sentence: "Any signed-in user of this tenant may fire this transition. No role or permission is checked, and the actor is still recorded in the audit trail.",
+          note: "A variant with nothing to configure still occupies the slot, with the consequence written out. Blank space here reads as a broken form." },
+        { caption: "Kind with a write-once secret", kind: "Webhook", slotStyle: "min-height: 78px;", fieldLabel: "Signing secret", fieldStyle: "display: flex; align-items: center; gap: 8px; min-height: 36px;", fieldValue: "Secret · set 14 Sep 2026", fieldInk: "#2D3748", fieldAction: "Replace", fieldHelp: "Never displayed again — see the write-once rule", sentence: null,
+          note: "Set state renders as a read-only pair with one Replace button; there is no reveal, and no masked placeholder pretending to hold the value." }
+      ],
+      variantSpec: [
+        { k: "The kind selector is the first field, always.", v: "Top of the form, never moved, never hidden, never disabled after the fact — a form whose shape can change must say what shape it is in before anything else. On an edit form it is still first, showing the stored kind." },
+        { k: "It is a select above three options.", v: "Two or three short kinds may be segmented; four or more is a select. A radio group of seven strategies is a wall of text that pushes every real field below the fold." },
+        { k: "One fixed slot for the variant's fields.", v: "The variant area is a single region of fixed minimum height, sized for the tallest variant. Nothing outside it moves when the kind changes, so the footer and the submit button never travel under the cursor." },
+        { k: "Cap sizing, and the stepped fallback.", v: "Dialog rule 2 is measured against the tallest variant with every inline panel open. If the tallest variant does not fit the 420px body, the whole form becomes stepped with the kind chosen in step one and its fields in step two — which is the honest fix, not a shorter cap." },
+        { k: "Validation is the active variant's only.", v: "Inactive variants are removed from the form model, not hidden with CSS. An invisible field can never block submit, and the submit button never sits disabled for a reason the user cannot see." },
+        { k: "Read-only names the kind, not just the value.", v: "“Role · Quality Director”, never a bare “Quality Director” — in this product a bare name could be a user, a role, a position or a committee, and a surveyor reading the page cannot ask." },
+        { k: "Dependent pickers within a variant.", v: "Where one variant field narrows another (position within org unit), the second is disabled until the first is set, with its helper text saying so — and changing the first clears the second rather than leaving an impossible pair." }
+      ],
+      rowGroup: [
+        { n: 1, days: "2", target: "Unit head", error: null, handleLabel: "Reorder step 1", removeLabel: "Remove step 1" },
+        { n: 2, days: "5", target: "Committee chair", error: null, handleLabel: "Reorder step 2", removeLabel: "Remove step 2" },
+        { n: 3, days: "5", target: "Quality Director", error: "Must be later than step 2 (5 days)", handleLabel: "Reorder step 3", removeLabel: "Remove step 3" }
+      ].map(r => ({
+        n: r.n + "", days: r.days, target: r.target, error: r.error,
+        handleLabel: r.handleLabel, removeLabel: r.removeLabel,
+        rowStyle: "display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; border-block-end: 1px solid #F0F3F7; background: " + (r.error ? "#FFFBFA" : "#fff") + ";",
+        numFieldStyle: "display: flex; align-items: stretch; height: 32px; border-radius: 4px; background: #fff; overflow: hidden; border: 1px solid " + (r.error ? "#B42318" : "#8A94A6") + ";" + (r.error ? " box-shadow: 0 0 0 3px rgba(180,35,24,0.12);" : "")
+      })),
+      rowGroupSpec: [
+        { k: "Row anatomy.", v: "Handle, ordinal, then the row's fields as bare controls under one set of column headers — labels appear once at the top of the group, not on every row, because eight repeated labels read as eight separate forms. Remove sits at the end edge. Row height is the 32px compact control, not the 36px form control." },
+        { k: "Add is inside the group.", v: "A dashed-outline text button as the last line of the group's frame, labelled with the noun (“+ Add step”), never in the dialog footer where it competes with Save. Adding appends a row, focuses its first control, and announces “Step 4 added” politely." },
+        { k: "Remove is per row and named.", v: "An icon button with the accessible name “Remove step 2”. It removes immediately with an 8-second Undo in the group's own footer — no confirm dialog for one row of a form that is not saved yet. At the minimum count the button is absent, not disabled, and the group's helper text says why." },
+        { k: "Ordinals are positions, not identities.", v: "Removing step 2 of 4 renumbers the rest immediately. Nothing in the row's copy refers to another row by number; the validation message names the value it must beat (“later than step 2 (5 days)”) and updates on reorder." },
+        { k: "Reordering has two paths.", v: "Pointer drag on the handle, and a keyboard path on the same handle: Space picks up, ↑/↓ move, Space drops, Escape cancels, each move announced. Move up / Move down also live in the row menu for touch. An order the user cannot change by keyboard is an order they cannot audit." },
+        { k: "Minimum and maximum are stated, never discovered.", v: "The count sits in the group header (“3 of 4”) and the remaining allowance beside the Add button. At the maximum the button disables with the reason inline — never a silent no-op click." },
+        { k: "Sequence validation is the group's, not the row's.", v: "Rules that compare rows (each step later than the last) are evaluated for the group and reported on the offending row, with the group header carrying the count of problems. Submit is blocked by the group, and the first offending row takes focus." },
+        { k: "Empty state is a sentence about consequence.", v: "Not “no items”: what the absence means — “Overdue tasks stay with the assignee and nobody else is told” — plus the add action, inside the group's frame so the group is still visibly a group." }
+      ],
+      changelog: [
+        { area: "Rev 3 · Token “use” strings", where: "Artboard 1", body: "Two strings still described the pre-correction system and are fixed: border #E2E8F0 now reads “cards, table rules, dividers, and disabled control borders only — not an enabled control border”, and ink-300 #8A94A6 now reads “control border at rest (3.08:1 on white); placeholder and disabled glyphs. Never body text.”" },
+        { area: "Rev 4 · Overlays on select-heavy pages", where: "Artboard 7", body: "A fourth allowance rule: a page hosting a form that left a dialog because of the cap — the workflow stage and transition editors — must scroll as the document, with no vertical inner scroll container around the editor or the flow strip. Horizontal-only scrolling is safe. Without this, moving those editors to page panels silently reintroduces the platform fault this artboard exists to make unreachable." },
+        { area: "Rev 4 · Write-once secrets", where: "Artboard 10", body: "Extended beyond secrets in one respect: the same “never displayed, never exported” care now governs restricted relation names in exports, specified in template 1 of the templates file." },
+        { area: "Rev 3 · New: variant form", where: "Artboard 10", body: "A form where one choice determines which other fields exist — previously unspecified, though the transition editor, the stage editor and the task form are all instances. Covers the kind selector's fixed first position and select-above-three rule, the fixed variant slot sized to the tallest variant, cap sizing with the stepped fallback, what is kept and discarded on switching kinds (and when a confirm is warranted), validation scoped to the active variant, read-only rendering that names the kind, and zero-field variants that must state their consequence in words. Also carries the system-wide write-once secret rule: set once, rendered as “Secret · set <date>” with a single Replace, never revealed, never exported." },
+        { area: "Rev 3 · New: repeating row group", where: "Artboard 11", body: "An ordered list of rows added, removed and reordered inside a form. Covers row anatomy with labels once at the group head, the in-frame Add button, named per-row Remove with undo instead of a confirm, ordinals as positions, two reordering paths (drag and a keyboard handle with announcements), stated minimum and maximum, group-level sequence validation, and a consequence-bearing empty state. The dialog-cap answer is explicit: a group with a maximum of three rows may live in a dialog sized for three; a maximum of four or more belongs on a page or a wizard step; a group that scrolls inside a capped dialog body is never permitted." },
+        { area: "Control borders", where: "Artboards 1, 6, 7, 9", body: "#CBD5E0 fails 1.4.11 at 1.49:1 on white and is withdrawn as a control border — it is now a structural/divider token only. Rest border is control-border #8A94A6 (3.08:1 on white); hover and any control sitting on the #F4F7FA ground use control-border-hover #5A6779, because #8A94A6 on surface is 2.86:1. Disabled controls keep #E2E8F0 under the 1.4.11 exemption. Every control in the artboard-6 gallery, the artboard-7 dialogs and the Arabic panel is redrawn at the new value, and the added weight is compensated with white field fill, a 16px row gap above four fields and no field-group boxes — not by lightening the line." },
+        { area: "Contrast table", where: "Artboard 9", body: "Corrected: #2E6FA3 / #FFFFFF is 5.36:1 and now reads the same in both directions (contrast is symmetric — the earlier 4.6 and 4.7 for one pair was the tell); #718096 on #F4F7FA is 3.79:1, still a fail; #CBD5E0 on white is 1.49:1 and now verdicts as a fail. Added #8A94A6 on white (3.08:1, pass), #8A94A6 on surface (2.86:1, fail — the reason controls live on white) and #5A6779 on white (5.86:1). The table is now asserted in CI against the token values rather than maintained by hand." },
+        { area: "Overlay allowance", where: "Artboard 7", body: "“Anchored to a sticky element” is withdrawn: sticky preserves the trigger's position but PrimeNG's ConnectedOverlayScrollHandler dismisses on any ancestor scroll regardless. Toolbar filters and the column chooser are permitted only through the CDK overlay with a reposition scroll strategy (the OverlaySelectComponent route), never a raw p-select or p-overlaypanel. The engineering guard is restated to match: refuse to mount inside a scrollable ancestor unless using the reposition strategy, and throw in development." },
+        { area: "Hijri dates", where: "Artboards 2, 6", body: "One statement in all three places: a user who opts into the Hijri calendar sees Hijri first with Gregorian in brackets; everyone else sees Gregorian only; digits stay Latin. Sample corrected — 14 Sep 2026 is 3 Rabi II 1448, not 22 Rabi I 1448 — and the type specimen moved to 4 Rabi II 1448 for 15 Sep 2026." },
+        { area: "Scale consistency", where: "Artboards 1, 6", body: "The space base is stated as 2px with a 4px layout rhythm, which is what the token list actually ships; 2 and 6 are explicitly scoped to sub-component gaps. The control gallery is redrawn at 36px to match the Form row of the density table, read-only at the same height, and icon buttons at 32×32 compact / 40×40 coarse, matching the density table's control sizes." }
+      ],
+
+      machine: [
+        mStep("request", "neutral", "→"),
+        mStep("loading · skeleton", "info", "→"),
+        mStep("200 + rows", "ok", "|"),
+        mStep("200 + zero → empty, with a reason", "neutral", "|"),
+        mStep("403 → permission wall", "warn", "|"),
+        mStep("5xx / timeout → error + retry", "danger", "|"),
+        mStep("some panels 200, some failed → partial", "warn")
+      ],
+
+      skel: {
+        chip: bar("28px", 14),
+        avatar: "flex: none; width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(90deg,#EDF1F6 0%,#F7F9FB 40%,#EDF1F6 80%); background-size: 260px 100%; animation: shimmer 1.3s linear infinite;"
+      },
+      skeletonRows: [72, 58, 66, 52, 62].map((w, i) => ({
+        line1: bar(w + "%", 11) + " margin-block-end: 5px;",
+        line2: bar((w - 26) + "%", 9),
+        meta: "flex: none; " + bar("52px", 10)
+      })),
+
+      contrastRows: [
+        cRow("#2D3748 on #FFFFFF — body", "11.6:1", "4.5", true, cChip("#2D3748", "#FFFFFF")),
+        cRow("#4A5568 on #FFFFFF — table value", "8.0:1", "4.5", true, cChip("#4A5568", "#FFFFFF")),
+        cRow("#5A6779 on #F4F7FA — label, meta", "5.45:1", "4.5", true, cChip("#5A6779", "#F4F7FA")),
+        cRow("#718096 on #F4F7FA — today's label", "3.79:1", "4.5", false, cChip("#718096", "#F4F7FA")),
+        cRow("#FFFFFF on #2E6FA3 — primary button", "5.36:1", "4.5", true, cChip("#FFFFFF", "#2E6FA3")),
+        cRow("#2E6FA3 on #FFFFFF — link (same pair, same ratio)", "5.36:1", "4.5", true, cChip("#2E6FA3", "#FFFFFF")),
+        cRow("#B42318 on #FEF3F2 — danger chip", "6.6:1", "4.5", true, cChip("#B42318", "#FEF3F2")),
+        cRow("#B54708 on #FFFAEB — warning chip", "5.5:1", "4.5", true, cChip("#B54708", "#FFFAEB")),
+        cRow("#067647 on #ECFDF3 — success", "5.3:1", "4.5", true, cChip("#067647", "#ECFDF3")),
+        cRow("#8DC63F on #FFFFFF — brand accent as text", "2.0:1", "4.5", false, cChip("#8DC63F", "#FFFFFF")),
+        cRow("#C9D3E0 on #1E2A38 — rail label", "7.9:1", "4.5", true, cChip("#C9D3E0", "#1E2A38")),
+        cRow("#8A94A6 on #FFFFFF — control border at rest", "3.08:1", "3.0", true, cChip("#8A94A6", "#FFFFFF")),
+        cRow("#8A94A6 on #F4F7FA — same border on surface", "2.86:1", "3.0", false, cChip("#8A94A6", "#F4F7FA")),
+        cRow("#5A6779 on #FFFFFF — control border, hover", "5.86:1", "3.0", true, cChip("#5A6779", "#FFFFFF")),
+        cRow("#CBD5E0 on #FFFFFF — yesterday's control border", "1.49:1", "3.0", false, cChip("#CBD5E0", "#FFFFFF"))
+      ],
+
+      a11yRules: [
+        { title: "Icon-only controls carry one string.", body: "The component takes a single required label prop and renders it as both aria-label and tooltip — they cannot drift, and an unlabelled icon button fails the build. Row-level actions include the object: “More actions for Nora Al-Otaibi”, not “More”." },
+        { title: "Meaning is never in a tooltip alone.", body: "A tooltip may only elaborate. Anything a user must know to act is on screen — which is what forces the row menus to carry worded items rather than icons." },
+        { title: "Tables are tables.", body: "Real th/scope, aria-sort on the sorted column, a caption naming the list and the active filters, and a live region announcing “28 of 312 match” after a search settles. Selection announces the count, not each row." },
+        { title: "Dialogs trap and return focus.", body: "role=dialog, aria-modal, labelled by its title, focus to the first field (not the close button), Escape closes, focus returns to the trigger. The inline date panel is inside the tab order in visual order." },
+        { title: "Conditions announce politely.", body: "The 15-minute Setup health recompute updates an aria-live=polite region with a count, never a per-condition interruption — and never while the user is typing." },
+        { title: "Targets: 32×32 minimum on desktop, 44×44 on coarse pointers.", body: "The compact 36px row still yields a 32px action target because the visual control is 30px inside a padded hit area." },
+        { title: "Direction is an attribute, not a stylesheet.", body: "dir on html drives everything; all spacing uses logical properties. No RTL-specific layout file exists, so no screen can be correct in one language and broken in the other." },
+        { title: "Zoom and reflow.", body: "Usable at 200% zoom and at 320px logical width without horizontal scrolling, except data tables, which may scroll horizontally — permitted by 1.4.10 and the right trade for 7-column evidence lists." }
+      ],
+
+      canonicalStates: [
+        st("Default", "—", "Committee name (English)", box.rest, txt.placeholder, "e.g. Infection Prevention", "Required. Shown in lists and reports.", help.base),
+        st("Focus", ":focus-visible", "Committee name (English)", box.focus, txt.caret, "Infection Prev", "Required. Shown in lists and reports.", help.base),
+        st("Filled", "—", "Committee name (English)", box.rest, txt.value, "Infection Prevention & Control", "Required. Shown in lists and reports.", help.base),
+        st("Disabled", "[disabled]", "Committee name (English)", box.disabled, txt.disabled, "Infection Prevention & Control", "Locked while the committee is in Terms Review.", help.base, "⊘", glyph.muted),
+        st("Read-only", "[readonly]", "Committee name (English)", box.readonly, txt.readonly, "Infection Prevention & Control", "", help.base),
+        st("Error", "aria-invalid", "Committee name (English)", box.error, txt.value, "IPC", "Must be at least 8 characters.", help.error, "!", "flex: none; color: #B42318; font-weight: 700; font-size: 13px;"),
+        st("Loading", "aria-busy", "Committee name (English)", box.loading, txt.disabled, "Checking for duplicates…", "Required. Shown in lists and reports.", help.base, "", glyph.spin)
+      ],
+
+      controlGallery: [
+        { name: "Textarea", prime: "p-inputtextarea", note: "Three rows by default, resizable vertically only — horizontal resize breaks the form grid. Character counter appears only where a limit exists, and turns amber at 90%, never red before the limit is passed.",
+          states: [
+            mini("Default", "border: 1px solid #8A94A6; border-radius: 4px; background: #fff; padding: 8px 10px; height: 58px; display: block;", txt.placeholder, "Purpose of this committee…"),
+            mini("Filled + counter", "border: 1px solid #8A94A6; border-radius: 4px; background: #fff; padding: 8px 10px; height: 58px; display: block; line-height: 1.4;", "font-size: 12.5px; color: #2D3748;", "Oversee surveillance, prevention and control of healthcare-associated infections.", null, null, "142 / 400", help.base),
+            mini("Error", "border: 1px solid #B42318; border-radius: 4px; background: #fff; padding: 8px 10px; height: 58px; display: block; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);", txt.placeholder, "Purpose of this committee…", null, null, "Purpose is required for JCI evidence.", help.error)
+          ] },
+        { name: "Select (≤15 options)", prime: "p-dropdown · typeahead only", note: "No search field inside — the platform select has none. Typeahead jumps by first letters, and the option list is capped at 15; past that the control becomes a picker dialog. Selected value is never truncated mid-word: the panel widens to the longest option at open.",
+          states: [
+            mini("Default", box.rest, txt.placeholder, "Select a type", "▼", "flex: none; color: #5A6779; font-size: 10px;"),
+            mini("Filled", box.rest, txt.value, "Standing · Clinical", "▼", "flex: none; color: #5A6779; font-size: 10px;"),
+            mini("Read-only", box.readonly, txt.readonly, "Standing · Clinical")
+          ] },
+        { name: "Multi-select", prime: "p-multiselect", note: "Chips inside the field up to two, then “+n more” — a field that grows to five rows pushes the submit button off screen. Full selection is readable in the tooltip and in the picker. Clearing is per chip; “Clear all” lives in the panel, not the field.",
+          states: [
+            mini("Default", box.rest, txt.placeholder, "Select accreditations", "▼", "flex: none; color: #5A6779; font-size: 10px;"),
+            mini("2 selected", box.rest, "flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: #1F5480;", "JCI ✕   CBAHI ✕", "▼", "flex: none; color: #5A6779; font-size: 10px;"),
+            mini("Overflow", box.rest, "flex: 1 1 auto; min-width: 0; font-size: 11.5px; color: #1F5480;", "JCI ✕   CBAHI ✕   +3 more", "▼", "flex: none; color: #5A6779; font-size: 10px;")
+          ] },
+        { name: "Searchable picker (>15)", prime: "p-dialog + p-inputtext", note: "The field shows the chosen record as a §4 relation — type glyph, name, state — with “Change…” as the affordance. Opening it is a dialog with a real search box. This is the only pattern allowed for choosing a record out of hundreds.",
+          states: [
+            mini("Empty", box.rest, txt.placeholder, "No committee selected", "Choose…", "flex: none; color: #2E6FA3; font-size: 11.5px; font-weight: 600;"),
+            mini("Selected", box.rest, txt.value, "◇  Infection Prevention & Control", "Change…", "flex: none; color: #2E6FA3; font-size: 11.5px; font-weight: 600;"),
+            mini("Disabled", box.disabled, txt.disabled, "◇  Infection Prevention & Control", "⊘", glyph.muted)
+          ] },
+        { name: "Date", prime: "p-calendar · inline panel", note: "Typing is the primary path: a masked DD MMM YYYY input that accepts 14/9/26 and normalises. The calendar expands in flow (§7), never as an overlay. A user who opts into the Hijri calendar sees Hijri first with Gregorian in brackets — everyone else sees Gregorian only, and digits are Latin in both.",
+          states: [
+            mini("Default", box.rest, txt.placeholder, "DD MMM YYYY", "▢", glyph.style, "Working days only.", help.base),
+            mini("Filled", box.rest, "flex: 1 1 auto; font-size: 13px; color: #2D3748; font-variant-numeric: tabular-nums;", "14 Sep 2026", "▢", glyph.style, "Hijri user: 3 Rabi II 1448 (14 Sep 2026)", help.base),
+            mini("Error", box.error, "flex: 1 1 auto; font-size: 13px; color: #2D3748; font-variant-numeric: tabular-nums;", "30 Feb 2026", "▢", glyph.style, "Not a valid date.", help.error)
+          ] },
+        { name: "Date range", prime: "two p-calendar fields", note: "Two labelled fields, never one field with a dash — a single range field cannot be typed reliably and cannot be read by a screen reader as two values. The second field's minimum is bound to the first, and a preset row (This quarter, Last 90 days) sits above for the reporting cases.",
+          states: [
+            mini("From", box.rest, "flex: 1 1 auto; font-size: 13px; color: #2D3748; font-variant-numeric: tabular-nums;", "01 Jul 2026", "▢", glyph.style, "From", help.base),
+            mini("To", box.rest, "flex: 1 1 auto; font-size: 13px; color: #2D3748; font-variant-numeric: tabular-nums;", "30 Sep 2026", "▢", glyph.style, "To · 92 days", help.base),
+            mini("Invalid order", box.error, "flex: 1 1 auto; font-size: 13px; color: #2D3748; font-variant-numeric: tabular-nums;", "01 Jun 2026", "▢", glyph.style, "End date is before the start date.", help.error)
+          ] },
+        { name: "Time & number", prime: "p-inputmask · p-inputnumber", note: "24-hour, no AM/PM control to mis-set. Numbers are right-aligned with tabular figures and explicit steppers, because quorum and thresholds are typed by people who count in single digits. Units live outside the field as a suffix label, so they are never selected and deleted.",
+          states: [
+            mini("Time", box.rest, "flex: 1 1 auto; font-size: 13px; color: #2D3748; font-variant-numeric: tabular-nums;", "14:30", "◷", glyph.style),
+            mini("Number", "display: flex; align-items: stretch; height: 36px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; overflow: hidden; box-sizing: border-box;", "flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-size: 13px; font-variant-numeric: tabular-nums;", "5", "− +", "flex: none; display: flex; align-items: center; gap: 12px; padding-inline: 9px; border-inline-start: 1px solid #E2E8F0; background: #F4F7FA; color: #4A5568; font-size: 13px;"),
+            mini("Number · error", "display: flex; align-items: stretch; height: 36px; border: 1px solid #B42318; border-radius: 4px; background: #fff; overflow: hidden; box-sizing: border-box; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);", "flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-size: 13px; font-variant-numeric: tabular-nums;", "12", "− +", "flex: none; display: flex; align-items: center; gap: 12px; padding-inline: 9px; border-inline-start: 1px solid #E2E8F0; background: #F4F7FA; color: #4A5568; font-size: 13px;", "Quorum cannot exceed 9 members.", help.error)
+          ] },
+        { name: "Search field", prime: "p-inputtext", note: "Debounced at 300ms, never a Search button. The result count is the feedback — “28 of 312” beside the field — and a spinner replaces the lens while in flight rather than appearing elsewhere. Clearing is one ✕; Escape also clears. Searching never resets the other filters.",
+          states: [
+            mini("Default", box.rest, txt.placeholder, "Search name, email, position…", "⌕", glyph.muted),
+            mini("Searching", box.focus, txt.value, "al-otaibi", "", glyph.spin, "Searching 312 users…", help.base),
+            mini("Has query", box.rest, txt.value, "al-otaibi", "✕", "flex: none; color: #5A6779; font-size: 11px; background: #F1F4F8; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;", "28 of 312 match", help.base)
+          ] }
+      ],
+
+      selectionControls: [
+        { name: "Checkbox", variants: [
+          { mark: "", text: "Requires quorum", controlStyle: "width: 16px; height: 16px; border: 1px solid #8A94A6; border-radius: 3px; background: #fff; flex: none;", textStyle: "font-size: 13px; color: #2D3748;" },
+          { mark: "✓", text: "Requires quorum", controlStyle: "width: 16px; height: 16px; border: 1px solid #1F5480; border-radius: 3px; background: #2E6FA3; color: #fff; font-size: 11px; line-height: 14px; text-align: center; flex: none;", textStyle: "font-size: 13px; color: #2D3748;" },
+          { mark: "–", text: "Some selected", controlStyle: "width: 16px; height: 16px; border: 1px solid #1F5480; border-radius: 3px; background: #2E6FA3; color: #fff; font-size: 11px; line-height: 13px; text-align: center; flex: none;", textStyle: "font-size: 13px; color: #2D3748;" },
+          { mark: "✓", text: "Locked by policy", controlStyle: "width: 16px; height: 16px; border: 1px solid #E2E8F0; border-radius: 3px; background: #EDF1F6; color: #8A94A6; font-size: 11px; line-height: 14px; text-align: center; flex: none;", textStyle: "font-size: 13px; color: #8A94A6;" },
+          { mark: "", text: "Invalid — pick one", controlStyle: "width: 16px; height: 16px; border: 1px solid #B42318; border-radius: 3px; background: #fff; flex: none; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);", textStyle: "font-size: 13px; color: #B42318; font-weight: 500;" }
+        ] },
+        { name: "Radio", variants: [
+          { mark: "", text: "Standing", controlStyle: "width: 16px; height: 16px; border: 1px solid #8A94A6; border-radius: 50%; background: #fff; flex: none;", textStyle: "font-size: 13px; color: #2D3748;" },
+          { mark: "●", text: "Ad hoc", controlStyle: "width: 16px; height: 16px; border: 1px solid #1F5480; border-radius: 50%; background: #fff; color: #2E6FA3; font-size: 9px; line-height: 14px; text-align: center; flex: none;", textStyle: "font-size: 13px; color: #2D3748; font-weight: 500;" },
+          { mark: "", text: "Sub-committee", controlStyle: "width: 16px; height: 16px; border: 1px solid #E2E8F0; border-radius: 50%; background: #EDF1F6; flex: none;", textStyle: "font-size: 13px; color: #8A94A6;" },
+          { mark: "●", text: "Focus ring", controlStyle: "width: 16px; height: 16px; border: 1px solid #1F5480; border-radius: 50%; background: #fff; color: #2E6FA3; font-size: 9px; line-height: 14px; text-align: center; flex: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2E6FA3;", textStyle: "font-size: 13px; color: #2D3748;" }
+        ] },
+        { name: "Toggle — immediate effect only", variants: [
+          { mark: "", text: "Email digest off", controlStyle: "width: 30px; height: 18px; border-radius: 999px; background: #8A94A6; position: relative; flex: none; box-shadow: inset 13px 0 0 -11px #fff;", textStyle: "font-size: 13px; color: #2D3748;" },
+          { mark: "", text: "Email digest on", controlStyle: "width: 30px; height: 18px; border-radius: 999px; background: #2E6FA3; position: relative; flex: none; box-shadow: inset -13px 0 0 -11px #fff;", textStyle: "font-size: 13px; color: #2D3748;" },
+          { mark: "", text: "Saving…", controlStyle: "width: 30px; height: 18px; border-radius: 999px; background: #8EB4D2; position: relative; flex: none; box-shadow: inset -13px 0 0 -11px #fff;", textStyle: "font-size: 13px; color: #5A6779;" },
+          { mark: "", text: "Disabled by plan", controlStyle: "width: 30px; height: 18px; border-radius: 999px; background: #EDF1F6; border: 1px solid #E2E8F0; box-sizing: border-box; position: relative; flex: none; box-shadow: inset 13px 0 0 -11px #CBD5E0;", textStyle: "font-size: 13px; color: #8A94A6;" }
+        ] }
+      ],
+
+      buttonRows: (() => {
+        const b = (bg, ink, bd, weight, extra) => "background: " + bg + "; color: " + ink + "; border: 1px solid " + bd + "; border-radius: 6px; padding: 7px 14px; font-family: inherit; font-size: 13px; font-weight: " + weight + "; cursor: pointer; white-space: nowrap;" + (extra || "");
+        return [
+          { name: "Primary", variants: [
+            { label: "Approve Committee", style: b("#2E6FA3", "#fff", "#1F5480", 600) },
+            { label: "Hover", style: b("#1F5480", "#fff", "#17405F", 600) },
+            { label: "Focus", style: b("#2E6FA3", "#fff", "#1F5480", 600, " box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2E6FA3;") },
+            { label: "Disabled", style: b("#DCE5EE", "#8A94A6", "#DCE5EE", 600, " cursor: not-allowed;") },
+            { label: "◌ Approving…", style: b("#6E9CC0", "#fff", "#6E9CC0", 600, " cursor: progress;") }
+          ] },
+          { name: "Secondary", variants: [
+            { label: "Revise Terms", style: b("#fff", "#2D3748", "#8A94A6", 500) },
+            { label: "Hover", style: b("#F4F7FA", "#2D3748", "#5A6779", 500) },
+            { label: "Disabled", style: b("#F4F7FA", "#8A94A6", "#E2E8F0", 500, " cursor: not-allowed;") }
+          ] },
+          { name: "Text", variants: [
+            { label: "Cancel", style: b("transparent", "#2E6FA3", "transparent", 500) },
+            { label: "Add member", style: b("transparent", "#2E6FA3", "transparent", 500) },
+            { label: "Disabled", style: b("transparent", "#8A94A6", "transparent", 500, " cursor: not-allowed;") }
+          ] },
+          { name: "Destructive", variants: [
+            { label: "Deactivate user", style: b("transparent", "#B42318", "transparent", 500) },
+            { label: "In its dialog", style: b("#B42318", "#fff", "#912018", 600) },
+            { label: "Disabled", style: b("transparent", "#C79A95", "transparent", 500, " cursor: not-allowed;") }
+          ] },
+          { name: "Size", variants: [
+            { label: "Compact 28", style: "background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 5px; padding: 4px 10px; font-family: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer;" },
+            { label: "Default 32", style: b("#fff", "#2D3748", "#8A94A6", 500) },
+            { label: "Coarse pointer 40", style: "background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 10px 16px; font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer;" }
+          ] }
+        ];
+      })(),
+
+      dialogRules: [
+        { title: "1 · Inside a dialog, panels expand in flow", body: "Date pickers, colour pickers and any inline panel push the content below them instead of floating. A panel that is part of the layout cannot be closed by a scroll, because there is no ancestor scroll to fire." },
+        { title: "2 · The body is capped so it need not scroll", body: "Content is sized for the dialog with every panel open. If it does not fit, the pattern is wrong — split into steps, or make it a page. No dialog body both scrolls and holds a picker." },
+        { title: "3 · Typing is always a complete path", body: "Every date, time and record field can be completed from the keyboard with no panel opened at all. The panel is an assist, never the only route — which also happens to be the accessible design." },
+        { title: "4 · Long option lists become their own layer", body: "A searchable picker is a dialog at the root, stacked above the first. Each layer is independently non-scrolling, so nesting is safe — and it gives us the search field the platform select lacks." }
+      ],
+
+      calCells: (() => {
+        const heads = ["S", "M", "T", "W", "T", "F", "S"];
+        const cells = heads.map(h => ({ label: h, style: "font-size: 10.5px; color: #8A94A6; font-weight: 600; padding: 2px 0;" }));
+        for (let d = 1; d <= 14; d++) {
+          const sel = d === 14, weekend = (d + 1) % 7 === 0 || (d + 2) % 7 === 0;
+          cells.push({ label: d + "",
+            style: "font-size: 11.5px; font-variant-numeric: tabular-nums; border-radius: 4px; padding: 3px 0; cursor: pointer; "
+              + (sel ? "background: #2E6FA3; color: #fff; font-weight: 600;" : weekend ? "color: #A7B2C2;" : "color: #2D3748;") });
+        }
+        return cells;
+      })(),
+
+      pickerRows: [
+        { name: "Infection Prevention & Control", chip: "Active · 3/4", sel: true },
+        { name: "Antimicrobial Stewardship Sub-committee", chip: "Active · 3/4" },
+        { name: "Outbreak Response Task Force", chip: "Terms Review · 2/4" },
+        { name: "Medication Safety (2019–2024)", chip: "Dissolved · 4/4", muted: true }
+      ].map(p => ({
+        name: p.name, chip: p.chip,
+        rowStyle: "display: flex; align-items: center; gap: 9px; padding: 8px 11px; border-block-end: 1px solid #F0F3F7; background: " + (p.sel ? "#E4EEF6" : "#fff") + ";",
+        chipStyle: "flex: none; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums; white-space: nowrap; "
+          + (p.muted ? "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;" : "color: #1F5480; background: #fff; border: 1px solid #C5DAEA;")
+      })),
+
+      dialogSizes: [
+        { name: "Confirm · 420", spec: "One question, two buttons, no fields. Destructive confirms name the object and the consequence: “Deactivate Nora Al-Otaibi? Her 7 open tasks stay assigned to her.”" },
+        { name: "Form · 560", spec: "Up to six fields, body capped at 420px with all panels open. More than that becomes a stepped dialog with a 1-of-3 indicator." },
+        { name: "Picker · 520", spec: "Search, scrolling result list — and no pickers of its own, so the one scrolling region in the system holds nothing that could be dismissed by scrolling it." }
+      ],
+
+      accessSpec: [
+        { key: "open", api: "access: \"open\"", note: "A real link: primary ink, underline on hover, arrow on hover, focusable, opens in a new tab on middle-click. The only state that is interactive.", demo: linkRel("Quality & Patient Safety Council", 14) },
+        { key: "named", api: "access: \"named\"", note: "Plain ink with a dashed underline — reads as a value, not a link, and the dash signals “there is more here”. Focusable so the tooltip reaches keyboard users; the tooltip names the missing permission so the reader can ask for it by name.", demo: namedRel("Quality & Patient Safety Council", 14) },
+        { key: "hidden", api: "access: \"hidden\"", note: "Type word only, on a hatched ground. Hatch rather than grey, because grey already means disabled or empty. The reader learns a relation exists — which is itself audit-relevant — and nothing more.", demo: hiddenRel("A committee", 14) }
+      ],
+
+      tableCells: [
+        { task: "Update hand-hygiene audit tool", due: "18 Sep", cell: linkRel("Infection Prevention & Control", 13, true) },
+        { task: "Review isolation policy IPC-04", due: "24 Sep", cell: namedRel("Quality & Patient Safety Council", 13, true) },
+        { task: "Close CAPA-0912", due: "overdue", cell: hiddenRel("A committee", 13, true) }
+      ],
+
+      listRows: [
+        { initials: "FA", role: "Chair · Infectious Diseases", name: linkRel("Dr. Fahad Al-Anazi"), avatarStyle: "flex: none; width: 26px; height: 26px; border-radius: 50%; background: #E4EEF6; color: #1F5480; font-size: 10.5px; font-weight: 600; display: flex; align-items: center; justify-content: center;" },
+        { initials: "NO", role: "Secretary · Quality", name: linkRel("Nora Al-Otaibi"), avatarStyle: "flex: none; width: 26px; height: 26px; border-radius: 50%; background: #E4EEF6; color: #1F5480; font-size: 10.5px; font-weight: 600; display: flex; align-items: center; justify-content: center;" },
+        { initials: "HZ", role: "Member · Microbiology", name: namedRel("Dr. Huda Zahrani"), avatarStyle: "flex: none; width: 26px; height: 26px; border-radius: 50%; background: #F1F4F8; color: #4A5568; font-size: 10.5px; font-weight: 600; display: flex; align-items: center; justify-content: center;" },
+        { initials: "", role: "Member · role withheld", name: hiddenRel("A user"), avatarStyle: "flex: none; width: 26px; height: 26px; border-radius: 50%; background: repeating-linear-gradient(135deg,#F4F7FA 0 4px,#E9EEF4 4px 8px); border: 1px solid #8A94A6;" },
+        { initials: "", role: "Observer · role withheld", name: hiddenRel("A user"), avatarStyle: "flex: none; width: 26px; height: 26px; border-radius: 50%; background: repeating-linear-gradient(135deg,#F4F7FA 0 4px,#E9EEF4 4px 8px); border: 1px solid #8A94A6;" }
+      ],
+
+      holeRules: [
+        { title: "1 · The field never disappears", body: "A missing label tells the reader no such relation exists — which is false, and in an audit context actively misleading. The label stays; only the value changes form." },
+        { title: "2 · “—” means empty, never restricted", body: "Empty and withheld are different facts. An em dash is reserved for “this committee has no parent”. Restricted gets the hatch. A reader must never have to guess which they are looking at." },
+        { title: "3 · Restriction is counted once, at page level", body: "One notice at the top with a total, not a warning icon per field. Per-field warnings turn a routine permission boundary into a page that looks broken." },
+        { title: "4 · Counts stay truthful", body: "A list says 9 when there are 9. Restricted rows are rendered, not filtered — otherwise quorum, coverage and evidence counts are computed against a denominator the reader cannot see." },
+        { title: "5 · Sections are absent, relations are restricted", body: "A whole panel the reader has no right to (Tasks, Membership history) is absent, per the shell rule. Individual records inside a panel they can see use the three access states. The two mechanisms never mix in one place." }
+      ],
+
+      holeFields: (() => {
+        const cell = "flex: 1 1 50%; min-width: 260px; box-sizing: border-box; padding: 9px 12px; border-inline-end: 1px solid #E2E8F0; border-block-end: 1px solid #E2E8F0;";
+        const hatched = cell + " background: repeating-linear-gradient(135deg,#FCFDFE 0 5px,#F4F7FA 5px 10px);";
+        return [
+          { label: "Parent committee", wrapStyle: cell, value: linkRel("Quality & Patient Safety Council", 14) },
+          { label: "Reporting line", wrapStyle: cell, value: namedRel("Chief Medical Officer", 14) },
+          { label: "Escalates to", wrapStyle: hatched, value: hiddenRel("A committee", 14) },
+          { label: "Chair", wrapStyle: cell, value: linkRel("Dr. Fahad Al-Anazi", 14) },
+          { label: "Secretary", wrapStyle: hatched, value: hiddenRel("A user", 14) },
+          { label: "Predecessor committee", wrapStyle: cell, value: R("span", { style: { fontSize: "14px", color: "#8A94A6" } }, "—") }
+        ];
+      })(),
+
+      stateKinds: [
+        { title: "Workflow stage", question: "Where is this record in its defined sequence?",
+          form: "Squared chip (radius 4), info tint, always carrying n/total. Never green, never red. The full stepper appears once, in the record header.",
+          why: "A stage is only meaningful relative to its sequence. The counter is what lets a reader tell progress from regression without opening the history.",
+          samples: [
+            { label: "Formation · 1/4", dot: false, dotStyle: "", style: "display: inline-flex; font-size: 11.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 2px 8px; font-variant-numeric: tabular-nums;" },
+            { label: "Terms Review · 2/4", dot: false, dotStyle: "", style: "display: inline-flex; font-size: 11.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 2px 8px; font-variant-numeric: tabular-nums;" },
+            { label: "↺ Terms Review · 2/4", dot: false, dotStyle: "", style: "display: inline-flex; font-size: 11.5px; font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 4px; padding: 2px 8px; font-variant-numeric: tabular-nums;" }
+          ] },
+        { title: "Record status", question: "Is this record live, and is that normal?",
+          form: "No fill, no border. A 6px dot plus the word, at weight 500. The expected value — Active on a list of committees — gets neither dot nor weight.",
+          why: "Status is a closed set with one overwhelmingly common member. Decorating that member is what made every list green. Decoration is spent only on departures.",
+          samples: [
+            { label: "Active", dot: false, dotStyle: "", style: "display: inline-flex; font-size: 12.5px; color: #4A5568;" },
+            { label: "Invited", dot: true, dotStyle: "width: 6px; height: 6px; border-radius: 50%; background: #F79009; margin-inline-end: 6px;", style: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #B54708;" },
+            { label: "Dissolved", dot: true, dotStyle: "width: 6px; height: 6px; border-radius: 50%; background: #8A94A6; margin-inline-end: 6px;", style: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #4A5568;" }
+          ] },
+        { title: "Severity / attention", question: "Must someone act, and how badly?",
+          form: "Filled pill with a leading dot, ranked in three tiers, always beside a sentence naming the consequence. The only saturated fill in the system.",
+          why: "This is the one state that asks for behaviour rather than describing a fact, so it gets the loudest form — and it only stays loud because nothing else is allowed to be.",
+          samples: [
+            { label: "Blocks work", dot: true, dotStyle: "width: 6px; height: 6px; border-radius: 50%; background: #D92D20; flex: none;", style: "display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 999px; padding: 2px 9px;" },
+            { label: "At risk", dot: true, dotStyle: "width: 6px; height: 6px; border-radius: 50%; background: #F79009; flex: none;", style: "display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 999px; padding: 2px 9px;" },
+            { label: "Hygiene", dot: false, dotStyle: "", style: "display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0; border-radius: 999px; padding: 2px 9px;" }
+          ] }
+      ],
+
+      tripleRows: [
+        { name: "Infection Prevention & Control", stage: "Active · 3/4", status: "Active", statusDot: false, sev: null },
+        { name: "Antimicrobial Stewardship", stage: "Active · 3/4", status: "Active", statusDot: false, sev: "Below quorum", sevTone: "warn" },
+        { name: "Outbreak Response Task Force", stage: "↺ Terms Review · 2/4", stageTone: "warn", status: "Active", statusDot: false, sev: "No chair", sevTone: "danger" },
+        { name: "Medication Safety (2019–2024)", stage: "Dissolved · 4/4", stageTone: "muted", status: "Inactive", statusDot: true, sev: null }
+      ].map(r => ({
+        name: r.name, stage: r.stage, status: r.status, statusDot: !!r.statusDot, sev: r.sev,
+        stageStyle: "display: inline-flex; font-size: 11.5px; font-weight: 600; border-radius: 4px; padding: 2px 8px; font-variant-numeric: tabular-nums; white-space: nowrap; "
+          + (r.stageTone === "warn" ? "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;"
+            : r.stageTone === "muted" ? "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;"
+            : "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;"),
+        statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; " + (r.statusDot ? "font-weight: 500; color: #4A5568;" : "color: #4A5568;"),
+        dotStyle: "width: 6px; height: 6px; border-radius: 50%; background: #8A94A6; margin-inline-end: 6px; flex: none;",
+        sevStyle: "display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; "
+          + (r.sevTone === "danger" ? "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;" : "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;")
+      })),
+
+      brandTokens: [
+        { name: "primary-600", value: "#2E6FA3", use: "Links, primary button, current nav, focus ring", swatch: sw("#2E6FA3") },
+        { name: "primary-700", value: "#1F5480", use: "Hover / pressed for primary; heading ink on tint", swatch: sw("#1F5480") },
+        { name: "primary-100", value: "#E4EEF6", use: "Selected row, active filter, info panel ground", swatch: sw("#E4EEF6") },
+        { name: "primary-50", value: "#F2F7FB", use: "Hover row, toolbar ground", swatch: sw("#F2F7FB") },
+        { name: "accent-500", value: "#8DC63F", use: "Brand only — charts, login, marks. Never state.", swatch: sw("#8DC63F") },
+        { name: "ink-900", value: "#2D3748", use: "Body text, headings", swatch: sw("#2D3748") },
+        { name: "ink-700", value: "#4A5568", use: "Table values, secondary body", swatch: sw("#4A5568") },
+        { name: "ink-500", value: "#5A6779", use: "Labels, meta, captions (replaces #718096)", swatch: sw("#5A6779") },
+        { name: "ink-300", value: "#8A94A6", use: "Control border at rest (3.08:1 on white); placeholder and disabled glyphs. Never body text.", swatch: sw("#8A94A6") },
+        { name: "border", value: "#E2E8F0", use: "Cards, table rules, dividers, and disabled control borders only — not an enabled control border", swatch: sw("#E2E8F0") },
+        { name: "border-strong", value: "#CBD5E0", use: "Structural only — table rules, dialog dividers. Never a control border.", swatch: sw("#CBD5E0") },
+        { name: "control-border", value: "#8A94A6", use: "Field / select / checkbox / secondary button at rest — 3.08:1 on white", swatch: sw("#8A94A6") },
+        { name: "control-border-hover", value: "#5A6779", use: "Hover, and the rest border for any control sitting on surface", swatch: sw("#5A6779") },
+        { name: "surface", value: "#F4F7FA", use: "App background, table header, footer bars", swatch: sw("#F4F7FA") },
+        { name: "surface-raised", value: "#FFFFFF", use: "Cards, rows, dialogs", swatch: sw("#FFFFFF") },
+        { name: "sidebar", value: "#1E2A38", use: "Rail ground (tenant). Platform rail shifts hue.", swatch: sw("#1E2A38") },
+        { name: "sidebar-ink", value: "#C9D3E0", use: "Rail labels — 7.9:1 on #1E2A38", swatch: sw("#C9D3E0") },
+        { name: "sidebar-hover", value: "#2B3A4C", use: "Rail item hover ground", swatch: sw("#2B3A4C") },
+        { name: "sidebar-active", value: "#31465E", use: "Current rail item; label goes to #FFFFFF", swatch: sw("#31465E") },
+        { name: "sidebar-rule", value: "#33425A", use: "Rail dividers and group separators", swatch: sw("#33425A") }
+      ],
+
+      semanticTokens: [
+        { name: "danger", value: "#B42318 / #FEF3F2 / #FECDCA", use: "Blocks work, overdue, destructive, error", sample: "Aa", swatch: chipSw("#B42318", "#FEF3F2", "#FECDCA") },
+        { name: "warning", value: "#B54708 / #FFFAEB / #FEDF89", use: "At risk, awaiting someone, expiring", sample: "Aa", swatch: chipSw("#B54708", "#FFFAEB", "#FEDF89") },
+        { name: "success", value: "#067647 / #ECFDF3 / #ABEFC6", use: "Confirmation of a change, cleared condition", sample: "Aa", swatch: chipSw("#067647", "#ECFDF3", "#ABEFC6") },
+        { name: "info", value: "#1F5480 / #E4EEF6 / #C5DAEA", use: "Workflow stage, in-review, system notice", sample: "Aa", swatch: chipSw("#1F5480", "#E4EEF6", "#C5DAEA") },
+        { name: "neutral-chip", value: "#4A5568 / #F1F4F8 / #E2E8F0", use: "Ended, archived, inactive — closed, not wrong", sample: "Aa", swatch: chipSw("#4A5568", "#F1F4F8", "#E2E8F0") },
+        { name: "restricted", value: "#5A6779 / repeating hatch", use: "Relation the reader may not open (§4)", sample: "Aa", swatch: chipSw("#5A6779", "repeating-linear-gradient(135deg,#F4F7FA 0 4px,#E9EEF4 4px 8px)", "#CBD5E0") },
+        { name: "focus-ring", value: "#2E6FA3 @ 2px + 2px offset", use: "Every focusable thing, never removed", sample: "Aa", swatch: "flex: none; width: 34px; height: 26px; border-radius: 5px; background: #fff; border: 1px solid #8A94A6; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2E6FA3;" },
+        { name: "overlay-scrim", value: "rgba(30,42,56,0.45)", use: "Behind dialogs only", sample: "", swatch: sw("rgba(30,42,56,0.45)") }
+      ],
+
+      spaceTokens: [2, 4, 6, 8, 12, 16, 20, 24, 32, 40].map(n => ({
+        label: n + "", bar: "display: block; width: 16px; height: " + Math.max(n, 3) + "px; background: #2E6FA3; opacity: 0.85; border-radius: 2px;"
+      })),
+
+      densityRows: [
+        { name: "Compact", spec: "Row 36px · cell pad 8/12 · font 13 · control 32px, icon button 32×32. The default for every table and panel." },
+        { name: "Comfortable", spec: "Row 44px · cell pad 12/12 · font 14 · control 40px, icon button 40×40. Coarse pointer (tablet on rounds) only, set by media query." },
+        { name: "Form", spec: "Control 36px · label 12/500 above · row gap 12 · max field 640px. This is the height the artboard-6 gallery is drawn at; a control inside a table row is the 32px compact variant of the same box." }
+      ],
+
+      typeScale: [
+        { spec: "11 / 16 · 700 · 0.08em", arSpec: "12 / 18 · 700 · 0", enSample: "SECTION LABEL", arSample: "عنوان القسم",
+          enStyle: "font-size: 11px; line-height: 16px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 12px; line-height: 18px; font-weight: 700; letter-spacing: 0; color: #5A6779;" },
+        { spec: "12 / 18 · 400", arSpec: "13 / 20 · 400", enSample: "Meta, captions, joined 14 Jan 2025", arSample: "بيانات ثانوية · انضم 14 Jan 2025",
+          enStyle: "font-size: 12px; line-height: 18px; color: #5A6779;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13px; line-height: 20px; color: #5A6779;" },
+        { spec: "13 / 20 · 400", arSpec: "14 / 22 · 400", enSample: "Table value — Quality Manager", arSample: "قيمة في جدول — مديرة الجودة",
+          enStyle: "font-size: 13px; line-height: 20px; color: #4A5568;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px; line-height: 22px; color: #4A5568;" },
+        { spec: "13 / 20 · 500", arSpec: "14 / 22 · 500", enSample: "Nora Al-Otaibi", arSample: "نورة العتيبي",
+          enStyle: "font-size: 13px; line-height: 20px; font-weight: 500;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px; line-height: 22px; font-weight: 500;" },
+        { spec: "14 / 21 · 400", arSpec: "15 / 24 · 400", enSample: "Body copy in a panel or a dialog.", arSample: "نص عادي داخل لوحة أو نافذة.",
+          enStyle: "font-size: 14px; line-height: 21px;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 15px; line-height: 24px;" },
+        { spec: "16 / 24 · 600", arSpec: "17 / 27 · 600", enSample: "Panel heading", arSample: "عنوان لوحة",
+          enStyle: "font-size: 16px; line-height: 24px; font-weight: 600;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 17px; line-height: 27px; font-weight: 600;" },
+        { spec: "22 / 28 · 600 · -0.01em", arSpec: "23 / 32 · 600 · 0", enSample: "Page title", arSample: "عنوان الصفحة",
+          enStyle: "font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 23px; line-height: 32px; font-weight: 600; letter-spacing: 0;" },
+        { spec: "28 / 34 · 600 · -0.015em", arSpec: "29 / 40 · 600 · 0", enSample: "Record name", arSample: "اسم السجل",
+          enStyle: "font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -0.015em;",
+          arStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 29px; line-height: 40px; font-weight: 600; letter-spacing: 0;" }
+      ],
+
+      arabicRules: [
+        { title: "Letter-spacing must be 0", body: "Arabic is a joining script: positive tracking severs the connecting strokes and the word stops being a word. Our current micro-labels apply 0.08em globally. Every tracking value is now Latin-only, and the Arabic micro-label earns its separation from weight 700 and colour instead.",
+          demoWrong: "الهيكل التنظيمي", demoRight: "الهيكل التنظيمي",
+          wrongStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; color: #B42318;",
+          rightStyle: "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0; color: #067647;" },
+        { title: "text-transform: uppercase is a no-op", body: "Arabic has no case. Our uppercase micro-label pattern silently does nothing in Arabic, so the two languages stop matching visually — the English label reads as a label and the Arabic one reads as body text. Arabic labels are therefore 12px/700 in ink-500, which is a distinct enough register without case.", demoWrong: null },
+        { title: "Line-height, not size, is the fix", body: "Arabic ascenders and descenders are deeper, and diacritics sit above the line. Same size with Latin leading collides. Every step is +1px size and +2px line-height (+4 above 22px) — it is the leading that does the work; the size bump only offsets the smaller apparent x-height.", demoWrong: null },
+        { title: "Truncation and mirroring", body: "Ellipsis is safe; mid-word breaking is not — no word-break: break-all on Arabic, ever. Directional glyphs mirror (chevrons, back arrows, the breadcrumb slash, the “open record” arrow); non-directional ones never do (clock, warning triangle, search lens, the AccreditMe mark). Logical properties throughout, so one layout serves both.", demoWrong: null }
+      ],
+
+      colourRules: [
+        { title: "1 · Default values are colourless", body: "If a value is what you expect — Active, Yes, Included, Approved on a page full of approvals — it is text. A reader scanning 200 rows is hunting for departures; colouring the norm hides them." },
+        { title: "2 · Taxonomy is never coloured", body: "Type, category, module, “System” vs “Custom” — these are facts, not conditions. They get plain ink, or a neutral chip only when a table column would otherwise be ambiguous." },
+        { title: "3 · Saturated fill is reserved for severity", body: "Red and amber fills mean someone must act, and carry a real consequence in the copy. At most one per row, one per panel header. If two compete, the row is telling you it needs a severity ranking instead." },
+        { title: "4 · Colour is never the only carrier", body: "Every coloured state also differs in shape, weight or wording — see §5. Tested by rendering the screen in greyscale: if a row's meaning disappears, the design failed, not the user's monitor." }
+      ],
+
+      badBefore: [
+        { name: "Nora Al-Otaibi", v1: "Active", v2: "Staff", v3: "Yes" },
+        { name: "Tariq Suleiman", v1: "Invited", v2: "Staff", v3: "Yes" },
+        { name: "Omar Bakri", v1: "Inactive", v2: "Contractor", v3: "No" },
+        { name: "Dana Chalabi", v1: "Active", v2: "Staff", v3: "Yes" },
+        { name: "Yousef Barakat", v1: "Active", v2: "System", v3: "Yes" }
+      ].map(r => ({
+        name: r.name, v1: r.v1, v2: r.v2, v3: r.v3,
+        c1: "display: inline-flex; font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; color: " + (r.v1 === "Active" ? "#3F7E21" : r.v1 === "Invited" ? "#B54708" : "#B42318") + "; background: " + (r.v1 === "Active" ? "#F0F9E5" : r.v1 === "Invited" ? "#FFFAEB" : "#FEF3F2") + "; border: 1px solid " + (r.v1 === "Active" ? "#CDE9AE" : r.v1 === "Invited" ? "#FEDF89" : "#FECDCA") + ";",
+        c2: "display: inline-flex; font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;",
+        c3: "display: inline-flex; font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px; color: " + (r.v3 === "Yes" ? "#3F7E21" : "#4A5568") + "; background: " + (r.v3 === "Yes" ? "#F0F9E5" : "#F1F4F8") + "; border: 1px solid " + (r.v3 === "Yes" ? "#CDE9AE" : "#E2E8F0") + ";"
+      })),
+
+      goodAfter: [
+        { name: "Nora Al-Otaibi", v1: "Active", v2: "Staff", v3: "Yes", kind: "plain" },
+        { name: "Tariq Suleiman", v1: "Invited", v2: "Staff", v3: "Yes", kind: "warn" },
+        { name: "Omar Bakri", v1: "Inactive", v2: "Contractor", v3: "No", kind: "neutral" },
+        { name: "Dana Chalabi", v1: "Active", v2: "Staff", v3: "Yes", kind: "plain" },
+        { name: "Yousef Barakat", v1: "Active", v2: "System", v3: "Yes", kind: "plain" }
+      ].map(r => ({
+        name: r.name, v1: r.v1, v2: r.v2, v3: r.v3,
+        c1: r.kind === "plain" ? "font-size: 12.5px; color: #4A5568;"
+          : r.kind === "warn" ? "display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 999px; padding: 2px 9px;"
+          : "display: inline-flex; font-size: 11.5px; font-weight: 500; color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0; border-radius: 999px; padding: 2px 9px;"
+      })),
+
+      chipSpecimens: [
+        { title: "Severity — filled pill", note: "The only saturated fills in the product. Always paired with a consequence in the copy beside them.",
+          chips: [chip("Blocks work", "#B42318", "#FEF3F2", "#FECDCA", 600, "#D92D20"), chip("At risk", "#B54708", "#FFFAEB", "#FEDF89", 600, "#F79009"), chip("Hygiene", "#4A5568", "#F1F4F8", "#E2E8F0", 600)] },
+        { title: "Record status — dot + text", note: "No fill. The expected value gets no dot at all; departures get a dot and weight 500.",
+          chips: [plain("Active"), chip("Invited", "#B54708", "transparent", "transparent", 500, "#F79009"), chip("Inactive", "#4A5568", "transparent", "transparent", 500, "#8A94A6")] },
+        { title: "Workflow stage — square, with position", note: "Squared corners and an n/total counter, so a stage can never be mistaken for a status or a severity.",
+          chips: [{ label: "Terms Review · 2/4", dot: false, dotStyle: "", style: "display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 2px 8px; font-variant-numeric: tabular-nums;" }, { label: "Active · 3/4", dot: false, dotStyle: "", style: "display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 2px 8px; font-variant-numeric: tabular-nums;" }] },
+        { title: "Banned", note: "Green “Active”, coloured taxonomy, and any chip whose text is under 4.5:1 on its own fill. All three exist in the build today.",
+          chips: [{ label: "Active", dot: false, dotStyle: "", style: "display: inline-flex; font-size: 11.5px; font-weight: 600; color: #3F7E21; background: #F0F9E5; border: 1px solid #CDE9AE; border-radius: 999px; padding: 2px 9px; text-decoration: line-through; opacity: 0.75;" }, { label: "System", dot: false, dotStyle: "", style: "display: inline-flex; font-size: 11.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 999px; padding: 2px 9px; text-decoration: line-through; opacity: 0.75;" }, { label: "Yes", dot: false, dotStyle: "", style: "display: inline-flex; font-size: 11.5px; font-weight: 600; color: #8DC63F; background: #F7FCEF; border: 1px solid #DBF0BE; border-radius: 999px; padding: 2px 9px; text-decoration: line-through; opacity: 0.75;" }] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
