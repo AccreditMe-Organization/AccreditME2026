@@ -131,11 +131,18 @@ export class TenantGuard implements CanActivate {
     // is the only caller of AuthProvider.invalidateUserSessions() today);
     // reject rather than trust a stale token until it naturally expires.
     // Role/permission changes do NOT bump tokenVersion (role.service.ts has
-    // zero tokenVersion/invalidateUserSessions references) — a user stripped
-    // of a role keeps full access on their existing JWT for up to 15 minutes
-    // (the token's own expiry), not revoked immediately. Corrected here per
-    // SYSTEM-REFERENCE.md Section 1.2 / Section 11 Tier 1 (ACC-33 item 2) —
-    // documentation-only, no behavior change.
+    // zero tokenVersion/invalidateUserSessions references), so a user whose
+    // role changes is NOT signed out — their session stays valid until the
+    // token expires.
+    //
+    // CORRECTED (ACC-101): this comment used to add "keeps full access for up
+    // to 15 minutes", which was wrong. It conflated session validity with
+    // authorization. The JWT carries no permissions; the permission set is
+    // resolved from the database a few lines below, on EVERY request. A
+    // revocation therefore applies on the very next request — the JWT
+    // authenticates, it does not authorize. Verified live in one unbroken
+    // session: my-permissions went from ["roles:view"] to [], the endpoint
+    // from 200 to 403, /auth/me stayed 200. See SYSTEM-REFERENCE §1.2.
     const user = await this.prisma.user.findFirst({
       where: { id: payload.sub, organizationId: payload.organizationId },
       select: { tokenVersion: true },
