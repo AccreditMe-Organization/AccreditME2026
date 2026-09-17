@@ -21,6 +21,7 @@ import { OrgUnitHeadService } from '../../src/foundation/organization/org-unit-h
 import { LookupService } from '../../src/foundation/lookup/lookup.service';
 import { UserService } from '../../src/foundation/user/user.service';
 import { CommitteesService } from '../../src/foundation/committees/committees.service';
+import { RoleService } from '../../src/foundation/roles/role.service';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { PrismaClient } from '../../generated/prisma/client';
@@ -34,6 +35,7 @@ import {
 } from './fixtures/fixture.types';
 import { applyOrgTree } from './apply/apply-org-tree';
 import { SEED_PASSWORD, applyPeople } from './apply/apply-people';
+import { applyCustomRoles } from './apply/apply-custom-roles';
 import { applyCommittees } from './apply/apply-committees';
 import { applyEdgeCases } from './apply/apply-edge-cases';
 
@@ -206,6 +208,7 @@ async function seedTenant(
     lookupService: LookupService;
     userService: UserService;
     committeesService: CommitteesService;
+    roleService: RoleService;
   },
   fixture: TenantFixture,
   actorId: string,
@@ -232,6 +235,9 @@ async function seedTenant(
 
   await applyPeople(deps, fixture, ctx, actorId);
   console.log(`  people: ${ctx.personIdByKey.size} created and activated`);
+
+  // ACC-101 — after the people exist, since a role is assigned to one of them.
+  await applyCustomRoles(deps, fixture, ctx, actorId);
 
   // Before the edge cases, deliberately: applyEdgeCases() deactivates a head,
   // and committee membership should be established while everyone is active.
@@ -320,6 +326,7 @@ async function main(): Promise<void> {
       lookupService: app.get(LookupService),
       userService: app.get(UserService),
       committeesService: app.get(CommitteesService),
+      roleService: app.get(RoleService),
     };
 
     for (const fixture of FIXTURES) {

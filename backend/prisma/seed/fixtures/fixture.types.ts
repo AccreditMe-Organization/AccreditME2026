@@ -1,4 +1,5 @@
 import { COMMITTEE_MEETING_FREQUENCIES } from '../../../src/foundation/committees/dto/create-committee.dto';
+import { ALL_PERMISSIONS } from '../../../src/foundation/roles/permission.seed';
 
 // ACC-62 — the declarative shapes a tenant fixture is written in.
 //
@@ -73,6 +74,42 @@ export interface PersonFixture {
   // manager sits in the same unit or an ancestor — an arbitrary cross-link is
   // a fixture bug, not a valid org.
   reportsTo: string | null;
+}
+
+// ── Custom roles ─────────────────────────────────────────────────────────────
+
+// ACC-101 — a TENANT-CUSTOM role and who holds it.
+//
+// Why this exists at all. Before it, the seed granted no permission role to
+// anyone: apply-people.ts creates each person with a position, a unit and a
+// reporting line, and stops there. The only "role" in a fixture was a committee
+// seat (chairman, secretary), which is a lookup value describing a seat at a
+// table, not a permission. So 45 of the 47 seeded people held nothing, and the
+// two who held anything were tenant admins created by bootstrap().
+//
+// The consequence was not cosmetic: three separate checks on ACC-101 could not
+// be run against the seed, because no persona existed between "holds
+// everything" and "holds nothing" — and almost every authorization question is
+// about someone in between.
+//
+// CUSTOM rather than a system role, deliberately: it exercises the
+// tenant-created-role path the whole permission model rests on
+// (RoleService.createRole with key: null, isSystem: false), which nothing in
+// the seed touched before.
+//
+// THIS IS NOT THE FIX for the seed's persona gap — it is one role for one
+// person, added because one ticket needed a subject. A credentialed persona per
+// meaningful role is its own piece of work.
+export interface CustomRoleFixture {
+  nameEn: string;
+  nameAr: string;
+  description: string;
+  // Real permission strings, e.g. 'roles:view'. Checked against the product's
+  // own catalogue by validateFixture(), so a typo fails before any write
+  // rather than seeding a role that silently grants nothing.
+  permissions: string[];
+  // PersonFixture keys.
+  holders: string[];
 }
 
 // ── Committees ───────────────────────────────────────────────────────────────
@@ -189,6 +226,8 @@ export interface TenantFixture {
   // rather than creating a second one.
   tree: UnitFixture;
   people: PersonFixture[];
+  // Optional: a tenant without custom roles is a legitimate fixture.
+  customRoles?: CustomRoleFixture[];
   committees: CommitteeFixture[];
   edgeCases: EdgeCaseFixture;
 }
@@ -560,6 +599,30 @@ export function validateFixture(fixture: TenantFixture): void {
         `edgeCases.duplicateNames pair (${a}, ${b}) are both in '${personA.unit}'. ` +
           'The point is that a name-only picker cannot tell them apart across different units.',
       );
+    }
+  }
+
+  // -- Custom roles (ACC-101) ------------------------------------------------
+  // Both halves checked against reality rather than trusted: a permission
+  // string that no longer exists would seed a role granting nothing, and a
+  // holder key typo would fail deep inside the applier.
+  const knownPermissions = new Set(ALL_PERMISSIONS.map((p) => `${p.module}:${p.action}`));
+  for (const role of fixture.customRoles ?? []) {
+    for (const permission of role.permissions) {
+      if (!knownPermissions.has(permission)) {
+        errors.push(
+          `Custom role '${role.nameEn}' references unknown permission '${permission}'. ` +
+            `It must be one of the strings in common/constants/permissions.ts.`,
+        );
+      }
+    }
+    if (role.permissions.length === 0) {
+      errors.push(`Custom role '${role.nameEn}' grants no permissions, which seeds nothing useful.`);
+    }
+    for (const holder of role.holders) {
+      if (!peopleByKey.has(holder)) {
+        errors.push(`Custom role '${role.nameEn}' is held by unknown person '${holder}'.`);
+      }
     }
   }
 
