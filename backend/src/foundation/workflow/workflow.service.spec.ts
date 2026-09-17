@@ -19,7 +19,9 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 const ORG_A = 'org-a-id';
 // ACC-101 — the permission set the route hands the service. The visibility
 // check is proven in workflow-parent-visibility.spec.ts; here it is stubbed.
-const VIEWER_PERMISSIONS = ['workflows:view', 'committees:view'];
+// ACC-101 — see task.service.spec.ts: these exercise label RESOLUTION, so the
+// viewer holds the permissions the labels require.
+const VIEWER_PERMISSIONS = ['workflows:view', 'committees:view', 'org:view', 'users:view'];
 const VIEWER_ID = 'viewer-id';
 const ORG_B = 'org-b-id';
 const ACTOR = 'actor-id';

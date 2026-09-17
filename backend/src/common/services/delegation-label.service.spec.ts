@@ -4,6 +4,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../testing/tenant-isolation';
 
 const ORG_A = 'org-a-id';
+// ACC-101 — resolveMany() now asks who is reading. These existing tests are
+// about RESOLUTION, so their viewer holds both label permissions; the
+// entitlement rules have their own tests below.
+const ENTITLED_VIEWER = { id: 'viewer-id', permissions: ['org:view', 'users:view'] };
 const ORG_B = 'org-b-id';
 const UNIT_ID = 'unit-cardiology';
 const COVERED_USER_ID = 'user-ahmad';
@@ -36,7 +40,7 @@ describe('DelegationLabelService (ACC-76)', () => {
       ]);
 
       const stamp = { delegationReason: 'ACTING_HEAD', delegationContextId: UNIT_ID };
-      const resolved = await service.resolveMany([stamp], ORG_A);
+      const resolved = await service.resolveMany([stamp], ORG_A, ENTITLED_VIEWER);
 
       expect(service.lookup(stamp, resolved)).toEqual({
         reason: 'ACTING_HEAD',
@@ -54,7 +58,7 @@ describe('DelegationLabelService (ACC-76)', () => {
       ]);
 
       const stamp = { delegationReason: 'ACTING_HEAD', delegationContextId: UNIT_ID };
-      const resolved = await service.resolveMany([stamp], ORG_A);
+      const resolved = await service.resolveMany([stamp], ORG_A, ENTITLED_VIEWER);
 
       expect(service.lookup(stamp, resolved)?.contextLabelAr).toBe('Cardiology');
     });
@@ -66,7 +70,7 @@ describe('DelegationLabelService (ACC-76)', () => {
         delegationReason: 'OUT_OF_OFFICE_COVERAGE',
         delegationContextId: COVERED_USER_ID,
       };
-      const resolved = await service.resolveMany([stamp], ORG_A);
+      const resolved = await service.resolveMany([stamp], ORG_A, ENTITLED_VIEWER);
 
       expect(service.lookup(stamp, resolved)).toEqual({
         reason: 'OUT_OF_OFFICE_COVERAGE',
@@ -92,6 +96,7 @@ describe('DelegationLabelService (ACC-76)', () => {
           { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: 'user-2' },
         ],
         ORG_A,
+        ENTITLED_VIEWER,
       );
 
       expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledTimes(1);
@@ -103,10 +108,81 @@ describe('DelegationLabelService (ACC-76)', () => {
       ]);
     });
 
+    // ACC-101 — WHO MAY SEE A QUALIFIER.
+    //
+    // A label is not decoration: "covering for Ahmad" says a named colleague is
+    // absent, "Acting Head of Cardiology" says who holds a unit. The viewer
+    // sees one only if they could see the record it names — and because
+    // delegationContextId is polymorphic, the two reasons take different
+    // permissions.
+    describe('entitlement', () => {
+      const stamps = [
+        { delegationReason: 'ACTING_HEAD', delegationContextId: 'unit-1' },
+        { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: 'user-absent' },
+      ];
+
+      beforeEach(() => {
+        mockPrisma.orgUnit.findMany.mockResolvedValue([
+          { id: 'unit-1', nameEn: 'Cardiology', nameAr: 'القلبية' },
+        ]);
+        mockPrisma.user.findMany.mockResolvedValue([{ id: 'user-absent', name: 'Ahmad Al-Najjar' }]);
+      });
+
+      it('gives a viewer holding neither permission NO labels, and asks the database for nothing', async () => {
+        const resolved = await service.resolveMany(stamps, ORG_A, {
+          id: 'viewer-id',
+          permissions: ['tasks:view'],
+        });
+
+        expect(resolved.size).toBe(0);
+        // Suppression skips the lookup rather than filtering after it: an
+        // unentitled viewer costs one query fewer, not one more.
+        expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
+      });
+
+      it('gives org:view the unit label and withholds the person', async () => {
+        const resolved = await service.resolveMany(stamps, ORG_A, {
+          id: 'viewer-id',
+          permissions: ['org:view'],
+        });
+
+        expect(resolved.get('ACTING_HEAD:unit-1')?.contextLabelEn).toBe('Cardiology');
+        expect(resolved.get('OUT_OF_OFFICE_COVERAGE:user-absent')).toBeUndefined();
+        expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
+      });
+
+      it('gives users:view the person label and withholds the unit', async () => {
+        const resolved = await service.resolveMany(stamps, ORG_A, {
+          id: 'viewer-id',
+          permissions: ['users:view'],
+        });
+
+        expect(resolved.get('OUT_OF_OFFICE_COVERAGE:user-absent')?.contextLabelEn).toBe(
+          'Ahmad Al-Najjar',
+        );
+        expect(resolved.get('ACTING_HEAD:unit-1')).toBeUndefined();
+      });
+
+      // The exception that makes this a visibility rule rather than a blanket
+      // permission: who you are covering for is a fact about your own work.
+      it('always tells a person who they are covering for, without users:view', async () => {
+        const resolved = await service.resolveMany(stamps, ORG_A, {
+          id: 'user-absent',
+          permissions: [],
+        });
+
+        expect(resolved.get('OUT_OF_OFFICE_COVERAGE:user-absent')?.contextLabelEn).toBe(
+          'Ahmad Al-Najjar',
+        );
+      });
+    });
+
     it('touches the database at all only when a stamp is present', async () => {
       await service.resolveMany(
         [{ delegationReason: null, delegationContextId: null }],
         ORG_A,
+        ENTITLED_VIEWER,
       );
 
       expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
@@ -155,7 +231,7 @@ describe('DelegationLabelService (ACC-76)', () => {
       { delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: COVERED_USER_ID },
     ];
 
-    const resolved = await service.resolveMany(stamps, ORG_B);
+    const resolved = await service.resolveMany(stamps, ORG_B, ENTITLED_VIEWER);
 
     expect(resolved.size).toBe(0);
     expect(service.lookup(stamps[0]!, resolved)).toBeNull();

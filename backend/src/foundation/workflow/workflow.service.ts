@@ -257,7 +257,10 @@ export class WorkflowService {
             select: { id: true, name: true },
           })
         : Promise.resolve([]),
-      this.delegationLabels.resolveMany(visitRows, organizationId),
+      this.delegationLabels.resolveMany(visitRows, organizationId, {
+        id: viewerId,
+        permissions: viewerPermissions,
+      }),
     ]);
     const actorNameById = new Map(actors.map((a) => [a.id, a.name]));
 

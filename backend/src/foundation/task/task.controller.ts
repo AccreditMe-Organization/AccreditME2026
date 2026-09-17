@@ -88,8 +88,15 @@ export class TaskController {
     // passed to the service, which refuses a caller who cannot see the source
     // record. Same decorator UserService.getByIdForViewer() already uses.
     @CurrentUserPermissions() actorPermissions: string[],
+    @CurrentUser() actorId: string,
   ): Promise<ITaskWithAssignees[]> {
-    return this.taskService.getForSource(sourceType, sourceId, tenantId, actorPermissions);
+    return this.taskService.getForSource(
+      sourceType,
+      sourceId,
+      tenantId,
+      actorPermissions,
+      actorId,
+    );
   }
 
   @Get(':id')

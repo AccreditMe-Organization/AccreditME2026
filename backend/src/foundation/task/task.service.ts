@@ -146,6 +146,9 @@ export class TaskService {
     sourceId: string,
     organizationId: string,
     viewerPermissions: readonly string[],
+    // ACC-101 — for the delegation-label entitlement check: a person may always
+    // be told who they are covering for.
+    viewerId: string,
   ): Promise<ITaskWithAssignees[]> {
     await this.objectVisibility.assertCanView(
       sourceType,
@@ -172,7 +175,10 @@ export class TaskService {
     // One resolve call for the whole page, not one per task — see
     // DelegationLabelService.resolveMany() on why that matters here.
     const allAssignees = tasks.flatMap((task) => task.assignees);
-    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId);
+    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId, {
+      id: viewerId,
+      permissions: viewerPermissions,
+    });
 
     return tasks.map(({ assignees, ...task }) => ({
       ...task,

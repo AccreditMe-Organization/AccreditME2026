@@ -140,13 +140,14 @@ describe('TaskController', () => {
   // assert the FORWARDING; the refusal itself is proven at the route in
   // task-parent-visibility.spec.ts.
   it('getForSource delegates to the service, forwarding the caller permissions', async () => {
-    const result = await controller.getForSource(TENANT_ID, 'DOCUMENT', 'doc-1', VIEWER_PERMISSIONS);
+    const result = await controller.getForSource(TENANT_ID, 'DOCUMENT', 'doc-1', VIEWER_PERMISSIONS, USER_ID);
 
     expect(service.getForSource).toHaveBeenCalledWith(
       'DOCUMENT',
       'doc-1',
       TENANT_ID,
       VIEWER_PERMISSIONS,
+      USER_ID,
     );
     expect(result).toEqual([MOCK_TASK]);
   });

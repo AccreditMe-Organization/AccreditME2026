@@ -209,5 +209,21 @@ describe('Child list gated by its parent (ACC-101)', () => {
     expect(response.status).toBe(200);
     expect(response.body).toHaveLength(1);
     expect(response.body[0].assignees[0].userName).toBe('Sara Al-Otaibi');
+
+    // ACC-101 — but NOT the delegation label. This caller can see the committee
+    // and its tasks; they hold no users:view, so they are not told which
+    // colleague is absent. The assignee's own name is part of the task (it is
+    // who owes the work); the absent third party is not.
+    expect(response.body[0].assignees[0].delegation).toBeNull();
+    expect(JSON.stringify(response.body)).not.toContain('Ahmad Al-Najjar');
+  });
+
+  it('gives the delegation label to a caller who may also see the person it names', async () => {
+    callerPermissions = ['tasks:view', 'committees:view', 'users:view'];
+
+    const response = await getCommitteeTasks();
+
+    expect(response.status).toBe(200);
+    expect(response.body[0].assignees[0].delegation.contextLabelEn).toBe('Ahmad Al-Najjar');
   });
 });
