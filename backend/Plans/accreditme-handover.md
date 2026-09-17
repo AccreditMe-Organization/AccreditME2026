@@ -143,6 +143,28 @@ rather than being merged per-file. Git shows what changed.
 analyse it and give him a prompt to send back. I never talk to Claude Code
 directly and cannot see the repo state except through what he pastes.
 
+**NARROWED by Ahmad during ACC-101, and this is the current rule — not a second
+one beside the old one.** The review side may now CREATE BACKLOG TICKETS in
+Linear directly: items with no branch, not picked up for work. ACC-105, ACC-106,
+ACC-107 and ACC-108 were created this way, so the document has to match what
+already happened rather than describe an older boundary.
+
+Everything else remains Claude Code's alone, unchanged: branches, commits, state
+transitions, any ticket that gets picked up for work, and every change to project
+files, migrations and the repo. The exception is deliberately narrow — a Backlog
+ticket is a note about work nobody has started, and filing one while the finding
+is fresh beats losing it to a round trip.
+
+A ticket created this way follows the house format, or the next person inherits
+two styles of ticket and no way to tell which is authoritative:
+
+* team **AccreditMe**, status **Backlog**, **no labels**, priority set
+  deliberately rather than left at none;
+* the sections `## Context`, `## Module`, `## What needs to be done`,
+  `## Acceptance criteria`, `## Technical notes`;
+* ending with **"No branch for this ticket yet, deliberately."** — which is what
+  distinguishes it from a ticket that is about to be worked.
+
 **Prompts were dense and carried reasoning, not just instructions.** A typical
 prompt confirmed decisions with their justification, named what to check rather
 than what to build, and said explicitly what was *out* of scope. Example shape:
@@ -174,6 +196,28 @@ better than what either of us had: the lifecycle stepper solved a
 sequence-vs-history question we'd gone back and forth on twice; the compact list
 variant established that controls respond to set size and row anatomy responds
 to width, which turned two components into one.
+
+**A source grep cannot tell you whether a test is covered by the
+tenant-isolation CI gate. Run the gate.** The gate is a Jest
+`--testNamePattern` on one exact string, and CLAUDE.md records a recurring
+failure class where a correct cross-tenant test sits under a name the gate never
+matches, so it passes locally and is invisible to CI. The natural check —
+grepping the diff for that string — is wrong in *both* directions now:
+`itEnforcesTenantIsolation(suffix, fn)`
+(`backend/src/common/testing/tenant-isolation.ts`) composes the gate string at
+**runtime**, so a test that is properly covered shows nothing to a grep.
+
+This came up on ACC-94: grepping the branch diff for the gate's literal string
+returned nothing, which looks exactly like the known failure class. The two new
+tenant-scoped queries were in fact covered, through the helper. The right check
+is `npx jest --testNamePattern="should NOT return records belonging to a
+different tenant"` and reading the passing count, or counting
+`itEnforcesTenantIsolation(` calls against the new queries — never searching the
+diff for the sentence.
+
+Worth knowing beyond this one gate: **any check whose key is assembled at
+runtime is invisible to static search**, and the helper exists precisely to stop
+the mislabelling problem, so it will keep producing this false alarm.
 
 ---
 

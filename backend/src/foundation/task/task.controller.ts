@@ -5,6 +5,7 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { CurrentTenant } from '../../common/decorators/current-tenant.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { TaskService } from './task.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
@@ -82,14 +83,32 @@ export class TaskController {
     // ACC-76 — the ONLY list endpoint returning assignees. Stays gated on
     // tasks:view (unlike my-tasks above, which is self-scoped): this can
     // return any task in the tenant, and now names the people on it.
+    //
+    // ACC-101 — tasks:view is no longer sufficient. The permission set is
+    // passed to the service, which refuses a caller who cannot see the source
+    // record. Same decorator UserService.getByIdForViewer() already uses.
+    @CurrentUserPermissions() actorPermissions: string[],
+    @CurrentUser() actorId: string,
   ): Promise<ITaskWithAssignees[]> {
-    return this.taskService.getForSource(sourceType, sourceId, tenantId);
+    return this.taskService.getForSource(
+      sourceType,
+      sourceId,
+      tenantId,
+      actorPermissions,
+      actorId,
+    );
   }
 
   @Get(':id')
   @Permissions(TASKS_PERMISSIONS.VIEW)
-  getById(@Param('id') id: string, @CurrentTenant() tenantId: string): Promise<ITask> {
-    return this.taskService.getById(id, tenantId);
+  getById(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+    // Named in the refusal log, which records what the 404 conceals.
+    @CurrentUser() actorId: string,
+  ): Promise<ITask> {
+    return this.taskService.getByIdForViewer(id, tenantId, actorPermissions, actorId);
   }
 
   @Post()

@@ -5,6 +5,7 @@ import { TaskService } from './task.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
+import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
@@ -13,6 +14,16 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
+// ACC-101 — what the route hands the service. Its content is irrelevant here
+// (the visibility stub below admits everyone); it exists so these tests call
+// the same signature the controller does.
+// ACC-101 — org:view and users:view are here because the delegation-label
+// tests below are about RESOLUTION, and a viewer entitled to neither now sees
+// no label at all. The entitlement rules themselves are tested in
+// delegation-label.service.spec.ts and at the route.
+const VIEWER_PERMISSIONS = ['tasks:view', 'committees:view', 'org:view', 'users:view'];
+// ACC-101 — who is reading, for the delegation-label entitlement check.
+const VIEWER_ID = 'viewer-id';
 const ACTOR = 'actor-id';
 const USER_A = 'user-a-id';
 const USER_B = 'user-b-id';
@@ -123,6 +134,16 @@ describe('TaskService', () => {
         // mocking it would hide the tenant scoping its own isolation test
         // exists to prove.
         DelegationLabelService,
+        // ACC-101 — a permissive stub, deliberately. These tests exercise the
+        // DATA path; the parent check is proven where it lives, in
+        // object-visibility.service.spec.ts and the route-level defect test in
+        // task-parent-visibility.spec.ts. A real one here would refuse every
+        // 'DOCUMENT'-sourced fixture below (no Document module exists to own
+        // them) and turn data assertions into authorization assertions.
+        {
+          provide: ObjectVisibilityService,
+          useValue: { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() },
+        },
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TenantService, useValue: mockTenantService },
@@ -487,7 +508,7 @@ describe('TaskService', () => {
         Promise.resolve(where.organizationId === ORG_A ? [BASE_TASK] : []),
       );
 
-      const result = await service.getForSource('DOCUMENT', 'doc-1', ORG_B);
+      const result = await service.getForSource('DOCUMENT', 'doc-1', ORG_B, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result).toHaveLength(0);
     });
@@ -505,7 +526,7 @@ describe('TaskService', () => {
         },
       ]);
 
-      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result[0]!.assignees).toEqual([
         { userId: USER_A, userName: 'Sarah', delegation: null },
@@ -518,7 +539,7 @@ describe('TaskService', () => {
     it('asks the database for active assignees only', async () => {
       mockPrisma.task.findMany.mockResolvedValue([]);
 
-      await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+      await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       const args = mockPrisma.task.findMany.mock.calls[0]![0];
       expect(args.include.assignees.where).toEqual({ removedAt: null });
@@ -545,7 +566,7 @@ describe('TaskService', () => {
         },
       ]);
 
-      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+      const result = await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(result[0]!.assignees[0]!.delegation).toEqual({
         reason: 'ACTING_HEAD',
@@ -573,7 +594,7 @@ describe('TaskService', () => {
         { ...BASE_TASK, id: 'task-3', assignees: [stampedAssignee] },
       ]);
 
-      await service.getForSource('COMMITTEE', 'committee-1', ORG_A);
+      await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
 
       expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledTimes(1);
     });

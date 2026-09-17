@@ -2169,6 +2169,126 @@ authoritative time-zone field); decisions and evidence in
 
 ---
 
+## Key Architecture Decisions (ACC-101)
+
+Full detail: SYSTEM-REFERENCE.md Section 1.9. The decisions, briefly:
+
+- **A list scoped to a parent record requires the caller to be able to see the
+  PARENT, not only the child type.** The child's own permission stays necessary
+  and stops being sufficient. Before this, a committee's task list was governed
+  by `tasks:view` — held by `BASE_USER`, the role every staff member gets —
+  while the committee itself needs `committees:view`, so the weaker gate
+  governed the richer payload (assignee names, and delegation labels naming who
+  is absent). The rule now covers tasks by source, a single task, workflow
+  instances by object, stage history, and a user's roles.
+- **The rule has TWO clauses, because the endpoints come in two shapes and only
+  one of them can be checked before reading.** Write both; a single sentence
+  three endpoints contradict is worse than no rule:
+  - **(a) Where the request NAMES the parent** (`?sourceType=&sourceId=`, an
+    object id in the query), the permission is checked **before the record is
+    read**. The refusal is **403 naming the permission**, costs no query, and is
+    existence-neutral by construction — identical for a real parent and an
+    invented one — so naming what is missing helps an entitled caller and
+    discloses nothing.
+  - **(b) Where the parent is knowable only FROM THE ROW** (`/tasks/:id`,
+    `/workflows/instances/:id`), the read is unavoidable, so the refusal must be
+    **indistinguishable from not-found**: same status, same body, naming neither
+    the parent type nor the permission. Otherwise a caller holding an id from a
+    link, a log or an export learns the record exists and is hidden from them —
+    the fact the check exists to withhold. **Not-found is the chosen shape**,
+    because it is the answer that discloses nothing.
+- **Proved live, against a running server.** Signed in as a real non-admin
+  holding exactly `["roles:view"]`, a request for another user's roles was
+  refused with **`Required permission: users:view`** — the PARENT's permission,
+  not the child's, which he held. Both refusals are 403, so only the message
+  separates them; that is why every spec on this rule asserts on the message.
+  The commit that added the check says its negative half rested on a test,
+  because no such persona existed yet — the seed persona that followed
+  superseded that, and this is the record of it (SYSTEM-REFERENCE §1.9).
+- **`getById()` / `getByIdForViewer()` is the convention, in every service.**
+  An unguarded `getById()` for the engine and internal callers — a service
+  acting on its own behalf has no viewer, and `addEvidence()` validating tenant
+  ownership must not acquire someone's permission check — and a
+  `getByIdForViewer()` taking viewer context for every route. User, Task and
+  Workflow all follow it. **The permission is checked before the record is read
+  wherever the shape allows**, so there is no existence oracle; that is the part
+  most likely to be dropped by the fourth service that needs this.
+- **Fail closed, and know what that means in practice.** An object type with no
+  entry in the visibility registry is REFUSED. `TaskSourceType` has 11 values
+  and `WorkflowObjectType` 8; exactly two have tables. **So each of the seven
+  unbuilt modules will be dark on the day it first ships — every child list
+  403, the module apparently broken — until one line is added to the registry.**
+  That is intended and it is the safe direction: a forgotten module costs a
+  visible 403, never a silent disclosure. Add the rule; never default to allow.
+- **Self-scoped reads are exempt, and the exemption is a rule rather than a
+  gap.** `GET /tasks/my-tasks`, the notification inbox and
+  `GET /roles/my-permissions` need no permission and get no parent check,
+  because **being the recipient IS the entitlement** — the notification named
+  the object because the user was party to it, and the task list is filtered to
+  their own assignee rows. A parent check there would refuse people work that is
+  already theirs.
+- **A qualifier is shown only to a viewer entitled to the record it names.**
+  Delegation labels ("covering for Ahmad", "Acting Head of Cardiology") take
+  DIFFERENT permissions, because the context id is polymorphic: `ACTING_HEAD`
+  resolves an OrgUnit (`org:view`), `OUT_OF_OFFICE_COVERAGE` a User
+  (`users:view`), and a person is **always** told who they are covering for. A
+  suppressed label is **absent** — an annotation on an otherwise fully rendered
+  row, so neither the hatched type word a restricted RELATION gets nor a
+  section's absence; a hatched qualifier would disclose the very fact withheld.
+- **A concealed refusal is still recorded — in the log, not the audit trail.**
+  A translated 404 tells the caller nothing, deliberately, but must not also be
+  invisible to operators, or someone probing ids and someone following a stale
+  link stay indistinguishable (the ACC-91 / ACC-93 shape). It is a **logger
+  line**: `AuditLog` records mutations with before/after, is append-only, is
+  retained three years and ships in the tenant's own export, and is
+  attacker-writable by construction here — anyone probing ids could append rows
+  to a table nothing may delete. **Where it lands today is process stdout, with
+  the platform's retention and nothing monitoring it.** That is the right call
+  for now and is the seam Winston replaces (as ACC-49 recorded for the sweep
+  logger) — the rule is "recorded where nobody watches", never "refusals are
+  monitored".
+- **`tasks:view` gates the tenant-wide task reads, NOT a user's own work**, and
+  is no longer on `BASE_USER`. `my-tasks` is ungated and self-scoped; the My
+  Tasks rail item carries no permission. `role.seed.spec.ts` pins BASE_USER's
+  EXACT set, not the absence of one string — an absence test passes again the
+  moment someone adds a different tenant-wide read to the role everyone holds.
+- **Revoking a permission takes effect IMMEDIATELY, on the next request.** The
+  JWT carries `sub`, `organizationId`, `tokenVersion` and `impersonatedBy` — no
+  permissions. `TenantGuard` resolves them per request and caches them only for
+  that request. **The JWT authenticates; it does not authorize.** Verified live:
+  in one unbroken session, a revocation turned `/roles/my-permissions` from
+  `["roles:view"]` to `[]` and the endpoint from 200 to 403, while `/auth/me`
+  stayed 200. What survives a revocation is the SESSION, not the permission.
+  **The fifteen-minute window never existed** — SYSTEM-REFERENCE §1.2 and
+  `tenant.guard.ts`'s comment both said a stripped user "keeps full old access
+  for up to 15 minutes"; both conflated session validity with authorization and
+  are corrected. **The one real staleness is the frontend's cached permission
+  set** (loaded at bootstrap), so affordances can linger over a backend already
+  refusing — ACC-108, and it is why "no window" must not be read as "no
+  staleness anywhere".
+- **A REVOCATION backfill is permitted only while no CUSTOMER tenant exists.**
+  Every earlier backfill (ACC-16, 22, 46, 82) only ever granted; granting a
+  permission a tenant never chose to withhold is safe, taking one away may
+  overwrite a decision a customer made, since roles are fully tenant-editable.
+  After the first customer: the removal changes the seed for new tenants only,
+  existing tenants get a REPORT of which roles still grant it and their admin
+  decides, and a security-critical revocation that cannot wait becomes a
+  customer-notified migration — never a silent script. Never use
+  `seedSystemRoles()` as the vehicle: it deletes and recreates every
+  `RolePermission` row for the role, so propagating one removal would reset
+  every system role's whole set.
+- **A backfill that modifies TENANT data must write to that tenant's audit
+  trail.** Today none do — every `backfill-*.ts` writes via direct Prisma and
+  bypasses `AuditLogService`, so the BASE_USER revocation left no record in
+  either tenant. Irrelevant at zero holders on dev; decisive the first time a
+  backfill touches a customer, which is exactly the case the rule above already
+  constrains. **A configuration change made by the vendor with nothing in the
+  customer's own record is the same blind spot as the
+  `IMPERSONATE_START`/`END` asymmetry** (ACC-99): the trail cannot answer what
+  was changed on their behalf, or by whom.
+
+---
+
 ## Open / Deferred Items
 
 - **No tenant-user password exists anywhere in the repo, so browser

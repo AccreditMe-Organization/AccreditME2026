@@ -10,6 +10,7 @@ import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
+import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
@@ -52,6 +53,9 @@ export class WorkflowService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly delegationLabels: DelegationLabelService,
+    // ACC-101 — resolved from TenantModule, which WorkflowModule already
+    // imports; no new module edge.
+    private readonly objectVisibility: ObjectVisibilityService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     private readonly taskService: TaskService,
@@ -136,6 +140,33 @@ export class WorkflowService {
     return this.mapInstance(instance);
   }
 
+  // ACC-101 — the route-facing read. An instance row names the object it
+  // belongs to, so serving it to someone who cannot see that object discloses
+  // the object's existence and its progress.
+  //
+  // The unguarded getInstanceById() above is kept for internal callers, per the
+  // convention in SYSTEM-REFERENCE: an engine acting on its own behalf has no
+  // viewer. Today every caller of the plain one is this method.
+  async getInstanceByIdForViewer(
+    id: string,
+    organizationId: string,
+    viewerPermissions: readonly string[],
+    viewerId: string,
+  ): Promise<IWorkflowInstance> {
+    const instance = await this.getInstanceById(id, organizationId);
+    // Read-first, so the refusal is shaped as not-found — see
+    // ObjectVisibilityService.assertCanViewOrNotFound() for why.
+    await this.objectVisibility.assertCanViewOrNotFound(
+      instance.objectType,
+      instance.objectId,
+      organizationId,
+      viewerPermissions,
+      'Workflow instance not found',
+      viewerId,
+    );
+    return instance;
+  }
+
   // ACC-76 — the real path an object took through its workflow.
   //
   // Returns BOTH views — see IWorkflowStageHistory for why neither substitutes
@@ -147,14 +178,33 @@ export class WorkflowService {
   async getStageHistory(
     instanceId: string,
     organizationId: string,
+    viewerPermissions: readonly string[],
+    viewerId: string,
   ): Promise<IWorkflowStageHistory> {
     // Scoped by id AND organizationId together, per CLAUDE.md's query shape —
     // also the only way to learn which template to diff the visits against.
+    //
+    // ACC-101 — objectType/objectId are selected so the parent can be checked
+    // below. This is the richest of the three reads: it names who acted at each
+    // stage and resolves their delegation stamps, so it says more about a
+    // committee than the committee list does.
     const instance = await this.prisma.workflowInstance.findFirst({
       where: { id: instanceId, organizationId },
-      select: { id: true, workflowTemplateId: true },
+      select: { id: true, workflowTemplateId: true, objectType: true, objectId: true },
     });
     if (!instance) throw new NotFoundException('Workflow instance not found');
+
+    // Same not-found shaping as getInstanceByIdForViewer(): the instance had to
+    // be read to learn its object, so a distinguishable refusal would confirm
+    // that an instance with this id exists.
+    await this.objectVisibility.assertCanViewOrNotFound(
+      instance.objectType,
+      instance.objectId,
+      organizationId,
+      viewerPermissions,
+      'Workflow instance not found',
+      viewerId,
+    );
 
     const [visitRows, stages, transitions] = await Promise.all([
       // WorkflowInstanceStage has NO organizationId of its own — tenancy is
@@ -207,7 +257,10 @@ export class WorkflowService {
             select: { id: true, name: true },
           })
         : Promise.resolve([]),
-      this.delegationLabels.resolveMany(visitRows, organizationId),
+      this.delegationLabels.resolveMany(visitRows, organizationId, {
+        id: viewerId,
+        permissions: viewerPermissions,
+      }),
     ]);
     const actorNameById = new Map(actors.map((a) => [a.id, a.name]));
 
@@ -270,11 +323,22 @@ export class WorkflowService {
   // Plural, and returns every instance ever created for this object — one
   // object can accumulate multiple instances over time (e.g. a document's
   // periodic review cycles each start a fresh WorkflowInstance).
+  //
+  // ACC-101 — the parent is named in the request here, so it is checked before
+  // anything is read.
   async getInstancesByObject(
     objectType: string,
     objectId: string,
     organizationId: string,
+    viewerPermissions: readonly string[],
   ): Promise<IWorkflowInstance[]> {
+    await this.objectVisibility.assertCanView(
+      objectType,
+      objectId,
+      organizationId,
+      viewerPermissions,
+    );
+
     const instances = await this.prisma.workflowInstance.findMany({
       where: { organizationId, objectType: objectType as WorkflowObjectType, objectId },
       orderBy: { createdAt: 'desc' },

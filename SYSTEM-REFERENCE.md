@@ -58,7 +58,7 @@ audit's starting point, not be mistaken for having already done it.
 
 ## Table of Contents
 
-1. Auth & Permission System — ✅ complete
+1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.2 corrected — a revocation applies on the next request)
 2. Workflow Engine — ✅ complete
 3. Task System — ✅ complete
 4. Notification System — ✅ complete
@@ -166,16 +166,45 @@ flow. Confirmed by direct grep:
   matches. `UserService.assignRoleToUser()`/`removeRoleFromUser()`
   (`user.service.ts:305–320`) are pure pass-through delegations to
   those same methods, adding nothing.
-- **Net effect: a user's existing JWT remains valid for up to 15
-  minutes after their role is changed or their permissions are
-  reassigned** — the access-control change does not take effect until
-  natural token expiry, not immediately as the guard's own comment
-  implies. Only deactivation forces immediate revocation today.
+- **Net effect: a user's existing JWT remains VALID — the session is not
+  terminated — after their role is changed or their permissions are
+  reassigned.** Only deactivation forces a sign-out today.
+
+**CORRECTED (ACC-101). This section previously said a stripped user
+"keeps full old access on their existing JWT for up to 15 minutes". That
+was wrong, and the error was to treat session validity and authorization
+as the same thing.** They are separate: the JWT carries `sub`,
+`organizationId`, `tokenVersion` and `impersonatedBy` and **no
+permissions at all**, and `TenantGuard` resolves the permission set from
+the database on EVERY request (§1.3). **A revocation therefore takes
+effect on the very next request.** The JWT authenticates; it does not
+authorize.
+
+Verified live rather than by reading, in one unbroken session with no
+re-login, at 2026-09-17T05:00Z:
+
+| | before revocation | after revocation |
+| -- | -- | -- |
+| `GET /roles/my-permissions` | `["roles:view"]` | `[]` |
+| an endpoint requiring it | 200 | 403 `Required permission: roles:view` |
+| `GET /auth/me` | 200 | 200 — still signed in |
+
+**The fifteen-minute window never existed.** What survives a revocation
+is the session, not the permission: the user stays signed in and simply
+cannot do the thing any more. `tenant.guard.ts`'s own comment carried
+the same error and is corrected with it.
+
+**The one real staleness is on the FRONTEND, not the token.**
+`NavigationAccessService` loads the permission set at bootstrap, so
+affordances can linger after a revocation over a backend that is already
+refusing — cosmetic, not an access gap, and tracked as ACC-108. "No
+window" must not be read as "no staleness anywhere".
 
 This is exactly the kind of doc-vs-code drift this document exists to
-catch rather than repeat — the guard's own header comment was taken at
-face value in an earlier draft of this section without checking the
-actual call sites; corrected here after verification.
+catch rather than repeat — and it caught it twice on the same paragraph:
+the guard's header comment was taken at face value in an earlier draft,
+and the correction then inherited the same conflation. Checked against a
+running server the second time.
 
 On success, `TenantGuard`
 populates `request.tenantId`, `request.userId`, and
@@ -550,6 +579,129 @@ the rail while its API accepted writes. The resolver is a pure function
 outside `TenantService` precisely so the guard can adopt it; do that
 before the first `@RequiresModule()` lands, and give `READ_ONLY` a
 meaning for write routes at the same time.
+
+### 1.9 Parent Visibility — Who May See a Child Record (ACC-101)
+
+`backend/src/common/services/object-visibility.service.ts`, provided by
+`TenantModule` beside `AuditLogService` and `DelegationLabelService`.
+
+**The rule: a list scoped to a parent record requires the caller to be
+able to see the PARENT, not only the child type.** The child's own
+permission stays necessary and stops being sufficient.
+
+What it fixed: `GET /tasks?sourceType=COMMITTEE&sourceId=…` returned a
+committee's tasks — with assignee names and delegation labels naming who
+was absent — to any caller holding `tasks:view`, which `BASE_USER` held.
+Committee visibility is `committees:view`. The weaker gate governed the
+richer payload.
+
+**Two clauses, because the endpoints come in two shapes:**
+
+| Shape | Endpoints | Order | Refusal |
+| -- | -- | -- | -- |
+| **(a) Request NAMES the parent** | `GET /tasks?sourceType&sourceId`, `GET /workflows/instances?objectType&objectId`, `GET /users/:userId/roles` | permission checked **before** any read | **403, naming the permission** |
+| **(b) Parent knowable only FROM THE ROW** | `GET /tasks/:id`, `GET /workflows/instances/:id`, `…/stage-history` | row read first of necessity | **404, indistinguishable from not-found** |
+
+Why the two differ, since one rule with two answers invites
+"simplification" back into one: in (a) the refusal is **already
+existence-neutral** — returned before any read, identical for a real
+parent and an invented one — so naming the missing permission helps an
+entitled caller and discloses nothing. In (b) the record had to be read
+to learn its parent, so a distinguishable refusal is an **existence
+oracle**: a caller holding an id from a link, a log or an export would
+learn the record exists and is hidden from them. Not-found is the chosen
+shape for both causes there, and **the body names neither the parent type
+nor the permission** — closing the oracle in the status and reopening it
+in the body is the obvious mistake. Specced by comparing the WHOLE
+response of a hidden record against a missing one.
+
+**Verified against a running server, not only a test harness.** Worth stating
+because the branch's own history understates it: the commit that added the
+user-roles check (`e24f6a4`) says its negative half rests on the route test,
+since at that moment no persona could exercise it — every seeded user held
+either everything or nothing (ACC-107). The seed persona added afterwards
+(`2316a37`) supplied one, and the check was then run live.
+
+Signed in as Dr. Faisal Al-Qahtani holding exactly `["roles:view"]`, against a
+running backend, 2026-09-17T04:42Z:
+
+| Request | Result |
+| -- | -- |
+| another user's roles | **403 `Required permission: users:view`** |
+| his own roles | 200 |
+| a committee's tasks | 403 `Required permission: tasks:view` |
+| the users list | 403 `Required permission: users:view` |
+
+The first row is the evidence the whole rule rests on: the refusal names
+**`users:view`**, the PARENT's permission, not `roles:view`, the child's, which
+he holds and which admitted him through `PermissionGuard`. Only the parent check
+can produce that message. Both refusals are 403, so a status-only assertion could
+never have told them apart — which is why the specs on this branch assert on the
+message throughout.
+
+**`getById()` / `getByIdForViewer()` — the convention, in every service.**
+An unguarded `getById()` for the engine and internal callers, and a
+`getByIdForViewer()` taking viewer context for every route. `UserService`
+(ACC-43), `TaskService` and `WorkflowService` all follow it. The split is
+load-bearing rather than stylistic: `TaskService.addEvidence()` calls
+`getById()` to validate tenant ownership, and the workflow engine reads
+tasks it created — **a service acting on its own behalf has no viewer**,
+and those call sites must never acquire someone's permission check.
+Where the shape allows, the permission is checked before the record is
+read; that is the part most likely to be dropped by the fourth service
+that needs this.
+
+**Fail closed — and what that means in practice.** The registry maps an
+object type to the permission its records require. `TaskSourceType` has
+11 values and `WorkflowObjectType` 8; **exactly two have tables**
+(`COMMITTEE`, `MEETING`). An unmapped type is REFUSED. **So each of the
+seven unbuilt modules will be dark on the day it first ships — every
+child list 403, the module apparently broken — until one line is added to
+the registry.** That is intended: a forgotten module costs a visible 403,
+never a silent disclosure. Add the rule; never default to allow.
+
+**Self-scoped reads are exempt, as a rule rather than an oversight.**
+`GET /tasks/my-tasks` (ACC-70), the notification inbox, and
+`GET /roles/my-permissions` carry no permission and get no parent check,
+because **being the recipient IS the entitlement** — the notification
+named the object because the user was party to it, and the task list is
+filtered to the caller's own assignee rows. A parent check there would
+refuse people work that is already theirs.
+
+**Qualifiers follow the same rule.** `DelegationLabelService.resolveMany()`
+takes the viewer: `ACTING_HEAD` resolves an OrgUnit (`org:view`),
+`OUT_OF_OFFICE_COVERAGE` a User (`users:view`), and a person is always
+told who they are covering for. Suppression skips the lookup rather than
+filtering after it, so an unentitled viewer costs one query fewer. A
+suppressed label is **absent** — an annotation on an otherwise rendered
+row, not a relation (which would hatch) and not a section (which would
+vanish wholesale); a hatched qualifier would disclose the very fact
+withheld.
+
+**A concealed refusal is still recorded — in the log.** Every translated
+404 logs the viewer, the object, the answer given and which cause it was,
+while the body says only "Task not found". A LOGGER line, not an
+`AuditLog` row: audit records mutations with before/after, is append-only,
+is retained three years, ships in the tenant's export, and here would be
+**attacker-writable by construction** — anyone probing ids could append
+rows to a table nothing may delete. **Today that lands on process stdout,
+with the platform's retention and nothing monitoring it** — the right
+call for now, and the seam Winston replaces (ACC-49's sweep-logger note is
+the precedent). The rule is "recorded where nobody watches", never
+"refusals are monitored".
+
+**Correction — ACC-28's resource-scoped role assignment was NEVER BUILT.**
+Worth stating plainly, because the ticket's title says otherwise and it
+was being relied on. ACC-28 was designed as a generic scoped-assignment
+model with its own table and guard; that design was scrapped, and what
+shipped was `ASSIGNEE_POOL` plus committee permission strings — a
+workflow extension. `UserRole` has four columns and no resource scoping
+(§1.1), `getUserPermissions()` has no resource context (§1.3), and
+**nothing anywhere narrows what a user may SEE to particular records**.
+`CommitteeMember.roleValueId` remains opaque metadata. The parent check
+above is not resource-scoped authorization either: it asks whether the
+caller may see the parent TYPE, then whether that parent exists in their
+tenant.
 
 ---
 

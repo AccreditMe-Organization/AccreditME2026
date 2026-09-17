@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
+import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
@@ -24,6 +25,7 @@ export class TaskService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
     private readonly delegationLabels: DelegationLabelService,
+    private readonly objectVisibility: ObjectVisibilityService,
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     @Inject(forwardRef(() => TenantService))
@@ -135,11 +137,26 @@ export class TaskService {
   // construction) and listUnassigned() has none by definition, so this stays
   // the only list that carries them rather than a shape change across all
   // three.
+  //
+  // ACC-101 — the caller must be able to see the SOURCE record, not merely hold
+  // tasks:view. Checked before the tasks are read: a refused caller costs no
+  // query, and the refusal cannot depend on what the list happens to contain.
   async getForSource(
     sourceType: TaskSourceType,
     sourceId: string,
     organizationId: string,
+    viewerPermissions: readonly string[],
+    // ACC-101 — for the delegation-label entitlement check: a person may always
+    // be told who they are covering for.
+    viewerId: string,
   ): Promise<ITaskWithAssignees[]> {
+    await this.objectVisibility.assertCanView(
+      sourceType,
+      sourceId,
+      organizationId,
+      viewerPermissions,
+    );
+
     const tasks = await this.prisma.task.findMany({
       where: { organizationId, sourceType, sourceId },
       orderBy: { createdAt: 'desc' },
@@ -158,7 +175,10 @@ export class TaskService {
     // One resolve call for the whole page, not one per task — see
     // DelegationLabelService.resolveMany() on why that matters here.
     const allAssignees = tasks.flatMap((task) => task.assignees);
-    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId);
+    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId, {
+      id: viewerId,
+      permissions: viewerPermissions,
+    });
 
     return tasks.map(({ assignees, ...task }) => ({
       ...task,
@@ -187,6 +207,40 @@ export class TaskService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
+    return task;
+  }
+
+  // ACC-101 — the HTTP-facing read. Same rule as getForSource(), one record
+  // instead of a list.
+  //
+  // DELIBERATELY NOT FOLDED INTO getById(), for the reason UserService draws
+  // the identical line (ACC-43): getById() is reused internally as a trusted
+  // tenant-scoped lookup — addEvidence() calls it to validate ownership, and
+  // the workflow engine reads tasks it created — and those call sites must
+  // never acquire a viewer's permission check. A service acting on its own
+  // behalf has no viewer.
+  //
+  // The order is the reverse of getForSource() of necessity: a task's parent is
+  // only knowable once the task is read. That is also why this cannot be a
+  // guard — a guard sees the request, not the record.
+  //
+  // A caller who cannot see the parent gets 403 whether or not the task exists;
+  // a caller who can gets the ordinary 404.
+  async getByIdForViewer(
+    id: string,
+    organizationId: string,
+    viewerPermissions: readonly string[],
+    viewerId: string,
+  ): Promise<ITask> {
+    const task = await this.getById(id, organizationId);
+    await this.objectVisibility.assertCanViewOrNotFound(
+      task.sourceType,
+      task.sourceId,
+      organizationId,
+      viewerPermissions,
+      'Task not found',
+      viewerId,
+    );
     return task;
   }
 

@@ -10,6 +10,8 @@ import { ITask } from './interfaces/task.interface';
 
 const TENANT_ID = 'tenant-test';
 const USER_ID = 'user-test';
+// ACC-101 — the permission set the route decorator supplies.
+const VIEWER_PERMISSIONS = ['tasks:view', 'committees:view'];
 
 const MOCK_TASK: ITask = {
   id: 'task-1',
@@ -41,6 +43,7 @@ describe('TaskController', () => {
     getMyTasks: jest.Mock;
     getForSource: jest.Mock;
     getById: jest.Mock;
+    getByIdForViewer: jest.Mock;
     create: jest.Mock;
     complete: jest.Mock;
     reassign: jest.Mock;
@@ -53,6 +56,7 @@ describe('TaskController', () => {
       getMyTasks: jest.fn().mockResolvedValue([MOCK_TASK]),
       getForSource: jest.fn().mockResolvedValue([MOCK_TASK]),
       getById: jest.fn().mockResolvedValue(MOCK_TASK),
+      getByIdForViewer: jest.fn().mockResolvedValue(MOCK_TASK),
       create: jest.fn().mockResolvedValue(MOCK_TASK),
       complete: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'COMPLETED' }),
       reassign: jest.fn().mockResolvedValue(MOCK_TASK),
@@ -131,17 +135,27 @@ describe('TaskController', () => {
     ]);
   });
 
-  it('getForSource delegates to the service', async () => {
-    const result = await controller.getForSource(TENANT_ID, 'DOCUMENT', 'doc-1');
+  // ACC-101 — both reads now forward the caller's permission set, which is what
+  // lets the service refuse a caller who cannot see the parent record. These
+  // assert the FORWARDING; the refusal itself is proven at the route in
+  // task-parent-visibility.spec.ts.
+  it('getForSource delegates to the service, forwarding the caller permissions', async () => {
+    const result = await controller.getForSource(TENANT_ID, 'DOCUMENT', 'doc-1', VIEWER_PERMISSIONS, USER_ID);
 
-    expect(service.getForSource).toHaveBeenCalledWith('DOCUMENT', 'doc-1', TENANT_ID);
+    expect(service.getForSource).toHaveBeenCalledWith(
+      'DOCUMENT',
+      'doc-1',
+      TENANT_ID,
+      VIEWER_PERMISSIONS,
+      USER_ID,
+    );
     expect(result).toEqual([MOCK_TASK]);
   });
 
-  it('getById delegates to the service', async () => {
-    const result = await controller.getById('task-1', TENANT_ID);
+  it('getById delegates to the viewer-aware read, forwarding the caller permissions', async () => {
+    const result = await controller.getById('task-1', TENANT_ID, VIEWER_PERMISSIONS, USER_ID);
 
-    expect(service.getById).toHaveBeenCalledWith('task-1', TENANT_ID);
+    expect(service.getByIdForViewer).toHaveBeenCalledWith('task-1', TENANT_ID, VIEWER_PERMISSIONS, USER_ID);
     expect(result).toEqual(MOCK_TASK);
   });
 

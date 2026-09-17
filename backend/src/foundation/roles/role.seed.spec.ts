@@ -1,14 +1,61 @@
 import { SYSTEM_ROLE_SEED } from './role.seed';
 import { ALL_PERMISSIONS } from './permission.seed';
-import { SETUP_PERMISSIONS } from '../../common/constants/permissions';
+import {
+  DOCUMENTS_PERMISSIONS,
+  KPI_PERMISSIONS,
+  MEETINGS_PERMISSIONS,
+  NOTIFICATIONS_PERMISSIONS,
+  SETUP_PERMISSIONS,
+  TASKS_PERMISSIONS,
+} from '../../common/constants/permissions';
 
 // ACC-82 — who sees Setup health. Pinned here because the answer lives in two
 // hand-maintained places (TENANT_ADMIN's ALL spread, and each other role's
 // explicit list) and a new permission reaching the wrong role is silent: no
 // test fails, a role just quietly gains a surface.
+const permissionsOf = (key: string): string[] =>
+  SYSTEM_ROLE_SEED.find((r) => r.key === key)?.permissions ?? [];
+
+// ACC-101 — BASE_USER's EXACT permission set, not merely the absence of
+// tasks:view.
+//
+// An absence test would pass again the moment someone adds a different
+// tenant-wide read to the role every staff member holds, which is the mistake
+// this ticket exists to undo rather than a hypothetical. This role is the
+// baseline: whatever is in this list, everyone in the tenant can do. Changing
+// it should require editing a test that says so out loud.
+describe('SYSTEM_ROLE_SEED — BASE_USER holds exactly its baseline set (ACC-101)', () => {
+  it('holds these permissions and no others', () => {
+    expect([...permissionsOf('BASE_USER')].sort()).toEqual(
+      [
+        DOCUMENTS_PERMISSIONS.VIEW,
+        MEETINGS_PERMISSIONS.VIEW,
+        KPI_PERMISSIONS.VIEW_OWN,
+        KPI_PERMISSIONS.ENTER_DATA,
+        NOTIFICATIONS_PERMISSIONS.VIEW,
+      ].sort(),
+    );
+  });
+
+  // Named separately from the set above, because the REASON matters more than
+  // the fact: tasks:view gates the tenant-wide task reads, not a user's own
+  // work. my-tasks is ungated and self-scoped, so this costs a staff member
+  // nothing they actually use.
+  it('does NOT hold tasks:view, which gates tenant-wide task reads rather than a user\'s own', () => {
+    expect(permissionsOf('BASE_USER')).not.toContain(TASKS_PERMISSIONS.VIEW);
+  });
+
+  // The roles that keep it, so a removal here is deliberate rather than
+  // collateral: an administrative or cross-cutting reader, never the baseline.
+  it.each(['TENANT_ADMIN', 'QUALITY_MANAGER', 'QUALITY_OFFICER', 'AUDITOR', 'VIEWER'])(
+    'keeps tasks:view on %s',
+    (key) => {
+      expect(permissionsOf(key)).toContain(TASKS_PERMISSIONS.VIEW);
+    },
+  );
+});
+
 describe('SYSTEM_ROLE_SEED — setup:view (ACC-82)', () => {
-  const permissionsOf = (key: string): string[] =>
-    SYSTEM_ROLE_SEED.find((r) => r.key === key)?.permissions ?? [];
 
   it('is in the global permission catalog', () => {
     expect(ALL_PERMISSIONS.map((p) => `${p.module}:${p.action}`)).toContain(

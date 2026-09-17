@@ -173,8 +173,14 @@ const PEOPLE: PersonFixture[] = [
   { key: 'huda', name: 'Huda Al-Rashidi', emailLocal: 'huda.alrashidi', position: 'Unit Head', unit: 'NUR-IP-WN', reportsTo: 'aisha' },
   { key: 'mariam', name: 'Mariam Al-Suwaidi', emailLocal: 'mariam.alsuwaidi', position: 'Head of Ward', unit: 'NUR-OP', reportsTo: 'noura' },
 
-  // Quality & Patient Safety — yasser is the tenant admin and the Quality
-  // Manager persona structural item 5 has been waiting to test against.
+  // Quality & Patient Safety.
+  //
+  // CORRECTED (ACC-101). This comment used to say yasser was "the tenant admin
+  // and the Quality Manager persona structural item 5 has been waiting to test
+  // against". Neither was true of anything the seed creates: yasser holds no
+  // roles at all, like every other person here, and the tenant admin in
+  // practice is hessa, created by bootstrap() rather than by this list. The
+  // comment described personas nobody had seeded.
   { key: 'yasser', name: 'Dr. Yasser Al-Amri', emailLocal: 'yasser.alamri', position: 'Director', unit: 'QPS', reportsTo: 'hessa' },
   { key: 'haya', name: 'Haya Al-Marri', emailLocal: 'haya.almarri', position: 'Head of Section', unit: 'QPS-ACC', reportsTo: 'yasser' },
   { key: 'salem', name: 'Salem Al-Hajri', emailLocal: 'salem.alhajri', position: 'Head of Section', unit: 'QPS-IC', reportsTo: 'yasser' },
@@ -261,6 +267,32 @@ export const HOSPITAL_FIXTURE: TenantFixture = {
   positions: POSITIONS,
   tree: TREE,
   people: PEOPLE,
+  // ACC-101 — the seed's FIRST permission role held by anyone other than a
+  // bootstrap-created tenant admin, and the first tenant-custom role it
+  // creates at all.
+  //
+  // Exactly one permission, on purpose. A persona holding everything and a
+  // persona holding nothing both answer authorization questions trivially;
+  // almost every real question is about someone in between, and until now the
+  // seed had nobody there. roles:view is the narrowest useful choice: it makes
+  // Faisal able to ask for role assignments while leaving him unable to see
+  // the people they belong to, which is exactly the pair ACC-101's parent rule
+  // separates.
+  //
+  // Faisal rather than Yasser for readability only — Chief Medical Officer
+  // reads naturally as someone who sees some things and not others. Neither
+  // held any role before this.
+  customRoles: [
+    {
+      nameEn: 'Role Auditor (seed persona)',
+      nameAr: 'مدقق الأدوار (شخصية تجريبية)',
+      description:
+        'Dev persona: holds roles:view and nothing else, so authorization can be tested ' +
+        'against someone between a tenant admin and a user with no permissions at all.',
+      permissions: ['roles:view'],
+      holders: ['faisal'],
+    },
+  ],
   committees: COMMITTEES,
 
   edgeCases: {
