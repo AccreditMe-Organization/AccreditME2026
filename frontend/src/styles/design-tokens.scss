@@ -1,0 +1,193 @@
+// AccreditMe design system tokens (ACC-111).
+//
+// Source: frontend/design-reference/AccreditMe Design System.dc.html,
+// artboard 1 (token sheet), artboard 2 (type) and the density table. That file
+// is authoritative; see frontend/DESIGN-REFERENCE.md. A value here that
+// disagrees with it is wrong until one of the two is deliberately changed.
+//
+// Every value is a custom property so that Tailwind (styles/tailwind-theme.scss)
+// and the PrimeNG preset (core/theme/accreditme-preset.ts) read ONE definition.
+// Components never carry a literal colour, size or radius.
+//
+// scripts/check-contrast.mjs parses the hex values in this file and asserts the
+// artboard-9 pairs in CI, so every colour stays a plain `--am-name: #RRGGBB;`
+// declaration on its own line — no functions, no Sass variables.
+//
+// Coexists with styles/tokens.scss during migration. The older --am-* names
+// there (--am-text-secondary #718096 among them) are retired screen by screen
+// as each screen moves onto these, never by global find-and-replace.
+
+:root {
+  // ─── Brand & neutrals ──────────────────────────────────────────────────
+  --am-primary-600: #2E6FA3; // links, primary button, current nav, focus ring
+  --am-primary-700: #1F5480; // hover / pressed
+  --am-primary-100: #E4EEF6; // selected row, active filter
+  --am-primary-50:  #F2F7FB; // hover row, toolbar
+  --am-accent-500:  #8DC63F; // brand mark only — never a state, never text
+
+  --am-ink-900: #2D3748; // body, headings
+  --am-ink-700: #4A5568; // table values
+  --am-ink-500: #5A6779; // labels, meta — replaces #718096
+  --am-ink-300: #8A94A6; // control border at rest, placeholder — never body text
+
+  --am-border:        #E2E8F0; // cards, rules, disabled control borders
+  --am-border-strong: #CBD5E0; // structural dividers only — NEVER a control border (1.49:1)
+
+  --am-control-border:          #8A94A6; // rest, on white (3.08:1)
+  --am-control-border-hover:    #5A6779; // hover, and rest for a control on surface
+  --am-control-border-disabled: #E2E8F0; // 1.4.11 exempts disabled controls
+  --am-control-bg:              #FFFFFF; // controls sit on white: #8A94A6 on surface is 2.86:1
+
+  --am-surface:        #F4F7FA;
+  --am-surface-raised: #FFFFFF;
+
+  --am-sidebar:        #1E2A38;
+  --am-sidebar-ink:    #C9D3E0;
+  --am-sidebar-hover:  #2B3A4C;
+  --am-sidebar-active: #31465E;
+  --am-sidebar-rule:   #33425A;
+
+  // Not on artboard 1, but drawn as literals by the templates file: the 1px
+  // rule between table rows (template 1, "No zebra, and why") and the two
+  // skeleton shimmer stops (artboard 8). Named here so no component carries them.
+  --am-row-rule:         #F0F3F7;
+  --am-skeleton-base:    #EDF1F6;
+  --am-skeleton-shimmer: #F7F9FB;
+
+  // ─── Semantic: ink / ground / border ───────────────────────────────────
+  --am-danger-ink:    #B42318;
+  --am-danger-bg:     #FEF3F2;
+  --am-danger-border: #FECDCA;
+
+  --am-warning-ink:    #B54708;
+  --am-warning-bg:     #FFFAEB;
+  --am-warning-border: #FEDF89;
+
+  --am-success-ink:    #067647;
+  --am-success-bg:     #ECFDF3;
+  --am-success-border: #ABEFC6;
+
+  --am-info-ink:    #1F5480;
+  --am-info-bg:     #E4EEF6;
+  --am-info-border: #C5DAEA;
+
+  --am-neutral-chip-ink:    #4A5568;
+  --am-neutral-chip-bg:     #F1F4F8;
+  --am-neutral-chip-border: #E2E8F0;
+
+  // Restricted relation (artboard 4, "hidden"). Hatch rather than grey,
+  // because grey already means disabled or empty.
+  --am-restricted-ink:         #5A6779;
+  --am-restricted-hatch-light: #F4F7FA;
+  --am-restricted-hatch-dark:  #E9EEF4;
+  --am-restricted-border:      #CBD5E0;
+  --am-restricted-hatch: repeating-linear-gradient(
+    135deg,
+    var(--am-restricted-hatch-light) 0 4px,
+    var(--am-restricted-hatch-dark) 4px 8px
+  );
+
+  --am-focus-ring:        #2E6FA3;
+  --am-focus-ring-width:  2px;
+  --am-focus-ring-offset: 2px;
+
+  --am-overlay-scrim: rgba(30, 42, 56, 0.45);
+
+  // ─── Space — 2px base, 4px layout rhythm ───────────────────────────────
+  // 2 and 6 exist only for sub-component gaps. Tailwind's default spacing
+  // scale already lands on every one of these (p-0.5 = 2px … p-10 = 40px),
+  // so they are not re-mapped into @theme; these names are for component CSS.
+  --am-space-2:  2px;
+  --am-space-4:  4px;
+  --am-space-6:  6px;
+  --am-space-8:  8px;
+  --am-space-12: 12px;
+  --am-space-16: 16px;
+  --am-space-20: 20px;
+  --am-space-24: 24px;
+  --am-space-32: 32px;
+  --am-space-40: 40px;
+
+  // ─── Radius & elevation ────────────────────────────────────────────────
+  // Cards carry a border and no shadow. Shadow means "floating above,
+  // dismissible": overlays, dialogs, menus. One shadow token in the system.
+  --am-radius-control: 4px;
+  --am-radius-button:  6px;
+  --am-radius-card:    8px;
+  --am-radius-pill:    999px;
+  --am-shadow-overlay: 0 12px 28px rgba(16, 24, 40, 0.14);
+
+  // ─── Density ───────────────────────────────────────────────────────────
+  // Compact is the default for every table and panel. Form controls are the
+  // 36px box; a control inside a table row is the 32px compact variant.
+  --am-row-height:          36px;
+  --am-control-height:      32px;
+  --am-icon-button-size:    32px;
+  --am-form-control-height: 36px;
+  --am-form-row-gap:        12px;
+  --am-form-max-width:      640px;
+
+  // ─── Dialog widths (artboard 7) ────────────────────────────────────────
+  --am-dialog-confirm: 420px;
+  --am-dialog-form:    560px;
+  --am-dialog-picker:  520px;
+  --am-dialog-form-body-max: 420px;
+
+  // ─── Type ──────────────────────────────────────────────────────────────
+  // One family for both scripts: IBM Plex Sans Arabic carries a Latin set
+  // drawn as IBM Plex Sans, so "14 Jan 2025" inside Arabic text is the same
+  // design as the words around it. See styles/fonts.css.
+  --am-font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+
+  // Steps from the artboard-2 specimen. Values are the DRAWN ones: "Record
+  // name" is labelled 28/34 but drawn at 36, and 36 is what its Arabic step
+  // (40, +4) is derived from.
+  --am-type-micro-size: 11px;   --am-type-micro-line: 16px;   --am-type-micro-weight: 700;
+  --am-type-micro-tracking: 0.08em;
+  --am-type-micro-transform: uppercase;
+  --am-type-micro-color: var(--am-ink-500);
+
+  --am-type-meta-size: 12px;    --am-type-meta-line: 18px;
+  --am-type-value-size: 13px;   --am-type-value-line: 20px;
+  --am-type-body-size: 14px;    --am-type-body-line: 21px;
+  --am-type-heading-size: 16px; --am-type-heading-line: 24px; --am-type-heading-weight: 600;
+
+  --am-type-title-size: 22px;   --am-type-title-line: 28px;   --am-type-title-weight: 600;
+  --am-type-title-tracking: -0.01em;
+
+  --am-type-record-size: 28px;  --am-type-record-line: 36px;  --am-type-record-weight: 600;
+  --am-type-record-tracking: -0.015em;
+}
+
+// Coarse pointer (tablet on rounds): one dial, chosen by pointer type, never
+// by the user.
+@media (pointer: coarse) {
+  :root {
+    --am-row-height:       44px;
+    --am-control-height:   40px;
+    --am-icon-button-size: 40px;
+  }
+}
+
+// Arabic. Applies to the document when the UI language is Arabic
+// (LanguageService sets <html lang>), and to any element marked lang="ar"
+// inside an English page. The artboard-2 table's values, not its summary
+// rule: 14→15/24 and 16→17/27 add 3px of leading, not 2.
+//
+// Tracking is zero everywhere: Arabic is a joining script and positive
+// tracking severs the strokes. There is no case, so the micro-label earns
+// its register from weight and colour at 12px instead of uppercase.
+[lang|='ar'] {
+  --am-type-micro-size: 12px;   --am-type-micro-line: 18px;
+  --am-type-micro-tracking: 0;
+  --am-type-micro-transform: none;
+
+  --am-type-meta-size: 13px;    --am-type-meta-line: 20px;
+  --am-type-value-size: 14px;   --am-type-value-line: 22px;
+  --am-type-body-size: 15px;    --am-type-body-line: 24px;
+  --am-type-heading-size: 17px; --am-type-heading-line: 27px;
+  --am-type-title-size: 23px;   --am-type-title-line: 32px;
+  --am-type-title-tracking: 0;
+  --am-type-record-size: 29px;  --am-type-record-line: 40px;
+  --am-type-record-tracking: 0;
+}
