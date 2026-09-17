@@ -7,7 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "check:formatting": "node scripts/check-formatting-rules.mjs"
+    "check:formatting": "node scripts/check-formatting-rules.mjs",
+    "check:contrast": "node scripts/check-contrast.mjs"
   },
   "private": true,
   "dependencies": {
