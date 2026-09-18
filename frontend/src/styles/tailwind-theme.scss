@@ -15,6 +15,13 @@
 // changes meaning. `--font-sans` is deliberately NOT set here — that would
 // retype every page, and the font switch is its own commit.
 
+// Not inline: Tailwind's preflight reads --default-font-family from --font-sans,
+// so this one has to exist as a real variable rather than be substituted at use.
+// Keeps `font-sans` and the document's own family the same thing.
+@theme {
+  --font-sans: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+}
+
 @theme inline {
   --color-primary-50: var(--am-primary-50);
   --color-primary-100: var(--am-primary-100);

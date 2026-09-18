@@ -112,7 +112,11 @@ Tier 3 — On-premises / private cloud (future)
   library then — `exceljs` is maintained on npm; SheetJS remains viable
   if sourced from its CDN rather than npm. Do not treat this line as a
   decision already made.
-- Typography: Inter (Google Fonts)
+- Typography: IBM Plex Sans Arabic, self-hosted (ACC-111) — one family for
+  Arabic AND Latin, four weights, no Google Fonts request. Inter is gone.
+  Type steps, weights and the Arabic rules are tokens in
+  `frontend/src/styles/design-tokens.scss`, taken from the design reference
+  (`frontend/DESIGN-REFERENCE.md`), which is authoritative for them.
 - Icons: PrimeIcons + Tabler Icons
 
 ### Supported Browsers (ACC-111)

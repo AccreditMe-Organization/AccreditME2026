@@ -36,7 +36,8 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Inter', sans-serif;
+  // ACC-111 — one family for both scripts, self-hosted (styles/fonts.css).
+  font-family: var(--am-font-family);
   background-color: var(--am-surface);
   color: var(--am-text-primary);
 }
