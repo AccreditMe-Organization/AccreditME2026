@@ -154,6 +154,30 @@ export class FormatService {
     };
   }
 
+  /**
+   * A date as it appears in an EDITABLE field — the value a person types and
+   * the value typing must produce (ACC-111).
+   *
+   * Gregorian always, even for a reader who has opted into Hijri, and English
+   * month names even in an Arabic session. Two reasons, both from ACC-94's own
+   * rules rather than convenience:
+   *
+   * - "Anything a person types or picks stays Gregorian" (D4). `date()` gives
+   *   a Hijri reader "4 ربيع الآخر 1448 (15 Sep 2026)", which is right to READ
+   *   and impossible to type back.
+   * - Digits are Latin in both languages, and the design's own Arabic dialog
+   *   draws the date field as "14 Jan 2025". An Arabic month name would not
+   *   round-trip through a parser either.
+   *
+   * Read-only displays keep using `date()`. This is only for a field whose
+   * value the user can edit.
+   */
+  dateForInput(value: DateInput): string {
+    const at = toDate(value);
+    if (!at) return '';
+    return this.gregorianDate(at, 'en', this.snapshot().timeZone);
+  }
+
   private gregorianDate(at: Date, language: DisplayLanguage, timeZone: string): string {
     const p = this.parts(at, language, { timeZone, calendar: 'gregory', day: 'numeric', month: 'short', year: 'numeric' });
     return `${p.day} ${p.month} ${p.year}`;

@@ -44,7 +44,7 @@ const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
 // Measured on the branch that introduced this scan.
-const BASELINE = 13;
+const BASELINE = 12;
 
 const OVERLAY_TAGS =
   /<(p-select|p-multiSelect|p-multiselect|p-datepicker|p-datePicker|p-overlayPanel|p-overlaypanel|p-autoComplete|p-autocomplete|p-cascadeSelect)\b([^>]*)>/g;

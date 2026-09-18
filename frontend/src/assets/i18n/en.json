@@ -24,7 +24,8 @@
     "back": "Back",
     "next": "Next",
     "close": "Close",
-    "remove": "Remove"
+    "remove": "Remove",
+    "saveFailed": "Save failed."
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -169,7 +170,13 @@
     "aiSuggesting": "AI is generating suggestions...",
     "aiSuggestionsTitle": "AI-Suggested Holidays",
     "aiSuggestionsHint": "Review each suggestion. Accept the ones that apply to your organization.",
-    "purpose": "Task and workflow due dates are counted in working time against this calendar."
+    "purpose": "Task and workflow due dates are counted in working time against this calendar.",
+    "holidayNameHint": "Shown on the calendar and in reports.",
+    "holidayDateHint": "Type a date, or pick one from the calendar.",
+    "holidayDateInvalid": "Enter a date like 18 Sep 2026.",
+    "toggleDatePanel": "Choose a date from a calendar",
+    "editHolidayNamed": "Edit {{name}}",
+    "deleteHolidayNamed": "Delete {{name}}"
   },
   "roles": {
     "title": "Roles & Permissions",
@@ -805,5 +812,21 @@
     "prevMonth": "Previous month",
     "nextMonth": "Next month",
     "weekHeader": "Wk"
+  },
+  "validation": {
+    "required": "This field is required.",
+    "minLength": "Too short.",
+    "maxLength": "Too long.",
+    "email": "Enter a valid email address.",
+    "min": "Too small.",
+    "max": "Too large.",
+    "pattern": "Enter a valid value.",
+    "invalid": "Check this value."
+  },
+  "dialog": {
+    "discardHeader": "Discard changes?",
+    "discardMessage": "This form has changes that have not been saved.",
+    "discard": "Discard",
+    "keepEditing": "Keep editing"
   }
 }

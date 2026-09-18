@@ -1,7 +1,16 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  Input,
+  Output,
+  EventEmitter,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
-import { ButtonModule } from 'primeng/button';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { DatePickerModule } from 'primeng/datepicker';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -11,78 +20,102 @@ import {
   CreatePublicHolidayDto,
 } from '../../services/working-calendar.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
+import { FormatService } from '../../../../core/formatting';
 
+/**
+ * Add / edit a public holiday — ACC-111's proof screen for the dialog shell,
+ * the field wrapper and the overlay rule.
+ *
+ * ## The date field is the point of this screen
+ *
+ * It used to be a `p-datepicker` with a floating panel inside a scrolling
+ * dialog body: PrimeNG's overlay closes on ANY ancestor scroll, so the panel
+ * could vanish mid-interaction. Artboard 7's answer is not a different
+ * overlay — it is that a panel inside a dialog EXPANDS IN FLOW, pushing the
+ * content below it, so there is no floating layer left to dismiss.
+ *
+ * And typing is a COMPLETE path: the text input alone can set the date, with
+ * the panel never opened. The panel is an assist, not the only route — which
+ * is also what makes the field usable from the keyboard.
+ *
+ * The buttons are NOT here any more: the dialog owns a fixed footer, outside
+ * the scrolling body (see PublicHolidayListComponent). This component exposes
+ * `submit()`, `canSave()`, `saving()` and `dirty()` for it to drive.
+ */
 @Component({
   selector: 'app-public-holiday-form',
   standalone: true,
   imports: [
     ReactiveFormsModule,
     TranslatePipe,
-    ButtonModule,
     InputTextModule,
     DatePickerModule,
     CheckboxModule,
+    FieldComponent,
+    IconButtonComponent,
   ],
   template: `
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+    <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
+      <am-field
+        [label]="'workingCalendar.holidayNameEn' | translate"
+        [control]="form.controls.nameEn"
+        [hint]="'workingCalendar.holidayNameHint' | translate"
+      >
+        <input pInputText formControlName="nameEn" class="w-full" />
+      </am-field>
 
-      <div class="flex flex-col gap-1">
-        <label for="nameEn" class="font-medium text-sm">
-          {{ 'workingCalendar.holidayNameEn' | translate }} *
-        </label>
-        <input id="nameEn" pInputText formControlName="nameEn" />
-      </div>
+      <am-field
+        [label]="'workingCalendar.holidayNameAr' | translate"
+        [control]="form.controls.nameAr"
+      >
+        <input pInputText formControlName="nameAr" dir="rtl" lang="ar" class="w-full" />
+      </am-field>
 
-      <div class="flex flex-col gap-1">
-        <label for="nameAr" class="font-medium text-sm">
-          {{ 'workingCalendar.holidayNameAr' | translate }}
-        </label>
-        <input id="nameAr" pInputText formControlName="nameAr" dir="rtl" />
-      </div>
-
-      <div class="flex flex-col gap-1">
-        <label for="date" class="font-medium text-sm">
-          {{ 'workingCalendar.holidayDate' | translate }} *
-        </label>
-        <p-datepicker
-          id="date"
-          formControlName="date"
-          [showIcon]="true"
-          styleClass="w-full"
+      <am-field
+        [label]="'workingCalendar.holidayDate' | translate"
+        [control]="form.controls.date"
+        [hint]="'workingCalendar.holidayDateHint' | translate"
+        [errorMessages]="{ invalidDate: 'workingCalendar.holidayDateInvalid' }"
+      >
+        <input
+          pInputText
+          class="w-full"
+          [value]="dateText()"
+          (input)="onDateTyped($any($event.target).value)"
+          (blur)="commitTypedDate()"
+          inputmode="numeric"
+          autocomplete="off"
         />
-      </div>
+        <am-icon-button
+          [label]="'workingCalendar.toggleDatePanel' | translate"
+          icon="pi pi-calendar"
+          (activated)="toggleDatePanel()"
+        />
+      </am-field>
+
+      <!-- IN FLOW, not floating: it pushes what follows down rather than
+           hovering over it, so the dialog body's scroll cannot dismiss it. -->
+      @if (panelOpen()) {
+        <p-datepicker
+          [inline]="true"
+          formControlName="date"
+          styleClass="w-full"
+          (onSelect)="panelOpen.set(false)"
+        />
+      }
 
       <div class="flex items-center gap-3">
-        <p-checkbox
-          formControlName="isRecurring"
-          [binary]="true"
-          inputId="isRecurring"
-        />
-        <label for="isRecurring" class="text-sm cursor-pointer">
+        <p-checkbox formControlName="isRecurring" [binary]="true" inputId="isRecurring" />
+        <label for="isRecurring" class="text-value cursor-pointer">
           {{ 'workingCalendar.isRecurring' | translate }}
         </label>
       </div>
 
       @if (saveError()) {
-        <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
+        <p class="text-meta text-[var(--am-danger-ink)]">{{ saveError() | translate }}</p>
       }
-
-      <div class="flex gap-3 justify-end">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          type="button"
-          (onClick)="cancelled.emit()"
-        />
-        <p-button
-          type="submit"
-          [label]="'common.save' | translate"
-          [loading]="saving()"
-          [disabled]="form.invalid"
-        />
-      </div>
-
     </form>
   `,
 })
@@ -93,9 +126,19 @@ export class PublicHolidayFormComponent implements OnInit {
 
   private readonly svc = inject(WorkingCalendarService);
   private readonly fb = inject(FormBuilder);
+  private readonly format = inject(FormatService);
+  private readonly translate = inject(TranslateService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
+  readonly panelOpen = signal(false);
+
+  /** What the text input shows. Kept in step with the control both ways. */
+  private readonly typed = signal<string | null>(null);
+  private readonly controlDate = signal<Date | null>(null);
+
+  readonly dateText = computed(() => this.typed() ?? this.format.dateForInput(this.controlDate()));
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(255)]],
@@ -103,6 +146,13 @@ export class PublicHolidayFormComponent implements OnInit {
     date: [null as Date | null, Validators.required],
     isRecurring: [false],
   });
+
+  /** For the dialog: unsaved work means Escape has to ask first. */
+  readonly dirty = (): boolean => this.form.dirty;
+
+  canSave(): boolean {
+    return this.form.valid && !this.saving();
+  }
 
   ngOnInit(): void {
     if (this.holiday) {
@@ -113,9 +163,70 @@ export class PublicHolidayFormComponent implements OnInit {
         isRecurring: this.holiday.isRecurring,
       });
     }
+    this.controlDate.set(this.form.controls.date.value);
+    this.form.controls.date.valueChanges.subscribe((value) => {
+      this.controlDate.set(value);
+      // A pick replaces whatever was half-typed.
+      this.typed.set(null);
+    });
   }
 
-  onSubmit(): void {
+  onDateTyped(value: string): void {
+    this.typed.set(value);
+  }
+
+  /**
+   * Opening the panel adds ~330px in flow, which on this form exceeds the
+   * dialog body's 420px cap — so the month grid opens partly below the fold.
+   * Bringing it into view is a stopgap, NOT the answer: artboard 7's rule is
+   * that a form is sized to fit with every panel open, and one that does not
+   * becomes a stepped dialog or a page. That is a product decision, recorded
+   * for ACC-111's review rather than taken here.
+   */
+  toggleDatePanel(): void {
+    const opening = !this.panelOpen();
+    this.panelOpen.set(opening);
+    if (!opening) return;
+    setTimeout(() => {
+      this.host.nativeElement
+        .querySelector('p-datepicker')
+        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }
+
+  /**
+   * Typing is a complete path to a date, so the text has to become a real
+   * value — on blur, not per keystroke, or "18 S" is an error before anyone
+   * has finished the month.
+   */
+  commitTypedDate(): void {
+    const text = this.typed();
+    if (text === null) return;
+
+    const control = this.form.controls.date;
+    const trimmed = text.trim();
+
+    if (trimmed === '') {
+      control.setValue(null);
+      control.markAsDirty();
+      this.typed.set(null);
+      return;
+    }
+
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+      control.setErrors({ ...(control.errors ?? {}), invalidDate: true });
+      control.markAsDirty();
+      return;
+    }
+
+    control.setValue(parsed);
+    control.markAsDirty();
+    this.typed.set(null);
+  }
+
+  submit(): void {
+    this.commitTypedDate();
     if (this.form.invalid) return;
     this.saving.set(true);
     this.saveError.set(null);
@@ -135,10 +246,11 @@ export class PublicHolidayFormComponent implements OnInit {
     request$.subscribe({
       next: () => {
         this.saving.set(false);
+        this.form.markAsPristine();
         this.saved.emit();
       },
       error: (err: unknown) => {
-        this.saveError.set(extractErrorMessage(err, 'Save failed'));
+        this.saveError.set(extractErrorMessage(err, this.translate.instant('common.saveFailed')));
         this.saving.set(false);
       },
     });
