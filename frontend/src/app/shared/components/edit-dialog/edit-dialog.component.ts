@@ -27,6 +27,29 @@ import { LayerStackService } from '../../overlay/layer-stack.service';
  */
 export type DialogSize = 'confirm' | 'form' | 'picker';
 
+/**
+ * Overlay panels PrimeNG opens and closes itself, which own Escape while they
+ * are up. An INLINE datepicker panel is deliberately excluded: it is part of
+ * the layout, nothing dismisses it, and treating it as an overlay would make a
+ * dialog containing one unclosable by keyboard.
+ */
+const FOREIGN_OVERLAY_SELECTOR = [
+  '.p-select-overlay',
+  '.p-multiselect-overlay',
+  '.p-autocomplete-overlay',
+  '.p-cascadeselect-overlay',
+  '.p-treeselect-overlay',
+  '.p-datepicker-panel:not(.p-datepicker-panel-inline)',
+  '.p-popover',
+  '.p-tieredmenu-overlay',
+  '.p-menu-overlay',
+  '.p-confirmdialog',
+].join(',');
+
+function foreignOverlayOpen(): boolean {
+  return document.querySelector(FOREIGN_OVERLAY_SELECTOR) !== null;
+}
+
 const DIALOG_WIDTH: Record<DialogSize, string> = {
   confirm: 'var(--am-dialog-confirm)',
   form: 'var(--am-dialog-form)',
@@ -212,6 +235,12 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
       // form's unsaved work. See LayerStackService for why ordering cannot
       // solve it.
       if (this.layerId !== null && !this.layers.isTop(this.layerId)) return;
+      // And an overlay PrimeNG owns cannot register with that stack, because
+      // PrimeNG builds it and gives us no hook — so defer to it by asking the
+      // DOM instead. Same class as the OverlaySelect defect: every PrimeNG
+      // overlay closes itself on Escape from a `document` listener in the
+      // BUBBLE phase, which this capture listener beats.
+      if (foreignOverlayOpen()) return;
       event.stopPropagation();
       this.requestClose();
     };

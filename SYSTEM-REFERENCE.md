@@ -4723,6 +4723,27 @@ REGISTRATION order, and a parent dialog is always constructed before the layer
 inside it — so a child can never win by listening later or by calling
 `stopPropagation`.
 
+**The whole class was swept once, deliberately, rather than found one screen
+at a time** (ACC-111). Every component handling Escape locally had made the
+same ordering assumption, and the shell's capture listener invalidated all of
+them at once. The result, so nobody re-runs it:
+
+| What | Verdict |
+| -- | -- |
+| `EditDialogComponent` | Owns the stack; registers automatically |
+| `OverlaySelectComponent` | Needed registration — now registers |
+| **PrimeNG overlays** (select, multiselect, datepicker popup, autocomplete, cascadeselect, popover, menus, confirmdialog) | **Cannot register — PrimeNG builds them and exposes no hook. The shell DEFERS instead**, skipping Escape while any of their panels is in the DOM |
+| `workflow-template-list`, `user-list` `stopPropagation` calls | Unaffected — CLICK handlers, not keydown |
+| Everything else | No local Escape handling anywhere else in the app |
+
+**The deferral has its own failure mode, and it is pinned.** The selector
+matches an OPEN panel, never a mounted-but-closed component: the app shell
+renders a `<p-confirmdialog>` permanently, and if that had counted as an open
+overlay no dialog would ever have closed on Escape again. An INLINE datepicker
+panel is excluded for the same reason — it is layout, not an overlay.
+Confirmed against PrimeNG's source that `p-confirmdialog` is a selector, not a
+host class, and a spec asserts the closed case.
+
 **This already broke something real.** ACC-41 made `OverlaySelectComponent`
 swallow Escape with `stopPropagation()` inside CDK's `body` listener, correct
 at the time because `body` precedes `document` in the BUBBLE chain. ACC-111's
