@@ -380,6 +380,20 @@ The Railway deployment reads the same database and competes on the same
 migration from an unmerged branch was applied. The rule that came out of it:
 additive/nullable changes are safe ahead of merge; destructive ones are not.
 
+**A STOPPED SERVER IS ONE YOU CHECKED, NEVER ONE THE COMMAND SAID IT STOPPED.**
+Added during `ACC-111`, where the backend was reported stopped and was still
+serving: the tooling killed the `npm run` wrapper and left the Nest process
+holding port 3000. It surfaced only because the next start failed with
+`EADDRINUSE`, half an hour later — nothing before that point would have shown
+it, and every "servers stopped" line in between was an assertion.
+
+So a stop is confirmed by the PORT being free (`netstat -ano | grep :3000`) or
+the PID being gone, and killed with `taskkill //PID <pid> //T //F` so the whole
+tree goes. This matters more than a tidy shell: a local worker on a shared
+Redis competes with the deployment for `sla-monitor` jobs, and the same
+kill-the-parent-not-the-child mechanism is what left `ACC-82`'s orphaned
+watchers running across three reconciler runs. Same shape, twice.
+
 **Migrations have an approval gate.** Claude Code shows the SQL and waits for
 Ahmad's explicit go-ahead before running `prisma migrate dev`. This was added
 after `ACC-48` and has held since.

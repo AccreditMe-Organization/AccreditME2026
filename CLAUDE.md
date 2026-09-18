@@ -2874,6 +2874,15 @@ complete, not just the currently-in-review ones.
     is "التقويم الرسمي" (rail, breadcrumb) and `workingCalendar.title` is
     "التقويم الوظيفي" (page H1, and therefore the tab title). English uses
     "Working Calendar" for both.
+  - **Organization Structure renders three things in English regardless of
+    session language** (`org-unit-tree.component.ts`, found in ACC-111's
+    Arabic browser pass): a hardcoded `<th>Status</th>` (line 55), hardcoded
+    `p-tag` values `'Active'`/`'Inactive'` (line 71), and the unit type as
+    `{{ rowData.type ?? '—' }}` (line 68) — which prints the raw lookup key
+    ("administration", "department"), so that one is wrong in English too, not
+    only in Arabic. Distinct from ACC-89: no stored `nameAr` is being ignored
+    here, so the fix is a translation key and a lookup-label lookup, not a
+    language branch.
   - **The Lookup values page's extensible tag reads just "Yes"**
     (`lookup.extensibleYes`). The same key is fine in the category table,
     under an "Extensible" column; beside the page title it has no column to
