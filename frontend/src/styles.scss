@@ -12,6 +12,8 @@
 @use 'tailwindcss';
 // After tailwindcss, because @theme extends the theme it declares.
 @use 'styles/tailwind-theme';
+// After Tailwind so the type rules win over preflight (ACC-111).
+@use 'styles/typography';
 
 // primeicons.css moved to angular.json's styles[] array (ACC-15) — no
 // longer @import-ed here. Once .postcssrc.json exists, Karma's

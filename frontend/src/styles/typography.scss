@@ -1,0 +1,76 @@
+// Type scale (ACC-111), from artboard 2 of the design system.
+//
+// The STEPS are tokens (styles/design-tokens.scss) and reach templates as
+// Tailwind utilities — text-micro, text-meta, text-value, text-body,
+// text-heading, text-title, text-record — each carrying its own line-height,
+// and each resolving per element so an Arabic subtree gets the Arabic step.
+//
+// This file holds only what a utility cannot express: the document's default
+// step, the rules that are absolute rather than per-element, and the one
+// composite (the micro-label) whose Arabic form differs in more than size.
+//
+// Loaded after Tailwind so these win over preflight at equal specificity.
+
+// The document's own step. Body copy is 14/21 in English, 15/24 in Arabic —
+// set here rather than on html, because Tailwind's rem-based utilities are
+// relative to the ROOT font size and rescaling that would move every spacing
+// utility in the app at once.
+body {
+  font-size: var(--am-type-body-size);
+  line-height: var(--am-type-body-line);
+  color: var(--am-ink-900);
+}
+
+// NO ITALICS ANYWHERE — including in English, so the two languages stay
+// structurally identical. Arabic has no true italic and the synthesised slant
+// is illegible at 12px. Emphasis is weight or colour, never slant.
+i,
+em,
+cite,
+dfn,
+var,
+address {
+  font-style: normal;
+}
+
+em,
+strong {
+  font-weight: 500;
+}
+
+// Arabic is a joining script: positive tracking severs the connecting strokes
+// and the word stops being a word. Every tracking value in this system is
+// Latin-only, so an Arabic subtree resets it — including where a Tailwind
+// tracking utility or a component style set one. This is a guard, not a
+// style: there is no Arabic text anywhere that wants letter-spacing.
+[lang|='ar'],
+[lang|='ar'] * {
+  letter-spacing: 0;
+}
+
+// Arabic must never be broken mid-word. Ellipsis is safe; break-all is not.
+[lang|='ar'] {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+// The micro-label — a composite, because Arabic differs in more than size:
+// 11/700 with 0.08em tracking and uppercase in English, 12/700 with neither in
+// Arabic, where the register comes from weight and colour instead. text-transform
+// is a no-op in Arabic, so a shared uppercase label silently reads as body text
+// there while the English one reads as a label.
+.am-label {
+  font-size: var(--am-type-micro-size);
+  line-height: var(--am-type-micro-line);
+  font-weight: var(--am-type-micro-weight);
+  letter-spacing: var(--am-type-micro-tracking);
+  text-transform: var(--am-type-micro-transform);
+  color: var(--am-type-micro-color);
+}
+
+// Columns of figures align only if their digits share one advance width.
+// Any cell holding a number gets this; the formatting layer (ACC-94) decides
+// what the number SAYS, this decides how the column reads.
+.am-num {
+  font-variant-numeric: tabular-nums;
+}
