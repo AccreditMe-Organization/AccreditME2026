@@ -5,12 +5,32 @@ import {
   OnDestroy,
   TemplateRef,
   ViewChild,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
   input,
   output,
   signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { DialogModule } from 'primeng/dialog';
+import { ConfirmationService, PrimeTemplate } from 'primeng/api';
+import { TranslateService } from '@ngx-translate/core';
+
+/**
+ * The three dialog sizes (ACC-111, artboard 7). A size is a KIND of dialog,
+ * not a width a caller tunes: confirm asks one question, form holds up to six
+ * fields, picker is a search over a scrolling list.
+ */
+export type DialogSize = 'confirm' | 'form' | 'picker';
+
+const DIALOG_WIDTH: Record<DialogSize, string> = {
+  confirm: 'var(--am-dialog-confirm)',
+  form: 'var(--am-dialog-form)',
+  picker: 'var(--am-dialog-picker)',
+};
 
 // Wraps a p-dialog and re-attaches its caller-supplied content via
 // ngTemplateOutlet, inside this component's OWN @if(visible()) — not
@@ -23,20 +43,23 @@ import { DialogModule } from 'primeng/dialog';
 @Component({
   selector: 'app-edit-dialog',
   standalone: true,
-  imports: [DialogModule, NgTemplateOutlet],
+  imports: [DialogModule, NgTemplateOutlet, PrimeTemplate],
   template: `
     <p-dialog
       [visible]="visible()"
-      (visibleChange)="visibleChange.emit($event)"
+      (visibleChange)="onDialogVisibleChange($event)"
       [header]="header()"
       [modal]="true"
-      [style]="{ width: width() }"
+      [closeOnEscape]="false"
+      [dismissableMask]="false"
+      [closable]="!saving()"
+      [style]="{ width: resolvedWidth() }"
     >
       @if (visible()) {
-        <div class="relative">
+        <div class="relative am-dialog__body-wrap">
           <div
             #scrollArea
-            class="max-h-[60vh] overflow-y-auto pr-1"
+            class="am-dialog__body pr-1"
             (scroll)="onScroll()"
             (wheel)="onWheel($event)"
           >
@@ -53,6 +76,17 @@ import { DialogModule } from 'primeng/dialog';
             </div>
           }
         </div>
+      }
+
+      <!-- FIXED, and outside the scrolling body (artboard 7). Two reasons, and
+           the second is not obvious: a footer inside the scroll container can
+           be scrolled away from the cursor mid-click, and its buttons sit flush
+           against the container's edge, which CLIPS their focus ring — measured
+           in ACC-111, the ring was cropped along the bottom. -->
+      @if (footer(); as footerTemplate) {
+        <ng-template pTemplate="footer">
+          <ng-container *ngTemplateOutlet="footerTemplate" />
+        </ng-template>
       }
     </p-dialog>
   `,
@@ -91,6 +125,15 @@ import { DialogModule } from 'primeng/dialog';
       :host ::ng-deep .p-multiselect-list-container {
         overscroll-behavior: contain;
       }
+
+      /* Capped so the body need not scroll at all (artboard 7): content is
+         sized for the dialog with every panel open, and a body that still
+         overflows means the pattern is wrong — split it into steps, or make it
+         a page. 60vh keeps the cap honest on a short viewport. */
+      .am-dialog__body {
+        max-height: min(var(--am-dialog-form-body-max), 60vh);
+        overflow-y: auto;
+      }
     `,
   ],
 })
@@ -98,8 +141,43 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   readonly visible = input.required<boolean>();
   readonly header = input<string>('');
   readonly content = input.required<TemplateRef<unknown>>();
-  readonly width = input<string>('560px');
   readonly visibleChange = output<boolean>();
+
+  /**
+   * The kind of dialog, which decides its width (ACC-111, artboard 7).
+   * Prefer this to `width`, which stays for callers predating it.
+   */
+  readonly size = input<DialogSize>('form');
+
+  /** Explicit width. Overrides `size` when set; '' means "use the size". */
+  readonly width = input<string>('');
+
+  /**
+   * Fixed footer, rendered outside the scrolling body. Optional: callers
+   * predating it keep their buttons inside the content.
+   */
+  readonly footer = input<TemplateRef<unknown> | null>(null);
+
+  /**
+   * Whether the form holds unsaved changes. Escape and the close button then
+   * ASK before discarding rather than throwing the work away silently.
+   */
+  readonly dirty = input(false);
+
+  /**
+   * A save is in flight. Escape is disarmed and the close button hidden: the
+   * outcome is not known yet, so there is nothing truthful to return to.
+   */
+  readonly saving = input(false);
+
+  protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
+
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly translate = inject(TranslateService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /** What had focus when the dialog opened, so it can be given back. */
+  private triggerElement: HTMLElement | null = null;
 
   @ViewChild('scrollArea') private readonly scrollAreaRef?: ElementRef<HTMLDivElement>;
   @ViewChild('contentWrapper') private readonly contentWrapperRef?: ElementRef<HTMLDivElement>;
@@ -108,6 +186,77 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
 
   private resizeObserver?: ResizeObserver;
   private observedContentEl?: HTMLDivElement;
+
+  constructor() {
+    // Escape is ours, not p-dialog's (closeOnEscape is off), because it has to
+    // consult dirty() and saving() before it closes anything.
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || !this.visible()) return;
+      event.stopPropagation();
+      this.requestClose();
+    };
+    document.addEventListener('keydown', onKeydown, true);
+    this.teardownKeydown = () => document.removeEventListener('keydown', onKeydown, true);
+
+    effect(() => {
+      if (this.visible()) {
+        // Remember the trigger BEFORE the dialog takes focus.
+        this.triggerElement = document.activeElement as HTMLElement | null;
+        afterNextRender({ read: () => this.focusFirstField() }, { injector: this.injector });
+      } else if (this.triggerElement?.isConnected) {
+        // Focus returns to what opened the dialog — otherwise it falls to the
+        // top of the document and a keyboard user starts the page again.
+        this.triggerElement.focus();
+        this.triggerElement = null;
+      }
+    });
+  }
+
+  private readonly injector = inject(Injector);
+  private teardownKeydown: (() => void) | null = null;
+
+  /**
+   * Focus the first FIELD, never the close button. PrimeNG focuses whatever is
+   * first in the DOM, which is the X — landing a keyboard user on "throw this
+   * away" instead of on the work.
+   */
+  private focusFirstField(): void {
+    const field = this.host.nativeElement.querySelector<HTMLElement>(
+      '.p-dialog-content input:not([type="hidden"]), .p-dialog-content select, .p-dialog-content textarea, .p-dialog-content [tabindex]:not([tabindex="-1"])',
+    );
+    field?.focus();
+  }
+
+  /**
+   * Every close path arrives here: Escape, the header's X, a caller's Cancel.
+   * One path, so the dirty question cannot be asked in one place and skipped
+   * in another.
+   */
+  requestClose(): void {
+    if (this.saving()) return; // nothing truthful to return to yet
+
+    if (!this.dirty()) {
+      this.visibleChange.emit(false);
+      return;
+    }
+
+    this.confirmationService.confirm({
+      header: this.translate.instant('dialog.discardHeader'),
+      message: this.translate.instant('dialog.discardMessage'),
+      acceptLabel: this.translate.instant('dialog.discard'),
+      rejectLabel: this.translate.instant('dialog.keepEditing'),
+      acceptButtonStyleClass: 'p-button-danger',
+      accept: () => this.visibleChange.emit(false),
+    });
+  }
+
+  protected onDialogVisibleChange(visible: boolean): void {
+    if (visible) {
+      this.visibleChange.emit(true);
+      return;
+    }
+    this.requestClose();
+  }
 
   // The scroll area (and the content it wraps) only exists in the DOM
   // while visible() is true, so the ResizeObserver is attached/detached
@@ -131,6 +280,7 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
 
   ngOnDestroy(): void {
     this.teardownObserver();
+    this.teardownKeydown?.();
   }
 
   onScroll(): void {

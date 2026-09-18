@@ -1,6 +1,8 @@
 import { Component, Input, OnInit, TemplateRef, ViewChild } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { ConfirmationService } from 'primeng/api';
+import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { EditDialogComponent } from './edit-dialog.component';
 
 let probeInstanceCounter = 0;
@@ -68,7 +70,55 @@ class ScrollAffordanceHostComponent {
   @ViewChild('tallTpl', { read: TemplateRef, static: true }) tallTpl!: TemplateRef<unknown>;
 }
 
+
+// ACC-111 — the dialog shell: sizes, a fixed footer, focus and the Escape
+// contract.
+@Component({
+  standalone: true,
+  imports: [EditDialogComponent],
+  template: `
+    <button id="trigger" (click)="visible = true">Open</button>
+    <ng-template #formTpl>
+      <label for="field-a">A</label>
+      <input id="field-a" type="text" />
+    </ng-template>
+    <ng-template #footerTpl>
+      <button id="save-btn">Save</button>
+    </ng-template>
+    <app-edit-dialog
+      [visible]="visible"
+      (visibleChange)="visible = $event"
+      [content]="formTpl"
+      [footer]="withFooter ? footerTpl : null"
+      [size]="size"
+      [dirty]="dirty"
+      [saving]="saving"
+    />
+  `,
+})
+class ShellHostComponent {
+  visible = false;
+  withFooter = true;
+  dirty = false;
+  saving = false;
+  size: 'confirm' | 'form' | 'picker' = 'form';
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+  @ViewChild('footerTpl', { read: TemplateRef, static: true }) footerTpl!: TemplateRef<unknown>;
+}
+
 describe('EditDialogComponent', () => {
+  // ACC-111 — the dialog now asks before discarding unsaved work and reads its
+  // discard wording from the translation files, so both services are real
+  // dependencies rather than test scaffolding.
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        ConfirmationService,
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+      ],
+    });
+  });
+
   describe('fresh instance on reopen (ACC-29 fix mechanism)', () => {
     it('creates a genuinely new content instance every time it reopens, re-running one-shot pre-fill with the current value', () => {
       const fixture = TestBed.createComponent(InstanceIdentityHostComponent);
@@ -227,6 +277,100 @@ describe('EditDialogComponent', () => {
       const dialog = fixture.debugElement.query(By.directive(EditDialogComponent))
         .componentInstance as EditDialogComponent;
       expect(dialog.canScrollMore()).toBe(true);
+    });
+  });
+
+  // ACC-111 — the dialog shell.
+  describe('the shell (ACC-111)', () => {
+    const open = async (setup: (h: ShellHostComponent) => void = () => {}) => {
+      const fixture = TestBed.createComponent(ShellHostComponent);
+      setup(fixture.componentInstance);
+      fixture.componentInstance.visible = true;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return fixture;
+    };
+
+    const escape = (): void => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    };
+
+    it('takes its width from the size, not from the caller', async () => {
+      const fixture = await open((h) => (h.size = 'confirm'));
+      const dialog = document.querySelector('.p-dialog') as HTMLElement;
+      expect(dialog.style.width).toContain('--am-dialog-confirm');
+    });
+
+    it('renders the footer OUTSIDE the scrolling body, so it cannot scroll away', async () => {
+      const fixture = await open();
+      const body = document.querySelector('.am-dialog__body');
+      const save = document.querySelector('#save-btn');
+      expect(save).toBeTruthy();
+      expect(body?.contains(save!)).toBe(false);
+    });
+
+    it('moves focus to the first field, never the close button', async () => {
+      const fixture = await open();
+      expect((document.activeElement as HTMLElement)?.id).toBe('field-a');
+    });
+
+    it('closes on Escape when there is nothing to lose', async () => {
+      const fixture = await open();
+      escape();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.visible).toBe(false);
+    });
+
+    it('asks before discarding unsaved work rather than closing on Escape', async () => {
+      const fixture = await open((h) => (h.dirty = true));
+      const confirmations: unknown[] = [];
+      spyOn(TestBed.inject(ConfirmationService), 'confirm').and.callFake((c: unknown) => {
+        confirmations.push(c);
+        return TestBed.inject(ConfirmationService);
+      });
+
+      escape();
+      fixture.detectChanges();
+
+      expect(confirmations.length).toBe(1);
+      expect(fixture.componentInstance.visible).toBe(true);
+    });
+
+    it('DISARMS Escape while a save is in flight — there is no outcome to return to yet', async () => {
+      const fixture = await open((h) => {
+        h.dirty = true;
+        h.saving = true;
+      });
+      const confirmSpy = spyOn(TestBed.inject(ConfirmationService), 'confirm');
+
+      escape();
+      fixture.detectChanges();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.visible).toBe(true);
+    });
+
+    it('hides the close button while saving, so the X cannot do what Escape refuses', async () => {
+      const fixture = await open((h) => (h.saving = true));
+      expect(document.querySelector('.p-dialog-header-close')).toBeNull();
+    });
+
+    it('returns focus to whatever opened it', async () => {
+      const fixture = TestBed.createComponent(ShellHostComponent);
+      fixture.detectChanges();
+      const trigger = fixture.nativeElement.querySelector('#trigger') as HTMLButtonElement;
+      trigger.focus();
+      trigger.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect((document.activeElement as HTMLElement)?.id).toBe('field-a');
+
+      escape();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect((document.activeElement as HTMLElement)?.id).toBe('trigger');
     });
   });
 });
