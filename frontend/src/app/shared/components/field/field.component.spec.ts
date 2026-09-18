@@ -186,6 +186,23 @@ describe('FieldComponent', () => {
     expect(message().classList).not.toContain('am-field__message--error');
   });
 
+  // ONE focus indicator per element, never two. The preset gives every
+  // interactive element a 2px ring at a 2px offset (artboard 9); a field
+  // signals focus with a primary border plus the 3px halo (artboard 6).
+  // Both are right alone — drawing both is what happens by default, and only
+  // via the keyboard, the path least likely to be found by accident.
+  it('renders the halo and suppresses the ring on a keyboard-focused control', () => {
+    const el = input();
+    el.focus();
+    fixture.detectChanges();
+
+    expect(el.matches(':focus-visible')).toBe(true);
+    const styles = getComputedStyle(el);
+    expect(styles.outlineStyle).toBe('none');
+    expect(styles.boxShadow).not.toBe('none');
+    expect(styles.boxShadow).toContain('rgb');
+  });
+
   it('focuses its control on request, for a form moving to the first invalid field', () => {
     host.field().focusControl();
     expect(document.activeElement).toBe(input());

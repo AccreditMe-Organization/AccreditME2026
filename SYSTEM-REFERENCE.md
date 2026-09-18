@@ -4659,6 +4659,58 @@ only. Switch back before moving on.
 
 ---
 
+### 10.12 `FieldComponent` — the Field Wrapper, and the Form-State Convention (ACC-111)
+
+`frontend/src/app/shared/components/field/field.component.ts`. Wraps one
+control: the label above it, the seven states of artboard 6, and a single
+message slot. The control itself is projected, so the wrapper decides how a
+field BEHAVES and the screen decides which control it needs.
+
+**A COMPONENT THAT MIRRORS FORM STATE SUBSCRIBES TO THE CONTROL'S
+`statusChanges` AND `valueChanges`. It never infers state from DOM events.**
+This is a convention of the same standing as `getById()` /
+`getByIdForViewer()` in Section 1.9, and it exists because the DOM half looks
+sufficient and is not: `disable()`, `setValue()` and a parent's
+`patchValue()` raise no `input` and no `focusout`. A wrapper listening only to
+the DOM therefore keeps rendering the state a control USED to be in.
+
+**What that costs, concretely, so nobody rates it cosmetic.** The failure
+found in ACC-111 was a disabled control still carrying `aria-invalid="true"`,
+the `p-invalid` class and an error message. A screen reader announces a fault
+on a field that no longer has one and that the user cannot act on, because it
+is disabled. It is an accessibility defect, not a stale pixel.
+
+DOM listeners still earn their place for the timing rule — `focusout` is what
+"validate on blur" means, and there is no control-level event for it — so the
+component uses both, deliberately. The rule is that the control's own streams
+are the source of TRUTH for state, and DOM events only supply what the forms
+API does not model.
+
+**Two more properties worth not re-deriving:**
+
+- **The element-mirroring effect must depend on a SIGNAL holding the projected
+  control**, not on a plain property. A property is populated after the first
+  render, by which time the effect has already run once against `null` and
+  will never re-run — every `aria-*` attribute silently stays unset. Six specs
+  caught this; nothing about the rendered page looks wrong.
+- **The message slot is always in the layout**, with a reserved height, empty
+  when there is nothing to say. A slot that appears with the error moves every
+  field below it while the user is reading one, and inside a dialog it moves
+  the footer under a cursor already travelling to Save. A spec pins the height
+  across the transition rather than trusting the CSS.
+
+**One focus indicator per element, never two.** The preset gives every
+interactive element a 2px focus ring at a 2px offset (artboard 9); a FIELD
+signals focus with a primary border plus the 3px halo of artboard 6 instead.
+Both are correct alone, and drawing both at once is what happens by default,
+so the wrapper sets `outline: none` on a focus-visible projected control and a
+spec asserts it. This only shows up via the keyboard, which is the path least
+likely to be found by accident.
+
+Consumers: the ACC-111 proof screens; every screen migration inherits it.
+
+---
+
 ## 11. Known Cross-Cutting Gaps
 
 **✅ Complete — built incrementally as each of Sections 1–10 above was
