@@ -20,6 +20,7 @@ import { CdkListbox, CdkOption, ListboxValueChangeEvent } from '@angular/cdk/lis
 import { CdkScrollable, ScrollDispatcher } from '@angular/cdk/scrolling';
 import { TranslatePipe } from '@ngx-translate/core';
 import { Subject } from 'rxjs';
+import { assertOverlaySafe } from '../../overlay/overlay-guard';
 
 // Minimal object satisfying ScrollDispatcher.register()/deregister()'s real
 // RUNTIME contract — verified directly against
@@ -516,6 +517,13 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
         autoClose: true,
         scrollThrottle: 20,
       });
+
+      // ACC-111 — the design's engineering rule, enforced where the overlay is
+      // actually built rather than in a document nobody reads. It passes here
+      // by construction; it exists so that CHANGING the strategy above fails
+      // loudly in development instead of quietly reintroducing the PrimeNG
+      // scroll-dismiss fault this component was built to escape.
+      assertOverlaySafe(this.triggerRef.nativeElement, scrollStrategy, 'OverlaySelectComponent');
 
       this.overlayRef = this.overlay.create({
         positionStrategy,

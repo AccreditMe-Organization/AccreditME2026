@@ -9,7 +9,8 @@
     "test": "ng test",
     "check:formatting": "node scripts/check-formatting-rules.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
-    "check:icon-labels": "node scripts/check-icon-labels.mjs"
+    "check:icon-labels": "node scripts/check-icon-labels.mjs",
+    "check:dialog-overlays": "node scripts/check-dialog-overlays.mjs"
   },
   "private": true,
   "dependencies": {
