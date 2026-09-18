@@ -115,6 +115,22 @@ Tier 3 — On-premises / private cloud (future)
 - Typography: Inter (Google Fonts)
 - Icons: PrimeIcons + Tabler Icons
 
+### Supported Browsers (ACC-111)
+
+```
+Chrome / Edge   111+
+Safari          16.4+
+Firefox         115 ESR+
+```
+
+Ahmad's decision, recorded because ACC-111 made it necessary to state: the
+PrimeNG preset derives the brand ramp positions the design does not name with
+`color-mix()`, whose baseline is exactly that set. Nothing in the app carries a
+fallback for it, and none is needed — Angular's own supported-browser matrix
+already sits above this line, so this documents the floor rather than lowering
+the app to it. A feature below this baseline is a real constraint to design
+around; anything above it may be used freely.
+
 ### Infrastructure
 - Backend hosting: Railway (auto-deploy from GitHub)
 - Database: Supabase — Bahrain region (me-south-1)
