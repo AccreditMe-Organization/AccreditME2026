@@ -21,6 +21,7 @@ import { CdkScrollable, ScrollDispatcher } from '@angular/cdk/scrolling';
 import { TranslatePipe } from '@ngx-translate/core';
 import { Subject } from 'rxjs';
 import { assertOverlaySafe } from '../../overlay/overlay-guard';
+import { LayerStackService } from '../../overlay/layer-stack.service';
 
 // Minimal object satisfying ScrollDispatcher.register()/deregister()'s real
 // RUNTIME contract — verified directly against
@@ -353,6 +354,8 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   private readonly overlay = inject(Overlay);
   private readonly viewContainerRef = inject(ViewContainerRef);
   private readonly scrollDispatcher = inject(ScrollDispatcher);
+  private readonly layers = inject(LayerStackService);
+  private layerId: number | null = null;
   private readonly ngZone = inject(NgZone);
   private manualScrollables: { scrollable: ManualScrollable; destroy: () => void }[] = [];
 
@@ -558,6 +561,10 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
       // bypassing close() entirely) all end up here exactly once.
       this.overlayRef.detachments().subscribe(() => {
         this.isOpen.set(false);
+        if (this.layerId !== null) {
+          this.layers.remove(this.layerId);
+          this.layerId = null;
+        }
         this.manualScrollables.forEach(({ scrollable, destroy }) => {
           this.scrollDispatcher.deregister(asScrollable(scrollable));
           destroy();
@@ -569,6 +576,13 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
     const portal = new TemplatePortal(this.panelTpl, this.viewContainerRef);
     this.overlayRef.attach(portal);
     this.isOpen.set(true);
+    // ACC-111 — an open dropdown IS a dismissable layer, so it registers as
+    // one. Without this the dialog shell's capture-phase Escape listener runs
+    // first (capture always precedes bubble, so ACC-41's stopPropagation in
+    // CDK's body listener no longer arrives in time) and Escape on this
+    // dropdown asks about the parent form's unsaved work instead of closing
+    // the list. See LayerStackService.
+    if (this.layerId === null) this.layerId = this.layers.push();
     this.onTouched();
   }
 

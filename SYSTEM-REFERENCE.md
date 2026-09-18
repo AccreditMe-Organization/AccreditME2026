@@ -4699,6 +4699,38 @@ API does not model.
   the footer under a cursor already travelling to Save. A spec pins the height
   across the transition rather than trusting the CSS.
 
+**A COMPONENT RENDERING A DISMISSABLE LAYER REGISTERS WHILE OPEN AND CHECKS
+TOP-OF-STACK BEFORE HANDLING ESCAPE.** `LayerStackService`
+(`shared/overlay/layer-stack.service.ts`). A sibling rule to the one above,
+and it matters more than it sounds: the design mandates a picker DIALOG
+wherever an option list passes fifteen options, so stacked layers are the
+normal case, not an exotic one.
+
+**For anything built on `EditDialogComponent`, registration is AUTOMATIC** —
+the shell pushes when it becomes visible, removes when it hides or is
+destroyed, and consults the stack in its own Escape handler. A caller does
+nothing, which is the point: a step each layer must remember is a step that
+gets forgotten, and the symptom (Escape closing the wrong thing) reads as a
+new bug rather than a known one.
+
+**A layer NOT built on the shell must register itself.** There is exactly one
+today: `OverlaySelectComponent`, which builds a CDK overlay directly.
+
+**Why ordering cannot solve this, so nobody tries.** The shell listens on
+`document` in the CAPTURE phase, because it must decide about unsaved work
+before anything closes anything. Capture listeners on the same target fire in
+REGISTRATION order, and a parent dialog is always constructed before the layer
+inside it — so a child can never win by listening later or by calling
+`stopPropagation`.
+
+**This already broke something real.** ACC-41 made `OverlaySelectComponent`
+swallow Escape with `stopPropagation()` inside CDK's `body` listener, correct
+at the time because `body` precedes `document` in the BUBBLE chain. ACC-111's
+capture-phase listener runs before every bubble listener anywhere, so that
+reasoning silently stopped holding: Escape on an open dropdown inside a dirty
+dialog asked "Discard changes?" about the form behind it. Caught by writing
+the spec first and watching it fail, not by reading the code.
+
 **One focus indicator per element, never two.** The preset gives every
 interactive element a 2px focus ring at a 2px offset (artboard 9); a FIELD
 signals focus with a primary border plus the 3px halo of artboard 6 instead.

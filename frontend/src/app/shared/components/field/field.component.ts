@@ -250,6 +250,14 @@ export class FieldComponent {
   /** Set when the caller gives the control its own id; otherwise generated. */
   readonly inputId = input<string>('');
 
+  /**
+   * Reveal every error now, whatever the user has touched. A form sets this on
+   * SUBMIT: at that point an untouched required field is a real answer to a
+   * real question, where before the submit it was just a field nobody had
+   * reached yet.
+   */
+  readonly forceShowErrors = input(false);
+
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly translate = inject(TranslateService);
 
@@ -273,7 +281,8 @@ export class FieldComponent {
   /** True once the field has shown an error — the switch for live validation. */
   private readonly erroredOnce = signal(false);
 
-  private readonly touched = signal(false);
+  /** The field has been left at least once. Not sufficient on its own — see showError. */
+  private readonly blurred = signal(false);
 
   protected readonly required = computed(() => {
     this.controlTick();
@@ -285,7 +294,13 @@ export class FieldComponent {
     this.controlTick();
     const c = this.control();
     if (!c || this.readonly() || c.disabled) return false;
-    return c.invalid && (this.touched() || this.erroredOnce());
+    if (!c.invalid) return false;
+    // BLUR ALONE IS NOT A VALIDATION EVENT — the control must also be dirty.
+    // A dialog focuses its first field on open, and opening a picker moves
+    // focus away again, so a pure blur rule told the user "This field is
+    // required" about a form they had not typed into yet. Found in ACC-111's
+    // browser pass, on the Add holiday proof screen.
+    return this.erroredOnce() || (this.blurred() && c.dirty) || this.forceShowErrors();
   });
 
   protected readonly errorText = computed(() => {
@@ -308,9 +323,10 @@ export class FieldComponent {
     // Blur anywhere inside the field marks it touched: that is the "validate on
     // blur" half. Leaving a field is the moment the user has finished with it.
     this.host.nativeElement.addEventListener('focusout', () => {
-      this.touched.set(true);
+      this.blurred.set(true);
       this.controlTick.update((n) => n + 1);
-      if (this.control()?.invalid) this.erroredOnce.set(true);
+      const c = this.control();
+      if (c?.invalid && c.dirty) this.erroredOnce.set(true);
     });
 
     // Every keystroke re-reads validity. It only becomes VISIBLE once

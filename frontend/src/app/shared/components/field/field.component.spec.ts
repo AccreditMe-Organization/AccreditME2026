@@ -18,6 +18,7 @@ import { FieldComponent } from './field.component';
       [control]="name"
       [readonly]="readonly"
       [loading]="loading"
+      [forceShowErrors]="forceShowErrors"
       [errorMessages]="{ minlength: 'committee.nameTooShort' }"
     >
       <input type="text" [formControl]="name" />
@@ -28,6 +29,7 @@ class HostComponent {
   readonly name = new FormControl('', [Validators.required, Validators.minLength(8)]);
   readonly = false;
   loading = false;
+  forceShowErrors = false;
   readonly field = viewChild.required(FieldComponent);
 }
 
@@ -83,6 +85,24 @@ describe('FieldComponent', () => {
       expect(message().classList).not.toContain('am-field__message--error');
       expect(message().textContent).toContain('Shown in lists and reports.');
       expect(input().getAttribute('aria-invalid')).toBe('false');
+    });
+
+    // Found in a browser, on the Add holiday proof: a dialog focuses its first
+    // field on open and opening the calendar blurs it, so a pure blur rule
+    // accused the user of leaving a field empty before they had typed at all.
+    it('says nothing when a field is merely focused and left, with nothing typed', () => {
+      input().dispatchEvent(new Event('focusout', { bubbles: true }));
+      fixture.detectChanges();
+      expect(message().classList).not.toContain('am-field__message--error');
+      expect(message().textContent).toContain('Shown in lists and reports.');
+    });
+
+    it('reveals every error on submit, when an untouched required field IS the answer', () => {
+      input().dispatchEvent(new Event('focusout', { bubbles: true }));
+      host.forceShowErrors = true;
+      fixture.detectChanges();
+      expect(message().classList).toContain('am-field__message--error');
+      expect(message().textContent).toContain('validation.required');
     });
 
     it('shows the error on blur', () => {

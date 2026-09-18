@@ -66,6 +66,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       <am-field
         [label]="'workingCalendar.holidayNameEn' | translate"
         [control]="form.controls.nameEn"
+        [forceShowErrors]="showErrors()"
         [hint]="'workingCalendar.holidayNameHint' | translate"
       >
         <input pInputText formControlName="nameEn" class="w-full" />
@@ -74,6 +75,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       <am-field
         [label]="'workingCalendar.holidayNameAr' | translate"
         [control]="form.controls.nameAr"
+        [forceShowErrors]="showErrors()"
       >
         <input pInputText formControlName="nameAr" dir="rtl" lang="ar" class="w-full" />
       </am-field>
@@ -81,6 +83,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       <am-field
         [label]="'workingCalendar.holidayDate' | translate"
         [control]="form.controls.date"
+        [forceShowErrors]="showErrors()"
         [hint]="'workingCalendar.holidayDateHint' | translate"
         [errorMessages]="{ invalidDate: 'workingCalendar.holidayDateInvalid' }"
       >
@@ -156,6 +159,13 @@ export class PublicHolidayFormComponent implements OnInit {
   readonly saveError = signal<string | null>(null);
   readonly panelOpen = signal(false);
 
+  /**
+   * Set when a submit is attempted, so every field speaks at once. Before a
+   * submit, a field nobody has typed into is not an error — it is a field
+   * nobody has reached yet (ACC-111).
+   */
+  readonly showErrors = signal(false);
+
   /** What the text input shows. Kept in step with the control both ways. */
   private readonly typed = signal<string | null>(null);
   /** Read by the calendar layer's template, so not private. */
@@ -214,6 +224,16 @@ export class PublicHolidayFormComponent implements OnInit {
     if (!visible) this.focusDateInput();
   }
 
+  /** Submit moves focus to the first field that needs an answer. */
+  private focusFirstInvalid(): void {
+    const order: Array<keyof typeof this.form.controls> = ['nameEn', 'nameAr', 'date'];
+    const index = order.findIndex((key) => this.form.controls[key].invalid);
+    if (index < 0) return;
+    this.host.nativeElement
+      .querySelectorAll<HTMLInputElement>('am-field input')
+      [index]?.focus();
+  }
+
   private focusDateInput(): void {
     setTimeout(() => {
       this.host.nativeElement
@@ -263,7 +283,11 @@ export class PublicHolidayFormComponent implements OnInit {
 
   submit(): void {
     this.commitTypedDate();
-    if (this.form.invalid) return;
+    if (this.form.invalid) {
+      this.showErrors.set(true);
+      this.focusFirstInvalid();
+      return;
+    }
     this.saving.set(true);
     this.saveError.set(null);
 
