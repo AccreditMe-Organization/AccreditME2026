@@ -18,6 +18,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService, PrimeTemplate } from 'primeng/api';
 import { TranslateService } from '@ngx-translate/core';
+import { LayerStackService } from '../../overlay/layer-stack.service';
 
 /**
  * The three dialog sizes (ACC-111, artboard 7). A size is a KIND of dialog,
@@ -53,6 +54,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
       [closeOnEscape]="false"
       [dismissableMask]="false"
       [closable]="!saving()"
+      [appendTo]="appendTo()"
       [style]="{ width: resolvedWidth() }"
     >
       @if (visible()) {
@@ -170,8 +172,21 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    */
   readonly saving = input(false);
 
+  /**
+   * Where the dialog's own DOM goes. 'self' (the default) keeps it a
+   * descendant of this component, which the ACC-36 overscroll rules depend on:
+   * they are :host ::ng-deep, so a body-appended dialog silently loses them.
+   *
+   * 'body' is for a layer that must have NO scrollable ancestor at all — a
+   * calendar or picker stacked above another dialog (ACC-111, dialog rule 4).
+   * Safe there precisely because such a layer holds no PrimeNG overlay of its
+   * own, so there is nothing for those rules to protect.
+   */
+  readonly appendTo = input<'self' | 'body'>('self');
+
   protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
 
+  private readonly layers = inject(LayerStackService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translate = inject(TranslateService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -192,6 +207,11 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
     // consult dirty() and saving() before it closes anything.
     const onKeydown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || !this.visible()) return;
+      // Only the TOP layer answers Escape. Without this, Escape inside a
+      // calendar or picker stacked above this dialog would ask about THIS
+      // form's unsaved work. See LayerStackService for why ordering cannot
+      // solve it.
+      if (this.layerId !== null && !this.layers.isTop(this.layerId)) return;
       event.stopPropagation();
       this.requestClose();
     };
@@ -200,10 +220,18 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
 
     effect(() => {
       if (this.visible()) {
+        if (this.layerId === null) this.layerId = this.layers.push();
         // Remember the trigger BEFORE the dialog takes focus.
         this.triggerElement = document.activeElement as HTMLElement | null;
         afterNextRender({ read: () => this.focusFirstField() }, { injector: this.injector });
-      } else if (this.triggerElement?.isConnected) {
+      } else {
+        if (this.layerId !== null) {
+          this.layers.remove(this.layerId);
+          this.layerId = null;
+        }
+      }
+
+      if (!this.visible() && this.triggerElement?.isConnected) {
         // Focus returns to what opened the dialog — otherwise it falls to the
         // top of the document and a keyboard user starts the page again.
         this.triggerElement.focus();
@@ -213,6 +241,7 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   }
 
   private readonly injector = inject(Injector);
+  private layerId: number | null = null;
   private teardownKeydown: (() => void) | null = null;
 
   /**
@@ -281,6 +310,10 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   ngOnDestroy(): void {
     this.teardownObserver();
     this.teardownKeydown?.();
+    if (this.layerId !== null) {
+      this.layers.remove(this.layerId);
+      this.layerId = null;
+    }
   }
 
   onScroll(): void {

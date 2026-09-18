@@ -176,7 +176,8 @@
     "holidayDateInvalid": "Enter a date like 18 Sep 2026.",
     "toggleDatePanel": "Choose a date from a calendar",
     "editHolidayNamed": "Edit {{name}}",
-    "deleteHolidayNamed": "Delete {{name}}"
+    "deleteHolidayNamed": "Delete {{name}}",
+    "chooseDate": "Choose a date"
   },
   "roles": {
     "title": "Roles & Permissions",

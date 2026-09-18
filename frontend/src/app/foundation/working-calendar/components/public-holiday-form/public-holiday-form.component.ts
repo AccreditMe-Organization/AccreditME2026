@@ -2,6 +2,8 @@ import {
   Component,
   ElementRef,
   Input,
+  TemplateRef,
+  ViewChild,
   Output,
   EventEmitter,
   OnInit,
@@ -9,7 +11,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { DatePickerModule } from 'primeng/datepicker';
@@ -23,6 +25,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { FormatService } from '../../../../core/formatting';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 /**
  * Add / edit a public holiday — ACC-111's proof screen for the dialog shell,
@@ -49,12 +52,14 @@ import { FormatService } from '../../../../core/formatting';
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    FormsModule,
     TranslatePipe,
     InputTextModule,
     DatePickerModule,
     CheckboxModule,
     FieldComponent,
     IconButtonComponent,
+    EditDialogComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col gap-3">
@@ -95,16 +100,6 @@ import { FormatService } from '../../../../core/formatting';
         />
       </am-field>
 
-      <!-- IN FLOW, not floating: it pushes what follows down rather than
-           hovering over it, so the dialog body's scroll cannot dismiss it. -->
-      @if (panelOpen()) {
-        <p-datepicker
-          [inline]="true"
-          formControlName="date"
-          styleClass="w-full"
-          (onSelect)="panelOpen.set(false)"
-        />
-      }
 
       <div class="flex items-center gap-3">
         <p-checkbox formControlName="isRecurring" [binary]="true" inputId="isRecurring" />
@@ -117,6 +112,33 @@ import { FormatService } from '../../../../core/formatting';
         <p class="text-meta text-[var(--am-danger-ink)]">{{ saveError() | translate }}</p>
       }
     </form>
+
+    <!-- THE CALENDAR IS ITS OWN LAYER, at the root (ACC-111, dialog rule 4
+         applied to a panel rather than a list). In flow it needed 632px inside
+         a 420px body cap; the cap is sized for a 768px laptop and does not
+         move, and three fields have no editorial seam to split into steps. A
+         layer at the root has no scrollable ancestor either, so the invariant
+         this rule protects holds by the same argument, not a weaker one.
+
+         appendTo="body" is what makes that true: nested in this form's DOM it
+         would sit inside the parent dialog's scrolling body again. -->
+    <ng-template #calendarTpl>
+      <p-datepicker
+        [inline]="true"
+        [ngModel]="controlDate()"
+        [ngModelOptions]="{ standalone: true }"
+        (ngModelChange)="onDatePicked($event)"
+        styleClass="w-full"
+      />
+    </ng-template>
+    <app-edit-dialog
+      [visible]="panelOpen()"
+      (visibleChange)="onCalendarVisibleChange($event)"
+      [header]="'workingCalendar.chooseDate' | translate"
+      [content]="calendarTpl"
+      size="picker"
+      appendTo="body"
+    />
   `,
 })
 export class PublicHolidayFormComponent implements OnInit {
@@ -136,7 +158,8 @@ export class PublicHolidayFormComponent implements OnInit {
 
   /** What the text input shows. Kept in step with the control both ways. */
   private readonly typed = signal<string | null>(null);
-  private readonly controlDate = signal<Date | null>(null);
+  /** Read by the calendar layer's template, so not private. */
+  readonly controlDate = signal<Date | null>(null);
 
   readonly dateText = computed(() => this.typed() ?? this.format.dateForInput(this.controlDate()));
 
@@ -171,27 +194,40 @@ export class PublicHolidayFormComponent implements OnInit {
     });
   }
 
+  @ViewChild('calendarTpl', { read: TemplateRef, static: true })
+  calendarTpl!: TemplateRef<unknown>;
+
+  /**
+   * A pick closes the layer and writes the value. Focus goes back to the date
+   * FIELD rather than the calendar button: the field is what the user was
+   * filling in, and it now holds the value they chose.
+   */
+  onDatePicked(value: Date | null): void {
+    this.form.controls.date.setValue(value);
+    this.form.controls.date.markAsDirty();
+    this.panelOpen.set(false);
+    this.focusDateInput();
+  }
+
+  onCalendarVisibleChange(visible: boolean): void {
+    this.panelOpen.set(visible);
+    if (!visible) this.focusDateInput();
+  }
+
+  private focusDateInput(): void {
+    setTimeout(() => {
+      this.host.nativeElement
+        .querySelector<HTMLInputElement>('am-field:nth-of-type(3) input')
+        ?.focus();
+    });
+  }
+
   onDateTyped(value: string): void {
     this.typed.set(value);
   }
 
-  /**
-   * Opening the panel adds ~330px in flow, which on this form exceeds the
-   * dialog body's 420px cap — so the month grid opens partly below the fold.
-   * Bringing it into view is a stopgap, NOT the answer: artboard 7's rule is
-   * that a form is sized to fit with every panel open, and one that does not
-   * becomes a stepped dialog or a page. That is a product decision, recorded
-   * for ACC-111's review rather than taken here.
-   */
   toggleDatePanel(): void {
-    const opening = !this.panelOpen();
-    this.panelOpen.set(opening);
-    if (!opening) return;
-    setTimeout(() => {
-      this.host.nativeElement
-        .querySelector('p-datepicker')
-        ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    });
+    this.panelOpen.set(!this.panelOpen());
   }
 
   /**

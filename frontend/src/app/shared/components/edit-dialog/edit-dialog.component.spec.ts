@@ -106,6 +106,40 @@ class ShellHostComponent {
   @ViewChild('footerTpl', { read: TemplateRef, static: true }) footerTpl!: TemplateRef<unknown>;
 }
 
+
+// ACC-111 — a layer stacked above a dialog (the calendar, a searchable
+// picker). The parent holds unsaved work, so an Escape that leaks to it would
+// ask "Discard changes?" for pressing Escape on a date picker.
+@Component({
+  standalone: true,
+  imports: [EditDialogComponent],
+  template: `
+    <ng-template #parentTpl><input id="parent-field" type="text" /></ng-template>
+    <ng-template #layerTpl><input id="layer-field" type="text" /></ng-template>
+    <app-edit-dialog
+      [visible]="parentVisible"
+      (visibleChange)="parentVisible = $event"
+      [content]="parentTpl"
+      [dirty]="true"
+      header="Parent"
+    />
+    <app-edit-dialog
+      [visible]="layerVisible"
+      (visibleChange)="layerVisible = $event"
+      [content]="layerTpl"
+      size="picker"
+      appendTo="body"
+      header="Layer"
+    />
+  `,
+})
+class StackedHostComponent {
+  parentVisible = false;
+  layerVisible = false;
+  @ViewChild('parentTpl', { read: TemplateRef, static: true }) parentTpl!: TemplateRef<unknown>;
+  @ViewChild('layerTpl', { read: TemplateRef, static: true }) layerTpl!: TemplateRef<unknown>;
+}
+
 describe('EditDialogComponent', () => {
   // ACC-111 — the dialog now asks before discarding unsaved work and reads its
   // discard wording from the translation files, so both services are real
@@ -371,6 +405,59 @@ describe('EditDialogComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
       expect((document.activeElement as HTMLElement)?.id).toBe('trigger');
+    });
+  });
+
+  // ACC-111 — Escape belongs to the TOP layer only.
+  describe('stacked layers (ACC-111)', () => {
+    const escape = (): void =>
+      void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    const openBoth = async () => {
+      const fixture = TestBed.createComponent(StackedHostComponent);
+      fixture.componentInstance.parentVisible = true;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.componentInstance.layerVisible = true;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return fixture;
+    };
+
+    it('closes ONLY the top layer, leaving the parent open', async () => {
+      const fixture = await openBoth();
+      escape();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.layerVisible).toBe(false);
+      expect(fixture.componentInstance.parentVisible).toBe(true);
+    });
+
+    it('never asks the PARENT about unsaved work when Escape lands on the layer', async () => {
+      const fixture = await openBoth();
+      const confirmSpy = spyOn(TestBed.inject(ConfirmationService), 'confirm');
+
+      escape();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      // The parent is dirty; if its handler had run, this would have fired.
+      expect(confirmSpy).not.toHaveBeenCalled();
+    });
+
+    it('hands Escape back to the parent once the layer is closed', async () => {
+      const fixture = await openBoth();
+      escape();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const confirmSpy = spyOn(TestBed.inject(ConfirmationService), 'confirm');
+      escape();
+      fixture.detectChanges();
+
+      expect(confirmSpy).toHaveBeenCalled();
     });
   });
 });

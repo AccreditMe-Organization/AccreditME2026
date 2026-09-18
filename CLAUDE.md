@@ -2309,6 +2309,56 @@ Full detail: SYSTEM-REFERENCE.md Section 1.9. The decisions, briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-111)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 10.5 (the dialog shell) and
+Section 10.12 (the field wrapper and the form-state convention). The design
+reference itself is `frontend/DESIGN-REFERENCE.md`, which is authoritative for
+tokens, type and states.
+
+- **A DIALOG FORM WHOSE INLINE PANEL WOULD EXCEED THE BODY CAP NEVER SCROLLS
+  THE BODY AND NEVER RAISES THE CAP.** Ahmad's decision. Resolve in this
+  order:
+  1. **A stepped dialog**, if the form has a genuine editorial seam — enough
+     fields that a meaningful split exists. The task form is the precedent:
+     seven fields, split into commitment (what, who, when, how urgent) and
+     substance (what it says, what proves it, where it came from).
+  2. **The panel opens as its OWN LAYER at the root**, if the form is too
+     small to split meaningfully. This is dialog rule 4's mechanism — the
+     searchable picker stacked above the first dialog — applied to a panel
+     rather than a list. A layer at the root has no scrollable ancestor
+     either, so the invariant holds by the same argument, not a weaker one.
+  3. **A page**, only if neither works.
+
+  **Add Holiday is case 2**: three fields, no editorial seam, and splitting
+  them across two steps is ceremony rather than structure.
+
+  **Why the cap is not negotiable**, because raising it is what a future
+  reader will reach for first: that form needed 632px of body, which with a
+  header and footer is roughly 750px, and that does not fit a 768px-tall
+  laptop once browser chrome exists. **The 420 is sized for the smallest
+  screen these users actually have**, not chosen for tidiness.
+
+- **Escape belongs to the TOP layer only**, and the DOM does not give that for
+  free. `EditDialogComponent` listens on `document` in the CAPTURE phase
+  because it must decide about unsaved work before anything else closes
+  anything; capture listeners fire in REGISTRATION order and the parent is
+  always constructed first, so a nested layer can never win by listening later
+  or calling `stopPropagation`. `LayerStackService` is what resolves it: every
+  layer registers while open and each Escape handler asks whether it is on
+  top. Without it, Escape on a date picker asks "Discard changes?" about the
+  form beneath it — a worse defect than the one the layer fixed. Pinned by
+  spec and mutation-tested.
+
+- **The design file still draws the inline calendar in template 3, so it is
+  behind this decision.** Do not edit
+  `frontend/design-reference/` to match — it is committed, and Claude Design
+  owns it wholesale (see `frontend/DESIGN-REFERENCE.md`). **It needs a design
+  pass**, and this line exists so the next design run picks it up rather than
+  the discrepancy being rediscovered from the code.
+
+---
+
 ## Open / Deferred Items
 
 - **No tenant-user password exists anywhere in the repo, so browser

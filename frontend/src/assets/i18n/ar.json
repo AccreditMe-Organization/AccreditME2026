@@ -176,7 +176,8 @@
     "holidayDateInvalid": "أدخل تاريخًا مثل 18 Sep 2026.",
     "toggleDatePanel": "اختيار التاريخ من التقويم",
     "editHolidayNamed": "تعديل {{name}}",
-    "deleteHolidayNamed": "حذف {{name}}"
+    "deleteHolidayNamed": "حذف {{name}}",
+    "chooseDate": "اختر التاريخ"
   },
   "roles": {
     "title": "الأدوار والصلاحيات",
