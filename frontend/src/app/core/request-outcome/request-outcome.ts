@@ -26,9 +26,36 @@ export type RequestOutcome<T> =
    * A completed response with rows. `refreshing` means a REFETCH is in flight
    * with these rows still on screen — see the two loadings, below.
    */
-  | { readonly status: 'rows'; readonly data: readonly T[]; readonly refreshing: boolean }
-  /** A completed response with NO rows. The reason is not optional. */
-  | { readonly status: 'empty'; readonly reason: string; readonly refreshing: boolean }
+  | {
+      readonly status: 'rows';
+      readonly data: readonly T[];
+      readonly refreshing: boolean;
+      /**
+       * A REFETCH failed and these rows are what we still have. They answer
+       * the PREVIOUS request, so the screen must say so: the sort header, page
+       * or filter the user just changed does not describe them.
+       *
+       * Artboard 8: an error states whether anything changed, because on a
+       * read saying so out loud stops the user re-submitting. A list read as
+       * evidence that silently shows the old order under a new header is the
+       * same family of defect as one that silently shortens.
+       */
+      readonly staleError?: { readonly errorId?: string };
+    }
+  /**
+   * A completed response with NO rows. The reason is not optional, and
+   * `filtered` says WHICH emptiness this is — artboard 8 requires two, and
+   * they differ in more than wording: "No members yet" offers a creating
+   * action and carries the dashed mark, while "No members match 'zahrani'"
+   * offers a way out of the filter and no decoration. Telling someone to
+   * clear a search they never made is worse than saying nothing.
+   */
+  | {
+      readonly status: 'empty';
+      readonly reason: string;
+      readonly filtered: boolean;
+      readonly refreshing: boolean;
+    }
   /**
    * Refused. `httpStatus` decides what a screen renders, and the distinction
    * is load-bearing (ACC-101): a 403 may name the permission, because the
@@ -37,7 +64,12 @@ export type RequestOutcome<T> =
    * exists to conceal.
    */
   | { readonly status: 'denied'; readonly httpStatus: number }
-  /** Failed for a reason that might not recur. Always offers a retry. */
+  /**
+   * Failed with NOTHING to show. Always offers a retry.
+   *
+   * A refetch that fails is NOT this: it keeps its rows and marks them stale —
+   * see `staleError` on the rows variant.
+   */
   | { readonly status: 'error'; readonly errorId?: string };
 
 /** How long a request may take before a skeleton is worth showing. */
@@ -46,13 +78,25 @@ export const SKELETON_DELAY_MS = 200;
 /** How long a request may run before it is treated as failed. */
 export const REQUEST_TIMEOUT_MS = 8000;
 
+/** What to say when a completed response has no rows. */
+export interface EmptyDescription {
+  /**
+   * In the caller's own words — "A committee needs at least 3 members before
+   * it can leave Formation", or "No members match 'zahrani'". Not "No data".
+   */
+  readonly reason: string;
+  /** True when a filter or search caused it, which changes what is offered. */
+  readonly filtered: boolean;
+}
+
 export interface RequestOutcomeOptions {
   /**
-   * Why the set is empty, in the caller's own words — "A committee needs at
-   * least 3 members before it can leave Formation", not "No data". Artboard 8
-   * requires a reason, so it is required here.
+   * Called when a response lands with zero rows — a FUNCTION, not a constant,
+   * because the two empties artboard 8 requires cannot both be written at
+   * setup time: one of them quotes the search the user just typed. The caller
+   * reads its own current filter state here.
    */
-  readonly emptyReason: string;
+  readonly describeEmpty: () => EmptyDescription;
   /** Overridable for tests; the defaults are the design's. */
   readonly skeletonDelayMs?: number;
   readonly timeoutMs?: number;
@@ -123,6 +167,10 @@ export function createRequestOutcome<T>(
     clearTimers();
     subscription?.unsubscribe();
     subscription = null;
+    // The stale mark is kept WITH the answer, deliberately. While a retry is
+    // in flight the rows are still the previous answer, so the notice must
+    // stay up; it clears only when a new answer actually lands. Stripping it
+    // here passed every spec and was quietly less truthful.
     if (next.status === 'rows' || next.status === 'empty') lastAnswer = next;
     outcome.set(next);
   };
@@ -147,19 +195,36 @@ export function createRequestOutcome<T>(
       next: (data) => {
         // THE RULE: a completed response with zero rows is empty. Nothing else
         // is — least of all an array nobody has fetched yet.
-        settle(
-          data.length === 0
-            ? { status: 'empty', reason: options.emptyReason, refreshing: false }
-            : { status: 'rows', data, refreshing: false },
-        );
+        if (data.length === 0) {
+          const described = options.describeEmpty();
+          settle({
+            status: 'empty',
+            reason: described.reason,
+            filtered: described.filtered,
+            refreshing: false,
+          });
+          return;
+        }
+        settle({ status: 'rows', data, refreshing: false });
       },
       error: (err: unknown) => {
         const httpStatus = readStatus(err);
-        settle(
-          httpStatus === 403 || httpStatus === 404
-            ? { status: 'denied', httpStatus }
-            : { status: 'error', errorId: readErrorId(err) },
-        );
+        if (httpStatus === 403 || httpStatus === 404) {
+          settle({ status: 'denied', httpStatus });
+          return;
+        }
+        // A REFETCH that failed keeps its rows rather than blanking the list —
+        // but marked, because they answer the request BEFORE this one.
+        if (lastAnswer?.status === 'rows') {
+          settle({
+            status: 'rows',
+            data: lastAnswer.data,
+            refreshing: false,
+            staleError: { errorId: readErrorId(err) },
+          });
+          return;
+        }
+        settle({ status: 'error', errorId: readErrorId(err) });
       },
     });
   };
@@ -224,6 +289,11 @@ export function composePageOutcome(outcomes: readonly RequestOutcome<unknown>[])
  */
 export function isSkeleton(outcome: RequestOutcome<unknown>): boolean {
   return outcome.status === 'loading';
+}
+
+/** Rows that answer the previous request, because a refetch failed. */
+export function isStale(outcome: RequestOutcome<unknown>): boolean {
+  return outcome.status === 'rows' && outcome.staleError !== undefined;
 }
 
 /** A refetch in flight with an answer still on screen. Render a spinner. */
