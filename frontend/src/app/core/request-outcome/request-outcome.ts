@@ -22,10 +22,13 @@ export type RequestOutcome<T> =
   | { readonly status: 'idle' }
   /** In flight long enough to be worth saying so. Render a skeleton. */
   | { readonly status: 'loading' }
-  /** A completed response with rows. */
-  | { readonly status: 'rows'; readonly data: readonly T[] }
+  /**
+   * A completed response with rows. `refreshing` means a REFETCH is in flight
+   * with these rows still on screen — see the two loadings, below.
+   */
+  | { readonly status: 'rows'; readonly data: readonly T[]; readonly refreshing: boolean }
   /** A completed response with NO rows. The reason is not optional. */
-  | { readonly status: 'empty'; readonly reason: string }
+  | { readonly status: 'empty'; readonly reason: string; readonly refreshing: boolean }
   /**
    * Refused. `httpStatus` decides what a screen renders, and the distinction
    * is load-bearing (ACC-101): a 403 may name the permission, because the
@@ -65,6 +68,19 @@ export interface RequestOutcomeHandle<T> {
 /**
  * Runs `source` and reports it as one of the six outcomes.
  *
+ * ## TWO LOADINGS, not one (artboard 8)
+ *
+ * "No centred spinner for an initial load; a spinner means 'in place,
+ * refreshing'." An INITIAL load has nothing to show, so it shows skeletons
+ * shaped like the rows to come. A REFETCH — a sort, a page, a filter, a search
+ * — already has rows on screen, and they STAY: the outcome remains `rows`,
+ * with `refreshing` true, and the screen shows a spinner in place.
+ *
+ * Collapsing the two would make rows vanish on every sort of the most-used
+ * screen in the product. It would also undercut the focus rule: moving focus
+ * to the first row of a replaced set assumes there are rows, not an
+ * intermediate skeleton with nothing to focus.
+ *
  * Two timings, both from artboard 8, and both about not lying to the reader:
  *
  * - **Suppressed under 200ms.** A fast response never flashes a skeleton. The
@@ -85,6 +101,13 @@ export function createRequestOutcome<T>(
 
   const outcome = signal<RequestOutcome<T>>({ status: 'idle' });
 
+  /**
+   * The last ANSWER, kept so a refetch can leave it on screen. Null until the
+   * first one arrives, which is exactly what separates an initial load from a
+   * refresh — nothing else needs to be told which this is.
+   */
+  let lastAnswer: Extract<RequestOutcome<T>, { status: 'rows' | 'empty' }> | null = null;
+
   let subscription: Subscription | null = null;
   let skeletonTimer: ReturnType<typeof setTimeout> | null = null;
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
@@ -100,15 +123,24 @@ export function createRequestOutcome<T>(
     clearTimers();
     subscription?.unsubscribe();
     subscription = null;
+    if (next.status === 'rows' || next.status === 'empty') lastAnswer = next;
     outcome.set(next);
   };
 
   const run = (): void => {
     subscription?.unsubscribe();
     clearTimers();
-    outcome.set({ status: 'idle' });
 
-    skeletonTimer = setTimeout(() => outcome.set({ status: 'loading' }), skeletonDelay);
+    // A refetch keeps what is on screen; only a FIRST load has nothing to
+    // keep. Note both paths start un-marked: the 200ms suppression applies to
+    // a refresh exactly as it does to an initial load, so a fast sort shows
+    // nothing at all — no skeleton, and no spinner either.
+    outcome.set(lastAnswer ? { ...lastAnswer, refreshing: false } : { status: 'idle' });
+
+    skeletonTimer = setTimeout(
+      () => outcome.set(lastAnswer ? { ...lastAnswer, refreshing: true } : { status: 'loading' }),
+      skeletonDelay,
+    );
     timeoutTimer = setTimeout(() => settle({ status: 'error' }), timeout);
 
     subscription = source().subscribe({
@@ -117,8 +149,8 @@ export function createRequestOutcome<T>(
         // is — least of all an array nobody has fetched yet.
         settle(
           data.length === 0
-            ? { status: 'empty', reason: options.emptyReason }
-            : { status: 'rows', data },
+            ? { status: 'empty', reason: options.emptyReason, refreshing: false }
+            : { status: 'rows', data, refreshing: false },
         );
       },
       error: (err: unknown) => {
@@ -186,7 +218,15 @@ export function composePageOutcome(outcomes: readonly RequestOutcome<unknown>[])
   return outcomes.some(isLoading) ? 'loading' : 'complete';
 }
 
-/** Convenience for templates that only need "is there a skeleton right now". */
+/**
+ * A SKELETON is only ever right for a first load. A refetch shows a spinner
+ * over the rows it already has — see the two loadings on createRequestOutcome.
+ */
 export function isSkeleton(outcome: RequestOutcome<unknown>): boolean {
   return outcome.status === 'loading';
+}
+
+/** A refetch in flight with an answer still on screen. Render a spinner. */
+export function isRefreshing(outcome: RequestOutcome<unknown>): boolean {
+  return (outcome.status === 'rows' || outcome.status === 'empty') && outcome.refreshing;
 }
