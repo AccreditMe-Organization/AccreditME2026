@@ -1,6 +1,8 @@
+import { ListFocusService } from './list-focus.service';
 import {
   Directive,
   ElementRef,
+  OnDestroy,
   HostBinding,
   HostListener,
   computed,
@@ -59,7 +61,7 @@ import {
   selector: '[amListRow]',
   standalone: true,
 })
-export class ListRowDirective {
+export class ListRowDirective implements OnDestroy {
   /** Whether this row is currently selected. The CALLER owns the state. */
   readonly selected = input(false, { alias: 'amListRowSelected' });
 
@@ -73,6 +75,7 @@ export class ListRowDirective {
   readonly rowToggleSelect = output<void>();
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly listFocus = inject(ListFocusService);
 
   /** -1 until this row is the roving tab stop. The first row starts at 0. */
   private readonly isTabStop = signal(false);
@@ -120,6 +123,17 @@ export class ListRowDirective {
   }
 
   private readonly rtl = computed(() => getComputedStyle(this.host.nativeElement).direction === 'rtl');
+
+  /**
+   * If this row holds focus as it is destroyed, say so before it goes. The
+   * service decides where focus lands once the new rows render — see
+   * ListFocusService. Without this, focus falls to <body> silently.
+   */
+  ngOnDestroy(): void {
+    const el = this.host.nativeElement;
+    if (!el.contains(document.activeElement)) return;
+    this.listFocus.noteRowRemoved(this.siblings().indexOf(el));
+  }
 
   @HostListener('focusin')
   onFocusIn(): void {

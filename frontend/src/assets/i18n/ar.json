@@ -670,7 +670,10 @@
     "columns": "الأعمدة",
     "more": "إجراءات أخرى",
     "clearFilters": "إزالة عوامل التصفية",
-    "panelRange": "{{first}}–{{last}} من {{total}}"
+    "panelRange": "{{first}}–{{last}} من {{total}}",
+    "announceSorted": "أُعيد ترتيب القائمة. انتقل التركيز إلى الصف الأول.",
+    "announceFiltered": "تمّت تصفية القائمة. انتقل التركيز إلى الصف الأول.",
+    "announcePaged": "تغيّرت الصفحة. انتقل التركيز إلى الصف الأول."
   },
   "shell": {
     "product": {

@@ -4700,6 +4700,24 @@ same way the Escape rule in §10.12 requires.
 **Tested by keyboard, not by clicking** (11 specs). The Escape collision was
 invisible to every mouse test; so is this one.
 
+**WHERE FOCUS GOES WHEN THE ROW SET CHANGES** — `ListFocusService`, same
+folder. A reader on row 7 sorts a column, turns the page, filters, or deletes
+that row from its own menu. Left alone, focus falls to `<body>` and the user
+is silently returned to the top of the document. **Two causes, two answers,
+and the distinction is the point:**
+
+| Cause | Focus goes to | Why |
+| -- | -- | -- |
+| The focused row was REMOVED (deleted, filtered out) | The row that takes its place — same index, or the last row if it was last | Work continues where it was; deleting three rows running stays fluent |
+| The whole SET was replaced (sort, page, filter, search, scope) | The FIRST row | Row 7 of a new sort is an unrelated record; landing there implies a continuity that does not exist |
+| The new set is EMPTY | The list container, which is focusable for this reason | There is no row to hold focus, and `<body>` is not an answer |
+| The user has since focused something outside the list | Nothing | Stealing focus from someone who moved on is worse than doing nothing |
+
+Every change is ANNOUNCED through a polite live region: a silent focus jump is
+its own defect, because nothing else tells a screen-reader user the list moved.
+An identical message is cleared before being re-set, since a live region set to
+the value it already holds says nothing.
+
 ---
 
 ### 10.12 `FieldComponent` — the Field Wrapper, and the Form-State Convention (ACC-111)

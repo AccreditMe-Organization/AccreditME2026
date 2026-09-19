@@ -1,7 +1,11 @@
 import {
   Component,
+  ElementRef,
+  Injector,
   OnInit,
   TemplateRef,
+  ViewChild,
+  afterNextRender,
   computed,
   contentChild,
   effect,
@@ -10,6 +14,7 @@ import {
   signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { ListFocusService } from './list-focus.service';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -323,7 +328,9 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
              static classes, so combining them would silently drop the
              containment context and every @min-* variant with it. -->
         <div class="@container/datalist">
-          <div [class]="bodyClass()">
+          <!-- tabindex -1 so focus has somewhere to land when a filter empties
+               the list — otherwise it falls to <body> (ACC-111). -->
+          <div #rowsBody [class]="bodyClass()" tabindex="-1" role="rowgroup">
             @for (row of rows(); track trackBy()(row)) {
               <ng-container
                 [ngTemplateOutlet]="rowTemplate()!"
@@ -338,6 +345,10 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
         </div>
       }
       </div>
+
+      <!-- Focus moved under the reader, so say so. A silent jump is its own
+           defect: nothing else tells a screen-reader user the list changed. -->
+      <div class="sr-only" role="status" aria-live="polite">{{ listFocus.announcement() }}</div>
 
       <!-- ── pager ───────────────────────────────────────────────────────── -->
       <!-- Page mode only. PrimeNG's paginator rather than a hand-rolled one:
@@ -389,7 +400,13 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
   `,
 })
 export class DataListComponent<T> implements OnInit {
+  /** The rows container, for ListFocusService to restore focus into. */
+  @ViewChild('rowsBody') private readonly rowsBody?: ElementRef<HTMLElement>;
+
   private readonly translate = inject(TranslateService);
+  /** Not private: the template reads its live-region announcement. */
+  protected readonly listFocus = inject(ListFocusService);
+  private readonly injector = inject(Injector);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
@@ -532,6 +549,12 @@ export class DataListComponent<T> implements OnInit {
           this.total.set(page.total);
           if (!this.isFiltered()) this.unfilteredTotal.set(page.total);
           this.loading.set(false);
+          // After the new rows render, not before: the service needs them in
+          // the DOM to focus one.
+          afterNextRender(
+            { read: () => this.listFocus.restore(this.rowsBody?.nativeElement ?? null) },
+            { injector: this.injector },
+          );
         },
         error: () => {
           this.error.set('list.errorLoad');
@@ -671,12 +694,26 @@ export class DataListComponent<T> implements OnInit {
       sortDir: q.sortBy === column.sortBy && q.sortDir === 'asc' ? 'desc' : 'asc',
       page: 1,
     }));
+    this.setReplaced('list.announceSorted');
+  }
+
+
+  /**
+   * A sort, page, filter, search or scope change REPLACES the set, so a
+   * keyboard user goes to the first row rather than to whatever now occupies
+   * the index they were on — row 7 of a new sort is an unrelated record.
+   * ListFocusService holds the decision; this only says which happened.
+   */
+  private setReplaced(announcement: string): void {
+    this.listFocus.noteSetReplaced();
+    this.listFocus.announce(this.translate.instant(announcement));
   }
 
   onScope(key: string): void {
     // Re-clicking the active scope clears it, so a chip is not a trap.
     this.activeScope.set(this.activeScope() === key ? null : key);
     this.query.update((q) => ({ ...q, page: 1 }));
+    this.setReplaced('list.announceFiltered');
   }
 
   setFilter(name: string, value: string | null): void {
@@ -685,6 +722,7 @@ export class DataListComponent<T> implements OnInit {
       filters: { ...(q.filters ?? {}), [name]: value },
       page: 1,
     }));
+    this.setReplaced('list.announceFiltered');
   }
 
   filterValue(name: string): string | null {
@@ -704,6 +742,7 @@ export class DataListComponent<T> implements OnInit {
       pageSize: rows,
       page: Math.floor((event.first ?? 0) / rows) + 1,
     }));
+    this.setReplaced('list.announcePaged');
   }
 
   clearFilters(): void {
