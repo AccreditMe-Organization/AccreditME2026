@@ -4700,6 +4700,25 @@ same way the Escape rule in §10.12 requires.
 **Tested by keyboard, not by clicking** (11 specs). The Escape collision was
 invisible to every mouse test; so is this one.
 
+**DESCRIPTION CARRIERS FOLLOW THE APPLIED QUERY; REQUEST CARRIERS KEEP THE
+REQUEST.** Ahmad's rule, recorded so the next screen does not re-litigate it.
+A list holds two kinds of control, and they answer different questions:
+
+| Kind | Examples | Reads | Because |
+| -- | -- | -- | -- |
+| **Description** | sort arrow, pager, empty-state text | `appliedQuery()` | They describe the rows in front of the reader. "Page 3" over page 2's rows is a lie, and so is an ascending header over descending rows |
+| **Request** | search box, filter inputs, **the URL** | the requested query | They carry what was ASKED for. The box still reads "zahrani" while the rows answer "zah", and that is right — the fix was to make the empty-state quote the term as it was at request time |
+
+They diverge only while a refetch has failed; every other moment they agree.
+
+**The URL is a request carrier, and deliberately so.** It is an ADDRESS:
+loading it issues a fresh request rather than describing the current screen.
+Pointing it at `appliedQuery()` would be briefly wrong on every SUCCESSFUL
+fetch in order to fix something that is wrong rarely and only on a screen that
+has already failed — and it would make reload discard the request the user
+just made, when reload-as-retry is the same affordance the Try again button
+offers two inches away.
+
 **WHERE FOCUS GOES WHEN THE ROW SET CHANGES** — `ListFocusService`, same
 folder. A reader on row 7 sorts a column, turns the page, filters, or deletes
 that row from its own menu. Left alone, focus falls to `<body>` and the user
