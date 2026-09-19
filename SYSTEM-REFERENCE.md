@@ -4659,6 +4659,49 @@ only. Switch back before moving on.
 
 ---
 
+### 10.13 `ListRowDirective` — the Table Row's Keyboard Contract (ACC-111)
+
+`frontend/src/app/shared/components/data-list/list-row.directive.ts`. Goes on
+whatever element a caller renders as a row inside `DataListComponent`'s row
+template — a directive, not a component, because the row's MARKUP belongs to
+the screen (every list has different columns) and only its BEHAVIOUR is shared.
+
+**FOCUS AND SELECTION ARE OWNED SEPARATELY, and that is the whole design
+decision.** PrimeNG's `[pSelectableRow]` conflates them — its arrow keys move
+the SELECTION — while the design separates them: arrows move focus, Enter
+opens, Space selects. A reader scanning a list with the keyboard is not
+choosing 25 records on the way past. So this directive owns **focus and key
+handling**, and reports selection to the caller, which owns the selection
+**state** the bulk-action bar reads.
+
+**The table is ONE tab stop; the row's actions are reached with →/←.** This is
+the part most likely to be dropped, and dropping it reproduces a defect the
+design already records: row menus unreachable by keyboard. Keeping the row a
+single tab stop and stopping there would look like the fix and be the bug. So
+the row's controls are taken OUT of the tab order (`tabindex="-1"`) and
+reached by arrow instead — the WAI-ARIA grid pattern — which keeps both
+properties at once. ←  from the first control returns to the row, so a reader
+can always get back out. →/← mirror in RTL, because "next" follows reading
+order.
+
+**Premise, with its dependency.** `DataListComponent` is not a `p-table`, so
+there is no second keyboard model on these rows. Verified against the
+installed PrimeNG (21.2.x): row key handling lives ONLY in the
+`[pSelectableRow]` directive — arrows, Home/End, Enter, Space and Ctrl+A,
+switching on `event.code` — and never in `p-table` itself.
+
+**So never put `pSelectableRow` on a row carrying this directive.** Both bind
+the same keys on the same element and both read `event.code`; the collision
+appears only via the keyboard, like the Escape one. **If a future PrimeNG
+version moves row key handling into `p-table` proper, every list still built
+on `p-table` inherits that collision silently** — re-verify on upgrade, the
+same way the Escape rule in §10.12 requires.
+
+**Tested by keyboard, not by clicking** (11 specs). The Escape collision was
+invisible to every mouse test; so is this one.
+
+---
+
 ### 10.12 `FieldComponent` — the Field Wrapper, and the Form-State Convention (ACC-111)
 
 `frontend/src/app/shared/components/field/field.component.ts`. Wraps one
