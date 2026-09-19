@@ -4851,41 +4851,62 @@ them at once. The result, so nobody re-runs it:
 | `EditDialogComponent` | Owns the stack; registers automatically |
 | `OverlaySelectComponent` | Needed registration — now registers |
 | The discard confirm the shell itself opens | Registered by the shell around the `confirm()` call |
-| **PrimeNG overlays** | Cannot register — PrimeNG builds them and exposes no hook. **Handled by the bubble + `defaultPrevented` rule below** |
+| **PrimeNG overlays** | Cannot register — PrimeNG builds them and exposes no hook. **Handled by the bubble-phase rule below; a floating one inside a dialog now closes together with it** |
 | `workflow-template-list`, `user-list` `stopPropagation` calls | Unaffected — CLICK handlers, not keydown |
 | Everything else | No local Escape handling anywhere else in the app |
 
 **THE SHELL HANDLES ESCAPE LAST, AND ONLY IF NOTHING ELSE CONSUMED IT.** The
 capture-phase listener was the mistake that created this whole problem, and it
 was not necessary: nothing else closes THIS dialog, because the underlying
-`p-dialog` has `closeOnEscape` off. The guard is now two lines and no list of
-class names — bubble phase, plus `if (event.defaultPrevented) return`.
+`p-dialog` has `closeOnEscape` off. The guard is bubble phase plus
+`LayerStackService.isTop`, and no list of class names.
 
-**Its premise, named because this is ACC-41's shape again.** It rests on
-PrimeNG *consuming* the keystroke, which was verified per component against
-the INSTALLED source (PrimeNG 21.2.x), not assumed:
+**`defaultPrevented` WAS the second half of that guard, and it is GONE
+(f7ce15c).** It stood in for "something closed", and for an INLINE component
+that proxy is false: the picker layer's calendar is `[inline]="true"`, so it
+has no overlay to close, yet it marks Escape handled and refocuses its own
+grid. The layer that OWNED the keystroke then never answered it — the calendar
+dialog could not be closed from inside its own date cells. `isTop` answers the
+real question instead: if this dialog is the top layer, nothing above it
+existed to consume anything, so the flag can only have come from its own
+content.
+
+**The consequence, on the twelve screens the ratchet still counts: a single
+Escape now closes the floating panel AND the dialog, where before it closed
+only the panel.** A regression on twelve, traded for a fix on one, and the
+trade is deliberate — a dirty form still prompts before closing, so the loss is
+bounded to a click rather than typed work, and this is the configuration
+artboard 7 forbids anyway. **Working `check:dialog-overlays` down to zero is
+what closes the gap**; there is no second fix pending.
+
+**Its premise, named because this is ACC-41's shape again.** It rests on how
+each component treats the keystroke, verified per component against the
+INSTALLED source (PrimeNG 21.2.x), not assumed:
 
 | Component | On Escape | Reaches the shell? |
 | -- | -- | -- |
-| `p-select`, `p-multiselect` | `preventDefault` + `stopPropagation` | Never arrives |
-| `p-datepicker` (popup), `p-autocomplete`, `p-cascadeselect`, `p-tieredmenu` | `preventDefault` only | Arrives, `defaultPrevented` is true |
+| `p-select`, `p-multiselect` | `preventDefault` + `stopPropagation` | Never arrives — unaffected by the guard's removal |
+| `p-datepicker` (popup), `p-autocomplete`, `p-cascadeselect`, `p-tieredmenu` | `preventDefault` only | Arrives, and is now ACTED ON: the panel and the dialog close together |
+| `p-datepicker` (`[inline]`) | `preventDefault`, closes nothing | Arrives, and must be acted on — this is the defect that removed the guard |
 | `p-dialog` / `p-confirmdialog` | Neither — closes by comparing z-indexes | Handled by our own stack instead |
-| `p-popover` | Neither — just `hide()` | **Residual gap**: Escape on an open popover would also close a dialog. No popover sits inside a dialog today |
+| `p-popover` | Neither — just `hide()` | Closes with the dialog, same as the floating panels above. No popover sits inside a dialog today |
 | `p-tooltip` | Nothing at all | Correct, and must stay so |
 
 **A HOVER-TRIGGERED OVERLAY MUST NEVER BE DEFERRED TO.** A tooltip is visible
 without being focused and is not something a user thinks of as dismissable, so
 if hovering anything inside a dialog made Escape do nothing, the dialog would
 read as stuck. It is different in kind from a menu or a popover, where Escape
-genuinely belongs to the overlay. The behavioural rule gets this right for
-free — a tooltip consumes nothing — which is one more reason it beats matching
-class names, where `.p-tooltip` would have had to be remembered and left out.
+genuinely belongs to the overlay. Removing the `defaultPrevented` guard settles
+this for every hover overlay at once rather than by remembering to leave
+`.p-tooltip` off a class list.
 
-**ON UPGRADE, RE-VERIFY THE TABLE ABOVE AGAINST THE NEW PRIMENG SOURCE.** A
-version that stops calling `preventDefault` on Escape silently brings back all
-twelve dialog-overlay collisions, and no test fails — the specs assert our
-behaviour given a consuming overlay, not that PrimeNG still consumes. This is
-the premise ACC-41 had and did not write down.
+**ON UPGRADE, RE-VERIFY THE TABLE ABOVE AGAINST THE NEW PRIMENG SOURCE.** The
+load-bearing row is now the FIRST one: `p-select` and `p-multiselect` are kept
+off the dialog only by their own `stopPropagation`, so a version that drops it
+makes every select inside a dialog close the dialog too, and no test fails —
+the specs assert our behaviour given a component that stops propagation, not
+that PrimeNG still stops it. This is the premise ACC-41 had and did not write
+down.
 
 **This already broke something real.** ACC-41 made `OverlaySelectComponent`
 swallow Escape with `stopPropagation()` inside CDK's `body` listener, correct
@@ -4894,6 +4915,16 @@ capture-phase listener runs before every bubble listener anywhere, so that
 reasoning silently stopped holding: Escape on an open dropdown inside a dirty
 dialog asked "Discard changes?" about the form behind it. Caught by writing
 the spec first and watching it fail, not by reading the code.
+
+**A SPEC'S SETUP CAN ESTABLISH THE CONDITION THAT HIDES THE DEFECT, and it did
+so four times on ACC-111** — every time with a green suite and a broken
+screen, so the pattern is worth recognising rather than the four cases:
+Escape tested in overlay mode but never inline; the row's tab order asserted
+only after a row was focused, which was itself the fix; the request-outcome
+machine unit-tested while no screen consumed it; and empty-state text read at
+answer time rather than at request time. **A spec that passes has only proven
+its own arrangement.** Prefer a test whose setup is the screen's real starting
+state, and prove anything fiddly by breaking it once and watching it go red.
 
 **One focus indicator per element, never two.** The preset gives every
 interactive element a 2px focus ring at a 2px offset (artboard 9); a FIELD
