@@ -374,7 +374,9 @@
       "biannual": "نصف سنوي",
       "annual": "سنوي",
       "as_needed": "عند الحاجة"
-    }
+    },
+    "changeRoleFor": "تغيير دور {{name}}",
+    "removeMemberNamed": "إزالة {{name}} من هذه اللجنة"
   },
   "orgPosition": {
     "title": "المسميات الوظيفية",

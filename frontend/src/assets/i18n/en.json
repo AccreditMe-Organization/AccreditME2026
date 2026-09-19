@@ -374,7 +374,9 @@
       "biannual": "Twice yearly",
       "annual": "Annually",
       "as_needed": "As needed"
-    }
+    },
+    "changeRoleFor": "Change role for {{name}}",
+    "removeMemberNamed": "Remove {{name}} from this committee"
   },
   "orgPosition": {
     "title": "Org Positions",

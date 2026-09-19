@@ -32,7 +32,7 @@ const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
 // Measured on the branch that introduced this scan. See the header.
-const BASELINE = 31;
+const BASELINE = 29;
 
 // A TOOLTIP IS NOT A NAME. pTooltip is deliberately absent here: a tooltip is
 // unreachable to a screen reader and to a touch user, so a control carrying
