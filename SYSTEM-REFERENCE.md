@@ -4712,11 +4712,27 @@ and the distinction is the point:**
 | The whole SET was replaced (sort, page, filter, search, scope) | The FIRST row | Row 7 of a new sort is an unrelated record; landing there implies a continuity that does not exist |
 | The new set is EMPTY | The list container, which is focusable for this reason | There is no row to hold focus, and `<body>` is not an answer |
 | The user has since focused something outside the list | Nothing | Stealing focus from someone who moved on is worse than doing nothing |
+| The set was replaced while focus was on a table CONTROL (sort header, pager), or nowhere | Nothing | The rules are stated by what changed AND **by where focus was**. A user usually replaces the set by USING such a control and may use it again, so moving them takes it out from under them — and they have not "moved on", they never left |
 
 Every change is ANNOUNCED through a polite live region: a silent focus jump is
 its own defect, because nothing else tells a screen-reader user the list moved.
 An identical message is cleared before being re-set, since a live region set to
 the value it already holds says nothing.
+
+**WHEN A DIALOG'S TRIGGER IS DESTROYED, THE LIST'S RULE WINS.** The one place
+these two components' focus rules collide, and the ordinary delete flow reaches
+it: focus a row's More button, open the menu, choose Delete, confirm in the
+dialog, and the row — with its trigger inside it — is gone.
+`EditDialogComponent` wants to return focus to that trigger and
+`ListFocusService` wants to focus the row that replaced it. Both are correct in
+isolation. Returning focus to a detached element focuses NOTHING, so the list
+wins — but only in that case: while the trigger survives, it still gets focus
+back.
+
+The shell captures the trigger's ROW INDEX when the dialog OPENS, because by
+the time it closes the row may not exist to be measured. On close with a
+detached trigger it records the removal and leaves the restore to
+`DataListComponent`, which runs once the refetched rows are in the DOM.
 
 ---
 
