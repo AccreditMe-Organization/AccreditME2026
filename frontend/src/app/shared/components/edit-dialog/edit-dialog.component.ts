@@ -15,7 +15,7 @@ import {
   signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { DialogModule } from 'primeng/dialog';
+import { Dialog, DialogModule } from 'primeng/dialog';
 import { ConfirmationService, PrimeTemplate } from 'primeng/api';
 import { TranslateService } from '@ngx-translate/core';
 import { LayerStackService } from '../../overlay/layer-stack.service';
@@ -205,6 +205,9 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   private triggerRowIndex = -1;
   private triggerRowKey: string | null = null;
 
+  /** The p-dialog itself, for the layering check in onKeydown. */
+  @ViewChild(Dialog) private readonly dialogRef?: Dialog;
+
   @ViewChild('scrollArea') private readonly scrollAreaRef?: ElementRef<HTMLDivElement>;
   @ViewChild('contentWrapper') private readonly contentWrapperRef?: ElementRef<HTMLDivElement>;
 
@@ -225,18 +228,43 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
     // of every PrimeNG overlay's own Escape handling and broke all twelve of
     // them at once.
     //
-    // Bubble phase plus defaultPrevented is the whole guard now, and it is
-    // BEHAVIOURAL rather than a list of class names:
+    // Bubble phase is the first half of the guard, and it is BEHAVIOURAL
+    // rather than a list of class names:
     //   - p-select and p-multiselect call stopPropagation, so the event never
     //     reaches this listener at all;
     //   - p-datepicker, p-autocomplete, p-cascadeselect and p-tieredmenu call
     //     preventDefault, so defaultPrevented is true;
     //   - our own layers register with LayerStackService and are checked below.
     // All four verified against the installed PrimeNG source, not assumed.
+    //
+    // THE defaultPrevented GUARD IS GONE, and this is the important part.
+    //
+    // It was a proxy for "something closed", and for an INLINE component that
+    // proxy is false: the calendar in the picker layer is [inline]="true", so
+    // it has no overlay to close, yet it still marks Escape handled and
+    // refocuses its own grid. The layer that OWNED the keystroke then never
+    // answered it — the calendar dialog could not be closed from inside its
+    // date cells, and focus jumped to the previous-month arrow.
+    //
+    // LayerStackService already answers the real question. If this dialog is
+    // the top layer, NOTHING ABOVE IT EXISTED to consume the keystroke, so a
+    // defaultPrevented flag can only have come from its own content. The
+    // isTop check below is therefore the whole guard.
+    //
+    // Two things were tried first and are recorded so they are not retried:
+    // PrimeNG's z-index registry does not see a panel appended to 'self' (the
+    // dialog had 1102 and the open datepicker panel had none), and the target's
+    // ancestor chain is identical for both — a popup datepicker's Escape comes
+    // from its INPUT, whose chain holds nothing positioned either.
+    //
+    // CONSEQUENCE, stated rather than discovered later: while a FLOATING
+    // PrimeNG panel still sits inside a dialog, Escape now closes both it and
+    // the dialog. That configuration is the one artboard 7 forbids and
+    // check:dialog-overlays counts down to zero; a dialog that cannot be
+    // closed from its own content is the worse of the two defects.
     const onKeydown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || !this.visible()) return;
-      // Something else already dealt with this keystroke.
-      if (event.defaultPrevented) return;
+
       // Only the TOP layer answers Escape — a calendar or picker stacked above
       // this dialog, or the discard confirm it opens. See LayerStackService
       // for why listener ordering cannot solve this.

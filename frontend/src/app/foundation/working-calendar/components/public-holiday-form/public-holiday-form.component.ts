@@ -33,15 +33,28 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
  *
  * ## The date field is the point of this screen
  *
- * It used to be a `p-datepicker` with a floating panel inside a scrolling
- * dialog body: PrimeNG's overlay closes on ANY ancestor scroll, so the panel
- * could vanish mid-interaction. Artboard 7's answer is not a different
- * overlay — it is that a panel inside a dialog EXPANDS IN FLOW, pushing the
- * content below it, so there is no floating layer left to dismiss.
+ * It used to be a `p-datepicker` with a floating panel inside a dialog body:
+ * PrimeNG's overlay closes on ANY ancestor scroll, so the panel could vanish
+ * mid-interaction.
  *
- * And typing is a COMPLETE path: the text input alone can set the date, with
- * the panel never opened. The panel is an assist, not the only route — which
- * is also what makes the field usable from the keyboard.
+ * The calendar is now ITS OWN DIALOG at the root, stacked above this form —
+ * artboard 7's rule 4 (a picker becomes its own layer) rather than its rule 1
+ * (a panel expands in flow). In flow it needed 632px against the dialog
+ * body's 420px cap, and the cap is sized for a 768px laptop, so it does not
+ * move; a root layer satisfies the same invariant for the stronger reason
+ * that it has no scrollable ancestor at all.
+ *
+ * AN EARLIER VERSION OF THIS COMMENT DESCRIBED THE IN-FLOW PANEL, and was
+ * left behind when a613fcb changed the mechanism. The check that goes with
+ * this screen is therefore NOT "scroll the dialog body with the panel open" —
+ * this dialog has three fields and never scrolls, and the calendar is not in
+ * its body. The real proof is: two stacked dialogs, Escape closing exactly
+ * ONE layer per press, focus returning to the date field, and the typed path
+ * setting a date with the calendar never opened.
+ *
+ * Typing is a COMPLETE path: the text input alone can set the date, with the
+ * calendar never opened. It is an assist, not the only route — which is also
+ * what makes the field usable from the keyboard.
  *
  * The buttons are NOT here any more: the dialog owns a fixed footer, outside
  * the scrolling body (see PublicHolidayListComponent). This component exposes

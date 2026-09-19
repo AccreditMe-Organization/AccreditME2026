@@ -60,6 +60,49 @@ class DialogWithPrimeSelectHost {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 }
 
+
+/**
+ * The INLINE case, and the third time on this branch that a spec passed while
+ * the screen was broken: the suite above exercises the four preventDefault
+ * components in OVERLAY mode, where deferring is correct. An inline datepicker
+ * marks Escape handled, closes nothing (it has no overlay), and refocuses its
+ * own grid — so the layer that owns the keystroke never answered it, and the
+ * calendar dialog could not be closed from inside the date cells.
+ *
+ * Two stacked dialogs, exactly as Add Holiday builds them.
+ */
+@Component({
+  standalone: true,
+  imports: [EditDialogComponent, DatePickerModule, FormsModule],
+  template: `
+    <ng-template #formTpl><input id="form-field" /></ng-template>
+    <ng-template #calendarTpl>
+      <p-datepicker [inline]="true" [(ngModel)]="when" />
+    </ng-template>
+    <app-edit-dialog
+      [visible]="formVisible"
+      (visibleChange)="formVisible = $event"
+      [content]="formTpl"
+      header="Add holiday"
+    />
+    <app-edit-dialog
+      [visible]="calendarVisible"
+      (visibleChange)="calendarVisible = $event"
+      [content]="calendarTpl"
+      size="picker"
+      appendTo="body"
+      header="Choose a date"
+    />
+  `,
+})
+class StackedInlineCalendarHost {
+  formVisible = false;
+  calendarVisible = false;
+  when: Date | null = null;
+  @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+  @ViewChild('calendarTpl', { read: TemplateRef, static: true }) calendarTpl!: TemplateRef<unknown>;
+}
+
 describe('EditDialogComponent with a PrimeNG overlay open (ACC-111)', () => {
   let fixture: ComponentFixture<DialogWithPrimeSelectHost>;
 
@@ -119,12 +162,15 @@ describe('EditDialogComponent with a PrimeNG overlay open (ACC-111)', () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
-  // The case the defaultPrevented rule actually carries. p-select STOPS
-  // propagation, so the event never reaches the dialog at all; p-datepicker
-  // only calls preventDefault, so the event does arrive and the dialog has to
-  // recognise that something already consumed it. Five of these sit inside
-  // dialogs today.
-  it('leaves Escape to an open date picker, which only preventDefaults', async () => {
+  // CHANGED DELIBERATELY. A floating panel inside a dialog is the
+  // configuration artboard 7 forbids and check:dialog-overlays counts down to
+  // zero; while one remains, Escape closes both it and the dialog. That is
+  // accepted as the lesser defect: the alternative — trusting defaultPrevented
+  // — left the Add Holiday calendar dialog unclosable from inside its own
+  // date cells, because an INLINE component marks Escape handled without
+  // having anything to close. p-select is unaffected either way: it stops
+  // propagation, so the event never reaches the dialog at all.
+  it('closes the dialog as well when a floating panel inside it consumes Escape', async () => {
     const input = document.querySelector('p-datepicker input') as HTMLElement;
     input.click();
     fixture.detectChanges();
@@ -139,8 +185,8 @@ describe('EditDialogComponent with a PrimeNG overlay open (ACC-111)', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(fixture.componentInstance.visible).toBe(true);
-    expect(confirmSpy).not.toHaveBeenCalled();
+    // The panel closed itself; the dialog asked about its unsaved work.
+    expect(confirmSpy).toHaveBeenCalled();
   });
 
   // The failure mode of the fix itself: a permanently rendered but CLOSED
@@ -160,5 +206,75 @@ describe('EditDialogComponent with a PrimeNG overlay open (ACC-111)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     fixture.detectChanges();
     expect(confirmSpy).toHaveBeenCalled();
+  });
+});
+
+
+describe('EditDialogComponent with an INLINE datepicker stacked above it (ACC-111)', () => {
+  let fixture: ComponentFixture<StackedInlineCalendarHost>;
+
+  const escapeFrom = (el: Element): void => {
+    el.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true } as KeyboardEventInit),
+    );
+    fixture.detectChanges();
+  };
+
+  const dialogCount = (): number => document.querySelectorAll('.p-dialog').length;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [StackedInlineCalendarHost],
+      providers: [
+        ConfirmationService,
+        provideNoopAnimations(),
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(StackedInlineCalendarHost);
+    fixture.componentInstance.formVisible = true;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentInstance.calendarVisible = true;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  });
+
+  it('opens both layers, with the inline calendar in the top one', () => {
+    expect(dialogCount()).toBe(2);
+    expect(document.querySelector('.p-datepicker-panel')).toBeTruthy();
+  });
+
+  // The reported defect: Escape from inside the date grid did nothing, because
+  // the inline datepicker had marked the event handled.
+  it('closes the calendar on Escape pressed INSIDE the date grid', async () => {
+    const dateCell =
+      document.querySelector('.p-datepicker-panel td span') ??
+      document.querySelector('.p-datepicker-panel');
+    expect(dateCell).toBeTruthy();
+
+    escapeFrom(dateCell!);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.calendarVisible).toBe(false);
+    expect(fixture.componentInstance.formVisible).toBe(true);
+  });
+
+  it('closes exactly ONE layer per press: the form dialog survives, then closes', async () => {
+    const dateCell = document.querySelector('.p-datepicker-panel td span')!;
+    escapeFrom(dateCell);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.formVisible).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.formVisible).toBe(false);
   });
 });
