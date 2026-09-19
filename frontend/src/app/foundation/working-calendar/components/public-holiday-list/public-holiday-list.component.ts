@@ -13,6 +13,7 @@ import { PublicHolidayFormComponent } from '../public-holiday-form/public-holida
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { AmDatePipe } from '../../../../core/formatting';
 
 @Component({
@@ -28,6 +29,7 @@ import { AmDatePipe } from '../../../../core/formatting';
     SelectModule,
     PublicHolidayFormComponent,
     EditDialogComponent,
+    IconButtonComponent,
   ],
   template: `
     <!-- ACC-79 — no back arrow: the breadcrumb links Working calendar. -->
@@ -84,18 +86,18 @@ import { AmDatePipe } from '../../../../core/formatting';
           </td>
           <td>
             <div class="flex gap-1 justify-end">
-              <p-button
+              <!-- ACC-111 — the label names the OBJECT: a screen reader on row
+                   nine hears "Edit Eid Al-Fitr", not the ninth "Edit". -->
+              <am-icon-button
                 icon="pi pi-pencil"
-                [text]="true"
-                size="small"
-                (onClick)="openForm(holiday)"
+                [label]="'workingCalendar.editHolidayNamed' | translate: { name: holiday.nameEn }"
+                (activated)="openForm(holiday)"
               />
-              <p-button
+              <am-icon-button
                 icon="pi pi-trash"
-                [text]="true"
-                size="small"
                 severity="danger"
-                (onClick)="onDelete(holiday)"
+                [label]="'workingCalendar.deleteHolidayNamed' | translate: { name: holiday.nameEn }"
+                (activated)="onDelete(holiday)"
               />
             </div>
           </td>
@@ -115,22 +117,60 @@ import { AmDatePipe } from '../../../../core/formatting';
       <app-public-holiday-form
         [holiday]="selectedHoliday()"
         (saved)="onSaved()"
-        (cancelled)="formVisible.set(false)"
+        (cancelled)="dialog.requestClose()"
       />
     </ng-template>
+
+    <!-- ACC-111 — the footer is FIXED, outside the scrolling body, so it
+         cannot scroll away from a cursor already moving toward Save and its
+         focus ring is not clipped by the body's edge. The form owns the
+         submit; the footer drives it through the component instance. -->
+    <ng-template #footerTpl>
+      <div class="flex justify-end gap-3">
+        <p-button
+          [label]="'common.cancel' | translate"
+          severity="secondary"
+          [text]="true"
+          type="button"
+          [disabled]="!!form?.saving()"
+          (onClick)="dialog.requestClose()"
+        />
+        <p-button
+          type="button"
+          [label]="'common.save' | translate"
+          [loading]="!!form?.saving()"
+          [disabled]="!form?.canSave()"
+          (onClick)="form?.submit()"
+        />
+      </div>
+    </ng-template>
+
     <app-edit-dialog
+      #dialog
       [visible]="formVisible()"
       (visibleChange)="formVisible.set($event)"
       [header]="selectedHoliday()
         ? ('workingCalendar.editHoliday' | translate)
         : ('workingCalendar.addHoliday' | translate)"
       [content]="formTpl"
-      width="480px"
+      [footer]="footerTpl"
+      size="form"
+      [dirty]="!!form?.dirty()"
+      [saving]="!!form?.saving()"
     />
   `,
 })
 export class PublicHolidayListComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
+  @ViewChild('footerTpl', { read: TemplateRef, static: true }) footerTpl!: TemplateRef<unknown>;
+
+  /**
+   * The form inside the dialog. The footer lives outside the body (ACC-111),
+   * so the buttons cannot reach the form through a template reference — the
+   * two templates are separate embedded views — and drive it through this
+   * instead. Undefined while the dialog is closed, hence every `?.`.
+   */
+  @ViewChild(PublicHolidayFormComponent) form?: PublicHolidayFormComponent;
 
   private readonly svc = inject(WorkingCalendarService);
 

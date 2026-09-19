@@ -97,7 +97,13 @@ Tier 3 — On-premises / private cloud (future)
   confirmed-harder capability, not an oversight. Full mechanism
   detail, capability list, and complete consumer inventory (28 total):
   SYSTEM-REFERENCE.md Section 10.7.
-- Styling: PrimeNG design tokens + Tailwind CSS
+- Styling: PrimeNG design tokens + Tailwind CSS, both reading ONE token set —
+  `frontend/src/styles/design-tokens.scss`, which implements artboard 1 of the
+  design reference (`frontend/DESIGN-REFERENCE.md`, authoritative for colour,
+  type, space, radius and density). Tailwind maps onto it through
+  `@theme inline` (v4 has no tailwind.config); the PrimeNG preset
+  (`core/theme/accreditme-preset.ts`) holds no colour literal, only `var()`
+  references. A component never carries a literal colour, size or radius.
 - Global styles: One SCSS file for app shell only
 - State management: NgRx Signals
 - Forms: Angular Reactive Forms
@@ -112,8 +118,28 @@ Tier 3 — On-premises / private cloud (future)
   library then — `exceljs` is maintained on npm; SheetJS remains viable
   if sourced from its CDN rather than npm. Do not treat this line as a
   decision already made.
-- Typography: Inter (Google Fonts)
+- Typography: IBM Plex Sans Arabic, self-hosted (ACC-111) — one family for
+  Arabic AND Latin, four weights, no Google Fonts request. Inter is gone.
+  Type steps, weights and the Arabic rules are tokens in
+  `frontend/src/styles/design-tokens.scss`, taken from the design reference
+  (`frontend/DESIGN-REFERENCE.md`), which is authoritative for them.
 - Icons: PrimeIcons + Tabler Icons
+
+### Supported Browsers (ACC-111)
+
+```
+Chrome / Edge   111+
+Safari          16.4+
+Firefox         115 ESR+
+```
+
+Ahmad's decision, recorded because ACC-111 made it necessary to state: the
+PrimeNG preset derives the brand ramp positions the design does not name with
+`color-mix()`, whose baseline is exactly that set. Nothing in the app carries a
+fallback for it, and none is needed — Angular's own supported-browser matrix
+already sits above this line, so this documents the floor rather than lowering
+the app to it. A feature below this baseline is a real constraint to design
+around; anything above it may be used freely.
 
 ### Infrastructure
 - Backend hosting: Railway (auto-deploy from GitHub)
@@ -2289,6 +2315,56 @@ Full detail: SYSTEM-REFERENCE.md Section 1.9. The decisions, briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-111)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 10.5 (the dialog shell) and
+Section 10.12 (the field wrapper and the form-state convention). The design
+reference itself is `frontend/DESIGN-REFERENCE.md`, which is authoritative for
+tokens, type and states.
+
+- **A DIALOG FORM WHOSE INLINE PANEL WOULD EXCEED THE BODY CAP NEVER SCROLLS
+  THE BODY AND NEVER RAISES THE CAP.** Ahmad's decision. Resolve in this
+  order:
+  1. **A stepped dialog**, if the form has a genuine editorial seam — enough
+     fields that a meaningful split exists. The task form is the precedent:
+     seven fields, split into commitment (what, who, when, how urgent) and
+     substance (what it says, what proves it, where it came from).
+  2. **The panel opens as its OWN LAYER at the root**, if the form is too
+     small to split meaningfully. This is dialog rule 4's mechanism — the
+     searchable picker stacked above the first dialog — applied to a panel
+     rather than a list. A layer at the root has no scrollable ancestor
+     either, so the invariant holds by the same argument, not a weaker one.
+  3. **A page**, only if neither works.
+
+  **Add Holiday is case 2**: three fields, no editorial seam, and splitting
+  them across two steps is ceremony rather than structure.
+
+  **Why the cap is not negotiable**, because raising it is what a future
+  reader will reach for first: that form needed 632px of body, which with a
+  header and footer is roughly 750px, and that does not fit a 768px-tall
+  laptop once browser chrome exists. **The 420 is sized for the smallest
+  screen these users actually have**, not chosen for tidiness.
+
+- **Escape belongs to the TOP layer only**, and the DOM does not give that for
+  free. `EditDialogComponent` listens on `document` in the CAPTURE phase
+  because it must decide about unsaved work before anything else closes
+  anything; capture listeners fire in REGISTRATION order and the parent is
+  always constructed first, so a nested layer can never win by listening later
+  or calling `stopPropagation`. `LayerStackService` is what resolves it: every
+  layer registers while open and each Escape handler asks whether it is on
+  top. Without it, Escape on a date picker asks "Discard changes?" about the
+  form beneath it — a worse defect than the one the layer fixed. Pinned by
+  spec and mutation-tested.
+
+- **The design file still draws the inline calendar in template 3, so it is
+  behind this decision.** Do not edit
+  `frontend/design-reference/` to match — it is committed, and Claude Design
+  owns it wholesale (see `frontend/DESIGN-REFERENCE.md`). **It needs a design
+  pass**, and this line exists so the next design run picks it up rather than
+  the discrepancy being rediscovered from the code.
+
+---
+
 ## Open / Deferred Items
 
 - **No tenant-user password exists anywhere in the repo, so browser
@@ -2673,7 +2749,7 @@ complete, not just the currently-in-review ones.
    | 2 | Home & daily work | UX-01, 07, 08 |
    | 3 | Shared list pattern | UX-11, 12, 13, 15, 16, 17 |
    | 4 | Record pages | UX-09, 18, 19, + the object-detail pattern |
-   | 5 | Forms & display conventions | UX-14, 20, 21, 22, 24 |
+   | 5 | Forms & display conventions | UX-14, 20, 21, 22 (UX-24 delivered, see below) |
    | 6 | Accessibility | UX-23, + the accessibility halves of 07 and 13 |
    | — | Standalone | UX-10 |
 
@@ -2701,6 +2777,43 @@ complete, not just the currently-in-review ones.
      in Open/Deferred Items.
    - **UX-23** — partly overlaps the full RTL visual audit and the
      frontend design-consistency audit, both already recorded.
+   - **UX-24** (ambiguous, inconsistent date formats) — **delivered by
+     ACC-94**, merged `596b9d4`. One format per meaning, Hijri by user
+     preference, enforced by `npm run check:formatting`.
+
+   **Workstream 5's remaining items each have a NAMED EXECUTOR** (Ahmad,
+   2026-09-18). Nothing in this workstream stays an unowned list entry:
+   an item with a named executor is owned, an item without one is a
+   graveyard entry. Where the executor ticket does not exist yet, it is
+   still named, so the item travels to it when it is created.
+   - **UX-20** (text boxes where pickers belong: working hours typed as
+     text, country as a code, out-of-office dates, the S3-key logo
+     field) → **the Working Calendar and Organization Profile
+     migrations.** Not a decision to make: the design's settings
+     template already specifies every control it asks for and names
+     both screens as its own proof screens, so this IS their definition
+     of done.
+   - **UX-14, permission-key half** (`add_member`, `manage_system`,
+     `view_all` shown raw) → **the permission matrix migration.** The
+     naming decision is ALREADY MADE — the design's matrix artboard
+     specifies written sentences rather than keys, with worked
+     examples. What remains is writing one sentence per permission, not
+     choosing a convention.
+   - **UX-14, enum-display half** (`DOCUMENT_REQUEST`, `ROLE_BASED`,
+     unit type "administration" leaking into lists) → **ACC-114**
+     (display and label sweep), because no migration owns it: it needs a
+     decision about where enum display lives.
+   - **UX-21, validation half** (no inline errors, focus does not move
+     to the first invalid field) → **ACC-111's field wrapper**, in
+     flight. Its disabled-Save half goes to ACC-114.
+   - **UX-22** (empty-state message shown while still loading, no
+     skeletons) → **ACC-111's request-outcome state machine and
+     ACC-104**, in flight. Its startup-splash half goes to ACC-114.
+   - **The four ACC-79 browser-pass defects below** → batched into
+     **ACC-114**, except the Lookup values "Yes" tag, which goes to
+     **the Lookup Values migration**. Batching
+     is not a reversal of that list's own "not one by one" header — one
+     sweep ticket is what it asks for.
 
 7. **ONLY THEN — Meeting Management planning begins.** Its own plan
    MUST, as a mandatory step:
@@ -2835,7 +2948,8 @@ complete, not just the currently-in-review ones.
   display conventions) is where most of its findings landed.
 - **Small display and translation defects found during ACC-79's browser
   pass — for workstream 5 (Forms & display conventions), NOT to be
-  ticketed one by one.** Each is small; together they are the kind of
+  ticketed one by one. NOW OWNED: batched into ACC-114, except the
+  Lookup values tag, which goes to the Lookup Values migration.** Each is small; together they are the kind of
   thing that workstream exists to sweep. Locations verified, not
   remembered:
   - **Hardcoded English labels on Working calendar** —
@@ -3082,6 +3196,24 @@ APP_BASE_DOMAIN=accreditme.com
 ---
 
 ## Brand Design Tokens
+
+**SUPERSEDED (ACC-111) — the list below is NOT the token set. Read
+`frontend/DESIGN-REFERENCE.md`, and the values in
+`frontend/src/styles/design-tokens.scss`, which implement artboard 1 of the
+design system.** Kept here as history, because a reader who finds it and
+applies it will reintroduce two things the design deliberately removed:
+
+- **`--am-text-secondary: #718096` is RETIRED.** Secondary text is ink-500
+  `#5A6779`. #718096 measures 4.02:1 on white and 3.73:1 on the #F4F7FA
+  surface it was actually used on — it fails AA in both places, which is why
+  it went.
+- **`#CBD5E0` is no longer a control border.** At 1.49:1 it fails 1.4.11
+  outright, and it is what every field in the build was drawn with. A control
+  border is `#8A94A6` at rest and `#5A6779` on hover, on white.
+
+The contrast pairs behind both statements are asserted in CI from the token
+values (`npm run check:contrast`), so the design file and the code cannot
+drift apart on them.
 
 ```css
 :root {

@@ -1,0 +1,85 @@
+// Tailwind v4 theme mapping for the design tokens (ACC-111).
+//
+// Tailwind v4 has no tailwind.config: its theme is CSS, declared in @theme.
+// Every entry below points at a styles/design-tokens.scss custom property, so
+// there is still exactly one definition of each value.
+//
+// `inline` is load-bearing. Without it a utility reads the theme variable,
+// which resolves once at :root — so the Arabic type overrides that
+// design-tokens.scss sets under [lang|='ar'] would never reach an element.
+// With it, `text-body` compiles to `font-size: var(--am-type-body-size)`,
+// resolved per element, and an Arabic subtree gets the Arabic step.
+//
+// Inert until used: Tailwind emits a utility only when a template names it.
+// None of these names collide with a Tailwind default, so no existing class
+// changes meaning. `--font-sans` is deliberately NOT set here — that would
+// retype every page, and the font switch is its own commit.
+
+// Not inline: Tailwind's preflight reads --default-font-family from --font-sans,
+// so this one has to exist as a real variable rather than be substituted at use.
+// Keeps `font-sans` and the document's own family the same thing.
+@theme {
+  --font-sans: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-primary-50: var(--am-primary-50);
+  --color-primary-100: var(--am-primary-100);
+  --color-primary-600: var(--am-primary-600);
+  --color-primary-700: var(--am-primary-700);
+  --color-accent-500: var(--am-accent-500);
+
+  --color-ink-900: var(--am-ink-900);
+  --color-ink-700: var(--am-ink-700);
+  --color-ink-500: var(--am-ink-500);
+  --color-ink-300: var(--am-ink-300);
+
+  --color-rule: var(--am-border);
+  --color-rule-strong: var(--am-border-strong);
+  --color-row-rule: var(--am-row-rule);
+  --color-control: var(--am-control-border);
+  --color-control-hover: var(--am-control-border-hover);
+  --color-control-disabled: var(--am-control-border-disabled);
+
+  --color-surface: var(--am-surface);
+  --color-surface-raised: var(--am-surface-raised);
+
+  --color-danger: var(--am-danger-ink);
+  --color-danger-bg: var(--am-danger-bg);
+  --color-danger-border: var(--am-danger-border);
+  --color-warning: var(--am-warning-ink);
+  --color-warning-bg: var(--am-warning-bg);
+  --color-warning-border: var(--am-warning-border);
+  --color-success: var(--am-success-ink);
+  --color-success-bg: var(--am-success-bg);
+  --color-success-border: var(--am-success-border);
+  --color-info: var(--am-info-ink);
+  --color-info-bg: var(--am-info-bg);
+  --color-info-border: var(--am-info-border);
+
+  --radius-control: var(--am-radius-control);
+  --radius-button: var(--am-radius-button);
+  --radius-card: var(--am-radius-card);
+  --radius-pill: var(--am-radius-pill);
+
+  --shadow-overlay: var(--am-shadow-overlay);
+
+  // Type steps: `text-meta`, `text-value`, `text-body`, `text-heading`,
+  // `text-title`, `text-record`. Size and line-height travel together.
+  --text-micro: var(--am-type-micro-size);
+  --text-micro--line-height: var(--am-type-micro-line);
+  --text-meta: var(--am-type-meta-size);
+  --text-meta--line-height: var(--am-type-meta-line);
+  --text-value: var(--am-type-value-size);
+  --text-value--line-height: var(--am-type-value-line);
+  --text-body: var(--am-type-body-size);
+  --text-body--line-height: var(--am-type-body-line);
+  --text-heading: var(--am-type-heading-size);
+  --text-heading--line-height: var(--am-type-heading-line);
+  --text-title: var(--am-type-title-size);
+  --text-title--line-height: var(--am-type-title-line);
+  --text-title--letter-spacing: var(--am-type-title-tracking);
+  --text-record: var(--am-type-record-size);
+  --text-record--line-height: var(--am-type-record-line);
+  --text-record--letter-spacing: var(--am-type-record-tracking);
+}

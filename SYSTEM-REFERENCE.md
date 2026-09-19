@@ -4659,6 +4659,285 @@ only. Switch back before moving on.
 
 ---
 
+### 10.13 `ListRowDirective` — the Table Row's Keyboard Contract (ACC-111)
+
+`frontend/src/app/shared/components/data-list/list-row.directive.ts`. Goes on
+whatever element a caller renders as a row inside `DataListComponent`'s row
+template — a directive, not a component, because the row's MARKUP belongs to
+the screen (every list has different columns) and only its BEHAVIOUR is shared.
+
+**FOCUS AND SELECTION ARE OWNED SEPARATELY, and that is the whole design
+decision.** PrimeNG's `[pSelectableRow]` conflates them — its arrow keys move
+the SELECTION — while the design separates them: arrows move focus, Enter
+opens, Space selects. A reader scanning a list with the keyboard is not
+choosing 25 records on the way past. So this directive owns **focus and key
+handling**, and reports selection to the caller, which owns the selection
+**state** the bulk-action bar reads.
+
+**The table is ONE tab stop; the row's actions are reached with →/←.** This is
+the part most likely to be dropped, and dropping it reproduces a defect the
+design already records: row menus unreachable by keyboard. Keeping the row a
+single tab stop and stopping there would look like the fix and be the bug. So
+the row's controls are taken OUT of the tab order (`tabindex="-1"`) and
+reached by arrow instead — the WAI-ARIA grid pattern — which keeps both
+properties at once. ←  from the first control returns to the row, so a reader
+can always get back out. →/← mirror in RTL, because "next" follows reading
+order.
+
+**Premise, with its dependency.** `DataListComponent` is not a `p-table`, so
+there is no second keyboard model on these rows. Verified against the
+installed PrimeNG (21.2.x): row key handling lives ONLY in the
+`[pSelectableRow]` directive — arrows, Home/End, Enter, Space and Ctrl+A,
+switching on `event.code` — and never in `p-table` itself.
+
+**So never put `pSelectableRow` on a row carrying this directive.** Both bind
+the same keys on the same element and both read `event.code`; the collision
+appears only via the keyboard, like the Escape one. **If a future PrimeNG
+version moves row key handling into `p-table` proper, every list still built
+on `p-table` inherits that collision silently** — re-verify on upgrade, the
+same way the Escape rule in §10.12 requires.
+
+**Tested by keyboard, not by clicking** (11 specs). The Escape collision was
+invisible to every mouse test; so is this one.
+
+**DESCRIPTION CARRIERS FOLLOW THE APPLIED QUERY; REQUEST CARRIERS KEEP THE
+REQUEST.** Ahmad's rule, recorded so the next screen does not re-litigate it.
+A list holds two kinds of control, and they answer different questions:
+
+| Kind | Examples | Reads | Because |
+| -- | -- | -- | -- |
+| **Description** | sort arrow, pager, empty-state text | `appliedQuery()` | They describe the rows in front of the reader. "Page 3" over page 2's rows is a lie, and so is an ascending header over descending rows |
+| **Request** | search box, filter inputs, **the URL** | the requested query | They carry what was ASKED for. The box still reads "zahrani" while the rows answer "zah", and that is right — the fix was to make the empty-state quote the term as it was at request time |
+
+They diverge only while a refetch has failed; every other moment they agree.
+
+**The URL is a request carrier, and deliberately so.** It is an ADDRESS:
+loading it issues a fresh request rather than describing the current screen.
+Pointing it at `appliedQuery()` would be briefly wrong on every SUCCESSFUL
+fetch in order to fix something that is wrong rarely and only on a screen that
+has already failed — and it would make reload discard the request the user
+just made, when reload-as-retry is the same affordance the Try again button
+offers two inches away.
+
+**WHERE FOCUS GOES WHEN THE ROW SET CHANGES** — `ListFocusService`, same
+folder. A reader on row 7 sorts a column, turns the page, filters, or deletes
+that row from its own menu. Left alone, focus falls to `<body>` and the user
+is silently returned to the top of the document. **Two causes, two answers,
+and the distinction is the point:**
+
+| Cause | Focus goes to | Why |
+| -- | -- | -- |
+| The focused row was REMOVED (deleted, filtered out) | The row that takes its place — same index, or the last row if it was last | Work continues where it was; deleting three rows running stays fluent |
+| The whole SET was replaced (sort, page, filter, search, scope) | The FIRST row | Row 7 of a new sort is an unrelated record; landing there implies a continuity that does not exist |
+| The new set is EMPTY | The list container, which is focusable for this reason | There is no row to hold focus, and `<body>` is not an answer |
+| The user has since focused something outside the list | Nothing | Stealing focus from someone who moved on is worse than doing nothing |
+| The set was replaced while focus was on a table CONTROL (sort header, pager), or nowhere | Nothing | The rules are stated by what changed AND **by where focus was**. A user usually replaces the set by USING such a control and may use it again, so moving them takes it out from under them — and they have not "moved on", they never left |
+
+Every change is ANNOUNCED through a polite live region: a silent focus jump is
+its own defect, because nothing else tells a screen-reader user the list moved.
+An identical message is cleared before being re-set, since a live region set to
+the value it already holds says nothing.
+
+**WHEN A DIALOG'S TRIGGER IS DESTROYED, THE LIST'S RULE WINS.** The one place
+these two components' focus rules collide, and the ordinary delete flow reaches
+it: focus a row's More button, open the menu, choose Delete, confirm in the
+dialog, and the row — with its trigger inside it — is gone.
+`EditDialogComponent` wants to return focus to that trigger and
+`ListFocusService` wants to focus the row that replaced it. Both are correct in
+isolation. Returning focus to a detached element focuses NOTHING, so the list
+wins — but only in that case: while the trigger survives, it still gets focus
+back.
+
+The shell captures the trigger's ROW INDEX **and the record's KEY** when the
+dialog OPENS, because by the time it closes the row may not exist to be
+measured. On close with a detached trigger it records both and leaves the
+restore to `DataListComponent`, which runs once the refetched rows are in the
+DOM.
+
+**IDENTITY FIRST, POSITION AS THE FALLBACK — because a detached trigger has
+two causes, and EDIT is the commoner one.** A save also detaches the trigger:
+the list refetches, Angular recreates the rows, and the record still exists —
+but if the list is sorted on the field just edited, it has MOVED. Restoring by
+position then lands on whoever now occupies the old slot, which is a different
+record: exactly the error that makes first-row the answer for a replaced set.
+
+| Cause | Restore to | Why |
+| -- | -- | -- |
+| **Edit** — the key still matches a row | That row, wherever it now sits | The record survived and moved; follow it |
+| **Delete** — no row carries the key | The captured index (clamped) | The record is gone; the next row is where work continues |
+| The list tracks no keys | The captured index | Nothing better is knowable |
+
+The dialog cannot tell a save from a delete — they look identical from there —
+so the DOM decides: if a row still carries the key, it was an edit. Both
+branches are mutation-tested (removing the key lookup fails the edit case;
+removing the positional fallback fails the delete case), because a single
+restore-by-index path passes the delete test and silently mis-focuses every
+edit that re-sorts. Rows opt in by binding `amListRowKey` to the same value
+the list tracks by.
+
+---
+
+### 10.12 `FieldComponent` — the Field Wrapper, and the Form-State Convention (ACC-111)
+
+`frontend/src/app/shared/components/field/field.component.ts`. Wraps one
+control: the label above it, the seven states of artboard 6, and a single
+message slot. The control itself is projected, so the wrapper decides how a
+field BEHAVES and the screen decides which control it needs.
+
+**A COMPONENT THAT MIRRORS FORM STATE SUBSCRIBES TO THE CONTROL'S
+`statusChanges` AND `valueChanges`. It never infers state from DOM events.**
+This is a convention of the same standing as `getById()` /
+`getByIdForViewer()` in Section 1.9, and it exists because the DOM half looks
+sufficient and is not: `disable()`, `setValue()` and a parent's
+`patchValue()` raise no `input` and no `focusout`. A wrapper listening only to
+the DOM therefore keeps rendering the state a control USED to be in.
+
+**What that costs, concretely, so nobody rates it cosmetic.** The failure
+found in ACC-111 was a disabled control still carrying `aria-invalid="true"`,
+the `p-invalid` class and an error message. A screen reader announces a fault
+on a field that no longer has one and that the user cannot act on, because it
+is disabled. It is an accessibility defect, not a stale pixel.
+
+DOM listeners still earn their place for the timing rule — `focusout` is what
+"validate on blur" means, and there is no control-level event for it — so the
+component uses both, deliberately. The rule is that the control's own streams
+are the source of TRUTH for state, and DOM events only supply what the forms
+API does not model.
+
+**Two more properties worth not re-deriving:**
+
+- **The element-mirroring effect must depend on a SIGNAL holding the projected
+  control**, not on a plain property. A property is populated after the first
+  render, by which time the effect has already run once against `null` and
+  will never re-run — every `aria-*` attribute silently stays unset. Six specs
+  caught this; nothing about the rendered page looks wrong.
+- **The message slot is always in the layout**, with a reserved height, empty
+  when there is nothing to say. A slot that appears with the error moves every
+  field below it while the user is reading one, and inside a dialog it moves
+  the footer under a cursor already travelling to Save. A spec pins the height
+  across the transition rather than trusting the CSS.
+
+**A COMPONENT RENDERING A DISMISSABLE LAYER REGISTERS WHILE OPEN AND CHECKS
+TOP-OF-STACK BEFORE HANDLING ESCAPE.** `LayerStackService`
+(`shared/overlay/layer-stack.service.ts`). A sibling rule to the one above,
+and it matters more than it sounds: the design mandates a picker DIALOG
+wherever an option list passes fifteen options, so stacked layers are the
+normal case, not an exotic one.
+
+**For anything built on `EditDialogComponent`, registration is AUTOMATIC** —
+the shell pushes when it becomes visible, removes when it hides or is
+destroyed, and consults the stack in its own Escape handler. A caller does
+nothing, which is the point: a step each layer must remember is a step that
+gets forgotten, and the symptom (Escape closing the wrong thing) reads as a
+new bug rather than a known one.
+
+**A layer NOT built on the shell must register itself.** There is exactly one
+today: `OverlaySelectComponent`, which builds a CDK overlay directly.
+
+**Why ordering cannot solve this, so nobody tries.** The shell listens on
+`document` in the CAPTURE phase, because it must decide about unsaved work
+before anything closes anything. Capture listeners on the same target fire in
+REGISTRATION order, and a parent dialog is always constructed before the layer
+inside it — so a child can never win by listening later or by calling
+`stopPropagation`.
+
+**The whole class was swept once, deliberately, rather than found one screen
+at a time** (ACC-111). Every component handling Escape locally had made the
+same ordering assumption, and the shell's capture listener invalidated all of
+them at once. The result, so nobody re-runs it:
+
+| What | Verdict |
+| -- | -- |
+| `EditDialogComponent` | Owns the stack; registers automatically |
+| `OverlaySelectComponent` | Needed registration — now registers |
+| The discard confirm the shell itself opens | Registered by the shell around the `confirm()` call |
+| **PrimeNG overlays** | Cannot register — PrimeNG builds them and exposes no hook. **Handled by the bubble-phase rule below; a floating one inside a dialog now closes together with it** |
+| `workflow-template-list`, `user-list` `stopPropagation` calls | Unaffected — CLICK handlers, not keydown |
+| Everything else | No local Escape handling anywhere else in the app |
+
+**THE SHELL HANDLES ESCAPE LAST, AND ONLY IF NOTHING ELSE CONSUMED IT.** The
+capture-phase listener was the mistake that created this whole problem, and it
+was not necessary: nothing else closes THIS dialog, because the underlying
+`p-dialog` has `closeOnEscape` off. The guard is bubble phase plus
+`LayerStackService.isTop`, and no list of class names.
+
+**`defaultPrevented` WAS the second half of that guard, and it is GONE
+(f7ce15c).** It stood in for "something closed", and for an INLINE component
+that proxy is false: the picker layer's calendar is `[inline]="true"`, so it
+has no overlay to close, yet it marks Escape handled and refocuses its own
+grid. The layer that OWNED the keystroke then never answered it — the calendar
+dialog could not be closed from inside its own date cells. `isTop` answers the
+real question instead: if this dialog is the top layer, nothing above it
+existed to consume anything, so the flag can only have come from its own
+content.
+
+**The consequence, on the twelve screens the ratchet still counts: a single
+Escape now closes the floating panel AND the dialog, where before it closed
+only the panel.** A regression on twelve, traded for a fix on one, and the
+trade is deliberate — a dirty form still prompts before closing, so the loss is
+bounded to a click rather than typed work, and this is the configuration
+artboard 7 forbids anyway. **Working `check:dialog-overlays` down to zero is
+what closes the gap**; there is no second fix pending.
+
+**Its premise, named because this is ACC-41's shape again.** It rests on how
+each component treats the keystroke, verified per component against the
+INSTALLED source (PrimeNG 21.2.x), not assumed:
+
+| Component | On Escape | Reaches the shell? |
+| -- | -- | -- |
+| `p-select`, `p-multiselect` | `preventDefault` + `stopPropagation` | Never arrives — unaffected by the guard's removal |
+| `p-datepicker` (popup), `p-autocomplete`, `p-cascadeselect`, `p-tieredmenu` | `preventDefault` only | Arrives, and is now ACTED ON: the panel and the dialog close together |
+| `p-datepicker` (`[inline]`) | `preventDefault`, closes nothing | Arrives, and must be acted on — this is the defect that removed the guard |
+| `p-dialog` / `p-confirmdialog` | Neither — closes by comparing z-indexes | Handled by our own stack instead |
+| `p-popover` | Neither — just `hide()` | Closes with the dialog, same as the floating panels above. No popover sits inside a dialog today |
+| `p-tooltip` | Nothing at all | Correct, and must stay so |
+
+**A HOVER-TRIGGERED OVERLAY MUST NEVER BE DEFERRED TO.** A tooltip is visible
+without being focused and is not something a user thinks of as dismissable, so
+if hovering anything inside a dialog made Escape do nothing, the dialog would
+read as stuck. It is different in kind from a menu or a popover, where Escape
+genuinely belongs to the overlay. Removing the `defaultPrevented` guard settles
+this for every hover overlay at once rather than by remembering to leave
+`.p-tooltip` off a class list.
+
+**ON UPGRADE, RE-VERIFY THE TABLE ABOVE AGAINST THE NEW PRIMENG SOURCE.** The
+load-bearing row is now the FIRST one: `p-select` and `p-multiselect` are kept
+off the dialog only by their own `stopPropagation`, so a version that drops it
+makes every select inside a dialog close the dialog too, and no test fails —
+the specs assert our behaviour given a component that stops propagation, not
+that PrimeNG still stops it. This is the premise ACC-41 had and did not write
+down.
+
+**This already broke something real.** ACC-41 made `OverlaySelectComponent`
+swallow Escape with `stopPropagation()` inside CDK's `body` listener, correct
+at the time because `body` precedes `document` in the BUBBLE chain. ACC-111's
+capture-phase listener runs before every bubble listener anywhere, so that
+reasoning silently stopped holding: Escape on an open dropdown inside a dirty
+dialog asked "Discard changes?" about the form behind it. Caught by writing
+the spec first and watching it fail, not by reading the code.
+
+**A SPEC'S SETUP CAN ESTABLISH THE CONDITION THAT HIDES THE DEFECT, and it did
+so four times on ACC-111** — every time with a green suite and a broken
+screen, so the pattern is worth recognising rather than the four cases:
+Escape tested in overlay mode but never inline; the row's tab order asserted
+only after a row was focused, which was itself the fix; the request-outcome
+machine unit-tested while no screen consumed it; and empty-state text read at
+answer time rather than at request time. **A spec that passes has only proven
+its own arrangement.** Prefer a test whose setup is the screen's real starting
+state, and prove anything fiddly by breaking it once and watching it go red.
+
+**One focus indicator per element, never two.** The preset gives every
+interactive element a 2px focus ring at a 2px offset (artboard 9); a FIELD
+signals focus with a primary border plus the 3px halo of artboard 6 instead.
+Both are correct alone, and drawing both at once is what happens by default,
+so the wrapper sets `outline: none` on a focus-visible projected control and a
+spec asserts it. This only shows up via the keyboard, which is the path least
+likely to be found by accident.
+
+Consumers: the ACC-111 proof screens; every screen migration inherits it.
+
+---
+
 ## 11. Known Cross-Cutting Gaps
 
 **✅ Complete — built incrementally as each of Sections 1–10 above was

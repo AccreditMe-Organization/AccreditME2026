@@ -1,7 +1,11 @@
 import {
   Component,
+  ElementRef,
+  Injector,
   OnInit,
   TemplateRef,
+  ViewChild,
+  afterNextRender,
   computed,
   contentChild,
   effect,
@@ -10,6 +14,15 @@ import {
   signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
+import { map, tap } from 'rxjs';
+import { ListFocusService } from './list-focus.service';
+import {
+  RequestOutcome,
+  createRequestOutcome,
+  isRefreshing,
+  isSkeleton,
+  isStale,
+} from '../../../core/request-outcome/request-outcome';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
@@ -255,8 +268,8 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
             [ngTemplateOutlet]="headerTemplate()!"
             [ngTemplateOutletContext]="{
               $implicit: {
-                sortBy: query().sortBy,
-                sortDir: query().sortDir,
+                sortBy: appliedQuery().sortBy,
+                sortDir: appliedQuery().sortDir,
                 sort: sortByColumnKey,
                 visible: isColumnVisible,
               },
@@ -278,14 +291,49 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
            When the parent does NOT constrain height, flex-1 simply grows to
            content and no scrollbar appears - so this is safe in panel mode
            too, and does not need a per-variant branch. -->
-      <div class="flex-1 min-h-0 overflow-y-auto">
-      @if (error()) {
-        <div class="p-4"><p-message severity="error" [text]="error()! | translate" /></div>
-      } @else if (loading()) {
-        <div class="flex justify-center py-10">
-          <p-progressSpinner styleClass="w-8 h-8" strokeWidth="4" />
+      <!-- A REFETCH FAILED and these rows answer the PREVIOUS request. The
+           sort arrow and pager already reverted with them; this says it in
+           words, because artboard 8 requires an error to state whether
+           anything changed. -->
+      @if (isStale()) {
+        <div
+          class="flex items-center justify-between gap-3 px-3 py-2 border-b text-xs"
+          style="background: var(--am-warning-bg); border-color: var(--am-warning-border); color: var(--am-warning-ink)"
+          role="status"
+        >
+          <span>{{ 'list.staleAfterError' | translate }}</span>
+          <p-button size="small" [text]="true" [label]="'list.retry' | translate" (onClick)="retry()" />
         </div>
-      } @else if (isFiltered() && rows().length === 0) {
+      }
+
+      <div class="flex-1 min-h-0 overflow-y-auto">
+      @if (outcome().status === 'error') {
+        <!-- Nothing to show: the request failed on a FIRST load. -->
+        <div class="p-4 flex flex-col items-center gap-2">
+          <p-message severity="error" [text]="'list.errorLoad' | translate" />
+          <p-button size="small" [label]="'list.retry' | translate" (onClick)="retry()" />
+        </div>
+      } @else if (outcome().status === 'denied') {
+        <div class="p-4">
+          <p-message severity="warn" [text]="'list.denied' | translate" />
+        </div>
+      } @else if (isSkeleton()) {
+        <!-- A FIRST load: skeleton rows shaped like the rows to come, at the
+             last page size, so nothing reflows when data lands. A refetch
+             never reaches here — it keeps its rows and shows a spinner. -->
+        <div class="flex flex-col" aria-hidden="true">
+          @for (n of skeletonRows(); track n) {
+            <div
+              class="grid items-center gap-3 px-3 py-2 border-b border-[var(--am-row-rule)]"
+              style="grid-template-columns: var(--am-list-cols)"
+            >
+              <span class="am-skeleton-bar"></span>
+              <span class="am-skeleton-bar"></span>
+              <span class="am-skeleton-bar"></span>
+            </div>
+          }
+        </div>
+      } @else if (isEmptyFiltered()) {
         <!-- NO RESULTS — distinct from empty, and the distinction is the
              point. The filter is the cause, so the exit offered is undoing
              it. Never shown where the set is genuinely empty: telling someone
@@ -303,9 +351,10 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
             (onClick)="clearFilters()"
           />
         </div>
-      } @else if (rows().length === 0) {
+      } @else if (isEmptyUnfiltered()) {
         <!-- NOTHING YET — an unpopulated relationship. Title, one explanatory
-             line, no illustration and no apology. -->
+             line, no illustration and no apology. The dashed mark belongs to
+             THIS empty only: the filtered one above offers a way out instead. -->
         <div class="flex flex-col items-center justify-center text-center gap-1 px-6 py-8">
           <span
             class="w-[30px] h-[30px] rounded-lg border border-dashed border-[var(--am-border)] bg-[var(--am-surface)] mb-1"
@@ -322,8 +371,10 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
              element with [class]="bodyClass()" — a [class] binding REPLACES
              static classes, so combining them would silently drop the
              containment context and every @min-* variant with it. -->
-        <div class="@container/datalist">
-          <div [class]="bodyClass()">
+        <div class="@container/datalist" [class.opacity-60]="isRefreshing()">
+          <!-- tabindex -1 so focus has somewhere to land when a filter empties
+               the list — otherwise it falls to <body> (ACC-111). -->
+          <div #rowsBody [class]="bodyClass()" tabindex="-1" role="rowgroup">
             @for (row of rows(); track trackBy()(row)) {
               <ng-container
                 [ngTemplateOutlet]="rowTemplate()!"
@@ -338,6 +389,10 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
         </div>
       }
       </div>
+
+      <!-- Focus moved under the reader, so say so. A silent jump is its own
+           defect: nothing else tells a screen-reader user the list changed. -->
+      <div class="sr-only" role="status" aria-live="polite">{{ listFocus.announcement() }}</div>
 
       <!-- ── pager ───────────────────────────────────────────────────────── -->
       <!-- Page mode only. PrimeNG's paginator rather than a hand-rolled one:
@@ -389,7 +444,13 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
   `,
 })
 export class DataListComponent<T> implements OnInit {
+  /** The rows container, for ListFocusService to restore focus into. */
+  @ViewChild('rowsBody') private readonly rowsBody?: ElementRef<HTMLElement>;
+
   private readonly translate = inject(TranslateService);
+  /** Not private: the template reads its live-region announcement. */
+  protected readonly listFocus = inject(ListFocusService);
+  private readonly injector = inject(Injector);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
@@ -442,10 +503,60 @@ export class DataListComponent<T> implements OnInit {
   readonly rowTemplate = contentChild.required<TemplateRef<unknown>>('listRow');
   readonly headerTemplate = contentChild<TemplateRef<unknown>>('listHeader');
 
-  readonly rows = signal<T[]>([]);
+  readonly rows = computed<T[]>(() => {
+    const outcome = this.outcome();
+    return outcome.status === 'rows' ? [...outcome.data] : [];
+  });
   readonly total = signal(0);
-  readonly loading = signal(false);
-  readonly error = signal<string | null>(null);
+  /**
+   * The request's outcome, as the ONE state machine (ACC-111). Replaces the
+   * loading/error pair: a flag beside an array can be half-read, which is how
+   * an empty state reached a tenant with 312 users. `rows` is derived from it,
+   * so a failed REFETCH keeps what is on screen instead of blanking the list.
+   */
+  private readonly outcomeHandle = signal<{
+    outcome: () => RequestOutcome<T>;
+    retry: () => void;
+    destroy: () => void;
+  } | null>(null);
+
+  protected readonly outcome = computed<RequestOutcome<T>>(
+    () => this.outcomeHandle()?.outcome() ?? { status: 'idle' },
+  );
+
+  protected readonly isSkeleton = computed(() => isSkeleton(this.outcome()));
+  protected readonly isRefreshing = computed(() => isRefreshing(this.outcome()));
+  protected readonly isStale = computed(() => isStale(this.outcome()));
+
+  /**
+   * The two empties artboard 8 requires, as separate reads — a template cannot
+   * narrow a union inside a condition, and conflating them is what tells
+   * someone to clear a search they never made.
+   */
+  protected readonly isEmptyFiltered = computed(() => {
+    const outcome = this.outcome();
+    return outcome.status === 'empty' && outcome.filtered;
+  });
+
+  protected readonly isEmptyUnfiltered = computed(() => {
+    const outcome = this.outcome();
+    return outcome.status === 'empty' && !outcome.filtered;
+  });
+
+  /** Retry for the error state and the stale notice. */
+  protected readonly retry = (): void => this.outcomeHandle()?.retry();
+
+  /** The query the next run should issue. See the effect that builds the machine. */
+  private pendingQuery: IListQuery = {};
+
+  /**
+   * Skeleton placeholders: the SAME COUNT as the last page size, so the list
+   * does not reflow when the rows land (artboard 8). Capped, because a page
+   * size of 100 would render 100 grey bars on a first paint.
+   */
+  protected readonly skeletonRows = computed(() =>
+    Array.from({ length: Math.min(this.effectivePageSize(), 8) }, (_, i) => i),
+  );
   readonly sortMenuOpen = signal(false);
   readonly columnMenuOpen = signal(false);
   readonly activeScope = signal<string | null>(null);
@@ -455,6 +566,19 @@ export class DataListComponent<T> implements OnInit {
 
   private readonly unfilteredTotal = signal(0);
   private readonly reloadToken = signal(0);
+
+  /**
+   * The query that PRODUCED the rows currently on screen, as opposed to the
+   * one last requested (ACC-111).
+   *
+   * They differ only when a refetch fails: the rows stay, because blanking
+   * the list loses the reader's place, and then the header must not claim a
+   * sort those rows are not in. The stale notice says it in words; the sort
+   * arrow and the pager say it at a glance, and a reader glances. So the
+   * indicator reverts with the rows, and the pending sort appears only once
+   * it succeeds.
+   */
+  protected readonly appliedQuery = signal<IListQuery>({});
 
   // The write-effect must not run before ngOnInit has read the URL, or it
   // writes the empty default query over the very params it is about to
@@ -515,6 +639,9 @@ export class DataListComponent<T> implements OnInit {
       }
     });
 
+    // ONE machine per list, re-run whenever the query changes. The source
+    // closure reads the CURRENT query, so a retry re-runs the same request the
+    // user is looking at rather than the one that first created the machine.
     effect(() => {
       const source = this.source();
       const query: IListQuery = {
@@ -522,22 +649,47 @@ export class DataListComponent<T> implements OnInit {
         pageSize: this.query().pageSize ?? this.pageSize(),
         scope: this.activeScope(),
       };
-
       this.reloadToken();
 
-      this.loading.set(true);
-      source(query).subscribe({
-        next: (page) => {
-          this.rows.set(page.data);
-          this.total.set(page.total);
-          if (!this.isFiltered()) this.unfilteredTotal.set(page.total);
-          this.loading.set(false);
+      this.pendingQuery = query;
+      const existing = this.outcomeHandle();
+      if (existing) {
+        existing.retry();
+        return;
+      }
+
+      const handle = createRequestOutcome<T>(
+        () =>
+          source(this.pendingQuery).pipe(
+            tap((page) => {
+              // Recorded on the way through, because the machine only carries
+              // rows: the total and the query that produced them belong to the
+              // list, and the pager and sort arrow read the APPLIED one.
+              this.appliedQuery.set(this.pendingQuery);
+              this.total.set(page.total);
+              if (!this.isFiltered()) this.unfilteredTotal.set(page.total);
+            }),
+            map((page) => page.data),
+          ),
+        {
+          // Described when the REQUEST goes out, so a debounced search quotes
+          // the term that produced the answer rather than the one now typed.
+          describeEmpty: () => ({
+            reason: this.isFiltered() ? 'list.noResultsBody' : this.emptyMessage() || 'list.empty',
+            filtered: this.isFiltered(),
+          }),
         },
-        error: () => {
-          this.error.set('list.errorLoad');
-          this.loading.set(false);
-        },
-      });
+      );
+      this.outcomeHandle.set(handle);
+    });
+
+    // Focus follows the new rows once they are in the DOM, never before.
+    effect(() => {
+      this.outcome();
+      afterNextRender(
+        { read: () => this.listFocus.restore(this.rowsBody?.nativeElement ?? null) },
+        { injector: this.injector },
+      );
     });
   }
 
@@ -570,9 +722,11 @@ export class DataListComponent<T> implements OnInit {
     return match?.label ?? this.sortableColumns()[0]?.label ?? '';
   });
 
-  readonly effectivePageSize = computed(() => this.query().pageSize ?? this.pageSize());
+  readonly effectivePageSize = computed(
+    () => this.appliedQuery().pageSize ?? this.query().pageSize ?? this.pageSize(),
+  );
   readonly firstRecord = computed(
-    () => ((this.query().page ?? 1) - 1) * this.effectivePageSize(),
+    () => ((this.appliedQuery().page ?? 1) - 1) * this.effectivePageSize(),
   );
 
   readonly showPanelFooter = computed(
@@ -671,12 +825,26 @@ export class DataListComponent<T> implements OnInit {
       sortDir: q.sortBy === column.sortBy && q.sortDir === 'asc' ? 'desc' : 'asc',
       page: 1,
     }));
+    this.setReplaced('list.announceSorted');
+  }
+
+
+  /**
+   * A sort, page, filter, search or scope change REPLACES the set, so a
+   * keyboard user goes to the first row rather than to whatever now occupies
+   * the index they were on — row 7 of a new sort is an unrelated record.
+   * ListFocusService holds the decision; this only says which happened.
+   */
+  private setReplaced(announcement: string): void {
+    this.listFocus.noteSetReplaced();
+    this.listFocus.announce(this.translate.instant(announcement));
   }
 
   onScope(key: string): void {
     // Re-clicking the active scope clears it, so a chip is not a trap.
     this.activeScope.set(this.activeScope() === key ? null : key);
     this.query.update((q) => ({ ...q, page: 1 }));
+    this.setReplaced('list.announceFiltered');
   }
 
   setFilter(name: string, value: string | null): void {
@@ -685,6 +853,7 @@ export class DataListComponent<T> implements OnInit {
       filters: { ...(q.filters ?? {}), [name]: value },
       page: 1,
     }));
+    this.setReplaced('list.announceFiltered');
   }
 
   filterValue(name: string): string | null {
@@ -704,6 +873,7 @@ export class DataListComponent<T> implements OnInit {
       pageSize: rows,
       page: Math.floor((event.first ?? 0) / rows) + 1,
     }));
+    this.setReplaced('list.announcePaged');
   }
 
   clearFilters(): void {

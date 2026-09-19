@@ -167,6 +167,24 @@ jobs:
       - name: Formatting rule
         run: npm run check:formatting
         working-directory: frontend
+      # ACC-111 — the design system's artboard-9 contrast pairs, computed from
+      # src/styles/design-tokens.scss. A token change that breaks a pair fails
+      # here, so the published table cannot drift from the code.
+      - name: Contrast pairs
+        run: npm run check:contrast
+        working-directory: frontend
+      # ACC-111 — icon-only controls must carry a name. A ratchet, not a gate:
+      # it prints the count of controls not yet migrated onto
+      # IconButtonComponent and fails only when that count GROWS.
+      - name: Icon labels
+        run: npm run check:icon-labels
+        working-directory: frontend
+      # ACC-111 — a PrimeNG overlay inside a dialog is dismissed by the dialog
+      # body's own scroll. The runtime guard cannot see those (PrimeNG builds
+      # them itself), so they are caught statically. Also a ratchet.
+      - name: Dialog overlays
+        run: npm run check:dialog-overlays
+        working-directory: frontend
       # ACC-47 — the actual gap this ticket exists to close: this frontend
       # job never ran any test-runner step before, at any point in this
       # repo's history (confirmed via full commit-history audit, not a

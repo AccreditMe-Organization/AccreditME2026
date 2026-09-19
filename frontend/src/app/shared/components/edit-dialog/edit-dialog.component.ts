@@ -5,12 +5,34 @@ import {
   OnDestroy,
   TemplateRef,
   ViewChild,
+  Injector,
+  afterNextRender,
+  computed,
+  effect,
+  inject,
   input,
   output,
   signal,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { DialogModule } from 'primeng/dialog';
+import { Dialog, DialogModule } from 'primeng/dialog';
+import { ConfirmationService, PrimeTemplate } from 'primeng/api';
+import { TranslateService } from '@ngx-translate/core';
+import { LayerStackService } from '../../overlay/layer-stack.service';
+import { ListFocusService } from '../data-list/list-focus.service';
+
+/**
+ * The three dialog sizes (ACC-111, artboard 7). A size is a KIND of dialog,
+ * not a width a caller tunes: confirm asks one question, form holds up to six
+ * fields, picker is a search over a scrolling list.
+ */
+export type DialogSize = 'confirm' | 'form' | 'picker';
+
+const DIALOG_WIDTH: Record<DialogSize, string> = {
+  confirm: 'var(--am-dialog-confirm)',
+  form: 'var(--am-dialog-form)',
+  picker: 'var(--am-dialog-picker)',
+};
 
 // Wraps a p-dialog and re-attaches its caller-supplied content via
 // ngTemplateOutlet, inside this component's OWN @if(visible()) — not
@@ -23,20 +45,24 @@ import { DialogModule } from 'primeng/dialog';
 @Component({
   selector: 'app-edit-dialog',
   standalone: true,
-  imports: [DialogModule, NgTemplateOutlet],
+  imports: [DialogModule, NgTemplateOutlet, PrimeTemplate],
   template: `
     <p-dialog
       [visible]="visible()"
-      (visibleChange)="visibleChange.emit($event)"
+      (visibleChange)="onDialogVisibleChange($event)"
       [header]="header()"
       [modal]="true"
-      [style]="{ width: width() }"
+      [closeOnEscape]="false"
+      [dismissableMask]="false"
+      [closable]="!saving()"
+      [appendTo]="appendTo()"
+      [style]="{ width: resolvedWidth() }"
     >
       @if (visible()) {
-        <div class="relative">
+        <div class="relative am-dialog__body-wrap">
           <div
             #scrollArea
-            class="max-h-[60vh] overflow-y-auto pr-1"
+            class="am-dialog__body pr-1"
             (scroll)="onScroll()"
             (wheel)="onWheel($event)"
           >
@@ -53,6 +79,17 @@ import { DialogModule } from 'primeng/dialog';
             </div>
           }
         </div>
+      }
+
+      <!-- FIXED, and outside the scrolling body (artboard 7). Two reasons, and
+           the second is not obvious: a footer inside the scroll container can
+           be scrolled away from the cursor mid-click, and its buttons sit flush
+           against the container's edge, which CLIPS their focus ring — measured
+           in ACC-111, the ring was cropped along the bottom. -->
+      @if (footer(); as footerTemplate) {
+        <ng-template pTemplate="footer">
+          <ng-container *ngTemplateOutlet="footerTemplate" />
+        </ng-template>
       }
     </p-dialog>
   `,
@@ -91,6 +128,15 @@ import { DialogModule } from 'primeng/dialog';
       :host ::ng-deep .p-multiselect-list-container {
         overscroll-behavior: contain;
       }
+
+      /* Capped so the body need not scroll at all (artboard 7): content is
+         sized for the dialog with every panel open, and a body that still
+         overflows means the pattern is wrong — split it into steps, or make it
+         a page. 60vh keeps the cap honest on a short viewport. */
+      .am-dialog__body {
+        max-height: min(var(--am-dialog-form-body-max), 60vh);
+        overflow-y: auto;
+      }
     `,
   ],
 })
@@ -98,8 +144,69 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   readonly visible = input.required<boolean>();
   readonly header = input<string>('');
   readonly content = input.required<TemplateRef<unknown>>();
-  readonly width = input<string>('560px');
   readonly visibleChange = output<boolean>();
+
+  /**
+   * The kind of dialog, which decides its width (ACC-111, artboard 7).
+   * Prefer this to `width`, which stays for callers predating it.
+   */
+  readonly size = input<DialogSize>('form');
+
+  /** Explicit width. Overrides `size` when set; '' means "use the size". */
+  readonly width = input<string>('');
+
+  /**
+   * Fixed footer, rendered outside the scrolling body. Optional: callers
+   * predating it keep their buttons inside the content.
+   */
+  readonly footer = input<TemplateRef<unknown> | null>(null);
+
+  /**
+   * Whether the form holds unsaved changes. Escape and the close button then
+   * ASK before discarding rather than throwing the work away silently.
+   */
+  readonly dirty = input(false);
+
+  /**
+   * A save is in flight. Escape is disarmed and the close button hidden: the
+   * outcome is not known yet, so there is nothing truthful to return to.
+   */
+  readonly saving = input(false);
+
+  /**
+   * Where the dialog's own DOM goes. 'self' (the default) keeps it a
+   * descendant of this component, which the ACC-36 overscroll rules depend on:
+   * they are :host ::ng-deep, so a body-appended dialog silently loses them.
+   *
+   * 'body' is for a layer that must have NO scrollable ancestor at all — a
+   * calendar or picker stacked above another dialog (ACC-111, dialog rule 4).
+   * Safe there precisely because such a layer holds no PrimeNG overlay of its
+   * own, so there is nothing for those rules to protect.
+   */
+  readonly appendTo = input<'self' | 'body'>('self');
+
+  protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
+
+  private readonly layers = inject(LayerStackService);
+  private readonly listFocus = inject(ListFocusService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly translate = inject(TranslateService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+
+  /** What had focus when the dialog opened, so it can be given back. */
+  private triggerElement: HTMLElement | null = null;
+
+  /**
+   * If the trigger was a control inside a list ROW, the row's position when
+   * the dialog opened. Captured then, because by the time the dialog closes
+   * the row may be gone and its position unknowable. See the focus-return
+   * rule in requestClose's sibling comment below.
+   */
+  private triggerRowIndex = -1;
+  private triggerRowKey: string | null = null;
+
+  /** The p-dialog itself, for the layering check in onKeydown. */
+  @ViewChild(Dialog) private readonly dialogRef?: Dialog;
 
   @ViewChild('scrollArea') private readonly scrollAreaRef?: ElementRef<HTMLDivElement>;
   @ViewChild('contentWrapper') private readonly contentWrapperRef?: ElementRef<HTMLDivElement>;
@@ -108,6 +215,166 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
 
   private resizeObserver?: ResizeObserver;
   private observedContentEl?: HTMLDivElement;
+
+  constructor() {
+    // Escape is ours, not p-dialog's (closeOnEscape is off), because it has to
+    // consult dirty() and saving() before it closes anything.
+    // THIS DIALOG HANDLES ESCAPE LAST, AND ONLY IF NOTHING ELSE CONSUMED IT.
+    //
+    // It used to listen in the CAPTURE phase, on the reasoning that it must
+    // decide about unsaved work before anything closes anything. That was
+    // wrong, and expensively so: nothing else closes THIS dialog (the
+    // underlying p-dialog has closeOnEscape off), while capture put us ahead
+    // of every PrimeNG overlay's own Escape handling and broke all twelve of
+    // them at once.
+    //
+    // Bubble phase is the first half of the guard, and it is BEHAVIOURAL
+    // rather than a list of class names:
+    //   - p-select and p-multiselect call stopPropagation, so the event never
+    //     reaches this listener at all;
+    //   - p-datepicker, p-autocomplete, p-cascadeselect and p-tieredmenu call
+    //     preventDefault, so defaultPrevented is true;
+    //   - our own layers register with LayerStackService and are checked below.
+    // All four verified against the installed PrimeNG source, not assumed.
+    //
+    // THE defaultPrevented GUARD IS GONE, and this is the important part.
+    //
+    // It was a proxy for "something closed", and for an INLINE component that
+    // proxy is false: the calendar in the picker layer is [inline]="true", so
+    // it has no overlay to close, yet it still marks Escape handled and
+    // refocuses its own grid. The layer that OWNED the keystroke then never
+    // answered it — the calendar dialog could not be closed from inside its
+    // date cells, and focus jumped to the previous-month arrow.
+    //
+    // LayerStackService already answers the real question. If this dialog is
+    // the top layer, NOTHING ABOVE IT EXISTED to consume the keystroke, so a
+    // defaultPrevented flag can only have come from its own content. The
+    // isTop check below is therefore the whole guard.
+    //
+    // Two things were tried first and are recorded so they are not retried:
+    // PrimeNG's z-index registry does not see a panel appended to 'self' (the
+    // dialog had 1102 and the open datepicker panel had none), and the target's
+    // ancestor chain is identical for both — a popup datepicker's Escape comes
+    // from its INPUT, whose chain holds nothing positioned either.
+    //
+    // CONSEQUENCE, stated rather than discovered later: while a FLOATING
+    // PrimeNG panel still sits inside a dialog, Escape now closes both it and
+    // the dialog. That configuration is the one artboard 7 forbids and
+    // check:dialog-overlays counts down to zero; a dialog that cannot be
+    // closed from its own content is the worse of the two defects.
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || !this.visible()) return;
+
+      // Only the TOP layer answers Escape — a calendar or picker stacked above
+      // this dialog, or the discard confirm it opens. See LayerStackService
+      // for why listener ordering cannot solve this.
+      if (this.layerId !== null && !this.layers.isTop(this.layerId)) return;
+      event.stopPropagation();
+      this.requestClose();
+    };
+    document.addEventListener('keydown', onKeydown);
+    this.teardownKeydown = () => document.removeEventListener('keydown', onKeydown);
+
+    effect(() => {
+      if (this.visible()) {
+        if (this.layerId === null) this.layerId = this.layers.push();
+        // Remember the trigger BEFORE the dialog takes focus.
+        this.triggerElement = document.activeElement as HTMLElement | null;
+        const row = this.triggerElement?.closest?.('.am-list-row') ?? null;
+        this.triggerRowIndex = row?.parentElement
+          ? Array.from(row.parentElement.children).indexOf(row)
+          : -1;
+        this.triggerRowKey = row?.getAttribute('data-am-row-key') ?? null;
+        afterNextRender({ read: () => this.focusFirstField() }, { injector: this.injector });
+      } else {
+        if (this.layerId !== null) {
+          this.layers.remove(this.layerId);
+          this.layerId = null;
+        }
+      }
+
+      if (!this.visible() && this.triggerElement) {
+        // WHEN THE TRIGGER IS GONE, THE LIST DECIDES — the one rule that wins
+        // over "focus returns to the trigger".
+        //
+        // Deleting a row runs: focus the row's More button, open the menu,
+        // choose Delete, confirm here, the row is removed. Both rules are
+        // correct and they collide: this dialog wants to return focus to a
+        // button that no longer exists, and the list wants to focus whatever
+        // took the row's place. Returning to a detached element focuses
+        // nothing at all, so the list wins — but ONLY in that case. While the
+        // trigger survives, it still gets focus back.
+        if (this.triggerElement.isConnected) {
+          this.triggerElement.focus();
+        } else if (this.triggerRowIndex >= 0) {
+          // Not restored here: the list refetches after a save or a delete,
+          // and DataListComponent restores once the new rows are in the DOM.
+          // The KEY is what separates the two — see ListFocusService.
+          this.listFocus.noteTriggerLost(this.triggerRowKey, this.triggerRowIndex);
+        }
+        this.triggerElement = null;
+        this.triggerRowIndex = -1;
+        this.triggerRowKey = null;
+      }
+    });
+  }
+
+  private readonly injector = inject(Injector);
+  private layerId: number | null = null;
+  private teardownKeydown: (() => void) | null = null;
+
+  /**
+   * Focus the first FIELD, never the close button. PrimeNG focuses whatever is
+   * first in the DOM, which is the X — landing a keyboard user on "throw this
+   * away" instead of on the work.
+   */
+  private focusFirstField(): void {
+    const field = this.host.nativeElement.querySelector<HTMLElement>(
+      '.p-dialog-content input:not([type="hidden"]), .p-dialog-content select, .p-dialog-content textarea, .p-dialog-content [tabindex]:not([tabindex="-1"])',
+    );
+    field?.focus();
+  }
+
+  /**
+   * Every close path arrives here: Escape, the header's X, a caller's Cancel.
+   * One path, so the dirty question cannot be asked in one place and skipped
+   * in another.
+   */
+  requestClose(): void {
+    if (this.saving()) return; // nothing truthful to return to yet
+
+    if (!this.dirty()) {
+      this.visibleChange.emit(false);
+      return;
+    }
+
+    // The confirm is a layer of ours too. PrimeNG's own dialog decides Escape
+    // by comparing z-indexes rather than by consuming the event, so without
+    // this the confirm would close AND this handler would run again.
+    const confirmLayer = this.layers.push();
+    const release = (): void => this.layers.remove(confirmLayer);
+
+    this.confirmationService.confirm({
+      header: this.translate.instant('dialog.discardHeader'),
+      message: this.translate.instant('dialog.discardMessage'),
+      acceptLabel: this.translate.instant('dialog.discard'),
+      rejectLabel: this.translate.instant('dialog.keepEditing'),
+      acceptButtonStyleClass: 'p-button-danger',
+      accept: () => {
+        release();
+        this.visibleChange.emit(false);
+      },
+      reject: release,
+    });
+  }
+
+  protected onDialogVisibleChange(visible: boolean): void {
+    if (visible) {
+      this.visibleChange.emit(true);
+      return;
+    }
+    this.requestClose();
+  }
 
   // The scroll area (and the content it wraps) only exists in the DOM
   // while visible() is true, so the ResizeObserver is attached/detached
@@ -131,6 +398,11 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
 
   ngOnDestroy(): void {
     this.teardownObserver();
+    this.teardownKeydown?.();
+    if (this.layerId !== null) {
+      this.layers.remove(this.layerId);
+      this.layerId = null;
+    }
   }
 
   onScroll(): void {

@@ -7,6 +7,8 @@ import { TooltipModule } from 'primeng/tooltip';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
+import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
+import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { TaskFormComponent } from '../../../tasks/components/task-form/task-form.component';
 import { TaskService, ITaskWithAssigneesDto } from '../../../tasks/services/task.service';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
@@ -44,6 +46,8 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     MessageModule,
     TooltipModule,
     RecordPanelComponent,
+    ListRowDirective,
+    IconButtonComponent,
     RouterLink,
     TaskFormComponent,
     WorkflowStageIndicatorComponent,
@@ -246,8 +250,13 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
               </button>
             }
             @for (member of members(); track member.id) {
+              <!-- ACC-111 — the row's keyboard contract: the panel is one tab
+                   stop, arrows move between members, and →/← reach this row's
+                   own actions, which are otherwise unreachable by keyboard. -->
               <div
-                class="grid grid-cols-[28px_1fr_auto] gap-2.5 items-center px-4 py-2 border-b border-[var(--am-border)]"
+                amListRow
+                [amListRowKey]="member.id"
+                class="grid grid-cols-[28px_1fr_auto] gap-2.5 items-center px-4 py-2"
               >
                 <span
                   class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold"
@@ -263,16 +272,21 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                   </span>
                 </span>
                 <span class="flex items-center gap-1 shrink-0">
+                  <!-- The label names the MEMBER: a panel of nine otherwise
+                       gives a screen-reader user nine identical "Edit". -->
                   @if (canChangeMemberRole()) {
-                    <p-button icon="pi pi-pencil" [text]="true" size="small" (onClick)="onChangeMemberRole(member)" />
+                    <am-icon-button
+                      icon="pi pi-pencil"
+                      [label]="'committee.changeRoleFor' | translate: { name: userName(member.userId) }"
+                      (activated)="onChangeMemberRole(member)"
+                    />
                   }
                   @if (canRemoveMember()) {
-                    <p-button
+                    <am-icon-button
                       icon="pi pi-times"
-                      [text]="true"
-                      size="small"
                       severity="danger"
-                      (onClick)="onRemoveMember(member)"
+                      [label]="'committee.removeMemberNamed' | translate: { name: userName(member.userId) }"
+                      (activated)="onRemoveMember(member)"
                     />
                   }
                 </span>

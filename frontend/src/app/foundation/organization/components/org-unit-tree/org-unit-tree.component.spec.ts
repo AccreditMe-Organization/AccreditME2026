@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { ConfirmationService } from 'primeng/api';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
@@ -24,6 +25,7 @@ describe('OrgUnitTreeComponent — head panel title (ACC-82)', () => {
       imports: [OrgUnitTreeComponent],
       providers: [
         provideHttpClient(),
+        ConfirmationService,
         provideHttpClientTesting(),
         provideRouter([]),
         provideTranslateService({ lang: 'en' }),

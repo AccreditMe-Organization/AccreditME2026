@@ -4,6 +4,7 @@
 // (2) the inline reassign form calls POST /tasks/:id/reassign with the
 // exact ReassignTaskDto shape and refreshes the list on success.
 import { TestBed, ComponentFixture } from '@angular/core/testing';
+import { ConfirmationService } from 'primeng/api';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader, TranslateService } from '@ngx-translate/core';
@@ -68,6 +69,7 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
       imports: [UnassignedTasksComponent],
       providers: [
         provideHttpClient(),
+        ConfirmationService,
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
         provideRouter([]),
@@ -147,6 +149,7 @@ describe('UnassignedTasksComponent — Setup health Fix link (ACC-82)', () => {
       imports: [UnassignedTasksComponent],
       providers: [
         provideHttpClient(),
+        ConfirmationService,
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
         provideRouter([]),
