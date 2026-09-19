@@ -673,7 +673,11 @@
     "panelRange": "{{first}}–{{last}} of {{total}}",
     "announceSorted": "List re-sorted. Focus moved to the first row.",
     "announceFiltered": "List filtered. Focus moved to the first row.",
-    "announcePaged": "Page changed. Focus moved to the first row."
+    "announcePaged": "Page changed. Focus moved to the first row.",
+    "moreFor": "More actions for {{name}}",
+    "retry": "Try again",
+    "denied": "You do not have permission to view this list.",
+    "staleAfterError": "Could not refresh — showing the previous results."
   },
   "shell": {
     "product": {

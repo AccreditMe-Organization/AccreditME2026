@@ -2,7 +2,9 @@ import { ListFocusService } from './list-focus.service';
 import {
   Directive,
   ElementRef,
+  Injector,
   OnDestroy,
+  afterNextRender,
   HostBinding,
   HostListener,
   computed,
@@ -83,6 +85,20 @@ export class ListRowDirective implements OnDestroy {
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly listFocus = inject(ListFocusService);
+  private readonly injector = inject(Injector);
+
+  constructor() {
+    // Controls leave the tab order as soon as the row EXISTS, not when it is
+    // first focused. Deferring it to focusin left Tab walking every button in
+    // every row until someone happened to focus one — the precise defect this
+    // directive exists to remove, hiding behind a green keyboard test that
+    // always focused a row first. Found in the Users list proof.
+    afterNextRender({ write: () => this.detachControlsFromTabOrder() }, { injector: this.injector });
+  }
+
+  private detachControlsFromTabOrder(): void {
+    this.controls().forEach((el) => el.setAttribute('tabindex', '-1'));
+  }
 
   /** -1 until this row is the roving tab stop. The first row starts at 0. */
   private readonly isTabStop = signal(false);
@@ -153,8 +169,9 @@ export class ListRowDirective implements OnDestroy {
     this.siblings().forEach((el) => el.setAttribute('tabindex', '-1'));
     this.host.nativeElement.setAttribute('tabindex', '0');
     this.isTabStop.set(true);
-    // Controls stay out of the tab order — they are arrow-reachable only.
-    this.controls().forEach((el) => el.setAttribute('tabindex', '-1'));
+    // Again on focus, for controls rendered after the first pass (a row menu
+    // that only appears once the row has actions).
+    this.detachControlsFromTabOrder();
   }
 
   @HostListener('dblclick')

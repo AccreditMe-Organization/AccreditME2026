@@ -143,7 +143,20 @@ describe('ListRowDirective (ACC-111)', () => {
   // The failure this component exists to avoid: the design records today's row
   // menus as unreachable by keyboard.
   describe('the row actions are reachable', () => {
-    it('takes the row controls OUT of the tab order', () => {
+    // Found in the Users list proof: doing this only on focusin left Tab
+    // walking 24 rows x 2 buttons until someone focused a row, and every
+    // existing spec focused one first.
+    it('takes the row controls out of the tab order BEFORE any row is focused', async () => {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const untouched = rowEls()[1];
+      expect(document.activeElement).not.toBe(untouched);
+      const buttons = untouched.querySelectorAll('button');
+      expect(buttons[0].getAttribute('tabindex')).toBe('-1');
+      expect(buttons[1].getAttribute('tabindex')).toBe('-1');
+    });
+
+    it('keeps them out once the row is focused', () => {
       const rows = rowEls();
       rows[0].focus();
       const buttons = rows[0].querySelectorAll('button');

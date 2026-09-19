@@ -107,3 +107,32 @@ strong {
 .am-list-row--disabled {
   opacity: 0.6;
 }
+
+// Skeleton placeholder bar (ACC-111, artboard 8). The row minus its content:
+// same heights, same columns, same count as the last page size, so nothing
+// reflows when the data lands.
+.am-skeleton-bar {
+  display: block;
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--am-skeleton-base) 0%,
+    var(--am-skeleton-shimmer) 50%,
+    var(--am-skeleton-base) 100%
+  );
+  background-size: 200% 100%;
+  animation: am-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes am-skeleton-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-skeleton-bar {
+    animation: none;
+  }
+}

@@ -40,6 +40,8 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { TransferUserWizardComponent } from '../transfer-user-wizard/transfer-user-wizard.component';
 import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
+import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
+import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 
 export type RowAction = 'transfer' | 'deactivate';
 
@@ -70,6 +72,8 @@ export type RowAction = 'transfer' | 'deactivate';
     StatusChipComponent,
     OverlaySelectComponent,
     TransferUserWizardComponent,
+    ListRowDirective,
+    IconButtonComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -172,8 +176,15 @@ export type RowAction = 'transfer' | 'deactivate';
           </ng-template>
 
           <ng-template #listRow let-user let-v="visible">
+            <!-- ACC-111 — the row's keyboard contract lives in amListRow: one
+                 tab stop for the table, arrows between rows, Enter opens,
+                 →/← reach the row's own actions. The key is what lets focus
+                 follow this RECORD after an edit re-sorts the list. -->
             <div
-              class="grid items-center gap-3 px-3 py-2 border-b border-[var(--am-border)] hover:bg-[var(--am-surface)] cursor-pointer"
+              amListRow
+              [amListRowKey]="user.id"
+              (rowOpen)="onView(user)"
+              class="grid items-center gap-3 px-3 py-2 cursor-pointer"
               style="grid-template-columns: var(--am-list-cols)"
               (click)="onView(user)"
             >
@@ -229,13 +240,12 @@ export type RowAction = 'transfer' | 'deactivate';
                 <!-- ACC-79 — only when the row HAS actions. It used to render
                      on every row and open an empty box for an inactive user. -->
                 @if (rowActionsFor(user).length > 0) {
-                  <p-button
+                  <!-- The label names the OBJECT: twenty rows otherwise give a
+                       screen-reader user twenty identical "More actions". -->
+                  <am-icon-button
                     icon="pi pi-ellipsis-h"
-                    size="small"
-                    [text]="true"
-                    [ariaLabel]="'list.more' | translate"
-                    [pTooltip]="'list.more' | translate"
-                    (onClick)="openRowMenu(user, $event)"
+                    [label]="'list.moreFor' | translate: { name: user.name }"
+                    (activated)="openRowMenu(user, $event)"
                   />
                 }
               </div>
