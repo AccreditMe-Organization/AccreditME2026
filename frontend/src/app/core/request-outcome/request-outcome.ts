@@ -91,10 +91,16 @@ export interface EmptyDescription {
 
 export interface RequestOutcomeOptions {
   /**
-   * Called when a response lands with zero rows — a FUNCTION, not a constant,
-   * because the two empties artboard 8 requires cannot both be written at
-   * setup time: one of them quotes the search the user just typed. The caller
-   * reads its own current filter state here.
+   * Describes an empty answer — a FUNCTION, not a constant, because the two
+   * empties artboard 8 requires cannot both be written at setup time: one of
+   * them quotes the search the user just typed.
+   *
+   * CALLED WHEN THE REQUEST IS MADE, not when its answer lands. Search is
+   * debounced: type "zah", the request goes, type "rani" before it returns,
+   * and reading live state at answer time would quote "zahrani" — a term that
+   * never produced that empty result. Same rule as the focus work: capture at
+   * the moment of the change, because the evidence has moved by the time the
+   * answer renders.
    */
   readonly describeEmpty: () => EmptyDescription;
   /** Overridable for tests; the defaults are the design's. */
@@ -179,6 +185,9 @@ export function createRequestOutcome<T>(
     subscription?.unsubscribe();
     clearTimers();
 
+    // Captured HERE, against the request about to go out. See describeEmpty.
+    const emptyForThisRequest = options.describeEmpty();
+
     // A refetch keeps what is on screen; only a FIRST load has nothing to
     // keep. Note both paths start un-marked: the 200ms suppression applies to
     // a refresh exactly as it does to an initial load, so a fast sort shows
@@ -196,11 +205,10 @@ export function createRequestOutcome<T>(
         // THE RULE: a completed response with zero rows is empty. Nothing else
         // is — least of all an array nobody has fetched yet.
         if (data.length === 0) {
-          const described = options.describeEmpty();
           settle({
             status: 'empty',
-            reason: described.reason,
-            filtered: described.filtered,
+            reason: emptyForThisRequest.reason,
+            filtered: emptyForThisRequest.filtered,
             refreshing: false,
           });
           return;

@@ -260,8 +260,8 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
             [ngTemplateOutlet]="headerTemplate()!"
             [ngTemplateOutletContext]="{
               $implicit: {
-                sortBy: query().sortBy,
-                sortDir: query().sortDir,
+                sortBy: appliedQuery().sortBy,
+                sortDir: appliedQuery().sortDir,
                 sort: sortByColumnKey,
                 visible: isColumnVisible,
               },
@@ -473,6 +473,19 @@ export class DataListComponent<T> implements OnInit {
   private readonly unfilteredTotal = signal(0);
   private readonly reloadToken = signal(0);
 
+  /**
+   * The query that PRODUCED the rows currently on screen, as opposed to the
+   * one last requested (ACC-111).
+   *
+   * They differ only when a refetch fails: the rows stay, because blanking
+   * the list loses the reader's place, and then the header must not claim a
+   * sort those rows are not in. The stale notice says it in words; the sort
+   * arrow and the pager say it at a glance, and a reader glances. So the
+   * indicator reverts with the rows, and the pending sort appears only once
+   * it succeeds.
+   */
+  protected readonly appliedQuery = signal<IListQuery>({});
+
   // The write-effect must not run before ngOnInit has read the URL, or it
   // writes the empty default query over the very params it is about to
   // restore. This is what made the address bar lose its own parameters.
@@ -545,6 +558,7 @@ export class DataListComponent<T> implements OnInit {
       this.loading.set(true);
       source(query).subscribe({
         next: (page) => {
+          this.appliedQuery.set(query);
           this.rows.set(page.data);
           this.total.set(page.total);
           if (!this.isFiltered()) this.unfilteredTotal.set(page.total);
@@ -593,9 +607,11 @@ export class DataListComponent<T> implements OnInit {
     return match?.label ?? this.sortableColumns()[0]?.label ?? '';
   });
 
-  readonly effectivePageSize = computed(() => this.query().pageSize ?? this.pageSize());
+  readonly effectivePageSize = computed(
+    () => this.appliedQuery().pageSize ?? this.query().pageSize ?? this.pageSize(),
+  );
   readonly firstRecord = computed(
-    () => ((this.query().page ?? 1) - 1) * this.effectivePageSize(),
+    () => ((this.appliedQuery().page ?? 1) - 1) * this.effectivePageSize(),
   );
 
   readonly showPanelFooter = computed(

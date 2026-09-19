@@ -266,6 +266,23 @@ describe('createRequestOutcome (ACC-111, artboard 8)', () => {
 
     // Artboard 8 requires TWO empties, and they differ in what they offer —
     // a creating action versus a way out of the filter.
+    // Debounced search: the term moves on while the answer is in flight.
+    it('quotes the term that PRODUCED the empty, not whatever is typed by then', fakeAsync(() => {
+      let search = 'zah';
+      const subject = new Subject<{ id: string }[]>();
+      const handle = createRequestOutcome(() => subject, {
+        describeEmpty: () => ({ reason: `No users match '${search}'`, filtered: true }),
+      });
+
+      // The user keeps typing while "zah" is still in flight.
+      search = 'zahrani';
+      subject.next([]);
+
+      const after = handle.outcome();
+      expect(after.status === 'empty' && after.reason).toBe("No users match 'zah'");
+      handle.destroy();
+    }));
+
     it('describes an empty answer from the request that produced it', fakeAsync(() => {
       const first = new Subject<{ id: string }[]>();
       let current: Subject<{ id: string }[]> = first;
