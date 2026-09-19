@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
 import { ConfirmationService } from 'primeng/api';
 import { SelectModule } from 'primeng/select';
+import { DatePickerModule } from 'primeng/datepicker';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
@@ -30,10 +31,11 @@ import { EditDialogComponent } from './edit-dialog.component';
  */
 @Component({
   standalone: true,
-  imports: [EditDialogComponent, SelectModule, FormsModule, ConfirmDialogModule],
+  imports: [EditDialogComponent, SelectModule, FormsModule, ConfirmDialogModule, DatePickerModule],
   template: `
     <ng-template #formTpl>
       <p-select [options]="options" optionLabel="label" optionValue="value" [(ngModel)]="picked" />
+      <p-datepicker [(ngModel)]="when" />
     </ng-template>
     <app-edit-dialog
       [visible]="visible"
@@ -50,6 +52,7 @@ import { EditDialogComponent } from './edit-dialog.component';
 class DialogWithPrimeSelectHost {
   visible = false;
   picked: string | null = null;
+  when: Date | null = null;
   options = [
     { label: 'Quality Manager', value: 'qm' },
     { label: 'Quality Officer', value: 'qo' },
@@ -96,11 +99,43 @@ describe('EditDialogComponent with a PrimeNG overlay open (ACC-111)', () => {
     await openSelect();
     const confirmSpy = spyOn(TestBed.inject(ConfirmationService), 'confirm');
 
-    // As the user produces it: from inside the overlay, bubbling.
-    const target = (selectPanel()?.querySelector('li') ??
-      document.activeElement ??
-      document.body) as HTMLElement;
-    target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    // As the user produces it: from the FOCUSED element. PrimeNG keeps focus
+    // on the select's trigger and drives the list with aria-activedescendant,
+    // so that is where a real Escape lands — and where its own handler is
+    // bound. Dispatching from an <li> inside the panel instead bypasses
+    // PrimeNG entirely and proves nothing.
+    // A REAL keystroke carries both `key` and `code`, and PrimeNG's Select
+    // switches on event.CODE. A synthetic event with only `key` set sails past
+    // its handler untouched — which looked exactly like the implementation
+    // failing, and cost an hour of chasing the wrong thing.
+    const target = document.querySelector('.p-select [role="combobox"]') as HTMLElement;
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }),
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.visible).toBe(true);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  // The case the defaultPrevented rule actually carries. p-select STOPS
+  // propagation, so the event never reaches the dialog at all; p-datepicker
+  // only calls preventDefault, so the event does arrive and the dialog has to
+  // recognise that something already consumed it. Five of these sit inside
+  // dialogs today.
+  it('leaves Escape to an open date picker, which only preventDefaults', async () => {
+    const input = document.querySelector('p-datepicker input') as HTMLElement;
+    input.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(document.querySelector('.p-datepicker-panel')).toBeTruthy();
+
+    const confirmSpy = spyOn(TestBed.inject(ConfirmationService), 'confirm');
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true } as KeyboardEventInit),
+    );
     fixture.detectChanges();
     await fixture.whenStable();
 

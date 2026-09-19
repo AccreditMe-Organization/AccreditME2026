@@ -27,29 +27,6 @@ import { LayerStackService } from '../../overlay/layer-stack.service';
  */
 export type DialogSize = 'confirm' | 'form' | 'picker';
 
-/**
- * Overlay panels PrimeNG opens and closes itself, which own Escape while they
- * are up. An INLINE datepicker panel is deliberately excluded: it is part of
- * the layout, nothing dismisses it, and treating it as an overlay would make a
- * dialog containing one unclosable by keyboard.
- */
-const FOREIGN_OVERLAY_SELECTOR = [
-  '.p-select-overlay',
-  '.p-multiselect-overlay',
-  '.p-autocomplete-overlay',
-  '.p-cascadeselect-overlay',
-  '.p-treeselect-overlay',
-  '.p-datepicker-panel:not(.p-datepicker-panel-inline)',
-  '.p-popover',
-  '.p-tieredmenu-overlay',
-  '.p-menu-overlay',
-  '.p-confirmdialog',
-].join(',');
-
-function foreignOverlayOpen(): boolean {
-  return document.querySelector(FOREIGN_OVERLAY_SELECTOR) !== null;
-}
-
 const DIALOG_WIDTH: Record<DialogSize, string> = {
   confirm: 'var(--am-dialog-confirm)',
   form: 'var(--am-dialog-form)',
@@ -228,24 +205,36 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   constructor() {
     // Escape is ours, not p-dialog's (closeOnEscape is off), because it has to
     // consult dirty() and saving() before it closes anything.
+    // THIS DIALOG HANDLES ESCAPE LAST, AND ONLY IF NOTHING ELSE CONSUMED IT.
+    //
+    // It used to listen in the CAPTURE phase, on the reasoning that it must
+    // decide about unsaved work before anything closes anything. That was
+    // wrong, and expensively so: nothing else closes THIS dialog (the
+    // underlying p-dialog has closeOnEscape off), while capture put us ahead
+    // of every PrimeNG overlay's own Escape handling and broke all twelve of
+    // them at once.
+    //
+    // Bubble phase plus defaultPrevented is the whole guard now, and it is
+    // BEHAVIOURAL rather than a list of class names:
+    //   - p-select and p-multiselect call stopPropagation, so the event never
+    //     reaches this listener at all;
+    //   - p-datepicker, p-autocomplete, p-cascadeselect and p-tieredmenu call
+    //     preventDefault, so defaultPrevented is true;
+    //   - our own layers register with LayerStackService and are checked below.
+    // All four verified against the installed PrimeNG source, not assumed.
     const onKeydown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || !this.visible()) return;
-      // Only the TOP layer answers Escape. Without this, Escape inside a
-      // calendar or picker stacked above this dialog would ask about THIS
-      // form's unsaved work. See LayerStackService for why ordering cannot
-      // solve it.
+      // Something else already dealt with this keystroke.
+      if (event.defaultPrevented) return;
+      // Only the TOP layer answers Escape — a calendar or picker stacked above
+      // this dialog, or the discard confirm it opens. See LayerStackService
+      // for why listener ordering cannot solve this.
       if (this.layerId !== null && !this.layers.isTop(this.layerId)) return;
-      // And an overlay PrimeNG owns cannot register with that stack, because
-      // PrimeNG builds it and gives us no hook — so defer to it by asking the
-      // DOM instead. Same class as the OverlaySelect defect: every PrimeNG
-      // overlay closes itself on Escape from a `document` listener in the
-      // BUBBLE phase, which this capture listener beats.
-      if (foreignOverlayOpen()) return;
       event.stopPropagation();
       this.requestClose();
     };
-    document.addEventListener('keydown', onKeydown, true);
-    this.teardownKeydown = () => document.removeEventListener('keydown', onKeydown, true);
+    document.addEventListener('keydown', onKeydown);
+    this.teardownKeydown = () => document.removeEventListener('keydown', onKeydown);
 
     effect(() => {
       if (this.visible()) {
@@ -298,13 +287,23 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
       return;
     }
 
+    // The confirm is a layer of ours too. PrimeNG's own dialog decides Escape
+    // by comparing z-indexes rather than by consuming the event, so without
+    // this the confirm would close AND this handler would run again.
+    const confirmLayer = this.layers.push();
+    const release = (): void => this.layers.remove(confirmLayer);
+
     this.confirmationService.confirm({
       header: this.translate.instant('dialog.discardHeader'),
       message: this.translate.instant('dialog.discardMessage'),
       acceptLabel: this.translate.instant('dialog.discard'),
       rejectLabel: this.translate.instant('dialog.keepEditing'),
       acceptButtonStyleClass: 'p-button-danger',
-      accept: () => this.visibleChange.emit(false),
+      accept: () => {
+        release();
+        this.visibleChange.emit(false);
+      },
+      reject: release,
     });
   }
 

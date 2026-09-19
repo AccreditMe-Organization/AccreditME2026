@@ -4732,17 +4732,42 @@ them at once. The result, so nobody re-runs it:
 | -- | -- |
 | `EditDialogComponent` | Owns the stack; registers automatically |
 | `OverlaySelectComponent` | Needed registration — now registers |
-| **PrimeNG overlays** (select, multiselect, datepicker popup, autocomplete, cascadeselect, popover, menus, confirmdialog) | **Cannot register — PrimeNG builds them and exposes no hook. The shell DEFERS instead**, skipping Escape while any of their panels is in the DOM |
+| The discard confirm the shell itself opens | Registered by the shell around the `confirm()` call |
+| **PrimeNG overlays** | Cannot register — PrimeNG builds them and exposes no hook. **Handled by the bubble + `defaultPrevented` rule below** |
 | `workflow-template-list`, `user-list` `stopPropagation` calls | Unaffected — CLICK handlers, not keydown |
 | Everything else | No local Escape handling anywhere else in the app |
 
-**The deferral has its own failure mode, and it is pinned.** The selector
-matches an OPEN panel, never a mounted-but-closed component: the app shell
-renders a `<p-confirmdialog>` permanently, and if that had counted as an open
-overlay no dialog would ever have closed on Escape again. An INLINE datepicker
-panel is excluded for the same reason — it is layout, not an overlay.
-Confirmed against PrimeNG's source that `p-confirmdialog` is a selector, not a
-host class, and a spec asserts the closed case.
+**THE SHELL HANDLES ESCAPE LAST, AND ONLY IF NOTHING ELSE CONSUMED IT.** The
+capture-phase listener was the mistake that created this whole problem, and it
+was not necessary: nothing else closes THIS dialog, because the underlying
+`p-dialog` has `closeOnEscape` off. The guard is now two lines and no list of
+class names — bubble phase, plus `if (event.defaultPrevented) return`.
+
+**Its premise, named because this is ACC-41's shape again.** It rests on
+PrimeNG *consuming* the keystroke, which was verified per component against
+the INSTALLED source (PrimeNG 21.2.x), not assumed:
+
+| Component | On Escape | Reaches the shell? |
+| -- | -- | -- |
+| `p-select`, `p-multiselect` | `preventDefault` + `stopPropagation` | Never arrives |
+| `p-datepicker` (popup), `p-autocomplete`, `p-cascadeselect`, `p-tieredmenu` | `preventDefault` only | Arrives, `defaultPrevented` is true |
+| `p-dialog` / `p-confirmdialog` | Neither — closes by comparing z-indexes | Handled by our own stack instead |
+| `p-popover` | Neither — just `hide()` | **Residual gap**: Escape on an open popover would also close a dialog. No popover sits inside a dialog today |
+| `p-tooltip` | Nothing at all | Correct, and must stay so |
+
+**A HOVER-TRIGGERED OVERLAY MUST NEVER BE DEFERRED TO.** A tooltip is visible
+without being focused and is not something a user thinks of as dismissable, so
+if hovering anything inside a dialog made Escape do nothing, the dialog would
+read as stuck. It is different in kind from a menu or a popover, where Escape
+genuinely belongs to the overlay. The behavioural rule gets this right for
+free — a tooltip consumes nothing — which is one more reason it beats matching
+class names, where `.p-tooltip` would have had to be remembered and left out.
+
+**ON UPGRADE, RE-VERIFY THE TABLE ABOVE AGAINST THE NEW PRIMENG SOURCE.** A
+version that stops calling `preventDefault` on Escape silently brings back all
+twelve dialog-overlay collisions, and no test fails — the specs assert our
+behaviour given a consuming overlay, not that PrimeNG still consumes. This is
+the premise ACC-41 had and did not write down.
 
 **This already broke something real.** ACC-41 made `OverlaySelectComponent`
 swallow Escape with `stopPropagation()` inside CDK's `body` listener, correct
