@@ -151,7 +151,7 @@ class StackedHostComponent {
   template: `
     <div class="rows">
       @for (row of rows; track row) {
-        <div class="am-list-row" tabindex="-1">
+        <div class="am-list-row" [attr.data-am-row-key]="row" tabindex="-1">
           <button class="more" [id]="'more-' + row" (click)="visible = true">More</button>
         </div>
       }
@@ -523,7 +523,7 @@ describe('EditDialogComponent', () => {
       fixture.detectChanges();
 
       const listFocus = TestBed.inject(ListFocusService);
-      const noteSpy = spyOn(listFocus, 'noteRowRemoved');
+      const noteSpy = spyOn(listFocus, 'noteTriggerLost');
 
       // The delete succeeded: the row holding the trigger is gone.
       fixture.componentInstance.rows = ['a', 'c'];
@@ -531,8 +531,9 @@ describe('EditDialogComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      // Row index 1 — the row the trigger sat in when the dialog opened.
-      expect(noteSpy).toHaveBeenCalledWith(1);
+      // The record's KEY and its position, both captured when the dialog
+      // opened: the key decides an edit, the index a delete.
+      expect(noteSpy).toHaveBeenCalledWith('b', 1);
     });
 
     it('does not involve the list when the trigger was never in a row', async () => {
@@ -545,7 +546,7 @@ describe('EditDialogComponent', () => {
       await fixture.whenStable();
       fixture.detectChanges();
 
-      const noteSpy = spyOn(TestBed.inject(ListFocusService), 'noteRowRemoved');
+      const noteSpy = spyOn(TestBed.inject(ListFocusService), 'noteTriggerLost');
       trigger.remove();
       fixture.componentInstance.visible = false;
       fixture.detectChanges();
