@@ -162,6 +162,56 @@ describe('EditDialogComponent with a PrimeNG overlay open (ACC-111)', () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
+  /**
+   * PINS A PREMISE WE DO NOT OWN. See SYSTEM-REFERENCE §10.12.
+   *
+   * Since the `defaultPrevented` guard was removed, `p-select` and
+   * `p-multiselect` are kept from closing the dialog behind them by ONE thing:
+   * PrimeNG's own `stopPropagation` on Escape. Nothing in our code depends on
+   * it, nothing enforces it, and the day an upgrade drops it every select in
+   * every dialog starts closing the dialog too — silently, with a green suite.
+   *
+   * NOT REDUNDANT with "leaves Escape to the open dropdown" above, which
+   * asserts only that the dialog SURVIVES. A dialog also survives if the
+   * keystroke reached nobody at all. This asserts the other half — the panel
+   * genuinely closed — so the two together say the event was consumed by
+   * PrimeNG and stopped there. Deleting either leaves the premise unpinned.
+   *
+   * It is meant to fail on an upgrade PR, which is the only day anyone can act
+   * on it. A future reader seeing it go red should read §10.12 before touching
+   * this file: the fix is in the dialog shell, not in this expectation.
+   *
+   * MUTATION-PROVEN, and the result matters for which line survives edits.
+   * Neutering `KeyboardEvent.prototype.stopPropagation` — what an upgrade that
+   * drops it looks like from here — fails this spec on the CONFIRM assertion,
+   * not on `visible`. The dialog stays visible in that run only because
+   * `confirm` is stubbed and never answers; in the real app the user gets a
+   * discard prompt they did not ask for. So the confirm line is the one doing
+   * the work, and dropping it as noise disarms the pin.
+   */
+  it('lets p-select close its own list and stop there: panel gone, dialog open', async () => {
+    await openSelect();
+    expect(selectPanel()).toBeTruthy();
+
+    const confirmSpy = spyOn(TestBed.inject(ConfirmationService), 'confirm');
+    const target = document.querySelector('.p-select [role="combobox"]') as HTMLElement;
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(selectPanel()).toBeNull();
+    expect(fixture.componentInstance.visible).toBe(true);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
   // CHANGED DELIBERATELY. A floating panel inside a dialog is the
   // configuration artboard 7 forbids and check:dialog-overlays counts down to
   // zero; while one remains, Escape closes both it and the dialog. That is
