@@ -97,7 +97,13 @@ Tier 3 — On-premises / private cloud (future)
   confirmed-harder capability, not an oversight. Full mechanism
   detail, capability list, and complete consumer inventory (28 total):
   SYSTEM-REFERENCE.md Section 10.7.
-- Styling: PrimeNG design tokens + Tailwind CSS
+- Styling: PrimeNG design tokens + Tailwind CSS, both reading ONE token set —
+  `frontend/src/styles/design-tokens.scss`, which implements artboard 1 of the
+  design reference (`frontend/DESIGN-REFERENCE.md`, authoritative for colour,
+  type, space, radius and density). Tailwind maps onto it through
+  `@theme inline` (v4 has no tailwind.config); the PrimeNG preset
+  (`core/theme/accreditme-preset.ts`) holds no colour literal, only `var()`
+  references. A component never carries a literal colour, size or radius.
 - Global styles: One SCSS file for app shell only
 - State management: NgRx Signals
 - Forms: Angular Reactive Forms
@@ -3190,6 +3196,24 @@ APP_BASE_DOMAIN=accreditme.com
 ---
 
 ## Brand Design Tokens
+
+**SUPERSEDED (ACC-111) — the list below is NOT the token set. Read
+`frontend/DESIGN-REFERENCE.md`, and the values in
+`frontend/src/styles/design-tokens.scss`, which implement artboard 1 of the
+design system.** Kept here as history, because a reader who finds it and
+applies it will reintroduce two things the design deliberately removed:
+
+- **`--am-text-secondary: #718096` is RETIRED.** Secondary text is ink-500
+  `#5A6779`. #718096 measures 4.02:1 on white and 3.73:1 on the #F4F7FA
+  surface it was actually used on — it fails AA in both places, which is why
+  it went.
+- **`#CBD5E0` is no longer a control border.** At 1.49:1 it fails 1.4.11
+  outright, and it is what every field in the build was drawn with. A control
+  border is `#8A94A6` at rest and `#5A6779` on hover, on white.
+
+The contrast pairs behind both statements are asserted in CI from the token
+values (`npm run check:contrast`), so the design file and the code cannot
+drift apart on them.
 
 ```css
 :root {
