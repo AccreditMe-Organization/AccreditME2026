@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ConfirmationService } from 'primeng/api';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
+import { ListFocusService } from '../data-list/list-focus.service';
 import { EditDialogComponent } from './edit-dialog.component';
 
 let probeInstanceCounter = 0;
@@ -138,6 +139,37 @@ class StackedHostComponent {
   layerVisible = false;
   @ViewChild('parentTpl', { read: TemplateRef, static: true }) parentTpl!: TemplateRef<unknown>;
   @ViewChild('layerTpl', { read: TemplateRef, static: true }) layerTpl!: TemplateRef<unknown>;
+}
+
+
+// ACC-111 — the delete flow, where two correct rules collide: this dialog
+// returns focus to its trigger, and the list focuses whatever replaced the
+// removed row. The trigger WAS in that row.
+@Component({
+  standalone: true,
+  imports: [EditDialogComponent],
+  template: `
+    <div class="rows">
+      @for (row of rows; track row) {
+        <div class="am-list-row" tabindex="-1">
+          <button class="more" [id]="'more-' + row" (click)="visible = true">More</button>
+        </div>
+      }
+    </div>
+    <ng-template #confirmTpl><input id="confirm-field" /></ng-template>
+    <app-edit-dialog
+      [visible]="visible"
+      (visibleChange)="visible = $event"
+      [content]="confirmTpl"
+      size="confirm"
+      header="Delete?"
+    />
+  `,
+})
+class DeleteFlowHost {
+  rows = ['a', 'b', 'c'];
+  visible = false;
+  @ViewChild('confirmTpl', { read: TemplateRef, static: true }) confirmTpl!: TemplateRef<unknown>;
 }
 
 describe('EditDialogComponent', () => {
@@ -458,6 +490,68 @@ describe('EditDialogComponent', () => {
       fixture.detectChanges();
 
       expect(confirmSpy).toHaveBeenCalled();
+    });
+  });
+
+  // ACC-111 — which rule wins when the trigger no longer exists.
+  describe('focus return when the trigger is destroyed (ACC-111)', () => {
+    it('returns focus to the trigger while it still exists', async () => {
+      const fixture = TestBed.createComponent(DeleteFlowHost);
+      fixture.detectChanges();
+      const trigger = fixture.nativeElement.querySelector('#more-b') as HTMLElement;
+      trigger.focus();
+      trigger.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      fixture.componentInstance.visible = false;
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('hands the decision to the LIST when its trigger has been removed', async () => {
+      const fixture = TestBed.createComponent(DeleteFlowHost);
+      fixture.detectChanges();
+      const trigger = fixture.nativeElement.querySelector('#more-b') as HTMLElement;
+      trigger.focus();
+      trigger.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const listFocus = TestBed.inject(ListFocusService);
+      const noteSpy = spyOn(listFocus, 'noteRowRemoved');
+
+      // The delete succeeded: the row holding the trigger is gone.
+      fixture.componentInstance.rows = ['a', 'c'];
+      fixture.componentInstance.visible = false;
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      // Row index 1 — the row the trigger sat in when the dialog opened.
+      expect(noteSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('does not involve the list when the trigger was never in a row', async () => {
+      const fixture = TestBed.createComponent(ShellHostComponent);
+      fixture.detectChanges();
+      const trigger = fixture.nativeElement.querySelector('#trigger') as HTMLElement;
+      trigger.focus();
+      trigger.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const noteSpy = spyOn(TestBed.inject(ListFocusService), 'noteRowRemoved');
+      trigger.remove();
+      fixture.componentInstance.visible = false;
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(noteSpy).not.toHaveBeenCalled();
     });
   });
 });

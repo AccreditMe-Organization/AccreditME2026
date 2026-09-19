@@ -3,7 +3,7 @@ import { Injectable, signal } from '@angular/core';
 /** Why the rows under a keyboard user changed. The answer differs per cause. */
 type FocusIntent =
   | { kind: 'row-removed'; index: number }
-  | { kind: 'set-replaced' }
+  | { kind: 'set-replaced'; fromRow: boolean }
   | null;
 
 /**
@@ -45,9 +45,21 @@ export class ListFocusService {
     this.intent = { kind: 'row-removed', index };
   }
 
-  /** A sort, page, filter or search replaced the rows. */
+  /**
+   * A sort, page, filter or search replaced the rows.
+   *
+   * WHERE FOCUS WAS decides whether moving it helps or steals, and that is
+   * captured HERE, at the moment of the change — by the time the new rows
+   * render, the evidence is gone. A user usually replaces the set by using a
+   * control inside the table: a sort header, the next-page button. Focus is on
+   * that control and they may well use it again, so jumping them to row 1
+   * would take it out from under them. Only a reader standing ON A ROW is
+   * moved.
+   */
   noteSetReplaced(): void {
-    this.intent = { kind: 'set-replaced' };
+    const active = document.activeElement;
+    const fromRow = !!(active && active.closest && active.closest('.am-list-row'));
+    this.intent = { kind: 'set-replaced', fromRow };
   }
 
   /**
@@ -59,8 +71,11 @@ export class ListFocusService {
     this.intent = null;
     if (!intent || !container) return 'none';
 
-    // Only act if the user was actually IN the list. Stealing focus from
-    // someone who has since clicked elsewhere is worse than doing nothing.
+    // The set was replaced while the user held a table CONTROL — a sort
+    // header, a pager button. Leave it alone: they are still holding it.
+    if (intent.kind === 'set-replaced' && !intent.fromRow) return 'none';
+
+    // And never take focus back from someone who has since moved elsewhere.
     const active = document.activeElement;
     const wasInList = active === document.body || active === null || container.contains(active);
     if (!wasInList) return 'none';

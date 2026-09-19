@@ -55,16 +55,52 @@ describe('ListFocusService (ACC-111)', () => {
 
   describe('a replaced set', () => {
     it('focuses the FIRST row — row 7 of a new sort is an unrelated record', () => {
-      buildRows(5);
-      service.noteSetReplaced();
       const rows = buildRows(5);
+      rows[3].focus(); // a reader standing on a row
+      service.noteSetReplaced();
+      const fresh = buildRows(5);
       expect(service.restore(container)).toBe('row');
-      expect(document.activeElement).toBe(rows[0]);
+      expect(document.activeElement).toBe(fresh[0]);
+    });
+
+    // WHERE focus was decides whether moving it helps or steals. Sorting and
+    // paging are done FROM a control, and the user may use it again.
+    //
+    // Two sub-cases, and only the second actually exercises the fromRow guard
+    // — the first is caught by the "moved elsewhere" rule regardless. Both are
+    // kept, because they fail for different reasons if either rule is lost.
+    it('leaves a table control alone — the user is still holding it', () => {
+      const sortHeader = document.createElement('button');
+      document.body.appendChild(sortHeader);
+      buildRows(5);
+      sortHeader.focus();
+
+      service.noteSetReplaced();
+      buildRows(5);
+
+      expect(service.restore(container)).toBe('none');
+      expect(document.activeElement).toBe(sortHeader);
+      sortHeader.remove();
+    });
+
+    it('does not jump to row 1 when the change came from OUTSIDE any row', () => {
+      buildRows(5);
+      // Nobody is on a row: a click on a sort header commonly leaves focus on
+      // <body>. Moving to row 1 here would be an unexplained jump.
+      (document.activeElement as HTMLElement | null)?.blur();
+      expect(document.activeElement).toBe(document.body);
+
+      service.noteSetReplaced();
+      buildRows(5);
+
+      expect(service.restore(container)).toBe('none');
+      expect(document.activeElement).toBe(document.body);
     });
   });
 
   it('focuses the container when the new set is empty, never <body>', () => {
-    buildRows(3);
+    const rows = buildRows(3);
+    rows[0].focus();
     service.noteSetReplaced();
     buildRows(0);
     expect(service.restore(container)).toBe('container');

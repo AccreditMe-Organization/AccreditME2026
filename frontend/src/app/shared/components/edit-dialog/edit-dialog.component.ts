@@ -19,6 +19,7 @@ import { DialogModule } from 'primeng/dialog';
 import { ConfirmationService, PrimeTemplate } from 'primeng/api';
 import { TranslateService } from '@ngx-translate/core';
 import { LayerStackService } from '../../overlay/layer-stack.service';
+import { ListFocusService } from '../data-list/list-focus.service';
 
 /**
  * The three dialog sizes (ACC-111, artboard 7). A size is a KIND of dialog,
@@ -187,12 +188,21 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
 
   private readonly layers = inject(LayerStackService);
+  private readonly listFocus = inject(ListFocusService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translate = inject(TranslateService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** What had focus when the dialog opened, so it can be given back. */
   private triggerElement: HTMLElement | null = null;
+
+  /**
+   * If the trigger was a control inside a list ROW, the row's position when
+   * the dialog opened. Captured then, because by the time the dialog closes
+   * the row may be gone and its position unknowable. See the focus-return
+   * rule in requestClose's sibling comment below.
+   */
+  private triggerRowIndex = -1;
 
   @ViewChild('scrollArea') private readonly scrollAreaRef?: ElementRef<HTMLDivElement>;
   @ViewChild('contentWrapper') private readonly contentWrapperRef?: ElementRef<HTMLDivElement>;
@@ -241,6 +251,10 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
         if (this.layerId === null) this.layerId = this.layers.push();
         // Remember the trigger BEFORE the dialog takes focus.
         this.triggerElement = document.activeElement as HTMLElement | null;
+        const row = this.triggerElement?.closest?.('.am-list-row') ?? null;
+        this.triggerRowIndex = row?.parentElement
+          ? Array.from(row.parentElement.children).indexOf(row)
+          : -1;
         afterNextRender({ read: () => this.focusFirstField() }, { injector: this.injector });
       } else {
         if (this.layerId !== null) {
@@ -249,11 +263,26 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
         }
       }
 
-      if (!this.visible() && this.triggerElement?.isConnected) {
-        // Focus returns to what opened the dialog — otherwise it falls to the
-        // top of the document and a keyboard user starts the page again.
-        this.triggerElement.focus();
+      if (!this.visible() && this.triggerElement) {
+        // WHEN THE TRIGGER IS GONE, THE LIST DECIDES — the one rule that wins
+        // over "focus returns to the trigger".
+        //
+        // Deleting a row runs: focus the row's More button, open the menu,
+        // choose Delete, confirm here, the row is removed. Both rules are
+        // correct and they collide: this dialog wants to return focus to a
+        // button that no longer exists, and the list wants to focus whatever
+        // took the row's place. Returning to a detached element focuses
+        // nothing at all, so the list wins — but ONLY in that case. While the
+        // trigger survives, it still gets focus back.
+        if (this.triggerElement.isConnected) {
+          this.triggerElement.focus();
+        } else if (this.triggerRowIndex >= 0) {
+          // Not restored here: the list refetches after a delete, and
+          // DataListComponent restores once the new rows are in the DOM.
+          this.listFocus.noteRowRemoved(this.triggerRowIndex);
+        }
         this.triggerElement = null;
+        this.triggerRowIndex = -1;
       }
     });
   }
