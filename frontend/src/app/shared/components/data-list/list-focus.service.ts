@@ -3,6 +3,7 @@ import { Injectable, signal } from '@angular/core';
 /** Why the rows under a keyboard user changed. The answer differs per cause. */
 type FocusIntent =
   | { kind: 'row-removed'; index: number }
+  | { kind: 'trigger-lost'; key: string | null; index: number }
   | { kind: 'set-replaced'; fromRow: boolean }
   | null;
 
@@ -46,6 +47,26 @@ export class ListFocusService {
   }
 
   /**
+   * A dialog closed and its trigger no longer exists, because the rows were
+   * recreated underneath it. TWO CAUSES THAT NEED DIFFERENT ANSWERS:
+   *
+   * - **Delete**: the record is gone. Its POSITION is right — the next row is
+   *   where work continues.
+   * - **Edit**: the record still exists and may have MOVED, if the list is
+   *   sorted on the field just changed. Its KEY is right; restoring by
+   *   position would land on whoever now occupies the old slot, which is a
+   *   different record — the same error that makes first-row the answer for a
+   *   replaced set.
+   *
+   * So identity first, position as the fallback. The dialog cannot tell which
+   * happened (a save and a delete look identical from there), but the DOM can:
+   * if a row still carries the key, it was an edit.
+   */
+  noteTriggerLost(key: string | null, index: number): void {
+    this.intent = { kind: 'trigger-lost', key, index };
+  }
+
+  /**
    * A sort, page, filter or search replaced the rows.
    *
    * WHERE FOCUS WAS decides whether moving it helps or steals, and that is
@@ -86,10 +107,29 @@ export class ListFocusService {
       return 'container';
     }
 
-    const target =
-      intent.kind === 'row-removed' ? rows[Math.min(intent.index, rows.length - 1)] : rows[0];
+    const target = this.targetFor(intent, container, rows);
     target.focus();
     return 'row';
+  }
+
+  private targetFor(
+    intent: NonNullable<FocusIntent>,
+    container: HTMLElement,
+    rows: HTMLElement[],
+  ): HTMLElement {
+    if (intent.kind === 'set-replaced') return rows[0];
+
+    if (intent.kind === 'trigger-lost' && intent.key !== null) {
+      const byKey = container.querySelector<HTMLElement>(
+        `.am-list-row[data-am-row-key="${CSS.escape(intent.key)}"]`,
+      );
+      // Found: the record survived and may have moved — follow it.
+      // Not found: it was deleted, so fall through to its position.
+      if (byKey) return byKey;
+    }
+
+    const index = intent.kind === 'row-removed' ? intent.index : intent.index;
+    return rows[Math.min(Math.max(index, 0), rows.length - 1)];
   }
 
   announce(message: string): void {

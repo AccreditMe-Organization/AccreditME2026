@@ -68,6 +68,13 @@ export class ListRowDirective implements OnDestroy {
   /** Rows that cannot be opened or selected still receive focus, and say so. */
   readonly disabled = input(false, { alias: 'amListRowDisabled' });
 
+  /**
+   * The record's stable key — the same value the list tracks by. Published to
+   * the DOM so focus can be restored to the RECORD after a save moves it, not
+   * to whatever now sits at its old position. See ListFocusService.
+   */
+  readonly key = input<string | null>(null, { alias: 'amListRowKey' });
+
   /** Enter, or a double click. */
   readonly rowOpen = output<void>();
 
@@ -81,6 +88,11 @@ export class ListRowDirective implements OnDestroy {
   private readonly isTabStop = signal(false);
 
   @HostBinding('attr.role') readonly role = 'row';
+
+  @HostBinding('attr.data-am-row-key')
+  get rowKey(): string | null {
+    return this.key();
+  }
 
   @HostBinding('attr.tabindex')
   get tabIndex(): number {

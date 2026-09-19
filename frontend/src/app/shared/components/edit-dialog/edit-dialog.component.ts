@@ -203,6 +203,7 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    * rule in requestClose's sibling comment below.
    */
   private triggerRowIndex = -1;
+  private triggerRowKey: string | null = null;
 
   @ViewChild('scrollArea') private readonly scrollAreaRef?: ElementRef<HTMLDivElement>;
   @ViewChild('contentWrapper') private readonly contentWrapperRef?: ElementRef<HTMLDivElement>;
@@ -255,6 +256,7 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
         this.triggerRowIndex = row?.parentElement
           ? Array.from(row.parentElement.children).indexOf(row)
           : -1;
+        this.triggerRowKey = row?.getAttribute('data-am-row-key') ?? null;
         afterNextRender({ read: () => this.focusFirstField() }, { injector: this.injector });
       } else {
         if (this.layerId !== null) {
@@ -277,12 +279,14 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
         if (this.triggerElement.isConnected) {
           this.triggerElement.focus();
         } else if (this.triggerRowIndex >= 0) {
-          // Not restored here: the list refetches after a delete, and
-          // DataListComponent restores once the new rows are in the DOM.
-          this.listFocus.noteRowRemoved(this.triggerRowIndex);
+          // Not restored here: the list refetches after a save or a delete,
+          // and DataListComponent restores once the new rows are in the DOM.
+          // The KEY is what separates the two — see ListFocusService.
+          this.listFocus.noteTriggerLost(this.triggerRowKey, this.triggerRowIndex);
         }
         this.triggerElement = null;
         this.triggerRowIndex = -1;
+        this.triggerRowKey = null;
       }
     });
   }

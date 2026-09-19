@@ -11,18 +11,21 @@ describe('ListFocusService (ACC-111)', () => {
   let service: ListFocusService;
   let container: HTMLElement;
 
-  const buildRows = (count: number): HTMLElement[] => {
+  const buildRows = (count: number): HTMLElement[] =>
+    buildKeyedRows(Array.from({ length: count }, (_, i) => `k${i}`));
+
+  /** Rows carrying the stable keys the list tracks by. */
+  const buildKeyedRows = (keys: string[]): HTMLElement[] => {
     container.innerHTML = '';
-    const rows: HTMLElement[] = [];
-    for (let i = 0; i < count; i++) {
+    return keys.map((key, i) => {
       const row = document.createElement('div');
       row.className = 'am-list-row';
       row.tabIndex = i === 0 ? 0 : -1;
-      row.textContent = `row ${i}`;
+      row.dataset['amRowKey'] = key;
+      row.textContent = `row ${key}`;
       container.appendChild(row);
-      rows.push(row);
-    }
-    return rows;
+      return row;
+    });
   };
 
   beforeEach(() => {
@@ -49,6 +52,47 @@ describe('ListFocusService (ACC-111)', () => {
       service.noteRowRemoved(2);
       const rows = buildRows(2);
       service.restore(container);
+      expect(document.activeElement).toBe(rows[1]);
+    });
+  });
+
+  // Edit and delete both leave the dialog with a DETACHED trigger — the rows
+  // were recreated — and they need different answers.
+  describe('a dialog whose trigger was destroyed', () => {
+    it('follows the RECORD after a save that moved it', () => {
+      buildKeyedRows(['ana', 'bob', 'cara']);
+      // Editing "cara" renamed it to "aaron"; the sort puts it first now.
+      service.noteTriggerLost('cara', 2);
+      const rows = buildKeyedRows(['cara', 'ana', 'bob']);
+
+      expect(service.restore(container)).toBe('row');
+      expect(document.activeElement).toBe(rows[0]);
+      expect((document.activeElement as HTMLElement).dataset['amRowKey']).toBe('cara');
+    });
+
+    it('falls back to the POSITION when the record is gone — a delete', () => {
+      buildKeyedRows(['ana', 'bob', 'cara']);
+      service.noteTriggerLost('bob', 1);
+      const rows = buildKeyedRows(['ana', 'cara']);
+
+      expect(service.restore(container)).toBe('row');
+      expect(document.activeElement).toBe(rows[1]);
+      expect((document.activeElement as HTMLElement).dataset['amRowKey']).toBe('cara');
+    });
+
+    it('uses the position when the list tracks no keys at all', () => {
+      buildKeyedRows(['ana', 'bob', 'cara']);
+      service.noteTriggerLost(null, 1);
+      const rows = buildKeyedRows(['ana', 'cara']);
+      service.restore(container);
+      expect(document.activeElement).toBe(rows[1]);
+    });
+
+    it('does not choke on a key that needs escaping', () => {
+      buildKeyedRows(['id="x"', 'bob']);
+      service.noteTriggerLost('id="x"', 0);
+      const rows = buildKeyedRows(['bob', 'id="x"']);
+      expect(() => service.restore(container)).not.toThrow();
       expect(document.activeElement).toBe(rows[1]);
     });
   });

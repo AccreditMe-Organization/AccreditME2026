@@ -4729,10 +4729,32 @@ isolation. Returning focus to a detached element focuses NOTHING, so the list
 wins — but only in that case: while the trigger survives, it still gets focus
 back.
 
-The shell captures the trigger's ROW INDEX when the dialog OPENS, because by
-the time it closes the row may not exist to be measured. On close with a
-detached trigger it records the removal and leaves the restore to
-`DataListComponent`, which runs once the refetched rows are in the DOM.
+The shell captures the trigger's ROW INDEX **and the record's KEY** when the
+dialog OPENS, because by the time it closes the row may not exist to be
+measured. On close with a detached trigger it records both and leaves the
+restore to `DataListComponent`, which runs once the refetched rows are in the
+DOM.
+
+**IDENTITY FIRST, POSITION AS THE FALLBACK — because a detached trigger has
+two causes, and EDIT is the commoner one.** A save also detaches the trigger:
+the list refetches, Angular recreates the rows, and the record still exists —
+but if the list is sorted on the field just edited, it has MOVED. Restoring by
+position then lands on whoever now occupies the old slot, which is a different
+record: exactly the error that makes first-row the answer for a replaced set.
+
+| Cause | Restore to | Why |
+| -- | -- | -- |
+| **Edit** — the key still matches a row | That row, wherever it now sits | The record survived and moved; follow it |
+| **Delete** — no row carries the key | The captured index (clamped) | The record is gone; the next row is where work continues |
+| The list tracks no keys | The captured index | Nothing better is knowable |
+
+The dialog cannot tell a save from a delete — they look identical from there —
+so the DOM decides: if a row still carries the key, it was an edit. Both
+branches are mutation-tested (removing the key lookup fails the edit case;
+removing the positional fallback fails the delete case), because a single
+restore-by-index path passes the delete test and silently mis-focuses every
+edit that re-sorts. Rows opt in by binding `amListRowKey` to the same value
+the list tracks by.
 
 ---
 
