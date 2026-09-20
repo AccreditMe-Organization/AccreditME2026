@@ -5984,6 +5984,29 @@ every 15 minutes, `setup-health` hourly. A processor that was registered but
 declined to work would still write its repeat entry to the shared Redis. Not
 registering it is what stops both halves.
 
+**Why the two UNSCHEDULED queues are gated too, which is not obvious.**
+`email-delivery` and `workflow-actions` have no timer, so a local process can
+never STEAL a tick from them — the case for gating them is not the case for
+gating the other two. It is that the consequence is worse than a stolen
+sweep. A laptop consuming `email-delivery` sends **real mail, from the
+deployment's own backlog, over a developer's network**; a laptop consuming
+`workflow-actions` **calls tenant-configured webhook URLs**, making a
+developer's machine the thing that contacts a customer's system on the
+product's behalf. A stolen sweep recomputes state that was going to be
+recomputed anyway. These two reach outside the system and cannot be undone.
+
+**The inventory is enforced, not listed.** `npm run check:worker-gate`
+(`backend/scripts/check-worker-gate.mjs`, CI: backend job) derives every
+`@Processor` from the source on each run and fails if one is registered
+outside the gate, or registered nowhere. It exists because the specs name
+their processors: they prove the property for the four that exist, and a
+fifth added later would rejoin the shared queues with every test still
+green. A one-time enumeration answers "is it complete today", never "is it
+still complete" — the `EditDialogComponent` "8 screens" count in §10.5 is
+the worked example of that going stale. **A gate, not a ratchet**: unlike
+`check:icon-labels` and `check:dialog-overlays` there is no legacy backlog
+here, so the allowed count is zero.
+
 **The gate is exact-match on the string `true`.** `TRUE`, `1`, `yes` and a
 leading space all leave workers off. The safe state does not depend on
 guessing what someone meant, and a spec pins each near-miss.
