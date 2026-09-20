@@ -14,6 +14,7 @@ import { WorkflowTemplateService } from './workflow-template.service';
 import { WorkflowService } from './workflow.service';
 import { WorkflowActionProcessor } from './workflow-action.processor';
 import { SlaMonitorProcessor } from './sla-monitor.processor';
+import { workersEnabled } from '../../common/queue/workers.config';
 
 // Not @Global() — unlike RolesModule, nothing outside this module needs
 // WorkflowTemplateService/WorkflowService injected via a guard; future
@@ -61,7 +62,17 @@ import { SlaMonitorProcessor } from './sla-monitor.processor';
     RolesModule,
   ],
   controllers: [WorkflowTemplateController, WorkflowController],
-  providers: [WorkflowTemplateService, WorkflowService, WorkflowActionProcessor, SlaMonitorProcessor],
+  // ACC-92 — both processors are gated. SlaMonitorProcessor also SCHEDULES
+  // its own 15-minute repeat in onModuleInit(), so leaving it registered
+  // would keep a local process writing the repeat entry to the shared Redis
+  // even if it never won a job. WorkflowActionProcessor fires outbound
+  // WEBHOOKS to tenant-configured URLs — a laptop should not be the thing
+  // calling a customer's system on the deployment's behalf.
+  providers: [
+    WorkflowTemplateService,
+    WorkflowService,
+    ...(workersEnabled() ? [WorkflowActionProcessor, SlaMonitorProcessor] : []),
+  ],
   exports: [WorkflowTemplateService, WorkflowService],
 })
 export class WorkflowModule {}
