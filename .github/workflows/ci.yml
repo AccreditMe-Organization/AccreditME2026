@@ -158,6 +158,21 @@ jobs:
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
+      # ACC-109 — the proof for the CHROME_BIN line further down, because CI
+      # cannot otherwise show it worked. If CHROME_BIN were unset, karma would
+      # fall back to the runner image's own Chrome and the job would still be
+      # GREEN — so a passing run is equally consistent with the pinning working
+      # and with it being silently dead. These two lines are what tell the two
+      # apart: they name the binary that the tests are about to use.
+      # It also fails loudly rather than quietly if the output ever goes away
+      # (a renamed output makes this `"" --version`, which is not a command),
+      # so the fallback cannot return unnoticed.
+      - name: Confirm the pinned Chrome is the one the tests will use
+        run: |
+          echo "CHROME_BIN=$CHROME_BIN"
+          "$CHROME_BIN" --version
+        env:
+          CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
       - name: TypeScript check
         run: npx tsc --noEmit
         working-directory: frontend
