@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Confirm required files exist
         run: |
@@ -43,8 +43,8 @@ jobs:
       matrix:
         workspace: [backend, frontend]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'
@@ -90,8 +90,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'
@@ -141,8 +141,8 @@ jobs:
     # browserNoActivityTimeout should fire well before this does.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'
@@ -154,7 +154,8 @@ jobs:
       # happens to be preinstalled on the ubuntu-latest runner image
       # (which drifts across runner image updates).
       - name: Set up Chrome
-        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
       - name: TypeScript check
@@ -193,9 +194,21 @@ jobs:
       # matching the backend job's own tsc -> test -> (expensive step)
       # ordering — fail fast on a test failure before spending time on a
       # full production build.
+      # ACC-109 — CHROME_BIN is what keeps ACC-47's pinned Chrome actually in
+      # use, and it became necessary at the setup-chrome v1 -> v2 bump. v2
+      # installs a channel name (`stable`) from Chrome for Testing rather than
+      # the official installer, so on Linux the binary is named `chrome`;
+      # karma-chrome-launcher resolves ChromeHeadless with
+      # getBin(['google-chrome', 'google-chrome-stable']) and would not match
+      # it. Without this it would silently fall back to the runner image's own
+      # preinstalled Chrome — green, but the exact drift ACC-47 pinned against.
+      # CHROME_BIN takes precedence over that lookup (ENV_CMD in the launcher),
+      # so the tests run on the binary this job installed.
       - name: Run unit tests
         run: npx ng test --watch=false --browsers=ChromeHeadlessCI
         working-directory: frontend
+        env:
+          CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
       - name: Build Angular app
         run: npm run build
         working-directory: frontend
@@ -208,8 +221,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'
