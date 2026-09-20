@@ -71,6 +71,7 @@ audit's starting point, not be mistaken for having already done it.
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
 13. Setup Health — standing conditions (ACC-82) — ✅ built (13.10 = the cached-state rule)
+14. Queue workers — which process runs them (ACC-92) — ✅ built
 
 ---
 
@@ -5962,3 +5963,104 @@ transitions, reassign) resolve live.
   matching rows, so each seeded tenant's "Cleared by itself" showed 16
   closures of gaps that never existed. The post-deploy cleanup script
   deletes exactly those cleared rows (13.7).
+
+
+---
+
+## 14. Queue Workers — Which Process Runs Them (ACC-92)
+
+`backend/src/common/queue/workers.config.ts`.
+
+**A process registers BullMQ workers only when `RUN_WORKERS=true`.** Four
+`@Processor()` classes are gated, in the three modules that provide them:
+`SlaMonitorProcessor` and `WorkflowActionProcessor` (WorkflowModule),
+`SetupHealthProcessor` (SetupHealthModule) and `NotificationEmailProcessor`
+(NotificationModule). Without the flag none is a provider at all, so the
+process serves the API and joins no queue.
+
+**Why the gate is on the PROVIDER, not inside the processor.** Two of these
+also SCHEDULE their own repeatable job in `onModuleInit()` — `sla-monitor`
+every 15 minutes, `setup-health` hourly. A processor that was registered but
+declined to work would still write its repeat entry to the shared Redis. Not
+registering it is what stops both halves.
+
+**The gate is exact-match on the string `true`.** `TRUE`, `1`, `yes` and a
+leading space all leave workers off. The safe state does not depend on
+guessing what someone meant, and a spec pins each near-miss.
+
+### 14.1 The default is OFF, and what that costs
+
+**A deployment that does not set `RUN_WORKERS=true` runs no scheduled work
+at all** — no SLA sweep, no Setup health reconciliation, no head-vacancy
+recompute — and nothing reports it, because ACC-93 is not built. That is a
+real silent failure and it is the accepted cost.
+
+It is still the right way round, because the two failures are not
+symmetrical:
+
+| Default | Fails when | Visible? | Fixed by |
+| -- | -- | -- | -- |
+| **OFF** (chosen) | once, at a deploy | a person is watching a deploy log, and the app logs ERROR | one configuration entry, permanently |
+| ON | every fresh clone, every new machine, forever | no — nobody chooses it or sees it | every developer remembering a `.env` line, forever |
+
+Default-on would make the control care-bounded again, which is precisely
+what ACC-92 found does not work: the second incident needed only a
+ninety-second API session, the most ordinary act on this project. Off is
+also the fail-safe direction — the failure is "the work did not happen"
+rather than "the wrong machine did it, to the shared database, with nothing
+recording which".
+
+**`RUN_WORKERS` cannot ship in the repo.** Railway's config-as-code covers
+build and deploy settings only; environment variables are dashboard or CLI.
+So the deployment's variable is a manual step, and that is exactly why the
+startup log below is load-bearing rather than decorative.
+
+### 14.2 The startup log is the mitigation, and it escalates
+
+`QueueModule.onModuleInit()` calls `logWorkerRegistration()` on every boot —
+in `QueueModule` rather than `main.ts` so it also fires under
+`createApplicationContext()`, which is how queue behaviour is verified
+locally. A verification run should state which side of the gate it is on.
+
+| State | Level | Why |
+| -- | -- | -- |
+| Enabled | `log` | Names the four queues this process consumes |
+| Disabled, local | `warn` | Disabled is the DESIRED state here; the line says so |
+| Disabled, looks like a deployment | **`error`** | The accepted failure mode, made unmissable |
+
+"Looks like a deployment" is `NODE_ENV=production` or Railway's own injected
+`RAILWAY_ENVIRONMENT`. **It chooses a log level and never changes
+behaviour.** Deriving the gate itself from it would trade a visible one-time
+setup step for an invisible dependency on a host's env injection — the same
+class of silent failure this section exists to prevent.
+
+### 14.3 What this does NOT fix
+
+- **Producers are not gated.** A local API still ENQUEUES onto the shared
+  queue; it just does not consume. A local workflow transition still creates
+  a `workflow-actions` job that the deployment then runs.
+- **The shared DATABASE is untouched by this.** A local backend still reads
+  and writes the deployment's tables. This is why namespacing the queues per
+  environment was rejected as the fix: it separates the queues and not the
+  data, and the theft was never the damage.
+- **Nothing records WHICH process wrote a row.** Deferred to ACC-93, whose
+  open question 4 already requires run records to name the worker — building
+  it here would build it twice.
+
+The larger question, separate dev/staging infrastructure, stays open in
+CLAUDE.md. This narrows the hazard; it does not close it.
+
+### 14.4 Orphaned watchers, and why they matter less now
+
+ACC-92's first incident was four orphaned `nest start --watch` processes
+taking three `setup-health` reconciliations. **After this change an orphan
+with no `RUN_WORKERS` joins no queue**, so that incident's mechanism is gone
+— an orphan is now wasted memory and a held port rather than a second writer
+on shared infrastructure.
+
+The underlying stop problem is NOT fixed and is not repo-side: nothing in
+either `package.json` stops a dev server, there is no `tree-kill` dependency
+and no stop script. What orphans a watcher is a session killing the `npm`
+parent and leaving the Nest child holding the port. The handover's rule
+stands — a stop is confirmed by the PORT being free or the PID being gone,
+never by what the kill printed.
