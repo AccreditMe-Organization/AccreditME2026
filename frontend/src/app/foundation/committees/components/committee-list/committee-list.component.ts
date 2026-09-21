@@ -1,4 +1,4 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -10,6 +10,7 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { CommitteeFormComponent } from '../committee-form/committee-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-committee-list',
@@ -19,7 +20,9 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'committee.title' | translate">
         <div pageActions>
-          <p-button [label]="'committee.addCommittee' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
+          @if (canCreate()) {
+            <p-button [label]="'committee.addCommittee' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
+          }
         </div>
       </app-page-header>
 
@@ -70,6 +73,14 @@ export class CommitteeListComponent implements OnInit {
   private readonly lookupService = inject(LookupService);
   private readonly languageService = inject(LanguageService);
   private readonly router = inject(Router);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // POST /committees enforces committees:create (committees.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('committees:create'));
 
   readonly loading = signal(false);
   readonly committees = signal<CommitteeDto[]>([]);

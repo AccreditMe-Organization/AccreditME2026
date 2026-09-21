@@ -1,4 +1,4 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, input, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, input, signal } from '@angular/core';
 import { AmDateTimePipe } from '../../../../core/formatting';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -13,6 +13,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 // Section 10.5), not a bug fix — the old @if(formVisible()) wrapping
 // <app-task-form> directly was already immune to ACC-29's pre-fill bug.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 // The ROUTED, full-page task list, filtered by sourceType + sourceId.
 //
@@ -40,7 +41,9 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'task.allTasks' | translate">
         <div pageActions>
-          <p-button [label]="'task.newTask' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
+          @if (canCreate()) {
+            <p-button [label]="'task.newTask' | translate" icon="pi pi-plus" (onClick)="onAdd()" />
+          }
         </div>
       </app-page-header>
 
@@ -105,6 +108,15 @@ export class TaskListComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly taskService = inject(TaskService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // POST /tasks enforces tasks:create (task.controller.ts). QUALITY_OFFICER does
+  // not hold it, so Haya loses this button — ACC-77's gap, not this gate's.
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('tasks:create'));
 
   readonly sourceType = input<string | null>(null);
   readonly sourceId = input<string | null>(null);

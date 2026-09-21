@@ -1,13 +1,4 @@
-import {
-  Component,
-  OnInit,
-  TemplateRef,
-  ViewChild,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -79,7 +70,9 @@ export type RowAction = 'transfer' | 'deactivate';
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'user.title' | translate">
         <div pageActions>
-          <p-button [label]="'user.invite' | translate" icon="pi pi-plus" (onClick)="onInvite()" />
+          @if (canCreate()) {
+            <p-button [label]="'user.invite' | translate" icon="pi pi-plus" (onClick)="onInvite()" />
+          }
         </div>
       </app-page-header>
 
@@ -298,6 +291,13 @@ export class UserListComponent implements OnInit {
   private readonly format = inject(FormatService);
   private readonly router = inject(Router);
   private readonly access = inject(NavigationAccessService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — found by check:create-gating, not by the ticket's own list of
+  // ten. Hidden, not disabled, same as every other page-header create action.
+  // POST /users/invite enforces USERS_PERMISSIONS.INVITE — users:invite, NOT
+  // users:manage. Both exist and they are not the same (user.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('users:invite'));
 
   readonly list = viewChild.required<DataListComponent<IUserDto>>('list');
   readonly transferVisible = signal(false);

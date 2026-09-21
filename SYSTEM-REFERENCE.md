@@ -67,7 +67,7 @@ audit's starting point, not be mistaken for having already done it.
 7. Organization Structure — ✅ complete
 8. Multi-Tenancy Conventions — ✅ complete
 9. i18n / RTL — ✅ complete (9.6 = the display formatting layer, ACC-94; 9.7 = the authoritative time-zone field)
-10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79)
+10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79; 10.14 = create-action permission gating, ACC-118)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
 13. Setup Health — standing conditions (ACC-82) — ✅ built (13.10 = the cached-state rule)
@@ -4936,6 +4936,71 @@ spec asserts it. This only shows up via the keyboard, which is the path least
 likely to be found by accident.
 
 Consumers: the ACC-111 proof screens; every screen migration inherits it.
+
+
+---
+
+### 10.14 A Create Action Is Gated On Its Endpoint's Permission (ACC-118)
+
+**Every create action in a page header sits behind `@if (canCreate())`, where
+`canCreate` is a `computed()` reading `NavigationAccessService`.** Thirteen
+pages carry one. Mechanism copied from §10.5's neighbour
+`committee-detail.component.ts` (`canEdit`, `canAddMember`, …) rather than
+invented — there is one way to ask this question in this app.
+
+**HIDDEN, NOT DISABLED.** A disabled control still announces an action that is
+not the caller's to take; absent is the correct rendering of "not yours to do".
+The two coexist where both apply: `workflow-stage-list` keeps
+`[disabled]="reordering()"` — a TRANSIENT state, which is what disabled is for
+— inside the `@if` for the permission, which is not transient.
+
+**THE PERMISSION IS READ OFF THE ENDPOINT'S `@Permissions()`, NEVER INFERRED
+FROM THE ENTITY NAME.** This is the part most likely to be got wrong by the
+next page, because the obvious guess is usually right and occasionally is not.
+Four of the thirteen would have been wrong:
+
+| Page | Guess | Actual |
+| -- | -- | -- |
+| `public-holiday-list` | a holiday/calendar string | **`org:manage`** |
+| `role-list` | `roles:create` | **`roles:manage`** — no `roles:create` exists |
+| `lookup-value-list` | `lookups:create` | **`lookups:manage`** — same |
+| `user-list` | `users:manage` | **`users:invite`** — both exist, different |
+
+**The four PLATFORM pages take `isPlatformAdmin()`, not a permission string**,
+because `PlanController` and `PlatformTenantController` carry no
+`@Permissions()` at all — they are `@UseGuards(TenantGuard, PlatformGuard)` at
+class level, and `isPlatformAdmin()` mirrors that guard's own two-part check
+(`isPlatformOrg` AND `platform:admin`). Those four are defence in depth: nobody
+who fails PlatformGuard can reach the page to begin with.
+
+**Held by BOTH a scan and specs, which do different jobs.** Worth stating
+because they look interchangeable:
+
+| | Proves |
+| -- | -- |
+| `npm run check:create-gating` | a gate is PRESENT on every page-header create action |
+| `create-action-gating.spec.ts` | that gate is the RIGHT one, in BOTH directions |
+
+The scan cannot do the second — deciding whether `canCreate` checks the
+permission the endpoint enforces means reading a controller decorator, and
+getting it wrong is invisible in a template. The specs cannot do the first:
+they only cover the pages they name, and a fourteenth page added later would
+ship ungated with every spec green. **The scan found three of the thirteen**,
+which the human sweep had missed.
+
+**Both spec directions are load-bearing**, and mutation-testing says why: with
+the gate removed only the ABSENT case fails; with the gate always false — the
+button hidden from everyone, a worse bug than the original — only the PRESENT
+case fails. A one-direction spec passes straight through one of those.
+
+**Scan's blind spot, recorded rather than rediscovered:** it recognises a
+`pi-plus` control inside a `pageActions` slot, which is the shape these pages
+use. A create action drawn another way is invisible to it. Widening the pattern
+would trade those misses for false positives on every `pi-plus` in the app.
+
+**Unrelated to ACC-108.** That is a STALE cached permission set; this was no
+gate at all. These gates read the same cached set ACC-108 is about, so fixing
+one does not fix the other.
 
 ---
 

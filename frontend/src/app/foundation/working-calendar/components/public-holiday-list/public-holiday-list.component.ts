@@ -1,4 +1,4 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -15,6 +15,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { AmDatePipe } from '../../../../core/formatting';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-public-holiday-list',
@@ -42,11 +43,13 @@ import { AmDatePipe } from '../../../../core/formatting';
           [ngModel]="selectedYear()"
           (ngModelChange)="onYearChange($event)"
         />
-        <p-button
-          icon="pi pi-plus"
-          [label]="'workingCalendar.addHoliday' | translate"
-          (onClick)="openForm(null)"
-        />
+        @if (canCreate()) {
+          <p-button
+            icon="pi pi-plus"
+            [label]="'workingCalendar.addHoliday' | translate"
+            (onClick)="openForm(null)"
+          />
+        }
       </div>
     </app-page-header>
 
@@ -173,6 +176,16 @@ export class PublicHolidayListComponent implements OnInit {
   @ViewChild(PublicHolidayFormComponent) form?: PublicHolidayFormComponent;
 
   private readonly svc = inject(WorkingCalendarService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // POST /working-calendar/holidays enforces ORG_PERMISSIONS.MANAGE — org:manage.
+  // Nothing in that string names a holiday or a calendar, which is exactly why
+  // it was read off the decorator (working-calendar.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('org:manage'));
 
   readonly loading = signal(false);
   readonly holidays = signal<PublicHolidayDto[]>([]);
