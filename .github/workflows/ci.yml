@@ -109,6 +109,14 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
         working-directory: backend
+      # ACC-92 — every @Processor must be registered behind the RUN_WORKERS
+      # gate. The specs prove the gate for the processors they NAME, so a
+      # fifth one added later would rejoin the shared queues with every test
+      # still green. This derives the inventory from the source instead.
+      # A gate, not a ratchet: the allowed count of ungated processors is 0.
+      - name: Worker gate
+        run: npm run check:worker-gate
+        working-directory: backend
       - name: Run unit tests
         run: npx jest --passWithNoTests
         working-directory: backend

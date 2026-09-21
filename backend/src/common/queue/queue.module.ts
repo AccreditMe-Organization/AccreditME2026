@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { logWorkerRegistration } from './workers.config';
 
 // First activation of BullMQ in the codebase — bullmq/@nestjs/bullmq have
 // been in package.json since scaffold but BullModule was never registered.
@@ -34,4 +35,14 @@ import { BullModule } from '@nestjs/bullmq';
   ],
   exports: [BullModule],
 })
-export class QueueModule {}
+export class QueueModule implements OnModuleInit {
+  private readonly logger = new Logger('Queue');
+
+  // ACC-92 — lives here rather than in main.ts so it also fires under
+  // createApplicationContext(), which is how queue-driven behaviour is
+  // verified locally. A verification run should state which side of this
+  // gate it is on, not leave it to be inferred.
+  onModuleInit(): void {
+    logWorkerRegistration(this.logger);
+  }
+}
