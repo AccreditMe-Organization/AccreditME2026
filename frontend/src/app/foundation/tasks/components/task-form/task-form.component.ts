@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
@@ -17,6 +17,10 @@ import { UserService, IUserDto } from '../../../user/services/user.service';
 // getOptionLabel()/getOptionValue()). See CLAUDE.md's PrimeNG-components-only
 // exception note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+// ACC-96 — the due-date calendar is its own LAYER rather than a floating panel
+// inside this dialog. See the template comment beside it.
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { FormatService } from '../../../../core/formatting';
 
 const SOURCE_TYPES = [
   'MEETING',
@@ -42,6 +46,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    FormsModule,
     TranslatePipe,
     InputTextModule,
     TextareaModule,
@@ -51,6 +56,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     MessageModule,
     ListboxModule,
     OverlaySelectComponent,
+    EditDialogComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -106,7 +112,33 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         </div>
         <div class="flex flex-col gap-1 flex-1">
           <label for="dueDate" class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
-          <p-datepicker inputId="dueDate" formControlName="dueDate" [showTime]="true" />
+          <!-- ACC-96 — NOT a <p-datepicker> with its own floating panel. That
+               panel is appended inside this dialog, and PrimeNG's
+               ConnectedOverlayScrollHandler closes it on ANY ancestor scroll:
+               confirmed live here, where scrolling the dialog body 60px shut
+               the calendar while an untouched one stayed open. The calendar is
+               now its own layer at the root (see below), which has no
+               scrollable ancestor at all.
+               Typing stays a COMPLETE path to a value — it was one before this
+               change, and removing it would trade one defect for another. -->
+          <div class="flex gap-1">
+            <input
+              pInputText
+              id="dueDate"
+              class="flex-1"
+              [value]="dueDateText()"
+              (input)="onDueDateTyped($any($event.target).value)"
+              (blur)="commitTypedDueDate()"
+              autocomplete="off"
+            />
+            <p-button
+              type="button"
+              icon="pi pi-calendar"
+              [text]="true"
+              [ariaLabel]="'task.toggleDuePanel' | translate"
+              (onClick)="toggleDuePanel()"
+            />
+          </div>
         </div>
       </div>
 
@@ -170,12 +202,38 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
       </div>
     </form>
+
+    <!-- ACC-96 — the calendar as its own layer, at the root, exactly as
+         public-holiday-form does it (ACC-111 a613fcb). [inline] means PrimeNG
+         builds no overlay, so there is nothing for its scroll handler to
+         close; appendTo="body" keeps the layer out of THIS dialog's scrolling
+         body. EditDialogComponent registers it with LayerStackService, which
+         is what makes Escape close exactly one layer per press. -->
+    <ng-template #dueDateTpl>
+      <p-datepicker
+        [inline]="true"
+        [showTime]="true"
+        [ngModel]="controlDueDate()"
+        [ngModelOptions]="{ standalone: true }"
+        (ngModelChange)="onDueDatePicked($event)"
+        styleClass="w-full"
+      />
+    </ng-template>
+    <app-edit-dialog
+      [visible]="duePanelOpen()"
+      (visibleChange)="onDuePanelVisibleChange($event)"
+      [header]="'task.chooseDueDate' | translate"
+      [content]="dueDateTpl"
+      size="picker"
+      appendTo="body"
+    />
   `,
 })
 export class TaskFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
   private readonly userService = inject(UserService);
+  private readonly format = inject(FormatService);
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
@@ -191,6 +249,90 @@ export class TaskFormComponent implements OnInit {
   readonly isSourceLocked = computed(
     () => !!this.lockedSourceType() && !!this.lockedSourceId() && !!this.lockedSourceLabel(),
   );
+
+  // ── Due date (ACC-96) ──────────────────────────────────────────────────
+  // Mirrors public-holiday-form's date field, which is the worked example of
+  // this pattern. Two signals rather than one: `typed` holds what the user is
+  // part-way through writing, `controlDueDate` holds the committed value, and
+  // the displayed text prefers the former. Without that split, re-rendering
+  // mid-keystroke rewrites the field under the cursor.
+  readonly duePanelOpen = signal(false);
+  private readonly typedDueDate = signal<string | null>(null);
+  readonly controlDueDate = signal<Date | null>(null);
+
+  // dateTimeForInput, not dateTime: this value is typed back, so it stays
+  // Gregorian with English months even for an Arabic or Hijri reader (ACC-94
+  // D4). Dropping the time here would read as midnight.
+  readonly dueDateText = computed(
+    () => this.typedDueDate() ?? this.format.dateTimeForInput(this.controlDueDate()),
+  );
+
+  toggleDuePanel(): void {
+    this.duePanelOpen.set(!this.duePanelOpen());
+  }
+
+  /**
+   * A pick closes the layer and writes the value, then returns focus to the
+   * FIELD rather than the calendar button — the field is what was being
+   * filled in, and it now holds the chosen value.
+   */
+  onDueDatePicked(value: Date | null): void {
+    this.form.controls.dueDate.setValue(value);
+    this.form.controls.dueDate.markAsDirty();
+    this.controlDueDate.set(value);
+    this.typedDueDate.set(null);
+    this.duePanelOpen.set(false);
+    this.focusDueDateInput();
+  }
+
+  onDuePanelVisibleChange(visible: boolean): void {
+    this.duePanelOpen.set(visible);
+    if (!visible) this.focusDueDateInput();
+  }
+
+  onDueDateTyped(value: string): void {
+    this.typedDueDate.set(value);
+  }
+
+  /**
+   * On BLUR, not per keystroke — "15 Sep" is not yet a date, and validating it
+   * as one would put an error under someone mid-word. Same parse and same
+   * invalidDate error shape as public-holiday-form, deliberately: one way to
+   * fail in this app, not two.
+   */
+  commitTypedDueDate(): void {
+    const text = this.typedDueDate();
+    if (text === null) return;
+
+    const control = this.form.controls.dueDate;
+    const trimmed = text.trim();
+
+    if (trimmed === '') {
+      control.setValue(null);
+      control.markAsDirty();
+      this.controlDueDate.set(null);
+      this.typedDueDate.set(null);
+      return;
+    }
+
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+      control.setErrors({ ...(control.errors ?? {}), invalidDate: true });
+      control.markAsDirty();
+      return;
+    }
+
+    control.setValue(parsed);
+    control.markAsDirty();
+    this.controlDueDate.set(parsed);
+    this.typedDueDate.set(null);
+  }
+
+  private focusDueDateInput(): void {
+    setTimeout(() => {
+      document.getElementById('dueDate')?.focus();
+    });
+  }
 
   readonly saving = signal(false);
   readonly sourceTypes = SOURCE_TYPES;
@@ -209,6 +351,14 @@ export class TaskFormComponent implements OnInit {
     this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({
       next: (users) => this.users.set(users),
       error: () => this.users.set([]),
+    });
+
+    // ACC-96 — the display signal follows the control, so a reset or a
+    // patchValue from outside is reflected in the field rather than leaving
+    // stale text behind.
+    this.controlDueDate.set(this.form.controls.dueDate.value);
+    this.form.controls.dueDate.valueChanges.subscribe((value) => {
+      this.controlDueDate.set(value);
     });
   }
 
@@ -238,6 +388,10 @@ export class TaskFormComponent implements OnInit {
   }
 
   onSubmit(): void {
+    // ACC-96 — Save can be reached straight from the date field, without a
+    // blur, so the typed text has to be committed here too or a value the
+    // user can see would not be submitted.
+    this.commitTypedDueDate();
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       return;

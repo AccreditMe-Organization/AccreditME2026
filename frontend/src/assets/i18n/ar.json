@@ -105,7 +105,9 @@
     "actingHeadAssign": "تعيين رئيس بالنيابة",
     "errorLoad": "فشل تحميل حالة الرئاسة.",
     "errorSave": "فشل حفظ التغييرات.",
-    "manageHeadNamed": "إدارة الرئاسة — {{unit}}"
+    "manageHeadNamed": "إدارة الرئاسة — {{unit}}",
+    "toggleDatePanel": "اختيار تاريخ السريان",
+    "chooseEffectiveDate": "اختيار تاريخ السريان"
   },
   "lookup": {
     "title": "الفئات المرجعية",
@@ -457,7 +459,9 @@
     "confirmComplete": "إكمال \"{{title}}\"؟ لن يعود يظهر كمهمة معلّقة لدى بقية المُسند إليهم.",
     "errorAction": "تعذّر تنفيذ الإجراء. يرجى المحاولة مرة أخرى.",
     "unassignedPurpose": "المهمة التي ليس لها مُكلَّف لا تُرسَل عنها تذكيرات ولا تُصعَّد — تبقى هنا حتى يُكلَّف بها أحد.",
-    "reassignNamed": "إعادة تعيين «{{title}}»"
+    "reassignNamed": "إعادة تعيين «{{title}}»",
+    "toggleDuePanel": "اختيار تاريخ الاستحقاق",
+    "chooseDueDate": "اختيار تاريخ الاستحقاق"
   },
   "auth": {
     "login": "تسجيل الدخول",

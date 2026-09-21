@@ -178,6 +178,27 @@ export class FormatService {
     return this.gregorianDate(at, 'en', this.snapshot().timeZone);
   }
 
+  /**
+   * `dateForInput`'s sibling, for an editable field whose value carries a TIME
+   * as well — today only a task's due date (ACC-96).
+   *
+   * Every rule above applies unchanged and for the same reasons: Gregorian
+   * regardless of the reader's calendar, English month names regardless of
+   * session language, because this is a value someone types back. It exists
+   * separately rather than as a flag on `dateForInput` so a caller cannot
+   * silently drop a time by reaching for the wrong one — a due date rendered
+   * without its time reads as midnight.
+   *
+   * The separator matches `dateTime()`'s, so the editable and read-only
+   * renderings of the same instant do not differ in punctuation.
+   */
+  dateTimeForInput(value: DateInput): string {
+    const at = toDate(value);
+    if (!at) return '';
+    const timeZone = this.snapshot().timeZone;
+    return `${this.gregorianDate(at, 'en', timeZone)}, ${this.time(at, 'en', timeZone)}`;
+  }
+
   private gregorianDate(at: Date, language: DisplayLanguage, timeZone: string): string {
     const p = this.parts(at, language, { timeZone, calendar: 'gregory', day: 'numeric', month: 'short', year: 'numeric' });
     return `${p.day} ${p.month} ${p.year}`;
