@@ -227,6 +227,14 @@ jobs:
       # preinstalled Chrome — green, but the exact drift ACC-47 pinned against.
       # CHROME_BIN takes precedence over that lookup (ENV_CMD in the launcher),
       # so the tests run on the binary this job installed.
+      # ACC-118 — a page-header create action must sit behind a permission gate.
+      # The specs pin the thirteen pages that have one; this catches the
+      # fourteenth, which no spec would. It proves a gate is PRESENT, never that
+      # it is the RIGHT one — that needs the endpoint's decorator, which only a
+      # spec can assert.
+      - name: Create-action gating
+        run: npm run check:create-gating
+        working-directory: frontend
       - name: Run unit tests
         run: npx ng test --watch=false --browsers=ChromeHeadlessCI
         working-directory: frontend
