@@ -26,7 +26,8 @@
     "next": "Next",
     "close": "Close",
     "remove": "Remove",
-    "saveFailed": "Save failed."
+    "saveFailed": "Save failed.",
+    "selectedCount": "{count} selected"
   },
   "nav": {
     "dashboard": "Dashboard",

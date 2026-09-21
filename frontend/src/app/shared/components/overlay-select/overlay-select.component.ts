@@ -183,7 +183,7 @@ function createManualScrollable(
       >
         {{ selectedLabel() || placeholder() }}
       </span>
-      @if (showClear() && value !== null && value !== undefined) {
+      @if (showClear() && hasValue()) {
         <i class="pi pi-times am-overlay-select-clear-icon" (click)="clear($event)"></i>
       }
       <i class="pi pi-chevron-down am-overlay-select-chevron"></i>
@@ -195,7 +195,8 @@ function createManualScrollable(
         cdkListbox
         class="am-overlay-select-panel"
         [style.width.px]="triggerWidth()"
-        [cdkListboxValue]="value === null || value === undefined ? [] : [value]"
+        [cdkListboxMultiple]="multiple()"
+        [cdkListboxValue]="listboxValue()"
         (cdkListboxValueChange)="onListboxChange($event)"
       >
         @for (flat of flattenedOptions(); track getOptionValue(flat.node)) {
@@ -410,6 +411,27 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // @angular/cdk/listbox source, not assumed).
   readonly groupsSelectable = input<boolean>(true);
 
+  /**
+   * ACC-96 — multi-select, off by default so all 28 existing consumers are
+   * untouched.
+   *
+   * Added for the New Task assignee field, which Template 3 budgets as a 75px
+   * field block: the inline p-listbox it replaced is ~200px and alone put step
+   * 1 over its 279px target. CdkListbox already does multi-selection natively,
+   * so this is a flag and a value shape, not a second control.
+   *
+   * In this mode the value is an ARRAY and the panel does NOT close on each
+   * pick — closing after every choice is what makes a multi-select painful.
+   */
+  readonly multiple = input<boolean>(false);
+
+  /**
+   * Shown instead of the joined labels once `multipleSummaryFrom` are picked —
+   * e.g. "3 selected". Already translated by the caller; empty keeps the names.
+   */
+  readonly multipleSummary = input<string>('');
+  readonly multipleSummaryFrom = input<number>(3);
+
   // ACC-42 Phase 2 — custom option rendering (plan §2.3). CdkOption is a
   // plain directive, not a component, so it has no content-projection
   // mechanism of its own to extend — this component already fully
@@ -450,11 +472,41 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // the old top-level search for every existing (flat-mode) consumer.
   get selectedLabel(): () => string {
     return () => {
-      const match = this.flattenedOptions().find(
-        (flat) => this.getOptionValue(flat.node) === this.value,
-      );
-      return match ? this.getOptionLabel(match.node, match.isGroup) : '';
+      const labelFor = (v: unknown): string => {
+        const match = this.flattenedOptions().find((flat) => this.getOptionValue(flat.node) === v);
+        return match ? this.getOptionLabel(match.node, match.isGroup) : '';
+      };
+
+      if (!this.multiple()) return labelFor(this.value);
+
+      const picked = this.selectedValues();
+      if (picked.length === 0) return '';
+      // Names while they fit, a count once they do not: "Noura, Salem" reads,
+      // "Noura, Salem, Huda, Yousef, Amal" does not, and the trigger is one
+      // line by design.
+      // The summary text is the CONSUMER's, not this component's. Translating
+      // it here would mean injecting TranslateService into a control whose 30
+      // existing specs do not provide one — the trigger renders on every
+      // instance, so unlike the empty-state pipe it cannot stay lazy. The
+      // consumer knows the count and already has the translation.
+      const summary = this.multipleSummary();
+      if (summary && picked.length >= this.multipleSummaryFrom()) return summary;
+      return picked.map(labelFor).filter(Boolean).join(', ');
     };
+  }
+
+  /** The current value as an array, whichever mode this is in. */
+  selectedValues(): unknown[] {
+    if (Array.isArray(this.value)) return this.value;
+    return this.value === null || this.value === undefined ? [] : [this.value];
+  }
+
+  listboxValue(): unknown[] {
+    return this.selectedValues();
+  }
+
+  hasValue(): boolean {
+    return this.selectedValues().length > 0;
   }
 
   // Matches p-select's own real default: a primitive-array option (e.g.
@@ -599,6 +651,13 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // infers T from [cdkOption]="unknown", which TS can't reconcile against a
   // hand-typed ListboxValueChangeEvent<unknown>.
   onListboxChange(event: ListboxValueChangeEvent<any>): void {
+    if (this.multiple()) {
+      // Stays OPEN. A multi-select that dismisses after each pick forces the
+      // user to reopen it once per person.
+      this.value = [...event.value];
+      this.onChange(this.value);
+      return;
+    }
     this.value = event.value.length > 0 ? event.value[0] : null;
     this.onChange(this.value);
     this.close();
@@ -606,7 +665,7 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
 
   clear(event: Event): void {
     event.stopPropagation();
-    this.value = null;
+    this.value = this.multiple() ? [] : null;
     this.onChange(this.value);
   }
 

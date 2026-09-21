@@ -26,7 +26,8 @@
     "next": "التالي",
     "close": "إغلاق",
     "remove": "إزالة",
-    "saveFailed": "تعذّر الحفظ."
+    "saveFailed": "تعذّر الحفظ.",
+    "selectedCount": "{count} محدد"
   },
   "nav": {
     "dashboard": "لوحة التحكم",
