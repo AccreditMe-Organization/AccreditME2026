@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Reflector } from '@nestjs/core';
+import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { WorkingCalendarController } from './working-calendar.controller';
 import { WorkingCalendarService } from './working-calendar.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -8,6 +10,7 @@ import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
 import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
 import { IWorkingCalendar } from './interfaces/working-calendar.interface';
 import { IPublicHoliday } from './interfaces/public-holiday.interface';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -141,5 +144,86 @@ describe('WorkingCalendarController', () => {
       expect(service.removeHoliday).toHaveBeenCalledWith(HOLIDAY_ID, TENANT_ID, USER_ID);
       expect(result).toBeUndefined();
     });
+  });
+});
+
+// ── ACC-96 — who may READ the calendar, and who may still write it ──────────
+//
+// These read the @Permissions() metadata and run the REAL PermissionGuard,
+// because the suite above overrides both guards and therefore cannot see a
+// permission change at all. The two GETs were org:view; a QUALITY_OFFICER or
+// AUDITOR does not hold it, so the New Task presets and the out-of-hours
+// warning 403'd for them.
+//
+// BOTH DIRECTIONS, deliberately: a test that only proves the reads are open
+// would still pass if someone opened the writes too.
+
+describe('WorkingCalendarController — read access (ACC-96)', () => {
+  const reflector = new Reflector();
+
+  const permissionsOn = (method: keyof WorkingCalendarController): string[] | undefined =>
+    reflector.get<string[]>(PERMISSIONS_KEY, WorkingCalendarController.prototype[method]);
+
+  // Runs the real guard against a caller holding exactly `held`.
+  const guardAllows = (method: keyof WorkingCalendarController, held: string[]): boolean => {
+    const guard = new PermissionGuard(reflector);
+    const ctx = {
+      getHandler: () => WorkingCalendarController.prototype[method],
+      getClass: () => WorkingCalendarController,
+      switchToHttp: () => ({ getRequest: () => ({ userPermissions: held }) }),
+    } as unknown as ExecutionContext;
+    return guard.canActivate(ctx);
+  };
+
+  // A real seeded role, not an invented one: QUALITY_OFFICER's exact set holds
+  // neither org:view nor org:manage.
+  const QUALITY_OFFICER_ISH = ['tasks:view', 'tasks:manage', 'documents:view'];
+
+  it('requires no permission to read the calendar or the holidays', () => {
+    expect(permissionsOn('getCalendar')).toBeUndefined();
+    expect(permissionsOn('listHolidays')).toBeUndefined();
+  });
+
+  it('lets a non-admin read their own calendar and holidays', () => {
+    expect(guardAllows('getCalendar', QUALITY_OFFICER_ISH)).toBe(true);
+    expect(guardAllows('listHolidays', QUALITY_OFFICER_ISH)).toBe(true);
+  });
+
+  it('still refuses that same non-admin every write', () => {
+    for (const method of ['updateCalendar', 'addHoliday', 'updateHoliday', 'removeHoliday'] as const) {
+      expect(permissionsOn(method)).toEqual(['org:manage']);
+      expect(() => guardAllows(method, QUALITY_OFFICER_ISH)).toThrow(ForbiddenException);
+    }
+  });
+
+  // The gate reads the caller's OWN tenant id, which TenantGuard resolves from
+  // the JWT and never from the request body. Ungating the read did not touch
+  // that, and this pins it: the handler passes through whatever tenant it was
+  // given, so a caller can only ever reach their own organization's row.
+  it('should NOT return records belonging to a different tenant', async () => {
+    const service = {
+      getOrCreate: jest.fn((org: string) => Promise.resolve({ ...MOCK_CALENDAR, organizationId: org })),
+      listHolidays: jest.fn(() => Promise.resolve([])),
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [WorkingCalendarController],
+      providers: [{ provide: WorkingCalendarService, useValue: service }],
+    })
+      .overrideGuard(TenantGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+    const controller = module.get(WorkingCalendarController);
+
+    const mine = await controller.getCalendar('org-a');
+    const theirs = await controller.getCalendar('org-b');
+
+    expect(mine.organizationId).toBe('org-a');
+    expect(theirs.organizationId).toBe('org-b');
+    expect(service.getOrCreate).toHaveBeenNthCalledWith(1, 'org-a');
+    expect(service.getOrCreate).toHaveBeenNthCalledWith(2, 'org-b');
+    // No call anywhere took a tenant the caller did not supply.
+    expect(service.getOrCreate.mock.calls.flat()).toEqual(['org-a', 'org-b']);
   });
 });
