@@ -463,7 +463,34 @@
     "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned.",
     "reassignNamed": "Reassign “{{title}}”",
     "toggleDuePanel": "Choose a due date",
-    "chooseDueDate": "Choose a due date"
+    "chooseDueDate": "Choose a due date",
+    "steps": "Steps",
+    "step1": "The work",
+    "step2": "Detail & evidence",
+    "nextDetails": "Next · Details",
+    "create": "Create task",
+    "assigneesNone": "No one selected",
+    "descriptionHint": "Plain text. What a surveyor will read as the statement of work.",
+    "sourceLockedHint": "Set by where you started.",
+    "due": {
+      "backToDetails": "Back to details",
+      "toggleCalendar": "Choose a due date",
+      "datePlaceholder": "DD MMM YYYY",
+      "timePlaceholder": "HH:mm",
+      "presets": "Due date shortcuts",
+      "none": "No due date set.",
+      "past": "That time has already passed.",
+      "zoneNote": "Working hours are the organisation's, in {{zone}}.",
+      "nonWorkingDay": "{{weekday}} is not a working day. The task is still due then, but its SLA clock resumes {{resumesAt}}.",
+      "outsideHours": "{{time}} is outside working hours ({{start}}–{{end}}, {{weekdays}}). The task is still due then, but its SLA clock resumes {{resumesAt}}.",
+      "preset": {
+        "plus1h": "+1 hour",
+        "plus2h": "+2 hours",
+        "endOfDay": "End of working day",
+        "tomorrow": "Tomorrow 09:00",
+        "nextDay": "{{day}} 09:00"
+      }
+    }
   },
   "auth": {
     "login": "Log In",

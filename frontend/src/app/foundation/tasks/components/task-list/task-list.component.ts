@@ -95,16 +95,27 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     </div>
 
     <ng-template #formTpl>
-      <app-task-form (saved)="onSaved()" (cancelled)="formVisible.set(false)" />
+      <app-task-form
+        (saved)="onSaved()"
+        (cancelled)="formVisible.set(false)"
+        (dirtyChange)="formDirty.set($event)"
+      />
     </ng-template>
+    <!-- ACC-96 — [dirty] is an opt-in input on the DIALOG, and task-form sits
+         inside it, so the state travels outward through (dirtyChange). Without
+         it Escape discards a part-filled task silently, which the templates
+         have always specified against. -->
     <app-edit-dialog
       [(visible)]="formVisible"
       [header]="'task.newTask' | translate"
       [content]="formTpl"
+      [dirty]="formDirty()"
     />
   `,
 })
 export class TaskListComponent implements OnInit {
+  readonly formDirty = signal(false);
+
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly taskService = inject(TaskService);

@@ -497,13 +497,18 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
           [lockedSourceLabel]="displayName(c)"
           (saved)="onTaskSaved()"
           (cancelled)="taskFormVisible.set(false)"
+          (dirtyChange)="taskFormDirty.set($event)"
         />
       }
     </ng-template>
+    <!-- ACC-96 — [dirty] is an opt-in input on the DIALOG, and task-form sits
+         inside it, so the state travels outward through (dirtyChange). Without
+         it Escape discards a part-filled task silently. -->
     <app-edit-dialog
       [(visible)]="taskFormVisible"
       [header]="'task.newTask' | translate"
       [content]="taskFormTpl"
+      [dirty]="taskFormDirty()"
     />
 
     <ng-template #memberFormTpl>
@@ -582,6 +587,7 @@ export class CommitteeDetailComponent implements OnInit {
   readonly tasksLoading = signal(false);
   readonly tasksError = signal<string | null>(null);
   readonly taskFormVisible = signal(false);
+  readonly taskFormDirty = signal(false);
 
   // "5 of 9 members" — the configured quorum against who is actually on the
   // committee. Either number alone is half the picture: a quorum of 5 means

@@ -1,16 +1,19 @@
-// ACC-96 — the due-date layer and the payload it produces.
+// ACC-96 — the two-step due control, and the payload it produces.
 //
-// This file exists because the suite was GREEN while the time picker was
-// unreachable. The first cut of the layer closed it on every ngModelChange,
-// copying public-holiday-form, whose date has no time. A due date does: every
-// hour and minute arrow fires ngModelChange as well as a day click, so the
-// layer shut on the first arrow press and the task kept whatever time it was
-// when the calendar opened. Found by driving the picker in a browser; nothing
-// here had failed.
+// ## What is inherited, and why it still matters after the rebuild
 //
-// Both directions, so neither half can be satisfied by doing nothing:
-//   - a pick (a day OR a time) leaves the layer OPEN
-//   - Done, and only Done, closes it
+// The payload test is the same evidence the superseded root-layer branch
+// produced: a body CAPTURED IN A BROWSER from the implementation that shipped
+// on dev, before any of this existed. It survives the rebuild deliberately —
+// the picker has now changed twice, and the one thing that must not change is
+// what POST /tasks receives for the same choice. Part B is what changes that,
+// on purpose, and nothing here does.
+//
+// The "does not close on a change" tests are also inherited. Their cause was a
+// layer that dismissed on every ngModelChange, so the first press of an hour
+// arrow shut the calendar and stranded the time at whatever "now" was. The
+// mechanism is gone; the requirement is not, and the date view can regress the
+// same way.
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -24,10 +27,27 @@ import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { TaskFormComponent } from './task-form.component';
 
-describe('TaskFormComponent — due-date layer (ACC-96)', () => {
+describe('TaskFormComponent — due control (ACC-96)', () => {
   let fixture: ComponentFixture<TaskFormComponent>;
   let component: TaskFormComponent;
   let httpMock: HttpTestingController;
+
+  const flushReferenceData = (): void => {
+    httpMock
+      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
+      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
+    httpMock.expectOne(`${environment.apiUrl}/working-calendar`).flush({
+      id: 'cal-1',
+      organizationId: 'org-1',
+      timezone: 'Asia/Riyadh',
+      workingDays: [0, 1, 2, 3, 4],
+      workingHoursStart: '07:30',
+      workingHoursEnd: '17:00',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    httpMock.expectOne(`${environment.apiUrl}/working-calendar/holidays`).flush([]);
+  };
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -45,50 +65,164 @@ describe('TaskFormComponent — due-date layer (ACC-96)', () => {
     fixture = TestBed.createComponent(TaskFormComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
-
-    httpMock
-      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
-      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
+    flushReferenceData();
     fixture.detectChanges();
   });
 
   afterEach(() => httpMock.verify());
 
-  it('keeps the layer open when the picker reports a value, so the time is reachable', () => {
-    component.toggleDuePanel();
-    expect(component.duePanelOpen()).toBe(true);
+  // ── The date view substitutes, and does not dismiss itself ──────────────
 
-    // A day click and a time arrow are indistinguishable here — both arrive as
-    // one ngModelChange carrying the whole Date. That is the point: the handler
-    // cannot close on one without closing on the other.
-    component.onDueDatePicked(new Date(2026, 8, 25, 15, 13));
-    expect(component.duePanelOpen())
-      .withContext('a pick must not dismiss the layer — the time picker lives in it')
+  it('opens and closes the date view from the calendar button, on the same step', () => {
+    expect(component.dateView()).toBe(false);
+
+    component.toggleDateView();
+    expect(component.dateView()).toBe(true);
+    expect(component.step())
+      .withContext('the date view is the same step, not a third one')
+      .toBe(1);
+
+    component.toggleDateView();
+    expect(component.dateView()).toBe(false);
+  });
+
+  it('keeps the date view open when a day or a time is set', () => {
+    component.toggleDateView();
+
+    component.onDayPicked(new Date(2026, 8, 25));
+    expect(component.dateView())
+      .withContext('picking a day must not dismiss the view — the time is set after the day')
       .toBe(true);
 
-    component.onDueDatePicked(new Date(2026, 8, 25, 9, 0));
-    expect(component.duePanelOpen()).toBe(true);
-    expect(component.form.controls.dueDate.value).toEqual(new Date(2026, 8, 25, 9, 0));
+    component.onTimeTyped('09:00');
+    expect(component.dateView()).toBe(true);
   });
 
-  it('closes on Done, and returns the committed value', () => {
-    component.toggleDuePanel();
-    component.onDueDatePicked(new Date(2026, 8, 25, 9, 0));
-
-    component.closeDuePanel();
-
-    expect(component.duePanelOpen()).toBe(false);
-    expect(component.form.controls.dueDate.value).toEqual(new Date(2026, 8, 25, 9, 0));
+  it('a day click keeps the time already chosen', () => {
+    component.onTimeTyped('18:30');
+    component.onDayPicked(new Date(2026, 8, 25));
+    expect(component.dueTimeText()).toBe('18:30');
   });
 
-  it('sends the picked instant unchanged — byte-for-byte the body the old picker sent', () => {
-    // Pinned against a payload CAPTURED IN A BROWSER from the previous
-    // implementation. Picking 25 Sep 2026 09:00 there posted exactly this, and
-    // the same choice on this implementation posted the same bytes.
-    //
-    // Compared as the serialised string rather than the object, because the
-    // wire format is what has to be identical: an absent `description` and a
-    // `description: undefined` are the same request and different objects.
+  it('a time with no day yet still produces a value', () => {
+    component.onTimeTyped('14:15');
+    expect(component.dueTimeText()).toBe('14:15');
+    expect(component.form.controls.dueDate.value).not.toBeNull();
+  });
+
+  // ── Presets ─────────────────────────────────────────────────────────────
+
+  it('sets both date and time from one preset press', () => {
+    const plus2h = component.presets().find((p) => p.key === 'plus2h')!;
+    component.applyPreset(plus2h);
+
+    expect(component.form.controls.dueDate.value).toEqual(plus2h.at);
+    expect(component.dueDateText()).not.toBe('');
+    expect(component.dueTimeText()).not.toBe('');
+    expect(component.activePreset()).toBe('plus2h');
+  });
+
+  it('offers all four presets once the calendar is known', () => {
+    expect(component.presets().map((p) => p.key)).toEqual([
+      'plus1h',
+      'plus2h',
+      'endOfDay',
+      'nextMorning',
+    ]);
+  });
+
+  // ── Typing stays a complete path ────────────────────────────────────────
+
+  it('accepts a typed date and keeps the typed time', () => {
+    component.onTimeTyped('16:45');
+    component.onDateTyped('25 Sep 2026');
+    component.commitTypedDate();
+
+    const value = component.form.controls.dueDate.value!;
+    expect(value.getFullYear()).toBe(2026);
+    expect(value.getMonth()).toBe(8);
+    expect(value.getDate()).toBe(25);
+    expect(component.dueTimeText()).toBe('16:45');
+  });
+
+  it('flags an unparseable date and clears the flag once it parses', () => {
+    component.onDateTyped('not a date');
+    component.commitTypedDate();
+    expect(component.form.controls.dueDate.hasError('invalidDate')).toBe(true);
+
+    component.onDateTyped('25 Sep 2026');
+    component.commitTypedDate();
+    expect(component.form.controls.dueDate.hasError('invalidDate')).toBe(false);
+  });
+
+  // ── Create on step 1 ────────────────────────────────────────────────────
+
+  describe('Create on step 1', () => {
+    it('is withheld while a required field lives on step 2', () => {
+      // No locked source, so sourceType and sourceId are required and live on
+      // step 2. Template 3: "use Create from there when step 2 has no required
+      // fields" — here it has two.
+      component.form.patchValue({ title: 'Raise an urgent task' });
+      expect(component.canCreateFromStep1()).toBe(false);
+    });
+
+    it('is offered once the source is locked and the title is valid', () => {
+      fixture.componentRef.setInput('lockedSourceType', 'COMMITTEE');
+      fixture.componentRef.setInput('lockedSourceId', 'cmt-1');
+      fixture.componentRef.setInput('lockedSourceLabel', 'Infection Prevention & Control');
+      fixture.detectChanges();
+
+      expect(component.canCreateFromStep1())
+        .withContext('an empty title is still required')
+        .toBe(false);
+
+      component.form.patchValue({ title: 'Raise an urgent task' });
+      fixture.detectChanges();
+      expect(component.canCreateFromStep1()).toBe(true);
+    });
+
+    it('is withheld while the chosen time is already past', () => {
+      fixture.componentRef.setInput('lockedSourceType', 'COMMITTEE');
+      fixture.componentRef.setInput('lockedSourceId', 'cmt-1');
+      fixture.componentRef.setInput('lockedSourceLabel', 'IPC');
+      component.form.patchValue({ title: 'Raise an urgent task' });
+      fixture.detectChanges();
+
+      component.onDayPicked(new Date(2020, 0, 1));
+      fixture.detectChanges();
+
+      // A past due time is the one case artboard 12 calls an error rather than
+      // a warning, so it blocks rather than warns.
+      expect(component.warning().kind).toBe('past');
+      expect(component.canCreateFromStep1()).toBe(false);
+    });
+  });
+
+  // ── Dirty ───────────────────────────────────────────────────────────────
+
+  it('reports dirty outward so the dialog can ask before discarding', () => {
+    const seen: boolean[] = [];
+    component.dirtyChange.subscribe((d) => seen.push(d));
+
+    // Opening the calendar is not a change — artboard 12's own rule for what
+    // counts as dirty, so that a user who looked at next month does not get a
+    // discard prompt.
+    component.toggleDateView();
+    expect(seen).toEqual([]);
+
+    component.form.controls.title.markAsDirty();
+    component.form.patchValue({ title: 'Something' });
+    expect(seen.at(-1)).toBe(true);
+  });
+
+  // ── The payload ─────────────────────────────────────────────────────────
+
+  it('sends the picked instant unchanged — byte-for-byte the body dev sends', () => {
+    // CAPTURED IN A BROWSER from the implementation on dev: picking
+    // 25 Sep 2026 09:00 posted exactly this. Compared as the serialised string
+    // rather than the object, because the wire format is what has to match —
+    // an absent `description` and `description: undefined` are the same
+    // request and different objects.
     const wire =
       '{"title":"ACC-96 payload probe","sourceType":"DOCUMENT","sourceId":"acc96-probe",' +
       '"priority":"MEDIUM","dueDate":"2026-09-25T06:00:00.000Z","assigneeUserIds":[]}';
@@ -98,9 +232,8 @@ describe('TaskFormComponent — due-date layer (ACC-96)', () => {
       sourceType: 'DOCUMENT',
       sourceId: 'acc96-probe',
     });
-    component.toggleDuePanel();
-    component.onDueDatePicked(new Date('2026-09-25T06:00:00.000Z'));
-    component.closeDuePanel();
+    component.onDayPicked(new Date('2026-09-25T06:00:00.000Z'));
+    component.onTimeTyped('09:00');
 
     component.onSubmit();
 

@@ -35,6 +35,19 @@
 // which is exactly artboard 12's "arrowing past the end of the month advances
 // the month and lands on a real day".
 //
+// ## Six rows: the one point NOT built as drawn
+//
+// Artboard 12 asks for six week rows always. PrimeNG builds as many as the
+// month needs — September 2026 is five — and exposes no input to pad to six.
+// Injecting a filler <tr> into a library's own table, on every month change,
+// is the kind of thing that breaks on upgrade.
+//
+// So the INVARIANT is held rather than the markup: the grid is pinned to the
+// height six rows would occupy, which is the drawing's own reason for asking
+// — "a calendar that changes height between months would move the dialog
+// footer under the cursor". A five-row month shows a blank final row instead
+// of dim other-month numbers. A deviation, recorded rather than discovered.
+//
 // ## Non-working days are MARKED, never disabled
 //
 // `disabledDays` would have been the obvious input and is wrong: artboard 12
@@ -59,6 +72,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { DatePicker, DatePickerModule } from 'primeng/datepicker';
 import { InputMaskModule } from 'primeng/inputmask';
 import { LanguageService } from '../../../core/services/language.service';
+import { FormatService } from '../../../core/formatting';
 
 /** 'YYYY-MM-DD' → the holiday's name in the reader's language. */
 export type HolidayMap = ReadonlyMap<string, string>;
@@ -245,23 +259,9 @@ export class CalendarA11yDirective implements AfterViewChecked {
         color: var(--am-ink-500);
       }
 
-      /* SIX ROWS' WORTH OF HEIGHT, ALWAYS — the one point of artboard 12 that
-         PrimeNG cannot render as drawn. It builds as many week rows as the
-         month needs (September 2026 is five), and exposes no input to pad to
-         six. Injecting a filler <tr> into a library's own table, on every
-         month change, is the kind of thing that breaks on upgrade.
-
-         So the INVARIANT is held rather than the markup: the grid is pinned to
-         the height six rows would occupy, which is the whole reason the drawing
-         asks for six — "a calendar that changes height between months would
-         move the dialog footer under the cursor". A five-row month shows a
-         blank final row instead of dim other-month numbers. Recorded as a
-         deviation, not a discovery.
-
-         6 x 28 cell + 5 x 2 gap = 178. border-spacing also adds a ring of
-         spacing OUTSIDE the table, so the negative margin removes it and the
-         4px gap the drawing specifies below the weekday row becomes 2px of
-         margin plus that 2px of spacing. */
+      /* Six rows' worth of height, always — see "Six rows" in the header
+         comment. 6 x 28 + 5 x 2 = 178; the negative margin cancels the ring of
+         border-spacing outside the table. */
       .am-cal .p-datepicker-day-view {
         margin: calc(var(--am-cal-gap) * -1);
         margin-block-start: calc(4px - var(--am-cal-gap));
@@ -389,6 +389,7 @@ export class CalendarA11yDirective implements AfterViewChecked {
 export class InlineCalendarComponent {
   private readonly language = inject(LanguageService);
   private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   private readonly picker = viewChild(DatePicker);
@@ -423,24 +424,11 @@ export class InlineCalendarComponent {
   readonly describeDay = (key: string): string => {
     const at = parsePrimeKey(key);
     if (!at) return '';
-    // Assembled from parts rather than taken from Intl's default ordering, for
-    // the reason ACC-94 gives: `en` is en-US, which renders "September 22,
-    // 2026". Day first, month as a word, matching FormatService's own
-    // gregorianDate() — "9/15/26" reads as 9 October in the GCC, and an
-    // announcement that disagrees with the field beside it is worse than either.
-    const locale = this.language.isArabic() ? 'ar-SA' : 'en';
-    const p = Object.fromEntries(
-      new Intl.DateTimeFormat(locale, {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        calendar: 'gregory',
-      })
-        .formatToParts(at)
-        .map((part) => [part.type, part.value]),
-    );
-    const full = `${p['weekday']} ${p['day']} ${p['month']} ${p['year']}`;
+    // Through the formatting layer, never a local Intl formatter: ACC-94 makes
+    // that a REQUIRED pattern and check:formatting enforces it. The layer also
+    // gets the ordering right — `en` is en-US, which would announce
+    // "September 22, 2026" while the field beside it reads "22 Sep 2026".
+    const full = this.format.dateWithWeekday(at);
 
     const holiday = this.holidays()?.get(dayKey(at));
     if (holiday) return `${full}, ${this.translate.instant('calendar.a11y.holiday')} — ${holiday}`;
