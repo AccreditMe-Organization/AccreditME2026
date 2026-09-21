@@ -44,12 +44,20 @@ const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
 // Measured on the branch that introduced this scan, lowered as screens migrate.
-// 12 -> 10 (ACC-96): task-form's and org-unit-head-panel's date pickers became
-// their own root layers, so neither builds a floating overlay any more. The
-// ten that remain are six p-selects, which are a DIFFERENT defect with a
-// different remedy (OverlaySelectComponent), plus user-profile's three, which
-// the scan over-reports per file — its pickers are page-level, not in a dialog.
-const BASELINE = 10;
+//
+// 12 -> 10 (ACC-96, first pass): task-form's and org-unit-head-panel's date
+// pickers stopped building floating overlays.
+//
+// 10 -> 9 (ACC-96, rebuilt to the approved design): task-form's last p-select
+// (priority) moved to OverlaySelectComponent, and its assignee p-listbox went
+// the same way. task-form now contributes NOTHING to this count.
+//
+// The nine that remain are org-unit-head-panel's five p-selects — a different
+// defect with a different remedy, and that dialog is being SPLIT rather than
+// restyled (ACC-120 slice 2), so it is deliberately untouched here — plus
+// user-profile's three and public-holiday-list's one, which the scan
+// over-reports per FILE: those controls are page-level, not in a dialog.
+const BASELINE = 9;
 
 const OVERLAY_TAGS =
   /<(p-select|p-multiSelect|p-multiselect|p-datepicker|p-datePicker|p-overlayPanel|p-overlaypanel|p-autoComplete|p-autocomplete|p-cascadeSelect)\b([^>]*)>/g;

@@ -241,4 +241,33 @@ describe('InlineCalendarComponent (ACC-96)', () => {
     // not know whether it is in a layer.
     expect((fixture.nativeElement as HTMLElement).querySelector('.p-datepicker-panel')).toBeTruthy();
   });
+
+  // ── The tab stop ────────────────────────────────────────────────────────
+
+  it('gives the grid exactly one tab stop, on the selected day', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const tabbable = Array.from(el.querySelectorAll<HTMLElement>('span[data-date]')).filter(
+      (s) => s.tabIndex === 0,
+    );
+    // PrimeNG seeds this from the OVERLAY's show path, which inline never
+    // runs: without the seed every one of the 42 cells stays at tabIndex -1
+    // and Tab skips the calendar entirely. Found in a browser.
+    expect(tabbable.length)
+      .withContext('one tab stop for the whole grid, not none and not 42')
+      .toBe(1);
+    expect(tabbable[0].textContent?.trim()).toBe('22');
+  });
+
+  it('falls back to a real day when nothing is selected', () => {
+    host.value.set(null);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const tabbable = Array.from(el.querySelectorAll<HTMLElement>('span[data-date]')).filter(
+      (s) => s.tabIndex === 0,
+    );
+    expect(tabbable.length).toBe(1);
+    expect(tabbable[0].classList.contains('p-disabled'))
+      .withContext('never an other-month cell — it is inert')
+      .toBe(false);
+  });
 });

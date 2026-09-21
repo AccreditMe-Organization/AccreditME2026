@@ -29,7 +29,7 @@
 // Neither exists in CreateTaskDto; both wait for the task analysis, and a
 // disabled placeholder would be worse than their absence.
 
-import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -44,6 +44,7 @@ import { UserService, IUserDto } from '../../../user/services/user.service';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
 import { FormatService } from '../../../../core/formatting';
+import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 
 const SOURCE_TYPES = [
   'MEETING',
@@ -81,40 +82,46 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     InlineCalendarComponent,
   ],
   template: `
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
+    <form id="taskForm" [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
       <!-- The step strip. EditDialogComponent's header is a plain string, so
-           this lives at the top of the body rather than beside the title. -->
-      <ol class="am-steps" [attr.aria-label]="'task.steps' | translate">
-        @for (s of steps; track s.n) {
-          <li class="am-steps__item" [class.am-steps__item--on]="step() === s.n">
-            <span class="am-steps__n">{{ s.n }}</span>
-            <span>{{ s.key | translate }}</span>
-          </li>
-        }
-      </ol>
+           this lives at the top of the body rather than beside the title.
+           HIDDEN IN THE DATE VIEW: that view has a 6px margin against the cap
+           and the strip costs 37px with its gap. The drawing does not show it
+           there either — the Back link is what orients you. -->
+      @if (!dateView()) {
+        <ol class="am-steps" [attr.aria-label]="'task.steps' | translate">
+          @for (s of steps; track s.n) {
+            <li class="am-steps__item" [class.am-steps__item--on]="step() === s.n">
+              <span class="am-steps__n">{{ s.n }}</span>
+              <span>{{ s.key | translate }}</span>
+            </li>
+          }
+        </ol>
+      }
 
       @if (step() === 1) {
         @if (dateView()) {
           <!-- ── Step 1, date view ───────────────────────────────────────
                SUBSTITUTES for the fields rather than pushing them down. Same
                step, same footer; every value is still live. -->
-          <button type="button" class="am-backlink" (click)="closeDateView()">
-            ← {{ 'task.due.backToDetails' | translate }}
-          </button>
+          <!-- 8px gaps, not the form's 16: the drawing budgets the date view
+               at 414 of a 420 cap, and the gap it names between the due block
+               and the calendar is 8. -->
+          <div class="am-dateview">
+            <ng-container *ngTemplateOutlet="dueBlock; context: { presets: false, back: true }" />
 
-          <ng-container *ngTemplateOutlet="dueBlock" />
-
-          <am-inline-calendar
-            [showTime]="true"
-            [value]="dueDay()"
-            (valueChange)="onDayPicked($event)"
-            [time]="dueTimeText()"
-            (timeChange)="onTimeTyped($event)"
-            [workingDays]="dueDates.workingDays()"
-            [holidays]="dueDates.holidays()"
-            [zoneSuffix]="dueDates.zoneSuffix()"
-            timeInputId="dueTimePanel"
-          />
+              <am-inline-calendar
+              [showTime]="true"
+              [value]="dueDay()"
+              (valueChange)="onDayPicked($event)"
+              [time]="dueTimeText()"
+              (timeChange)="onTimeTyped($event)"
+              [workingDays]="dueDates.workingDays()"
+              [holidays]="dueDates.holidays()"
+              [zoneSuffix]="dueDates.zoneSuffix()"
+              timeInputId="dueTimePanel"
+            />
+          </div>
         } @else {
           <!-- ── Step 1, fields ──────────────────────────────────────────── -->
           <div class="flex flex-col gap-1">
@@ -199,60 +206,43 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         }
       }
 
-      <!-- ── Footer ──────────────────────────────────────────────────────── -->
-      <div class="am-task-form__footer">
-        @if (step() === 1) {
-          <p-button
-            [label]="'common.cancel' | translate"
-            severity="secondary"
-            [text]="true"
-            type="button"
-            (onClick)="cancelled.emit()"
-            [disabled]="saving()"
-          />
-          <p-button
-            [label]="'task.nextDetails' | translate"
-            severity="secondary"
-            [outlined]="true"
-            type="button"
-            (onClick)="goToStep(2)"
-            [disabled]="saving()"
-          />
-          <p-button
-            [label]="'task.create' | translate"
-            type="submit"
-            [loading]="saving()"
-            [disabled]="!canCreateFromStep1()"
-          />
-        } @else {
-          <p-button
-            [label]="'common.back' | translate"
-            severity="secondary"
-            [text]="true"
-            type="button"
-            (onClick)="goToStep(1)"
-            [disabled]="saving()"
-          />
-          <p-button
-            [label]="'task.create' | translate"
-            type="submit"
-            [loading]="saving()"
-            [disabled]="form.invalid"
-          />
-        }
-      </div>
     </form>
 
     <!-- The due block is identical on both step-1 views, which is the point:
          pressing the calendar button must not appear to move the control. -->
-    <ng-template #dueBlock>
-      <div class="flex flex-col gap-1">
-        <label for="dueDate" class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
+    <ng-template #dueBlock let-showPresets="presets" let-showBack="back">
+      <div class="flex flex-col gap-1 am-due">
+        <!-- THE BACK LINK SHARES THE LABEL'S ROW, and that is a height
+             decision rather than a layout preference. The drawing's 414 is
+             due block 75 + gap 8 + calendar 314 + one warning line 17, and it
+             does NOT include the link. On its own row the link costs 24px in
+             Arabic, and a warning that wraps to two lines then takes the view
+             to 455 against a 420 cap — measured, with the body scrolling,
+             which is the defect this ticket removes. On the label's row it
+             costs nothing.
+             The arrow is an icon, not a literal "←": a left arrow in an
+             Arabic layout points away from where Back goes, so it mirrors. -->
+        <div class="am-due__labelrow">
+          <label for="dueDate" class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
+          @if (showBack) {
+            <button type="button" class="am-backlink" (click)="closeDateView()">
+              <i class="pi pi-arrow-left am-backlink__icon" aria-hidden="true"></i>
+              {{ 'task.due.backToDetails' | translate }}
+            </button>
+          }
+        </div>
         <div class="am-due__row">
+          <!-- dir="ltr" on a value that is Latin script inside an RTL layout.
+               Without it the bidi algorithm reorders "25 Sep 2026" into
+               "Sep 2026 25" — seen in the Arabic pass. ACC-94 D4 keeps a typed
+               date Gregorian with English months in both languages precisely
+               so it round-trips, and that only holds if it also READS in the
+               order it is typed. Same for the HH:mm field. -->
           <input
             pInputText
             id="dueDate"
             class="am-due__date"
+            dir="ltr"
             [value]="dueDateText()"
             (input)="onDateTyped($any($event.target).value)"
             (blur)="commitTypedDate()"
@@ -269,6 +259,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
           />
           <p-inputmask
             inputId="dueTime"
+            dir="ltr"
             mask="99:99"
             [placeholder]="'task.due.timePlaceholder' | translate"
             [ngModel]="dueTimeText()"
@@ -284,6 +275,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
              fields is not usable without sight. +1h and +2h are clock
              arithmetic and always present; the other two need the tenant
              calendar and are withheld without it. -->
+        @if (showPresets !== false) {
         <div class="am-presets" role="group" [attr.aria-label]="'task.due.presets' | translate">
           @for (p of presets(); track p.key) {
             <button
@@ -296,25 +288,30 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
             </button>
           }
         </div>
+        }
 
         <!-- One live region for the whole block: the resolved value, or the
              warning that replaces it. -->
-        <p class="am-due__resolved" aria-live="polite">
-          @switch (warning().kind) {
-            @case ('past') {
-              <span class="am-due__error">{{ 'task.due.past' | translate }}</span>
-            }
-            @case ('nonWorkingDay') {
-              <span class="am-due__warn">{{ warningText() }}</span>
-            }
-            @case ('outsideHours') {
-              <span class="am-due__warn">{{ warningText() }}</span>
-            }
-            @default {
-              {{ resolvedText() }}
-            }
+        <div class="am-due__messages" aria-live="polite">
+          <!-- The resolved value is announced WHERE THE PRESETS ARE, and only
+               there. A preset writes two fields in one press, so "announces
+               the absolute value it set" is the whole reason this line exists;
+               a warning that swallowed it would leave a screen-reader user
+               told their time is out of hours and never told what it is.
+               In the date view there are no presets, and the date and time
+               fields sit directly above showing that same value — so echoing
+               it there buys nothing and costs 17px of a 420px cap. With it,
+               a warning wrapped to two lines measured 424 (English) and 427
+               (Arabic) and the body scrolled. -->
+          @if (showPresets !== false) {
+            <p class="am-due__resolved">{{ resolvedText() }}</p>
           }
-        </p>
+          @if (warning().kind === 'past') {
+            <p class="am-due__resolved am-due__error">{{ 'task.due.past' | translate }}</p>
+          } @else if (warningText()) {
+            <p class="am-due__resolved am-due__warn">{{ warningText() }}</p>
+          }
+        </div>
       </div>
     </ng-template>
   `,
@@ -356,8 +353,18 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         font-size: 11px;
       }
 
+      .am-due__labelrow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        min-block-size: 22px;
+      }
+
       .am-backlink {
-        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
         background: none;
         border: none;
         padding: 0;
@@ -367,9 +374,31 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         cursor: pointer;
       }
 
+      :dir(rtl) .am-backlink__icon {
+        transform: scaleX(-1);
+      }
+
       .am-backlink:focus-visible {
         outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
         outline-offset: var(--am-focus-ring-offset);
+      }
+
+      /* The form and everything in it may shrink. Without min-inline-size: 0
+         a flex child refuses to go below its content width, and the due row's
+         time field then pushes the body into a horizontal scrollbar — which is
+         a scrollable ancestor around a calendar, the exact thing this ticket
+         removes. Seen in a browser, not predicted. */
+      .am-task-form,
+      .am-task-form > *,
+      .am-dateview > * {
+        min-inline-size: 0;
+      }
+
+      .am-dateview {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-inline-size: 0;
       }
 
       .am-due__row {
@@ -377,6 +406,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         align-items: center;
         gap: 0.5rem;
         block-size: 36px;
+        min-inline-size: 0;
       }
 
       .am-due__date {
@@ -384,8 +414,20 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         min-inline-size: 0;
       }
 
+      /* ::ng-deep for the INNER input, matching field.component.ts. The
+         <p-inputmask> host element carries this component's content attribute
+         and can be styled directly; the <input> PrimeNG renders inside it
+         cannot, so sizing only the wrapper left a 305px input inside an 84px
+         box — which overflowed the body horizontally and clipped the time
+         field off the dialog's edge. Measured in a browser. */
       .am-due__row .p-inputmask {
+        flex: none;
         inline-size: 84px;
+      }
+
+      .am-due__row ::ng-deep .p-inputmask input {
+        inline-size: 84px;
+        min-inline-size: 0;
       }
 
       .am-due__zone {
@@ -439,6 +481,15 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         color: var(--am-ink-500);
       }
 
+      /* The reserved slot, always present so the footer cannot move under the
+         cursor when a warning appears. A warning that WRAPS adds a line, which
+         the drawing budgets for explicitly ("second warning line 17"). */
+      .am-due__messages {
+        display: flex;
+        flex-direction: column;
+        min-block-size: 17px;
+      }
+
       .am-due__warn {
         color: var(--am-warning-ink);
       }
@@ -457,7 +508,6 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         display: flex;
         justify-content: flex-end;
         gap: 0.5rem;
-        padding-block-start: 0.5rem;
       }
     `,
   ],
@@ -469,6 +519,8 @@ export class TaskFormComponent implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   readonly dueDates = inject(DueDateService);
+  private readonly layers = inject(LayerStackService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
@@ -478,6 +530,18 @@ export class TaskFormComponent implements OnInit {
    * inside, so the state has to travel outward.
    */
   readonly dirtyChange = output<boolean>();
+  /**
+   * Emits THIS instance so the host can render app-task-form-footer inside the
+   * dialog's own fixed footer.
+   *
+   * Handing the host a TemplateRef was the first attempt and does not work:
+   * p-dialog collects pTemplate children at CONTENT INIT, and a footer that
+   * arrives from a projected component's ngAfterViewInit is already too late —
+   * it silently rendered no footer at all. The host's footer template must
+   * exist from the start, so what travels outward is the instance, not the
+   * markup.
+   */
+  readonly ready = output<TaskFormComponent>();
 
   // ACC-76 — set by a record's own detail page. Both or neither.
   readonly lockedSourceType = input<string | null>(null);
@@ -601,7 +665,44 @@ export class TaskFormComponent implements OnInit {
     dueDate: [null as Date | null],
   });
 
+  private dateViewLayerId: number | null = null;
+
   constructor() {
+    // THE DATE VIEW IS A LAYER, even though nothing floats.
+    //
+    // Artboard 12's Escape ladder: the first press collapses the calendar and
+    // leaves the dialog open, "otherwise a user who opened it to look at next
+    // month loses the whole form to a single key". Without registering,
+    // EditDialogComponent's own capture-phase handler answers first and a dirty
+    // form goes straight to "Discard this task?" with the calendar still open —
+    // observed in a browser, and the exact failure LayerStackService exists to
+    // prevent for floating pickers.
+    effect(() => {
+      const open = this.dateView();
+      if (open && this.dateViewLayerId === null) {
+        this.dateViewLayerId = this.layers.push();
+      } else if (!open && this.dateViewLayerId !== null) {
+        this.layers.remove(this.dateViewLayerId);
+        this.dateViewLayerId = null;
+      }
+    });
+
+    // Bubble phase, not capture: EditDialogComponent listens in capture and
+    // returns early once it sees it is not on top, so by the time this runs the
+    // dialog has already declined. Listening in capture here would race it.
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || !this.dateView()) return;
+      if (this.dateViewLayerId === null || !this.layers.isTop(this.dateViewLayerId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeDateView();
+    };
+    document.addEventListener('keydown', onKeydown);
+    this.destroyRef.onDestroy(() => {
+      document.removeEventListener('keydown', onKeydown);
+      if (this.dateViewLayerId !== null) this.layers.remove(this.dateViewLayerId);
+    });
+
     effect(() => {
       if (!this.isSourceLocked()) return;
       this.form.patchValue({
@@ -621,6 +722,7 @@ export class TaskFormComponent implements OnInit {
       error: () => this.users.set([]),
     });
 
+    this.ready.emit(this);
     this.titleValid.set(this.form.controls.title.valid);
     this.form.valueChanges.subscribe(() => {
       this.titleValid.set(this.form.controls.title.valid);

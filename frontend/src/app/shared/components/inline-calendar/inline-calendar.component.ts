@@ -24,6 +24,9 @@
 //   - Shift+PageUp/PageDown by year. `case 33`/`34` never read shiftKey.
 //   - aria-hidden and a full per-day announcement. PrimeNG puts the bare day
 //     NUMBER in aria-label, on the <td>, which no template can reach.
+//   - A tab stop on the grid AT ALL. initFocusableCell() runs from the
+//     overlay's show path, and inline there is no overlay — so every one of
+//     the 42 cells stays tabIndex -1 and Tab skips the calendar entirely.
 //
 // All three are handled here — the first two by intercepting keydown ahead of
 // PrimeNG, the third by a directive. No new library, and nothing patched.
@@ -143,6 +146,7 @@ export class CalendarA11yDirective implements AfterViewChecked {
 
   /** Public so a spec can drive it directly. */
   apply(): void {
+    this.seedRovingTabIndex();
     for (const cell of Array.from(this.host.nativeElement.querySelectorAll<HTMLElement>('td'))) {
       const span = cell.querySelector<HTMLElement>('span[data-date]');
       if (!span || cell.classList.contains('p-datepicker-other-month')) {
@@ -152,11 +156,41 @@ export class CalendarA11yDirective implements AfterViewChecked {
       }
       cell.removeAttribute('aria-hidden');
       const label = this.describeDay()(span.dataset['date'] ?? '');
-      // Guarded: an unconditional write retriggers the observer and spins.
+      // Guarded: an unconditional write would rewrite on every pass.
       if (label && cell.getAttribute('aria-label') !== label) {
         cell.setAttribute('aria-label', label);
       }
     }
+  }
+
+  /**
+   * THE GRID IS OTHERWISE UNREACHABLE BY KEYBOARD — a fourth thing PrimeNG
+   * does not do for an [inline] picker, found in a browser and not predicted.
+   *
+   * `initFocusableCell()` sets tabIndex 0 on one cell, but it runs from the
+   * OVERLAY's show path. Inline there is no overlay, so it never runs: every
+   * one of the 42 spans stays at tabIndex -1 with no tabindex attribute, Tab
+   * skips the whole calendar, and a keyboard user cannot reach a single day.
+   *
+   * Seeds the roving tab stop, once: the selected day, else today, else the
+   * first selectable day — artboard 12's "one tab stop for the whole grid,
+   * Tab leaves the calendar, it does not walk 42 cells".
+   *
+   * ONLY when nothing is tabbable. PrimeNG's own arrow handler moves the stop
+   * as you navigate (-1 on the old cell, 0 on the new); re-seeding on every
+   * change-detection pass would drag focus back to the selected day mid-arrow.
+   */
+  private seedRovingTabIndex(): void {
+    const root = this.host.nativeElement;
+    const days = Array.from(root.querySelectorAll<HTMLElement>('span[data-date]:not(.p-disabled)'));
+    if (days.length === 0) return;
+
+    if (days.some((d) => d.tabIndex === 0)) return;
+    const target =
+      days.find((d) => d.classList.contains('p-datepicker-day-selected')) ??
+      days.find((d) => d.closest('td')?.classList.contains('p-datepicker-today')) ??
+      days[0];
+    target.tabIndex = 0;
   }
 }
 
@@ -203,6 +237,7 @@ export class CalendarA11yDirective implements AfterViewChecked {
           </label>
           <p-inputmask
             [inputId]="timeInputId()"
+            dir="ltr"
             mask="99:99"
             placeholder="HH:mm"
             [ngModel]="time()"
@@ -248,6 +283,16 @@ export class CalendarA11yDirective implements AfterViewChecked {
         block-size: 28px;
       }
 
+      /* The chevrons MIRROR, not just the buttons' positions. Flex already
+         swaps which side each button sits on in RTL, but PrimeNG's icons are
+         literal left/right chevrons — so "previous" ended up on the right
+         still pointing left, i.e. away from the direction it travels. Artboard
+         12: "the header chevrons mirror with it". */
+      :dir(rtl) .am-cal .p-datepicker-prev-button svg,
+      :dir(rtl) .am-cal .p-datepicker-next-button svg {
+        transform: scaleX(-1);
+      }
+
       .am-cal .p-datepicker-weekday-cell {
         block-size: 20px;
         padding: 0;
@@ -263,7 +308,13 @@ export class CalendarA11yDirective implements AfterViewChecked {
          comment. 6 x 28 + 5 x 2 = 178; the negative margin cancels the ring of
          border-spacing outside the table. */
       .am-cal .p-datepicker-day-view {
-        margin: calc(var(--am-cal-gap) * -1);
+        /* Block only. An inline negative margin left the table's own content
+           2px wider than its box — harmless, since both it and its container
+           are overflow: visible and the panel above them does not scroll, but
+           it reads as an overflow in any measurement and is not worth keeping
+           for nothing. */
+        margin-block: calc(var(--am-cal-gap) * -1);
+        margin-inline: 0;
         margin-block-start: calc(4px - var(--am-cal-gap));
         border-spacing: var(--am-cal-gap);
         border-collapse: separate;
@@ -373,9 +424,31 @@ export class CalendarA11yDirective implements AfterViewChecked {
         color: var(--am-ink-500);
       }
 
+      /* The INNER input too, not only the wrapper. PrimeNG renders a 305px
+         input inside p-inputmask; sizing only the host left it overflowing its
+         own box, which put a horizontal scrollbar on the calendar — a
+         scrollable ancestor around the grid, which is the defect this ticket
+         exists to remove. Caught in the Arabic pass and then confirmed present
+         in English as well: the first check only walked the top level. */
       .am-cal__time .p-inputmask {
+        flex: none;
         inline-size: 84px;
         block-size: 36px;
+      }
+
+      .am-cal__time .p-inputmask input {
+        inline-size: 84px;
+        min-inline-size: 0;
+        block-size: 36px;
+      }
+
+      /* max-content plus a negative margin on the grid can round up past the
+         container in RTL. The calendar never needs to scroll: it is sized to
+         its own content by construction. */
+      .am-cal,
+      .am-cal .p-datepicker-calendar-container,
+      .am-cal .p-datepicker-calendar {
+        overflow: visible;
       }
 
       .am-cal__zone {
@@ -479,6 +552,20 @@ export class InlineCalendarComponent {
     const target = event.target as HTMLElement | null;
     if (!target?.matches?.('span[data-date]')) return;
 
+    // ARROWING ACROSS A MONTH BOUNDARY OTHERWISE LOSES FOCUS ENTIRELY.
+    //
+    // PrimeNG's handler calls navigateToMonth(), which rebuilds the grid and
+    // leaves updateFocus() to land on a day. That path is written for the
+    // overlay and does not land inline: the month advances and focus falls
+    // back to <body>, dropping a keyboard user out of the calendar mid-walk.
+    // Seen in a browser — the month DID change, which is exactly what made it
+    // look like it had worked.
+    //
+    // Restored after PrimeNG has rebuilt, and only if focus really was lost to
+    // <body>. Narrow on purpose: <body> holding focus means nothing else has
+    // claimed it, so this can never steal focus from another control.
+    if (NAVIGATION_KEYS.has(event.key)) this.restoreGridFocusAfterRebuild();
+
     if (event.shiftKey && (event.key === 'PageUp' || event.key === 'PageDown')) {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -507,6 +594,17 @@ export class InlineCalendarComponent {
     target.dispatchEvent(clone);
   }
 
+  private restoreGridFocusAfterRebuild(): void {
+    setTimeout(() => {
+      if (document.activeElement !== document.body) return;
+      const root = this.host.nativeElement;
+      const stop =
+        root.querySelector<HTMLElement>('span[data-date][tabindex="0"]:not(.p-disabled)') ??
+        root.querySelector<HTMLElement>('span[data-date]:not(.p-disabled)');
+      stop?.focus();
+    });
+  }
+
   private stepYear(delta: number, cell: HTMLElement): void {
     const picker = this.picker();
     const from = parsePrimeKey(cell.dataset['date'] ?? '');
@@ -528,6 +626,17 @@ export class InlineCalendarComponent {
     });
   }
 }
+
+const NAVIGATION_KEYS = new Set([
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+]);
 
 interface DayMeta {
   day: number;
