@@ -843,5 +843,13 @@
     "discardMessage": "This form has changes that have not been saved.",
     "discard": "Discard",
     "keepEditing": "Keep editing"
+  },
+  "calendar": {
+    "time": "Time",
+    "a11y": {
+      "workingDay": "working day",
+      "nonWorkingDay": "non-working day",
+      "holiday": "public holiday"
+    }
   }
 }

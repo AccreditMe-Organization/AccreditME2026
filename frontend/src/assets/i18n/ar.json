@@ -879,5 +879,13 @@
     "discardMessage": "يحتوي هذا النموذج على تغييرات لم تُحفظ.",
     "discard": "تجاهل",
     "keepEditing": "متابعة التحرير"
+  },
+  "calendar": {
+    "time": "الوقت",
+    "a11y": {
+      "workingDay": "يوم عمل",
+      "nonWorkingDay": "يوم غير عمل",
+      "holiday": "عطلة رسمية"
+    }
   }
 }
