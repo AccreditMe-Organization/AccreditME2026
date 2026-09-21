@@ -219,11 +219,30 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         styleClass="w-full"
       />
     </ng-template>
+    <!-- A due date carries a TIME, so this layer must NOT close on change the
+         way public-holiday-form's date-only one does. Every hour and minute
+         arrow fires ngModelChange as well as a day click, so closing there shut
+         the layer on the FIRST arrow press and left the time at whatever "now"
+         was when it opened — a time nobody chose. Caught in a browser, not by a
+         test; the suite was green either way.
+
+         PrimeNG's own overlay does not have this problem for a different
+         reason: it closes in onDateSelect (hideOnDateTimeSelect, default true),
+         which a time arrow never calls — so adjusting the time first and
+         clicking a day last worked there. Reproducing that ordering rule in a
+         layer would be fragile, so this does the simpler thing: the value
+         applies live and Done dismisses. -->
+    <ng-template #dueDateFooterTpl>
+      <div class="flex justify-end">
+        <p-button [label]="'common.done' | translate" (onClick)="closeDuePanel()" />
+      </div>
+    </ng-template>
     <app-edit-dialog
       [visible]="duePanelOpen()"
       (visibleChange)="onDuePanelVisibleChange($event)"
       [header]="'task.chooseDueDate' | translate"
       [content]="dueDateTpl"
+      [footer]="dueDateFooterTpl"
       size="picker"
       appendTo="body"
     />
@@ -272,15 +291,23 @@ export class TaskFormComponent implements OnInit {
   }
 
   /**
-   * A pick closes the layer and writes the value, then returns focus to the
-   * FIELD rather than the calendar button — the field is what was being
-   * filled in, and it now holds the chosen value.
+   * Writes the value and LEAVES THE LAYER OPEN. Every hour and minute arrow
+   * fires this too, so closing here would shut the calendar on the first arrow
+   * press and strand the time at whatever "now" was — see the template comment
+   * beside the footer. Dismissal is closeDuePanel(), via Done or Escape.
    */
   onDueDatePicked(value: Date | null): void {
     this.form.controls.dueDate.setValue(value);
     this.form.controls.dueDate.markAsDirty();
     this.controlDueDate.set(value);
     this.typedDueDate.set(null);
+  }
+
+  /**
+   * Returns focus to the FIELD rather than the calendar button — the field is
+   * what was being filled in, and it now holds the chosen value.
+   */
+  closeDuePanel(): void {
     this.duePanelOpen.set(false);
     this.focusDueDateInput();
   }
