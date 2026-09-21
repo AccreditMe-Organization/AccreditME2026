@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -8,6 +8,7 @@ import { ConfirmationService } from 'primeng/api';
 import { StatusBadgeComponent } from '../../../shared/components/status-badge/status-badge.component';
 import { PlatformTenantService, IPlatformTenantSummary } from '../../services/platform-tenant.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+import { NavigationAccessService } from '../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-tenant-list',
@@ -17,11 +18,13 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
     <div class="flex flex-col gap-4">
       <app-page-header [title]="'platform.tenants' | translate">
         <div pageActions>
-          <p-button
-            icon="pi pi-plus"
-            [label]="'platform.createTenant' | translate"
-            routerLink="/platform/tenants/create"
-          />
+          @if (canCreate()) {
+            <p-button
+              icon="pi pi-plus"
+              [label]="'platform.createTenant' | translate"
+              routerLink="/platform/tenants/create"
+            />
+          }
         </div>
       </app-page-header>
 
@@ -88,6 +91,13 @@ export class TenantListComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translateService = inject(TranslateService);
   private readonly router = inject(Router);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — found by check:create-gating, not by the ticket's own list of
+  // ten. Hidden, not disabled, same as every other page-header create action.
+  // POST /platform/tenants carries no @Permissions(); it is @UseGuards(TenantGuard,
+  // PlatformGuard), which isPlatformAdmin() mirrors (platform-tenant.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.isPlatformAdmin());
 
   readonly tenants = signal<IPlatformTenantSummary[]>([]);
   readonly loading = signal(false);

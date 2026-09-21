@@ -1,12 +1,4 @@
-import {
-  Component,
-  TemplateRef,
-  ViewChild,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { Component, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -25,6 +17,7 @@ import { DataListSource } from '../../../../shared/components/data-list/data-lis
 import { StatusChipComponent } from '../../../../shared/components/status-chip/status-chip.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { AmCountPipe } from '../../../../core/formatting';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-role-list',
@@ -45,11 +38,13 @@ import { AmCountPipe } from '../../../../core/formatting';
 
       <app-page-header [title]="'roles.title' | translate">
         <div pageActions>
-          <p-button
-            icon="pi pi-plus"
-            [label]="'roles.addRole' | translate"
-            (onClick)="openAdd()"
-          />
+          @if (canCreate()) {
+            <p-button
+              icon="pi pi-plus"
+              [label]="'roles.addRole' | translate"
+              (onClick)="openAdd()"
+            />
+          }
         </div>
       </app-page-header>
 
@@ -209,6 +204,14 @@ export class RoleListComponent {
   private readonly confirmationService = inject(ConfirmationService);
 
   private readonly translate = inject(TranslateService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // POST /roles enforces roles:manage, not a roles:create (role.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('roles:manage'));
 
   readonly error = signal<string | null>(null);
   readonly list = viewChild.required<DataListComponent<RoleDto>>('list');

@@ -1,4 +1,4 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -16,6 +16,7 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
 // required pattern, not a bug fix.
 import { EditDialogComponent } from '../../../shared/components/edit-dialog/edit-dialog.component';
 import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
+import { NavigationAccessService } from '../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-ai-feature-cost-list',
@@ -25,7 +26,9 @@ import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
     <div class="flex flex-col gap-4">
       <app-page-header [title]="'platform.aiFeatureCosts' | translate">
         <div pageActions>
-          <p-button icon="pi pi-plus" [label]="'platform.addAiFeatureCost' | translate" (onClick)="openAdd()" />
+          @if (canCreate()) {
+            <p-button icon="pi pi-plus" [label]="'platform.addAiFeatureCost' | translate" (onClick)="openAdd()" />
+          }
         </div>
       </app-page-header>
 
@@ -90,6 +93,14 @@ export class AiFeatureCostListComponent implements OnInit {
 
   private readonly fb = inject(FormBuilder);
   private readonly planService = inject(PlanService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // PlatformGuard rather than a permission string — see ai-credit-pack-list.
+  readonly canCreate = computed(() => this.navigationAccess.isPlatformAdmin());
 
   readonly costs = signal<IAiFeatureCost[]>([]);
   readonly loading = signal(false);

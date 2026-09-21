@@ -1,4 +1,4 @@
-import { Component, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -13,6 +13,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-lookup-value-list',
@@ -46,7 +47,7 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
             [value]="(category()!.isExtensible ? 'lookup.extensibleYes' : 'lookup.extensibleNo') | translate"
             [severity]="category()!.isExtensible ? 'success' : 'secondary'"
           />
-          @if (category()!.isExtensible) {
+          @if (category()!.isExtensible && canCreate()) {
             <p-button
               icon="pi pi-plus"
               [label]="'lookup.addValue' | translate"
@@ -230,6 +231,15 @@ export class LookupValueListComponent implements OnInit {
   private readonly lookupService = inject(LookupService);
   private readonly route = inject(ActivatedRoute);
   private readonly languageService = inject(LanguageService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // POST /lookups/categories/:key/values enforces lookups:manage. There is no
+  // lookups:create string at all (lookup.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('lookups:manage'));
 
   categoryKey = '';
 

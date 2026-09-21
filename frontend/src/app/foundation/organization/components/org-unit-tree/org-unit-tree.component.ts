@@ -13,6 +13,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-org-unit-tree',
@@ -30,11 +31,13 @@ import { LanguageService } from '../../../../core/services/language.service';
   template: `
     <app-page-header [title]="'organization.title' | translate">
       <div pageActions>
-        <p-button
-          icon="pi pi-plus"
-          [label]="'organization.addUnit' | translate"
-          (onClick)="onAdd()"
-        />
+        @if (canCreate()) {
+          <p-button
+            icon="pi pi-plus"
+            [label]="'organization.addUnit' | translate"
+            (onClick)="onAdd()"
+          />
+        }
       </div>
     </app-page-header>
 
@@ -153,6 +156,13 @@ export class OrgUnitTreeComponent implements OnInit {
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly translate = inject(TranslateService);
   private readonly languageService = inject(LanguageService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — found by check:create-gating, not by the ticket's own list of
+  // ten. Hidden, not disabled, same as every other page-header create action.
+  // POST /organization enforces ORG_PERMISSIONS.MANAGE — org:manage
+  // (organization.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('org:manage'));
 
   readonly loading = signal(false);
   readonly treeNodes = signal<TreeNode<OrgUnitDto>[]>([]);

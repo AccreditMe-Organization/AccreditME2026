@@ -24,6 +24,7 @@ import {
 } from '../../../../shared/components/data-list/data-list.source';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-workflow-stage-list',
@@ -45,12 +46,17 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
         [eyebrow]="'workflow.stagesEyebrow' | translate"
       >
         <div pageActions>
-          <p-button
-            icon="pi pi-plus"
-            [label]="'workflow.addStage' | translate"
-            [disabled]="reordering()"
-            (onClick)="openAdd()"
-          />
+          @if (canCreate()) {
+            <!-- [disabled] here is a TRANSIENT state (a reorder is in flight),
+                 which is what disabled is for. Permission is not transient, so
+                 it hides instead — ACC-118. The two coexist deliberately. -->
+            <p-button
+              icon="pi pi-plus"
+              [label]="'workflow.addStage' | translate"
+              [disabled]="reordering()"
+              (onClick)="openAdd()"
+            />
+          }
         </div>
       </app-page-header>
 
@@ -258,6 +264,15 @@ export class WorkflowStageListComponent implements OnInit {
   readonly expandedRowKeys = signal<Record<string, boolean>>({});
 
   private readonly translate = inject(TranslateService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // POST /workflow-templates/:id/stages enforces workflows:manage
+  // (workflow-template.controller.ts).
+  readonly canCreate = computed(() => this.navigationAccess.hasPermission('workflows:manage'));
 
   readonly templateId = computed(() => this.template()?.id ?? '');
   readonly stages = computed(() => this.template()?.stages ?? []);

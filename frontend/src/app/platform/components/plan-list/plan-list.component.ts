@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -7,6 +7,7 @@ import { TagModule } from 'primeng/tag';
 import { MessageModule } from 'primeng/message';
 import { PlanService, IPlan } from '../../services/plan.service';
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
+import { NavigationAccessService } from '../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-plan-list',
@@ -16,7 +17,9 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
     <div class="flex flex-col gap-4">
       <app-page-header [title]="'platform.plans' | translate">
         <div pageActions>
-          <p-button icon="pi pi-plus" [label]="'platform.addPlan' | translate" routerLink="/platform/plans/create" />
+          @if (canCreate()) {
+            <p-button icon="pi pi-plus" [label]="'platform.addPlan' | translate" routerLink="/platform/plans/create" />
+          }
         </div>
       </app-page-header>
 
@@ -67,6 +70,14 @@ import { PageHeaderComponent } from '../../../shared/components/page-header/page
 })
 export class PlanListComponent implements OnInit {
   private readonly planService = inject(PlanService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
+  // cannot use it: a disabled button still announces an action that is not
+  // theirs. Same mechanism as committee-detail.component.ts's canEdit /
+  // canAddMember, deliberately rather than a second one.
+  // PlatformGuard rather than a permission string — see ai-credit-pack-list.
+  readonly canCreate = computed(() => this.navigationAccess.isPlatformAdmin());
 
   readonly plans = signal<IPlan[]>([]);
   readonly loading = signal(false);
