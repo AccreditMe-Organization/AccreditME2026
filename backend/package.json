@@ -23,6 +23,7 @@
     "seed:demo": "ts-node -r tsconfig-paths/register prisma/demo-seed.ts",
     "db:reset:dev": "ts-node -r tsconfig-paths/register prisma/seed/reset-dev-db.ts",
     "seed:realistic": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/seed/seed-realistic.ts",
+    "verify:seed": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/seed/verify-seed.ts",
     "backfill:setup-view-permission": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-setup-view-permission.ts",
     "cleanup:acc82-condition-data": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/cleanup-acc82-condition-data.ts",
     "backfill:remove-base-user-tasks-view": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-remove-base-user-tasks-view.ts"

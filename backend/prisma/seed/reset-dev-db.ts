@@ -41,11 +41,14 @@ async function main(): Promise<void> {
   });
 
   console.log('\nResetting…\n');
-  const result = spawnSync(
-    'npx',
-    ['prisma', 'migrate', 'reset', '--force', '--skip-seed', '--skip-generate'],
-    { stdio: 'inherit', shell: true },
-  );
+  // --force is the ONLY flag Prisma 7's `migrate reset` takes besides --schema
+  // and --config. --skip-seed and --skip-generate existed in earlier majors and
+  // now make it exit 1 with a usage dump; there is no seed configured for it to
+  // skip anyway, since seeding here is two separate deliberate commands.
+  const result = spawnSync('npx', ['prisma', 'migrate', 'reset', '--force'], {
+    stdio: 'inherit',
+    shell: true,
+  });
 
   if (result.status !== 0) {
     throw new Error(`prisma migrate reset exited with status ${String(result.status)}.`);
