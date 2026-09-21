@@ -23,6 +23,24 @@ Thumbs.db
 # Playwright MCP session artifacts
 .playwright-mcp/
 
+# ACC-119 — screenshots Playwright writes to the REPOSITORY ROOT.
+#
+# Not a duplicate of the line above. `--output-dir` governs only
+# AUTOMATICALLY named output; the flag's own help says "Files with an explicit
+# name are resolved against the workspace root", so a screenshot taken with a
+# meaningful filename — which is what a verification pass naturally produces —
+# lands here by design and cannot be redirected. On ACC-118 two of them sat
+# untracked at the root, one `git add -A` from being committed.
+#
+# LEADING SLASH, so this matches the root ONLY. Assets under frontend/src are
+# untouched; that is the whole reason the pattern is anchored rather than
+# global. Verified by `git check-ignore`, not assumed.
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.webp
+
 # ACC-75 — npm audit report written by the CI dependency gate.
 # Build artifact, never committed.
 audit.json
