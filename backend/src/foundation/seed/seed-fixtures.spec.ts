@@ -22,6 +22,8 @@ import {
   validateFixture,
 } from '../../../prisma/seed/fixtures/fixture.types';
 import { orderPeopleForInvite } from '../../../prisma/seed/apply/order-people';
+import { SYSTEM_ROLE_SEED } from '../roles/role.seed';
+import { ALL_PERMISSIONS } from '../roles/permission.seed';
 
 const FIXTURES: Array<[string, TenantFixture]> = [
   ['hospital', HOSPITAL_FIXTURE],
@@ -200,6 +202,58 @@ describe('ACC-62 seed fixtures', () => {
       }
     });
 
+    // ── Personas (ACC-107) ───────────────────────────────────────────────
+    // The acceptance criterion is "which person demonstrates which role is
+    // STATED and VALIDATED, not prose". validateFixture() enforces it at seed
+    // time; these run it in CI, so a fixture that drops a persona fails on a
+    // pull request rather than at the next reseed.
+    it('gives every assignable system role exactly one credentialed persona', () => {
+      const assignable = SYSTEM_ROLE_SEED.map((r) => r.key).filter((k) => k !== 'PLATFORM_ADMIN');
+      const covered = fixture.systemRolePersonas.map((p) => p.roleKey);
+
+      expect([...covered].sort()).toEqual([...assignable].sort());
+    });
+
+    it('names a real, ACTIVE person for each persona, with a reason', () => {
+      const byKey = new Map(fixture.people.map((p) => [p.key, p]));
+      for (const persona of fixture.systemRolePersonas) {
+        expect(byKey.has(persona.holder)).toBe(true);
+        // The departing head cannot sign in, so cannot demonstrate anything.
+        expect(persona.holder).not.toBe(fixture.edgeCases.vacantHeadUnit.departingHead);
+        expect(persona.why.trim().length).toBeGreaterThan(0);
+      }
+    });
+
+    it('declares TENANT_ADMIN against the person bootstrap() actually grants it to', () => {
+      const admin = fixture.systemRolePersonas.find((p) => p.roleKey === 'TENANT_ADMIN');
+      expect(admin?.holder).toBe(fixture.adminKey);
+    });
+
+    it('carries at least one custom role whose permissions all exist', () => {
+      const known = new Set(ALL_PERMISSIONS.map((p) => `${p.module}:${p.action}`));
+      expect(fixture.customRoles.length).toBeGreaterThan(0);
+      for (const role of fixture.customRoles) {
+        expect(role.permissions.length).toBeGreaterThan(0);
+        for (const permission of role.permissions) expect(known.has(permission)).toBe(true);
+      }
+    });
+
+    // The pair the browser verification turns on. If a future edit gave VIEWER
+    // committees:create, or took it from QUALITY_MANAGER, the live check would
+    // silently stop distinguishing them and nothing else would notice.
+    it('keeps VIEWER and QUALITY_MANAGER separable on a committees write', () => {
+      const permissionsOf = (key: string) =>
+        SYSTEM_ROLE_SEED.find((r) => r.key === key)?.permissions ?? [];
+
+      expect(permissionsOf('QUALITY_MANAGER')).toContain('committees:create');
+      expect(permissionsOf('VIEWER')).not.toContain('committees:create');
+      expect(permissionsOf('VIEWER')).toContain('committees:view');
+
+      const roles = fixture.systemRolePersonas;
+      expect(roles.find((p) => p.roleKey === 'VIEWER')?.holder).toBeTruthy();
+      expect(roles.find((p) => p.roleKey === 'QUALITY_MANAGER')?.holder).toBeTruthy();
+    });
+
     it('references only committee lookup keys the SYSTEM seed ships', () => {
       const types = ['quality_committee', 'safety_committee', 'executive_board', 'clinical_committee', 'advisory_committee'];
       const roles = ['chairman', 'vice_chairman', 'secretary', 'member', 'observer', 'advisor'];
@@ -291,5 +345,63 @@ describe('validateFixture rejects', () => {
     const fixture = clone();
     fixture.adminKey = 'yasser';
     expect(() => validateFixture(fixture)).toThrow(/ROOT unit|root of the reporting tree/);
+  });
+
+  // ── Personas (ACC-107) ─────────────────────────────────────────────────────
+  // Each of these is a way the persona set could quietly stop demonstrating
+  // anything. The completeness case is the one that matters most: it is how
+  // the seed reached the state this ticket exists to fix.
+  it('a system role left with no persona', () => {
+    const fixture = clone();
+    fixture.systemRolePersonas = fixture.systemRolePersonas.filter(
+      (p) => p.roleKey !== 'AUDITOR',
+    );
+    expect(() => validateFixture(fixture)).toThrow(/AUDITOR.*no persona/s);
+  });
+
+  it('a persona naming a role that is not in the seed', () => {
+    const fixture = clone();
+    fixture.systemRolePersonas[1]!.roleKey = 'QUALITY_MANGER';
+    expect(() => validateFixture(fixture)).toThrow(/unknown system role/);
+  });
+
+  it('a persona held by the person the vacancy case deactivates', () => {
+    const fixture = clone();
+    fixture.systemRolePersonas.find((p) => p.roleKey === 'VIEWER')!.holder = 'ziad';
+    expect(() => validateFixture(fixture)).toThrow(/deactivates|cannot sign in/);
+  });
+
+  it('a persona granting PLATFORM_ADMIN to a tenant person', () => {
+    const fixture = clone();
+    fixture.systemRolePersonas.push({
+      roleKey: 'PLATFORM_ADMIN',
+      holder: 'yasser',
+      why: 'should be refused',
+    });
+    expect(() => validateFixture(fixture)).toThrow(/inert in a tenant|deliberately unassignable/);
+  });
+
+  it('a TENANT_ADMIN persona who is not the fixture admin', () => {
+    const fixture = clone();
+    fixture.systemRolePersonas.find((p) => p.roleKey === 'TENANT_ADMIN')!.holder = 'yasser';
+    expect(() => validateFixture(fixture)).toThrow(/adminKey/);
+  });
+
+  it('a persona with an empty reason', () => {
+    const fixture = clone();
+    fixture.systemRolePersonas[1]!.why = '   ';
+    expect(() => validateFixture(fixture)).toThrow(/no 'why'/);
+  });
+
+  it('a fixture with no custom roles at all', () => {
+    const fixture = clone();
+    fixture.customRoles = [];
+    expect(() => validateFixture(fixture)).toThrow(/no custom roles/);
+  });
+
+  it('a custom role with a mistyped permission', () => {
+    const fixture = clone();
+    fixture.customRoles[0]!.permissions = ['roles:veiw'];
+    expect(() => validateFixture(fixture)).toThrow(/unknown permission/);
   });
 });

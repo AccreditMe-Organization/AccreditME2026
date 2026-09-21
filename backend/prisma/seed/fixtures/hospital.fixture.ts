@@ -282,6 +282,52 @@ export const HOSPITAL_FIXTURE: TenantFixture = {
   // Faisal rather than Yasser for readability only — Chief Medical Officer
   // reads naturally as someone who sees some things and not others. Neither
   // held any role before this.
+  // ACC-107 — one credentialed holder per seeded system role, attached to the
+  // people who already exist. Read this as an org chart: the Quality &
+  // Patient Safety directorate holds the quality roles because that is what
+  // that directorate does, and the two non-quality personas sit outside it so
+  // that "can see, cannot change" is a real position in this hospital rather
+  // than a contrivance.
+  //
+  // VIEWER and QUALITY_MANAGER are the pair the browser check turns on: both
+  // hold committees:view, only QUALITY_MANAGER holds the rest of
+  // COMMITTEES_PERMISSIONS, so the create affordance on Committees is present
+  // for one and absent for the other. Picked because Committee Management is
+  // the one fully-built module today — a pair chosen from an unbuilt module
+  // would be unverifiable in a browser, which is the whole point.
+  systemRolePersonas: [
+    {
+      roleKey: 'TENANT_ADMIN',
+      holder: 'hessa',
+      why: 'Chief Executive — granted by bootstrap() as the tenant admin, not by this applier.',
+    },
+    {
+      roleKey: 'QUALITY_MANAGER',
+      holder: 'yasser',
+      why: 'Director of Quality & Patient Safety — the Head of Quality genuinely holds this role.',
+    },
+    {
+      roleKey: 'QUALITY_OFFICER',
+      holder: 'haya',
+      why: 'Head of the Accreditation Section, reporting to Yasser — operational quality work.',
+    },
+    {
+      roleKey: 'AUDITOR',
+      holder: 'salem',
+      why: 'Head of Infection Control, whose section audits compliance across the wards.',
+    },
+    {
+      roleKey: 'VIEWER',
+      holder: 'nasser',
+      why: 'Director of Clinical Support Services — outside quality, so read-only is his real access.',
+    },
+    {
+      roleKey: 'BASE_USER',
+      holder: 'mohammed-car',
+      why: 'Cardiology Specialist — the most ordinary staff member, and the baseline everyone gets.',
+    },
+  ],
+
   customRoles: [
     {
       nameEn: 'Role Auditor (seed persona)',

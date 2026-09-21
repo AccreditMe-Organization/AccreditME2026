@@ -9,10 +9,15 @@
 // isSystem: false), which the whole permission model rests on and nothing was
 // covering.
 //
-// What this does NOT do: grant anyone a SYSTEM role. BASE_USER, VIEWER and the
-// rest remain unheld by any seeded person, which is deliberate — see
-// CustomRoleFixture for why one custom role is not the fix for the seed's
-// missing personas.
+// SYSTEM roles are NOT granted here — apply-system-roles.ts does that
+// (ACC-107). The split is deliberate: a custom role has to be CREATED before
+// it can be assigned, while a system role already exists from bootstrap() and
+// only needs assigning, so the two appliers do genuinely different work.
+//
+// The sentence that used to be here — "BASE_USER, VIEWER and the rest remain
+// unheld by any seeded person" — was true until ACC-107 and is now false.
+// Corrected rather than deleted, because a reader who remembers the old
+// behaviour should find out when it changed.
 import { RoleService } from '../../../src/foundation/roles/role.service';
 import { SeedContext, TenantFixture, resolve } from '../fixtures/fixture.types';
 

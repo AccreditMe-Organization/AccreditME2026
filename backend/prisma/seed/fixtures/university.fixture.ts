@@ -242,6 +242,63 @@ export const UNIVERSITY_FIXTURE: TenantFixture = {
   positions: POSITIONS,
   tree: TREE,
   people: PEOPLE,
+
+  // ACC-107 — the same persona set as the hospital, mapped onto a university's
+  // own structure: the Directorate of Quality Assurance holds the quality
+  // roles, and the two non-quality personas sit in a faculty. A second tenant
+  // is not duplication here — it is what proves the personas are a property of
+  // the fixture shape rather than of one hand-tuned tenant, and it gives any
+  // cross-tenant check two credentialed subjects instead of one.
+  systemRolePersonas: [
+    {
+      roleKey: 'TENANT_ADMIN',
+      holder: 'adel',
+      why: 'Rector — granted by bootstrap() as the tenant admin, not by this applier.',
+    },
+    {
+      roleKey: 'QUALITY_MANAGER',
+      holder: 'hind',
+      why: 'Director of the Quality Assurance Directorate — the Head of Quality holds the role.',
+    },
+    {
+      roleKey: 'QUALITY_OFFICER',
+      holder: 'maitha',
+      why: 'Head of the Accreditation Office, reporting to Hind — day-to-day quality work.',
+    },
+    {
+      roleKey: 'AUDITOR',
+      holder: 'sultan',
+      why: 'Institutional Effectiveness specialist — the office whose work is reviewing evidence.',
+    },
+    {
+      roleKey: 'VIEWER',
+      holder: 'badr',
+      why: 'Dean of Business — outside quality, so read-only is his real access.',
+    },
+    {
+      roleKey: 'BASE_USER',
+      holder: 'aliya',
+      why: 'Computer Science specialist — the most ordinary staff member.',
+    },
+  ],
+
+  // ACC-107 — a second custom role, in a second tenant, with a DIFFERENT
+  // permission from the hospital's. Two reasons: createRole's custom path is
+  // then exercised more than once, and 'committees:view' alone is the narrowest
+  // way to hold part of a module — Fahad can open a committee but not create,
+  // edit or add a member, which VIEWER (read across everything) does not show.
+  customRoles: [
+    {
+      nameEn: 'Committee Observer (seed persona)',
+      nameAr: 'مراقب اللجان (شخصية تجريبية)',
+      description:
+        'Dev persona: holds committees:view and nothing else, so a caller who can read one ' +
+        'module and nothing else can be tested without granting a whole read-only role.',
+      permissions: ['committees:view'],
+      holders: ['fahad'],
+    },
+  ],
+
   committees: COMMITTEES,
 
   // All four cases are seeded in BOTH tenants, not split between them. The

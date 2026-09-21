@@ -1,5 +1,11 @@
 import { COMMITTEE_MEETING_FREQUENCIES } from '../../../src/foundation/committees/dto/create-committee.dto';
 import { ALL_PERMISSIONS } from '../../../src/foundation/roles/permission.seed';
+import { SYSTEM_ROLE_SEED } from '../../../src/foundation/roles/role.seed';
+
+// ACC-107 — seeded into every tenant but inert there, and filtered out of the
+// assignable-roles list (ACC-13). Named once so the persona rules below and a
+// future reader agree on why it is excluded.
+const PLATFORM_ROLE_KEY = 'PLATFORM_ADMIN';
 
 // ACC-62 — the declarative shapes a tenant fixture is written in.
 //
@@ -97,9 +103,11 @@ export interface PersonFixture {
 // (RoleService.createRole with key: null, isSystem: false), which nothing in
 // the seed touched before.
 //
-// THIS IS NOT THE FIX for the seed's persona gap — it is one role for one
-// person, added because one ticket needed a subject. A credentialed persona per
-// meaningful role is its own piece of work.
+// ACC-107 IS that piece of work, and it is below (SystemRolePersonaFixture).
+// The paragraph above described the state until then: one custom role, one
+// holder, added because one ticket needed a subject. Every seeded system role
+// now has a credentialed holder too, so the sentence "BASE_USER, VIEWER and
+// the rest remain unheld" is no longer true of this seed.
 export interface CustomRoleFixture {
   nameEn: string;
   nameAr: string;
@@ -110,6 +118,50 @@ export interface CustomRoleFixture {
   permissions: string[];
   // PersonFixture keys.
   holders: string[];
+}
+
+// ── System-role personas ─────────────────────────────────────────────────────
+
+// ACC-107 — who demonstrates which SEEDED SYSTEM role.
+//
+// ## Roles on the existing people, not extra people (Ahmad's decision)
+//
+// A persona is a role attached to one of the tenant's own 24 people, never a
+// synthetic extra person. Two reasons, and the second is the one that decides
+// it:
+//
+//   1. The headcount and the org tree stay honest. A "QM Persona" reporting to
+//      nobody, holding no position, sitting in no unit, is a row that exists
+//      only to be logged in as — and it would appear in every user picker,
+//      every org chart and every count, misrepresenting the tenant.
+//   2. It states something TRUE about the organisation. The Head of Quality
+//      actually holds Quality Manager. That is what the role is for, so a
+//      reader learns the permission model and the org chart at the same time,
+//      instead of learning that demo data has demo people in it.
+//
+// The cost, stated rather than discovered: personas are less obvious than
+// extra people would be, since nothing in a person's name marks them. That is
+// what `why` and the printed credentials table are for.
+//
+// ## Why this is validated rather than written in prose
+//
+// The fixture comment claimed Yasser was "the tenant admin and the Quality
+// Manager persona" while he held no role at all and hessa was the admin. Prose
+// drifted from the data because nothing could contradict it. Every field here
+// is checked by validateFixture() against the real role seed, the real
+// permission catalogue and the fixture's own people — so the same claim, made
+// again, now fails before any write.
+export interface SystemRolePersonaFixture {
+  // A key from SYSTEM_ROLE_SEED, e.g. 'QUALITY_MANAGER'. Validated against it,
+  // so a renamed or removed role fails here rather than seeding nothing.
+  roleKey: string;
+  // PersonFixture.key. Must be someone the seed leaves ACTIVE — the departing
+  // head cannot demonstrate anything, because they cannot sign in.
+  holder: string;
+  // Why THIS person for THIS role, in one line. Not decoration: it is what a
+  // reader has instead of a name that says "persona", and it is printed in the
+  // credentials table at the end of a seed run.
+  why: string;
 }
 
 // ── Committees ───────────────────────────────────────────────────────────────
@@ -226,8 +278,15 @@ export interface TenantFixture {
   // rather than creating a second one.
   tree: UnitFixture;
   people: PersonFixture[];
-  // Optional: a tenant without custom roles is a legitimate fixture.
-  customRoles?: CustomRoleFixture[];
+  // ACC-107 — REQUIRED, and required to be complete: validateFixture() proves
+  // every assignable seeded system role has a holder here. Optional would mean
+  // a fixture could silently go back to demonstrating nothing, which is the
+  // state this ticket exists to end.
+  systemRolePersonas: SystemRolePersonaFixture[];
+  // ACC-107 — no longer optional. Custom roles are the product's central claim
+  // about permissions, and until ACC-101 nothing exercised createRole's custom
+  // path at all. A tenant fixture with none leaves that path unseeded again.
+  customRoles: CustomRoleFixture[];
   committees: CommitteeFixture[];
   edgeCases: EdgeCaseFixture;
 }
@@ -607,7 +666,88 @@ export function validateFixture(fixture: TenantFixture): void {
   // string that no longer exists would seed a role granting nothing, and a
   // holder key typo would fail deep inside the applier.
   const knownPermissions = new Set(ALL_PERMISSIONS.map((p) => `${p.module}:${p.action}`));
-  for (const role of fixture.customRoles ?? []) {
+
+  // -- System-role personas (ACC-107) ----------------------------------------
+  // The claim "this person demonstrates this role" is checked against the real
+  // role seed and the fixture's own data, so it cannot drift into prose the way
+  // the old Yasser comment did.
+  const seededRoleKeys = new Set(SYSTEM_ROLE_SEED.map((r) => r.key));
+  const personaByRole = new Map<string, string>();
+
+  for (const persona of fixture.systemRolePersonas) {
+    if (!seededRoleKeys.has(persona.roleKey)) {
+      errors.push(
+        `Persona references unknown system role '${persona.roleKey}'. ` +
+          `It must be a key in SYSTEM_ROLE_SEED (${[...seededRoleKeys].join(', ')}).`,
+      );
+    }
+    // PLATFORM_ADMIN is seeded into every tenant but is inert there and is
+    // filtered out of the assignable-roles list (ACC-13). Granting it to a
+    // tenant person would seed the exact cross-tenant escalation PlatformGuard
+    // exists to refuse.
+    if (persona.roleKey === PLATFORM_ROLE_KEY) {
+      errors.push(
+        `Persona grants '${PLATFORM_ROLE_KEY}' to a tenant person. That role is inert in a ` +
+          'tenant and is deliberately unassignable — PlatformGuard requires isPlatformOrg too.',
+      );
+    }
+    if (!peopleByKey.has(persona.holder)) {
+      errors.push(`Persona for '${persona.roleKey}' is held by unknown person '${persona.holder}'.`);
+    }
+    // A departed person cannot sign in, so they cannot demonstrate anything.
+    // Caught here rather than in a browser, where it looks like a broken login.
+    if (persona.holder === fixture.edgeCases.vacantHeadUnit.departingHead) {
+      errors.push(
+        `Persona for '${persona.roleKey}' is held by '${persona.holder}', whom the vacancy edge ` +
+          'case deactivates. A deactivated holder cannot sign in, so the persona proves nothing.',
+      );
+    }
+    if (!persona.why.trim()) {
+      errors.push(`Persona for '${persona.roleKey}' has no 'why' — a reader needs the reason.`);
+    }
+    const existing = personaByRole.get(persona.roleKey);
+    if (existing) {
+      errors.push(
+        `System role '${persona.roleKey}' has two personas ('${existing}', '${persona.holder}'). ` +
+          'One holder per role keeps the credentials table unambiguous.',
+      );
+    }
+    personaByRole.set(persona.roleKey, persona.holder);
+  }
+
+  // THE COMPLETENESS CHECK — the acceptance criterion this ticket turns on.
+  // Without it a fixture could drop a persona and quietly stop demonstrating
+  // that role, which is exactly how the seed reached this state.
+  for (const key of seededRoleKeys) {
+    if (key === PLATFORM_ROLE_KEY) continue;
+    if (!personaByRole.has(key)) {
+      errors.push(
+        `Seeded system role '${key}' has no persona. Every assignable role needs one active, ` +
+          'credentialed holder, or permission behaviour cannot be demonstrated in a browser.',
+      );
+    }
+  }
+
+  // TENANT_ADMIN is granted by bootstrap() to the tenant's own admin, not by
+  // the persona applier. Declaring anyone else would be a statement the seed
+  // does not carry out.
+  const adminPersona = personaByRole.get('TENANT_ADMIN');
+  if (adminPersona && adminPersona !== fixture.adminKey) {
+    errors.push(
+      `TENANT_ADMIN's persona is '${adminPersona}' but the fixture's adminKey is ` +
+        `'${fixture.adminKey}'. bootstrap() grants TENANT_ADMIN to adminKey, so any other ` +
+        'holder would be a claim the seed never carries out.',
+    );
+  }
+
+  if (fixture.customRoles.length === 0) {
+    errors.push(
+      'Fixture declares no custom roles. Custom roles are the product\'s central claim about ' +
+        "permissions, and nothing else exercises RoleService.createRole's custom path.",
+    );
+  }
+
+  for (const role of fixture.customRoles) {
     for (const permission of role.permissions) {
       if (!knownPermissions.has(permission)) {
         errors.push(
