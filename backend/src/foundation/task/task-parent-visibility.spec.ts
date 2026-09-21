@@ -13,11 +13,19 @@
 // defines, and could not show the first half passing at all.
 //
 // THE SUBJECT IS CONSTRUCTED DELIBERATELY, because the obvious subject proves
-// nothing. On dev, 45 of 47 tenant users hold no role at all — such a caller is
-// refused by the CHILD gate, identically before and after this change, and a
-// test using one would pass for the wrong reason forever. So the subject here
-// holds tasks:view and lacks committees:view: PermissionGuard admits it, and
-// the only thing left that can refuse it is the parent check.
+// nothing. A caller holding NO role is refused by the CHILD gate, identically
+// before and after this change, and a test using one would pass for the wrong
+// reason forever. So the subject here holds tasks:view and lacks
+// committees:view: PermissionGuard admits it, and the only thing left that can
+// refuse it is the parent check.
+//
+// This paragraph used to say "on dev, 45 of 47 tenant users hold no role at
+// all", which was the state that forced the construction. ACC-107 ended it —
+// every seeded system role now has a credentialed holder — so the fact is
+// corrected here rather than left to read as current. The construction itself
+// is unchanged and still right: this spec must not depend on seed data, which
+// it does not, and picking a real persona would tie an authorization proof to
+// a fixture that is free to change.
 //
 // The two control tests below exist to keep that true. They fail if the harness
 // ever stops exercising the real guard, and they distinguish the two refusals

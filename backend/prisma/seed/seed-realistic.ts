@@ -1,17 +1,25 @@
 // ACC-62 — seeds two realistic tenants: a hospital and a university.
 //
 // PREREQUISITES, in order:
-//   1. npx prisma migrate reset --force   (drops and rebuilds the schema)
+//   1. npm run db:reset:dev               (drops and rebuilds the schema)
 //   2. npm run seed:demo                  (platform org + PLATFORM_ADMIN)
 //   3. npm run seed:realistic             (this script)
 //
-// Step 1 is deliberately NOT wrapped in a script. A committed
+// Step 1 is still THREE SEPARATE COMMANDS, deliberately. A committed
 // "reset-and-seed" one-liner is exactly the thing that eventually gets run
-// against the wrong database; resetting stays a manual, deliberate act.
+// against the wrong database, so resetting stays its own act — ACC-107 gave
+// it the guard it never had (it was a bare `prisma migrate reset --force`
+// pointed at whatever DATABASE_URL said), without chaining it to this.
 //
 // Step 2 is required because this script needs a real actorId for audit
 // logging — AuditLog.actorId is a foreign key to User, so an invented id
 // would fail on the first write.
+// ACC-107 — loaded explicitly rather than inherited. The guards below read
+// process.env BEFORE Nest boots, so ConfigModule cannot have populated it;
+// until now this worked only as a SIDE EFFECT of importing the generated
+// Prisma client further down, which is not something a reader could know and
+// not something an import reorder would preserve.
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -36,120 +44,30 @@ import {
 import { applyOrgTree } from './apply/apply-org-tree';
 import { SEED_PASSWORD, applyPeople } from './apply/apply-people';
 import { applyCustomRoles } from './apply/apply-custom-roles';
+import { applySystemRolePersonas } from './apply/apply-system-roles';
+import {
+  assertNotProduction,
+  confirmDestructiveIntent,
+  describeDatabase,
+  warnIfSharedRedis,
+} from './db-guard';
 import { applyCommittees } from './apply/apply-committees';
 import { applyEdgeCases } from './apply/apply-edge-cases';
 
 const FIXTURES: TenantFixture[] = [HOSPITAL_FIXTURE, UNIVERSITY_FIXTURE];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Environment guard — fails CLOSED
+// Guards — now shared with the reset (ACC-107)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// This script assumes an already-reset database and creates tenants from
-// scratch; run against a populated one it would collide on slugs and emails,
-// and run against anything real it would be a disaster. Ahmad confirmed THIS
-// dev database is disposable (ACC-62 PD #1) — that decision is about this
-// database, not a licence to run the seed wherever it happens to point.
-const ALLOWED_DB_HOST_FRAGMENTS = ['localhost', '127.0.0.1', 'pooler.supabase.com'];
-
-function hostOf(url: string | undefined): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
-}
-
-function assertSafeEnvironment(): void {
-  if (process.env['NODE_ENV'] === 'production') {
-    throw new Error('Refusing to seed: NODE_ENV is production.');
-  }
-
-  const dbHost = hostOf(process.env['DATABASE_URL']);
-  if (!dbHost) {
-    throw new Error('Refusing to seed: DATABASE_URL is unset or unparseable.');
-  }
-  if (!ALLOWED_DB_HOST_FRAGMENTS.some((fragment) => dbHost.includes(fragment))) {
-    throw new Error(
-      `Refusing to seed: DATABASE_URL host '${dbHost}' is not in the allowlist ` +
-        `(${ALLOWED_DB_HOST_FRAGMENTS.join(', ')}). This seed DESTROYS and recreates tenant data — ` +
-        'add the host deliberately if it really is a disposable database.',
-    );
-  }
-
-  // Not fatal, but worth saying out loud. AppModule pulls in QueueModule, and
-  // three @Processor classes (sla-monitor, email-delivery, workflow-actions)
-  // become live BullMQ workers the moment the context boots. Against the
-  // SHARED Railway Redis this process therefore competes for jobs with the
-  // deployed instance for as long as it runs — the exact hazard ACC-51 hit,
-  // where a deployed worker consumed a locally-enqueued job and silently
-  // invalidated a verification.
-  //
-  // During a wipe-and-reseed the blast radius is small (the data those jobs
-  // would touch is being destroyed anyway), and the window is the length of
-  // one seed run. Stated rather than hidden, because someone running this for
-  // another reason deserves to know.
-  const redisHost = hostOf(process.env['REDIS_URL']);
-  if (redisHost && !['localhost', '127.0.0.1'].includes(redisHost)) {
-    console.warn(
-      `\n⚠  REDIS_URL points at '${redisHost}', not localhost.\n` +
-        '   Booting the app starts sla-monitor / email-delivery / workflow-actions workers\n' +
-        '   that will compete with any deployed instance on that same Redis for the\n' +
-        '   duration of this run (ACC-51). Safe during a deliberate wipe; know about it otherwise.\n',
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Confirmation gate
-// ─────────────────────────────────────────────────────────────────────────────
-
-// assertSafeEnvironment() answers "is this the wrong database?". This answers
-// a different question it cannot: "did you MEAN to run this at all?"
-//
-// Added because that gap was not hypothetical. During ACC-62's own
-// guard-branch testing, a run with the real (correctly allowlisted)
-// DATABASE_URL passed every check and seeded a live tenant that nobody
-// intended to create. The guard behaved exactly as designed; the design was
-// simply not covering intent.
-//
-// Typing the database host, rather than "yes", is deliberate: "yes" is the
-// kind of thing a person types reflexively, and the host is the one fact
-// worth being sure about.
-async function confirmIntent(preflight: {
-  dbHost: string;
-  existingSlugs: string[];
-}): Promise<void> {
-  const args = process.argv.slice(2);
-  if (args.includes('--confirm')) {
-    console.log('Proceeding: --confirm supplied.');
-    return;
-  }
-
-  console.log('\nThis will create tenants in a REAL database.');
-  console.log(`  database host : ${preflight.dbHost}`);
-  console.log(`  tenants       : ${FIXTURES.map((f) => f.slug).join(', ')}`);
-  console.log(`  people        : ${FIXTURES.reduce((n, f) => n + f.people.length, 0)} across both`);
-
-  if (!process.stdin.isTTY) {
-    throw new Error(
-      'Refusing to seed: not an interactive terminal and --confirm was not supplied. ' +
-        'Pass --confirm only when the run is genuinely intended.',
-    );
-  }
-
-  const readline = await import('node:readline/promises');
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await rl.question(`\nType the database host to proceed (${preflight.dbHost}): `);
-    if (answer.trim() !== preflight.dbHost) {
-      throw new Error('Refusing to seed: confirmation did not match the database host.');
-    }
-  } finally {
-    rl.close();
-  }
-}
+// These used to live here, which meant they protected the SECOND half of a
+// two-step operation: `prisma migrate reset --force` runs first and drops
+// every table, and it had no guard at all. They moved to db-guard.ts so both
+// halves share one implementation, and the confirmation now binds to the
+// Supabase PROJECT REF rather than the host — the old host allowlist matched
+// `pooler.supabase.com`, which is the shared endpoint for an entire region and
+// would have accepted a customer's connection string unchanged. Full reasoning
+// in db-guard.ts.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Credentials summary
@@ -186,6 +104,26 @@ function printCredentials(fixture: TenantFixture): void {
   );
 
   console.log(`\n─── ${fixture.name}  (org slug: ${fixture.slug}) ───`);
+
+  // ACC-107 — the personas come first, because they are the reason most people
+  // run this seed. Derived from fixture.systemRolePersonas rather than written
+  // out here: a hand-maintained table is exactly how the old comment came to
+  // claim Yasser held a role he did not.
+  console.log('  PERMISSION PERSONAS');
+  for (const persona of fixture.systemRolePersonas) {
+    const p = person(persona.holder);
+    console.log(`    ${persona.roleKey.padEnd(16)} ${email(persona.holder).padEnd(42)} ${p.name}`);
+    console.log(`    ${''.padEnd(16)} ${persona.why}`);
+  }
+  for (const role of fixture.customRoles) {
+    for (const holder of role.holders) {
+      const p = person(holder);
+      console.log(`    ${'(custom)'.padEnd(16)} ${email(holder).padEnd(42)} ${p.name}`);
+      console.log(`    ${''.padEnd(16)} ${role.nameEn} — ${role.permissions.join(', ')}`);
+    }
+  }
+
+  console.log('  EDGE CASES');
   line('Tenant admin', fixture.adminKey);
   if (departmentHead) line('Department head', departmentHead.key);
   line('Out of office (absent)', edge.outOfOffice.person);
@@ -236,7 +174,10 @@ async function seedTenant(
   await applyPeople(deps, fixture, ctx, actorId);
   console.log(`  people: ${ctx.personIdByKey.size} created and activated`);
 
-  // ACC-101 — after the people exist, since a role is assigned to one of them.
+  // ACC-101 / ACC-107 — after the people exist, since a role is assigned to
+  // one of them. System personas first so the credentials table's ordering
+  // matches the order a reader meets them in the fixture.
+  await applySystemRolePersonas(deps, fixture, ctx, actorId);
   await applyCustomRoles(deps, fixture, ctx, actorId);
 
   // Before the edge cases, deliberately: applyEdgeCases() deactivates a head,
@@ -249,7 +190,9 @@ async function seedTenant(
 }
 
 async function main(): Promise<void> {
-  assertSafeEnvironment();
+  assertNotProduction();
+  const identity = describeDatabase(process.env['DATABASE_URL']);
+  warnIfSharedRedis();
 
   // Validate BOTH fixtures before touching anything. Seeding one tenant and
   // then failing validation on the second would leave the database half-built
@@ -262,7 +205,6 @@ async function main(): Promise<void> {
   // there is no sense doing it for a run the operator is about to decline;
   // and a slug collision should be reported up front rather than surfacing as
   // a ConflictException partway through creating a tenant.
-  const dbHost = hostOf(process.env['DATABASE_URL'])!;
   const preflightPrisma = new PrismaClient({
     adapter: new PrismaPg(new Pool({ connectionString: process.env['DATABASE_URL'] })),
   });
@@ -281,12 +223,16 @@ async function main(): Promise<void> {
   if (existingSlugs.length > 0) {
     throw new Error(
       `Refusing to seed: ${existingSlugs.join(', ')} already exist. This script creates tenants from ` +
-        'scratch and would collide on slugs and emails. Run `npx prisma migrate reset --force` first — ' +
-        'that reset is the intended way to re-run this seed (see ACC-62 Section 5).',
+        'scratch and would collide on slugs and emails. Run `npm run db:reset:dev` first — ' +
+        'that reset is the intended way to re-run this seed (see ACC-62 Section 5, ACC-107).',
     );
   }
 
-  await confirmIntent({ dbHost, existingSlugs });
+  await confirmDestructiveIntent(identity, {
+    tenants: FIXTURES.map((f) => f.slug).join(', '),
+    people: String(FIXTURES.reduce((n, f) => n + f.people.length, 0)),
+    personas: String(FIXTURES.reduce((n, f) => n + f.systemRolePersonas.length, 0)),
+  });
 
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
   let authPrisma: PrismaClient | undefined;
