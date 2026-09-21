@@ -6,6 +6,19 @@ import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 // ACC-96 — the effective-date calendar is its own LAYER rather than a floating
 // panel inside this dialog. See the template comment beside it.
+//
+// INTERIM, AND KNOWN TO BE. This is the pattern the rest of the ticket moved
+// AWAY from: New Task now uses the shared am-inline-calendar in flow, per
+// artboard 12. This screen keeps the layer because the approved design does
+// not merely restyle this dialog — it SPLITS it, into "Assign head" and "Set
+// acting head", each one decision, the second carrying a date RANGE rather
+// than a single effective date. That split is ACC-120 slice 2, and it is what
+// replaces this. Migrating the calendar here first would mean building a
+// dialog the design says should not exist.
+//
+// So do not read this as the pattern to copy, and do not "fix" it to match
+// New Task. Its measured defect (the panel ran 165px below the dialog's edge
+// and closed on a scroll of <main>) is fixed; its SHAPE is pending.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FormatService } from '../../../../core/formatting';
 import { InputTextModule } from 'primeng/inputtext';
