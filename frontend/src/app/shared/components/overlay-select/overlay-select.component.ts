@@ -177,13 +177,46 @@ function createManualScrollable(
       (keydown.arrowUp)="open(); $event.preventDefault()"
       (keydown.escape)="close()"
     >
-      <span
-        class="am-overlay-select-label"
-        [class.am-overlay-select-placeholder]="!selectedLabel()"
-      >
-        {{ selectedLabel() || placeholder() }}
-      </span>
-      @if (showClear() && value !== null && value !== undefined) {
+      @if (multiple() && hasValue()) {
+        <!-- ACC-96 — ONE CHIP PER SELECTION, each with its own remove button.
+             A joined label with a single clear icon meant removing one person
+             removed ALL of them, which is what Ahmad hit: the only affordance
+             was "clear everything". These are real <button>s, so they are in
+             the tab order, and each NAMES the person it removes — a
+             screen-reader user hearing six identical "remove" buttons cannot
+             tell them apart. -->
+        <span class="am-overlay-select-chips">
+          @for (v of selectedValues(); track v) {
+            <span class="am-overlay-select-chip">
+              <!-- title and aria-label carry the full name, so the one chip
+                   that IS too wide for the field is still identifiable by
+                   hover and by screen reader. -->
+              <span
+                class="am-overlay-select-chip-label"
+                [attr.title]="labelForValue(v)"
+                [attr.aria-label]="labelForValue(v)"
+                >{{ labelForValue(v) }}</span
+              >
+              <button
+                type="button"
+                class="am-overlay-select-chip-remove"
+                [attr.aria-label]="removeLabel() + ' ' + labelForValue(v)"
+                (click)="removeOne(v, $event)"
+              >
+                <i class="pi pi-times" aria-hidden="true"></i>
+              </button>
+            </span>
+          }
+        </span>
+      } @else {
+        <span
+          class="am-overlay-select-label"
+          [class.am-overlay-select-placeholder]="!selectedLabel()"
+        >
+          {{ selectedLabel() || placeholder() }}
+        </span>
+      }
+      @if (showClear() && hasValue() && !multiple()) {
         <i class="pi pi-times am-overlay-select-clear-icon" (click)="clear($event)"></i>
       }
       <i class="pi pi-chevron-down am-overlay-select-chevron"></i>
@@ -195,7 +228,8 @@ function createManualScrollable(
         cdkListbox
         class="am-overlay-select-panel"
         [style.width.px]="triggerWidth()"
-        [cdkListboxValue]="value === null || value === undefined ? [] : [value]"
+        [cdkListboxMultiple]="multiple()"
+        [cdkListboxValue]="listboxValue()"
         (cdkListboxValueChange)="onListboxChange($event)"
       >
         @for (flat of flattenedOptions(); track getOptionValue(flat.node)) {
@@ -226,6 +260,69 @@ function createManualScrollable(
     `
       :host {
         display: block;
+      }
+
+      .am-overlay-select-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        flex: 1 1 auto;
+        min-inline-size: 0;
+      }
+
+      /* NATURAL WIDTH, wrapping to the next row when a chip does not fit.
+         A half-row cap was tried and is wrong: it truncated ordinary names
+         ("Aisha Al-…", "Dr. Faisal …") in a ~200px field, which is worse than
+         a second row — a name is what identifies the person, and a clipped one
+         identifies nobody. Only a chip wider than the WHOLE field truncates
+         now, and that one keeps its full name in a tooltip and in its
+         accessible name. */
+      .am-overlay-select-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        min-inline-size: 0;
+        max-inline-size: 100%;
+        padding-inline-start: 8px;
+        border: 1px solid var(--am-neutral-chip-border);
+        background: var(--am-neutral-chip-bg);
+        color: var(--am-neutral-chip-ink);
+        border-radius: 999px;
+        font-size: 12px;
+      }
+
+      .am-overlay-select-chip-label {
+        min-inline-size: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* 24x24 — the WCAG 2.5.8 floor. The glyph inside is smaller; the TARGET
+         is not. */
+      .am-overlay-select-chip-remove {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        inline-size: 24px;
+        block-size: 24px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: inherit;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 10px;
+      }
+
+      .am-overlay-select-chip-remove:hover {
+        background: var(--am-border);
+      }
+
+      .am-overlay-select-chip-remove:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: 1px;
       }
 
       .am-overlay-select-trigger {
@@ -410,6 +507,28 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // @angular/cdk/listbox source, not assumed).
   readonly groupsSelectable = input<boolean>(true);
 
+  /**
+   * ACC-96 — multi-select, off by default so all 28 existing consumers are
+   * untouched.
+   *
+   * Added for the New Task assignee field, which Template 3 budgets as a 75px
+   * field block: the inline p-listbox it replaced is ~200px and alone put step
+   * 1 over its 279px target. CdkListbox already does multi-selection natively,
+   * so this is a flag and a value shape, not a second control.
+   *
+   * In this mode the value is an ARRAY and the panel does NOT close on each
+   * pick — closing after every choice is what makes a multi-select painful.
+   */
+  readonly multiple = input<boolean>(false);
+
+  /**
+   * The verb on each chip's remove button, e.g. "Remove". Already translated
+   * by the caller, for the same reason the summary it replaces was: the
+   * trigger renders on every instance, so a pipe here cannot stay lazy, and
+   * injecting TranslateService breaks the 30 specs that do not provide one.
+   */
+  readonly removeLabel = input<string>('Remove');
+
   // ACC-42 Phase 2 — custom option rendering (plan §2.3). CdkOption is a
   // plain directive, not a component, so it has no content-projection
   // mechanism of its own to extend — this component already fully
@@ -450,11 +569,47 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // the old top-level search for every existing (flat-mode) consumer.
   get selectedLabel(): () => string {
     return () => {
-      const match = this.flattenedOptions().find(
-        (flat) => this.getOptionValue(flat.node) === this.value,
-      );
-      return match ? this.getOptionLabel(match.node, match.isGroup) : '';
+      const labelFor = (v: unknown): string => {
+        const match = this.flattenedOptions().find((flat) => this.getOptionValue(flat.node) === v);
+        return match ? this.getOptionLabel(match.node, match.isGroup) : '';
+      };
+
+      // Multiple mode renders CHIPS instead, so this is only ever the
+      // placeholder path there.
+      return this.multiple() ? '' : labelFor(this.value);
     };
+  }
+
+  /** The label for one selected value — what each chip shows. */
+  labelForValue(value: unknown): string {
+    const match = this.flattenedOptions().find((flat) => this.getOptionValue(flat.node) === value);
+    return match ? this.getOptionLabel(match.node, match.isGroup) : '';
+  }
+
+  /**
+   * Removes ONE selection and leaves the rest. Stops the event so the click
+   * does not also toggle the panel open underneath.
+   */
+  removeOne(value: unknown, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.value = this.selectedValues().filter((v) => v !== value);
+    this.onChange(this.value);
+    this.onTouched();
+  }
+
+  /** The current value as an array, whichever mode this is in. */
+  selectedValues(): unknown[] {
+    if (Array.isArray(this.value)) return this.value;
+    return this.value === null || this.value === undefined ? [] : [this.value];
+  }
+
+  listboxValue(): unknown[] {
+    return this.selectedValues();
+  }
+
+  hasValue(): boolean {
+    return this.selectedValues().length > 0;
   }
 
   // Matches p-select's own real default: a primitive-array option (e.g.
@@ -599,6 +754,13 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   // infers T from [cdkOption]="unknown", which TS can't reconcile against a
   // hand-typed ListboxValueChangeEvent<unknown>.
   onListboxChange(event: ListboxValueChangeEvent<any>): void {
+    if (this.multiple()) {
+      // Stays OPEN. A multi-select that dismisses after each pick forces the
+      // user to reopen it once per person.
+      this.value = [...event.value];
+      this.onChange(this.value);
+      return;
+    }
     this.value = event.value.length > 0 ? event.value[0] : null;
     this.onChange(this.value);
     this.close();
@@ -606,7 +768,7 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
 
   clear(event: Event): void {
     event.stopPropagation();
-    this.value = null;
+    this.value = this.multiple() ? [] : null;
     this.onChange(this.value);
   }
 

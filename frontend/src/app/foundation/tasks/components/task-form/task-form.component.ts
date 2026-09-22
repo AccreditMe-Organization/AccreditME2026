@@ -1,22 +1,51 @@
-import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+// New task — Template 3, a TWO-STEP form dialog (ACC-96).
+//
+// ## Why two steps, and why the due date is not what moved
+//
+// One step with the real inline calendar open measures 750px against a 420px
+// body cap — title 75, description 128, priority 75, assignee 75, due 75 plus 8
+// plus 314. That is 330px over, and it cannot be recovered by shrinking the
+// calendar, which is already at the WCAG target-size floor plus 4px.
+//
+// So the form splits, and the DUE DATE STAYS ON STEP 1. Moving it to step 2
+// would have satisfied the arithmetic and broken the product: "complete step 1
+// and Create" is the path for someone raising an urgent task in ten seconds,
+// and a task created with no due time is exactly the task the SLA cannot
+// govern. The split is editorial rather than arithmetic — step 1 is the
+// commitment (what, who, when, how urgent), step 2 is the substance.
+//
+// ## Nothing expands on step 1; the calendar SUBSTITUTES for it
+//
+// A calendar with time leaves 23px of the cap, room for no other field at all.
+// So pressing the calendar button swaps step 1's body for the date view rather
+// than pushing it down: same step, same footer, values all still live, Create
+// still reachable. Artboard 12 names this as a scoped exception — "in flow"
+// meaning INSTEAD OF rather than BELOW — and it applies only because the
+// presets already cover the common case.
+//
+// ## Not built here, deliberately
+//
+// Template 3's step 2 also draws evidence-required and a delegation label.
+// Neither exists in CreateTaskDto; both wait for the task analysis, and a
+// disabled placeholder would be worse than their absence.
+
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
-import { SelectModule } from 'primeng/select';
-import { DatePickerModule } from 'primeng/datepicker';
+import { InputMaskModule } from 'primeng/inputmask';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { ListboxModule } from 'primeng/listbox';
 import { TaskService } from '../../services/task.service';
+import { DueDateService, DuePreset } from '../../services/due-date.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
-// ACC-41 — OverlaySelectComponent replaces p-select here: this field sits in
-// a raw p-dialog (not EditDialogComponent), the second confirmed DOM context
-// where PrimeNG's own scroll-chaining bug is reachable, and the option list
-// here is a plain string[] (exercises the primitive-array fallback in
-// getOptionLabel()/getOptionValue()). See CLAUDE.md's PrimeNG-components-only
-// exception note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
+import { FormatService } from '../../../../core/formatting';
+import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
+import { createRequestOutcome } from '../../../../core/request-outcome/request-outcome';
 
 const SOURCE_TYPES = [
   'MEETING',
@@ -42,175 +71,710 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    FormsModule,
+    NgTemplateOutlet,
     TranslatePipe,
     InputTextModule,
     TextareaModule,
-    SelectModule,
-    DatePickerModule,
+    InputMaskModule,
     ButtonModule,
     MessageModule,
-    ListboxModule,
     OverlaySelectComponent,
+    InlineCalendarComponent,
   ],
   template: `
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
-      <div class="flex flex-col gap-1">
-        <label for="title" class="text-sm font-medium">
-          {{ 'task.title' | translate }} <span class="text-red-500">*</span>
-        </label>
-        <input pInputText id="title" formControlName="title" />
-      </div>
+    <form id="taskForm" [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
+      @if (step() === 1) {
+        @if (dateView()) {
+          <!-- ── Step 1, date view ───────────────────────────────────────
+               SUBSTITUTES for the fields rather than pushing them down. Same
+               step, same footer; every value is still live. -->
+          <!-- 8px gaps, not the form's 16: the drawing budgets the date view
+               at 414 of a 420 cap, and the gap it names between the due block
+               and the calendar is 8. -->
+          <div class="am-dateview">
+            <!-- Top, start side, ABOVE the fields — as drawn. It had been
+                 folded onto the due block's label row to buy 24px; the step
+                 strip moving into the header gives back 37, so it returns to
+                 where Template 3 puts it. -->
+            <button type="button" class="am-backlink" (click)="closeDateView()">
+              <i class="pi pi-arrow-left am-backlink__icon" aria-hidden="true"></i>
+              {{ 'task.due.backToDetails' | translate }}
+            </button>
 
-      <div class="flex flex-col gap-1">
-        <label for="description" class="text-sm font-medium">{{ 'task.description' | translate }}</label>
-        <textarea pTextarea id="description" formControlName="description" rows="3"></textarea>
-      </div>
+            <ng-container *ngTemplateOutlet="dueBlock; context: { presets: false }" />
 
-      <!-- ACC-76 — when this form is opened FROM a record's own detail page,
-           the source is not a question: the task belongs to that record. Both
-           fields are prefilled and locked TOGETHER. Locking only the id would
-           be the worst of both — the type would still be editable, so a
-           committee's id could be saved against sourceType DOCUMENT,
-           producing a row that resolves to nothing anywhere.
+              <!-- minDate today: a new task cannot be due in the past, so
+                 yesterday and earlier are non-selectable and PrimeNG's own
+                 arrow traversal skips them, exactly as it does other-month
+                 days. TODAY stays selectable — a time later today is a
+                 perfectly good due date. -->
+            <am-inline-calendar
+              [value]="dueDay()"
+              (valueChange)="onDayPicked($event)"
+              [minDate]="today()"
+              [workingDays]="dueDates.workingDays()"
+              [holidays]="dueDates.holidays()"
+            />
+          </div>
+        } @else {
+          <!-- ── Step 1, fields ──────────────────────────────────────────── -->
+          <div class="flex flex-col gap-1">
+            <label for="title" class="text-sm font-medium">
+              {{ 'task.title' | translate }} <span class="text-red-500">*</span>
+            </label>
+            <input pInputText id="title" formControlName="title" />
+          </div>
 
-           Rendered as one read-only fact rather than two disabled inputs,
-           because the id is a cuid and showing it teaches the reader
-           nothing. The controls stay populated (and disabled) behind this, so
-           getRawValue() below still submits them. -->
-      @if (isSourceLocked()) {
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium">{{ 'task.source' | translate }}</label>
-          <p class="text-sm text-[var(--am-text-secondary)]">{{ lockedSourceLabel() }}</p>
-        </div>
+          <div class="flex gap-4">
+            <div class="flex flex-col gap-1 flex-1">
+              <label for="assigneeUserIds" class="text-sm font-medium">
+                {{ 'task.assignees' | translate }}
+              </label>
+              <!-- NOTHING RENDERS FOR A FAST LOAD (ACC-111's request-outcome
+                   rule). The control is present from the first frame and the
+                   message appears only for a REFUSAL, so a people list that
+                   arrives in 80ms produces no change at all. Previously the
+                   "assignees unavailable" message rendered while users() was
+                   still [], then swapped — a sub-second flash Ahmad caught in
+                   a live test, and exactly the shape artboard 8 calls a
+                   loading state pretending to be an empty one.
+
+                   A trigger, not the inline p-listbox ACC-76 added: same data
+                   source and the same eligible set — every ACTIVE user in the
+                   tenant, because a committee task can legitimately go to a
+                   department head outside it — but the list was ~200px and
+                   step 1 budgets 75px for this field. -->
+              @if (assigneesRefused()) {
+                <!-- Degrades rather than blocks. A caller whose role grants
+                     tasks:create but not users:view gets a 403 they cannot act
+                     on; creating the task unassigned is still a real,
+                     supported outcome. -->
+                <p-message severity="info" [text]="'task.assigneesUnavailable' | translate" />
+              } @else {
+                <app-overlay-select
+                  formControlName="assigneeUserIds"
+                  [options]="users()"
+                  optionLabel="name"
+                  optionValue="id"
+                  [multiple]="true"
+                  [removeLabel]="'task.removeAssignee' | translate"
+                  [placeholder]="'task.assigneesNone' | translate"
+                />
+              }
+            </div>
+
+            <div class="flex flex-col gap-1 flex-1">
+              <label for="priority" class="text-sm font-medium">
+                {{ 'task.priority.title' | translate }}
+              </label>
+              <!-- Objects, not the bare enum strings: a raw "MEDIUM" was
+                 showing in both languages. The keys already existed and are
+                 shared with the task list and the SLA settings screen, so one
+                 value now has one name everywhere. -->
+            <app-overlay-select
+              formControlName="priority"
+              [options]="priorityOptions()"
+              optionLabel="label"
+              optionValue="value"
+            />
+            </div>
+          </div>
+
+          <ng-container *ngTemplateOutlet="dueBlock" />
+        }
       } @else {
-        <div class="flex gap-4">
-          <div class="flex flex-col gap-1 flex-1">
-            <label for="sourceType" class="text-sm font-medium">
-              {{ 'task.sourceType' | translate }} <span class="text-red-500">*</span>
-            </label>
-            <app-overlay-select formControlName="sourceType" [options]="sourceTypes" />
-          </div>
-          <div class="flex flex-col gap-1 flex-1">
-            <label for="sourceId" class="text-sm font-medium">
-              {{ 'task.sourceId' | translate }} <span class="text-red-500">*</span>
-            </label>
-            <input pInputText id="sourceId" formControlName="sourceId" />
-          </div>
+        <!-- ── Step 2 — the substance ──────────────────────────────────── -->
+        <div class="flex flex-col gap-1">
+          <label for="description" class="text-sm font-medium">
+            {{ 'task.description' | translate }}
+          </label>
+          <textarea pTextarea id="description" formControlName="description" rows="3"></textarea>
+          <small class="am-hint">{{ 'task.descriptionHint' | translate }}</small>
         </div>
+
+        @if (isSourceLocked()) {
+          <div class="flex flex-col gap-1">
+            <label class="text-sm font-medium">{{ 'task.source' | translate }}</label>
+            <p class="text-sm text-[var(--am-ink-500)]">{{ lockedSourceLabel() }}</p>
+            <small class="am-hint">{{ 'task.sourceLockedHint' | translate }}</small>
+          </div>
+        } @else {
+          <div class="flex gap-4">
+            <div class="flex flex-col gap-1 flex-1">
+              <label for="sourceType" class="text-sm font-medium">
+                {{ 'task.sourceType' | translate }} <span class="text-red-500">*</span>
+              </label>
+              <app-overlay-select formControlName="sourceType" [options]="sourceTypes" />
+            </div>
+            <div class="flex flex-col gap-1 flex-1">
+              <label for="sourceId" class="text-sm font-medium">
+                {{ 'task.sourceId' | translate }} <span class="text-red-500">*</span>
+              </label>
+              <input pInputText id="sourceId" formControlName="sourceId" />
+            </div>
+          </div>
+        }
       }
 
-      <div class="flex gap-4">
-        <div class="flex flex-col gap-1 flex-1">
-          <label for="priority" class="text-sm font-medium">{{ 'task.priority.title' | translate }}</label>
-          <p-select inputId="priority" formControlName="priority" [options]="priorities" />
-        </div>
-        <div class="flex flex-col gap-1 flex-1">
-          <label for="dueDate" class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
-          <p-datepicker inputId="dueDate" formControlName="dueDate" [showTime]="true" />
-        </div>
-      </div>
-
-      <!-- ACC-76 — a real assignee picker, replacing the stopgap message that
-           claimed this "will be available once User Management is set up".
-           User Management shipped in ACC-12; the message had been stale for
-           most of the project, and sat directly above a Save button that is
-           disabled whenever the title is empty, so users read it as the reason
-           Save was dead.
-
-           p-listbox, not p-multiselect or OverlaySelectComponent: CLAUDE.md
-           makes it the required pattern for inline multi-select inside a
-           dialog (structurally immune to the scroll-chaining bug rather than
-           merely protected from it), and it carries the filter box a user list
-           needs — which OverlaySelectComponent deliberately does not have
-           (ACC-42). Copied in shape from unassigned-tasks' Reassign field,
-           which already does exactly this.
-
-           ALL ACTIVE USERS, not just members of the source record: the backend
-           accepts any active user, and a committee task can legitimately go to
-           a department head outside the committee who owes it data. -->
-      <div class="flex flex-col gap-1">
-        <label for="assigneeUserIds" class="text-sm font-medium">
-          {{ 'task.assignees' | translate }}
-        </label>
-        @if (users().length > 0) {
-          <p-listbox
-            inputId="assigneeUserIds"
-            formControlName="assigneeUserIds"
-            [options]="users()"
-            optionLabel="name"
-            optionValue="id"
-            [multiple]="true"
-            [checkbox]="true"
-            [filter]="true"
-            filterBy="name,email"
-            [showToggleAll]="false"
-            [listStyle]="{ 'max-height': '180px' }"
-          />
-          <small class="text-xs text-[var(--am-text-secondary)]">
-            {{ 'task.assigneesHint' | translate }}
-          </small>
-        } @else {
-          <!-- Degrades rather than blocks. A caller whose role grants
-               tasks:create but not users:view gets an empty list and a 403 they
-               cannot act on; creating the task unassigned is still a real,
-               supported outcome — TaskService.create() sets status UNASSIGNED
-               and notifies every tenant admin to assign it. -->
-          <p-message severity="info" [text]="'task.assigneesUnavailable' | translate" />
-        }
-      </div>
-
-      <div class="flex justify-end gap-2 pt-2">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          (onClick)="cancelled.emit()"
-          [disabled]="saving()"
-        />
-        <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
-      </div>
     </form>
+
+    <!-- The due block is identical on both step-1 views, which is the point:
+         pressing the calendar button must not appear to move the control. -->
+    <ng-template #dueBlock let-showPresets="presets">
+      <!-- No gap between the label, the control and the message: the drawing
+           budgets this block at 75 (label 22 + control 36 + reserved 17) and
+           the line heights already separate them. Two 4px gaps put it at 83,
+           which is 8px the date view does not have. -->
+      <div class="flex flex-col am-due">
+        <label for="dueDate" class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
+        <div class="am-due__row">
+          <!-- dir="ltr" on a value that is Latin script inside an RTL layout.
+               Without it the bidi algorithm reorders "25 Sep 2026" into
+               "Sep 2026 25" — seen in the Arabic pass. ACC-94 D4 keeps a typed
+               date Gregorian with English months in both languages precisely
+               so it round-trips, and that only holds if it also READS in the
+               order it is typed. Same for the HH:mm field. -->
+          <!-- ONE FIELD, with the calendar button at its TRAILING end — right
+               in English, left in Arabic, which the flex order gives for free.
+               Template 3 draws it inside the field's own border; a separate
+               button beside it read as a second control. The border lives on
+               the wrapper and the input is borderless, so focusing either
+               shows one ring around the pair.
+
+               A real <button> with a name, not an icon glyph:
+               check:icon-labels refuses an unnamed icon-only control, and the
+               target is 28x28, above the 24px WCAG 2.5.8 floor. -->
+          <div class="am-due__field" [class.am-due__field--invalid]="isPast()">
+            <input
+              pInputText
+              id="dueDate"
+              class="am-due__date"
+              dir="ltr"
+              [value]="dueDateText()"
+              (input)="onDateTyped($any($event.target).value)"
+              (blur)="commitTypedDate()"
+              [placeholder]="'task.due.datePlaceholder' | translate"
+              [attr.aria-invalid]="isPast() ? 'true' : null"
+              [attr.aria-errormessage]="isPast() ? 'dueDateError' : null"
+              autocomplete="off"
+            />
+            <!-- A TOGGLE, not a one-way opener (Rev 7): aria-expanded, a
+                 pressed state, and a label that says what the press will do.
+                 It is the shortcut for whoever finds it — the taught ways back
+                 remain the Back link and Escape. -->
+            <button
+              type="button"
+              class="am-due__calendar-button"
+              [class.am-due__calendar-button--on]="dateView()"
+              [attr.aria-label]="calendarToggleLabel()"
+              [attr.title]="calendarToggleLabel()"
+              [attr.aria-expanded]="dateView()"
+              [attr.aria-pressed]="dateView()"
+              (click)="toggleDateView()"
+            >
+              <i class="pi pi-calendar" aria-hidden="true"></i>
+            </button>
+          </div>
+          <p-inputmask
+            inputId="dueTime"
+            dir="ltr"
+            mask="99:99"
+            [placeholder]="'task.due.timePlaceholder' | translate"
+            [ngModel]="dueTimeText()"
+            [ngModelOptions]="{ standalone: true }"
+            (ngModelChange)="onTimeTyped($event ?? '')"
+          />
+          <!-- dir="ltr" so the bidi algorithm does not reorder "+03" into
+               "03+" in an Arabic layout — the sign belongs to the number. -->
+          <span class="am-due__zone" dir="ltr">{{ dueDates.zoneSuffix() }}</span>
+        </div>
+
+        <!-- Presets. Each sets BOTH date and time in one press — the urgent
+             case end to end — and the resolved line below announces the
+             absolute value it set, because a button that silently changes two
+             fields is not usable without sight. +1h and +2h are clock
+             arithmetic and always present; the other two need the tenant
+             calendar and are withheld without it. -->
+        @if (showPresets !== false) {
+        <div class="am-presets" role="group" [attr.aria-label]="'task.due.presets' | translate">
+          @for (p of presets(); track p.key) {
+            <button
+              type="button"
+              class="am-presets__chip"
+              [class.am-presets__chip--on]="activePreset() === p.key"
+              (click)="applyPreset(p)"
+            >
+              {{ p.labelKey | translate: p.labelParams }}
+            </button>
+          }
+        </div>
+        }
+
+        <!-- One live region for the whole block: the resolved value, or the
+             warning that replaces it. -->
+        <div class="am-due__messages" aria-live="polite">
+          <!-- The resolved value is announced WHERE THE PRESETS ARE, and only
+               there. A preset writes two fields in one press, so "announces
+               the absolute value it set" is the whole reason this line exists;
+               a warning that swallowed it would leave a screen-reader user
+               told their time is out of hours and never told what it is.
+               In the date view there are no presets, and the date and time
+               fields sit directly above showing that same value — so echoing
+               it there buys nothing and costs 17px of a 420px cap. With it,
+               a warning wrapped to two lines measured 424 (English) and 427
+               (Arabic) and the body scrolled. -->
+          @if (showPresets !== false) {
+            <p class="am-due__resolved">{{ resolvedText() }}</p>
+          }
+          @if (warning().kind === 'past') {
+            <p id="dueDateError" class="am-due__resolved am-due__error">
+              {{ 'task.due.past' | translate }}
+            </p>
+          } @else if (warningText()) {
+            <p class="am-due__resolved am-due__warn">{{ warningText() }}</p>
+          }
+        </div>
+      </div>
+    </ng-template>
   `,
+  styles: [
+    `
+      :host {
+        display: block;
+      }
+
+      .am-backlink {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        font-size: 12.5px;
+        color: var(--am-primary-600);
+        cursor: pointer;
+      }
+
+      :dir(rtl) .am-backlink__icon {
+        transform: scaleX(-1);
+      }
+
+      .am-backlink:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+
+      /* The form and everything in it may shrink. Without min-inline-size: 0
+         a flex child refuses to go below its content width, and the due row's
+         time field then pushes the body into a horizontal scrollbar — which is
+         a scrollable ancestor around a calendar, the exact thing this ticket
+         removes. Seen in a browser, not predicted. */
+      .am-task-form,
+      .am-task-form > *,
+      .am-dateview > * {
+        min-inline-size: 0;
+      }
+
+      .am-dateview {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-inline-size: 0;
+      }
+
+      .am-due label {
+        line-height: 22px;
+      }
+
+      .am-due__row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        block-size: 36px;
+        min-inline-size: 0;
+      }
+
+      /* The wrapper carries the border; the input inside is borderless, so the
+         pair reads and focuses as ONE control. */
+      .am-due__field {
+        display: flex;
+        align-items: center;
+        flex: 1 1 auto;
+        min-inline-size: 0;
+        block-size: 36px;
+        padding-inline-end: 2px;
+        border: 1px solid var(--am-control-border);
+        border-radius: 4px;
+        background: var(--am-control-bg);
+      }
+
+      .am-due__field:hover {
+        border-color: var(--am-control-border-hover);
+      }
+
+      .am-due__field--invalid {
+        border-color: var(--am-danger-ink);
+      }
+
+      .am-due__field:focus-within {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+
+      .am-due__date {
+        flex: 1 1 auto;
+        min-inline-size: 0;
+        border: none;
+        background: none;
+        box-shadow: none;
+      }
+
+      .am-due__date:focus,
+      .am-due__date:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+
+      /* 28x28 — above the 24px WCAG 2.5.8 floor, and the same size as a day
+         cell. */
+      .am-due__calendar-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        inline-size: 28px;
+        block-size: 28px;
+        padding: 0;
+        border: none;
+        background: none;
+        border-radius: 4px;
+        color: var(--am-primary-600);
+        cursor: pointer;
+      }
+
+      .am-due__calendar-button:hover {
+        background: var(--am-primary-50);
+      }
+
+      /* Pressed, because the button is a toggle and its two states have to be
+         distinguishable without reading the label. */
+      .am-due__calendar-button--on {
+        background: var(--am-primary-100);
+        color: var(--am-primary-700);
+      }
+
+      .am-due__calendar-button:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: 1px;
+      }
+
+      /* ::ng-deep for the INNER input, matching field.component.ts. The
+         <p-inputmask> host element carries this component's content attribute
+         and can be styled directly; the <input> PrimeNG renders inside it
+         cannot, so sizing only the wrapper left a 305px input inside an 84px
+         box — which overflowed the body horizontally and clipped the time
+         field off the dialog's edge. Measured in a browser. */
+      /* 112px, not 84. The Arabic hint "ساعة:دقيقة" was clipped to
+         "اعة:دقيقة" at 84 — a truncated hint is worse than none, because it
+         reads as a malformed value. Widened rather than shortened to "س:د",
+         which is cryptic; the date field beside it is flex 1 1 auto and simply
+         gives up the 28px. The VALUE it holds is five Latin characters either
+         way, so nothing else changes. */
+      .am-due__row .p-inputmask {
+        flex: none;
+        inline-size: 112px;
+      }
+
+      .am-due__row ::ng-deep .p-inputmask input {
+        inline-size: 112px;
+        min-inline-size: 0;
+      }
+
+      .am-due__zone {
+        font-size: 12px;
+        color: var(--am-ink-500);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* NO fixed height and NO overflow: hidden. Pinning this to the
+         drawing's 30px budget cut the chips' bottom border off and clipped the
+         focus ring, and in Arabic — where the row wraps — it hid the second
+         row entirely. The budget describes the common case, not a clamp: the
+         row takes the height its content needs and the resolved line follows
+         it rather than sitting on top of it.
+         The padding is the ring's room: 2px offset + 2px width outside each
+         chip, which an overflow-clipped or flush container would crop. */
+      .am-presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.375rem;
+        margin-block-start: 0.375rem;
+        padding-block: 4px;
+      }
+
+      .am-presets__chip {
+        border: 1px solid var(--am-control-border);
+        background: var(--am-control-bg);
+        color: var(--am-ink-900);
+        border-radius: 999px;
+        padding: 4px 11px;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .am-presets__chip--on {
+        background: var(--am-primary-100);
+        border-color: var(--am-primary-600);
+        color: var(--am-primary-700);
+        font-weight: 600;
+      }
+
+      .am-presets__chip:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+
+      /* The reserved message slot: always 17px, so a warning appearing never
+         changes the dialog's height and the footer cannot move under the
+         cursor mid-click. */
+      .am-due__resolved {
+        margin: 0;
+        min-block-size: 17px;
+        font-size: 12px;
+        line-height: 17px;
+        color: var(--am-ink-500);
+      }
+
+      /* The reserved slot, always present so the footer cannot move under the
+         cursor when a warning appears. A warning that WRAPS adds a line, which
+         the drawing budgets for explicitly ("second warning line 17"). */
+      .am-due__messages {
+        display: flex;
+        flex-direction: column;
+        min-block-size: 17px;
+      }
+
+      .am-due__warn {
+        color: var(--am-warning-ink);
+      }
+
+      .am-due__error {
+        color: var(--am-danger-ink);
+      }
+
+      .am-hint {
+        font-size: 12px;
+        line-height: 17px;
+        color: var(--am-ink-500);
+      }
+
+      .am-task-form__footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+    `,
+  ],
 })
 export class TaskFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
   private readonly userService = inject(UserService);
+  private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
+  readonly dueDates = inject(DueDateService);
+  private readonly layers = inject(LayerStackService);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
+  /**
+   * ACC-96 — lets the host pass [dirty] to EditDialogComponent, so Escape asks
+   * before discarding. The input is on the DIALOG, which this component sits
+   * inside, so the state has to travel outward.
+   */
+  readonly dirtyChange = output<boolean>();
+  /**
+   * Emits THIS instance so the host can render app-task-form-footer inside the
+   * dialog's own fixed footer.
+   *
+   * Handing the host a TemplateRef was the first attempt and does not work:
+   * p-dialog collects pTemplate children at CONTENT INIT, and a footer that
+   * arrives from a projected component's ngAfterViewInit is already too late —
+   * it silently rendered no footer at all. The host's footer template must
+   * exist from the start, so what travels outward is the instance, not the
+   * markup.
+   */
+  readonly ready = output<TaskFormComponent>();
 
-  // ACC-76 — set by a record's own detail page. Both or neither: a locked id
-  // with an editable type would let a committee's id be saved against the
-  // wrong sourceType, so isSourceLocked() requires all three.
+  // ACC-76 — set by a record's own detail page. Both or neither.
   readonly lockedSourceType = input<string | null>(null);
   readonly lockedSourceId = input<string | null>(null);
-  // What the reader actually recognises — the committee's name, not its cuid.
   readonly lockedSourceLabel = input<string | null>(null);
 
   readonly isSourceLocked = computed(
     () => !!this.lockedSourceType() && !!this.lockedSourceId() && !!this.lockedSourceLabel(),
   );
 
+  readonly steps = [
+    { n: 1 as const, key: 'task.step1' },
+    { n: 2 as const, key: 'task.step2' },
+  ];
+
+  readonly step = signal<1 | 2>(1);
+  readonly dateView = signal(false);
   readonly saving = signal(false);
   readonly sourceTypes = SOURCE_TYPES;
   readonly priorities = PRIORITIES;
+  /**
+   * The people list, as ACC-111's request outcome rather than a bare array.
+   *
+   * The array alone could not tell "not back yet" from "there are none", which
+   * is precisely the confusion that produced the flash: empty was rendered as
+   * refused. The outcome machine also suppresses anything for a load under
+   * 200ms, so a fast answer changes nothing on screen.
+   */
+  private readonly usersOutcome = createRequestOutcome<IUserDto>(
+    () => this.userService.listAllUsers({ status: 'ACTIVE' }),
+    { describeEmpty: () => ({ reason: 'task.assigneesUnavailable', filtered: false }) },
+  );
 
-  // Every ACTIVE user in the tenant. The backend filters again through
-  // filterActiveUsers() at create time, so a user deactivated between load and
-  // submit is dropped there rather than creating a dead assignment.
-  readonly users = signal<IUserDto[]>([]);
+  readonly users = computed<IUserDto[]>(() => {
+    const outcome = this.usersOutcome.outcome();
+    return outcome.status === 'rows' ? [...outcome.data] : [];
+  });
 
-  ngOnInit(): void {
-    // Requires users:view. Every seeded role holding tasks:create also holds
-    // it, but a tenant-created role need not — hence the quiet failure: an
-    // empty list renders the explanatory message and the task can still be
-    // created unassigned.
-    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({
-      next: (users) => this.users.set(users),
-      error: () => this.users.set([]),
-    });
-  }
+  /**
+   * Only a REFUSAL swaps the control for the message — never a load in flight,
+   * and never an empty tenant, which is a real state the picker can show.
+   */
+  readonly assigneesRefused = computed(() => {
+    const status = this.usersOutcome.outcome().status;
+    return status === 'denied' || status === 'error';
+  });
+
+  // ── The due value ──────────────────────────────────────────────────────
+  //
+  // One signal holds the instant; the two fields are projections of it. A
+  // separate `typedDate` holds what the user is part-way through writing, so
+  // re-rendering mid-keystroke cannot rewrite the text under the cursor.
+  private readonly due = signal<Date | null>(null);
+  private readonly typedDate = signal<string | null>(null);
+  private readonly now = signal(new Date());
+  readonly activePreset = signal<string | null>(null);
+
+  readonly dueDay = computed(() => this.due());
+
+  readonly dueDateText = computed(
+    () => this.typedDate() ?? (this.due() ? this.format.dateForInput(this.due()) : ''),
+  );
+
+  readonly dueTimeText = computed(() => {
+    const at = this.due();
+    if (!at) return '';
+    return `${`${at.getHours()}`.padStart(2, '0')}:${`${at.getMinutes()}`.padStart(2, '0')}`;
+  });
+
+  readonly presets = computed<DuePreset[]>(() => {
+    this.dueDates.ready();
+    return this.dueDates.presets(this.now());
+  });
+
+  readonly warning = computed(() => this.dueDates.warningFor(this.due(), this.now()));
+
+  /** A new task's due date may not be in the past — the calendar's floor. */
+  readonly today = computed(() => {
+    const at = new Date(this.now());
+    at.setHours(0, 0, 0, 0);
+    return at;
+  });
+
+  /**
+   * A REAL ERROR, not a note. A due date already gone is the one case
+   * artboard 12 calls an error rather than a warning, and the note alone did
+   * not stop Create on step 2, which gates on form.invalid.
+   *
+   * "Today at a time already gone" counts: the comparison is against the
+   * instant, not the day.
+   */
+  readonly isPast = computed(() => this.warning().kind === 'past');
+
+  readonly calendarToggleLabel = computed(() => {
+    this.translate.currentLang();
+    return this.translate.instant(
+      this.dateView() ? 'task.due.hideCalendar' : 'task.due.toggleCalendar',
+    );
+  });
+
+  readonly resolvedText = computed(() => {
+    const at = this.due();
+    if (!at) return this.translate.instant('task.due.none');
+    return this.format.dateTimeForInput(at);
+  });
+
+  readonly warningText = computed(() => {
+    const w = this.warning();
+    const resumes = (at: Date): string => this.format.dateTimeForInput(at);
+    // The tenant zone is named only when the reader's clock is not the SLA's.
+    // Where they agree, saying it adds a word and no information.
+    const zoneNote = this.dueDates.zoneMismatch()
+      ? ` ${this.translate.instant('task.due.zoneNote', { zone: this.dueDates.tenantZone() })}`
+      : '';
+    if (w.kind === 'nonWorkingDay') {
+      return (
+        this.translate.instant('task.due.nonWorkingDay', {
+          weekday: w.weekday,
+          resumesAt: resumes(w.resumesAt),
+        }) + zoneNote
+      );
+    }
+    if (w.kind === 'outsideHours') {
+      return (
+        this.translate.instant('task.due.outsideHours', {
+          time: this.dueTimeText(),
+          start: w.start,
+          end: w.end,
+          // `weekdays`, not `days`: the i18n guard reserves {{days}} for a
+          // COUNT, and this is a list of weekday names ("Sun–Thu").
+          weekdays: w.days,
+          resumesAt: resumes(w.resumesAt),
+        }) + zoneNote
+      );
+    }
+    return '';
+  });
+
+  readonly priorityOptions = computed(() => {
+    this.translate.currentLang();
+    return PRIORITIES.map((value) => ({
+      value,
+      label: this.translate.instant(`task.priority.${value.toLowerCase()}`),
+    }));
+  });
+
+  /**
+   * Create is offered on step 1 only when every REQUIRED field lives there.
+   *
+   * With the source locked — a task raised from a committee, which is the
+   * normal case and the one Template 3 draws — nothing on step 2 is required,
+   * so the ten-second path is title, +2h, Create. With the source unfilled,
+   * sourceType and sourceId are required and live on step 2, so Create waits
+   * there. That is Template 3's own rule: "use Create from there when step 2
+   * has no required fields".
+   */
+  readonly canCreateFromStep1 = computed(() => {
+    if (this.saving()) return false;
+    if (!this.isSourceLocked()) return false;
+    if (this.isPast()) return false;
+    return this.titleValid();
+  });
+
+  private readonly titleValid = signal(false);
 
   readonly form = this.fb.group({
     title: ['', [Validators.required, Validators.maxLength(255)]],
@@ -222,10 +786,45 @@ export class TaskFormComponent implements OnInit {
     dueDate: [null as Date | null],
   });
 
+  private dateViewLayerId: number | null = null;
+
   constructor() {
-    // Disabled controls are excluded from form.value but INCLUDED in
-    // getRawValue(), which onSubmit() already uses — so locking them changes
-    // what the user can edit without changing what gets submitted.
+    // THE DATE VIEW IS A LAYER, even though nothing floats.
+    //
+    // Artboard 12's Escape ladder: the first press collapses the calendar and
+    // leaves the dialog open, "otherwise a user who opened it to look at next
+    // month loses the whole form to a single key". Without registering,
+    // EditDialogComponent's own capture-phase handler answers first and a dirty
+    // form goes straight to "Discard this task?" with the calendar still open —
+    // observed in a browser, and the exact failure LayerStackService exists to
+    // prevent for floating pickers.
+    effect(() => {
+      const open = this.dateView();
+      if (open && this.dateViewLayerId === null) {
+        this.dateViewLayerId = this.layers.push();
+      } else if (!open && this.dateViewLayerId !== null) {
+        this.layers.remove(this.dateViewLayerId);
+        this.dateViewLayerId = null;
+      }
+    });
+
+    // Bubble phase, not capture: EditDialogComponent listens in capture and
+    // returns early once it sees it is not on top, so by the time this runs the
+    // dialog has already declined. Listening in capture here would race it.
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || !this.dateView()) return;
+      if (this.dateViewLayerId === null || !this.layers.isTop(this.dateViewLayerId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeDateView();
+    };
+    document.addEventListener('keydown', onKeydown);
+    this.destroyRef.onDestroy(() => {
+      this.usersOutcome.destroy();
+      document.removeEventListener('keydown', onKeydown);
+      if (this.dateViewLayerId !== null) this.layers.remove(this.dateViewLayerId);
+    });
+
     effect(() => {
       if (!this.isSourceLocked()) return;
       this.form.patchValue({
@@ -237,9 +836,171 @@ export class TaskFormComponent implements OnInit {
     });
   }
 
+  ngOnInit(): void {
+    this.dueDates.load();
+
+    this.ready.emit(this);
+    this.titleValid.set(this.form.controls.title.valid);
+    this.form.valueChanges.subscribe(() => {
+      this.titleValid.set(this.form.controls.title.valid);
+      // Opening a calendar, changing month or focusing a field is NOT a change
+      // (artboard 12's own rule for what counts as dirty), so this follows the
+      // form's own dirty flag rather than any view state.
+      this.dirtyChange.emit(this.form.dirty);
+    });
+  }
+
+  // ── Step and view ──────────────────────────────────────────────────────
+
+  goToStep(n: 1 | 2): void {
+    this.commitTypedDate();
+    this.dateView.set(false);
+    this.step.set(n);
+  }
+
+  toggleDateView(): void {
+    this.commitTypedDate();
+    // Recomputed on open so a dialog left sitting does not offer "+2h" from
+    // an hour ago — and so a value that has since gone past is caught.
+    this.now.set(new Date());
+    this.refreshDueErrors();
+    this.dateView.set(!this.dateView());
+  }
+
+  closeDateView(): void {
+    this.dateView.set(false);
+    setTimeout(() => document.getElementById('dueDate')?.focus());
+  }
+
+  // ── The due value ──────────────────────────────────────────────────────
+
+  onDayPicked(day: Date | null): void {
+    if (!day) {
+      this.setDue(null);
+      return;
+    }
+    // Same rule as a typed date, through the same helper: a time already set
+    // wins, otherwise the end of that day's working hours. Picking 25 Sep in
+    // the grid and typing "25 Sep 2026" are the same statement, so they must
+    // not produce different times — and the day is usually chosen before the
+    // time, so a pick must never strand one nobody chose.
+    this.setDue(this.withResolvedTime(day));
+  }
+
+  onTimeTyped(hm: string): void {
+    const m = /^(\d{2}):(\d{2})$/.exec(hm ?? '');
+    if (!m) return;
+    const hour = Number(m[1]);
+    const minute = Number(m[2]);
+    if (hour > 23 || minute > 59) return;
+    const at = new Date(this.due() ?? new Date());
+    at.setHours(hour, minute, 0, 0);
+    this.setDue(at);
+  }
+
+  onDateTyped(text: string): void {
+    this.typedDate.set(text);
+  }
+
+  /**
+   * On BLUR, not per keystroke — "15 Sep" is not yet a date, and validating it
+   * as one would put an error under someone mid-word. Same parse and the same
+   * invalidDate error shape as public-holiday-form: one way to fail, not two.
+   */
+  commitTypedDate(): void {
+    const text = this.typedDate();
+    if (text === null) return;
+
+    const control = this.form.controls.dueDate;
+    const trimmed = text.trim();
+
+    if (trimmed === '') {
+      this.setDue(null);
+      return;
+    }
+
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+      control.setErrors({ ...(control.errors ?? {}), invalidDate: true });
+      control.markAsDirty();
+      return;
+    }
+
+    this.setDue(this.withResolvedTime(parsed));
+  }
+
+  /**
+   * A date the user named, given the time it should carry.
+   *
+   * A TIME ALREADY SET WINS — typed, picked or from a preset. Otherwise the
+   * day takes the tenant's end of working hours (Ahmad, 2026-09-22), because
+   * midnight is what the parser returns and almost never what anyone means: a
+   * task "due Thursday" is due by the end of Thursday, not at the very start
+   * of it, and 00:00 also made every typed date warn about being out of hours.
+   *
+   * On a non-working day or a holiday it still takes that same configured end
+   * time, and the warning then says so — see endOfDayFor().
+   */
+  private withResolvedTime(day: Date): Date {
+    const at = new Date(day);
+    const current = this.due();
+    if (current) {
+      at.setHours(current.getHours(), current.getMinutes(), 0, 0);
+      return at;
+    }
+    const endOfDay = this.dueDates.endOfDayFor(at);
+    if (endOfDay) at.setHours(endOfDay.getHours(), endOfDay.getMinutes(), 0, 0);
+    return at;
+  }
+
+  applyPreset(preset: DuePreset): void {
+    this.setDue(new Date(preset.at));
+    this.activePreset.set(preset.key);
+  }
+
+  private setDue(at: Date | null): void {
+    this.due.set(at);
+    this.typedDate.set(null);
+    if (at === null) this.activePreset.set(null);
+
+    const control = this.form.controls.dueDate;
+    control.setValue(at);
+    control.markAsDirty();
+    this.refreshDueErrors(control);
+  }
+
+  /**
+   * Keeps the CONTROL's errors in step with the value, so both Creates are
+   * blocked by the same fact: step 1's own guard and step 2's form.invalid.
+   * A note that only step 1 consulted let a past date through from step 2.
+   */
+  private refreshDueErrors(control = this.form.controls.dueDate): void {
+    const errors = { ...(control.errors ?? {}) };
+    delete errors['invalidDate'];
+    delete errors['pastDate'];
+    if (this.isPast()) errors['pastDate'] = true;
+    control.setErrors(Object.keys(errors).length > 0 ? errors : null);
+  }
+
+  // ── Submit ─────────────────────────────────────────────────────────────
+
   onSubmit(): void {
+    // Create can be reached straight from the date field without a blur, so
+    // the typed text is committed here too, or a value the user can see would
+    // not be submitted.
+    this.commitTypedDate();
+    // The clock has moved since the value was set; a due time that has just
+    // gone past must not slip through on the press that follows it.
+    this.now.set(new Date());
+    this.refreshDueErrors();
+
     if (this.form.invalid) {
       this.form.markAllAsTouched();
+      // Send the user to the step that holds the problem rather than leaving
+      // Create apparently dead.
+      if (this.form.controls.sourceId.invalid || this.form.controls.sourceType.invalid) {
+        this.step.set(2);
+      }
       return;
     }
     this.saving.set(true);
@@ -253,10 +1014,9 @@ export class TaskFormComponent implements OnInit {
         sourceId: value.sourceId!,
         priority: value.priority ?? undefined,
         dueDate: value.dueDate ? value.dueDate.toISOString() : undefined,
-        // Empty is a real, supported outcome, not a failure: TaskService
-        // .create() sets status UNASSIGNED and notifies every tenant admin to
-        // assign it. So the picker is optional rather than required — a task
-        // worth recording now is worth recording before its owner is known.
+        // Empty is a real, supported outcome: TaskService.create() records an
+        // UNASSIGNED task. A task worth recording now is worth recording
+        // before its owner is known.
         assigneeUserIds: value.assigneeUserIds ?? [],
       })
       .subscribe({

@@ -4,6 +4,7 @@
     "add": "Add",
     "cancel": "Cancel",
     "delete": "Delete",
+    "done": "Done",
     "edit": "Edit",
     "view": "View",
     "create": "Create",
@@ -25,7 +26,8 @@
     "next": "Next",
     "close": "Close",
     "remove": "Remove",
-    "saveFailed": "Save failed."
+    "saveFailed": "Save failed.",
+    "selectedCount": "{count} selected"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -105,7 +107,9 @@
     "actingHeadAssign": "Assign Acting Head",
     "errorLoad": "Failed to load Head status.",
     "errorSave": "Failed to save changes.",
-    "manageHeadNamed": "Manage Head — {{unit}}"
+    "manageHeadNamed": "Manage Head — {{unit}}",
+    "toggleDatePanel": "Choose an effective date",
+    "chooseEffectiveDate": "Choose an effective date"
   },
   "lookup": {
     "title": "Lookup Categories",
@@ -457,7 +461,40 @@
     "confirmComplete": "Complete \"{{title}}\"? Any other assignees will no longer see it as outstanding.",
     "errorAction": "The action could not be completed. Please try again.",
     "unassignedPurpose": "A task with no assignee is never reminded or escalated — it waits here until someone is assigned.",
-    "reassignNamed": "Reassign “{{title}}”"
+    "reassignNamed": "Reassign “{{title}}”",
+    "toggleDuePanel": "Choose a due date",
+    "chooseDueDate": "Choose a due date",
+    "steps": "Steps",
+    "step1": "The work",
+    "step2": "Detail & evidence",
+    "nextDetails": "Next · Details",
+    "create": "Create task",
+    "assigneesNone": "No one selected",
+    "descriptionHint": "Plain text. What a surveyor will read as the statement of work.",
+    "sourceLockedHint": "Set by where you started.",
+    "due": {
+      "backToDetails": "Back to details",
+      "toggleCalendar": "Choose a due date",
+      "datePlaceholder": "DD MMM YYYY",
+      "timePlaceholder": "HH:mm",
+      "presets": "Due date shortcuts",
+      "none": "No due date set.",
+      "past": "A due date cannot be in the past.",
+      "zoneNote": "Working hours are the organisation's, in {{zone}}.",
+      "nonWorkingDay": "{{weekday}} is not a working day. The task is still due then, but its SLA clock resumes {{resumesAt}}.",
+      "outsideHours": "{{time}} is outside working hours ({{start}}–{{end}}, {{weekdays}}). The task is still due then, but its SLA clock resumes {{resumesAt}}.",
+      "preset": {
+        "plus1h": "+1 hour",
+        "plus2h": "+2 hours",
+        "endOfDay": "End of working day",
+        "tomorrow": "Tomorrow 09:00",
+        "nextDay": "{{day}} 09:00"
+      },
+      "hideCalendar": "Hide calendar",
+      "closeCalendarFirst": "Close the calendar to continue"
+    },
+    "removeAssignee": "Remove",
+    "raisedFrom": "on {{record}}"
   },
   "auth": {
     "login": "Log In",
@@ -838,5 +875,13 @@
     "discardMessage": "This form has changes that have not been saved.",
     "discard": "Discard",
     "keepEditing": "Keep editing"
+  },
+  "calendar": {
+    "time": "Time",
+    "a11y": {
+      "workingDay": "working day",
+      "nonWorkingDay": "non-working day",
+      "holiday": "public holiday"
+    }
   }
 }

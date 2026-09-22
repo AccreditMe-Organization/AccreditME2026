@@ -43,8 +43,21 @@ import { fileURLToPath } from 'node:url';
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
-// Measured on the branch that introduced this scan.
-const BASELINE = 12;
+// Measured on the branch that introduced this scan, lowered as screens migrate.
+//
+// 12 -> 10 (ACC-96, first pass): task-form's and org-unit-head-panel's date
+// pickers stopped building floating overlays.
+//
+// 10 -> 9 (ACC-96, rebuilt to the approved design): task-form's last p-select
+// (priority) moved to OverlaySelectComponent, and its assignee p-listbox went
+// the same way. task-form now contributes NOTHING to this count.
+//
+// The nine that remain are org-unit-head-panel's five p-selects — a different
+// defect with a different remedy, and that dialog is being SPLIT rather than
+// restyled (ACC-120 slice 2), so it is deliberately untouched here — plus
+// user-profile's three and public-holiday-list's one, which the scan
+// over-reports per FILE: those controls are page-level, not in a dialog.
+const BASELINE = 9;
 
 const OVERLAY_TAGS =
   /<(p-select|p-multiSelect|p-multiselect|p-datepicker|p-datePicker|p-overlayPanel|p-overlaypanel|p-autoComplete|p-autocomplete|p-cascadeSelect)\b([^>]*)>/g;
@@ -68,7 +81,18 @@ function* sourceFiles(dir) {
  * p-multiSelect while describing the very bug this scan exists for.
  */
 function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  return (
+    source
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+      // ACC-96 — HTML comments too. A template comment EXPLAINING why a tag is
+      // not used ("NOT a <p-datepicker> with its own panel") was counted as
+      // that tag, so documenting the fix re-reported the defect it fixed. The
+      // JS-comment strip above exists for exactly this reason; this is the
+      // same hazard in the other comment syntax, and check-create-gating.mjs
+      // already strips both.
+      .replace(/<!--[\s\S]*?-->/g, '')
+  );
 }
 
 const lineOf = (source, index) => source.slice(0, index).split(/\r?\n/).length;

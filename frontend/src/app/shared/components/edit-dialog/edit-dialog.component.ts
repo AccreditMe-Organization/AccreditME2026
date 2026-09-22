@@ -17,7 +17,7 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { Dialog, DialogModule } from 'primeng/dialog';
 import { ConfirmationService, PrimeTemplate } from 'primeng/api';
-import { TranslateService } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LayerStackService } from '../../overlay/layer-stack.service';
 import { ListFocusService } from '../data-list/list-focus.service';
 
@@ -45,7 +45,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
 @Component({
   selector: 'app-edit-dialog',
   standalone: true,
-  imports: [DialogModule, NgTemplateOutlet, PrimeTemplate],
+  imports: [DialogModule, NgTemplateOutlet, PrimeTemplate, TranslatePipe],
   template: `
     <p-dialog
       [visible]="visible()"
@@ -54,10 +54,55 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
       [modal]="true"
       [closeOnEscape]="false"
       [dismissableMask]="false"
-      [closable]="!saving()"
+      [closable]="false"
       [appendTo]="appendTo()"
       [style]="{ width: resolvedWidth() }"
     >
+      <!-- ACC-96 — the title and, when the caller gives one, a context line
+           under it: "on Infection Control Committee". Template 3 draws it
+           there because a dialog raised FROM a record has to say which record
+           without the user reading the page behind it.
+
+           A header TEMPLATE rather than the [header] input, because p-dialog
+           renders that input as a bare string with no room for a second line.
+           It is declared unconditionally — p-dialog collects pTemplate
+           children at content init, so one that appears later never lands
+           (the same trap the task footer hit). The @if is INSIDE. -->
+      <!-- OUR OWN ✕, and p-dialog's is off ([closable]="false").
+           PrimeNG's close button hides the dialog ITSELF and then emits
+           visibleChange. With a one-way [visible] binding the host has no new
+           value to push back, so the form vanished before the discard question
+           was answered and "Keep editing" had nothing to return to — it asked
+           a question whose answer no longer mattered.
+           Mirroring the input back was tried and is worse: setting it to the
+           value it already held is not a change, so PrimeNG never sees the
+           transition and the dialog stays shut for good. Owning the button is
+           the fix — every close path then reaches requestClose() with the
+           dialog still on screen. Found in a browser; the specs passed either
+           way, because they assert on the host's flag and the confirm, and
+           PrimeNG's internal state is neither. -->
+      <ng-template pTemplate="header">
+        <div class="am-dialog__heading">
+          <span class="p-dialog-title">{{ header() }}</span>
+          @if (context()) {
+            <span class="am-dialog__context">{{ context() }}</span>
+          }
+          @if (headerExtra(); as extra) {
+            <ng-container *ngTemplateOutlet="extra" />
+          }
+        </div>
+        @if (!saving()) {
+          <button
+            type="button"
+            class="am-dialog__close"
+            [attr.aria-label]="'common.close' | translate"
+            (click)="requestClose()"
+          >
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        }
+      </ng-template>
+
       @if (visible()) {
         <div class="relative am-dialog__body-wrap">
           <div
@@ -124,6 +169,47 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
   // here, not a silent gap the way p-multiselect was.
   styles: [
     `
+      .am-dialog__heading {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-inline-size: 0;
+        flex: 1 1 auto;
+      }
+
+      /* 32px, above the 24px WCAG 2.5.8 floor, and the same size PrimeNG's own
+         close button used. */
+      .am-dialog__close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        inline-size: 32px;
+        block-size: 32px;
+        padding: 0;
+        border: none;
+        background: none;
+        border-radius: 999px;
+        color: var(--am-ink-500);
+        cursor: pointer;
+      }
+
+      .am-dialog__close:hover {
+        background: var(--am-primary-50);
+        color: var(--am-ink-900);
+      }
+
+      .am-dialog__close:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: 2px;
+      }
+
+      .am-dialog__context {
+        font-size: 12.5px;
+        font-weight: 400;
+        color: var(--am-ink-500);
+      }
+
       :host ::ng-deep .p-select-list-container,
       :host ::ng-deep .p-multiselect-list-container {
         overscroll-behavior: contain;
@@ -143,6 +229,19 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
 export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   readonly visible = input.required<boolean>();
   readonly header = input<string>('');
+  /**
+   * An optional line under the title, naming what this dialog was raised from
+   * — e.g. "on Infection Control Committee". Empty renders nothing at all, not
+   * an empty line.
+   */
+  readonly context = input<string>('');
+  /**
+   * Anything else that belongs beside the title rather than in the body — a
+   * wizard's step strip, above all. Template 3 draws that inside the header
+   * block, and putting it there is what keeps it UNCHANGED when the body is
+   * substituted, as well as keeping it off the 420px body cap.
+   */
+  readonly headerExtra = input<TemplateRef<unknown> | null>(null);
   readonly content = input.required<TemplateRef<unknown>>();
   readonly visibleChange = output<boolean>();
 
@@ -212,6 +311,7 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   @ViewChild('contentWrapper') private readonly contentWrapperRef?: ElementRef<HTMLDivElement>;
 
   readonly canScrollMore = signal(false);
+
 
   private resizeObserver?: ResizeObserver;
   private observedContentEl?: HTMLDivElement;

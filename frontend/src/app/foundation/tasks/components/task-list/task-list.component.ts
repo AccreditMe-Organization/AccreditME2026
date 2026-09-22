@@ -6,6 +6,8 @@ import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { TaskService, ITaskWithAssigneesDto } from '../../services/task.service';
 import { TaskFormComponent } from '../task-form/task-form.component';
+import { TaskFormFooterComponent } from '../task-form/task-form-footer.component';
+import { TaskFormStepsComponent } from '../task-form/task-form-steps.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 // ACC-39 — EditDialogComponent replaces this raw p-dialog + manual @if.
 // task-form is create-only (no edit flow), so this is architectural
@@ -36,7 +38,8 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 @Component({
   selector: 'app-task-list',
   standalone: true,
-  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, EditDialogComponent],
+  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskFormComponent, TaskFormFooterComponent,
+    TaskFormStepsComponent, EditDialogComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'task.allTasks' | translate">
@@ -95,16 +98,49 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     </div>
 
     <ng-template #formTpl>
-      <app-task-form (saved)="onSaved()" (cancelled)="formVisible.set(false)" />
+      <app-task-form
+        (saved)="onSaved()"
+        (cancelled)="taskDialog.requestClose()"
+        (dirtyChange)="formDirty.set($event)"
+        (ready)="taskFormRef.set($event)"
+      />
+    </ng-template>
+    <!-- ACC-96 — [dirty] is an opt-in input on the DIALOG, and task-form sits
+         inside it, so the state travels outward through (dirtyChange). Without
+         it Escape discards a part-filled task silently, which the templates
+         have always specified against.
+
+         CANCEL GOES THROUGH requestClose(), not straight to visible=false.
+         That method is the single place the dirty question is asked — Escape
+         and the header's ✕ already arrived there, and Cancel was the one path
+         that bypassed it and discarded a part-filled task without a word. -->
+    <!-- Declared HERE, not inside the form: p-dialog collects pTemplate
+         children at content init, so a footer arriving later never lands. -->
+    <!-- The step strip belongs to the HEADER, beside the title and the
+         context line, exactly as Template 3 draws it — so it does not change
+         when the date view substitutes the body, and costs nothing against
+         the 420px body cap. -->
+    <ng-template #taskStepsTpl>
+      <app-task-form-steps [form]="taskFormRef()" />
+    </ng-template>
+    <ng-template #taskFooterTpl>
+      <app-task-form-footer [form]="taskFormRef()" />
     </ng-template>
     <app-edit-dialog
+      #taskDialog
       [(visible)]="formVisible"
       [header]="'task.newTask' | translate"
       [content]="formTpl"
+      [dirty]="formDirty()"
+      [headerExtra]="taskStepsTpl"
+      [footer]="taskFooterTpl"
     />
   `,
 })
 export class TaskListComponent implements OnInit {
+  readonly formDirty = signal(false);
+  readonly taskFormRef = signal<TaskFormComponent | null>(null);
+
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly taskService = inject(TaskService);

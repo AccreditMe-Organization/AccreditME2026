@@ -507,8 +507,8 @@ class Component extends DCLogic {
     const shown = outRows.length;
     const rangeTotal = filtered ? est(shown) : total;
     const rangeLabel = total === 0 ? (rtl ? "لا سجلات" : "No records")
-      : filtered ? (rtl ? "١–" + shown + " من " + rangeTotal + " مطابق (من " + total + ")" : "1–" + shown + " of " + rangeTotal + " matching · " + total + " total")
-      : (rtl ? "١–٢٥ من " + total : "1–25 of " + total);
+      : filtered ? (rtl ? "1–" + shown + " من " + rangeTotal + " مطابق (من " + total + ")" : "1–" + shown + " of " + rangeTotal + " matching · " + total + " total")
+      : (rtl ? "1–25 من " + total : "1–25 of " + total);
 
     const pageBtn = (on) => "min-width: 27px; height: 27px; padding: 0 7px; border: 1px solid " + (on ? "oklch(0.5 0.11 250)" : "oklch(0.89 0.006 250)") + "; background: " + (on ? "oklch(0.52 0.11 250)" : "#fff") + "; color: " + (on ? "#fff" : "oklch(0.4 0.01 250)") + "; border-radius: 5px; font-family: inherit; font-size: 12.5px; font-weight: " + (on ? 600 : 500) + "; cursor: pointer; font-variant-numeric: tabular-nums;";
 

@@ -563,21 +563,28 @@
                   <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Low · Medium · High · Critical — sets the SLA</div>
                 </div>
                 <div style="grid-column: 1 / -1;">
-                  <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Due date</label>
-                  <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18); border-radius: 4px; background: #fff;">
-                    <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">18 Sep 2026</span>
-                    <span style="flex: none; font-size: 11px; color: #5A6779;">DD MMM YYYY</span>
-                    <span style="flex: none; color: #2E6FA3; font-size: 13px;">▢</span>
-                  </div>
-                  <div style="border: 1px solid #C5DAEA; border-radius: 6px; background: #F2F7FB; padding: 9px; margin-block-start: 7px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #1F5480; font-weight: 600; margin-block-end: 7px;"><span>September 2026</span><span style="letter-spacing: 0.2em;">‹ ›</span></div>
-                    <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center;">
-                      <sc-for list="{{ t3.cal }}" as="c" hint-placeholder-count="21">
-                        <span style="{{ c.style }}">{{ c.label }}</span>
-                      </sc-for>
+                  <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Due</label>
+                  <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    <div style="flex: 1 1 160px; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18); border-radius: 4px; background: #fff;">
+                      <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">21 Sep 2026</span>
+                      <span style="flex: none; font-size: 11px; color: #5A6779;">DD MMM YYYY</span>
+                      <span style="flex: none; color: #2E6FA3; font-size: 13px;">▢</span>
                     </div>
-                    <div style="font-size: 11px; color: #5A6779; margin-block-start: 7px;">Working days only · the panel is in the tab order, after the input</div>
+                    <div style="flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                      <span dir="ltr" style="font-size: 13px; font-variant-numeric: tabular-nums;">18:00</span>
+                      <span style="font-size: 11px; color: #5A6779;">+03</span>
+                    </div>
                   </div>
+                  <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 7px;">
+                    <sc-for list="{{ t3.presets }}" as="p" hint-placeholder-count="4">
+                      <button style="{{ p.style }}">{{ p.label }}</button>
+                    </sc-for>
+                  </div>
+                  <div style="display: flex; align-items: flex-start; gap: 8px; margin-block-start: 7px; padding: 8px 10px; border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 6px;">
+                    <span style="flex: none; color: #B54708; font-weight: 700;">!</span>
+                    <span style="font-size: 11.5px; color: #4A5568; text-wrap: pretty;"><strong>18:00 is outside working hours (07:30–17:00, Sun–Thu).</strong> Allowed — the SLA clock pauses at 17:00 and resumes 07:30 Sun 22 Sep, so the assignee has 2h 30m of working time, not 1h 30m.</span>
+                  </div>
+                  <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;"><strong>No calendar on this step.</strong> The presets and the typed field are the whole control — a calendar with time leaves 23px of the cap, so it cannot share a step with three other fields. ▢ swaps this step's body for the date view →</div>
                 </div>
               </div>
             </div>
@@ -651,13 +658,279 @@
           </div>
         </div>
 
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-block-start: 12px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+            <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;">
+              <span style="font-size: 12.5px; font-weight: 600;">Step 1 · date view</span>
+              <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;">358 / 420</span>
+            </div>
+            <div style="padding: 11px 12px;">
+              <button style="background: none; border: none; padding: 0; margin-block-end: 9px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #2E6FA3; cursor: pointer;">← Back to details</button>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <div style="flex: 1 1 150px; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18); border-radius: 4px; background: #fff;">
+                  <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">21 Sep 2026</span>
+                  <button aria-label="Hide calendar" title="Hide calendar" aria-expanded="true" style="flex: none; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #1F5480; border-radius: 4px; background: #2E6FA3; color: #fff; font-size: 12px; cursor: pointer;">▢</button>
+                </div>
+                <div style="flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span dir="ltr" style="font-size: 13px; font-variant-numeric: tabular-nums;">18:00</span>
+                  <span style="flex: none; display: flex; flex-direction: column; gap: 1px;"><span style="font-size: 7px; color: #4A5568; line-height: 1;">▲</span><span style="font-size: 7px; color: #4A5568; line-height: 1;">▼</span></span>
+                  <span style="font-size: 11px; color: #5A6779;">+03</span>
+                </div>
+              </div>
+              <div style="font-size: 11px; color: #1F5480; margin-block-start: 5px; text-wrap: pretty;"><strong>One time control, in one place.</strong> It is a sibling of the date field in both states, so pressing ▢ never moves it — and the ▢ is a toggle, pressed here, labelled “Hide calendar”.</div>
+              <div style="border: 1px solid #C5DAEA; border-radius: 6px; background: #F2F7FB; padding: 9px; margin-block-start: 7px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #1F5480; font-weight: 600; margin-block-end: 7px;"><span>September 2026</span><span style="letter-spacing: 0.2em;">‹ ›</span></div>
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center;">
+                  <sc-for list="{{ t3.cal }}" as="c" hint-placeholder-count="21">
+                    <span style="{{ c.style }}">{{ c.label }}</span>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="font-size: 11px; color: #5A6779; margin-block-start: 7px; text-wrap: pretty;">Drawn small for the artboard — built at <a href="#s12" style="text-decoration: none; font-weight: 600;">artboard 12</a>'s size: 28×28 cells, six rows, <strong>258px</strong>. The time strip that used to sit under the grid is gone with the duplicate control, which is where the 56px and the 62px of new headroom came from. It still does not collapse when a day is picked, because the time is usually set after the day.</div>
+            </div>
+          </div>
+          <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 12px 14px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 7px;">Why the due date stays on step 1</div>
+            <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Moving it to step 2 would have satisfied the arithmetic and broken the product: “complete step 1 and Create” is the path for someone raising an urgent task in ten seconds, and a task created without a due time is exactly the task the SLA cannot govern. So <strong>when</strong> stays with what, who and how urgent, and the calendar is what moves. On step 1 the due control is a typed field plus the preset row — <strong>+2 hours sets both date and time in one press with nothing expanding</strong>, which is the urgent case end to end. Pressing ▢ substitutes the step's body for the date view on the left: same step, same footer, values all still live, Create still reachable from the Back link. This is the scoped exception named in <a href="#s12" style="text-decoration: none; font-weight: 600;">artboard 12</a> — in flow meaning <em style="font-style: normal; font-weight: 600;">instead of</em> rather than <em style="font-style: normal; font-weight: 600;">below</em> — and it applies only because the presets already cover the common case. A form whose primary act is picking a date expands normally.</div>
+          </div>
+        </div>
+
         <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px; margin-block-start: 10px;">
           <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 7px;">The cap measurement, and the rule applied</div>
-          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Seven fields measure <strong>512px</strong> with the inline calendar open — title 77, assignee/priority row 77, due date 77 plus a 132px calendar, description 103, evidence 77, and the raised-from / delegation row 77, before the error summary's 64. Against a 420px cap that is a 92px overflow with the calendar open and still 40px over without it. Per template 3's own rule the field is not shrunk and the cap is not raised: <strong>the task form becomes a two-step dialog</strong>. The split is not arithmetic — step 1 is the commitment (what, who, when, how urgent) and step 2 is the substance (what it says, what proves it, where it came from), so a user who only needs to raise a quick task can complete step 1 and use Create from there when step 2 has no required fields. It stays a dialog rather than a page because tasks are raised <em style="font-style: normal; font-weight: 600;">from</em> a record and must not navigate away from it.</div>
+
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;"><strong>Re-measured against <a href="#s12" style="text-decoration: none; font-weight: 600;">artboard 12</a>'s real calendar.</strong> The earlier sum assumed a 132px calendar; the true figure is <strong>258px</strong>, which makes the one-step form <strong>694px</strong> — title 75, description 128, priority 75, assignee 75, due 75 plus 8 plus 258, before the error summary. That is 274px over a 420px cap, not 92, and it <em style="font-style: normal; font-weight: 600;">cannot</em> be recovered by shrinking the calendar: it is already at the WCAG target-size floor plus 4px. Step 1 as drawn measures <strong>279px</strong> — title 75, the assignee/priority row 75, two gaps, and a 105px due block of typed field, presets and resolved value — because <strong>no calendar expands on that step</strong>. Its date view measures <strong>358px</strong>: due block 75, gap 8, calendar 258, and 17 for the warning's second line — 62px spare since Rev 7 moved the time control out of the calendar box, which is headroom for the warning to run to three lines rather than an invitation to add a field. Per the rule the field is not shrunk and the cap is not raised: <strong>the task form stays a two-step dialog</strong> — step 1 the commitment, step 2 the substance — and the calendar, not the due date, is what moves. The split is not arithmetic — step 1 is the commitment (what, who, when, how urgent) and step 2 is the substance (what it says, what proves it, where it came from), so a user who only needs to raise a quick task can complete step 1 and use Create from there when step 2 has no required fields. It stays a dialog rather than a page because tasks are raised <em style="font-style: normal; font-weight: 600;">from</em> a record and must not navigate away from it.</div>
+        </div>
+
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 12px;">
+          <div style="padding: 10px 13px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px;">
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Step 1 at both densities — <a href="#s13" style="text-decoration: none;">artboard 13</a> applied to the crowded case</span>
+            <span style="font-size: 11.5px; color: #5A6779;">same type sizes · 22px recovered · every block's height printed</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+            <sc-for list="{{ t3.densities }}" as="d" hint-placeholder-count="3">
+              <div style="{{ d.wrapStyle }}">
+                <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 9px;">
+                  <span style="font-size: 12.5px; font-weight: 600;">{{ d.name }}</span>
+                  <span style="{{ d.totalStyle }}">{{ d.total }}</span>
+                </div>
+                <div style="{{ d.bodyStyle }}">
+                  <sc-for list="{{ d.fields }}" as="f" hint-placeholder-count="3">
+                    <div style="{{ f.blockStyle }}">
+                      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 6px;">
+                        <label style="{{ f.labelStyle }}">{{ f.label }}</label>
+                        <span dir="ltr" style="flex: none; font-size: 11px; font-weight: 600; color: #5A6779; font-variant-numeric: tabular-nums;">{{ f.px }}</span>
+                      </div>
+                      <div style="{{ f.controlStyle }}">
+                        <span style="{{ f.valueStyle }}">{{ f.value }}</span>
+                        <sc-if value="{{ f.glyph }}" hint-placeholder-val="{{ false }}"><span style="flex: none; color: #5A6779; font-size: 10px;">{{ f.glyph }}</span></sc-if>
+                      </div>
+                      <sc-if value="{{ f.msg }}" hint-placeholder-val="{{ false }}"><div style="{{ f.msgStyle }}">{{ f.msg }}</div></sc-if>
+                      <sc-if value="{{ f.presets }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; flex-wrap: wrap; gap: 5px; margin-block-start: 5px;">
+                          <sc-for list="{{ f.presets }}" as="p" hint-placeholder-count="3">
+                            <span style="{{ p.style }}">{{ p.label }}</span>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">{{ d.note }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="padding: 11px 13px; background: #F2F7FB; border-block-start: 1px solid #C5DAEA; font-size: 12px; color: #4A5568; text-wrap: pretty;"><strong>Where the 22px came from, field by field.</strong> Title keeps its slot and loses 4px (36→32 control, 4→2 gap). The assignee/priority row also loses only 4px, not 23: priority loses its slot outright, but <em style="font-style: normal; font-weight: 600;">assignee keeps one</em> — a server-side conflict on an assignee is a real message — and a side-by-side row is as tall as its taller field, so the 19px priority saves is absorbed by its neighbour. That is worth stating plainly: <strong>dropping a slot only buys height when every field in the row drops it.</strong> Two 8px gaps save 8, the due block loses 6, and the calendar in the date view loses nothing at all, by rule. 279 → 257. Nothing here is a type change: set the two drawings side by side and the words are identical in size — which is the answer to “can the text be smaller”. It can't, not without Arabic dropping below its 13px floor and the two languages needing different control heights.</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-block-start: 12px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+            <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+              <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;">
+                <span style="font-size: 12.5px; font-weight: 600;">Add holiday — no longer a dialog</span>
+                <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;">was 515 / 420</span>
+              </div>
+              <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 2px;">Template 5 · Working calendar → Public holidays. An inline add row above the list it feeds.</div>
+            </div>
+            <div style="padding: 11px 12px;">
+              <div style="border: 1px dashed #8A94A6; border-radius: 6px; padding: 10px 11px; background: #FBFCFD;">
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <div style="flex: 1 1 130px; min-width: 120px;">
+                    <label style="display: block; font-size: 11.5px; font-weight: 500; color: #4A5568; margin-block-end: 3px;">Name (English)</label>
+                    <div style="display: flex; align-items: center; height: 32px; padding: 0 9px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; font-size: 12.5px;">National Day</div>
+                  </div>
+                  <div dir="rtl" style="flex: 1 1 130px; min-width: 120px;">
+                    <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 3px; font-family: 'IBM Plex Sans Arabic', sans-serif;">الاسم بالعربية</label>
+                    <div style="display: flex; align-items: center; height: 32px; padding: 0 9px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; font-size: 13px; font-family: 'IBM Plex Sans Arabic', sans-serif;">اليوم الوطني</div>
+                  </div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px; align-items: flex-end;">
+                  <div style="flex: 1 1 150px; min-width: 140px;">
+                    <label style="display: block; font-size: 11.5px; font-weight: 500; color: #4A5568; margin-block-end: 3px;">Date</label>
+                    <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 9px; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18); border-radius: 4px; background: #fff;">
+                      <span dir="ltr" style="flex: 1 1 auto; font-size: 12.5px; font-variant-numeric: tabular-nums;">23 Sep 2026</span>
+                      <span style="flex: none; color: #2E6FA3; font-size: 12px;">▢</span>
+                    </div>
+                  </div>
+                  <label style="flex: none; display: inline-flex; align-items: center; gap: 7px; height: 32px; font-size: 12.5px; color: #2D3748;">
+                    <span style="width: 16px; height: 16px; border: 1px solid #1F5480; border-radius: 3px; background: #2E6FA3; color: #fff; font-size: 11px; line-height: 14px; text-align: center; flex: none;">✓</span>
+                    Repeats annually
+                  </label>
+                </div>
+                <div style="border: 1px solid #C5DAEA; border-radius: 6px; background: #F2F7FB; padding: 9px; margin-block-start: 8px;">
+                  <div style="display: flex; align-items: center; gap: 4px; height: 26px; padding: 2px; background: #fff; border: 1px solid #E2E8F0; border-radius: 4px; margin-block-end: 7px; max-width: 190px;">
+                    <span style="flex: 1 1 0; text-align: center; font-size: 11.5px; font-weight: 500; color: #4A5568; padding: 2px 0; cursor: pointer;">Gregorian</span>
+                    <span style="flex: 1 1 0; text-align: center; font-size: 11.5px; font-weight: 600; color: #fff; background: #2E6FA3; border-radius: 3px; padding: 2px 0;">Hijri · هجري</span>
+                  </div>
+                  <div dir="rtl" style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #1F5480; font-weight: 600; margin-block-end: 7px; font-family: 'IBM Plex Sans Arabic', sans-serif;"><span>ربيع الآخر 1448</span><span style="letter-spacing: 0.2em;">‹ ›</span></div>
+                  <div dir="rtl" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+                    <sc-for list="{{ t3.calHijri }}" as="c" hint-placeholder-count="21">
+                      <span style="{{ c.style }}">{{ c.label }}</span>
+                    </sc-for>
+                  </div>
+                  <div style="font-size: 11px; color: #1F5480; margin-block-start: 7px; text-wrap: pretty;"><strong><span dir="rtl" style="unicode-bidi: isolate; font-family: 'IBM Plex Sans Arabic', sans-serif;">12 ربيع الآخر 1448</span></strong> — equals <span dir="ltr" style="unicode-bidi: isolate; font-variant-numeric: tabular-nums; font-weight: 600;">23 Sep 2026</span>, shown before saving, not after.</div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-block-start: 9px;">
+                  <span style="font-size: 11.5px; color: #5A6779;">Enter adds and keeps the row open for the next one</span>
+                  <div style="display: flex; gap: 7px;">
+                    <button style="background: transparent; color: #5A6779; border: none; padding: 5px 8px; font-family: inherit; font-size: 12.5px; cursor: pointer;">Cancel</button>
+                    <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 5px 12px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;">Add holiday</button>
+                  </div>
+                </div>
+              </div>
+              <sc-for list="{{ t3.holidays }}" as="h" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-block-end: 1px solid #F0F3F7;">
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ h.name }}</span>
+                  <span dir="ltr" style="flex: none; font-size: 12px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ h.date }}</span>
+                  <span style="flex: none; font-size: 11px; color: #5A6779;">{{ h.repeat }}</span>
+                  <button aria-label="{{ h.removeLabel }}" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #B42318; font-size: 11px; cursor: pointer;">✕</button>
+                </div>
+              </sc-for>
+              <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">The move is not only arithmetic. Eight ministry holidays arrive at once each year, and a modal per holiday is eight open-fill-save cycles; an inline row that stays open after Enter is one. The Hijri switch is here because holidays are published in Hijri and consumed in Gregorian — one of the two screens in <a href="#s12" style="text-decoration: none; font-weight: 600;">artboard 12</a>'s Hijri scope — and the equivalent is shown before the row is added, never after.</div>
+            </div>
+          </div>
+
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+            <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+              <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;">
+                <span style="font-size: 12.5px; font-weight: 600;">Unit head — after the split</span>
+                <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;">341 / 420</span>
+              </div>
+              <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 2px;">Assign head · one decision, one field, one calendar</div>
+            </div>
+            <div style="padding: 11px 12px;">
+              <div style="margin-block-end: 9px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">New head of Pharmacy</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">◷ Dr. Huda Zahrani</span>
+                  <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">Change…</span>
+                </div>
+              </div>
+              <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Effective from</label>
+              <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18); border-radius: 4px; background: #fff;">
+                <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">1 Oct 2026</span>
+                <span style="flex: none; font-size: 11px; color: #5A6779;">DD MMM YYYY</span>
+                <span style="flex: none; color: #2E6FA3; font-size: 13px;">▢</span>
+              </div>
+              <div style="border: 1px solid #C5DAEA; border-radius: 6px; background: #F2F7FB; padding: 9px; margin-block-start: 7px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #1F5480; font-weight: 600; margin-block-end: 7px;"><span>October 2026</span><span style="letter-spacing: 0.2em;">‹ ›</span></div>
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center;">
+                  <sc-for list="{{ t3.calOct }}" as="c" hint-placeholder-count="21">
+                    <span style="{{ c.style }}">{{ c.label }}</span>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">This is the rule's clean case — <strong>one field plus the calendar is exactly what fits</strong>, with 79px spare and nothing competing for it. It is also why the second action had to go: “Set acting head” sat in this same dialog with no hierarchy between them, and there is no longer room to pretend that was acceptable.</div>
+              <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; padding: 10px 11px; margin-block-start: 9px;">
+                <div style="font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #1F5480; margin-block-end: 5px;">Where the second action went</div>
+                <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;"><strong>“Set acting head” becomes its own dialog</strong>, from its own item in the unit's row menu — one decision each, named by what it does. It carries a from-and-to date <em style="font-style: normal; font-weight: 600;">range</em> rather than a single effective date, because an acting head is temporary by definition, and that difference is precisely what the merged dialog obscured: two actions sharing one date field, one of which needed two dates. Two date fields plus a calendar exceed the cap, so that dialog opens its calendar in the substituted view, exactly as the task form does. The genuine overlap — a head leaving on a date and an acting head covering until a successor starts — is a <strong>wizard</strong>, not a dialog with two unranked halves, and it is the Transfer-user pattern from <a href="#t4" style="text-decoration: none; font-weight: 600;">template 4</a>: one decision per step, a summary, then an irreversible act stated in words.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div>
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Set acting head · 560 — the second action, now its own dialog</span>
+            <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;">249 / 420</span>
+          </div>
+          <div style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px;">
+            <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+                <div style="min-width: 0;">
+                  <h4 style="margin: 0; font-size: 15px; font-weight: 600;">Set acting head</h4>
+                  <div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Nursing Services · substantive head <a href="#t2" style="text-decoration: none; font-weight: 500;">Dr. Fahad Al-Anazi</a> stays in post</div>
+                </div>
+                <button aria-label="Close dialog" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779; font-size: 12px; cursor: pointer;">✕</button>
+              </div>
+              <div style="padding: 11px 13px;">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Acting head</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span style="flex: none; color: #5A6779; font-size: 12px;">◷</span>
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Nora Al-Otaibi</span>
+                  <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">Change…</span>
+                </div>
+                <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Must already hold a position in this unit or its parent</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-block-start: 12px;">
+                  <div style="flex: 1 1 150px; min-width: 140px;">
+                    <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">From</label>
+                    <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                      <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">01 Oct 2026</span>
+                      <button aria-label="Show calendar for From" title="Show calendar" aria-expanded="false" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px; cursor: pointer;">▢</button>
+                    </div>
+                    <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Today or later</div>
+                  </div>
+                  <div style="flex: 1 1 150px; min-width: 140px;">
+                    <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">To <span style="font-weight: 400; color: #5A6779;">· optional</span></label>
+                    <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                      <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; color: #8A94A6;">DD MMM YYYY</span>
+                      <button aria-label="Show calendar for To" title="Show calendar" aria-expanded="false" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px; cursor: pointer;">▢</button>
+                    </div>
+                    <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Empty means until it is ended by hand</div>
+                  </div>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 8px; margin-block-start: 10px; padding: 9px 10px; border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 6px;">
+                  <span style="flex: none; color: #B54708; font-weight: 700;">!</span>
+                  <span style="font-size: 11.5px; color: #4A5568; text-wrap: pretty;"><strong>Open-ended acting appointments are reported.</strong> With no end date, Setup health raises this unit after 90 days as a condition a tenant admin must resolve — an acting head is temporary by definition, and an unbounded one is how a unit ends up with no accountable head on paper.</span>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+                <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;">Cancel</button>
+                <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Set acting head</button>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Three field blocks at 75px with two 12px gaps is <strong>249px</strong>, so it stays at <a href="#s1" style="text-decoration: none; font-weight: 600;">form density</a> — it neither exceeds the cap nor reaches five fields, which is <a href="#s13" style="text-decoration: none; font-weight: 600;">artboard 13</a>'s rule declining to fire rather than an exception to it.</div>
+        </div>
+
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;">
+            <span style="font-size: 12.5px; font-weight: 600;">Its date view — one calendar, two fields</span>
+            <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums;">358 / 420</span>
+          </div>
+          <div style="padding: 11px 12px;">
+            <button style="background: none; border: none; padding: 0; margin-block-end: 9px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #2E6FA3; cursor: pointer;">← Back to details</button>
+            <div style="display: flex; align-items: center; gap: 4px; padding: 2px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; margin-block-end: 8px;">
+              <span style="flex: 1 1 0; text-align: center; font-size: 11.5px; font-weight: 600; color: #fff; background: #2E6FA3; border-radius: 3px; padding: 3px 0;">From · 01 Oct 2026</span>
+              <span style="flex: 1 1 0; text-align: center; font-size: 11.5px; font-weight: 500; color: #4A5568; padding: 3px 0;">To · not set</span>
+            </div>
+            <div style="border: 1px solid #C5DAEA; border-radius: 6px; background: #F2F7FB; padding: 9px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: #1F5480; font-weight: 600; margin-block-end: 7px;"><span>October 2026</span><span style="letter-spacing: 0.2em;">‹ ›</span></div>
+              <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center;">
+                <sc-for list="{{ t3.calOct }}" as="c" hint-placeholder-count="21">
+                  <span style="{{ c.style }}">{{ c.label }}</span>
+                </sc-for>
+              </div>
+            </div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">A range needs nothing new: <strong>one calendar serves both fields</strong>, and the segmented header says which one it is filling — including the value each already holds, so the range is readable while it is being built. Picking From advances the header to To rather than closing, which is the only concession a range gets. Two calendars side by side would be 516px of a 420px cap; two stacked views would make an acting appointment a wizard, and it is one decision, not several.</div>
+            <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; padding: 10px 11px; margin-block-start: 9px;">
+              <div style="font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #1F5480; margin-block-end: 5px;">Range rules, and the one case that is a wizard</div>
+              <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">To must be after From, validated on the group rather than the field, reported on To, and re-checked when From moves. Days before From are disabled in the To view with the <a href="#s12" style="text-decoration: none; font-weight: 600;">artboard 12</a> strike, not merely tinted. An overlap with an existing acting period is <strong>refused with the conflicting period named and dated</strong> — “Tariq Suleiman is acting head 15 Sep – 30 Sep 2026” — with End that period early offered as the action, because the real intent is almost always a handover, not two acting heads. The genuine overlap — the substantive head leaving while an acting head covers until a successor starts — stays a <a href="#t4" style="text-decoration: none; font-weight: 600;">template 4</a> wizard: three objects change on three dates, and a dialog that fits it is a dialog that hides which of them the user is committing to.</div>
+            </div>
+          </div>
+        </div>
+
         <div>
           <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Picker · 520 — the second layer, and the multi-select answer</div>
           <div style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px;">
@@ -1126,7 +1399,7 @@
         <div>
           <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">التحذير قبل الاستحقاق</label>
           <div style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px;"><span style="flex: 1 1 auto; font-size: 14px;">يومَا عمل</span><span style="color: #5A6779; font-size: 10px;">▼</span></div>
-          <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 4px;">٦ خيارات</div>
+          <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 4px;">6 خيارات</div>
         </div>
       </div>
       <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
@@ -2024,9 +2297,9 @@
 
   <section id="changed" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-start: 14px;">
     <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
-      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Revision 2</span>
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">Revisions 2–6</span>
       <h2 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em;">What changed</h2>
-      <span style="font-size: 12.5px; color: #5A6779;">Diff against the first templates export. Corrections and one added artboard; nothing from pass 2 redesigned.</span>
+      <span style="font-size: 12.5px; color: #5A6779;">Diff against the first templates export. Newest first; nothing already settled has been redesigned.</span>
     </div>
     <sc-for list="{{ changed }}" as="c" hint-placeholder-count="6">
       <div style="display: grid; grid-template-columns: 158px 1fr; gap: 12px; padding: 9px 0; border-block-end: 1px solid #F0F3F7;">
@@ -2146,12 +2419,18 @@ class Component extends DCLogic {
       },
 
       changed: [
-        { area: "Rev 3 · Export", where: "Template 1, used by 2", body: "Export was drawn three times and specified nowhere — the one surface that can quietly break every truthfulness rule the system sets, since a file is read without the screen beside it. Four rules now govern every instance: restricted rows are <strong>present and marked</strong>, never silently omitted and never a refusal (refusing would make legitimately evidenceable lists unexportable and push people to screenshots, which carry no provenance at all); a seven-row provenance block records who, when, which list, which filters, exported count against true total, and restricted count; export is its own permission <code style=\"font-size: 11px;\">&lt;module&gt;.export</code>, distinct from reading on screen; and every export writes an audit entry, the one read operation that does. The same care the system already gives secrets — “never displayed, never exported” — now extends to restricted names." },
-        { area: "Rev 3 · No inner scroll on the workflow route", body: "Moving both editors out of dialogs also moved them out from under artboard 7's protection, and both are full of selects. Stated as a build constraint in template 6 and in artboard 7: <code style=\"font-size: 11px;\">/workflows/:id/stages</code> scrolls as the document — no overflow wrapper around the flow strip or the editor panel, horizontal-only scrolling permitted on the strip. An inner scrolling region here reintroduces the exact platform fault artboard 7 exists to eliminate, and the current build already has pages with inner scroll containers to copy by accident.", where: "Template 6 + artboard 7" },
-        { area: "Rev 3 · Arabic organisation name", where: "Template 7", body: "The Organization record has no Arabic name field — the Arabic name in the shell belongs to the root org unit — so the first screen a customer sees cannot name its own organisation in Arabic. Both states are now drawn: today, the English name isolated with dir=\"ltr\" inside the Arabic sentence <strong>plus a disclosure line saying it is the registered English name</strong>, because an invitee cannot tell a fallback from a mistake at the exact moment they are judging whether the mail is genuine; and after ACC-89, the Arabic name with no disclosure. Two knock-ons recorded: Organization profile in template 5 gains the Arabic name as a required pair, and the invitation email needs it too, being read before this page." },
-        { area: "Rev 3 · requiredPermission", where: "Template 6b", body: "The schema stores String? with no constraint. The control's options now come explicitly from the permission catalogue — grouped by module, written descriptions, never raw keys — and a stored value that is no longer valid <strong>renders as stale, not as “none”</strong>: an “unknown · committees.archive” chip showing the dead key, the transition listed as unfireable in Setup health, and save blocked until it is chosen or cleared deliberately. Degrading a stale requirement to “no extra permission” would silently widen who can fire a transition." },
-        { area: "Rev 3 · Stage escalation", where: "Template 6b", body: "Hold lifted; drawn as axis 3 of the stage editor. Both escalation systems stay because they govern different objects: <strong>stage escalation is about a record that has not moved</strong> — notify-only, fires once per rule, authored with the workflow — while the tenant policy in template 5 is about an overdue task rising through the org hierarchy, set per priority by the admin. Both can fire for the same late work when a transition action creates a task, so each screen states which object it governs and links to the other. Built as an artboard-11 group with group-level sequence validation, and <strong>raised from three rules to four</strong> to match the tenant policy's maximum — the three-row reservation was a dialog-cap artefact, and the cap no longer applies now that the editor is a page panel. The unit ambiguity is designed around rather than inherited: stage rules count clock hours, the stage deadline uses the working calendar, the tenant policy counts working days, so every number states its unit in words beside it and the group reads itself back in plain language (“48 clock hours after entering the stage — around Sun 20 Sep, weekend included”) until ACC-105 lands." },
-        { area: "Task form", where: "Template 3", body: "Description added as a plain textarea (3 rows, counter, amber at 90%) — plain text, not rich text, both for the 187 kB headroom and because an evidence trail is safer without markup. Priority corrected to Low · Medium · High · Critical; “Normal” does not exist in TaskPriority. Seven fields with the inline calendar measure 512px against the 420px body cap, so per template 3's own rule the field is not shrunk and the cap is not raised: the form becomes a two-step dialog, split by meaning — step 1 the commitment, step 2 the substance — with both steps drawn and the measurement stated." },
+        { area: "Rev 6 · One time control, and the date view re-measured", where: "Template 3", body: "The drawing showed the time twice — a chip beside the date field and a strip under the calendar grid — which was a drawing defect, not an intention. The strip is deleted and the time control stays a sibling of the date field in both states, so pressing ▢ never moves it. The date view falls from 414px to 358px of the cap, and the one-step measurement from 750px to 694px — still 274px over, so the two-step split stands unchanged. ▢ is confirmed as a toggle (aria-expanded, pressed state, label switching to “Hide calendar”), but the taught route back is the “Back to details” link and Escape; the toggle is a shortcut for whoever finds it, never the only way out." },
+        { area: "Rev 6 · Step 1 at both densities", where: "Template 3 + artboard 13", body: "The crowded dialog drawn three times — form density as built (279px), compact density as specified (257px), and Arabic compact (287px, because the preset row wraps) — with every block's height printed beside it. The 22px comes from gaps, control height and one dropped message slot, not from type: the two English drawings use identical type sizes, which is the answer to whether the text can be smaller. The drawing also shows the limit of the slot rule — priority drops its slot but shares a row with assignee, which keeps one, so a side-by-side row only shortens when both fields drop it. It cannot without Arabic dropping below its 13px floor and the two languages needing different control heights." },
+        { area: "Rev 6 · Set acting head, drawn", where: "Template 3", body: "The action that left the unit head dialog is now drawn rather than described: its own 560 dialog at form density (249px — three field blocks, so artboard 13's compact rule correctly declines to fire), an optional To date meaning “until ended by hand” with Setup health raising an open-ended appointment after 90 days, and a date view where one calendar serves both ends of the range with a segmented From/To header carrying each current value. Overlap with an existing acting period is refused with that period named and dated and “End that period early” offered as the action. The genuine three-object overlap stays a template 4 wizard." },
+        { area: "Rev 6 · Hijri equivalence corrected", where: "Template 3", body: "The Add holiday Hijri example read 11 Rabiʻ al-Thani 1448 for 23 Sep 2026; the correct equivalent is 12, and the grid's selected day now matches the caption." },
+        { area: "Rev 5 · Due date placement, and two screens drawn", where: "Templates 3 and 5", body: "The step-1 drawing and the fit table disagreed about where the due date lives; the drawing wins and the arithmetic bends around it. Due stays on step 1 — moving it would satisfy the cap and break “complete step 1 and Create”, which is the whole urgent path, and a task created with no due time is exactly the task the SLA cannot govern. Instead no calendar expands on step 1 (typed field plus presets, 279px), and ▢ substitutes the step's body for a 358px date view with a Back link, same step and same footer. Add holiday is now drawn as the inline add row on Working calendar, with the Hijri switch and the Gregorian equivalent shown before the row is added — the move buys more than 95px of cap, since eight ministry holidays arrive at once and a modal each is eight cycles. Unit head is drawn after the split: Assign head keeps the dialog at 341px, and Set acting head becomes its own dialog with a date range, which is the difference the merged dialog was hiding." },
+        { area: "Rev 4 · Dates and times", where: "Templates 3, 5, 2 + new artboard 12", body: "The in-flow rule held; the 132px calendar budget under it did not — the real compact inline calendar is 258px, specified in artboard 12 (Rev 4 also specified a 314px variant with a time strip inside the calendar box; Rev 6 deleted that strip and its duplicate time control) with 28×28 day cells and six rows always rendered. Consequences here: New Task gains a due time with a computed preset row (+1h, +2h, End of working day, Tomorrow 09:00) and an out-of-hours warning stated in working time, and its one-step form re-measured at 750px on Rev 4's figures, and at 694px once the strip was removed, confirming the two-step split as load-bearing rather than precautionary — step 2 was 414px and held nothing but the due block — both superseded: Rev 5 moved the due block to step 1, so step 2 now holds description, evidence and the source relation, and the date view that opens from step 1 measures 358px. Add holiday leaves the dialog entirely at 515px and becomes an inline add row on the Working calendar page, which also fixes entering eight ministry holidays one modal at a time. Unit head handover fits at 341px and stays a dialog, shedding its unrelated second action. Hijri picking is the one thing PrimeNG cannot do and is scoped to Meetings and holidays." },
+        { area: "Rev 3 · Export", where: "Template 1, used by 2", body: "Export was drawn three times and specified nowhere — the one surface that can quietly break every truthfulness rule the system sets, since a file is read without the screen beside it. Four rules now govern every instance: restricted rows are present and marked, never silently omitted and never a refusal (refusing would make legitimately evidenceable lists unexportable and push people to screenshots, which carry no provenance at all); a seven-row provenance block records who, when, which list, which filters, exported count against true total, and restricted count; export is its own permission module.export, distinct from reading on screen; and every export writes an audit entry, the one read operation that does. The same care the system already gives secrets — “never displayed, never exported” — now extends to restricted names." },
+        { area: "Rev 3 · No inner scroll on the workflow route", body: "Moving both editors out of dialogs also moved them out from under artboard 7's protection, and both are full of selects. Stated as a build constraint in template 6 and in artboard 7: /workflows/:id/stages scrolls as the document — no overflow wrapper around the flow strip or the editor panel, horizontal-only scrolling permitted on the strip. An inner scrolling region here reintroduces the exact platform fault artboard 7 exists to eliminate, and the current build already has pages with inner scroll containers to copy by accident.", where: "Template 6 + artboard 7" },
+        { area: "Rev 3 · Arabic organisation name", where: "Template 7", body: "The Organization record has no Arabic name field — the Arabic name in the shell belongs to the root org unit — so the first screen a customer sees cannot name its own organisation in Arabic. Both states are now drawn: today, the English name isolated with dir=\"ltr\" inside the Arabic sentence plus a disclosure line saying it is the registered English name, because an invitee cannot tell a fallback from a mistake at the exact moment they are judging whether the mail is genuine; and after ACC-89, the Arabic name with no disclosure. Two knock-ons recorded: Organization profile in template 5 gains the Arabic name as a required pair, and the invitation email needs it too, being read before this page." },
+        { area: "Rev 3 · requiredPermission", where: "Template 6b", body: "The schema stores String? with no constraint. The control's options now come explicitly from the permission catalogue — grouped by module, written descriptions, never raw keys — and a stored value that is no longer valid renders as stale, not as “none”: an “unknown · committees.archive” chip showing the dead key, the transition listed as unfireable in Setup health, and save blocked until it is chosen or cleared deliberately. Degrading a stale requirement to “no extra permission” would silently widen who can fire a transition." },
+        { area: "Rev 3 · Stage escalation", where: "Template 6b", body: "Hold lifted; drawn as axis 3 of the stage editor. Both escalation systems stay because they govern different objects: stage escalation is about a record that has not moved — notify-only, fires once per rule, authored with the workflow — while the tenant policy in template 5 is about an overdue task rising through the org hierarchy, set per priority by the admin. Both can fire for the same late work when a transition action creates a task, so each screen states which object it governs and links to the other. Built as an artboard-11 group with group-level sequence validation, and raised from three rules to four to match the tenant policy's maximum — the three-row reservation was a dialog-cap artefact, and the cap no longer applies now that the editor is a page panel. The unit ambiguity is designed around rather than inherited: stage rules count clock hours, the stage deadline uses the working calendar, the tenant policy counts working days, so every number states its unit in words beside it and the group reads itself back in plain language (“48 clock hours after entering the stage — around Sun 20 Sep, weekend included”) until ACC-105 lands." },
+        { area: "Task form", where: "Template 3", body: "Description added as a plain textarea (3 rows, counter, amber at 90%) — plain text, not rich text, both for the 187 kB headroom and because an evidence trail is safer without markup. Priority corrected to Low · Medium · High · Critical; “Normal” does not exist in TaskPriority. Measured at the time as 512px against the 420px body cap — superseded by Rev 4, which found that sum assumed a 132px calendar, and by Rev 6, which put the one-step figure at 694px. The conclusion held: per template 3's own rule the field is not shrunk and the cap is not raised, so the form becomes a two-step dialog, split by meaning — step 1 the commitment, step 2 the substance — with both steps drawn and the measurement stated." },
         { area: "Task record page", where: "New artboard 10", body: "A task now carries a description, evidence, an SLA chain with fired escalations, a delegation label and a source relation. Three are audit evidence and GET /tasks/:id already exists, so the task gets a record page as an instance of template 2 at its smallest honest size: header with defining relations and the SLA chain, two tabs, three panels, no padding. Every task notification now lands here instead of on a list with a highlighted row." },
         { area: "Time limits", where: "Template 5", body: "The section covered two priorities and named one of them “Normal”, which does not exist in TaskPriority and contradicted the escalation matrix beneath it. It now carries all four — Low 20, Medium 10, High 3, Critical 1 working days — and the matrix's Limit column reads these values, so the two agree value-for-value. The Arabic label is المتوسطة, not العادية." },
         { area: "SLA escalation", where: "Template 5", body: "Escalation becomes per priority — four chains, each an artboard-11 repeating group with handle, stepper, target select, named remove, add with allowance and a maximum of 4. Validation is group-level: each step must be later than the one before, reported on the offending row (drawn failing on Critical) and blocking Save with the reason in the footer. A priority with no chain is a legitimate configuration stated in words, not a gap. Finding: four stacked sections measure ~1,150px, put four Saves on one page and hide the only real question — does escalation tighten as priority rises — so the section takes a per-priority matrix form with one header, one problem count and one Save. This amends template 5: repeating groups differing by one key take the matrix, not the stack." },
@@ -2396,10 +2675,10 @@ class Component extends DCLogic {
           strategies: [
             { name: "Specific user", body: "A user picker. Goes stale on deactivation — Setup health reports it." },
             { name: "Role", body: "A select of 11 roles. Resolves to whoever holds it; if nobody does, that is a Setup health condition, not a silent no-op." },
-            { name: "Org unit head", body: "No field — and the sentence must say <em style=\"font-style: normal; font-weight: 600;\">whose</em> unit: “the head of the org unit the record belongs to, resolved when the stage is entered”. When that head is vacant the work is held unassigned, the record shows “awaiting a unit head”, and Setup health raises “org unit with no head” — which is precisely the condition it already detects, so the copy names it in the same words." },
+            { name: "Org unit head", body: "No field — and the sentence must say whose unit: “the head of the org unit the record belongs to, resolved when the stage is entered”. When that head is vacant the work is held unassigned, the record shows “awaiting a unit head”, and Setup health raises “org unit with no head” — which is precisely the condition it already detects, so the copy names it in the same words." },
             { name: "Self", body: "No field. “The person who moved the record into this stage keeps the work.”" },
             { name: "Committee", body: "A committee picker, plus an optional seat narrowing (Chair · Secretary · any member) — the one strategy with a second, genuinely optional field inside it." },
-            { name: "Round robin", body: "<strong>Open question, not invented.</strong> The schema stores no pool for it, so there is nothing to draw. It needs one of: a role to rotate within, a committee's membership, or an explicit user list — plus a stored cursor, since fair rotation cannot be derived. Until that is decided the strategy is absent from the select rather than offered with no field: a kind that cannot be configured is worse than a kind that is not there." }
+            { name: "Round robin", body: "Open question, not invented. The schema stores no pool for it, so there is nothing to draw. It needs one of: a role to rotate within, a committee's membership, or an explicit user list — plus a stored cursor, since fair rotation cannot be derived. Until that is decided the strategy is absent from the select rather than offered with no field: a kind that cannot be configured is worse than a kind that is not there." }
           ],
           modes: [
             { name: "Single", body: "The sentence “One approval from the assignee completes the stage.” No field." },
@@ -2469,14 +2748,94 @@ class Component extends DCLogic {
       })(),
 
       t3: {
-        cal: (() => {
-          const heads = ["S", "M", "T", "W", "T", "F", "S"];
-          const cells = heads.map(h => ({ label: h, style: "font-size: 10.5px; color: #8A94A6; font-weight: 600; padding: 2px 0;" }));
-          for (let d = 13; d <= 26; d++) {
-            const sel = d === 18, weekend = d % 7 === 5 || d % 7 === 6;
-            cells.push({ label: d + "", style: "font-size: 11.5px; font-variant-numeric: tabular-nums; border-radius: 4px; padding: 3px 0; cursor: pointer; " + (sel ? "background: #2E6FA3; color: #fff; font-weight: 600;" : weekend ? "color: #A7B2C2;" : "color: #2D3748;") });
-          }
-          return cells;
+        holidays: [
+          { name: "Founding Day", date: "22 Feb 2027", repeat: "annual" },
+          { name: "Eid al-Fitr (3 days)", date: "20 Mar 2027", repeat: "Hijri-dated" },
+          { name: "Eid al-Adha (4 days)", date: "27 May 2027", repeat: "Hijri-dated" }
+        ].map(h => ({ name: h.name, date: h.date, repeat: h.repeat, removeLabel: "Remove " + h.name })),
+        presets: ["+1 hour", "+2 hours", "End of working day", "Tomorrow 09:00"].map((label, i) => ({
+          label,
+          style: "background: " + (i === 1 ? "#E4EEF6" : "#fff") + "; color: " + (i === 1 ? "#1F5480" : "#2D3748") + "; border: 1px solid " + (i === 1 ? "#2E6FA3" : "#8A94A6") + "; border-radius: 999px; padding: 4px 11px; font-family: inherit; font-size: 12px; font-weight: " + (i === 1 ? 600 : 500) + "; cursor: pointer; white-space: nowrap;"
+        })),
+        ...(() => {
+          const grid = (heads, firstCol, from, to, sel) => {
+            const cells = heads.map(h => ({ label: h, style: "font-size: 11px; color: #5A6779; font-weight: 600; padding: 2px 0;" }));
+            for (let i = 0; i < firstCol; i++) cells.push({ label: "", style: "padding: 3px 0;" });
+            for (let d = from; d <= to; d++) {
+              const col = (firstCol + d - from) % 7;
+              const nonWorking = col === 5 || col === 6;
+              cells.push({ label: d + "", style: "font-size: 11.5px; font-variant-numeric: tabular-nums; border-radius: 4px; padding: 3px 0; "
+                + (d === sel ? "background: #2E6FA3; color: #fff; font-weight: 600; cursor: pointer;"
+                  : nonWorking ? "color: #5A6779; text-decoration: line-through; cursor: not-allowed;"
+                  : "color: #2D3748; cursor: pointer;") });
+            }
+            return cells;
+          };
+          const EN = ["S", "M", "T", "W", "T", "F", "S"];
+          const AR = ["أحد", "إثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
+          const preset = (label, on) => ({ label, style: "font-size: 11px; font-weight: 600; border-radius: 999px; padding: 2px 8px; white-space: nowrap; " + (on ? "color: #fff; background: #2E6FA3; border: 1px solid #1F5480;" : "color: #2E6FA3; background: #fff; border: 1px solid #8A94A6;") });
+        const density = (opts) => {
+          const ar = !!opts.ar;
+          const g = opts.compact
+            ? { labelMB: 2, ctrl: 32, msgMT: 2, blockMB: 8 }
+            : { labelMB: 4, ctrl: 36, msgMT: 4, blockMB: 12 };
+          const labelFS = ar ? 13 : 12, valFS = ar ? 14 : 13;
+          const fam = ar ? " font-family: 'IBM Plex Sans Arabic', sans-serif;" : "";
+          const iso = (s, key) => React.createElement("span", { key: key, dir: "ltr", style: { unicodeBidi: "isolate", fontVariantNumeric: "tabular-nums" } }, s);
+          const fld = (f, last) => ({
+            label: f.label, px: f.px,
+            value: f.num ? iso(f.value) : f.value,
+            glyph: f.glyph || null,
+            msg: f.msgParts
+              ? React.createElement("span", null, f.msgParts.map((p, i) => typeof p === "string" ? p : iso(p.iso, i)))
+              : (f.msg || null),
+            presets: f.presets || null,
+            blockStyle: "margin-block-end: " + (last ? 0 : g.blockMB) + "px;",
+            labelStyle: "display: block; font-size: " + labelFS + "px; font-weight: 500; color: #4A5568; margin-block-end: " + g.labelMB + "px;" + fam,
+            controlStyle: "display: flex; align-items: center; gap: 8px; height: " + g.ctrl + "px; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;",
+            valueStyle: "flex: 1 1 auto; min-width: 0; font-size: " + valFS + "px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: " + (f.muted ? "#8A94A6" : "#2D3748") + ";" + fam + (f.num ? " font-variant-numeric: tabular-nums;" : ""),
+            msgStyle: "font-size: " + (ar ? 12.5 : 11.5) + "px; color: #5A6779; margin-block-start: " + g.msgMT + "px; min-height: 17px;" + fam
+          });
+          return {
+            name: opts.name, total: opts.total, note: opts.note,
+            wrapStyle: "padding: 12px 13px; border-inline-end: 1px solid #E2E8F0;" + (ar ? " direction: rtl;" : ""),
+            bodyStyle: "border: 1px dashed #E2E8F0; border-radius: 6px; padding: 10px 11px; background: #FBFCFD;",
+            totalStyle: "font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums; " + (opts.compact ? "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;" : "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;"),
+            fields: opts.fields.map((f, i) => fld(f, i === opts.fields.length - 1))
+          };
+        };
+        const NB = "\u00A0";
+        return {
+            cal: grid(EN, 0, 13, 26, 21),
+            calHijri: grid(AR, 3, 5, 18, 12),
+            calOct: grid(EN, 4, 1, 14, 1),
+            densities: [
+              density({ name: "Form density — as built", total: "279", compact: false,
+                note: "Four reserved message slots, one of which can never carry a message: 17px of the 279 is space held for text that cannot arrive, and it is priority's — which is exactly why dropping it buys only 4px while it shares a row with assignee.",
+                fields: [
+                  { label: "Task title", px: "75", value: "Review isolation policy IPC-04", msg: "Required · at least 8 characters" },
+                  { label: "Assigned to", px: "75", value: "Nora Al-Otaibi", glyph: "▼", msg: NB },
+                  { label: "Priority", px: "75", value: "HIGH", glyph: "▼", msg: NB },
+                  { label: "Due", px: "105", value: "21 Sep 2026", glyph: "▢", num: true, msg: "Due 21 Sep 2026, 18:00 +03", presets: [preset("+1 hour", true), preset("+2 hours"), preset("End of working day"), preset("Tomorrow 09:00")] }
+                ] }),
+              density({ name: "Compact density — specified", total: "257", compact: true,
+                note: "Priority loses its slot outright; assignee keeps one because a server-side conflict is a real message it declares. Title and due keep theirs. No type size changed.",
+                fields: [
+                  { label: "Task title", px: "71", value: "Review isolation policy IPC-04", msg: "Required · at least 8 characters" },
+                  { label: "Assigned to", px: "71", value: "Nora Al-Otaibi", glyph: "▼", msg: NB },
+                  { label: "Priority", px: "52", value: "HIGH", glyph: "▼" },
+                  { label: "Due", px: "99", value: "21 Sep 2026", glyph: "▢", num: true, msg: "Due 21 Sep 2026, 18:00 +03", presets: [preset("+1 hour", true), preset("+2 hours"), preset("End of working day"), preset("Tomorrow 09:00")] }
+                ] }),
+              density({ name: "مهمة جديدة — الكثافة المضغوطة", total: "287", compact: true, ar: true,
+                note: "العربية أطول بنحو 20٪، فصفّ الاختصارات ينكسر إلى سطرين عند عرض 560 — والقياس العربي هو 287 لا 257. القياس يُجرى باللغتين، وتُعتمد الأطول.",
+                fields: [
+                  { label: "عنوان المهمة", px: "71", value: "مراجعة سياسة العزل IPC-04", msg: "مطلوب · 8 أحرف على الأقل" },
+                  { label: "مُسند إلى", px: "71", value: "نورة العتيبي", glyph: "▼", msg: NB },
+                  { label: "الأهمية", px: "52", value: "عالية", glyph: "▼" },
+                  { label: "تاريخ الاستحقاق", px: "129", value: "21 Sep 2026", glyph: "▢", num: true, msgParts: ["الاستحقاق ", { iso: "21 Sep 2026" }, "، ", { iso: "18:00 +03" }], presets: [preset("+ ساعة", true), preset("+ ساعتان"), preset("نهاية يوم العمل"), preset("غدًا 09:00")] }
+                ] })
+            ]
+          };
         })(),
         selected: ["ISO 9001", "JCI", "CBAHI"],
         pickerRows: [
@@ -2508,14 +2867,15 @@ class Component extends DCLogic {
           partial: "Some lists loaded, one did not: the form is usable, the failed field is the only one flagged, and if the user does not need that field they can still submit. Never disable the whole dialog for one failed lookup."
         }),
         instances: [
-          { name: "New / edit task", route: "/tasks/new", body: "The worst form in the product becomes a two-step dialog, because seven fields with an inline calendar measure 512px against a 420px cap — drawn above with the measurement. Step 1: title, assignee (picker, 312 users), priority (Low/Medium/High/Critical — “Normal” does not exist in TaskPriority), due date. Step 2: description (plain textarea, 3 rows, counter amber at 90%), evidence-required, raised-from relation, delegation. Standard reference stays out — it belongs to the Standards module and is added from the task record once that ships." },
-          { name: "Add holiday", route: "/calendar/holidays/new", body: "The clipped picker is fixed by construction: name, date (typed first, inline panel second), repeats-annually checkbox. Three fields in a 560 dialog with the panel open still needs no scroll, which is the whole point of the cap." },
+          { name: "New / edit task", route: "/tasks/new", body: "The worst form in the product becomes a two-step dialog, because one step with the real inline calendar measures 694px against a 420px cap — drawn above with the measurement. Step 1: title, assignee (picker, 312 users), priority (Low/Medium/High/Critical — “Normal” does not exist in TaskPriority), due date and time with the preset row, since urgent tasks are due in an hour or two the same day. Step 2: description (plain textarea, 3 rows, counter amber at 90%), evidence-required, raised-from relation, delegation. Standard reference stays out — it belongs to the Standards module and is added from the task record once that ships." },
+          { name: "Add holiday", route: "/settings/calendar", body: "It stops being a dialog. Three fields plus the real 258px calendar measure 515px — 95px over the cap — and a holiday does not deserve a wizard, so it becomes an inline add row on the Working calendar settings page, directly above the holiday list it is adding to, where there is no cap at all. That also fixes the thing the dialog was always bad at: adding eight ministry holidays one modal at a time. Name EN, name AR, date (typed first, inline panel second, with the Hijri switch since holidays are published in Hijri), repeats-annually. The clipped picker is fixed by construction, not by sizing." },
+          { name: "Unit head · handover date", route: "/org-units/:id/head", body: "One field plus the calendar measures 341px in a 560 dialog and stays a dialog. It is the clean case for the rule: the calendar plus one other field is exactly what fits, which is also why the unrelated second action in that dialog has to move out." },
           { name: "Add committee member", route: "/committees/:id/members/new", body: "Gets its search back as a picker dialog, not a dropdown — the platform select has none and the list is every user in the tenant. Fields: user (picker), role on committee (select), joined date. Already-member users are shown in the picker as disabled rows with “already a member”, not filtered out, so the searcher is not left wondering." },
           { name: "Manage head", route: "/org-units/:id/head", body: "Two unrelated actions in one dialog is the defect. Split: “Assign head” and “Set acting head” are separate dialogs from separate menu items, each one decision. Where both are genuinely being set at once — a head leaving on a date — it is a wizard, not a dialog with two unranked halves." },
           { name: "Add / edit org unit", route: "/org-units/new", body: "Save no longer scrolls out of view because the footer is fixed and the body capped; parent unit is a picker (a deep tree), type is a select, and the Arabic name sits beside the English rather than under it so the pair is obviously one field in two languages." }
         ],
         decisions: [
-          { q: "Does a task get a record page?", a: "<strong>Yes — and it is not optional.</strong> A task now carries a description a surveyor reads, evidence attached on completion, an SLA chain with escalations that have already fired, a delegation label, and a source relation to the committee or incident that raised it. That is five things a list row cannot hold and three of them are audit evidence. <code style=\"font-size: 11px;\">GET /tasks/:id</code> already exists. It is drawn as artboard 10 of this file — an instance of template 2 at its smallest honest size: header with the defining relations and the SLA state, three panels, and an activity trail. The argument for <em style=\"font-style: normal; font-weight: 600;\">not</em> giving it one — that a task is a work item rather than a record — fails on the single test that matters here: a surveyor asks “show me that this action was taken, by whom, and what proves it”, and a row in someone's task list cannot answer." },
+          { q: "Does a task get a record page?", a: "Yes — and it is not optional. A task now carries a description a surveyor reads, evidence attached on completion, an SLA chain with escalations that have already fired, a delegation label, and a source relation to the committee or incident that raised it. That is five things a list row cannot hold and three of them are audit evidence. GET /tasks/:id already exists. It is drawn as artboard 10 of this file — an instance of template 2 at its smallest honest size: header with the defining relations and the SLA state, three panels, and an activity trail. The argument for not giving it one — that a task is a work item rather than a record — fails on the single test that matters here: a surveyor asks “show me that this action was taken, by whom, and what proves it”, and a row in someone's task list cannot answer." },
           { q: "Multi-select above fifteen options", a: "The picker rule extends to multi-select as a multi-picker dialog: search, checkbox rows, a pinned “Selected n” chip area at the top so the current set is always visible while searching, “Select all n matching” for a filtered search, and a footer that confirms with the count (“Done · 3”). The field behind it shows two chips and “+n more”, with the full set in its tooltip. Accreditations, org-unit scopes and notification categories use this. Permissions do not — a role's permissions are not a long list to pick from, they are a matrix with module structure and select-all semantics, so they get template 6a instead. Any multi-select under fifteen stays the inline chip field from artboard 6." },
           { q: "Save confirmation: toast, inline, or optimistic with undo", a: "All three, chosen by reversibility. Optimistic with undo for a single reversible field edited inline — the value commits on blur, a toast offers Undo for 8 seconds, and a failure rolls the value back visibly with the reason. Inline confirmation inside the dialog for anything the user will immediately act on again, so they stay in place. Toast on close for a created or updated record — naming the object and offering “View” — with the affected panel updated in place rather than a page reload. Irreversible and cross-object actions get none of these: the dialog holds until the server confirms, then a toast without an Undo, because offering an undo that cannot work is worse than offering nothing." }
         ]
@@ -2636,7 +2996,7 @@ class Component extends DCLogic {
             { k: "Every panel owns its request.", v: "Its own loading, empty, error and permission outcome, inside its own frame. No panel can blank the page, and the header renders from the record fetch alone so the page has a title within one round trip." },
             { k: "Panel bodies do not scroll on the record page.", v: "They show 3–6 rows and hand off. A record page is a map, not a workspace: the full set is one click away in a list page that can paginate properly." },
             { k: "Tabs are for depth, panels for breadth.", v: "The Details tab holds the panel grid; a tab exists only where a relation needs the full list-page toolbar (Members with 40 rows, History with filters). Panels are the summary, tabs are the same data with search and sort." },
-            { k: "Audit panels export under template 1's export rules.", v: "Stage history and Membership history carry the same Export as a list toolbar, and therefore the same contract: restricted rows present and marked, the seven-row provenance block, the <code style=\"font-size: 11px;\">&lt;module&gt;.export</code> permission, and an audit entry for the export itself. A history panel is the likeliest thing on this page to be handed to a surveyor as a file, so it is the last place a silently shortened export may happen." },
+            { k: "Audit panels export under template 1's export rules.", v: "Stage history and Membership history carry the same Export as a list toolbar, and therefore the same contract: restricted rows present and marked, the seven-row provenance block, the module.export permission, and an audit entry for the export itself. A history panel is the likeliest thing on this page to be handed to a surveyor as a file, so it is the last place a silently shortened export may happen." },
             { k: "Audit panels are read-only by construction.", v: "Stage history and Membership history have no row actions at all, an Export action, and rows that render even when the actor is a restricted relation — an audit trail with a hole in it is worse than one naming an actor you cannot open." }
           ],
           outcomes: outcomes({
@@ -2666,7 +3026,7 @@ class Component extends DCLogic {
         exportRules: [
           { title: "1 · Restricted rows are present and marked", body: "Never omitted, never a shortened file. The row keeps its line, the name is replaced by the artboard-4 type word, and a Restricted column names the reason. Silent omission is the one outcome forbidden outright — see the reasoning beside the sample." },
           { title: "2 · The file carries its own provenance", body: "Seven rows above the data: who, when, which list, which filters, exported count, true total, restricted count. A file with no provenance cannot be cited, and a screenshot has none at all, which is the alternative we are competing with." },
-          { title: "3 · Export is its own permission", body: "Yes — distinct from reading the list. <code style=\"font-size: 11px;\">&lt;module&gt;.export</code>, granted separately in the permission matrix. Reading 25 rows on screen and taking 3,000 out of the tenant's control are different acts with different risk, and an exfiltration question from a healthcare buyer cannot be answered by “anyone who can read it”. Where the permission is absent the button is absent, per the shell rule." },
+          { title: "3 · Export is its own permission", body: "Yes — distinct from reading the list. module.export, granted separately in the permission matrix. Reading 25 rows on screen and taking 3,000 out of the tenant's control are different acts with different risk, and an exfiltration question from a healthcare buyer cannot be answered by “anyone who can read it”. Where the permission is absent the button is absent, per the shell rule." },
           { title: "4 · Every export is logged", body: "An export writes an audit entry — actor, list, filter hash, row count, format — visible in the tenant's audit trail. It is the one read operation that logs, because it is the one that removes data from the product. Secrets are never exported, per the system's write-once rule; restricted names now follow the same care." }
         ],
         provenance: [

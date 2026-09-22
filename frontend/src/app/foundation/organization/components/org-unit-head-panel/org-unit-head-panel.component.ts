@@ -1,9 +1,26 @@
-import { Component, OnInit, inject, input, output, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
+// ACC-96 — the effective-date calendar is its own LAYER rather than a floating
+// panel inside this dialog. See the template comment beside it.
+//
+// INTERIM, AND KNOWN TO BE. This is the pattern the rest of the ticket moved
+// AWAY from: New Task now uses the shared am-inline-calendar in flow, per
+// artboard 12. This screen keeps the layer because the approved design does
+// not merely restyle this dialog — it SPLITS it, into "Assign head" and "Set
+// acting head", each one decision, the second carrying a date RANGE rather
+// than a single effective date. That split is ACC-120 slice 2, and it is what
+// replaces this. Migrating the calendar here first would mean building a
+// dialog the design says should not exist.
+//
+// So do not read this as the pattern to copy, and do not "fix" it to match
+// New Task. Its measured defect (the panel ran 165px below the dialog's edge
+// and closed on a scroll of <main>) is fixed; its SHAPE is pending.
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { FormatService } from '../../../../core/formatting';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
 import { TagModule } from 'primeng/tag';
@@ -26,11 +43,13 @@ import { AmDatePipe } from '../../../../core/formatting';
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    FormsModule,
     TranslatePipe,
     AmDatePipe,
     ButtonModule,
     SelectModule,
     DatePickerModule,
+    EditDialogComponent,
     InputTextModule,
     MessageModule,
     TagModule,
@@ -174,8 +193,34 @@ import { AmDatePipe } from '../../../../core/formatting';
               />
             </div>
             <div class="flex flex-col gap-1">
-              <label class="text-sm font-medium">{{ 'orgUnitHead.effectiveDate' | translate }}</label>
-              <p-datepicker formControlName="effectiveDate" />
+              <label for="effectiveDate" class="text-sm font-medium">
+                {{ 'orgUnitHead.effectiveDate' | translate }}
+              </label>
+              <!-- ACC-96 — NOT a <p-datepicker> with its own floating panel.
+                   Confirmed live on this screen: the panel opened INSIDE the
+                   dialog and ran 165px below its bottom edge, so the lower
+                   weeks of the month were unreachable, and it closed on a
+                   scroll of the app shell's <main>. The calendar is now its
+                   own layer at the root, which has neither problem.
+                   Typing stays a complete path to a value. -->
+              <div class="flex gap-1">
+                <input
+                  pInputText
+                  id="effectiveDate"
+                  class="flex-1"
+                  [value]="effectiveDateText()"
+                  (input)="onEffectiveDateTyped($any($event.target).value)"
+                  (blur)="commitTypedEffectiveDate()"
+                  autocomplete="off"
+                />
+                <p-button
+                  type="button"
+                  icon="pi pi-calendar"
+                  [text]="true"
+                  [ariaLabel]="'orgUnitHead.toggleDatePanel' | translate"
+                  (onClick)="toggleDatePanel()"
+                />
+              </div>
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-sm font-medium">{{ 'orgUnitHead.reason' | translate }}</label>
@@ -191,6 +236,31 @@ import { AmDatePipe } from '../../../../core/formatting';
         </div>
       }
     }
+
+    <!-- ACC-96 — the calendar as its own layer at the root, as
+         public-holiday-form does it (ACC-111 a613fcb). [inline] means PrimeNG
+         builds no overlay, so there is nothing for ConnectedOverlayScrollHandler
+         to close and nothing for the dialog to clip; appendTo="body" keeps the
+         layer out of THIS dialog's scrolling body. EditDialogComponent
+         registers it with LayerStackService, which is what makes Escape close
+         exactly one layer per press. -->
+    <ng-template #effectiveDateTpl>
+      <p-datepicker
+        [inline]="true"
+        [ngModel]="controlEffectiveDate()"
+        [ngModelOptions]="{ standalone: true }"
+        (ngModelChange)="onEffectiveDatePicked($event)"
+        styleClass="w-full"
+      />
+    </ng-template>
+    <app-edit-dialog
+      [visible]="datePanelOpen()"
+      (visibleChange)="onDatePanelVisibleChange($event)"
+      [header]="'orgUnitHead.chooseEffectiveDate' | translate"
+      [content]="effectiveDateTpl"
+      size="picker"
+      appendTo="body"
+    />
   `,
 })
 export class OrgUnitHeadPanelComponent implements OnInit {
@@ -199,6 +269,7 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   readonly saved = output<void>();
 
   private readonly fb = inject(FormBuilder);
+  private readonly format = inject(FormatService);
   private readonly orgUnitHeadService = inject(OrgUnitHeadService);
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly userService = inject(UserService);
@@ -419,6 +490,78 @@ export class OrgUnitHeadPanelComponent implements OnInit {
           },
         });
       },
+    });
+  }
+
+  // ── Effective date (ACC-96) ────────────────────────────────────────────
+  // Mirrors public-holiday-form's date field. `typed` holds what is part-way
+  // written, `controlEffectiveDate` the committed value; the text prefers the
+  // former, so re-rendering mid-keystroke cannot rewrite the field under the
+  // cursor.
+  readonly datePanelOpen = signal(false);
+  private readonly typedEffectiveDate = signal<string | null>(null);
+  readonly controlEffectiveDate = signal<Date | null>(null);
+
+  // dateForInput, not date(): this value is typed back, so it stays Gregorian
+  // with English months even for an Arabic or Hijri reader (ACC-94 D4).
+  readonly effectiveDateText = computed(
+    () => this.typedEffectiveDate() ?? this.format.dateForInput(this.controlEffectiveDate()),
+  );
+
+  toggleDatePanel(): void {
+    this.datePanelOpen.set(!this.datePanelOpen());
+  }
+
+  onEffectiveDatePicked(value: Date | null): void {
+    this.handoverForm.controls.effectiveDate.setValue(value);
+    this.handoverForm.controls.effectiveDate.markAsDirty();
+    this.controlEffectiveDate.set(value);
+    this.typedEffectiveDate.set(null);
+    this.datePanelOpen.set(false);
+    this.focusEffectiveDateInput();
+  }
+
+  onDatePanelVisibleChange(visible: boolean): void {
+    this.datePanelOpen.set(visible);
+    if (!visible) this.focusEffectiveDateInput();
+  }
+
+  onEffectiveDateTyped(value: string): void {
+    this.typedEffectiveDate.set(value);
+  }
+
+  /** On BLUR, not per keystroke — "15 S" is not an error, it is unfinished. */
+  commitTypedEffectiveDate(): void {
+    const text = this.typedEffectiveDate();
+    if (text === null) return;
+
+    const control = this.handoverForm.controls.effectiveDate;
+    const trimmed = text.trim();
+
+    if (trimmed === '') {
+      control.setValue(null);
+      control.markAsDirty();
+      this.controlEffectiveDate.set(null);
+      this.typedEffectiveDate.set(null);
+      return;
+    }
+
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+      control.setErrors({ ...(control.errors ?? {}), invalidDate: true });
+      control.markAsDirty();
+      return;
+    }
+
+    control.setValue(parsed);
+    control.markAsDirty();
+    this.controlEffectiveDate.set(parsed);
+    this.typedEffectiveDate.set(null);
+  }
+
+  private focusEffectiveDateInput(): void {
+    setTimeout(() => {
+      document.getElementById('effectiveDate')?.focus();
     });
   }
 }
