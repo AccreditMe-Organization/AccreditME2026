@@ -95,6 +95,26 @@ describe('AuthService — display preferences (ACC-94)', () => {
     httpMock.expectOne(ME_URL).flush(me());
     service.restoreSession().subscribe();
     httpMock.expectOne(ME_URL).flush('unauthorized', { status: 401, statusText: 'Unauthorized' });
+    // ACC-122 — restoreSession() now tries ONE renewal before concluding the
+    // user is not signed in. Refusing it reaches the same clearSession() the
+    // old single-request path did.
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/refresh`)
+      .flush('unauthorized', { status: 401, statusText: 'Unauthorized' });
     expect(service.displayPreferences()).toBeNull();
+  });
+
+  // ACC-122 — the reload case, and the one users feel. The access_token cookie
+  // lives fifteen minutes; reload after that and /auth/me 401s while the 7-day
+  // refresh token is still good. Before this, that meant signing in again.
+  it('restores the session when /auth/me 401s but the renewal succeeds', () => {
+    service.restoreSession().subscribe();
+
+    httpMock.expectOne(ME_URL).flush('unauthorized', { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne(`${environment.apiUrl}/auth/refresh`).flush({ success: true });
+    httpMock.expectOne(ME_URL).flush(me());
+
+    expect(service.isAuthenticated()).toBe(true);
+    expect(service.displayPreferences()).not.toBeNull();
   });
 });

@@ -11,6 +11,7 @@ import { Injectable, Injector, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, switchMap, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { SessionRenewalService } from './session-renewal.service';
 import { LanguageService } from './language.service';
 
 export interface PublicUser {
@@ -58,6 +59,7 @@ export interface MfaSetupResult {
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/auth`;
+  private readonly sessionRenewalService = inject(SessionRenewalService);
 
   // Resolved lazily via Injector, NOT injected as a constructor-time field
   // (ACC-19) — AuthService is the first thing provideAppInitializer
@@ -160,6 +162,35 @@ export class AuthService {
   // which already blocks Angular's initial navigation, so this avoids any
   // flash of the wrong language without a second blocking mechanism.
   restoreSession(): Observable<void> {
+    return this.loadMe().pipe(
+      // ACC-122 — ONE renewal attempt before concluding "not signed in".
+      //
+      // This is the half of the fix a user notices most. The access_token
+      // cookie lives fifteen minutes; reload after that and /auth/me 401s
+      // even though the 7-day refresh token is still perfectly good. Before
+      // this, every such reload meant signing in again.
+      //
+      // It does NOT redirect, whatever happens. restoreSession() runs from
+      // provideAppInitializer on every boot, including on /accept-invitation
+      // and /forgot-password where a 401 simply means nobody is signed in —
+      // redirecting from here is the ACC-24 bug, and it stays fixed.
+      catchError(() =>
+        this.sessionRenewalService.renew().pipe(
+          switchMap(() => this.loadMe()),
+          // Renewal refused, or /auth/me failed again: genuinely not signed
+          // in. Exactly the old behaviour, reached one attempt later.
+          catchError(() => {
+            this.clearSession();
+            return of(null);
+          }),
+        ),
+      ),
+      map(() => void 0),
+    );
+  }
+
+  /** Reads /auth/me and applies everything it carries. Throws on failure. */
+  private loadMe(): Observable<MeResponse> {
     return this.http.get<MeResponse>(`${this.baseUrl}/me`).pipe(
       switchMap((response) =>
         this.languageService.use(response.language).pipe(map(() => response)),
@@ -169,11 +200,6 @@ export class AuthService {
         this._impersonatedBy.set(response.impersonatedBy);
         this.applyDisplayPreferences(response);
       }),
-      catchError(() => {
-        this.clearSession();
-        return of(null);
-      }),
-      map(() => void 0),
     );
   }
 

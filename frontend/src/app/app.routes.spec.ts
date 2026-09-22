@@ -42,6 +42,12 @@ describe('unauthenticated navigation to a pre-auth route (ACC-24)', () => {
     const initPromise = TestBed.runInInjectionContext(() => initializeSession());
     const meReq = httpMock.expectOne(`${environment.apiUrl}/auth/me`);
     meReq.flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    // ACC-122 — restoreSession() tries one renewal first. Refusing it is the
+    // anonymous case, and this test's whole point is that reaching it still
+    // does NOT redirect: /accept-invitation must stay reachable signed out.
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/refresh`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
     await initPromise;
 
     const harness = await RouterTestingHarness.create('/accept-invitation?token=abc123');

@@ -89,6 +89,14 @@ describe('initializeSession (ACC-21 — ordering guarantee)', () => {
     meReq.flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
     tick();
 
+    // ACC-122 — one renewal is attempted before concluding "not signed in".
+    // Refusing it keeps the ordering guarantee this test exists for: the
+    // initializer still resolves, and loadAccess() is still never called.
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/refresh`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    tick();
+
     expect(resolved).toBeTrue();
     httpMock.expectNone(`${environment.apiUrl}/roles/my-permissions`);
     httpMock.expectNone(`${environment.apiUrl}/tenant/entitlements`);
