@@ -43,7 +43,7 @@ export const permissionGuard: CanActivateFn = (route) => {
 
   // Exact match first, then walk up. A child inherits its parent's
   // requirement unless it declares a stricter one of its own.
-  let required: string | undefined;
+  let required: readonly string[] | undefined;
   const segments = fullPath.split('/').filter((s) => s.length > 0);
   for (let i = segments.length; i > 0 && !required; i--) {
     required = ROUTE_PERMISSIONS.get(segments.slice(0, i).join('/'));
@@ -62,7 +62,13 @@ export const permissionGuard: CanActivateFn = (route) => {
   // the backend answer authoritatively.
   if (!navigationAccessService.hasTrustworthyPermissions()) return true;
 
-  if (navigationAccessService.hasPermission(required)) return true;
+  // ACC-123 — EVERY permission in the entry, not the first. An Administration
+  // route carries two: admin:access and the page's own. Holding one is not
+  // holding the route, which is the entire point of separating them — a
+  // quality manager holds users:view for the task assignee picker and must
+  // still be refused /users.
+  if (required.every((permission) => navigationAccessService.hasPermission(permission)))
+    return true;
 
   return router.parseUrl(LANDING_ROUTE);
 };

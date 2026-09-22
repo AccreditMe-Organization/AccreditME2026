@@ -88,7 +88,10 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
             }
           </td>
           <td>
+            <!-- ACC-123 — org:manage, what the holiday write endpoints carry.
+                 The list itself is readable with org:view. -->
             <div class="flex gap-1 justify-end">
+              @if (canManage()) {
               <!-- ACC-111 — the label names the OBJECT: a screen reader on row
                    nine hears "Edit Eid Al-Fitr", not the ninth "Edit". -->
               <am-icon-button
@@ -102,6 +105,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                 [label]="'workingCalendar.deleteHolidayNamed' | translate: { name: holiday.nameEn }"
                 (activated)="onDelete(holiday)"
               />
+              }
             </div>
           </td>
         </tr>
@@ -186,6 +190,8 @@ export class PublicHolidayListComponent implements OnInit {
   // Nothing in that string names a holiday or a calendar, which is exactly why
   // it was read off the decorator (working-calendar.controller.ts).
   readonly canCreate = computed(() => this.navigationAccess.hasPermission('org:manage'));
+  // ACC-123 — the same permission, asked about changing an existing holiday.
+  readonly canManage = this.canCreate;
 
   readonly loading = signal(false);
   readonly holidays = signal<PublicHolidayDto[]>([]);

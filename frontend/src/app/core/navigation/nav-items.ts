@@ -35,6 +35,8 @@
 // permissions and for the future dashboard). So every item keeps its own
 // permission, and a group renders when at least one of its items does.
 
+import { ADMIN_ACCESS } from './admin-access';
+
 export type NavGroupKey = 'work' | 'quality' | 'admin' | 'platform';
 
 export interface NavItem {
@@ -65,6 +67,18 @@ export interface NavItem {
 export interface NavGroup {
   key: NavGroupKey;
   labelKey: string;
+  // ACC-123 — a permission the whole GROUP requires, on top of each item's
+  // own. Present only on Administration today.
+  //
+  // It exists because an item's permission had been answering two questions at
+  // once. `users:view` is what the task assignee picker needs (it reads GET
+  // /users), and it was also read as "may open the Users admin page", so
+  // QUALITY_MANAGER — which holds users:view, org:view, lookups:view and
+  // workflows:view for its pickers — was shown the whole Administration
+  // section, and write controls the server then refused. Splitting the
+  // questions is the fix: the item permission still says what the PAGE reads,
+  // and this says whether the person administers at all. Both must pass.
+  requiredPermission?: string;
   items: readonly NavItem[];
 }
 
@@ -129,6 +143,12 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
   {
     key: 'admin',
     labelKey: 'nav.groups.admin',
+    // ACC-123. Note what is NOT done here: the items keep their own
+    // permissions unchanged. Dropping them and gating the section on this
+    // alone would hand a custom admin role every admin page the moment a
+    // tenant granted it one — the "each item still requires its own page
+    // permission as well" half of the decision.
+    requiredPermission: ADMIN_ACCESS,
     items: [
       // ACC-82 — first, as in the reference: it is the one Administration item
       // that is about what is wrong NOW rather than a screen to configure. Its
@@ -326,6 +346,11 @@ export function isNavItemVisible(item: NavItem, access: NavAccess): boolean {
   return permitted && entitled;
 }
 
+/** ACC-123 — a group the caller may see at all, before its items are filtered. */
+export function isNavGroupPermitted(group: NavGroup, access: NavAccess): boolean {
+  return !group.requiredPermission || access.hasPermission(group.requiredPermission);
+}
+
 /**
  * The rail for this user: platform groups for a platform admin, tenant groups
  * for everyone else, each filtered to the items this user may see.
@@ -339,6 +364,7 @@ export function visibleNavGroups(access: NavAccess): NavGroup[] {
     ? PLATFORM_NAV_GROUPS
     : TENANT_NAV_GROUPS;
   return groups
+    .filter((group) => isNavGroupPermitted(group, access))
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => isNavItemVisible(item, access)),
@@ -348,7 +374,7 @@ export function visibleNavGroups(access: NavAccess): NavGroup[] {
 
 // Permission-gated routes that have NO nav item. Without an entry here, such a
 // route would be the one gated screen the guard silently allowed through.
-export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, string> =
+export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> =
   new Map([
     // Must be explicit now that /tasks itself is ungated. permissionGuard walks
     // UP from a route to its nearest mapped ancestor, but a child route with no
@@ -356,28 +382,45 @@ export const STANDALONE_ROUTE_PERMISSIONS: ReadonlyMap<string, string> =
     // would have become reachable by anyone — and TaskListComponent can return
     // ANY task in the tenant, not just the caller's. Deliberately has no nav
     // item: CLAUDE.md records /tasks/all as a stopgap that must not be linked.
-    ['tasks/all', 'tasks:view'],
+    //
+    // ACC-123 deliberately leaves this one tasks:view alone. It is a stopgap
+    // route with no nav item, not an Administration screen, so requiring
+    // admin:access here would be inventing a rule the decision did not make.
+    ['tasks/all', ['tasks:view'] as readonly string[]],
   ]);
 
-// Route path -> required permission, for the guard. Keyed by the route path
-// WITHOUT its leading slash, matching how app.routes.ts declares children
-// under the shell's `path: ''`.
+// Route path -> the permissions required to open it, ALL of which must be held.
+// Keyed by the route path WITHOUT its leading slash, matching how app.routes.ts
+// declares children under the shell's `path: ''`.
 //
 // Built from the groups above rather than hand-written, so adding a nav item
-// automatically guards its route and there is no second place to forget.
+// automatically guards its route and there is no second place to forget. An
+// Administration item yields two entries in its list — the group's
+// admin:access and its own page permission (ACC-123) — which is how a typed
+// URL is refused rather than only a link being hidden.
+//
 // Platform items are not included: /platform is guarded as a whole by
 // platformAdminGuard, not per item.
-export const ROUTE_PERMISSIONS: ReadonlyMap<string, string> = new Map([
-  ...TENANT_NAV_GROUPS.flatMap((group) => group.items)
-    // A self-scoped item has no entry — absence from this map is how the guard
-    // knows the route is not permission-gated.
-    .filter(
-      (item): item is NavItem & { requiredPermission: string } =>
-        !!item.requiredPermission,
-    )
-    .map(
-      (item) =>
-        [item.route.replace(/^\//, ''), item.requiredPermission] as const,
-    ),
+export const ROUTE_PERMISSIONS: ReadonlyMap<string, readonly string[]> = new Map([
+  ...TENANT_NAV_GROUPS.flatMap((group) =>
+    group.items
+      // A self-scoped item has no entry — absence from this map is how the
+      // guard knows the route is not permission-gated. A group permission
+      // alone does not create one: an ungated item inside a gated group would
+      // be a contradiction, and none exists.
+      .filter(
+        (item): item is NavItem & { requiredPermission: string } =>
+          !!item.requiredPermission,
+      )
+      .map(
+        (item) =>
+          [
+            item.route.replace(/^\//, ''),
+            group.requiredPermission
+              ? [group.requiredPermission, item.requiredPermission]
+              : [item.requiredPermission],
+          ] as const,
+      ),
+  ),
   ...STANDALONE_ROUTE_PERMISSIONS,
 ]);

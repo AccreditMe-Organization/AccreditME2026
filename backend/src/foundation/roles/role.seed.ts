@@ -19,6 +19,7 @@ import {
   POSITIONS_PERMISSIONS,
   KPI_PERMISSIONS,
   SETUP_PERMISSIONS,
+  ADMIN_PERMISSIONS,
 } from '../../common/constants/permissions';
 
 const ALL = [
@@ -30,6 +31,14 @@ const ALL = [
   // ACC-82 — Setup health visibility. TENANT_ADMIN only, via this spread; not in
   // VIEWER's readOnly() list, which is explicit.
   SETUP_PERMISSIONS,
+  // ACC-123 — admin:access, the Administration section's own gate. Reaches
+  // TENANT_ADMIN through this spread and no other seeded role, which is the
+  // whole point: QUALITY_MANAGER holds users:view and workflows:view for its
+  // pickers, and that must no longer be read as "may administer".
+  //
+  // A tenant is free to grant it to a custom role — it is an ordinary
+  // permission in the catalogue, editable on the Roles screen like any other.
+  ADMIN_PERMISSIONS,
 ].flatMap((g) => Object.values(g));
 
 const readOnly = (...groups: Record<string, string>[]) =>

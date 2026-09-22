@@ -75,7 +75,7 @@ const TRIGGER_CONDITIONS = [
   { label: 'SYSTEM_AUTOMATIC', value: 'SYSTEM_AUTOMATIC' },
   { label: 'ASSIGNEE_POOL', value: 'ASSIGNEE_POOL' },
 ];
-
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 @Component({
   selector: 'app-workflow-transition-editor',
   standalone: true,
@@ -100,12 +100,17 @@ const TRIGGER_CONDITIONS = [
 
       <div class="flex items-center justify-between">
         <h3 class="font-medium text-sm">{{ 'workflow.transitions' | translate }}</h3>
-        <p-button
-          icon="pi pi-plus"
-          size="small"
-          [label]="'workflow.addTransition' | translate"
-          (onClick)="openAdd()"
-        />
+        <!-- ACC-123 — workflows:manage. The cog beside each row is NOT gated
+             here: it opens the action configurator, whose own writes are gated
+             inside it, so a viewer may still read how a transition is wired. -->
+        @if (canManage()) {
+          <p-button
+            icon="pi pi-plus"
+            size="small"
+            [label]="'workflow.addTransition' | translate"
+            (onClick)="openAdd()"
+          />
+        }
       </div>
 
       @if (error()) {
@@ -149,6 +154,7 @@ const TRIGGER_CONDITIONS = [
             </td>
             <td>
               <div class="flex gap-1 justify-end">
+                @if (canManage()) {
                 <p-button
                   icon="pi pi-pencil"
                   [text]="true"
@@ -164,6 +170,7 @@ const TRIGGER_CONDITIONS = [
                   [pTooltip]="'common.remove' | translate"
                   (onClick)="onRemove(transition)"
                 />
+              }
               </div>
             </td>
           </tr>
@@ -434,6 +441,12 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   private readonly roleService = inject(RoleService);
   private readonly fb = inject(FormBuilder);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-123 — workflows:manage, what every transition endpoint carries.
+  readonly canManage = computed(() =>
+    this.navigationAccess.hasPermission('workflows:manage'),
+  );
   // ACC-55 — group labels are built inside a computed, outside the template,
   // so TranslatePipe cannot reach them. instant() matches the established
   // precedent in org-unit-head-panel.component.ts.

@@ -10,6 +10,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import en from '../../../assets/i18n/en.json';
 import { loadTranslationsForTest } from '../../core/formatting/testing';
 import { environment } from '../../../environments/environment';
+import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
 
 // ACC-79 — the rail's own behaviour. WHICH items appear is nav-items.spec.ts's
 // job; this covers what the rail derives and how it presents groups.
@@ -58,19 +59,31 @@ describe('SidebarComponent (ACC-79)', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  describe('product kicker — derived from what the rail shows, never a role name', () => {
-    it('says Quality when there is no Administration group', () => {
+  describe('product kicker — read from admin:access, never a role name', () => {
+    it('says Quality when the user does not administer', () => {
       render({ permissions: ['committees:view'] });
       expect(fixture.componentInstance.productLabelKey()).toBe(
         'shell.product.quality',
       );
     });
 
-    // A custom role with a single admin permission gets the admin face. That is
-    // the consequence of deriving rather than naming, and it is the right one:
-    // they are administering part of this tenant.
-    it('says Tenant admin as soon as any Administration item is visible', () => {
-      render({ permissions: ['lookups:view'] });
+    // ACC-123 — the live defect. Dr. Yasser Al-Amri (QUALITY_MANAGER) holds
+    // these four for his PICKERS: the task assignee list reads GET /users. The
+    // shell called him "Tenant admin" ("إدارة المنشأة") for it.
+    it('does NOT say Tenant admin to a working role holding four page permissions', () => {
+      render({
+        permissions: ['users:view', 'org:view', 'lookups:view', 'workflows:view'],
+      });
+      expect(fixture.componentInstance.productLabelKey()).toBe(
+        'shell.product.quality',
+      );
+    });
+
+    // A custom role granted admin:access gets the admin face, whether or not it
+    // can open any particular page — it administers this tenant, which is what
+    // the kicker states.
+    it('says Tenant admin for a holder of admin:access', () => {
+      render({ permissions: [ADMIN_ACCESS, 'lookups:view'] });
       expect(fixture.componentInstance.productLabelKey()).toBe(
         'shell.product.admin',
       );
@@ -98,7 +111,7 @@ describe('SidebarComponent (ACC-79)', () => {
 
   describe('group presentation', () => {
     it('shows a heading per group when open', () => {
-      const el = render({ permissions: ['committees:view', 'users:view'] });
+      const el = render({ permissions: [ADMIN_ACCESS, 'committees:view', 'users:view'] });
       const text = el.textContent ?? '';
       // Translation is not loaded in this test, so the keys render as-is —
       // which is exactly what makes them assertable here.
@@ -111,7 +124,7 @@ describe('SidebarComponent (ACC-79)', () => {
     // rule — so there is one fewer rule than there are groups.
     it('replaces headings with rules between groups when collapsed', () => {
       const el = render({
-        permissions: ['committees:view', 'users:view'],
+        permissions: [ADMIN_ACCESS, 'committees:view', 'users:view'],
         collapsed: true,
       });
       expect(el.textContent ?? '').not.toContain('nav.groups.work');
@@ -120,7 +133,7 @@ describe('SidebarComponent (ACC-79)', () => {
 
     // An icon-only link is announced as nothing without a label.
     it('labels every link for assistive technology when collapsed', () => {
-      const el = render({ permissions: ['users:view'], collapsed: true });
+      const el = render({ permissions: [ADMIN_ACCESS, 'users:view'], collapsed: true });
       const links = Array.from(el.querySelectorAll('nav a'));
       expect(links.length).toBeGreaterThan(0);
       for (const link of links) {
@@ -177,7 +190,7 @@ describe('SidebarComponent (ACC-79)', () => {
     afterEach(() => http.verify());
 
     it('shows the open count on the item, with a pluralised label for screen readers', () => {
-      const el = renderWithHttp({ permissions: ['setup:view'] });
+      const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'setup:view'] });
       loadTranslationsForTest({ en });
       flushSummary(25, 0);
 
@@ -188,7 +201,7 @@ describe('SidebarComponent (ACC-79)', () => {
 
     // Red is kept for a count that includes something blocking work.
     it('uses the alert tone only when a condition blocks work', () => {
-      const el = renderWithHttp({ permissions: ['setup:view'] });
+      const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'setup:view'] });
       flushSummary(3, 1);
 
       expect(badge(el)?.classList).toContain('am-rail-badge--alert');
@@ -196,7 +209,7 @@ describe('SidebarComponent (ACC-79)', () => {
 
     // ACC-94 — the rail read "1 open conditions" before counted strings had plural forms.
     it('says 1 open condition, not 1 open conditions', () => {
-      const el = renderWithHttp({ permissions: ['setup:view'] });
+      const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'setup:view'] });
       loadTranslationsForTest({ en });
       flushSummary(1, 0);
 
@@ -204,7 +217,7 @@ describe('SidebarComponent (ACC-79)', () => {
     });
 
     it('shows no badge when nothing is open', () => {
-      const el = renderWithHttp({ permissions: ['setup:view'] });
+      const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'setup:view'] });
       flushSummary(0, 0);
 
       expect(badge(el)).toBeNull();
@@ -213,13 +226,13 @@ describe('SidebarComponent (ACC-79)', () => {
     // The item is gated on setup:view, and so is the request: the rail must
     // never ask for a count the user would be refused.
     it('never requests the count for a user without setup:view', () => {
-      renderWithHttp({ permissions: ['users:view', 'roles:view'] });
+      renderWithHttp({ permissions: [ADMIN_ACCESS, 'users:view', 'roles:view'] });
 
       http.expectNone(SUMMARY_URL);
     });
 
     it('carries the count in the label when the rail is collapsed', () => {
-      const el = renderWithHttp({ permissions: ['setup:view'], collapsed: true });
+      const el = renderWithHttp({ permissions: [ADMIN_ACCESS, 'setup:view'], collapsed: true });
       loadTranslationsForTest({ en });
       flushSummary(7, 0);
 

@@ -49,7 +49,13 @@ import { NavigationAccessService } from '../../../core/services/navigation-acces
             <td>{{ cost.featureKey }}</td>
             <td>{{ cost.creditCost }}</td>
             <td>
-              <p-button icon="pi pi-pencil" [text]="true" size="small" (onClick)="openEdit(cost)" />
+              <!-- ACC-123 — the same gate the create action already had.
+                   /platform is behind platformAdminGuard as a whole, so this
+                   is belt and braces rather than a fix; it is here because a
+                   reader should not have to know that to see the rule. -->
+              @if (canCreate()) {
+                <p-button icon="pi pi-pencil" [text]="true" size="small" (onClick)="openEdit(cost)" />
+              }
             </td>
           </tr>
         </ng-template>

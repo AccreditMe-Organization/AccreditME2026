@@ -26,6 +26,7 @@ const ROLE_A: RoleDto = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 describe('UserRoleAssignmentComponent (ACC-26)', () => {
   let fixture: ComponentFixture<UserRoleAssignmentComponent>;
@@ -40,6 +41,13 @@ describe('UserRoleAssignmentComponent (ACC-26)', () => {
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
         ConfirmationService,
+        // ACC-123 — the panel's controls are roles:manage now. The real
+        // service would make its own HTTP calls here; this states the
+        // permission the existing cases assume they have.
+        {
+          provide: NavigationAccessService,
+          useValue: { hasPermission: (p: string) => p === 'roles:manage' },
+        },
       ],
     });
 

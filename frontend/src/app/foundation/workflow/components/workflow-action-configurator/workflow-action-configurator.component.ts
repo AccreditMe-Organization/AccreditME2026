@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, TemplateRef, ViewChild, inject, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -44,7 +44,7 @@ const ACTION_TYPES = [
   { label: 'LOG_AUDIT', value: 'LOG_AUDIT' },
   { label: 'WEBHOOK', value: 'WEBHOOK' },
 ];
-
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 @Component({
   selector: 'app-workflow-action-configurator',
   standalone: true,
@@ -70,12 +70,17 @@ const ACTION_TYPES = [
 
       <div class="flex items-center justify-between">
         <h3 class="font-medium text-sm">{{ 'workflow.actions' | translate }}</h3>
-        <p-button
-          icon="pi pi-plus"
-          size="small"
-          [label]="'workflow.addAction' | translate"
-          (onClick)="openAdd()"
-        />
+        <!-- ACC-123 — this nested editor had NO permission gate of any kind:
+             add, enable, edit and remove were all offered to anyone holding
+             workflows:view. Every one of them is workflows:manage. -->
+        @if (canManage()) {
+          <p-button
+            icon="pi pi-plus"
+            size="small"
+            [label]="'workflow.addAction' | translate"
+            (onClick)="openAdd()"
+          />
+        }
       </div>
 
       @if (error()) {
@@ -103,6 +108,7 @@ const ACTION_TYPES = [
                 <p-checkbox
                   [ngModel]="action.isEnabled"
                   [binary]="true"
+                  [disabled]="!canManage()"
                   (ngModelChange)="onToggleEnabled(action, $event)"
                 />
                 <label class="text-sm">{{ 'workflow.actionEnabled' | translate }}</label>
@@ -110,6 +116,7 @@ const ACTION_TYPES = [
             </td>
             <td>
               <div class="flex gap-1 justify-end">
+                @if (canManage()) {
                 <p-button
                   icon="pi pi-pencil"
                   [text]="true"
@@ -125,6 +132,7 @@ const ACTION_TYPES = [
                   [pTooltip]="'common.remove' | translate"
                   (onClick)="onRemove(action)"
                 />
+                }
               </div>
             </td>
           </tr>
@@ -215,6 +223,12 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
   private readonly fb = inject(FormBuilder);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-123 — workflows:manage, what every transition-action endpoint carries.
+  readonly canManage = computed(() =>
+    this.navigationAccess.hasPermission('workflows:manage'),
+  );
 
   readonly actionTypes = ACTION_TYPES;
   readonly showFormDialog = signal(false);

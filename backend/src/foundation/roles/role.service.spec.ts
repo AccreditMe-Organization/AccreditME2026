@@ -198,8 +198,55 @@ describe('RoleService', () => {
       const result = await service.getRoles(ORG_A);
 
       const where = mockPrisma.role.findMany.mock.calls[0]![0].where;
-      expect(where.key).toEqual({ not: 'PLATFORM_ADMIN' });
+      expect(where.AND).toContainEqual({
+        OR: [{ key: null }, { key: { not: 'PLATFORM_ADMIN' } }],
+      });
       expect(result.data.map((r) => r.key)).toEqual(['TENANT_ADMIN']);
+    });
+
+    // ACC-123 — the null branch, asserted on its own because its absence was a
+    // real defect and this suite did not catch it.
+    //
+    // BE HONEST ABOUT WHAT THIS PROVES. mockPrisma returns whatever the test
+    // hands it, so no assertion here can show what Postgres does with
+    // `key <> 'PLATFORM_ADMIN'` when key is NULL. It answers NULL, not true,
+    // and the row is dropped — which is why every tenant-created role was
+    // missing from the Roles screen while these specs stayed green.
+    //
+    // That was MEASURED against the dev database, both spellings
+    // (`key: { not: X }` and `NOT: { key: X }`), each returning the six system
+    // roles and neither custom one. What this test can do is pin the shape
+    // that measurement settled on, so it is not quietly simplified back.
+    it('includes roles with NO key — a custom role is not PLATFORM_ADMIN', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
+      mockPrisma.role.findMany.mockResolvedValue([]);
+
+      await service.getRoles(ORG_A);
+
+      const clause = (
+        mockPrisma.role.findMany.mock.calls[0]![0].where.AND as unknown[]
+      ).find((c) => JSON.stringify(c).includes('PLATFORM_ADMIN'));
+
+      expect(clause).toEqual({
+        OR: [{ key: null }, { key: { not: 'PLATFORM_ADMIN' } }],
+      });
+    });
+
+    // The two clauses are each a disjunction, and one object holds one `OR`.
+    // Spread side by side, the search clause REPLACES the platform exclusion —
+    // so searching would put PLATFORM_ADMIN back into an ordinary tenant's
+    // list. Both must survive together.
+    it('keeps the PLATFORM_ADMIN exclusion when a search term is also applied', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
+      mockPrisma.role.findMany.mockResolvedValue([]);
+
+      await service.getRoles(ORG_A, { search: 'admin' });
+
+      const and = mockPrisma.role.findMany.mock.calls[0]![0].where.AND as unknown[];
+      expect(and).toContainEqual({
+        OR: [{ key: null }, { key: { not: 'PLATFORM_ADMIN' } }],
+      });
+      expect(JSON.stringify(and)).toContain('nameAr');
     });
 
     it('does not exclude PLATFORM_ADMIN for the designated platform organization', async () => {
@@ -211,7 +258,9 @@ describe('RoleService', () => {
 
       const result = await service.getRoles(ORG_A);
 
-      expect(mockPrisma.role.findMany.mock.calls[0]![0].where.key).toBeUndefined();
+      expect(
+        JSON.stringify(mockPrisma.role.findMany.mock.calls[0]![0].where),
+      ).not.toContain('PLATFORM_ADMIN');
       expect(result.data.map((r) => r.key).sort()).toEqual(['PLATFORM_ADMIN', 'TENANT_ADMIN']);
     });
 
@@ -227,7 +276,9 @@ describe('RoleService', () => {
       const findWhere = mockPrisma.role.findMany.mock.calls[0]![0].where;
       const countWhere = mockPrisma.role.count.mock.calls[0]![0].where;
       expect(countWhere).toEqual(findWhere);
-      expect(countWhere.key).toEqual({ not: 'PLATFORM_ADMIN' });
+      expect(countWhere.AND).toContainEqual({
+        OR: [{ key: null }, { key: { not: 'PLATFORM_ADMIN' } }],
+      });
     });
 
     // ACC-74 — the Roles list rendered 0 for every role because getRoles()
@@ -325,10 +376,15 @@ describe('RoleService', () => {
 
       await service.getRoles(ORG_A, { search: 'جودة' });
 
-      expect(mockPrisma.role.findMany.mock.calls[0]![0].where.OR).toEqual([
-        { nameEn: { contains: 'جودة', mode: 'insensitive' } },
-        { nameAr: { contains: 'جودة', mode: 'insensitive' } },
-      ]);
+      // ACC-123 — under AND now, so that the search clause and the
+      // platform-role exclusion can both apply. Before, each was an `OR` key
+      // on one object and the second silently won.
+      expect(mockPrisma.role.findMany.mock.calls[0]![0].where.AND).toContainEqual({
+        OR: [
+          { nameEn: { contains: 'جودة', mode: 'insensitive' } },
+          { nameAr: { contains: 'جودة', mode: 'insensitive' } },
+        ],
+      });
     });
 
     // The compound default: system roles first, then alphabetical. It predates

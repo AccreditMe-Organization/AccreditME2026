@@ -16,6 +16,7 @@ import {
   TENANT_NAV_GROUPS,
   visibleNavGroups,
 } from '../../core/navigation/nav-items';
+import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
 
 const BADGE_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -298,12 +299,20 @@ export class SidebarComponent {
 
   // Which face of the product this is. The reference switches the kicker on a
   // role NAME ("Tenant admin" when role === "admin"). This product never gates
-  // or labels on a role name, so it is derived from what the rail actually
-  // shows: an Administration group means administering this tenant.
+  // or labels on a role name.
+  //
+  // ACC-123 — it reads admin:access DIRECTLY, rather than asking whether the
+  // Administration group came back from visibleNavGroups(). The two now agree
+  // (the group requires the same permission), so this is not a fix — it is
+  // about which fact the label states. Before this, Dr. Yasser Al-Amri was
+  // called "Tenant admin" because he held four page permissions for his
+  // pickers; the label was reporting the rail, and the rail was wrong. Naming
+  // the permission means the label cannot drift again if the group's own
+  // visibility rule changes.
   readonly productLabelKey = computed(() => {
-    const keys = this.groups().map((g) => g.key);
     if (this.isPlatformShell()) return 'shell.product.platform';
-    if (keys.includes('admin')) return 'shell.product.admin';
+    if (this.navigationAccessService.hasPermission(ADMIN_ACCESS))
+      return 'shell.product.admin';
     return 'shell.product.quality';
   });
 

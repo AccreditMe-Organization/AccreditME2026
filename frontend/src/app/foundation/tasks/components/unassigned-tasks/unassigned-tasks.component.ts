@@ -20,6 +20,7 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 // object), so this is the only place an admin sees them and reassigns
 // (ACC-34 item 4). Gated by tasks:manage (sidebar.component.ts), the first
 // real consumer of that previously-inert permission.
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 @Component({
   selector: 'app-unassigned-tasks',
   standalone: true,
@@ -61,12 +62,18 @@ import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
             <td>{{ task.title }}</td>
             <td>{{ task.createdAt | amDateTime }}</td>
             <td>
-              <p-button
-                [label]="'task.reassign' | translate"
-                size="small"
-                [text]="true"
-                (onClick)="onOpenReassign(task)"
-              />
+              <!-- ACC-123 — tasks:reassign, not tasks:manage. The ROUTE is
+                   tasks:manage, and the two are separate permissions, so a
+                   custom role holding only the first reached this screen and
+                   met a 403 on its only action. -->
+              @if (canReassign()) {
+                <p-button
+                  [label]="'task.reassign' | translate"
+                  size="small"
+                  [text]="true"
+                  (onClick)="onOpenReassign(task)"
+                />
+              }
             </td>
           </tr>
         </ng-template>
@@ -148,6 +155,12 @@ export class UnassignedTasksComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly orgUnitService = inject(OrgUnitService);
   private readonly translate = inject(TranslateService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-123 — POST /tasks/:id/reassign carries tasks:reassign.
+  readonly canReassign = computed(() =>
+    this.navigationAccess.hasPermission('tasks:reassign'),
+  );
 
   readonly loading = signal(false);
   readonly tasks = signal<ITaskDto[]>([]);

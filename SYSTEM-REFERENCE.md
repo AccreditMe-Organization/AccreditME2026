@@ -58,7 +58,7 @@ audit's starting point, not be mistaken for having already done it.
 
 ## Table of Contents
 
-1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.2 corrected — a revocation applies on the next request)
+1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.2 corrected — a revocation applies on the next request)
 2. Workflow Engine — ✅ complete
 3. Task System — ✅ complete
 4. Notification System — ✅ complete
@@ -67,7 +67,7 @@ audit's starting point, not be mistaken for having already done it.
 7. Organization Structure — ✅ complete
 8. Multi-Tenancy Conventions — ✅ complete
 9. i18n / RTL — ✅ complete (9.6 = the display formatting layer, ACC-94; 9.7 = the authoritative time-zone field)
-10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79; 10.14 = create-action permission gating, ACC-118)
+10. Frontend Design Patterns — ✅ complete (10.10 = the shared list pattern, ACC-78; 10.11 = the application shell, ACC-79; 10.14 = create-action permission gating, ACC-118; 10.15 = write-action gating, ACC-123)
 11. Known Cross-Cutting Gaps — ✅ complete
 12. User Management — ✅ complete
 13. Setup Health — standing conditions (ACC-82) — ✅ built (13.10 = the cached-state rule)
@@ -323,6 +323,28 @@ elsewhere.**
 - **`getRoles()`** — filters `PLATFORM_ADMIN` out of the list for any
   non-platform organization (UX-only defense-in-depth; `PlatformGuard`
   is the real gate, not this filter).
+  **The exclusion is `OR: [{ key: null }, { key: { not: 'PLATFORM_ADMIN' } }]`,
+  and the null branch is load-bearing** (ACC-123). A custom role has
+  `key: null` (see `createRole()` above), and in SQL
+  `key <> 'PLATFORM_ADMIN'` evaluates to NULL rather than true for a NULL
+  key, so the row is not returned. Prisma does not add the null check:
+  both `key: { not: X }` and `NOT: { key: X }` were run against the dev
+  database and each returned the six system roles and neither custom one.
+  **The effect was that every tenant-created role was invisible on the
+  Roles screen from ACC-78 until ACC-123** — the list read "1-6 of 6" for
+  a tenant that had eight. It arrived with the move of the filter into the
+  where clause, which was itself correct (a post-query filter and a
+  database-side `count()` cannot agree); the post-query filter it replaced
+  had handled null correctly by accident.
+  **Both this clause and the bilingual search clause live in `AND`**, not
+  as sibling spreads. Each is a disjunction, one object holds one `OR`
+  key, and side by side the search clause silently REPLACED the platform
+  exclusion — so any search term would have put `PLATFORM_ADMIN` back into
+  an ordinary tenant's list.
+  Note what a unit test can and cannot show here: `mockPrisma` returns
+  whatever the test hands it, so no assertion in `role.service.spec.ts`
+  demonstrates NULL comparison semantics. That was measured; the specs pin
+  the shape the measurement settled on.
   **Returns `permissionCount`, never `permissions`** (ACC-74). The two
   are deliberately separate fields on `IRole`:
   - `permissions?: string[]` is **detail-only** — populated by
@@ -703,6 +725,76 @@ workflow extension. `UserRole` has four columns and no resource scoping
 above is not resource-scoped authorization either: it asks whether the
 caller may see the parent TYPE, then whether that parent exists in their
 tenant.
+
+---
+
+### 1.10 Administration Access — the Section Permission (ACC-123)
+
+**`admin:access` says whether a person administers this tenant. It does not
+say which admin page they may open — every Administration route needs BOTH.**
+
+**Why it exists.** A "view" permission was answering two unrelated questions.
+The task-form assignee picker reads `GET /users`, so a working role needs
+`users:view`; the rail read the same string as "may open the Users admin
+page". `QUALITY_MANAGER` holds `users:view`, `org:view`, `lookups:view` and
+`workflows:view` for its pickers, and was therefore shown the whole
+Administration section, the "Tenant admin" kicker, and write controls the
+server then refused one by one. The page permissions are unchanged; this
+separates the second question out.
+
+| | Backend | Frontend |
+| -- | -- | -- |
+| Declaration | `ADMIN_PERMISSIONS.ACCESS` (`common/constants/permissions.ts`) | `ADMIN_ACCESS` (`core/navigation/admin-access.ts`) |
+| Reaches the catalogue | automatically — `permission.seed.ts` flattens every `*_PERMISSIONS` group | — |
+| Reaches TENANT_ADMIN | `role.seed.ts`'s `ALL` spread, and no other seeded role | — |
+
+Two declarations because the frontend does not import backend source.
+`role.seed.spec.ts` pins the backend half — including, per seeded role by
+name, that `QUALITY_MANAGER` keeps `users:view` and still cannot administer.
+
+**The nav model carries it on the GROUP.** `NavGroup` gained
+`requiredPermission?`, set on Administration only. `visibleNavGroups()` drops
+a group whose permission fails before filtering its items, and
+`ROUTE_PERMISSIONS` became `ReadonlyMap<string, readonly string[]>`: an
+Administration item yields `[admin:access, <its own>]`, everything else a
+one-element list. `permissionGuard` requires EVERY entry. That is what makes
+a typed URL refused rather than only a link hidden, and it covers any item
+added later without anyone listing routes by hand.
+
+**Both halves are load-bearing, and each alone is a different product.** The
+group permission alone would hand a custom admin role every admin page; the
+item permission alone is what shipped. Verified live, in both directions: a
+custom role holding `admin:access` + `lookups:view` gets Administration with
+exactly one item, reads the Lookup values list, sees zero write controls on
+it, and is still refused `/users`.
+
+**`/users/:id` keeps `ownProfileGuard`, which needs no change.** Your own id
+is always allowed; anyone else's delegates to `permissionGuard`, which walks
+up to the `users` entry and therefore now requires both permissions. The
+delegation is what makes that free, so `own-profile.guard.spec.ts` pins it —
+including that an ordinary user still opens their own profile, which is where
+language and out-of-office live.
+
+**The shell kicker reads the permission directly**, rather than asking whether
+the Administration group came back from `visibleNavGroups()`. The two agree
+today; naming the permission means the label cannot drift if the group's
+visibility rule changes.
+
+**`/tasks/all` was deliberately left on `tasks:view` alone** — a stopgap route
+with no nav item, not an Administration screen.
+
+**Backfill, and why its ordering differs from every earlier one.**
+`backfill-admin-access-permission.ts` grants `admin:access` to each existing
+organization's `TENANT_ADMIN` role; additive, idempotent, and deliberately not
+a `seedSystemRoles()` replace. Earlier backfills (ACC-16, ACC-22, ACC-46,
+ACC-82) each unlocked something NEW, so running late merely delayed a feature.
+**This one gates a section that already works**: between the deploy and the
+run, an existing tenant admin loses all of Administration. It must run BEFORE
+the code that requires it. Run on the shared dev database 22 Sep 2026 —
+3 roles granted, then 0 on a re-run.
+It writes via direct Prisma and so leaves no `AuditLog` row, matching every
+other `backfill-*.ts` and the standing gap CLAUDE.md records under ACC-101.
+That rule constrains REVOCATION backfills; this one only grants.
 
 ---
 
@@ -5001,6 +5093,73 @@ would trade those misses for false positives on every `pi-plus` in the app.
 **Unrelated to ACC-108.** That is a STALE cached permission set; this was no
 gate at all. These gates read the same cached set ACC-108 is about, so fixing
 one does not fix the other.
+
+---
+
+### 10.15 Every Write Action Is Gated Too (ACC-123)
+
+**§10.14's rule, widened from create to edit / delete / deactivate / reorder /
+set-default / remove.** Same mechanism (`@if (canX())` over a `computed()`
+reading `NavigationAccessService`), same rule that the permission is read off
+the endpoint's `@Permissions()`, same HIDDEN-not-disabled default.
+
+**Gated by CONTAINER where a group of controls shares one permission.** Not
+laziness: it is also how controls a template scan cannot see get covered — a
+label-only Edit button in `workflow-stage-list`, the `pi-tag` override-label in
+`lookup-value-list`, and an add-child `pi-plus` in `org-unit-tree` that sits in
+a row rather than a page header and so was invisible to `check:create-gating`
+as well.
+
+**Three components had no permission gate of any kind**, and all three are
+nested config editors rather than pages, which is how they were missed:
+`workflow-action-configurator`, `workflow-transition-editor`,
+`user-role-assignment`. The last of those also hides its role PICKER, not just
+its Assign button — a chooser whose only action is refused is worse than no
+chooser.
+
+**One control moved permission rather than gaining one:** the Reassign button
+in `unassigned-tasks` now reads `tasks:reassign`, where the ROUTE is
+`tasks:manage`. They are separate permissions, so a custom role holding only
+the first reached the screen and met a 403 on its only action.
+
+**DISABLED MUST SAY WHY.** Where a control stays visible and disabled for a
+STATE reason, the tooltip now gives the reason instead of repeating the action:
+`workflow.alreadyDefault` on the Set-as-default star of a template that already
+is the default, `organization.unitInactive` on an inactive unit's controls.
+
+| | Proves |
+| -- | -- |
+| `npm run check:action-gating` | a gate is PRESENT on every write control it can see |
+| `npm run check:action-gating:selftest` | the scan still FAILS for an ungated control |
+| component specs | the gate is the RIGHT one, in both directions |
+
+**`check-action-gating.mjs` builds each template's real `@if` block structure**
+— a brace walk with quotes honoured only inside tags, because an apostrophe in
+prose is not a delimiter — so a control gated two blocks up is recognised and a
+control merely NEAR a gated one is not. It knows `<button>`, `<p-button>` and
+`<am-icon-button>` (whose click is `(activated)`), and matches a write icon only
+in a literal `icon=`/`class=` value, never a `[class.pi-arrow-up]` binding,
+which is how sortable headers draw their chevron.
+
+**A SEPARATE SCAN FROM `check:create-gating`, deliberately.** A create action is
+one control in one bounded region (`pageActions` … `</app-page-header>`); write
+controls are scattered through cells, expanded rows and record headers with no
+region to bound on. One pattern doing both jobs would do both worse.
+
+**Two blind spots, stated rather than discovered.** A control built as data — a
+`MenuItem[]` with a `command`, rendered by `p-menu` — has no icon in the
+template (`user-list`, `position-list`; both gate correctly in TypeScript, and
+specs cover them). And a write control drawn with an icon outside the scan's
+vocabulary is invisible; widening it to any icon would make the allowlist the
+real rule.
+
+**The allowlist is four entries, each naming file, control and reason** — a
+dialog's own ✕, a picker's clear/chip-remove, the task form's clear-due-date,
+and the impersonation banner's exit. All edit form state or end a session;
+none is a saved change.
+
+**Zero baseline, not a ratchet.** Every real ungated control was fixed in
+ACC-123 (26 gated at the time of writing), so the scan fails on any finding.
 
 ---
 

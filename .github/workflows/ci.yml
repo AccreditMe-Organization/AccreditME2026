@@ -235,6 +235,20 @@ jobs:
       - name: Create-action gating
         run: npm run check:create-gating
         working-directory: frontend
+      # ACC-123 — the same argument, widened from create to every write action:
+      # edit, delete, deactivate, reorder, set default, remove. A separate scan
+      # rather than a wider one, because the two look for different shapes —
+      # see the header of check-action-gating.mjs.
+      - name: Write-action gating
+        run: npm run check:action-gating
+        working-directory: frontend
+      # A scan that has quietly stopped matching anything reports a clean app,
+      # and a green build looks identical either way. The scan's own floor
+      # catches total failure; this writes a real ungated control into src/app
+      # and asserts the scan fails for it, then that the tree is clean again.
+      - name: Write-action gating — self-test
+        run: npm run check:action-gating:selftest
+        working-directory: frontend
       - name: Run unit tests
         run: npx ng test --watch=false --browsers=ChromeHeadlessCI
         working-directory: frontend

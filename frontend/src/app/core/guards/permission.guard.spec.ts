@@ -15,6 +15,7 @@ import { environment } from '../../../environments/environment';
 import { permissionGuard } from './permission.guard';
 import { NavigationAccessService } from '../services/navigation-access.service';
 import { LANDING_ROUTE } from '../navigation/landing-route';
+import { ADMIN_ACCESS } from '../navigation/admin-access';
 
 // ACC-70 — the deny path is the reason this guard exists, so it is tested
 // first and hardest. An allow-only suite would pass just as happily against
@@ -63,7 +64,7 @@ describe('permissionGuard', () => {
   });
 
   it('denies each mapped route independently — holding one permission does not grant another', () => {
-    setup({ permissions: ['org:view'] });
+    setup({ permissions: [ADMIN_ACCESS, 'org:view'] });
 
     expect(run('organization')).toBe(true);
     expect(run('roles')).toEqual(router.parseUrl(LANDING_ROUTE));
@@ -80,7 +81,7 @@ describe('permissionGuard', () => {
   // The mapping is derived from the sidebar's own list, so these assert the
   // wiring rather than restating it: if nav-items.ts changed, these break.
   it('reads the permission from the shared nav mapping', () => {
-    setup({ permissions: ['workflows:view', 'positions:view'] });
+    setup({ permissions: [ADMIN_ACCESS, 'workflows:view', 'positions:view'] });
 
     expect(run('workflows')).toBe(true);
     expect(run('org-positions')).toBe(true);
@@ -91,7 +92,7 @@ describe('permissionGuard', () => {
   // permission. Asserted deliberately — the guard uses whatever the shared
   // list declares, and this documents that as intended rather than a bug.
   it('honours the shared list even where the mapping looks unusual (working-calendar under org:view)', () => {
-    setup({ permissions: ['org:view'] });
+    setup({ permissions: [ADMIN_ACCESS, 'org:view'] });
 
     expect(run('working-calendar')).toBe(true);
   });
@@ -118,19 +119,19 @@ describe('permissionGuard', () => {
     expect(run('tasks', 'all')).toBe(true);
   });
 
-  it('gates /tasks/unassigned on tasks:manage ALONE, no longer on tasks:view as well', () => {
-    setup({ permissions: ['tasks:manage'] });
+  it('gates /tasks/unassigned on tasks:manage, no longer on tasks:view as well', () => {
+    setup({ permissions: [ADMIN_ACCESS, 'tasks:manage'] });
     expect(run('tasks', 'unassigned')).toBe(true);
   });
 
   it('applies a nested route’s OWN stricter permission (/tasks/unassigned needs tasks:manage)', () => {
-    setup({ permissions: ['tasks:view'] });
+    setup({ permissions: [ADMIN_ACCESS, 'tasks:view'] });
 
     expect(run('tasks')).toBe(true);
     // tasks:view is not enough for the unassigned view.
     expect(run('tasks', 'unassigned')).toEqual(router.parseUrl(LANDING_ROUTE));
 
-    setup({ permissions: ['tasks:view', 'tasks:manage'] });
+    setup({ permissions: [ADMIN_ACCESS, 'tasks:view', 'tasks:manage'] });
     expect(run('tasks', 'unassigned')).toBe(true);
   });
 
@@ -170,8 +171,9 @@ describe('permissionGuard', () => {
     }
 
     // Organization profile reads GET /tenant, so tenant:view is enough for it
-    // — and for nothing else here.
-    setup({ permissions: ['tenant:view'] });
+    // — and for nothing else here. ACC-123: plus admin:access, which every
+    // Administration route now requires on top of its own permission.
+    setup({ permissions: [ADMIN_ACCESS, 'tenant:view'] });
     expect(run('admin-settings', 'organization-profile')).toBe(true);
     for (const screen of screens) {
       expect(run('admin-settings', screen))
@@ -179,7 +181,7 @@ describe('permissionGuard', () => {
         .toEqual(router.parseUrl(LANDING_ROUTE));
     }
 
-    setup({ permissions: ['tenant:manage_config'] });
+    setup({ permissions: [ADMIN_ACCESS, 'tenant:manage_config'] });
     for (const screen of screens) {
       expect(run('admin-settings', screen)).withContext(screen).toBe(true);
     }
@@ -198,6 +200,85 @@ describe('permissionGuard', () => {
     setup({ permissions: [], trustworthy: true });
 
     expect(run('organization')).toEqual(router.parseUrl(LANDING_ROUTE));
+  });
+
+  // ── ACC-123 — every Administration route needs BOTH permissions ──────────
+  //
+  // The defect: Dr. Yasser Al-Amri (QUALITY_MANAGER) holds users:view, org:view,
+  // lookups:view and workflows:view because his pickers read those endpoints,
+  // and that was enough to open every one of those admin pages by URL. These
+  // tests are the guard half of separating "may read this data" from "may
+  // administer this tenant".
+  describe('Administration routes require admin:access as well (ACC-123)', () => {
+    const ADMIN_ROUTES: readonly (readonly string[])[] = [
+      ['setup-health'],
+      ['users'],
+      ['roles'],
+      ['org-positions'],
+      ['organization'],
+      ['workflows'],
+      ['lookups'],
+      ['working-calendar'],
+      ['tasks', 'unassigned'],
+      ['admin-settings', 'task-sla'],
+      ['admin-settings', 'organization-profile'],
+      ['admin-settings', 'email-provider'],
+      ['admin-settings', 'ai-settings'],
+    ];
+
+    // The PAGE permissions Yasser really holds. Not a stand-in: this is the
+    // QUALITY_MANAGER seed's intersection with the Administration items.
+    const YASSER = ['users:view', 'org:view', 'lookups:view', 'workflows:view'];
+
+    it('refuses every admin route to a working role holding the page permissions but not admin:access', () => {
+      setup({ permissions: YASSER });
+      for (const segments of ADMIN_ROUTES) {
+        expect(run(...segments))
+          .withContext(segments.join('/'))
+          .toEqual(router.parseUrl(LANDING_ROUTE));
+      }
+    });
+
+    // The other direction, so the new permission is not silently sufficient on
+    // its own. A custom role granted admin:access and nothing else administers
+    // nothing — it is a section key, not a master key.
+    it('refuses every admin route to a role holding admin:access and no page permission', () => {
+      setup({ permissions: [ADMIN_ACCESS] });
+      for (const segments of ADMIN_ROUTES) {
+        expect(run(...segments))
+          .withContext(segments.join('/'))
+          .toEqual(router.parseUrl(LANDING_ROUTE));
+      }
+    });
+
+    it('allows each admin route to a caller holding admin:access AND that route\u0027s own permission', () => {
+      setup({
+        permissions: [
+          ADMIN_ACCESS,
+          ...YASSER,
+          'setup:view',
+          'roles:view',
+          'positions:view',
+          'tasks:manage',
+          'tenant:view',
+          'tenant:manage_config',
+        ],
+      });
+      for (const segments of ADMIN_ROUTES) {
+        expect(run(...segments)).withContext(segments.join('/')).toBe(true);
+      }
+    });
+
+    // The routes OUTSIDE Administration must not have acquired the new
+    // requirement by accident — the same mistake in the other direction, and
+    // the one that would lock every ordinary user out of their own work.
+    it('leaves the non-admin routes alone', () => {
+      setup({ permissions: ['committees:view', 'tasks:view'] });
+      expect(run('home')).toBe(true);
+      expect(run('tasks')).toBe(true);
+      expect(run('tasks', 'all')).toBe(true);
+      expect(run('committees')).toBe(true);
+    });
   });
 });
 
@@ -350,7 +431,9 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
 
   it('allows a guarded route to a user who holds its permission, even when the tenant call 403s', () => {
     service.loadAccess().subscribe();
-    httpMock.expectOne(PERMISSIONS_URL).flush(['org:view']);
+    // ACC-123 — admin:access as well, because /organization is an
+    // Administration route and org:view alone no longer opens it.
+    httpMock.expectOne(PERMISSIONS_URL).flush([ADMIN_ACCESS, 'org:view']);
     httpMock
       .expectOne(TENANT_URL)
       .flush('forbidden', { status: 403, statusText: 'Forbidden' });
@@ -375,4 +458,5 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
 
     expect(guard('organization')).toBe(true);
   });
+
 });

@@ -77,7 +77,12 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
             />
           </td>
           <td>
+            <!-- ACC-123 — add child, edit, manage head and deactivate are all
+                 org:manage (organization.controller.ts). The add-child control
+                 is a row action rather than a page-header one, so
+                 check:create-gating never saw it; this closes that too. -->
             <div class="flex gap-1 justify-end">
+              @if (canManage()) {
               <p-button
                 icon="pi pi-plus"
                 [text]="true"
@@ -97,7 +102,10 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                 [text]="true"
                 size="small"
                 [disabled]="!rowData.isActive"
-                [pTooltip]="'orgUnitHead.manageHead' | translate"
+                [pTooltip]="
+                  (rowData.isActive ? 'orgUnitHead.manageHead' : 'organization.unitInactive')
+                    | translate
+                "
                 (onClick)="onManageHead(rowData)"
               />
               <p-button
@@ -106,9 +114,13 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                 size="small"
                 severity="danger"
                 [disabled]="!rowData.isActive"
-                [pTooltip]="'organization.deactivate' | translate"
+                [pTooltip]="
+                  (rowData.isActive ? 'organization.deactivate' : 'organization.unitInactive')
+                    | translate
+                "
                 (onClick)="onDeactivate(rowData)"
               />
+              }
             </div>
           </td>
         </tr>
@@ -163,6 +175,8 @@ export class OrgUnitTreeComponent implements OnInit {
   // POST /organization enforces ORG_PERMISSIONS.MANAGE — org:manage
   // (organization.controller.ts).
   readonly canCreate = computed(() => this.navigationAccess.hasPermission('org:manage'));
+  // ACC-123 — the same permission, asked about changing an existing unit.
+  readonly canManage = this.canCreate;
 
   readonly loading = signal(false);
   readonly treeNodes = signal<TreeNode<OrgUnitDto>[]>([]);

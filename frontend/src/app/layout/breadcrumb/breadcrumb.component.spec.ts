@@ -55,6 +55,8 @@ const routes: Routes = [
   },
 ];
 
+import { ADMIN_ACCESS } from '../../core/navigation/admin-access';
+
 describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () => {
   let tenantName: WritableSignal<string>;
   let permissions: WritableSignal<string[]>;
@@ -108,7 +110,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
   // UX-04. The last crumb used to BE the current page, directly above an H1
   // saying the same word.
   it('never names the current page on a section page — the H1 owns that', async () => {
-    configure({ permissions: ['users:view'] });
+    configure({ permissions: [ADMIN_ACCESS, 'users:view'] });
     const { crumb } = await trailAt('/users');
     expect(crumb.items()).toEqual([
       { text: TENANT, url: '/home' },
@@ -118,7 +120,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
   });
 
   it('ignores the query string, so a filtered list keeps the same trail', async () => {
-    configure({ permissions: ['users:view'] });
+    configure({ permissions: [ADMIN_ACCESS, 'users:view'] });
     const { crumb } = await trailAt('/users?users.scope=ACTIVE');
     expect(crumb.items().map((i) => i.labelKey ?? i.text)).toEqual([
       TENANT,
@@ -149,7 +151,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
   // Longest route wins: '/tasks' is a prefix of '/tasks/unassigned', but the
   // unassigned view belongs to Administration, not to My work.
   it('resolves /tasks/unassigned to Administration, not to My tasks', async () => {
-    configure({ permissions: ['tasks:manage'] });
+    configure({ permissions: [ADMIN_ACCESS, 'tasks:manage'] });
     const { crumb } = await trailAt('/tasks/unassigned');
     expect(crumb.items()).toEqual([
       { text: TENANT, url: '/home' },
@@ -189,7 +191,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
   // On a hard reload the navigation can finish BEFORE entitlements load. A trail
   // built once at NavigationEnd would have no root and never recover.
   it('adds the tenant root when entitlements arrive after the navigation', async () => {
-    configure({ permissions: ['users:view'], tenantName: '' });
+    configure({ permissions: [ADMIN_ACCESS, 'users:view'], tenantName: '' });
     const { harness, crumb } = await trailAt('/users');
     expect(crumb.items()).toEqual([
       { labelKey: 'nav.groups.admin', url: null },
@@ -204,7 +206,7 @@ describe('BreadcrumbComponent (ACC-79 — ancestry, stops at the parent)', () =>
   // ACC-14 — a failure building one trail must not kill the breadcrumb for the
   // rest of the session.
   it('recovers on the next navigation after a build failure', async () => {
-    configure({ permissions: ['users:view', 'committees:view'] });
+    configure({ permissions: [ADMIN_ACCESS, 'users:view', 'committees:view'] });
     const { harness, crumb } = await trailAt('/users');
     const good = crumb.items();
 
