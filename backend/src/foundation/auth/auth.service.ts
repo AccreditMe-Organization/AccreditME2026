@@ -45,7 +45,36 @@ import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
 
-export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // matches CLAUDE.md's "JWT expiry: 15 minutes"
+// CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
+const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+
+/**
+ * ACC-122 — the access-token lifetime, overridable ONLY for local testing.
+ *
+ * Silent renewal is, by construction, the thing you cannot see working: a
+ * correct implementation looks exactly like a session that never expired.
+ * Waiting fifteen real minutes to watch one renewal is not a test anybody
+ * runs twice, so the browser pass runs the local backend at, say, 30 seconds
+ * and watches several renewals in a couple of minutes.
+ *
+ * THE PRODUCTION VALUE IS UNCHANGED. With the variable unset — which is every
+ * deployed environment, and the default locally — this is 15 * 60 exactly as
+ * before. A value is only honoured when it parses as a positive integer, so a
+ * typo falls back to the default rather than minting a zero-second token.
+ *
+ * Deliberately not wired to NODE_ENV: the override has to be something a
+ * person sets on purpose for one run, not something that switches itself on
+ * in an environment that merely looks non-production.
+ */
+function resolveAccessTokenTtlSeconds(): number {
+  const raw = process.env['AUTH_ACCESS_TOKEN_TTL_SECONDS'];
+  if (!raw) return DEFAULT_ACCESS_TOKEN_TTL_SECONDS;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_ACCESS_TOKEN_TTL_SECONDS;
+  return parsed;
+}
+
+export const ACCESS_TOKEN_TTL_SECONDS = resolveAccessTokenTtlSeconds();
 const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // matches "Refresh token expiry: 7 days"
 
 export interface PublicUser {
@@ -148,9 +177,14 @@ export class AuthService {
     );
   }
 
+  // ACC-122 — tokenVersion is now recorded on the row. It is what lets
+  // refresh() tell "this session predates a forced logout" from "this session
+  // is current", which it could not do before: refresh tokens rotate, so the
+  // row is the only place a session's origin can be written down.
   private async issueRefreshToken(
     userId: string,
     organizationId: string,
+    tokenVersion: number,
     req: ExpressRequest,
   ): Promise<string> {
     const rawToken = randomBytes(32).toString('hex');
@@ -161,6 +195,7 @@ export class AuthService {
         userId,
         organizationId,
         tokenHash,
+        tokenVersion,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
         deviceInfo: req.headers['user-agent'],
         ipAddress: req.ip,
@@ -217,7 +252,12 @@ export class AuthService {
     const wasNewIp = this.loginAttemptService.isNewIp(user.lastLoginIp, req.ip);
 
     const accessToken = this.mintAccessToken(user);
-    const refreshToken = await this.issueRefreshToken(user.id, user.organizationId, req);
+    const refreshToken = await this.issueRefreshToken(
+      user.id,
+      user.organizationId,
+      user.tokenVersion,
+      req,
+    );
     this.setSessionCookies(res, accessToken, refreshToken);
 
     await this.prisma.user.update({
@@ -375,8 +415,44 @@ export class AuthService {
       throw new UnauthorizedException('This account is not active');
     }
 
+    // ACC-122 — THE FORCED LOGOUT, MADE TRUE BY CONSTRUCTION.
+    //
+    // TenantGuard rejects an access token whose tokenVersion is stale
+    // (tenant.guard.ts). Before silent renewal that was the whole story: the
+    // user's next request 401'd and the frontend signed them out. With
+    // renewal, a 401 is no longer the end of anything — the client refreshes
+    // and retries — so without this check refresh() would mint a token
+    // carrying the CURRENT version and the forced logout would silently stop
+    // working.
+    //
+    // It did not bite today only by coincidence: invalidateUserSessions() has
+    // exactly one caller, UserService.deactivate(), which also flips status to
+    // INACTIVE, and the check above catches that. But tenant.guard.ts's own
+    // comment says the mechanism is also meant to cover a password change, and
+    // the first caller that bumps the version WITHOUT deactivating would have
+    // reopened the hole with nothing failing to say so.
+    //
+    // NULL means the row was written before this column existed. Treated as
+    // "unknown", which falls back to the status check — exactly the behaviour
+    // that shipped before. Refusing nulls would sign out every logged-in user
+    // the moment the migration ran, for no security gain, and rows rotate on
+    // every refresh so nulls disappear within one refresh cycle.
+    // `?? null` rather than a bare `!== null`: a row read through a narrower
+    // `select` would give undefined, and a strict null comparison would then
+    // reject EVERY refresh — failing closed in the one direction that signs
+    // out the whole tenant. Unknown is unknown however it is spelt.
+    const issuedAtVersion = existing.tokenVersion ?? null;
+    if (issuedAtVersion !== null && issuedAtVersion !== user.tokenVersion) {
+      throw new UnauthorizedException('Session has been revoked');
+    }
+
     const accessToken = this.mintAccessToken(user);
-    const newRefreshToken = await this.issueRefreshToken(user.id, user.organizationId, req);
+    const newRefreshToken = await this.issueRefreshToken(
+      user.id,
+      user.organizationId,
+      user.tokenVersion,
+      req,
+    );
     this.setSessionCookies(res, accessToken, newRefreshToken);
 
     return { success: true };
