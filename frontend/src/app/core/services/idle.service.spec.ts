@@ -270,4 +270,13 @@ describe('IdleService (ACC-122)', () => {
     expect(authService.logout).toHaveBeenCalledTimes(1);
     discardPeriodicTasks();
   }));
+
+  // The dialog's static line says "You'll be signed out in 2 minutes", and
+  // nothing in the code derives that "2" from the constant — they agree by
+  // convention. Changing the lead without changing the string would leave the
+  // dialog quietly lying, which no other test would notice.
+  it('keeps the warning lead at the 2 minutes the dialog text promises', () => {
+    expect(IDLE_WARNING_LEAD_MS).toBe(2 * 60 * 1000);
+    expect(IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000);
+  });
 });
