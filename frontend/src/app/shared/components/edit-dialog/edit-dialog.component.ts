@@ -58,6 +58,25 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
       [appendTo]="appendTo()"
       [style]="{ width: resolvedWidth() }"
     >
+      <!-- ACC-96 — the title and, when the caller gives one, a context line
+           under it: "on Infection Control Committee". Template 3 draws it
+           there because a dialog raised FROM a record has to say which record
+           without the user reading the page behind it.
+
+           A header TEMPLATE rather than the [header] input, because p-dialog
+           renders that input as a bare string with no room for a second line.
+           It is declared unconditionally — p-dialog collects pTemplate
+           children at content init, so one that appears later never lands
+           (the same trap the task footer hit). The @if is INSIDE. -->
+      <ng-template pTemplate="header">
+        <div class="am-dialog__heading">
+          <span class="p-dialog-title">{{ header() }}</span>
+          @if (context()) {
+            <span class="am-dialog__context">{{ context() }}</span>
+          }
+        </div>
+      </ng-template>
+
       @if (visible()) {
         <div class="relative am-dialog__body-wrap">
           <div
@@ -124,6 +143,19 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
   // here, not a silent gap the way p-multiselect was.
   styles: [
     `
+      .am-dialog__heading {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-inline-size: 0;
+      }
+
+      .am-dialog__context {
+        font-size: 12.5px;
+        font-weight: 400;
+        color: var(--am-ink-500);
+      }
+
       :host ::ng-deep .p-select-list-container,
       :host ::ng-deep .p-multiselect-list-container {
         overscroll-behavior: contain;
@@ -143,6 +175,12 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
 export class EditDialogComponent implements AfterViewChecked, OnDestroy {
   readonly visible = input.required<boolean>();
   readonly header = input<string>('');
+  /**
+   * An optional line under the title, naming what this dialog was raised from
+   * — e.g. "on Infection Control Committee". Empty renders nothing at all, not
+   * an empty line.
+   */
+  readonly context = input<string>('');
   readonly content = input.required<TemplateRef<unknown>>();
   readonly visibleChange = output<boolean>();
 

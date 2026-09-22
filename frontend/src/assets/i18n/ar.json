@@ -434,7 +434,7 @@
       "low": "منخفضة",
       "medium": "متوسطة",
       "high": "عالية",
-      "critical": "حرجة"
+      "critical": "عاجلة"
     },
     "status": {
       "title": "الحالة",
@@ -490,7 +490,9 @@
         "tomorrow": "غدًا 09:00",
         "nextDay": "{{day}} 09:00"
       }
-    }
+    },
+    "removeAssignee": "إزالة",
+    "raisedFrom": "على {{record}}"
   },
   "auth": {
     "login": "تسجيل الدخول",

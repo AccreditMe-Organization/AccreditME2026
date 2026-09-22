@@ -515,6 +515,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     <app-edit-dialog
       [(visible)]="taskFormVisible"
       [header]="'task.newTask' | translate"
+      [context]="committee() ? ('task.raisedFrom' | translate: { record: displayName(committee()!) }) : ''"
       [content]="taskFormTpl"
       [dirty]="taskFormDirty()"
       [footer]="taskFooterTpl"

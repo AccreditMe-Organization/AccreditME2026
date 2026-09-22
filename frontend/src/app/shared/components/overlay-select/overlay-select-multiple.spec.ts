@@ -35,8 +35,7 @@ const USERS: UserOption[] = [
       optionLabel="name"
       optionValue="id"
       [multiple]="true"
-      [showClear]="true"
-      multipleSummary="3 selected"
+      removeLabel="Remove"
       [formControl]="control"
     />
   `,
@@ -55,6 +54,19 @@ describe('OverlaySelectComponent — multiple (ACC-96)', () => {
     fixture.nativeElement.querySelector('.am-overlay-select-trigger');
 
   const triggerText = (): string => trigger().textContent?.trim() ?? '';
+
+  const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
+
+  const chipLabels = (): string[] =>
+    Array.from(root().querySelectorAll<HTMLElement>('.am-overlay-select-chip-label')).map(
+      (el) => el.textContent?.trim() ?? '',
+    );
+
+  const removeButtons = (): HTMLElement[] =>
+    Array.from(root().querySelectorAll<HTMLElement>('.am-overlay-select-chip-remove'));
+
+  const removeLabels = (): string[] =>
+    removeButtons().map((el) => el.getAttribute('aria-label') ?? '');
 
   const optionEls = (): HTMLElement[] =>
     Array.from(
@@ -106,26 +118,66 @@ describe('OverlaySelectComponent — multiple (ACC-96)', () => {
       .toBe(4);
   }));
 
-  it('names the picks while they fit and counts them when they do not', fakeAsync(() => {
+  it('shows one chip per pick, each naming its own remove button', fakeAsync(() => {
     open();
     optionEls()[0].click();
-    fixture.detectChanges();
-    tick();
-    expect(triggerText()).toContain('Noura Al-Ghamdi');
-
     optionEls()[1].click();
     fixture.detectChanges();
     tick();
-    expect(triggerText()).toContain('Noura Al-Ghamdi');
-    expect(triggerText()).toContain('Salem Al-Hajri');
 
-    // Third pick crosses multipleSummaryFrom, so the consumer's own summary
-    // replaces the names — the trigger is one line by design.
+    expect(chipLabels()).toEqual(['Noura Al-Ghamdi', 'Salem Al-Hajri']);
+    expect(removeLabels()).toEqual(['Remove Noura Al-Ghamdi', 'Remove Salem Al-Hajri']);
+  }));
+
+  // THE DEFECT THIS REPLACES: a joined label with one clear icon, so the only
+  // way to drop one person was to drop them all. Ahmad hit it in a live test.
+  it('removes ONE of three and keeps the other two', fakeAsync(() => {
+    open();
+    optionEls()[0].click();
+    optionEls()[1].click();
     optionEls()[2].click();
     fixture.detectChanges();
     tick();
-    expect(triggerText()).toContain('3 selected');
-    expect(triggerText()).not.toContain('Noura Al-Ghamdi');
+    expect(host.control.value).toEqual(['u1', 'u2', 'u3']);
+
+    // The MIDDLE one, so a bug that drops the first or the last still fails.
+    removeButtons()[1].click();
+    fixture.detectChanges();
+    tick();
+
+    expect(host.control.value).toEqual(['u1', 'u3']);
+    expect(chipLabels()).toEqual(['Noura Al-Ghamdi', 'Huda Al-Rashidi']);
+  }));
+
+  it('each remove button is a real, focusable button', fakeAsync(() => {
+    host.control.setValue(['u1', 'u2']);
+    fixture.detectChanges();
+    tick();
+
+    for (const button of removeButtons()) {
+      // A <span> with a click handler is not keyboard reachable; a <button> is,
+      // with no tabindex of its own.
+      expect(button.tagName).toBe('BUTTON');
+      expect(button.getAttribute('aria-label')).toContain('Remove');
+      button.focus();
+      expect(document.activeElement).toBe(button);
+    }
+  }));
+
+  it('removing a chip does not open the panel underneath', fakeAsync(() => {
+    host.control.setValue(['u1', 'u2']);
+    fixture.detectChanges();
+    tick();
+    expect(optionEls().length).withContext('closed to begin with').toBe(0);
+
+    removeButtons()[0].click();
+    fixture.detectChanges();
+    tick();
+
+    // The remove button sits inside the trigger, whose own click toggles the
+    // panel — so the handler has to stop the event.
+    expect(optionEls().length).toBe(0);
+    expect(host.control.value).toEqual(['u2']);
   }));
 
   it('writes an existing array back into the trigger and the listbox', fakeAsync(() => {
@@ -154,29 +206,28 @@ describe('OverlaySelectComponent — multiple (ACC-96)', () => {
     expect(host.control.value).toEqual([]);
   }));
 
-  it('clears to an empty array, never to null', fakeAsync(() => {
-    host.control.setValue(['u1', 'u2']);
+  it('removing the last chip leaves an empty array, never null', fakeAsync(() => {
+    host.control.setValue(['u1']);
     fixture.detectChanges();
     tick();
 
-    fixture.nativeElement.querySelector('.am-overlay-select-clear-icon').click();
+    removeButtons()[0].click();
     fixture.detectChanges();
     tick();
 
     // null would reach the API as a missing field rather than "no assignees",
     // and CreateTaskDto.assigneeUserIds is @IsArray.
     expect(host.control.value).toEqual([]);
+    expect(chipLabels()).toEqual([]);
   }));
 
-  it('shows the clear affordance only while something is picked', fakeAsync(() => {
-    const clearIcon = (): Element | null =>
-      fixture.nativeElement.querySelector('.am-overlay-select-clear-icon');
-
-    expect(clearIcon()).toBeNull();
-
-    host.control.setValue(['u1']);
+  it('offers no whole-set clear icon in multiple mode', fakeAsync(() => {
+    host.control.setValue(['u1', 'u2']);
     fixture.detectChanges();
     tick();
-    expect(clearIcon()).not.toBeNull();
+
+    // Chips ARE the affordance now. Keeping a single clear icon beside them
+    // would put the destructive action next to the precise one.
+    expect(fixture.nativeElement.querySelector('.am-overlay-select-clear-icon')).toBeNull();
   }));
 });

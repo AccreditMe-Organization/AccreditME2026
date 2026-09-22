@@ -434,7 +434,7 @@
       "low": "Low",
       "medium": "Medium",
       "high": "High",
-      "critical": "Critical"
+      "critical": "Urgent"
     },
     "status": {
       "title": "Status",
@@ -490,7 +490,9 @@
         "tomorrow": "Tomorrow 09:00",
         "nextDay": "{{day}} 09:00"
       }
-    }
+    },
+    "removeAssignee": "Remove",
+    "raisedFrom": "on {{record}}"
   },
   "auth": {
     "login": "Log In",

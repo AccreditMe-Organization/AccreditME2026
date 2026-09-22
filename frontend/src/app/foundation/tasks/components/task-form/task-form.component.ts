@@ -45,6 +45,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
 import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
 import { FormatService } from '../../../../core/formatting';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
+import { createRequestOutcome } from '../../../../core/request-outcome/request-outcome';
 
 const SOURCE_TYPES = [
   'MEETING',
@@ -136,29 +137,36 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               <label for="assigneeUserIds" class="text-sm font-medium">
                 {{ 'task.assignees' | translate }}
               </label>
-              @if (users().length > 0) {
-                <!-- ACC-96 — a trigger, not the inline p-listbox ACC-76 added.
-                     Same data source and the same eligible set: every ACTIVE
-                     user in the tenant, because a committee task can
-                     legitimately go to a department head outside it. What
-                     changed is the height — the list was ~200px and step 1
-                     budgets 75px for this field. -->
+              <!-- NOTHING RENDERS FOR A FAST LOAD (ACC-111's request-outcome
+                   rule). The control is present from the first frame and the
+                   message appears only for a REFUSAL, so a people list that
+                   arrives in 80ms produces no change at all. Previously the
+                   "assignees unavailable" message rendered while users() was
+                   still [], then swapped — a sub-second flash Ahmad caught in
+                   a live test, and exactly the shape artboard 8 calls a
+                   loading state pretending to be an empty one.
+
+                   A trigger, not the inline p-listbox ACC-76 added: same data
+                   source and the same eligible set — every ACTIVE user in the
+                   tenant, because a committee task can legitimately go to a
+                   department head outside it — but the list was ~200px and
+                   step 1 budgets 75px for this field. -->
+              @if (assigneesRefused()) {
+                <!-- Degrades rather than blocks. A caller whose role grants
+                     tasks:create but not users:view gets a 403 they cannot act
+                     on; creating the task unassigned is still a real,
+                     supported outcome. -->
+                <p-message severity="info" [text]="'task.assigneesUnavailable' | translate" />
+              } @else {
                 <app-overlay-select
                   formControlName="assigneeUserIds"
                   [options]="users()"
                   optionLabel="name"
                   optionValue="id"
                   [multiple]="true"
-                  [showClear]="true"
-                  [multipleSummary]="assigneeSummary()"
+                  [removeLabel]="'task.removeAssignee' | translate"
                   [placeholder]="'task.assigneesNone' | translate"
                 />
-              } @else {
-                <!-- Degrades rather than blocks. A caller whose role grants
-                     tasks:create but not users:view gets an empty list and a
-                     403 they cannot act on; creating the task unassigned is
-                     still a real, supported outcome. -->
-                <p-message severity="info" [text]="'task.assigneesUnavailable' | translate" />
               }
             </div>
 
@@ -166,7 +174,16 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               <label for="priority" class="text-sm font-medium">
                 {{ 'task.priority.title' | translate }}
               </label>
-              <app-overlay-select formControlName="priority" [options]="priorities" />
+              <!-- Objects, not the bare enum strings: a raw "MEDIUM" was
+                 showing in both languages. The keys already existed and are
+                 shared with the task list and the SLA settings screen, so one
+                 value now has one name everywhere. -->
+            <app-overlay-select
+              formControlName="priority"
+              [options]="priorityOptions()"
+              optionLabel="label"
+              optionValue="value"
+            />
             </div>
           </div>
 
@@ -562,7 +579,32 @@ export class TaskFormComponent implements OnInit {
   readonly saving = signal(false);
   readonly sourceTypes = SOURCE_TYPES;
   readonly priorities = PRIORITIES;
-  readonly users = signal<IUserDto[]>([]);
+  /**
+   * The people list, as ACC-111's request outcome rather than a bare array.
+   *
+   * The array alone could not tell "not back yet" from "there are none", which
+   * is precisely the confusion that produced the flash: empty was rendered as
+   * refused. The outcome machine also suppresses anything for a load under
+   * 200ms, so a fast answer changes nothing on screen.
+   */
+  private readonly usersOutcome = createRequestOutcome<IUserDto>(
+    () => this.userService.listAllUsers({ status: 'ACTIVE' }),
+    { describeEmpty: () => ({ reason: 'task.assigneesUnavailable', filtered: false }) },
+  );
+
+  readonly users = computed<IUserDto[]>(() => {
+    const outcome = this.usersOutcome.outcome();
+    return outcome.status === 'rows' ? [...outcome.data] : [];
+  });
+
+  /**
+   * Only a REFUSAL swaps the control for the message — never a load in flight,
+   * and never an empty tenant, which is a real state the picker can show.
+   */
+  readonly assigneesRefused = computed(() => {
+    const status = this.usersOutcome.outcome().status;
+    return status === 'denied' || status === 'error';
+  });
 
   // ── The due value ──────────────────────────────────────────────────────
   //
@@ -631,10 +673,13 @@ export class TaskFormComponent implements OnInit {
     return '';
   });
 
-  readonly assigneeCount = signal(0);
-  readonly assigneeSummary = computed(() =>
-    this.translate.instant('common.selectedCount', { count: this.assigneeCount() }),
-  );
+  readonly priorityOptions = computed(() => {
+    this.translate.currentLang();
+    return PRIORITIES.map((value) => ({
+      value,
+      label: this.translate.instant(`task.priority.${value.toLowerCase()}`),
+    }));
+  });
 
   /**
    * Create is offered on step 1 only when every REQUIRED field lives there.
@@ -699,6 +744,7 @@ export class TaskFormComponent implements OnInit {
     };
     document.addEventListener('keydown', onKeydown);
     this.destroyRef.onDestroy(() => {
+      this.usersOutcome.destroy();
       document.removeEventListener('keydown', onKeydown);
       if (this.dateViewLayerId !== null) this.layers.remove(this.dateViewLayerId);
     });
@@ -717,16 +763,10 @@ export class TaskFormComponent implements OnInit {
   ngOnInit(): void {
     this.dueDates.load();
 
-    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({
-      next: (users) => this.users.set(users),
-      error: () => this.users.set([]),
-    });
-
     this.ready.emit(this);
     this.titleValid.set(this.form.controls.title.valid);
     this.form.valueChanges.subscribe(() => {
       this.titleValid.set(this.form.controls.title.valid);
-      this.assigneeCount.set((this.form.controls.assigneeUserIds.value ?? []).length);
       // Opening a calendar, changing month or focusing a field is NOT a change
       // (artboard 12's own rule for what counts as dirty), so this follows the
       // form's own dirty flag rather than any view state.

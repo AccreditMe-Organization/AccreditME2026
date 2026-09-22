@@ -177,13 +177,38 @@ function createManualScrollable(
       (keydown.arrowUp)="open(); $event.preventDefault()"
       (keydown.escape)="close()"
     >
-      <span
-        class="am-overlay-select-label"
-        [class.am-overlay-select-placeholder]="!selectedLabel()"
-      >
-        {{ selectedLabel() || placeholder() }}
-      </span>
-      @if (showClear() && hasValue()) {
+      @if (multiple() && hasValue()) {
+        <!-- ACC-96 — ONE CHIP PER SELECTION, each with its own remove button.
+             A joined label with a single clear icon meant removing one person
+             removed ALL of them, which is what Ahmad hit: the only affordance
+             was "clear everything". These are real <button>s, so they are in
+             the tab order, and each NAMES the person it removes — a
+             screen-reader user hearing six identical "remove" buttons cannot
+             tell them apart. -->
+        <span class="am-overlay-select-chips">
+          @for (v of selectedValues(); track v) {
+            <span class="am-overlay-select-chip">
+              <span class="am-overlay-select-chip-label">{{ labelForValue(v) }}</span>
+              <button
+                type="button"
+                class="am-overlay-select-chip-remove"
+                [attr.aria-label]="removeLabel() + ' ' + labelForValue(v)"
+                (click)="removeOne(v, $event)"
+              >
+                <i class="pi pi-times" aria-hidden="true"></i>
+              </button>
+            </span>
+          }
+        </span>
+      } @else {
+        <span
+          class="am-overlay-select-label"
+          [class.am-overlay-select-placeholder]="!selectedLabel()"
+        >
+          {{ selectedLabel() || placeholder() }}
+        </span>
+      }
+      @if (showClear() && hasValue() && !multiple()) {
         <i class="pi pi-times am-overlay-select-clear-icon" (click)="clear($event)"></i>
       }
       <i class="pi pi-chevron-down am-overlay-select-chevron"></i>
@@ -227,6 +252,60 @@ function createManualScrollable(
     `
       :host {
         display: block;
+      }
+
+      .am-overlay-select-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        flex: 1 1 auto;
+        min-inline-size: 0;
+      }
+
+      .am-overlay-select-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        max-inline-size: 100%;
+        padding-inline-start: 8px;
+        border: 1px solid var(--am-neutral-chip-border);
+        background: var(--am-neutral-chip-bg);
+        color: var(--am-neutral-chip-ink);
+        border-radius: 999px;
+        font-size: 12px;
+      }
+
+      .am-overlay-select-chip-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* 24x24 — the WCAG 2.5.8 floor. The glyph inside is smaller; the TARGET
+         is not. */
+      .am-overlay-select-chip-remove {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        inline-size: 24px;
+        block-size: 24px;
+        padding: 0;
+        border: none;
+        background: none;
+        color: inherit;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 10px;
+      }
+
+      .am-overlay-select-chip-remove:hover {
+        background: var(--am-border);
+      }
+
+      .am-overlay-select-chip-remove:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: 1px;
       }
 
       .am-overlay-select-trigger {
@@ -426,11 +505,12 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
   readonly multiple = input<boolean>(false);
 
   /**
-   * Shown instead of the joined labels once `multipleSummaryFrom` are picked —
-   * e.g. "3 selected". Already translated by the caller; empty keeps the names.
+   * The verb on each chip's remove button, e.g. "Remove". Already translated
+   * by the caller, for the same reason the summary it replaces was: the
+   * trigger renders on every instance, so a pipe here cannot stay lazy, and
+   * injecting TranslateService breaks the 30 specs that do not provide one.
    */
-  readonly multipleSummary = input<string>('');
-  readonly multipleSummaryFrom = input<number>(3);
+  readonly removeLabel = input<string>('Remove');
 
   // ACC-42 Phase 2 — custom option rendering (plan §2.3). CdkOption is a
   // plain directive, not a component, so it has no content-projection
@@ -477,22 +557,28 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
         return match ? this.getOptionLabel(match.node, match.isGroup) : '';
       };
 
-      if (!this.multiple()) return labelFor(this.value);
-
-      const picked = this.selectedValues();
-      if (picked.length === 0) return '';
-      // Names while they fit, a count once they do not: "Noura, Salem" reads,
-      // "Noura, Salem, Huda, Yousef, Amal" does not, and the trigger is one
-      // line by design.
-      // The summary text is the CONSUMER's, not this component's. Translating
-      // it here would mean injecting TranslateService into a control whose 30
-      // existing specs do not provide one — the trigger renders on every
-      // instance, so unlike the empty-state pipe it cannot stay lazy. The
-      // consumer knows the count and already has the translation.
-      const summary = this.multipleSummary();
-      if (summary && picked.length >= this.multipleSummaryFrom()) return summary;
-      return picked.map(labelFor).filter(Boolean).join(', ');
+      // Multiple mode renders CHIPS instead, so this is only ever the
+      // placeholder path there.
+      return this.multiple() ? '' : labelFor(this.value);
     };
+  }
+
+  /** The label for one selected value — what each chip shows. */
+  labelForValue(value: unknown): string {
+    const match = this.flattenedOptions().find((flat) => this.getOptionValue(flat.node) === value);
+    return match ? this.getOptionLabel(match.node, match.isGroup) : '';
+  }
+
+  /**
+   * Removes ONE selection and leaves the rest. Stops the event so the click
+   * does not also toggle the panel open underneath.
+   */
+  removeOne(value: unknown, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.value = this.selectedValues().filter((v) => v !== value);
+    this.onChange(this.value);
+    this.onTouched();
   }
 
   /** The current value as an array, whichever mode this is in. */
