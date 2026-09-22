@@ -81,6 +81,13 @@
   --am-restricted-hatch-light: #F4F7FA;
   --am-restricted-hatch-dark:  #E9EEF4;
   --am-restricted-border:      #CBD5E0;
+
+  // Artboard 12's inert other-month day. NOT a text colour anywhere else: at
+  // 2.14:1 it fails 1.4.3, and is defensible only where the design puts it —
+  // padding that keeps the calendar grid rectangular, which is pointer-inert,
+  // skipped by arrow traversal and aria-hidden, so it is not text a user can
+  // read, act on or reach. Named here so no component carries the literal.
+  --am-calendar-inert-day:     #A7B2C2;
   --am-restricted-hatch: repeating-linear-gradient(
     135deg,
     var(--am-restricted-hatch-light) 0 4px,

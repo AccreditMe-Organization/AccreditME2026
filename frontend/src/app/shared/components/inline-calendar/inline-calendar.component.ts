@@ -121,7 +121,8 @@ function parsePrimeKey(key: string): Date | null {
  *  - Other-month days become `aria-hidden`. They are padding that keeps the
  *    grid rectangular. They are already unreachable by pointer (CSS) and by
  *    arrow key (PrimeNG skips `p-disabled`), so hiding them from the
- *    accessibility tree is what makes #A7B2C2 at 2.14:1 defensible here: it is
+ *    accessibility tree is what makes --am-calendar-inert-day (#A7B2C2) at
+ *    2.14:1 defensible here: it is
  *    not text a user can read, act on or reach.
  *  - Real days announce in full — "Tuesday 22 September 2026, working day" —
  *    because the working-day fact changes what the date MEANS for an SLA, and
@@ -403,7 +404,7 @@ export class CalendarA11yDirective implements AfterViewChecked {
       /* Other month — inert. Unreachable by pointer here, by arrow key in
          PrimeNG, and by a screen reader via CalendarA11yDirective. */
       .am-cal .p-datepicker-other-month > .p-datepicker-day {
-        color: #a7b2c2;
+        color: var(--am-calendar-inert-day);
         pointer-events: none;
         cursor: default;
       }
