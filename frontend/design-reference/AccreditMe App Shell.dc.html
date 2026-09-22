@@ -438,7 +438,7 @@ const TYPES = {
   orphanTask: { en: "Task with no actionable owner", ar: "مهمة بلا مسؤول فعّال" },
   positionRole: { en: "Position with no role mapped", ar: "مسمى وظيفي بلا دور" },
   lookup: { en: "Lookup value in use but deactivated", ar: "قيمة مرجعية مُعطّلة وقيد الاستخدام" },
-  staleInvite: { en: "Invitation unused for 30+ days", ar: "دعوة غير مستخدمة لأكثر من ٣٠ يومًا" }
+  staleInvite: { en: "Invitation unused for 30+ days", ar: "دعوة غير مستخدمة لأكثر من 30 يومًا" }
 };
 
 const SEV = {
@@ -503,11 +503,11 @@ const T = {
     readOnlyOn: "قراءة فقط في خطة", addModule: "إضافة إلى الخطة", upgradeTo: "الترقية للتعديل", contactSales: "التحدث مع المبيعات",
     bellTitle: "التنبيهات", bellMarkRead: "تعليم الكل كمقروء",
     bellNote: "أحداث فقط — ما وقع ويحتاج علمك. أما المشكلات القائمة فمكانها صفحة سلامة الإعداد، ولا يكررها الجرس.",
-    needsFixing: "يحتاج إصلاحًا", recomputed: "حُسِبت قبل ٤ دقائق", openHealth: "فتح سلامة الإعداد →",
-    conditionNote: "كل سطر حالة قائمة لا رسالة. يختفي في الدورة التالية (كل ١٥ دقيقة) بمجرد إصلاح الإعداد — لا شيء لتجاهله ولا لتعليمه كمقروء.",
-    configure: "إعداد هذه المنشأة", snooze: "تأجيل ٧ أيام",
-    clearedTitle: "أُغلقت تلقائيًا", clearedMeta: "آخر ٧ أيام",
-    clearedNote: "تُعرض ليتأكد المسؤول أن إصلاحه نفذ، وليرى المُقيّم أن الفجوة أُغلقت. تُحذف بعد ٧ أيام.",
+    needsFixing: "يحتاج إصلاحًا", recomputed: "حُسِبت قبل 4 دقائق", openHealth: "فتح سلامة الإعداد →",
+    conditionNote: "كل سطر حالة قائمة لا رسالة. يختفي في الدورة التالية (كل 15 دقيقة) بمجرد إصلاح الإعداد — لا شيء لتجاهله ولا لتعليمه كمقروء.",
+    configure: "إعداد هذه المنشأة", snooze: "تأجيل 7 أيام",
+    clearedTitle: "أُغلقت تلقائيًا", clearedMeta: "آخر 7 أيام",
+    clearedNote: "تُعرض ليتأكد المسؤول أن إصلاحه نفذ، وليرى المُقيّم أن الفجوة أُغلقت. تُحذف بعد 7 أيام.",
     genericBody: "ليست جزءًا من هذا الطلب. المقصود هنا هو الهيكل حولها: مسار التنقل، ورأس الصفحة بعنوان واحد وأزراره، ثم المحتوى مباشرة.",
     tenantsMeta: "الشهر الحالي حتى تاريخه",
     dirBtn: "English — LTR", railBtn: "طيّ الشريط", railBtnOpen: "توسيع الشريط"
@@ -614,7 +614,7 @@ class Component extends DCLogic {
     if (r === "admin" && p === "health") return {
       eyebrow: rtl ? "الإدارة" : "Administration",
       title: rtl ? "سلامة الإعداد" : "Setup health",
-      sub: rtl ? "حالات قائمة يكتشفها النظام كل ١٥ دقيقة ولا يمكن إصلاحها إلا بصلاحية إدارية. تُغلق عند إصلاح السبب." : "Standing conditions the system detects every 15 minutes and only an administrator can fix. They close when the cause is fixed, not when the message is read.",
+      sub: rtl ? "حالات قائمة يكتشفها النظام كل 15 دقيقة ولا يمكن إصلاحها إلا بصلاحية إدارية. تُغلق عند إصلاح السبب." : "Standing conditions the system detects every 15 minutes and only an administrator can fix. They close when the cause is fixed, not when the message is read.",
       actions: [{ label: rtl ? "تصدير كدليل" : "Export as evidence", style: sec }],
       crumbs: [{ label: L.admin }]
     };
@@ -630,7 +630,7 @@ class Component extends DCLogic {
       eyebrow: rtl ? "الإدارة" : "Administration",
       title: L.planModules,
       sub: rtl
-        ? "خطة " + ({ starter: "المبتدئ", growth: "النمو", enterprise: "المؤسسات" })[this.plan] + " · تُجدَّد ١ يناير ٢٠٢٧. ما في الخطة، وما يمكن إضافته، وما أُعلن ولم يُطلق."
+        ? "خطة " + ({ starter: "المبتدئ", growth: "النمو", enterprise: "المؤسسات" })[this.plan] + " · تُجدَّد 1 يناير 2027. ما في الخطة، وما يمكن إضافته، وما أُعلن ولم يُطلق."
         : this.plan.charAt(0).toUpperCase() + this.plan.slice(1) + " plan · renews 1 Jan 2027. What is included, what can be added, and what has been announced but not released.",
       actions: [{ label: L.contactSales, style: sec }],
       crumbs: [{ label: L.admin }]
@@ -695,20 +695,20 @@ class Component extends DCLogic {
     }, {});
 
     const workPanels = [
-      { title: L.myTasks, count: "7", alert: rtl ? "٢ متأخرة" : "2 overdue", link: rtl ? "كل مهامي" : "All my tasks", hasRows: true, isEmpty: false, rows: [
-        row("Update hand-hygiene audit tool", "IPC Committee", rtl ? "تأخر ٦ أيام" : "6d overdue", { late: true }),
-        row("Review isolation policy IPC-04", "IPC Committee", rtl ? "تستحق ٢٤ سبتمبر" : "due 24 Sep"),
-        row("Antimicrobial dosing table refresh", "Pharmacy", rtl ? "تستحق ١ أكتوبر" : "due 1 Oct"),
+      { title: L.myTasks, count: "7", alert: rtl ? "2 متأخرة" : "2 overdue", link: rtl ? "كل مهامي" : "All my tasks", hasRows: true, isEmpty: false, rows: [
+        row("Update hand-hygiene audit tool", "IPC Committee", rtl ? "تأخر 6 أيام" : "6d overdue", { late: true }),
+        row("Review isolation policy IPC-04", "IPC Committee", rtl ? "تستحق 24 سبتمبر" : "due 24 Sep"),
+        row("Antimicrobial dosing table refresh", "Pharmacy", rtl ? "تستحق 1 أكتوبر" : "due 1 Oct"),
         row("Close CAPA-0870", "CAPA", rtl ? "تأخر يومان" : "2d overdue", { late: true }),
-        row("Quarterly stock audit sign-off", "Pharmacy", rtl ? "تستحق ٩ أكتوبر" : "due 9 Oct")
+        row("Quarterly stock audit sign-off", "Pharmacy", rtl ? "تستحق 9 أكتوبر" : "due 9 Oct")
       ], emptyTitle: "", emptyBody: "" },
       { title: L.myCommittees, count: "3", alert: null, link: rtl ? "كل اللجان" : "All committees", hasRows: true, isEmpty: false, rows: [
-        row("Infection Prevention & Control", rtl ? "عضو · الصيدلة" : "Member · Pharmacy", rtl ? "الاجتماع القادم ١٤ سبتمبر" : "next 14 Sep", { chip: rtl ? "نشطة" : "Active" }),
-        row("Antimicrobial Stewardship", rtl ? "أمينة السر" : "Secretary", rtl ? "الاجتماع القادم ٢٢ سبتمبر" : "next 22 Sep"),
+        row("Infection Prevention & Control", rtl ? "عضو · الصيدلة" : "Member · Pharmacy", rtl ? "الاجتماع القادم 14 سبتمبر" : "next 14 Sep", { chip: rtl ? "نشطة" : "Active" }),
+        row("Antimicrobial Stewardship", rtl ? "أمينة السر" : "Secretary", rtl ? "الاجتماع القادم 22 سبتمبر" : "next 22 Sep"),
         row("Medication Safety", rtl ? "عضو" : "Member", rtl ? "بانتظار اللائحة" : "terms in review", { chip: rtl ? "مراجعة" : "Terms Review" })
       ], emptyTitle: "", emptyBody: "" },
       { title: L.myReviews, count: "2", alert: null, link: rtl ? "الكل" : "View all", hasRows: true, isEmpty: false, rows: [
-        row("IPC-04 Isolation Policy v3", rtl ? "بانتظار موافقتك" : "awaiting your approval", rtl ? "منذ ٣ أيام" : "3d waiting"),
+        row("IPC-04 Isolation Policy v3", rtl ? "بانتظار موافقتك" : "awaiting your approval", rtl ? "منذ 3 أيام" : "3d waiting"),
         row("CAPA-0912 effectiveness check", rtl ? "بانتظار تحققك" : "awaiting your verification", rtl ? "منذ يوم" : "1d waiting")
       ], emptyTitle: "", emptyBody: "" },
       { title: L.myIncidents, count: "0", alert: null, link: rtl ? "الإبلاغ" : "Report one", hasRows: false, isEmpty: true, rows: [],
@@ -718,34 +718,34 @@ class Component extends DCLogic {
 
     const tileInk = "oklch(0.28 0.01 250)";
     const workTiles = [
-      { label: rtl ? "مهام مفتوحة" : "Open tasks", value: "7", meta: rtl ? "٢ متأخرة" : "2 overdue", ink: tileInk, metaInk: "oklch(0.5 0.16 30)" },
-      { label: rtl ? "بانتظار إجرائي" : "Awaiting me", value: "2", meta: rtl ? "أقدمها ٣ أيام" : "oldest 3d", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
+      { label: rtl ? "مهام مفتوحة" : "Open tasks", value: "7", meta: rtl ? "2 متأخرة" : "2 overdue", ink: tileInk, metaInk: "oklch(0.5 0.16 30)" },
+      { label: rtl ? "بانتظار إجرائي" : "Awaiting me", value: "2", meta: rtl ? "أقدمها 3 أيام" : "oldest 3d", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
       { label: rtl ? "لجاني" : "My committees", value: "3", meta: rtl ? "اجتماع هذا الأسبوع" : "1 meeting this week", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
-      { label: rtl ? "تدريب مستحق" : "Training due", value: "1", meta: rtl ? "قبل ٣٠ سبتمبر" : "by 30 Sep", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" }
+      { label: rtl ? "تدريب مستحق" : "Training due", value: "1", meta: rtl ? "قبل 30 سبتمبر" : "by 30 Sep", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" }
     ];
 
     const adminTiles = [
       { label: rtl ? "حالات قائمة" : "Open conditions", value: CONDITIONS.length + "", meta: counts.blocks + (rtl ? " تعطّل العمل" : " blocking"), ink: "oklch(0.45 0.15 30)", metaInk: "oklch(0.5 0.16 30)" },
-      { label: rtl ? "مستخدمون نشطون" : "Active users", value: "298", meta: rtl ? "من ٤٠٠ مقعد" : "of 400 seats", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
-      { label: rtl ? "دعوات معلّقة" : "Pending invites", value: "14", meta: rtl ? "٣ أقدم من ٣٠ يومًا" : "3 over 30 days", ink: tileInk, metaInk: "oklch(0.5 0.09 75)" },
-      { label: rtl ? "لجان نشطة" : "Active committees", value: "22", meta: rtl ? "٤ بلا نصاب" : "4 below quorum", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" }
+      { label: rtl ? "مستخدمون نشطون" : "Active users", value: "298", meta: rtl ? "من 400 مقعد" : "of 400 seats", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
+      { label: rtl ? "دعوات معلّقة" : "Pending invites", value: "14", meta: rtl ? "3 أقدم من 30 يومًا" : "3 over 30 days", ink: tileInk, metaInk: "oklch(0.5 0.09 75)" },
+      { label: rtl ? "لجان نشطة" : "Active committees", value: "22", meta: rtl ? "4 بلا نصاب" : "4 below quorum", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" }
     ];
 
     const configCards = [
-      { glyph: "⑉", label: L.structure, meta: rtl ? "٣٤ وحدة · ٤ مستويات" : "34 units · 4 levels", flag: rtl ? "٢" : "2" },
-      { glyph: "⬡", label: L.positions, meta: rtl ? "٦٨ مسمى · ٦٦ مرتبطة بدور" : "68 positions · 66 mapped", flag: rtl ? "٢" : "2" },
-      { glyph: "◈", label: L.roles, meta: rtl ? "١١ دورًا" : "11 roles", flag: null },
-      { glyph: "▣", label: L.users, meta: rtl ? "٣١٢ مستخدمًا" : "312 users", flag: null },
-      { glyph: "⇄", label: L.workflows, meta: rtl ? "٩ مسارات · ٤١ مرحلة" : "9 workflows · 41 stages", flag: rtl ? "١" : "1" },
-      { glyph: "≡", label: L.lookups, meta: rtl ? "٢٦ قائمة" : "26 lists", flag: rtl ? "١" : "1" },
-      { glyph: "▢", label: L.calendar, meta: rtl ? "الأحد–الخميس · ١١ عطلة" : "Sun–Thu · 11 holidays", flag: null }
+      { glyph: "⑉", label: L.structure, meta: rtl ? "34 وحدة · 4 مستويات" : "34 units · 4 levels", flag: rtl ? "2" : "2" },
+      { glyph: "⬡", label: L.positions, meta: rtl ? "68 مسمى · 66 مرتبطة بدور" : "68 positions · 66 mapped", flag: rtl ? "2" : "2" },
+      { glyph: "◈", label: L.roles, meta: rtl ? "11 دورًا" : "11 roles", flag: null },
+      { glyph: "▣", label: L.users, meta: rtl ? "312 مستخدمًا" : "312 users", flag: null },
+      { glyph: "⇄", label: L.workflows, meta: rtl ? "9 مسارات · 41 مرحلة" : "9 workflows · 41 stages", flag: rtl ? "1" : "1" },
+      { glyph: "≡", label: L.lookups, meta: rtl ? "26 قائمة" : "26 lists", flag: rtl ? "1" : "1" },
+      { glyph: "▢", label: L.calendar, meta: rtl ? "الأحد–الخميس · 11 عطلة" : "Sun–Thu · 11 holidays", flag: null }
     ];
 
     const platformTiles = [
-      { label: rtl ? "منشآت نشطة" : "Active tenants", value: "6", meta: rtl ? "١ تجريبية · ١ موقوفة" : "1 trial · 1 suspended", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
-      { label: rtl ? "مقاعد مستخدمة" : "Seats in use", value: "754", meta: rtl ? "من ٩٧٥" : "of 975", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
-      { label: rtl ? "تكلفة الذكاء" : "AI cost MTD", value: "$3,460", meta: rtl ? "+١٨٪ عن الشهر الماضي" : "+18% vs last month", ink: tileInk, metaInk: "oklch(0.5 0.09 75)" },
-      { label: rtl ? "رصيد منخفض" : "Low credit", value: "2", meta: rtl ? "منشآت تحت ١٥٪" : "tenants under 15%", ink: "oklch(0.45 0.15 30)", metaInk: "oklch(0.5 0.16 30)" }
+      { label: rtl ? "منشآت نشطة" : "Active tenants", value: "6", meta: rtl ? "1 تجريبية · 1 موقوفة" : "1 trial · 1 suspended", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
+      { label: rtl ? "مقاعد مستخدمة" : "Seats in use", value: "754", meta: rtl ? "من 975" : "of 975", ink: tileInk, metaInk: "oklch(0.55 0.012 250)" },
+      { label: rtl ? "تكلفة الذكاء" : "AI cost MTD", value: "$3,460", meta: rtl ? "+18٪ عن الشهر الماضي" : "+18% vs last month", ink: tileInk, metaInk: "oklch(0.5 0.09 75)" },
+      { label: rtl ? "رصيد منخفض" : "Low credit", value: "2", meta: rtl ? "منشآت تحت 15٪" : "tenants under 15%", ink: "oklch(0.45 0.15 30)", metaInk: "oklch(0.5 0.16 30)" }
     ];
 
     const headStyle = (flex) => "flex: " + flex + "; min-width: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: oklch(0.52 0.012 250); text-align: start;";
@@ -757,7 +757,7 @@ class Component extends DCLogic {
       { label: rtl ? "الرصيد" : "Credits", style: headStyle("none; width: 96px") },
       { label: rtl ? "الحالة" : "Status", style: headStyle("none; width: 108px") }
     ];
-    const tStatus = { active: { en: "Active", ar: "نشطة", ink: "oklch(0.52 0.012 250)", bg: "transparent", bd: "transparent" }, trial: { en: "Trial · 9d left", ar: "تجريبية · ٩ أيام", ink: "oklch(0.42 0.09 75)", bg: "oklch(0.96 0.05 85)", bd: "oklch(0.88 0.06 85)" }, suspended: { en: "Suspended", ar: "موقوفة", ink: "oklch(0.42 0.15 30)", bg: "oklch(0.96 0.03 30)", bd: "oklch(0.88 0.05 30)" } };
+    const tStatus = { active: { en: "Active", ar: "نشطة", ink: "oklch(0.52 0.012 250)", bg: "transparent", bd: "transparent" }, trial: { en: "Trial · 9d left", ar: "تجريبية · 9 أيام", ink: "oklch(0.42 0.09 75)", bg: "oklch(0.96 0.05 85)", bd: "oklch(0.88 0.06 85)" }, suspended: { en: "Suspended", ar: "موقوفة", ink: "oklch(0.42 0.15 30)", bg: "oklch(0.96 0.03 30)", bd: "oklch(0.88 0.05 30)" } };
     const tenantRows = TENANTS.map(x => ({
       name: x[0], sector: x[1], plan: x[2], seats: x[3], ai: x[4], credits: x[5],
       creditInk: parseInt(x[5], 10) < 15 ? "oklch(0.5 0.16 30)" : "oklch(0.3 0.01 250)",
@@ -796,15 +796,15 @@ class Component extends DCLogic {
       bellOpen: this.state.bell, bellCount: r === "platform" ? "2" : "3",
       bellItems: (r === "platform" ? [
         { text: rtl ? "منشأة «الإمارات كير» أُوقفت لعدم السداد" : "Emirates Care Group suspended for non-payment", when: rtl ? "قبل ساعة" : "1h ago", tone: "alert" },
-        { text: rtl ? "«دار الشفاء» تنتهي تجربتها بعد ٩ أيام" : "Dar Al-Shifa trial ends in 9 days", when: rtl ? "اليوم ٠٨:٤٠" : "Today 08:40", tone: "info" }
+        { text: rtl ? "«دار الشفاء» تنتهي تجربتها بعد 9 أيام" : "Dar Al-Shifa trial ends in 9 days", when: rtl ? "اليوم 08:40" : "Today 08:40", tone: "info" }
       ] : r === "admin" ? [
-        { text: rtl ? "وافق عبدالله الحربي على لائحة لجنة مكافحة العدوى" : "Abdullah Al-Harbi approved the IPC committee terms", when: rtl ? "قبل ٢٠ دقيقة" : "20m ago", tone: "info" },
-        { text: rtl ? "اكتمل استيراد ٤٢ مستخدمًا من ملف الموارد البشرية" : "HR import finished — 42 users created", when: rtl ? "قبل ساعتين" : "2h ago", tone: "ok" },
+        { text: rtl ? "وافق عبدالله الحربي على لائحة لجنة مكافحة العدوى" : "Abdullah Al-Harbi approved the IPC committee terms", when: rtl ? "قبل 20 دقيقة" : "20m ago", tone: "info" },
+        { text: rtl ? "اكتمل استيراد 42 مستخدمًا من ملف الموارد البشرية" : "HR import finished — 42 users created", when: rtl ? "قبل ساعتين" : "2h ago", tone: "ok" },
         { text: rtl ? "أُسند إليك تدقيق CBAHI الداخلي" : "You were assigned the CBAHI internal audit", when: rtl ? "أمس" : "Yesterday", tone: "info" }
       ] : [
-        { text: rtl ? "ذُكرت في محضر لجنة مكافحة العدوى" : "You were mentioned in the IPC meeting minutes", when: rtl ? "قبل ٤٠ دقيقة" : "40m ago", tone: "info" },
-        { text: rtl ? "أُسندت إليك مهمة: تحديث أداة تدقيق نظافة اليدين" : "Task assigned to you: hand-hygiene audit tool", when: rtl ? "قبل ٣ ساعات" : "3h ago", tone: "info" },
-        { text: rtl ? "اجتماع لجنة سلامة الدواء نُقل إلى ٢٢ سبتمبر" : "Medication Safety meeting moved to 22 Sep", when: rtl ? "أمس" : "Yesterday", tone: "ok" }
+        { text: rtl ? "ذُكرت في محضر لجنة مكافحة العدوى" : "You were mentioned in the IPC meeting minutes", when: rtl ? "قبل 40 دقيقة" : "40m ago", tone: "info" },
+        { text: rtl ? "أُسندت إليك مهمة: تحديث أداة تدقيق نظافة اليدين" : "Task assigned to you: hand-hygiene audit tool", when: rtl ? "قبل 3 ساعات" : "3h ago", tone: "info" },
+        { text: rtl ? "اجتماع لجنة سلامة الدواء نُقل إلى 22 سبتمبر" : "Medication Safety meeting moved to 22 Sep", when: rtl ? "أمس" : "Yesterday", tone: "ok" }
       ]).map(b => ({ text: b.text, when: b.when, dotStyle: "flex: none; width: 7px; height: 7px; border-radius: 50%; margin-block-start: 6px; background: " + (b.tone === "alert" ? "oklch(0.55 0.16 30)" : b.tone === "ok" ? "oklch(0.55 0.1 165)" : "oklch(0.55 0.11 250)") + ";" })),
 
       isWorkHome: r === "work" && this.page === "home",
@@ -854,15 +854,15 @@ class Component extends DCLogic {
       conditionCount: CONDITIONS.length + "", topConditions: conds.filter(c => c.severity === "blocks").slice(0, 3),
       goHealth: this.go("health"),
       healthFilters, healthGroups,
-      healthUpdated: rtl ? "آخر حساب: اليوم ٠٩:٤١ · التالي بعد ١١ دقيقة" : "last pass today 09:41 · next in 11 min",
+      healthUpdated: rtl ? "آخر حساب: اليوم 09:41 · التالي بعد 11 دقيقة" : "last pass today 09:41 · next in 11 min",
       cleared: [
         { what: rtl ? "الأشعة التشخيصية — أُسند رئيس الوحدة (د. يوسف بركات)" : "Diagnostic Imaging — unit head assigned (Dr. Yousef Barakat)", when: rtl ? "أُغلقت قبل ساعتين" : "cleared 2h ago" },
         { what: rtl ? "مسار الحوادث → التحقيق — رُبط مسؤول" : "Incident workflow → Investigation — assignee resolved", when: rtl ? "أمس" : "yesterday" },
-        { what: rtl ? "منسق الجودة — رُبط دور «محرر الجودة»" : "Quality Coordinator — mapped to role “Quality Editor”", when: rtl ? "قبل ٣ أيام" : "3 days ago" }
+        { what: rtl ? "منسق الجودة — رُبط دور «محرر الجودة»" : "Quality Coordinator — mapped to role “Quality Editor”", when: rtl ? "قبل 3 أيام" : "3 days ago" }
       ],
       notes: [
         { title: rtl ? "شكل واحد، ثلاث قوائم" : "One shell, three navigations", body: rtl ? "الهيكل نفسه للأدوار الثلاثة؛ ما يختلف هو محتوى القائمة. العمل اليومي أولًا، ثم وحدات الجودة، ثم الإعداد في مجموعة أخيرة يراها المسؤول فقط. المنصة تحصل على لون مختلف لأنها منتج آخر لا مستوى صلاحية أعلى." : "Same chrome for all three; only the rail's contents change. Daily work first, quality modules next, configuration last and only for admins. Platform gets a different hue because it is a different product, not a higher permission tier." },
-        { title: rtl ? "الحالات ليست تنبيهات" : "Conditions are not notifications", body: rtl ? "الجرس للأحداث: وقعت، تُقرأ، تنتهي. سلامة الإعداد للحالات: قائمة حتى تُصلح، تُحسب كل ١٥ دقيقة، وتُغلق عند اختفاء السبب. لا تكرار بينهما." : "The bell carries events: they happened, you read them, done. Setup health carries conditions: they persist until fixed, recompute every 15 minutes, and clear when the cause disappears. Neither repeats the other." },
+        { title: rtl ? "الحالات ليست تنبيهات" : "Conditions are not notifications", body: rtl ? "الجرس للأحداث: وقعت، تُقرأ، تنتهي. سلامة الإعداد للحالات: قائمة حتى تُصلح، تُحسب كل 15 دقيقة، وتُغلق عند اختفاء السبب. لا تكرار بينهما." : "The bell carries events: they happened, you read them, done. Setup health carries conditions: they persist until fixed, recompute every 15 minutes, and clear when the cause disappears. Neither repeats the other." },
         { title: rtl ? "العنوان مرة واحدة" : "The title appears once", body: rtl ? "مسار التنقل يتوقف عند الأب ولا يكرر اسم الصفحة؛ الاسم في العنوان الرئيسي فقط، تحته السطر التوضيحي وإلى جانبه الأزرار. عنوان التبويب: الصفحة · المنشأة — AccreditMe." : "The breadcrumb stops at the parent and never restates the page name. The H1 owns the name, with its one-line purpose under it and its actions beside it. Tab title: Page · Tenant — AccreditMe." },
         { title: rtl ? "لا شيء معطّل" : "Nothing disabled", body: rtl ? "العناصر الممنوعة بالصلاحية غائبة تمامًا — لذلك لا يرى غير الإداري مجموعة الإدارة ولا يرى شريطًا فارغًا، بل قائمة كاملة من عمله هو." : "Permission-gated items are absent, not greyed. A non-admin never sees an Administration group or a hollow rail — they get a full rail of their own work." },
         { title: rtl ? "غير مبنية ≠ غير مشتراة" : "Unbuilt ≠ unlicensed", body: rtl ? "غير المبنية غائبة عن الجميع بلا أثر. وغير المشتراة غائبة عن الشريط أيضًا، لكنها تظهر في «الخطة والوحدات» للمسؤول وحده بسعرها وزر إضافة يعمل — لا عنصر مقفل في مسار العمل. وتبديل الخطة في الأعلى يغيّر الشريط مباشرة." : "Unbuilt modules are absent for everyone, with no trace anywhere. Unlicensed ones are absent from the rail too, but listed on Plan & modules — admin only — with a price and a working Add button. Switch the plan above and watch the rail change." },
