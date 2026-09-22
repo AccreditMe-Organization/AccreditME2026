@@ -13,6 +13,28 @@ import {
 } from '@ngx-translate/core';
 import { InlineCalendarComponent, dayKey } from './inline-calendar.component';
 import { LanguageService } from '../../../core/services/language.service';
+import { FormatContext } from '../../../core/formatting';
+
+/**
+ * A fixed display context, so the announcement does not depend on the runner's
+ * own clock. Asia/Riyadh because that is DEFAULT_TIME_ZONE — this pins the
+ * spec to the shipped default rather than inventing one.
+ *
+ * FOUND WHILE PINNING THIS, and left for Part B rather than fixed here: the
+ * announcement renders a grid cell — a CALENDAR DAY — through a formatter that
+ * works in instants and the TENANT's zone. Setting this context to UTC while
+ * the browser sat at +03 made the cell drawn "22" announce "Monday 21
+ * September", because local midnight on the 22nd is 21:00Z on the 21st. The
+ * same slip happens for real in any browser east of the tenant zone. It is
+ * exactly Part B's defect class (a calendar day carried as an instant), it is
+ * not what this spec is for, and CI is unaffected: at UTC the shift runs the
+ * harmless way.
+ */
+const FIXED_CONTEXT = {
+  language: () => 'en' as const,
+  timeZone: () => 'Asia/Riyadh',
+  calendar: () => 'gregory' as const,
+};
 
 // A real Sunday-to-Thursday week, and a holiday on it.
 const WORKING_DAYS = [0, 1, 2, 3, 4];
@@ -60,6 +82,16 @@ describe('InlineCalendarComponent (ACC-96)', () => {
       imports: [HostComponent],
       providers: [
         provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        // The day announcement goes through FormatService, which renders in
+        // the TENANT's zone. Left real, that zone is the DEFAULT_TIME_ZONE of
+        // +03 while the grid's cells are local dates — so in a browser east of
+        // +03 the announced day would slide back by one and this spec would
+        // fail for a reason that has nothing to do with what it tests.
+        //
+        // Pinning it here pins a TEST INPUT, not the runner's clock. Part B's
+        // defect class is about the BROWSER's zone on the way IN, which this
+        // does not touch and must not hide.
+        { provide: FormatContext, useValue: FIXED_CONTEXT },
         {
           provide: LanguageService,
           useValue: { isRtl: () => rtl, isArabic: () => rtl },

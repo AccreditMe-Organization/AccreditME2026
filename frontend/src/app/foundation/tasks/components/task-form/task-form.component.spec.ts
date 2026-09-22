@@ -354,16 +354,34 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     // rather than the object, because the wire format is what has to match —
     // an absent `description` and `description: undefined` are the same
     // request and different objects.
+    //
+    // THE INSTANT IS DERIVED, NOT HARD-CODED, and that is the whole point of
+    // this test rather than a detail of it.
+    //
+    // It was "2026-09-25T06:00:00.000Z", which is 09:00 local in +03 and only
+    // there. CI runs UTC, where the same choice is 09:00Z, so the spec failed
+    // on the runner and passed on the machine it was written on — a test that
+    // asserts the AUTHOR'S time zone, not the product's behaviour.
+    //
+    // Both sides now start from the same LOCAL wall clock, so they agree in
+    // every zone while still pinning the key set, their order and the shape
+    // byte-for-byte. Part A's behaviour is deliberately unchanged: a picked
+    // wall-clock time is read in the BROWSER's zone, exactly as dev does.
+    // That is the defect Part B fixes, so the fix belongs there and pinning
+    // TZ in CI or Karma would only hide it.
+    const picked = new Date(2026, 8, 25, 9, 0, 0, 0);
     const wire =
       '{"title":"ACC-96 payload probe","sourceType":"DOCUMENT","sourceId":"acc96-probe",' +
-      '"priority":"MEDIUM","dueDate":"2026-09-25T06:00:00.000Z","assigneeUserIds":[]}';
+      `"priority":"MEDIUM","dueDate":"${picked.toISOString()}","assigneeUserIds":[]}`;
 
     component.form.patchValue({
       title: 'ACC-96 payload probe',
       sourceType: 'DOCUMENT',
       sourceId: 'acc96-probe',
     });
-    component.onDayPicked(new Date('2026-09-25T06:00:00.000Z'));
+    // A LOCAL date, not an instant: "2026-09-25T06:00:00.000Z" is 24 Sep in
+    // any zone west of UTC-6, so the day itself moved, not only the time.
+    component.onDayPicked(new Date(2026, 8, 25));
     component.onTimeTyped('09:00');
 
     component.onSubmit();
