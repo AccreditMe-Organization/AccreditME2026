@@ -262,11 +262,21 @@ function createManualScrollable(
         min-inline-size: 0;
       }
 
+      /* SIDE BY SIDE, wrapping only once the row is genuinely full.
+         Content-sized chips each took a whole line in a 203px field, because
+         the three seeded names are 122-148px wide. Letting them SHRINK does
+         not help and it is worth knowing why: flex-wrap breaks lines at each
+         item's CONTENT size and only shrinks what already shares a line, so a
+         shrinkable chip still gets a line to itself.
+         The cap is what works. A chip may take at most half the row, so two
+         always fit and a long name truncates instead of monopolising the line
+         — while names short enough to fit three still get three. */
       .am-overlay-select-chip {
         display: inline-flex;
         align-items: center;
         gap: 0.25rem;
-        max-inline-size: 100%;
+        min-inline-size: 0;
+        max-inline-size: calc(50% - 0.125rem);
         padding-inline-start: 8px;
         border: 1px solid var(--am-neutral-chip-border);
         background: var(--am-neutral-chip-bg);
@@ -276,6 +286,7 @@ function createManualScrollable(
       }
 
       .am-overlay-select-chip-label {
+        min-inline-size: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;

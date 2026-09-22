@@ -18,8 +18,8 @@
 // Why it matters that this is not in the body: the footer costs 63px, and the
 // date view leaves 6px against the 420px cap. In the body it pushed the
 // calendar into a scrolling ancestor, which is the defect this ticket removes.
-import { Component, input } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
+import { Component, inject, input } from '@angular/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TaskFormComponent } from './task-form.component';
 
@@ -39,13 +39,25 @@ import { TaskFormComponent } from './task-form.component';
               (onClick)="f.cancelled.emit()"
               [disabled]="f.saving()"
             />
+            <!-- VISIBLE BUT DISABLED while the date view is open (Ahmad's
+                 decision, a small deviation from the drawing): Cancel and
+                 Create stay active, and Next comes back the moment the
+                 calendar closes. Removing it instead would move Create under
+                 the cursor.
+
+                 The reason reaches BOTH audiences: a title attribute for a
+                 pointer, and the accessible NAME carries it too, since a
+                 disabled button is out of the tab order but is still read in a
+                 screen reader's browse mode. -->
             <p-button
               [label]="'task.nextDetails' | translate"
               severity="secondary"
               [outlined]="true"
               type="button"
               (onClick)="f.goToStep(2)"
-              [disabled]="f.saving()"
+              [disabled]="f.saving() || f.dateView()"
+              [ariaLabel]="nextLabel(f)"
+              [title]="f.dateView() ? ('task.due.closeCalendarFirst' | translate) : ''"
             />
             <p-button
               [label]="'task.create' | translate"
@@ -85,5 +97,14 @@ import { TaskFormComponent } from './task-form.component';
   ],
 })
 export class TaskFormFooterComponent {
+  private readonly translate = inject(TranslateService);
+
   readonly form = input<TaskFormComponent | null>(null);
+
+  /** "Next · Details — Close the calendar to continue" while it is disabled. */
+  nextLabel(form: TaskFormComponent): string {
+    const base = this.translate.instant('task.nextDetails');
+    if (!form.dateView()) return base;
+    return `${base} — ${this.translate.instant('task.due.closeCalendarFirst')}`;
+  }
 }

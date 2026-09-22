@@ -479,7 +479,7 @@
       "timePlaceholder": "HH:mm",
       "presets": "Due date shortcuts",
       "none": "No due date set.",
-      "past": "That time has already passed.",
+      "past": "A due date cannot be in the past.",
       "zoneNote": "Working hours are the organisation's, in {{zone}}.",
       "nonWorkingDay": "{{weekday}} is not a working day. The task is still due then, but its SLA clock resumes {{resumesAt}}.",
       "outsideHours": "{{time}} is outside working hours ({{start}}–{{end}}, {{weekdays}}). The task is still due then, but its SLA clock resumes {{resumesAt}}.",
@@ -489,7 +489,9 @@
         "endOfDay": "End of working day",
         "tomorrow": "Tomorrow 09:00",
         "nextDay": "{{day}} 09:00"
-      }
+      },
+      "hideCalendar": "Hide calendar",
+      "closeCalendarFirst": "Close the calendar to continue"
     },
     "removeAssignee": "Remove",
     "raisedFrom": "on {{record}}"

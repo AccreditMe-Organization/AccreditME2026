@@ -266,6 +266,86 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     expect(seen.at(-1)).toBe(true);
   });
 
+  // ── The calendar toggle (Rev 7) ─────────────────────────────────────────
+
+  it('names what the next press will do, and reports its state', () => {
+    expect(component.dateView()).toBe(false);
+    expect(component.calendarToggleLabel()).toBe('task.due.toggleCalendar');
+
+    component.toggleDateView();
+    // Not "Choose a due date" while the calendar is already open: a toggle
+    // whose label describes the current state instead of the next action
+    // tells the user the opposite of what will happen.
+    expect(component.calendarToggleLabel()).toBe('task.due.hideCalendar');
+
+    component.toggleDateView();
+    expect(component.calendarToggleLabel()).toBe('task.due.toggleCalendar');
+  });
+
+  // ── A due date may not be in the past ───────────────────────────────────
+
+  describe('past due dates', () => {
+    const lockSource = (): void => {
+      fixture.componentRef.setInput('lockedSourceType', 'COMMITTEE');
+      fixture.componentRef.setInput('lockedSourceId', 'cmt-1');
+      fixture.componentRef.setInput('lockedSourceLabel', 'IPC');
+      component.form.patchValue({ title: 'Raise an urgent task' });
+      fixture.detectChanges();
+    };
+
+    it('blocks BOTH Creates, not just step 1s', () => {
+      lockSource();
+      expect(component.canCreateFromStep1()).toBe(true);
+
+      component.onDateTyped('1 Jan 2020');
+      component.commitTypedDate();
+      fixture.detectChanges();
+
+      expect(component.isPast()).toBe(true);
+      expect(component.canCreateFromStep1()).toBe(false);
+      // Step 2's Create gates on form.invalid, so the fact has to reach the
+      // CONTROL. A note only step 1 consulted let a past date through there.
+      expect(component.form.controls.dueDate.hasError('pastDate')).toBe(true);
+      expect(component.form.invalid).toBe(true);
+    });
+
+    it('counts today at a time already gone as past', () => {
+      lockSource();
+      const anHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      component.onDayPicked(anHourAgo);
+      component.onTimeTyped(
+        `${`${anHourAgo.getHours()}`.padStart(2, '0')}:${`${anHourAgo.getMinutes()}`.padStart(2, '0')}`,
+      );
+      fixture.detectChanges();
+
+      // The comparison is against the INSTANT, not the day — today is a
+      // perfectly good due date, an hour ago is not.
+      expect(component.isPast()).toBe(true);
+      expect(component.form.controls.dueDate.hasError('pastDate')).toBe(true);
+    });
+
+    it('clears the error once the value moves into the future', () => {
+      lockSource();
+      component.onDateTyped('1 Jan 2020');
+      component.commitTypedDate();
+      expect(component.form.controls.dueDate.hasError('pastDate')).toBe(true);
+
+      component.onDateTyped('1 Jan 2099');
+      component.commitTypedDate();
+      fixture.detectChanges();
+
+      expect(component.form.controls.dueDate.hasError('pastDate')).toBe(false);
+      expect(component.canCreateFromStep1()).toBe(true);
+    });
+
+    it('hands the calendar today as its floor', () => {
+      const floor = component.today();
+      expect(floor.getHours()).toBe(0);
+      expect(floor.getMinutes()).toBe(0);
+      expect(floor.toDateString()).toBe(new Date().toDateString());
+    });
+  });
+
   // ── The payload ─────────────────────────────────────────────────────────
 
   it('sends the picked instant unchanged — byte-for-byte the body dev sends', () => {

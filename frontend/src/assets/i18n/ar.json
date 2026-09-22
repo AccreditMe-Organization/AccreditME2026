@@ -475,11 +475,11 @@
     "due": {
       "backToDetails": "العودة إلى التفاصيل",
       "toggleCalendar": "اختيار تاريخ الاستحقاق",
-      "datePlaceholder": "DD MMM YYYY",
-      "timePlaceholder": "HH:mm",
+      "datePlaceholder": "يوم شهر سنة",
+      "timePlaceholder": "ساعة:دقيقة",
       "presets": "اختصارات تاريخ الاستحقاق",
       "none": "لم يُحدَّد تاريخ استحقاق.",
-      "past": "هذا الوقت قد مضى بالفعل.",
+      "past": "لا يمكن أن يكون تاريخ الاستحقاق في الماضي.",
       "zoneNote": "ساعات العمل هي ساعات المؤسسة، بتوقيت {{zone}}.",
       "nonWorkingDay": "{{weekday}} ليس يوم عمل. تبقى المهمة مستحقة حينها، لكن ساعة اتفاقية مستوى الخدمة تستأنف {{resumesAt}}.",
       "outsideHours": "{{time}} خارج ساعات العمل ({{start}}–{{end}}، {{weekdays}}). تبقى المهمة مستحقة حينها، لكن ساعة اتفاقية مستوى الخدمة تستأنف {{resumesAt}}.",
@@ -489,7 +489,9 @@
         "endOfDay": "نهاية يوم العمل",
         "tomorrow": "غدًا 09:00",
         "nextDay": "{{day}} 09:00"
-      }
+      },
+      "hideCalendar": "إخفاء التقويم",
+      "closeCalendarFirst": "أغلق التقويم للمتابعة"
     },
     "removeAssignee": "إزالة",
     "raisedFrom": "على {{record}}"

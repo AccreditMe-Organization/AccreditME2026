@@ -3,8 +3,13 @@
 // ## Why this exists rather than a p-datepicker per screen
 //
 // Artboard 12 fixes the geometry so a template can budget against it: 28x28
-// day cells, six week rows ALWAYS rendered, 258px date-only and 314px with the
-// time strip. Six rows always, never five, because a calendar that changes
+// day cells, six week rows ALWAYS rendered, 258px.
+//
+// NO TIME STRIP. Rev 7 deleted it: the date-and-time drawing showed the time
+// TWICE, once here and once beside the date field, and the field is the one
+// that survives — it is a sibling of the date field in BOTH states, so
+// pressing the calendar toggle never moves it. That returns this component's
+// figure to 258px and the task form's date view to 358 of its 420 cap. Six rows always, never five, because a calendar that changes
 // height between months moves the dialog footer under the cursor — the same
 // failure the in-flow rule exists to prevent. None of that survives being
 // re-derived screen by screen, so it lives here once.
@@ -71,9 +76,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TranslateService } from '@ngx-translate/core';
 import { DatePicker, DatePickerModule } from 'primeng/datepicker';
-import { InputMaskModule } from 'primeng/inputmask';
 import { LanguageService } from '../../../core/services/language.service';
 import { FormatService } from '../../../core/formatting';
 
@@ -199,7 +203,7 @@ export class CalendarA11yDirective implements AfterViewChecked {
 @Component({
   selector: 'am-inline-calendar',
   standalone: true,
-  imports: [FormsModule, TranslatePipe, DatePickerModule, InputMaskModule, CalendarA11yDirective],
+  imports: [FormsModule, DatePickerModule, CalendarA11yDirective],
   // Encapsulation.None under an `.am-cal` scope class: every rule below targets
   // PrimeNG's own generated classes, which :host ::ng-deep can reach but which
   // read far worse when every selector carries it.
@@ -214,6 +218,7 @@ export class CalendarA11yDirective implements AfterViewChecked {
         [firstDayOfWeek]="0"
         [showOtherMonths]="true"
         [selectOtherMonths]="false"
+        [minDate]="minDate() ?? undefined"
         [amCalendarA11y]="describeDay"
       >
         <ng-template #date let-d>
@@ -225,30 +230,6 @@ export class CalendarA11yDirective implements AfterViewChecked {
           >
         </ng-template>
       </p-datepicker>
-
-      @if (showTime()) {
-        <!-- Artboard 12's named compromise: NOT p-datepicker's hour/minute
-             spinners. Reaching 18:00 from a 16:30 default is up to six presses
-             on one spinner, at the moment someone is raising an incident. A
-             masked field takes four keystrokes and is still plain PrimeNG. -->
-        <div class="am-cal__time">
-          <label class="am-cal__time-label" [attr.for]="timeInputId()">
-            {{ 'calendar.time' | translate }}
-          </label>
-          <p-inputmask
-            [inputId]="timeInputId()"
-            dir="ltr"
-            mask="99:99"
-            placeholder="HH:mm"
-            [ngModel]="time()"
-            (ngModelChange)="time.set($event ?? '')"
-            [ngModelOptions]="{ standalone: true }"
-          />
-          @if (zoneSuffix()) {
-            <span class="am-cal__zone">{{ zoneSuffix() }}</span>
-          }
-        </div>
-      }
     </div>
   `,
   styles: [
@@ -427,54 +408,6 @@ export class CalendarA11yDirective implements AfterViewChecked {
         cursor: default;
       }
 
-      /* The time strip: divider 1 + 10 margins + 36 control + 9 label = 56. */
-      .am-cal__time {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-block-start: 10px;
-        padding-block-start: 10px;
-        border-block-start: 1px solid var(--am-border);
-      }
-
-      .am-cal__time-label {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--am-ink-500);
-      }
-
-      /* The INNER input too, not only the wrapper. PrimeNG renders a 305px
-         input inside p-inputmask; sizing only the host left it overflowing its
-         own box, which put a horizontal scrollbar on the calendar — a
-         scrollable ancestor around the grid, which is the defect this ticket
-         exists to remove. Caught in the Arabic pass and then confirmed present
-         in English as well: the first check only walked the top level. */
-      .am-cal__time .p-inputmask {
-        flex: none;
-        inline-size: 84px;
-        block-size: 36px;
-      }
-
-      .am-cal__time .p-inputmask input {
-        inline-size: 84px;
-        min-inline-size: 0;
-        block-size: 36px;
-      }
-
-      /* max-content plus a negative margin on the grid can round up past the
-         container in RTL. The calendar never needs to scroll: it is sized to
-         its own content by construction. */
-      .am-cal,
-      .am-cal .p-datepicker-calendar-container,
-      .am-cal .p-datepicker-calendar {
-        overflow: visible;
-      }
-
-      .am-cal__zone {
-        font-size: 12px;
-        color: var(--am-ink-500);
-        font-variant-numeric: tabular-nums;
-      }
     `,
   ],
 })
@@ -487,16 +420,17 @@ export class InlineCalendarComponent {
   private readonly picker = viewChild(DatePicker);
 
   readonly value = model<Date | null>(null);
-  /** 'HH:mm'. Only meaningful when showTime is set. */
-  readonly time = model<string>('');
+  /**
+   * The earliest selectable day. PrimeNG's own isSelectable() refuses anything
+   * before it, which gives the day `p-disabled` — so it is skipped by arrow
+   * traversal and by pointer exactly as an other-month day is, with no second
+   * mechanism to keep in step.
+   */
+  readonly minDate = input<Date | null>(null);
 
-  readonly showTime = input(false);
   /** 0=Sun … 6=Sat. Null or empty means "not known" — nothing is hatched. */
   readonly workingDays = input<readonly number[] | null>(null);
   readonly holidays = input<HolidayMap | null>(null);
-  /** Rendered after the time field, e.g. "+03". Empty hides it. */
-  readonly zoneSuffix = input<string>('');
-  readonly timeInputId = input<string>('am-cal-time');
 
   // ── Day markers ────────────────────────────────────────────────────────
 

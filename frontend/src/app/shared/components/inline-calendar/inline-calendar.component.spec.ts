@@ -24,7 +24,7 @@ const HOLIDAY_KEY = '2026-09-23';
   template: `
     <am-inline-calendar
       [(value)]="value"
-      [showTime]="showTime()"
+      [minDate]="minDate()"
       [workingDays]="workingDays()"
       [holidays]="holidays()"
     />
@@ -32,7 +32,7 @@ const HOLIDAY_KEY = '2026-09-23';
 })
 class HostComponent {
   readonly value = signal<Date | null>(new Date(2026, 8, 22, 9, 0));
-  readonly showTime = signal(false);
+  readonly minDate = signal<Date | null>(null);
   readonly workingDays = signal<readonly number[] | null>(WORKING_DAYS);
   readonly holidays = signal(new Map([[HOLIDAY_KEY, 'National Day']]));
 }
@@ -217,18 +217,46 @@ describe('InlineCalendarComponent (ACC-96)', () => {
 
   // ── The time strip ──────────────────────────────────────────────────────
 
-  it('renders no time strip unless asked, and a masked field when asked', () => {
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.am-cal__time')).toBeNull();
+  // ── No time control here at all (Rev 7) ─────────────────────────────────
 
-    host.showTime.set(true);
+  it('carries no time control of any kind', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    // Rev 7 deleted the strip: the time lives beside the DATE FIELD, so it is
+    // a sibling in both states and pressing the toggle never moves it. Both
+    // are asserted — PrimeNG's own spinners were never wanted either.
+    expect(el.querySelector('.am-cal__time')).toBeNull();
+    expect(el.querySelector('.p-datepicker-time-picker')).toBeNull();
+    expect(el.querySelector('input')).toBeNull();
+  });
+
+  // ── minDate ─────────────────────────────────────────────────────────────
+
+  it('makes days before minDate inert, exactly as other-month days are', () => {
+    host.minDate.set(new Date(2026, 8, 22));
     fixture.detectChanges();
 
-    const mask = el.querySelector<HTMLInputElement>('.am-cal__time input');
-    expect(mask).toBeTruthy();
-    // p-inputmask, not p-datepicker's hour/minute spinners (artboard 12's
-    // named compromise).
-    expect(el.querySelector('.p-datepicker-time-picker')).toBeNull();
+    const el = fixture.nativeElement as HTMLElement;
+    const dayOf = (n: number): HTMLElement =>
+      Array.from(el.querySelectorAll<HTMLElement>('span[data-date]')).find(
+        (s) => s.textContent?.trim() === String(n) && !isOtherMonth(s),
+      )!;
+
+    // p-disabled is the SAME mechanism other-month days use, which is what
+    // makes PrimeNG's arrow traversal skip them with no second rule to keep
+    // in step.
+    expect(dayOf(21).classList.contains('p-disabled')).toBe(true);
+    expect(dayOf(22).classList.contains('p-disabled'))
+      .withContext('today stays selectable — a later time today is a real due date')
+      .toBe(false);
+    expect(dayOf(23).classList.contains('p-disabled')).toBe(false);
+  });
+
+  it('disables nothing when no minDate is given', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const inMonth = Array.from(el.querySelectorAll<HTMLElement>('span[data-date]')).filter(
+      (s) => !isOtherMonth(s),
+    );
+    expect(inMonth.every((s) => !s.classList.contains('p-disabled'))).toBe(true);
   });
 
   // ── Picking ─────────────────────────────────────────────────────────────

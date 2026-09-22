@@ -104,16 +104,17 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
             <ng-container *ngTemplateOutlet="dueBlock; context: { presets: false }" />
 
-              <am-inline-calendar
-              [showTime]="true"
+              <!-- minDate today: a new task cannot be due in the past, so
+                 yesterday and earlier are non-selectable and PrimeNG's own
+                 arrow traversal skips them, exactly as it does other-month
+                 days. TODAY stays selectable — a time later today is a
+                 perfectly good due date. -->
+            <am-inline-calendar
               [value]="dueDay()"
               (valueChange)="onDayPicked($event)"
-              [time]="dueTimeText()"
-              (timeChange)="onTimeTyped($event)"
+              [minDate]="today()"
               [workingDays]="dueDates.workingDays()"
               [holidays]="dueDates.holidays()"
-              [zoneSuffix]="dueDates.zoneSuffix()"
-              timeInputId="dueTimePanel"
             />
           </div>
         } @else {
@@ -244,7 +245,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
                A real <button> with a name, not an icon glyph:
                check:icon-labels refuses an unnamed icon-only control, and the
                target is 28x28, above the 24px WCAG 2.5.8 floor. -->
-          <div class="am-due__field">
+          <div class="am-due__field" [class.am-due__field--invalid]="isPast()">
             <input
               pInputText
               id="dueDate"
@@ -254,13 +255,22 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               (input)="onDateTyped($any($event.target).value)"
               (blur)="commitTypedDate()"
               [placeholder]="'task.due.datePlaceholder' | translate"
+              [attr.aria-invalid]="isPast() ? 'true' : null"
+              [attr.aria-errormessage]="isPast() ? 'dueDateError' : null"
               autocomplete="off"
             />
+            <!-- A TOGGLE, not a one-way opener (Rev 7): aria-expanded, a
+                 pressed state, and a label that says what the press will do.
+                 It is the shortcut for whoever finds it — the taught ways back
+                 remain the Back link and Escape. -->
             <button
               type="button"
               class="am-due__calendar-button"
-              [attr.aria-label]="'task.due.toggleCalendar' | translate"
+              [class.am-due__calendar-button--on]="dateView()"
+              [attr.aria-label]="calendarToggleLabel()"
+              [attr.title]="calendarToggleLabel()"
               [attr.aria-expanded]="dateView()"
+              [attr.aria-pressed]="dateView()"
               (click)="toggleDateView()"
             >
               <i class="pi pi-calendar" aria-hidden="true"></i>
@@ -275,7 +285,9 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
             [ngModelOptions]="{ standalone: true }"
             (ngModelChange)="onTimeTyped($event ?? '')"
           />
-          <span class="am-due__zone">{{ dueDates.zoneSuffix() }}</span>
+          <!-- dir="ltr" so the bidi algorithm does not reorder "+03" into
+               "03+" in an Arabic layout — the sign belongs to the number. -->
+          <span class="am-due__zone" dir="ltr">{{ dueDates.zoneSuffix() }}</span>
         </div>
 
         <!-- Presets. Each sets BOTH date and time in one press — the urgent
@@ -316,7 +328,9 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
             <p class="am-due__resolved">{{ resolvedText() }}</p>
           }
           @if (warning().kind === 'past') {
-            <p class="am-due__resolved am-due__error">{{ 'task.due.past' | translate }}</p>
+            <p id="dueDateError" class="am-due__resolved am-due__error">
+              {{ 'task.due.past' | translate }}
+            </p>
           } @else if (warningText()) {
             <p class="am-due__resolved am-due__warn">{{ warningText() }}</p>
           }
@@ -400,6 +414,10 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         border-color: var(--am-control-border-hover);
       }
 
+      .am-due__field--invalid {
+        border-color: var(--am-danger-ink);
+      }
+
       .am-due__field:focus-within {
         outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
         outline-offset: var(--am-focus-ring-offset);
@@ -438,6 +456,13 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
       .am-due__calendar-button:hover {
         background: var(--am-primary-50);
+      }
+
+      /* Pressed, because the button is a toggle and its two states have to be
+         distinguishable without reading the label. */
+      .am-due__calendar-button--on {
+        background: var(--am-primary-100);
+        color: var(--am-primary-700);
       }
 
       .am-due__calendar-button:focus-visible {
@@ -649,6 +674,30 @@ export class TaskFormComponent implements OnInit {
 
   readonly warning = computed(() => this.dueDates.warningFor(this.due(), this.now()));
 
+  /** A new task's due date may not be in the past — the calendar's floor. */
+  readonly today = computed(() => {
+    const at = new Date(this.now());
+    at.setHours(0, 0, 0, 0);
+    return at;
+  });
+
+  /**
+   * A REAL ERROR, not a note. A due date already gone is the one case
+   * artboard 12 calls an error rather than a warning, and the note alone did
+   * not stop Create on step 2, which gates on form.invalid.
+   *
+   * "Today at a time already gone" counts: the comparison is against the
+   * instant, not the day.
+   */
+  readonly isPast = computed(() => this.warning().kind === 'past');
+
+  readonly calendarToggleLabel = computed(() => {
+    this.translate.currentLang();
+    return this.translate.instant(
+      this.dateView() ? 'task.due.hideCalendar' : 'task.due.toggleCalendar',
+    );
+  });
+
   readonly resolvedText = computed(() => {
     const at = this.due();
     if (!at) return this.translate.instant('task.due.none');
@@ -708,7 +757,7 @@ export class TaskFormComponent implements OnInit {
   readonly canCreateFromStep1 = computed(() => {
     if (this.saving()) return false;
     if (!this.isSourceLocked()) return false;
-    if (this.warning().kind === 'past') return false;
+    if (this.isPast()) return false;
     return this.titleValid();
   });
 
@@ -799,8 +848,9 @@ export class TaskFormComponent implements OnInit {
   toggleDateView(): void {
     this.commitTypedDate();
     // Recomputed on open so a dialog left sitting does not offer "+2h" from
-    // an hour ago.
+    // an hour ago — and so a value that has since gone past is caught.
     this.now.set(new Date());
+    this.refreshDueErrors();
     this.dateView.set(!this.dateView());
   }
 
@@ -901,12 +951,22 @@ export class TaskFormComponent implements OnInit {
     if (at === null) this.activePreset.set(null);
 
     const control = this.form.controls.dueDate;
-    if (control.hasError('invalidDate')) {
-      const { invalidDate: _cleared, ...rest } = control.errors ?? {};
-      control.setErrors(Object.keys(rest).length > 0 ? rest : null);
-    }
     control.setValue(at);
     control.markAsDirty();
+    this.refreshDueErrors(control);
+  }
+
+  /**
+   * Keeps the CONTROL's errors in step with the value, so both Creates are
+   * blocked by the same fact: step 1's own guard and step 2's form.invalid.
+   * A note that only step 1 consulted let a past date through from step 2.
+   */
+  private refreshDueErrors(control = this.form.controls.dueDate): void {
+    const errors = { ...(control.errors ?? {}) };
+    delete errors['invalidDate'];
+    delete errors['pastDate'];
+    if (this.isPast()) errors['pastDate'] = true;
+    control.setErrors(Object.keys(errors).length > 0 ? errors : null);
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────
@@ -916,6 +976,10 @@ export class TaskFormComponent implements OnInit {
     // the typed text is committed here too, or a value the user can see would
     // not be submitted.
     this.commitTypedDate();
+    // The clock has moved since the value was set; a due time that has just
+    // gone past must not slip through on the press that follows it.
+    this.now.set(new Date());
+    this.refreshDueErrors();
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
