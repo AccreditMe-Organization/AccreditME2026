@@ -27,6 +27,13 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
       <div class="flex flex-col gap-6 w-full max-w-sm">
         <h1 class="text-xl font-semibold text-center">{{ 'auth.login' | translate }}</h1>
 
+        <!-- ACC-122 — why they are looking at this page. Without it, an idle
+             sign-out is indistinguishable from the session simply breaking,
+             which is what the 15-minute bug felt like. -->
+        @if (signedOutForIdle) {
+          <p-message severity="info" [text]="'session.signedOutIdle' | translate" />
+        }
+
         @if (error()) {
           <p-message severity="error" [text]="error()! | translate" />
         }
@@ -92,6 +99,10 @@ export class LoginComponent {
   private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+
+  /** Set when the idle rule ended the last session (IdleService). */
+  protected readonly signedOutForIdle =
+    this.route.snapshot.queryParamMap.get('reason') === 'idle';
 
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
