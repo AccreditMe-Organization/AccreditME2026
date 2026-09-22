@@ -137,23 +137,56 @@ export class RoleService {
       select: { isPlatformOrg: true },
     });
 
+    // ACC-123 — both clauses go in `AND`, and that is not stylistic.
+    //
+    // They are each a disjunction, and a plain object can hold ONE `OR` key:
+    // written as two spreads, the search clause silently REPLACES the
+    // platform-role exclusion, so typing anything into the search box would
+    // put PLATFORM_ADMIN back in an ordinary tenant's list. Two entries in
+    // `AND` keep both conditions, and keep them independent.
     const where = {
       organizationId,
-      // Same rule as before — PLATFORM_ADMIN is visible only inside the
-      // platform org — now expressed where both queries see it.
-      ...(org?.isPlatformOrg ? {} : { key: { not: 'PLATFORM_ADMIN' } }),
-      // Bilingual search: BOTH names, because a role's Arabic name is not a
-      // translation of a search term, it is the name an Arabic-speaking admin
-      // knows it by. Searching only nameEn would make the Arabic UI's search
-      // box quietly useless.
-      ...(filters?.search
-        ? {
-            OR: [
-              { nameEn: { contains: filters.search, mode: 'insensitive' as const } },
-              { nameAr: { contains: filters.search, mode: 'insensitive' as const } },
-            ],
-          }
-        : {}),
+      AND: [
+        // PLATFORM_ADMIN is visible only inside the platform org (ACC-13):
+        // it is seeded into every tenant's Role table but is meaningful only
+        // where PlatformGuard's isPlatformOrg check can pass. Expressed in the
+        // where clause rather than after the query so findMany() and count()
+        // cannot disagree about the total (ACC-78).
+        //
+        // THE `key: null` BRANCH IS LOAD-BEARING, and `{ key: { not: … } }`
+        // alone was a real bug. A custom role has no key, and in SQL
+        // `key <> 'PLATFORM_ADMIN'` is NULL rather than true for a NULL key,
+        // so the row is not returned. Prisma does not add the null check for
+        // you: both `key: { not: X }` and `NOT: { key: X }` were measured
+        // against the dev database, and each returned the six system roles and
+        // neither of the two custom ones.
+        //
+        // The effect was that EVERY tenant-created role was invisible on the
+        // Roles screen — it read "1-6 of 6" for a tenant that had eight. It
+        // arrived with the move into the where clause; the post-query filter
+        // it replaced handled null correctly by accident.
+        //
+        // Found while verifying that a tenant can grant admin:access to a
+        // custom role, which is this ticket's own decision 4 and was not
+        // reachable through the UI at all.
+        ...(org?.isPlatformOrg
+          ? []
+          : [{ OR: [{ key: null }, { key: { not: 'PLATFORM_ADMIN' } }] }]),
+        // Bilingual search: BOTH names, because a role's Arabic name is not a
+        // translation of a search term, it is the name an Arabic-speaking admin
+        // knows it by. Searching only nameEn would make the Arabic UI's search
+        // box quietly useless.
+        ...(filters?.search
+          ? [
+              {
+                OR: [
+                  { nameEn: { contains: filters.search, mode: 'insensitive' as const } },
+                  { nameAr: { contains: filters.search, mode: 'insensitive' as const } },
+                ],
+              },
+            ]
+          : []),
+      ],
     };
 
     const [visibleRoles, total] = await Promise.all([
