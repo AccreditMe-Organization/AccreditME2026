@@ -149,3 +149,23 @@ export const KPI_PERMISSIONS = {
   MANAGE:          'kpi:manage',
   MANAGE_SYSTEM:   'kpi:manage_system',
 } as const;
+
+// ACC-123 — who may ADMINISTER this tenant, as a permission rather than a role
+// name (ACC-79's rule, so a tenant's own custom admin role works with no
+// special-casing).
+//
+// It exists because a "view" permission was doing two unrelated jobs. The task
+// assignee picker reads GET /users, so a working role needs users:view; the
+// rail read the same string as "may open the Users admin page". QUALITY_MANAGER
+// holds users:view, org:view, lookups:view and workflows:view for pickers, and
+// so was shown the whole Administration section — and write controls the server
+// then refused one by one. Separating the two jobs is what this adds: the page
+// permission stays exactly as it was, and this says whether the person is an
+// administrator at all. BOTH are required for an Administration route.
+//
+// Deliberately NOT a permission on any module: administering is not an action
+// on a thing, and pinning it to one ("tenant:administer") would imply the
+// Tenant screens rather than the whole section.
+export const ADMIN_PERMISSIONS = {
+  ACCESS: 'admin:access',
+} as const;

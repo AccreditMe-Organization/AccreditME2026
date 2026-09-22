@@ -7,6 +7,7 @@ import {
   NOTIFICATIONS_PERMISSIONS,
   SETUP_PERMISSIONS,
   TASKS_PERMISSIONS,
+  ADMIN_PERMISSIONS,
 } from '../../common/constants/permissions';
 
 // ACC-82 — who sees Setup health. Pinned here because the answer lives in two
@@ -77,4 +78,47 @@ describe('SYSTEM_ROLE_SEED — setup:view (ACC-82)', () => {
       expect(permissionsOf(key)).not.toContain(SETUP_PERMISSIONS.VIEW);
     },
   );
+});
+
+// ACC-123 — who may administer the tenant.
+//
+// The negative half is the reason this ticket exists, so it is tested per role
+// by name rather than as one "nobody else" assertion: QUALITY_MANAGER holding
+// users:view, org:view, lookups:view and workflows:view for its PICKERS is
+// correct and unchanged, and must not amount to administering. If a future
+// change hands admin:access to one of these roles, that is a decision someone
+// has to make by editing a test that says so.
+describe('SYSTEM_ROLE_SEED — admin:access (ACC-123)', () => {
+  it('is in the global permission catalog', () => {
+    expect(ALL_PERMISSIONS.map((p) => `${p.module}:${p.action}`)).toContain(
+      ADMIN_PERMISSIONS.ACCESS,
+    );
+  });
+
+  it('is granted to TENANT_ADMIN', () => {
+    expect(permissionsOf('TENANT_ADMIN')).toContain(ADMIN_PERMISSIONS.ACCESS);
+  });
+
+  it.each(['QUALITY_MANAGER', 'QUALITY_OFFICER', 'AUDITOR', 'BASE_USER', 'VIEWER'])(
+    'is not granted to %s',
+    (key) => {
+      expect(SYSTEM_ROLE_SEED.some((r) => r.key === key)).toBe(true);
+      expect(permissionsOf(key)).not.toContain(ADMIN_PERMISSIONS.ACCESS);
+    },
+  );
+
+  // The seeded roles that hold a page permission WITHOUT holding admin:access.
+  // This is the state the frontend gating now depends on: if these lists ever
+  // came apart — a role gaining admin:access, or losing the view permission —
+  // the rail would change for that role with no test naming the change.
+  it.each([
+    ['QUALITY_MANAGER', 'users:view'],
+    ['QUALITY_MANAGER', 'org:view'],
+    ['QUALITY_MANAGER', 'lookups:view'],
+    ['QUALITY_MANAGER', 'workflows:view'],
+    ['QUALITY_OFFICER', 'tasks:manage'],
+  ])('%s keeps %s but still cannot administer', (key, permission) => {
+    expect(permissionsOf(key)).toContain(permission);
+    expect(permissionsOf(key)).not.toContain(ADMIN_PERMISSIONS.ACCESS);
+  });
 });
