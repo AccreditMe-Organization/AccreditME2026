@@ -1569,6 +1569,15 @@ model RefreshToken {
   userId         String
   organizationId String
   tokenHash      String    @unique // SHA-256 hash of the raw token — never store it plain
+  // ACC-122 — the User.tokenVersion this session was issued against, so
+  // /auth/refresh can refuse to renew a session that a forced logout has
+  // already ended. NULLABLE on purpose: rows created before this column
+  // existed carry null and are treated as "unknown", which falls back to the
+  // status check that was the only guard before. Refusing them would sign
+  // out every logged-in user the moment the migration ran, for no security
+  // gain. Rows rotate on every refresh, so nulls disappear within one refresh
+  // cycle (at most the 7-day refresh lifetime).
+  tokenVersion   Int?
   expiresAt      DateTime
   createdAt      DateTime  @default(now())
   revokedAt      DateTime?
