@@ -100,7 +100,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     <ng-template #formTpl>
       <app-task-form
         (saved)="onSaved()"
-        (cancelled)="formVisible.set(false)"
+        (cancelled)="taskDialog.requestClose()"
         (dirtyChange)="formDirty.set($event)"
         (ready)="taskFormRef.set($event)"
       />
@@ -108,7 +108,12 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     <!-- ACC-96 — [dirty] is an opt-in input on the DIALOG, and task-form sits
          inside it, so the state travels outward through (dirtyChange). Without
          it Escape discards a part-filled task silently, which the templates
-         have always specified against. -->
+         have always specified against.
+
+         CANCEL GOES THROUGH requestClose(), not straight to visible=false.
+         That method is the single place the dirty question is asked — Escape
+         and the header's ✕ already arrived there, and Cancel was the one path
+         that bypassed it and discarded a part-filled task without a word. -->
     <!-- Declared HERE, not inside the form: p-dialog collects pTemplate
          children at content init, so a footer arriving later never lands. -->
     <!-- The step strip belongs to the HEADER, beside the title and the
@@ -122,6 +127,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
       <app-task-form-footer [form]="taskFormRef()" />
     </ng-template>
     <app-edit-dialog
+      #taskDialog
       [(visible)]="formVisible"
       [header]="'task.newTask' | translate"
       [content]="formTpl"

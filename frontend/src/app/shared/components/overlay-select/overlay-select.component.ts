@@ -188,7 +188,15 @@ function createManualScrollable(
         <span class="am-overlay-select-chips">
           @for (v of selectedValues(); track v) {
             <span class="am-overlay-select-chip">
-              <span class="am-overlay-select-chip-label">{{ labelForValue(v) }}</span>
+              <!-- title and aria-label carry the full name, so the one chip
+                   that IS too wide for the field is still identifiable by
+                   hover and by screen reader. -->
+              <span
+                class="am-overlay-select-chip-label"
+                [attr.title]="labelForValue(v)"
+                [attr.aria-label]="labelForValue(v)"
+                >{{ labelForValue(v) }}</span
+              >
               <button
                 type="button"
                 class="am-overlay-select-chip-remove"
@@ -262,21 +270,19 @@ function createManualScrollable(
         min-inline-size: 0;
       }
 
-      /* SIDE BY SIDE, wrapping only once the row is genuinely full.
-         Content-sized chips each took a whole line in a 203px field, because
-         the three seeded names are 122-148px wide. Letting them SHRINK does
-         not help and it is worth knowing why: flex-wrap breaks lines at each
-         item's CONTENT size and only shrinks what already shares a line, so a
-         shrinkable chip still gets a line to itself.
-         The cap is what works. A chip may take at most half the row, so two
-         always fit and a long name truncates instead of monopolising the line
-         — while names short enough to fit three still get three. */
+      /* NATURAL WIDTH, wrapping to the next row when a chip does not fit.
+         A half-row cap was tried and is wrong: it truncated ordinary names
+         ("Aisha Al-…", "Dr. Faisal …") in a ~200px field, which is worse than
+         a second row — a name is what identifies the person, and a clipped one
+         identifies nobody. Only a chip wider than the WHOLE field truncates
+         now, and that one keeps its full name in a tooltip and in its
+         accessible name. */
       .am-overlay-select-chip {
         display: inline-flex;
         align-items: center;
         gap: 0.25rem;
         min-inline-size: 0;
-        max-inline-size: calc(50% - 0.125rem);
+        max-inline-size: 100%;
         padding-inline-start: 8px;
         border: 1px solid var(--am-neutral-chip-border);
         background: var(--am-neutral-chip-bg);

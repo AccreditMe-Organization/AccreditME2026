@@ -476,13 +476,19 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
          cannot, so sizing only the wrapper left a 305px input inside an 84px
          box — which overflowed the body horizontally and clipped the time
          field off the dialog's edge. Measured in a browser. */
+      /* 112px, not 84. The Arabic hint "ساعة:دقيقة" was clipped to
+         "اعة:دقيقة" at 84 — a truncated hint is worse than none, because it
+         reads as a malformed value. Widened rather than shortened to "س:د",
+         which is cryptic; the date field beside it is flex 1 1 auto and simply
+         gives up the 28px. The VALUE it holds is five Latin characters either
+         way, so nothing else changes. */
       .am-due__row .p-inputmask {
         flex: none;
-        inline-size: 84px;
+        inline-size: 112px;
       }
 
       .am-due__row ::ng-deep .p-inputmask input {
-        inline-size: 84px;
+        inline-size: 112px;
         min-inline-size: 0;
       }
 
@@ -492,13 +498,20 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         font-variant-numeric: tabular-nums;
       }
 
+      /* NO fixed height and NO overflow: hidden. Pinning this to the
+         drawing's 30px budget cut the chips' bottom border off and clipped the
+         focus ring, and in Arabic — where the row wraps — it hid the second
+         row entirely. The budget describes the common case, not a clamp: the
+         row takes the height its content needs and the resolved line follows
+         it rather than sitting on top of it.
+         The padding is the ring's room: 2px offset + 2px width outside each
+         chip, which an overflow-clipped or flush container would crop. */
       .am-presets {
         display: flex;
         flex-wrap: wrap;
         gap: 0.375rem;
         margin-block-start: 0.375rem;
-        block-size: 30px;
-        overflow: hidden;
+        padding-block: 4px;
       }
 
       .am-presets__chip {

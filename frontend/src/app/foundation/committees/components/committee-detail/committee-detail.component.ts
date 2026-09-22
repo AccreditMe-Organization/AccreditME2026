@@ -512,7 +512,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
           [lockedSourceId]="committeeId"
           [lockedSourceLabel]="displayName(c)"
           (saved)="onTaskSaved()"
-          (cancelled)="taskFormVisible.set(false)"
+          (cancelled)="taskDialog.requestClose()"
           (dirtyChange)="taskFormDirty.set($event)"
         (ready)="taskFormRef.set($event)"
         />
@@ -522,6 +522,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
          inside it, so the state travels outward through (dirtyChange). Without
          it Escape discards a part-filled task silently. -->
     <app-edit-dialog
+      #taskDialog
       [(visible)]="taskFormVisible"
       [header]="'task.newTask' | translate"
       [context]="committee() ? ('task.raisedFrom' | translate: { record: displayName(committee()!) }) : ''"
