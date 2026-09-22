@@ -11,7 +11,9 @@
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:icon-labels": "node scripts/check-icon-labels.mjs",
     "check:dialog-overlays": "node scripts/check-dialog-overlays.mjs",
-    "check:create-gating": "node scripts/check-create-gating.mjs"
+    "check:create-gating": "node scripts/check-create-gating.mjs",
+    "check:action-gating": "node scripts/check-action-gating.mjs",
+    "check:action-gating:selftest": "node scripts/check-action-gating.selftest.mjs"
   },
   "private": true,
   "dependencies": {
