@@ -74,6 +74,9 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
           @if (context()) {
             <span class="am-dialog__context">{{ context() }}</span>
           }
+          @if (headerExtra(); as extra) {
+            <ng-container *ngTemplateOutlet="extra" />
+          }
         </div>
       </ng-template>
 
@@ -181,6 +184,13 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    * an empty line.
    */
   readonly context = input<string>('');
+  /**
+   * Anything else that belongs beside the title rather than in the body — a
+   * wizard's step strip, above all. Template 3 draws that inside the header
+   * block, and putting it there is what keeps it UNCHANGED when the body is
+   * substituted, as well as keeping it off the 420px body cap.
+   */
+  readonly headerExtra = input<TemplateRef<unknown> | null>(null);
   readonly content = input.required<TemplateRef<unknown>>();
   readonly visibleChange = output<boolean>();
 

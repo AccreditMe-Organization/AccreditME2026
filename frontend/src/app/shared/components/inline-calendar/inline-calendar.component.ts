@@ -255,13 +255,21 @@ export class CalendarA11yDirective implements AfterViewChecked {
     `
       /* Artboard 12's geometry, as the numbers it names so a template can
          budget against them: 258px date-only, 314px with the time strip. */
+      /* FULL WIDTH of whatever holds it, as Template 3 draws it: seven columns
+         across the body, no empty half. It used to be max-content, which left
+         the calendar at ~226px in a 520px dialog body.
+         --am-cal-cell is now a FLOOR, not a fixed size: the cells stretch to
+         fill and never go under 28px (the WCAG 2.5.8 floor of 24 plus margin
+         for a trackpad slip). The HEIGHT stays 28px, so the six-row budget of
+         178px — and the 258/314 panel totals — are unchanged. */
       .am-cal {
         --am-cal-cell: 28px;
         --am-cal-gap: 2px;
-        inline-size: max-content;
+        inline-size: 100%;
       }
 
       .am-cal .p-datepicker-panel {
+        inline-size: 100%;
         border: 1px solid var(--am-border);
         border-radius: 8px;
         padding: 8px;
@@ -325,6 +333,16 @@ export class CalendarA11yDirective implements AfterViewChecked {
         block-size: var(--am-cal-cell);
       }
 
+      /* Seven equal columns across whatever width the table gets. */
+      .am-cal .p-datepicker-day-view {
+        inline-size: 100%;
+        table-layout: fixed;
+      }
+
+      .am-cal .p-datepicker-day-cell {
+        inline-size: calc(100% / 7);
+      }
+
       .am-cal .p-datepicker-day-cell {
         padding: 0;
       }
@@ -333,7 +351,8 @@ export class CalendarA11yDirective implements AfterViewChecked {
          fill; the inner am-cal__day carries the marker textures, so the two
          never fight over one background. */
       .am-cal .p-datepicker-day {
-        inline-size: var(--am-cal-cell);
+        inline-size: 100%;
+        min-inline-size: var(--am-cal-cell);
         block-size: var(--am-cal-cell);
         display: flex;
         align-items: center;

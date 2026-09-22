@@ -434,7 +434,7 @@
       "low": "Low",
       "medium": "Medium",
       "high": "High",
-      "critical": "Urgent"
+      "critical": "Critical"
     },
     "status": {
       "title": "Status",

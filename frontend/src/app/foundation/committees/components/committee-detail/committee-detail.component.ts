@@ -11,6 +11,7 @@ import { ListRowDirective } from '../../../../shared/components/data-list/list-r
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { TaskFormComponent } from '../../../tasks/components/task-form/task-form.component';
 import { TaskFormFooterComponent } from '../../../tasks/components/task-form/task-form-footer.component';
+import { TaskFormStepsComponent } from '../../../tasks/components/task-form/task-form-steps.component';
 import { TaskService, ITaskWithAssigneesDto } from '../../../tasks/services/task.service';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
@@ -52,6 +53,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     RouterLink,
     TaskFormComponent,
     TaskFormFooterComponent,
+    TaskFormStepsComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
@@ -485,6 +487,13 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     </ng-template>
     <!-- Declared HERE, not inside the form: p-dialog collects pTemplate
          children at content init, so a footer arriving later never lands. -->
+    <!-- The step strip belongs to the HEADER, beside the title and the
+         context line, exactly as Template 3 draws it — so it does not change
+         when the date view substitutes the body, and costs nothing against
+         the 420px body cap. -->
+    <ng-template #taskStepsTpl>
+      <app-task-form-steps [form]="taskFormRef()" />
+    </ng-template>
     <ng-template #taskFooterTpl>
       <app-task-form-footer [form]="taskFormRef()" />
     </ng-template>
@@ -518,6 +527,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       [context]="committee() ? ('task.raisedFrom' | translate: { record: displayName(committee()!) }) : ''"
       [content]="taskFormTpl"
       [dirty]="taskFormDirty()"
+      [headerExtra]="taskStepsTpl"
       [footer]="taskFooterTpl"
     />
 

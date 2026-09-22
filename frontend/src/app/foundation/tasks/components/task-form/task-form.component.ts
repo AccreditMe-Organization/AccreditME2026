@@ -84,22 +84,6 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
   ],
   template: `
     <form id="taskForm" [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
-      <!-- The step strip. EditDialogComponent's header is a plain string, so
-           this lives at the top of the body rather than beside the title.
-           HIDDEN IN THE DATE VIEW: that view has a 6px margin against the cap
-           and the strip costs 37px with its gap. The drawing does not show it
-           there either — the Back link is what orients you. -->
-      @if (!dateView()) {
-        <ol class="am-steps" [attr.aria-label]="'task.steps' | translate">
-          @for (s of steps; track s.n) {
-            <li class="am-steps__item" [class.am-steps__item--on]="step() === s.n">
-              <span class="am-steps__n">{{ s.n }}</span>
-              <span>{{ s.key | translate }}</span>
-            </li>
-          }
-        </ol>
-      }
-
       @if (step() === 1) {
         @if (dateView()) {
           <!-- ── Step 1, date view ───────────────────────────────────────
@@ -109,7 +93,16 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
                at 414 of a 420 cap, and the gap it names between the due block
                and the calendar is 8. -->
           <div class="am-dateview">
-            <ng-container *ngTemplateOutlet="dueBlock; context: { presets: false, back: true }" />
+            <!-- Top, start side, ABOVE the fields — as drawn. It had been
+                 folded onto the due block's label row to buy 24px; the step
+                 strip moving into the header gives back 37, so it returns to
+                 where Template 3 puts it. -->
+            <button type="button" class="am-backlink" (click)="closeDateView()">
+              <i class="pi pi-arrow-left am-backlink__icon" aria-hidden="true"></i>
+              {{ 'task.due.backToDetails' | translate }}
+            </button>
+
+            <ng-container *ngTemplateOutlet="dueBlock; context: { presets: false }" />
 
               <am-inline-calendar
               [showTime]="true"
@@ -227,27 +220,13 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
     <!-- The due block is identical on both step-1 views, which is the point:
          pressing the calendar button must not appear to move the control. -->
-    <ng-template #dueBlock let-showPresets="presets" let-showBack="back">
-      <div class="flex flex-col gap-1 am-due">
-        <!-- THE BACK LINK SHARES THE LABEL'S ROW, and that is a height
-             decision rather than a layout preference. The drawing's 414 is
-             due block 75 + gap 8 + calendar 314 + one warning line 17, and it
-             does NOT include the link. On its own row the link costs 24px in
-             Arabic, and a warning that wraps to two lines then takes the view
-             to 455 against a 420 cap — measured, with the body scrolling,
-             which is the defect this ticket removes. On the label's row it
-             costs nothing.
-             The arrow is an icon, not a literal "←": a left arrow in an
-             Arabic layout points away from where Back goes, so it mirrors. -->
-        <div class="am-due__labelrow">
-          <label for="dueDate" class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
-          @if (showBack) {
-            <button type="button" class="am-backlink" (click)="closeDateView()">
-              <i class="pi pi-arrow-left am-backlink__icon" aria-hidden="true"></i>
-              {{ 'task.due.backToDetails' | translate }}
-            </button>
-          }
-        </div>
+    <ng-template #dueBlock let-showPresets="presets">
+      <!-- No gap between the label, the control and the message: the drawing
+           budgets this block at 75 (label 22 + control 36 + reserved 17) and
+           the line heights already separate them. Two 4px gaps put it at 83,
+           which is 8px the date view does not have. -->
+      <div class="flex flex-col am-due">
+        <label for="dueDate" class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
         <div class="am-due__row">
           <!-- dir="ltr" on a value that is Latin script inside an RTL layout.
                Without it the bidi algorithm reorders "25 Sep 2026" into
@@ -255,25 +234,38 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
                date Gregorian with English months in both languages precisely
                so it round-trips, and that only holds if it also READS in the
                order it is typed. Same for the HH:mm field. -->
-          <input
-            pInputText
-            id="dueDate"
-            class="am-due__date"
-            dir="ltr"
-            [value]="dueDateText()"
-            (input)="onDateTyped($any($event.target).value)"
-            (blur)="commitTypedDate()"
-            [placeholder]="'task.due.datePlaceholder' | translate"
-            autocomplete="off"
-          />
-          <p-button
-            type="button"
-            icon="pi pi-calendar"
-            [text]="true"
-            [ariaLabel]="'task.due.toggleCalendar' | translate"
-            [attr.aria-expanded]="dateView()"
-            (onClick)="toggleDateView()"
-          />
+          <!-- ONE FIELD, with the calendar button at its TRAILING end — right
+               in English, left in Arabic, which the flex order gives for free.
+               Template 3 draws it inside the field's own border; a separate
+               button beside it read as a second control. The border lives on
+               the wrapper and the input is borderless, so focusing either
+               shows one ring around the pair.
+
+               A real <button> with a name, not an icon glyph:
+               check:icon-labels refuses an unnamed icon-only control, and the
+               target is 28x28, above the 24px WCAG 2.5.8 floor. -->
+          <div class="am-due__field">
+            <input
+              pInputText
+              id="dueDate"
+              class="am-due__date"
+              dir="ltr"
+              [value]="dueDateText()"
+              (input)="onDateTyped($any($event.target).value)"
+              (blur)="commitTypedDate()"
+              [placeholder]="'task.due.datePlaceholder' | translate"
+              autocomplete="off"
+            />
+            <button
+              type="button"
+              class="am-due__calendar-button"
+              [attr.aria-label]="'task.due.toggleCalendar' | translate"
+              [attr.aria-expanded]="dateView()"
+              (click)="toggleDateView()"
+            >
+              <i class="pi pi-calendar" aria-hidden="true"></i>
+            </button>
+          </div>
           <p-inputmask
             inputId="dueTime"
             dir="ltr"
@@ -338,46 +330,6 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         display: block;
       }
 
-      .am-steps {
-        display: flex;
-        gap: 1.25rem;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-      }
-
-      .am-steps__item {
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-        font-size: 12.5px;
-        color: var(--am-ink-500);
-      }
-
-      .am-steps__item--on {
-        color: var(--am-primary-700);
-        font-weight: 600;
-      }
-
-      .am-steps__n {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        inline-size: 18px;
-        block-size: 18px;
-        border-radius: 999px;
-        border: 1px solid currentColor;
-        font-size: 11px;
-      }
-
-      .am-due__labelrow {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
-        min-block-size: 22px;
-      }
-
       .am-backlink {
         display: inline-flex;
         align-items: center;
@@ -418,6 +370,10 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         min-inline-size: 0;
       }
 
+      .am-due label {
+        line-height: 22px;
+      }
+
       .am-due__row {
         display: flex;
         align-items: center;
@@ -426,9 +382,67 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         min-inline-size: 0;
       }
 
+      /* The wrapper carries the border; the input inside is borderless, so the
+         pair reads and focuses as ONE control. */
+      .am-due__field {
+        display: flex;
+        align-items: center;
+        flex: 1 1 auto;
+        min-inline-size: 0;
+        block-size: 36px;
+        padding-inline-end: 2px;
+        border: 1px solid var(--am-control-border);
+        border-radius: 4px;
+        background: var(--am-control-bg);
+      }
+
+      .am-due__field:hover {
+        border-color: var(--am-control-border-hover);
+      }
+
+      .am-due__field:focus-within {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+
       .am-due__date {
         flex: 1 1 auto;
         min-inline-size: 0;
+        border: none;
+        background: none;
+        box-shadow: none;
+      }
+
+      .am-due__date:focus,
+      .am-due__date:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+
+      /* 28x28 — above the 24px WCAG 2.5.8 floor, and the same size as a day
+         cell. */
+      .am-due__calendar-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+        inline-size: 28px;
+        block-size: 28px;
+        padding: 0;
+        border: none;
+        background: none;
+        border-radius: 4px;
+        color: var(--am-primary-600);
+        cursor: pointer;
+      }
+
+      .am-due__calendar-button:hover {
+        background: var(--am-primary-50);
+      }
+
+      .am-due__calendar-button:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: 1px;
       }
 
       /* ::ng-deep for the INNER input, matching field.component.ts. The
