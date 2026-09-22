@@ -89,7 +89,10 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
               />
             </td>
             <td>
+              <!-- ACC-123 — edit, deactivate and reactivate are all
+                   positions:manage (org-position.controller.ts). -->
               <div class="flex gap-1 justify-end">
+                @if (canManage()) {
                 <p-button
                   icon="pi pi-pencil"
                   [text]="true"
@@ -114,6 +117,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                     [pTooltip]="'orgPosition.reactivate' | translate"
                     (onClick)="onReactivate(position)"
                   />
+                }
                 }
               </div>
             </td>
@@ -157,6 +161,8 @@ export class PositionListComponent implements OnInit {
   // canAddMember, deliberately rather than a second one.
   // POST /org-positions enforces positions:manage (org-position.controller.ts).
   readonly canCreate = computed(() => this.navigationAccess.hasPermission('positions:manage'));
+  // ACC-123 — the same permission, asked about changing an existing position.
+  readonly canManage = this.canCreate;
 
   readonly loading = signal(false);
   readonly positions = signal<IOrgPositionDto[]>([]);

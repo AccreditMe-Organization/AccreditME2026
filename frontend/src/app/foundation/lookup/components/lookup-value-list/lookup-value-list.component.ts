@@ -105,7 +105,14 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
               />
             </td>
             <td>
+              <!-- ACC-123 — hide, unhide, override label, edit and delete are
+                   all lookups:manage (lookup.controller.ts). Gated as one
+                   block because they share the permission, and because the
+                   override-label control uses pi-tag, which is not in
+                   check:action-gating's icon vocabulary — gating the container
+                   covers what the scan cannot see. -->
               <div class="flex gap-1 justify-end">
+                @if (canManage()) {
                 @if (val.layer === 'SYSTEM' && !val.isHidden) {
                   <p-button
                     icon="pi pi-eye-slash"
@@ -147,6 +154,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                     [pTooltip]="'common.delete' | translate"
                     (onClick)="onDelete(val)"
                   />
+                }
                 }
               </div>
             </td>
@@ -240,6 +248,8 @@ export class LookupValueListComponent implements OnInit {
   // POST /lookups/categories/:key/values enforces lookups:manage. There is no
   // lookups:create string at all (lookup.controller.ts).
   readonly canCreate = computed(() => this.navigationAccess.hasPermission('lookups:manage'));
+  // ACC-123 — the same permission, asked about changing an existing value.
+  readonly canManage = this.canCreate;
 
   categoryKey = '';
 

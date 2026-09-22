@@ -162,7 +162,14 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                   </span>
                 }
 
+                <!-- ACC-123 — reorder, edit and remove are all
+                     workflows:manage. Gated as one block: they share a
+                     permission, and four separate @ifs would be four places to
+                     get it wrong. Note the Edit button carries a label rather
+                     than an icon, so check:action-gating cannot see it — a
+                     reason to gate the container, not each control. -->
                 <div class="flex items-center gap-1 shrink-0">
+                  @if (canManage()) {
                   <p-button
                     icon="pi pi-arrow-up"
                     [text]="true"
@@ -195,6 +202,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                     [pTooltip]="'common.remove' | translate"
                     (onClick)="onRemove(stage)"
                   />
+                  }
                 </div>
               </div>
 
@@ -273,6 +281,11 @@ export class WorkflowStageListComponent implements OnInit {
   // POST /workflow-templates/:id/stages enforces workflows:manage
   // (workflow-template.controller.ts).
   readonly canCreate = computed(() => this.navigationAccess.hasPermission('workflows:manage'));
+  // ACC-123 — the same permission, asked as a different question: may this
+  // person CHANGE a stage. Kept separate from canCreate so the create scan and
+  // the action scan each read the gate that names what it guards, and so a
+  // future split of the two endpoints does not need every call site found.
+  readonly canManage = this.canCreate;
 
   readonly templateId = computed(() => this.template()?.id ?? '');
   readonly stages = computed(() => this.template()?.stages ?? []);

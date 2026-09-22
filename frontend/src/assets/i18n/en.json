@@ -77,7 +77,8 @@
     "description": "Description",
     "noUnits": "No organization units defined yet.",
     "confirmDeactivate": "Deactivate this unit? Active children must be deactivated first.",
-    "codeInUse": "This code is already in use in your organization."
+    "codeInUse": "This code is already in use in your organization.",
+    "unitInactive": "This unit is inactive"
   },
   "orgUnitHead": {
     "manageHead": "Manage Head",
@@ -308,7 +309,8 @@
     "sla": "SLA",
     "searchStages": "Search stages…",
     "stagesEyebrow": "Workflow stages",
-    "triggerRoleUnknown": "Unknown role"
+    "triggerRoleUnknown": "Unknown role",
+    "alreadyDefault": "Already the default workflow"
   },
   "notification": {
     "title": "Notifications",

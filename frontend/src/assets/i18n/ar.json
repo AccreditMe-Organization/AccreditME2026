@@ -77,7 +77,8 @@
     "description": "الوصف",
     "noUnits": "لم يتم تحديد وحدات تنظيمية بعد.",
     "confirmDeactivate": "هل تريد إلغاء تفعيل هذه الوحدة؟ يجب إلغاء تفعيل الوحدات الفرعية النشطة أولاً.",
-    "codeInUse": "هذا الرمز مستخدم بالفعل في منظمتك."
+    "codeInUse": "هذا الرمز مستخدم بالفعل في منظمتك.",
+    "unitInactive": "هذه الوحدة غير نشطة"
   },
   "orgUnitHead": {
     "manageHead": "إدارة الرئاسة",
@@ -308,7 +309,8 @@
     "sla": "مدة الإنجاز",
     "searchStages": "ابحث في المراحل…",
     "stagesEyebrow": "مراحل سير العمل",
-    "triggerRoleUnknown": "دور غير معروف"
+    "triggerRoleUnknown": "دور غير معروف",
+    "alreadyDefault": "هذا هو سير العمل الافتراضي بالفعل"
   },
   "notification": {
     "title": "الإشعارات",

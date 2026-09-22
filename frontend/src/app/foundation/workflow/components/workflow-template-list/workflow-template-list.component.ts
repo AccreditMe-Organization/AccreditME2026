@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
@@ -9,6 +9,7 @@ import { ConfirmationService } from 'primeng/api';
 import { WorkflowTemplateService, WorkflowTemplateDto } from '../../services/workflow-template.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-workflow-template-list',
@@ -60,24 +61,34 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
               />
             </td>
             <td>
+              <!-- ACC-123 — both actions are workflows:manage, which the
+                   endpoints enforce. Before this they were shown to anyone who
+                   could READ the list, and the server refused each one. -->
               <div class="flex gap-1 justify-end">
-                <p-button
-                  icon="pi pi-star"
-                  [text]="true"
-                  size="small"
-                  [disabled]="template.isDefault"
-                  [pTooltip]="'workflow.setDefault' | translate"
-                  (onClick)="onSetDefault(template, $event)"
-                />
-                @if (template.isActive) {
+                @if (canManage()) {
                   <p-button
-                    icon="pi pi-ban"
+                    icon="pi pi-star"
                     [text]="true"
                     size="small"
-                    severity="danger"
-                    [pTooltip]="'workflow.deactivateTemplate' | translate"
-                    (onClick)="onDeactivate(template, $event)"
+                    [disabled]="template.isDefault"
+                    [pTooltip]="
+                      (template.isDefault
+                        ? 'workflow.alreadyDefault'
+                        : 'workflow.setDefault'
+                      ) | translate
+                    "
+                    (onClick)="onSetDefault(template, $event)"
                   />
+                  @if (template.isActive) {
+                    <p-button
+                      icon="pi pi-ban"
+                      [text]="true"
+                      size="small"
+                      severity="danger"
+                      [pTooltip]="'workflow.deactivateTemplate' | translate"
+                      (onClick)="onDeactivate(template, $event)"
+                    />
+                  }
                 }
               </div>
             </td>
@@ -101,6 +112,14 @@ export class WorkflowTemplateListComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-123 — workflows:manage, the permission both write endpoints carry
+  // (workflow-template.controller.ts). workflows:view opens this list and does
+  // nothing else.
+  readonly canManage = computed(() =>
+    this.navigationAccess.hasPermission('workflows:manage'),
+  );
 
   readonly loading = signal(false);
   readonly templates = signal<WorkflowTemplateDto[]>([]);

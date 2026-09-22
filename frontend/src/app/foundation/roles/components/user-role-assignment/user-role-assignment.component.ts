@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, inject, signal } from '@angular/core';
+import { Component, Input, OnChanges, computed, inject, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
@@ -12,7 +12,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // PrimeNG-components-only exception note and overlay-select.component.ts
 // for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
-
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 @Component({
   selector: 'app-user-role-assignment',
   standalone: true,
@@ -29,6 +29,10 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
         @for (role of assignedRoles(); track role.id) {
           <li class="flex items-center justify-between gap-3">
             <span>{{ role.nameEn }}</span>
+            <!-- ACC-123 — roles:manage, what DELETE /users/:id/roles/:roleId
+                 carries. The list of a user's roles is readable with
+                 users:view; removing one is not. -->
+            @if (canManage()) {
             <p-button
               icon="pi pi-times"
               [text]="true"
@@ -37,6 +41,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
               [pTooltip]="'roles.removeRole' | translate"
               (onClick)="onRemove(role)"
             />
+            }
           </li>
         }
         @if (assignedRoles().length === 0 && !loading()) {
@@ -44,6 +49,9 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
         }
       </ul>
 
+      <!-- The picker goes with the button: a role chooser whose only action is
+           refused is worse than no chooser. -->
+      @if (canManage()) {
       <div class="flex items-center gap-3">
         <app-overlay-select
           [options]="assignableRoles()"
@@ -59,6 +67,7 @@ import { OverlaySelectComponent } from '../../../../shared/components/overlay-se
           (onClick)="onAssign()"
         />
       </div>
+      }
     </div>
   `,
 })
@@ -67,6 +76,13 @@ export class UserRoleAssignmentComponent implements OnChanges {
 
   private readonly roleService = inject(RoleService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // ACC-123 — roles:manage, what both the assign and the remove endpoint carry
+  // (user.controller.ts). This panel had no gate at all.
+  readonly canManage = computed(() =>
+    this.navigationAccess.hasPermission('roles:manage'),
+  );
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
