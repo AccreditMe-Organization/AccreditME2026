@@ -12,6 +12,7 @@ import { ownProfileGuard } from './own-profile.guard';
 import { AuthService } from '../services/auth.service';
 import { NavigationAccessService } from '../services/navigation-access.service';
 import { LANDING_ROUTE } from '../navigation/landing-route';
+import { ADMIN_ACCESS } from '../navigation/admin-access';
 
 // ACC-79 — the regression this fixes: a user without users:view clicked
 // "My Profile" and landed on Home, because `users/:id` inherited the list's
@@ -69,9 +70,28 @@ describe('ownProfileGuard (ACC-79)', () => {
     expect(run(SOMEONE_ELSE)).toEqual(router.parseUrl(LANDING_ROUTE));
   });
 
-  it('allows someone else\'s profile with users:view', () => {
+  // ACC-123 — users:view alone is no longer enough for someone ELSE's record.
+  // It is what the task assignee picker needs, so a working role holds it; a
+  // colleague's profile page is an Administration screen and takes the same two
+  // permissions as the Users list. This comes for free from the delegation
+  // below, and is pinned here because "for free" is exactly what stops being
+  // true when someone rewrites this guard.
+  it('refuses someone else\'s profile to a holder of users:view alone', () => {
     setup({ permissions: ['users:view'], currentUserId: ME });
+    expect(run(SOMEONE_ELSE)).toEqual(router.parseUrl(LANDING_ROUTE));
+  });
+
+  it('allows someone else\'s profile with admin:access AND users:view', () => {
+    setup({ permissions: [ADMIN_ACCESS, 'users:view'], currentUserId: ME });
     expect(run(SOMEONE_ELSE)).toBe(true);
+  });
+
+  // The half that must NOT change, and the reason this guard exists at all.
+  // Every user can open their own profile — it is where language and
+  // out-of-office live — and an administrator is not required to have one.
+  it('still lets an ordinary user open their OWN profile after ACC-123', () => {
+    setup({ permissions: ['tasks:create'], currentUserId: ME });
+    expect(run(ME)).toBe(true);
   });
 
   // No session means no "own" profile to match — never treat a missing id as a

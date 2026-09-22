@@ -73,6 +73,8 @@ describe('PageNameRegistry (ACC-79)', () => {
   });
 });
 
+import { ADMIN_ACCESS } from '../navigation/admin-access';
+
 describe('DocumentTitleService (ACC-79)', () => {
   let tenantName: WritableSignal<string>;
   let permissions: WritableSignal<string[]>;
@@ -83,7 +85,7 @@ describe('DocumentTitleService (ACC-79)', () => {
 
   beforeEach(async () => {
     tenantName = signal('Al Nakheel Specialist Hospital');
-    permissions = signal(['users:view', 'committees:view']);
+    permissions = signal([ADMIN_ACCESS, 'users:view', 'committees:view']);
     platformAdmin = signal(false);
     const access: Partial<NavigationAccessService> = {
       tenantName: tenantName.asReadonly(),

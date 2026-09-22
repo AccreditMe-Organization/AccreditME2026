@@ -7,6 +7,7 @@ import {
   isNavItemVisible,
   visibleNavGroups,
 } from './nav-items';
+import { ADMIN_ACCESS } from './admin-access';
 import en from '../../../assets/i18n/en.json';
 import ar from '../../../assets/i18n/ar.json';
 
@@ -27,11 +28,14 @@ describe('nav-items (ACC-79)', () => {
   const keysOf = (groups: ReturnType<typeof visibleNavGroups>) =>
     groups.map((g) => ({ group: g.key, items: g.items.map((i) => i.key) }));
 
-  // Every permission any tenant item declares — a stand-in for a tenant admin,
-  // derived from the model so a new item cannot be missed by this test.
-  const ALL_TENANT_PERMISSIONS = TENANT_NAV_GROUPS.flatMap((g) => g.items)
-    .map((i) => i.requiredPermission)
-    .filter((p): p is string => !!p);
+  // Every permission any tenant item OR GROUP declares — a stand-in for a
+  // tenant admin, derived from the model so a new item cannot be missed by
+  // this test. ACC-123 added the group half: without it this "tenant admin"
+  // would silently stop being one.
+  const ALL_TENANT_PERMISSIONS = [
+    ...TENANT_NAV_GROUPS.map((g) => g.requiredPermission),
+    ...TENANT_NAV_GROUPS.flatMap((g) => g.items).map((i) => i.requiredPermission),
+  ].filter((p): p is string => !!p);
 
   // A rail label is DATA — item.labelKey piped through translate — so no
   // template check sees it, and a missing key renders as the raw key string in
@@ -111,20 +115,59 @@ describe('nav-items (ACC-79)', () => {
       expect(items).not.toContain('setupHealth');
     });
 
-    it('guards its route with setup:view', () => {
-      expect(ROUTE_PERMISSIONS.get('setup-health')).toBe('setup:view');
+    it('guards its route with setup:view, and with admin:access (ACC-123)', () => {
+      expect(ROUTE_PERMISSIONS.get('setup-health')).toEqual([
+        ADMIN_ACCESS,
+        'setup:view',
+      ]);
     });
   });
 
-  describe('Administration is gated per item, never on a role', () => {
-    it('shows the group to a custom role holding a single admin permission', () => {
+  // ACC-123 — the section is for administrators, and "administrator" is a
+  // PERMISSION. Both halves are tested, because each on its own is a different
+  // product: the group permission alone would hand a custom admin role every
+  // admin page, and the item permission alone is what shipped and showed
+  // QUALITY_MANAGER the whole section.
+  describe('Administration is gated per item AND by admin:access, never on a role', () => {
+    it('shows a custom role holding admin:access exactly the items it also has the page permission for', () => {
       const groups = visibleNavGroups(
-        access({ permissions: ['lookups:view'] }),
+        access({ permissions: [ADMIN_ACCESS, 'lookups:view'] }),
       );
       expect(keysOf(groups)).toEqual([
         { group: 'work', items: ['home', 'myTasks'] },
         { group: 'admin', items: ['lookups'] },
       ]);
+    });
+
+    // Yasser's case, which is the whole ticket. He holds users:view, org:view,
+    // lookups:view and workflows:view — for the task assignee picker and the
+    // rest — and is not an administrator.
+    it('hides the whole section from a working role holding four page permissions', () => {
+      const groups = visibleNavGroups(
+        access({
+          permissions: ['users:view', 'org:view', 'lookups:view', 'workflows:view'],
+        }),
+      );
+      expect(keysOf(groups)).toEqual([
+        { group: 'work', items: ['home', 'myTasks'] },
+      ]);
+    });
+
+    // The other direction, so the group permission is not quietly doing all
+    // the work: admin:access on its own opens nothing.
+    it('shows nothing in the section to a role holding admin:access and no page permission', () => {
+      const groups = visibleNavGroups(access({ permissions: [ADMIN_ACCESS] }));
+      expect(keysOf(groups)).toEqual([
+        { group: 'work', items: ['home', 'myTasks'] },
+      ]);
+    });
+
+    it('declares the permission on the group, so every item inherits it', () => {
+      const admin = TENANT_NAV_GROUPS.find((g) => g.key === 'admin');
+      expect(admin?.requiredPermission).toBe(ADMIN_ACCESS);
+      for (const group of TENANT_NAV_GROUPS.filter((g) => g.key !== 'admin')) {
+        expect(group.requiredPermission).withContext(group.key).toBeUndefined();
+      }
     });
   });
 
@@ -221,8 +264,13 @@ describe('nav-items (ACC-79)', () => {
     });
 
     it('still gates the task routes that are not self-scoped', () => {
-      expect(ROUTE_PERMISSIONS.get('tasks/all')).toBe('tasks:view');
-      expect(ROUTE_PERMISSIONS.get('tasks/unassigned')).toBe('tasks:manage');
+      // /tasks/all is a stopgap route with no nav item, not an Administration
+      // screen, so ACC-123 left it on tasks:view alone.
+      expect(ROUTE_PERMISSIONS.get('tasks/all')).toEqual(['tasks:view']);
+      expect(ROUTE_PERMISSIONS.get('tasks/unassigned')).toEqual([
+        ADMIN_ACCESS,
+        'tasks:manage',
+      ]);
     });
 
     // ACC-79 — the hub is gone. Its four screens are rail items, so they are
@@ -230,24 +278,46 @@ describe('nav-items (ACC-79)', () => {
     // silently re-impose one permission on all four.
     it('maps each admin-settings screen, and not the removed hub', () => {
       expect(ROUTE_PERMISSIONS.has('admin-settings')).toBe(false);
-      expect(ROUTE_PERMISSIONS.get('admin-settings/organization-profile')).toBe(
+      expect(ROUTE_PERMISSIONS.get('admin-settings/organization-profile')).toEqual([
+        ADMIN_ACCESS,
         'tenant:view',
-      );
+      ]);
       for (const screen of ['email-provider', 'ai-settings', 'task-sla']) {
         expect(ROUTE_PERMISSIONS.get(`admin-settings/${screen}`))
           .withContext(screen)
-          .toBe('tenant:manage_config');
+          .toEqual([ADMIN_ACCESS, 'tenant:manage_config']);
       }
     });
 
-    // The single-source guarantee: a link and its route cannot disagree.
-    it('contains every tenant item that declares a permission, with that permission', () => {
-      for (const item of TENANT_NAV_GROUPS.flatMap((g) => g.items)) {
-        if (!item.requiredPermission) continue;
+    // The single-source guarantee: a link and its route cannot disagree. It now
+    // covers the group permission too, which is what makes "every
+    // Administration route is guarded by it" true of routes nobody listed by
+    // hand — including any item added later.
+    it('contains every tenant item that declares a permission, with that permission and its group\u0027s', () => {
+      for (const group of TENANT_NAV_GROUPS) {
+        for (const item of group.items) {
+          if (!item.requiredPermission) continue;
+          const expected = group.requiredPermission
+            ? [group.requiredPermission, item.requiredPermission]
+            : [item.requiredPermission];
+          expect(ROUTE_PERMISSIONS.get(item.route.replace(/^\//, '')))
+            .withContext(item.key)
+            .toEqual(expected);
+        }
+      }
+    });
+
+    // ACC-123 — stated as its own assertion rather than left implied by the
+    // loop above, because "every Administration route requires admin:access"
+    // is the acceptance criterion and should fail by name if it stops holding.
+    it('requires admin:access on EVERY Administration route', () => {
+      const admin = TENANT_NAV_GROUPS.find((g) => g.key === 'admin')!;
+      for (const item of admin.items) {
         expect(ROUTE_PERMISSIONS.get(item.route.replace(/^\//, '')))
           .withContext(item.key)
-          .toBe(item.requiredPermission);
+          .toContain(ADMIN_ACCESS);
       }
+      expect(admin.items.length).withContext('the section is not empty').toBe(13);
     });
 
     it('holds no platform routes — /platform is guarded as a whole', () => {

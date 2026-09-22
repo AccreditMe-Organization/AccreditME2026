@@ -1,5 +1,6 @@
 import { NavAccess } from './nav-items';
 import { normalizePath, resolveNavLocation } from './nav-location';
+import { ADMIN_ACCESS } from './admin-access';
 
 describe('resolveNavLocation (ACC-79)', () => {
   const access = (
@@ -19,7 +20,7 @@ describe('resolveNavLocation (ACC-79)', () => {
   it('prefers the longest matching route', () => {
     const loc = resolveNavLocation(
       '/tasks/unassigned',
-      access(['tasks:manage']),
+      access([ADMIN_ACCESS, 'tasks:manage']),
     );
     expect(loc?.item.key).toBe('unassignedTasks');
     expect(loc?.isSectionPage).toBe(true);
@@ -28,7 +29,7 @@ describe('resolveNavLocation (ACC-79)', () => {
   it('marks a page below its section as not the section page', () => {
     const loc = resolveNavLocation(
       '/roles/abc/permissions',
-      access(['roles:view']),
+      access([ADMIN_ACCESS, 'roles:view']),
     );
     expect(loc?.item.key).toBe('roles');
     expect(loc?.isSectionPage).toBe(false);
@@ -36,9 +37,13 @@ describe('resolveNavLocation (ACC-79)', () => {
 
   it('resolves only among items this user can see', () => {
     expect(resolveNavLocation('/users', access([]))).toBeNull();
-    expect(resolveNavLocation('/users', access(['users:view']))?.item.key).toBe(
-      'users',
-    );
+    // ACC-123 — users:view alone no longer reaches the item: Administration
+    // takes admin:access too, and this resolver reads the same rail the user
+    // sees. A trail naming a section they cannot open would be its own defect.
+    expect(resolveNavLocation('/users', access(['users:view']))).toBeNull();
+    expect(
+      resolveNavLocation('/users', access([ADMIN_ACCESS, 'users:view']))?.item.key,
+    ).toBe('users');
   });
 
   it('resolves platform routes only for a platform admin', () => {
