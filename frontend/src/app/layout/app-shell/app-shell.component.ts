@@ -18,6 +18,8 @@ import { DocumentTitleService } from '../../core/services/document-title.service
 // positions itself relative to its trigger element regardless of where
 // that element sits in normal document flow, so moving it out of a fixed
 // wrapper doesn't affect how its dropdown behaves.
+import { IdleWarningComponent } from '../../core/components/idle-warning/idle-warning.component';
+import { IdleService } from '../../core/services/idle.service';
 @Component({
   selector: 'app-shell',
   standalone: true,
@@ -27,6 +29,7 @@ import { DocumentTitleService } from '../../core/services/document-title.service
     TopbarComponent,
     SidebarComponent,
     ImpersonationBannerComponent,
+    IdleWarningComponent,
   ],
   template: `
     <!-- ACC-79 — the App Shell reference's layout. The rail runs the full
@@ -34,6 +37,10 @@ import { DocumentTitleService } from '../../core/services/document-title.service
          rail toggle, breadcrumb and bell. The impersonation banner sits above
          BOTH, full width: it is the one indicator that every action is being
          taken as someone else, so it never shrinks into a column. -->
+    <!-- ACC-122 — inside the shell, so it exists only for a signed-in user
+         and never over the login page. -->
+    <app-idle-warning />
+
     <div class="h-screen flex flex-col">
       <app-impersonation-banner />
       <div class="flex flex-1 min-h-0">
@@ -78,6 +85,7 @@ import { DocumentTitleService } from '../../core/services/document-title.service
   ],
 })
 export class AppShellComponent implements OnInit {
+  private readonly idleService = inject(IdleService);
   private readonly navigationAccessService = inject(NavigationAccessService);
 
   readonly sidebarCollapsed = signal(false);
@@ -90,6 +98,9 @@ export class AppShellComponent implements OnInit {
 
   ngOnInit(): void {
     this.navigationAccessService.loadAccess().subscribe();
+    // ACC-122 — the idle clock runs for the life of the signed-in shell.
+    // start() is idempotent, and IdleService stops itself on destroy.
+    this.idleService.start();
   }
 
   // Mirrors EditDialogComponent.onWheel() exactly — only ever calls

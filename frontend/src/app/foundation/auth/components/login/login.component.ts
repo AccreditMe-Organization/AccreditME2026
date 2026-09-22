@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { PasswordModule } from 'primeng/password';
@@ -91,6 +91,7 @@ export class LoginComponent {
   private readonly authService = inject(AuthService);
   private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
@@ -163,6 +164,25 @@ export class LoginComponent {
       // ACC-70 — LANDING_ROUTE, not '/organization'. Sending every user to an
       // admin screen meant a user without org:view landed on a page they could
       // not use; the landing page is reachable regardless of permissions.
+      // ACC-122 — back to where they were, when we know where that was.
+      //
+      // Only ever an in-app path: returnUrl arrives in the query string, so
+      // it is attacker-supplied, and navigating to whatever it says would be
+      // an open redirect. A value that does not start with a single '/' is
+      // discarded, which rules out '//evil.test' and 'https://evil.test'
+      // alike. The login page itself is discarded too, or signing in would
+      // land the user straight back on it.
+      const requested = this.route.snapshot.queryParamMap.get('returnUrl');
+      const safeReturn =
+        requested && /^\/(?!\/)/.test(requested) && !requested.startsWith('/login')
+          ? requested
+          : null;
+
+      if (safeReturn) {
+        void this.router.navigateByUrl(safeReturn);
+        return;
+      }
+
       const destination = this.navigationAccessService.isPlatformAdmin() ? '/platform' : LANDING_ROUTE;
       void this.router.navigate([destination]);
     });
