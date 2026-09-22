@@ -206,6 +206,29 @@ describe('DueDateService (ACC-96)', () => {
     });
   });
 
+  // ── End of day for a named date ─────────────────────────────────────────
+
+  describe('endOfDayFor', () => {
+    it('returns the configured end time on a working day', () => {
+      const service = configure();
+      expect(service.endOfDayFor(new Date(2026, 8, 24))).toEqual(new Date(2026, 8, 24, 17, 0));
+    });
+
+    it('returns the SAME end time on a non-working day and on a holiday', () => {
+      const service = configure({ holidays: [NATIONAL_DAY] });
+      // Friday, and National Day. Neither rolls the date forward: the user was
+      // explicit about the day, and the warning is what tells them it is not a
+      // working one.
+      expect(service.endOfDayFor(FRI_10_00)).toEqual(new Date(2026, 8, 25, 17, 0));
+      expect(service.endOfDayFor(new Date(2026, 8, 23))).toEqual(new Date(2026, 8, 23, 17, 0));
+    });
+
+    it('returns null when the calendar cannot be read, rather than inventing a time', () => {
+      const service = configure({ fail: true });
+      expect(service.endOfDayFor(new Date(2026, 8, 24))).toBeNull();
+    });
+  });
+
   // ── Holidays for the grid ───────────────────────────────────────────────
 
   it('reads a holiday date as a calendar DAY, never as an instant', () => {

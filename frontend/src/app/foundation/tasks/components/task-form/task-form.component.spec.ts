@@ -133,6 +133,57 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
 
   // ── Typing stays a complete path ────────────────────────────────────────
 
+  // ── A date with no time (Ahmad, 2026-09-22) ─────────────────────────────
+  //
+  // Midnight is what the parser returns and almost never what anyone means. A
+  // task "due Thursday" is due by the END of Thursday, and 00:00 also made
+  // every typed date warn about being out of hours.
+
+  describe('a date named with no time', () => {
+    it('takes the end of the working day on a working day', () => {
+      // 24 Sep 2026 is a Thursday — a working day in this tenant's Sun–Thu week.
+      component.onDateTyped('24 Sep 2026');
+      component.commitTypedDate();
+
+      expect(component.dueTimeText()).toBe('17:00');
+      expect(component.warning().kind)
+        .withContext('17:00 is the end of the day, so nothing to warn about')
+        .toBe('none');
+    });
+
+    it('takes the SAME end time on a non-working day, and warns', () => {
+      // 25 Sep 2026 is a Friday. The configured end time still applies — the
+      // alternative, rolling to the next working day, would change the DAY the
+      // user was explicit about. The warning is what makes that visible.
+      component.onDateTyped('25 Sep 2026');
+      component.commitTypedDate();
+
+      expect(component.dueTimeText()).toBe('17:00');
+      expect(component.form.controls.dueDate.value?.getDate())
+        .withContext('the day the user typed, not the next working one')
+        .toBe(25);
+      expect(component.warning().kind).toBe('nonWorkingDay');
+    });
+
+    it('never overrides a time the user set — typed, picked or from a preset', () => {
+      component.onTimeTyped('08:15');
+      component.onDateTyped('24 Sep 2026');
+      component.commitTypedDate();
+      expect(component.dueTimeText()).toBe('08:15');
+
+      // And the same through the grid, which answers the question the same way.
+      component.onDayPicked(new Date(2026, 8, 28));
+      expect(component.dueTimeText()).toBe('08:15');
+    });
+
+    it('applies the same default to a day picked in the grid', () => {
+      component.onDayPicked(new Date(2026, 8, 24));
+      expect(component.dueTimeText())
+        .withContext('picking 24 Sep and typing "24 Sep 2026" are the same statement')
+        .toBe('17:00');
+    });
+  });
+
   it('accepts a typed date and keeps the typed time', () => {
     component.onTimeTyped('16:45');
     component.onDateTyped('25 Sep 2026');

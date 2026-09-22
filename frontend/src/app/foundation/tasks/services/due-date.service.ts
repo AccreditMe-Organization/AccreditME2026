@@ -198,6 +198,24 @@ export class DueDateService {
     return cursor; // A calendar with no working days at all; the caller still gets a date.
   }
 
+  /**
+   * The tenant's configured end-of-working-hours ON that day — the time a date
+   * gets when the user names a day and no time (Ahmad, 2026-09-22).
+   *
+   * DELIBERATELY NOT conditional on the day being a working one. A Friday or a
+   * public holiday still takes the same configured end time, and the
+   * out-of-hours warning then tells the user what they have chosen. The
+   * alternative — silently rolling to the next working day — would change the
+   * DAY the user just typed, which is the one thing they were explicit about.
+   *
+   * Null when the calendar is unreadable; the caller then leaves the parsed
+   * time alone rather than inventing one.
+   */
+  endOfDayFor(day: Date): Date | null {
+    const cal = this.calendar();
+    return cal ? atTime(day, cal.workingHoursEnd) : null;
+  }
+
   isWorkingDay(at: Date, cal = this.calendar()): boolean {
     if (!cal) return true;
     if (!cal.workingDays.includes(at.getDay())) return false;

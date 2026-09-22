@@ -762,13 +762,12 @@ export class TaskFormComponent implements OnInit {
       this.setDue(null);
       return;
     }
-    const at = new Date(day);
-    const current = this.due();
-    // A day click keeps whatever time is already set — the day is usually
-    // picked before the time, and defaulting to "now" would strand a time
-    // nobody chose (the ACC-96 regression this rebuild inherits the lesson of).
-    at.setHours(current?.getHours() ?? 9, current?.getMinutes() ?? 0, 0, 0);
-    this.setDue(at);
+    // Same rule as a typed date, through the same helper: a time already set
+    // wins, otherwise the end of that day's working hours. Picking 25 Sep in
+    // the grid and typing "25 Sep 2026" are the same statement, so they must
+    // not produce different times — and the day is usually chosen before the
+    // time, so a pick must never strand one nobody chose.
+    this.setDue(this.withResolvedTime(day));
   }
 
   onTimeTyped(hm: string): void {
@@ -810,10 +809,31 @@ export class TaskFormComponent implements OnInit {
       return;
     }
 
-    const at = new Date(parsed);
+    this.setDue(this.withResolvedTime(parsed));
+  }
+
+  /**
+   * A date the user named, given the time it should carry.
+   *
+   * A TIME ALREADY SET WINS — typed, picked or from a preset. Otherwise the
+   * day takes the tenant's end of working hours (Ahmad, 2026-09-22), because
+   * midnight is what the parser returns and almost never what anyone means: a
+   * task "due Thursday" is due by the end of Thursday, not at the very start
+   * of it, and 00:00 also made every typed date warn about being out of hours.
+   *
+   * On a non-working day or a holiday it still takes that same configured end
+   * time, and the warning then says so — see endOfDayFor().
+   */
+  private withResolvedTime(day: Date): Date {
+    const at = new Date(day);
     const current = this.due();
-    if (current) at.setHours(current.getHours(), current.getMinutes(), 0, 0);
-    this.setDue(at);
+    if (current) {
+      at.setHours(current.getHours(), current.getMinutes(), 0, 0);
+      return at;
+    }
+    const endOfDay = this.dueDates.endOfDayFor(at);
+    if (endOfDay) at.setHours(endOfDay.getHours(), endOfDay.getMinutes(), 0, 0);
+    return at;
   }
 
   applyPreset(preset: DuePreset): void {
