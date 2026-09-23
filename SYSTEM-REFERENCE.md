@@ -58,7 +58,7 @@ audit's starting point, not be mistaken for having already done it.
 
 ## Table of Contents
 
-1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.2 corrected — a revocation applies on the next request)
+1. Auth & Permission System — ✅ complete (1.9 = parent visibility, ACC-101; 1.10 = Administration access, ACC-123; 1.11 = session renewal and the idle rule, ACC-122; 1.2 corrected — a revocation applies on the next request)
 2. Workflow Engine — ✅ complete
 3. Task System — ✅ complete
 4. Notification System — ✅ complete
@@ -795,6 +795,100 @@ the code that requires it. Run on the shared dev database 22 Sep 2026 —
 It writes via direct Prisma and so leaves no `AuditLog` row, matching every
 other `backfill-*.ts` and the standing gap CLAUDE.md records under ACC-101.
 That rule constrains REVOCATION backfills; this one only grants.
+
+---
+
+### 1.11 Session Renewal and the Idle Rule (ACC-122)
+
+**Until this ticket the 15-minute access token WAS the session length.** The
+frontend never called `POST /auth/refresh`, and `authInterceptor` treated any
+401 as the end: `clearSession()` and a redirect. So a user who spent more than
+fifteen minutes on a form pressed Save, got a 401, and landed on the login page
+with their work gone. The 7-day refresh token CLAUDE.md documents did nothing.
+
+**A 401 on an ordinary request now means "renew once, then retry".** Only a
+failed renewal ends the session.
+
+**`SessionRenewalService` holds ONE in-flight refresh, and sharing it is a
+correctness requirement, not an optimisation.** `/auth/refresh` ROTATES — it
+revokes the token it was handed (`auth.service.ts`, `refreshToken.update({
+revokedAt })`). Two concurrent refreshes means the second presents an
+already-revoked token, gets a 401, and signs the user out. The failure mode is
+"logged out at random whenever two requests expire together", which is most
+page loads. `shareReplay({ refCount: false })` is deliberate: `refCount: true`
+tears the shared subscription down when the first caller unsubscribes and lets
+a slow second 401 fire its own refresh.
+
+**THE INTERCEPTOR NEVER NAVIGATES FOR AN AUTH ENDPOINT.** `/auth/refresh`,
+`/auth/login`, `/auth/logout` and `/auth/me` rethrow, and the CALLER decides.
+This is the part most likely to be "simplified" back, so the cost is recorded:
+signing the user out from that branch REINTRODUCED ACC-24, because
+`restoreSession()`'s renewal is an ordinary HTTP call that re-enters the
+interceptor — a signed-out visitor loading `/forgot-password` was redirected to
+`/login?returnUrl=%2F`. It also overwrote `authGuard`'s `returnUrl` with `/` on
+every cold load, and dropped `returnUrl` and `reason=idle` when the login page
+was reloaded. The ordinary path never needed it: a failed renewal already
+reaches the outer `catchError`, which navigates with the page the user is
+actually on. A comment promising that `restoreSession()` never redirects
+describes the FUNCTION, not the BEHAVIOUR — its dependencies can undo it.
+
+**`restoreSession()` tries one renewal before concluding nobody is signed in**,
+which is what lets a reload more than fifteen minutes after signing in stay
+signed in. It still never redirects (ACC-24).
+
+**The forced logout is now true by construction, not by coincidence.**
+`RefreshToken.tokenVersion` (nullable, ACC-122 migration) records the version a
+session was issued at, and `refresh()` refuses to renew when it no longer
+matches the user's. Without it, renewal would DEFEAT the forced logout: the 401
+from `TenantGuard`'s stale-version check would be retried after a refresh that
+minted a token carrying the NEW version. It did not bite before only because
+`invalidateUserSessions()` has exactly one caller, `UserService.deactivate()`,
+which also flips status to `INACTIVE` — and `tenant.guard.ts` says the
+mechanism is also meant to cover a password change. **NULL means "issued before
+the column existed"** and falls back to the status check; refusing nulls would
+have signed out every logged-in user the moment the migration ran. Read via
+`?? null` so a narrower `select` cannot fail closed and reject every refresh.
+
+**The idle rule is 30 minutes, fixed** (not a tenant setting — deliberately
+deferred), with a warning at 28. **Activity is DOM input only** — `keydown`,
+`pointerdown`, `pointermove`, `touchstart`. Background traffic therefore cannot
+extend a session BY CONSTRUCTION rather than by an exclusion list: the
+notification bell polls on a timer and never touches the clock. Verified in a
+browser — the bell polled eight times and two of those polls renewed the
+session successfully, and the tab still signed out. The bell keeps a session
+RENEWABLE, not ALIVE.
+
+**One clock across tabs**, in `localStorage` with a `BroadcastChannel` nudge.
+Both are best-effort and wrapped (ACC-96's rule); either failing degrades to
+per-tab, which is a stricter session, never a longer one. The channel never
+moves the clock backwards — a late message from a tab with an older record
+would otherwise shorten everyone's session. **Post the `signed-out` message
+BEFORE `stop()`**: `stop()` closes and nulls the channel and `post()` is a
+no-op on a null channel, so doing it the other way round meant the broadcast
+was never sent at all and the other tabs found out only when their own clock
+ran out. The reason travels with it, so every tab gives the same account.
+
+**Sign-out calls `POST /auth/logout`**, not just `clearSession()` — the refresh
+token is a database row with a 7-day life, and forgetting it client-side would
+leave the session alive on the server while telling the user otherwise.
+
+**The warning dialog** is built on `EditDialogComponent` (so Escape resolves
+through `LayerStackService`) with `role="alertdialog"` — a `role` input added
+to that shell for this. Escape means "stay signed in": dismissing a warning is
+not consent to be signed out. **The countdown is split in two.** The visible
+number ticks every second and is `aria-hidden`; a separate `sr-only`
+`aria-live="polite"` region announces only at 2 min, 1 min, 30 s and each of
+the last ten. `polite` QUEUES rather than replaces, so 120 updates build a
+backlog read out long after the dialog has gone, during which the user hears
+nothing else — including their own attempt to dismiss it. There is also exactly
+ONE statement of the time: a fixed "signed out in 2 minutes" line above a live
+countdown was wrong from the first tick.
+
+**`AUTH_ACCESS_TOKEN_TTL_SECONDS` can only ever SHORTEN.** It exists so a
+browser pass can watch several renewals in minutes instead of waiting fifteen,
+and is clamped to the 15-minute default — a stray variable on a deployed
+environment must not be able to hand out day-long access tokens. A test-only
+affordance that can make production less safe is not test-only.
 
 ---
 
