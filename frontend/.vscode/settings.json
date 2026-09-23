@@ -1,0 +1,30 @@
+{
+  // ACC-122 — pins the editor's TypeScript to this workspace's own 5.9.3.
+  //
+  // NOT A DUPLICATE OF THE ONE AT THE REPOSITORY ROOT, and please do not
+  // delete it as one. `.vscode/settings.json` is read only when its folder IS
+  // the workspace root. Open `frontend/` directly — which the tracked
+  // `launch.json` and `tasks.json` beside this file suggest people do — and
+  // the repository-root settings sit ABOVE the workspace, so VS Code never
+  // loads them. Nothing reports that: the editor simply falls back to its
+  // BUNDLED TypeScript (6.0.3 at the time of writing) with nothing on screen
+  // to say it has.
+  //
+  // The path differs for the same reason. `typescript.tsdk` resolves against
+  // the workspace folder, so the root file says `frontend/node_modules/...`
+  // and this one says `node_modules/...`. Copying either value into the other
+  // file breaks it.
+  //
+  // What the skew costs: a full major version between the editor's compiler
+  // and the one CI runs. It is what put red squiggles under
+  // task-form.component.ts on lines the compiler was happy with — NG8002
+  // against OverlaySelectComponent inputs that exist, reported by an Angular
+  // 22 language service on an Angular 21 project. The code was never wrong.
+  //
+  // The related CI gap — `tsc --noEmit` passing only because TypeScript 5.9
+  // auto-includes @types/jasmine where 6.0 does not — is ACC-125. This pin
+  // does not fix that; it stops the editor and the build disagreeing
+  // meanwhile.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "js/ts.tsdk.path": "node_modules/typescript/lib"
+}
