@@ -55,6 +55,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
       [closeOnEscape]="false"
       [dismissableMask]="false"
       [closable]="false"
+      [role]="role()"
       [appendTo]="appendTo()"
       [style]="{ width: resolvedWidth() }"
     >
@@ -283,6 +284,18 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    * own, so there is nothing for those rules to protect.
    */
   readonly appendTo = input<'self' | 'body'>('self');
+
+  /**
+   * ACC-122 — the ARIA role, forwarded to p-dialog.
+   *
+   * 'dialog' is right for the add/edit forms this shell was built for. A
+   * dialog that INTERRUPTS to say something time-critical — the idle warning
+   * is the first — takes 'alertdialog', which tells a screen reader to
+   * announce the contents immediately rather than only on focus. That is the
+   * difference between a user hearing "you will be signed out in two minutes"
+   * and hearing nothing until they happen to tab into it.
+   */
+  readonly role = input<'dialog' | 'alertdialog'>('dialog');
 
   protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
 

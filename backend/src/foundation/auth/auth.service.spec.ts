@@ -354,6 +354,7 @@ describe('AuthService', () => {
         id: 'rt-1',
         userId: 'user-1',
         revokedAt: null,
+        tokenVersion: 2,
         expiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       mockPrisma.user.findFirst.mockResolvedValue({
@@ -876,6 +877,108 @@ describe('AuthService', () => {
       mockPrisma.organization.findUnique.mockResolvedValue(null);
       const result = await service.resolveLanguage(null, ORG_A);
       expect(result).toBe('en');
+    });
+  });
+
+  // ACC-122 — the forced logout, and why refresh() has to know about it.
+  //
+  // TenantGuard already rejects a stale access token. Before silent renewal
+  // that ended the session, because the frontend treated any 401 as the end.
+  // Now a 401 is retried after a refresh, so if refresh() minted a token
+  // carrying the CURRENT version, a deactivated or force-logged-out user
+  // would be handed a working session by the very mechanism meant to keep
+  // active users signed in. These pin both halves.
+  describe('refresh — tokenVersion (ACC-122)', () => {
+    const validRow = (over: Record<string, unknown> = {}) => ({
+      id: 'rt-1',
+      userId: 'user-1',
+      revokedAt: null,
+      tokenVersion: 2,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      ...over,
+    });
+    const activeUser = (over: Record<string, unknown> = {}) => ({
+      id: 'user-1',
+      organizationId: ORG_A,
+      status: 'ACTIVE',
+      tokenVersion: 2,
+      ...over,
+    });
+
+    it('REFUSES to renew a session whose tokenVersion is stale', async () => {
+      // The session was issued at version 2; a forced logout has since moved
+      // the user to 3. Status is still ACTIVE, so the pre-existing check
+      // cannot catch this — which is the whole reason the column exists.
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(validRow({ tokenVersion: 2 }));
+      mockPrisma.user.findFirst.mockResolvedValue(activeUser({ tokenVersion: 3 }));
+
+      await expect(
+        service.refresh(
+          fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } }),
+          fakeExpressRes(),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('renews when the version still matches', async () => {
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(validRow({ tokenVersion: 7 }));
+      mockPrisma.user.findFirst.mockResolvedValue(activeUser({ tokenVersion: 7 }));
+
+      await expect(
+        service.refresh(
+          fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } }),
+          fakeExpressRes(),
+        ),
+      ).resolves.toEqual({ success: true });
+    });
+
+    // The migration's chosen semantics, asserted rather than left to a comment:
+    // a row written before the column existed is UNKNOWN, not stale. Refusing
+    // it would have signed out every logged-in user the moment the migration
+    // ran. The status check below is what still protects those rows.
+    it('treats a NULL tokenVersion as unknown and still renews', async () => {
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(validRow({ tokenVersion: null }));
+      mockPrisma.user.findFirst.mockResolvedValue(activeUser({ tokenVersion: 9 }));
+
+      await expect(
+        service.refresh(
+          fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } }),
+          fakeExpressRes(),
+        ),
+      ).resolves.toEqual({ success: true });
+    });
+
+    it('still refuses a NULL-version row when the user is not ACTIVE', async () => {
+      // Deactivation is the one path that bumps tokenVersion today, and it
+      // also flips status — so legacy rows remain covered.
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(validRow({ tokenVersion: null }));
+      mockPrisma.user.findFirst.mockResolvedValue(activeUser({ status: 'INACTIVE' }));
+
+      await expect(
+        service.refresh(
+          fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } }),
+          fakeExpressRes(),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('records the CURRENT tokenVersion on the rotated row', async () => {
+      // Without this the next refresh would compare against a stale number
+      // and sign the user out one cycle later — a bug that would look like a
+      // random logout an hour after a role change.
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(validRow({ tokenVersion: 4 }));
+      mockPrisma.user.findFirst.mockResolvedValue(activeUser({ tokenVersion: 4 }));
+
+      await service.refresh(
+        fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } }),
+        fakeExpressRes(),
+      );
+
+      expect(mockPrisma.refreshToken.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ tokenVersion: 4 }),
+        }),
+      );
     });
   });
 });

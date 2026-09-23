@@ -846,6 +846,12 @@
         "one": "{{count}} open item cannot advance: no one can act on this stage.",
         "other": "{{count}} open items cannot advance: no one can act on this stage."
       }
+    },
+    "session": {
+      "secondsRemaining": {
+        "one": "Signing out in {{count}} second",
+        "other": "Signing out in {{count}} seconds"
+      }
     }
   },
   "datePicker": {
@@ -885,5 +891,14 @@
       "nonWorkingDay": "non-working day",
       "holiday": "public holiday"
     }
+  },
+  "session": {
+    "idle": {
+      "title": "Stay signed in?",
+      "unsavedWarning": "Anything you haven't saved will be lost.",
+      "staySignedIn": "Stay signed in",
+      "signOutNow": "Sign out now"
+    },
+    "signedOutIdle": "You were signed out because there was no activity for a while."
   }
 }
