@@ -335,8 +335,23 @@ What problem does this solve or what requirement does it fulfill?}
 {List each Prisma migration included:
 
 - Migration name: add-{module}-tables
-- Effect: {what tables were created or modified}}
+- Effect: {what tables were created or modified}
+- Expand or contract: {expand / contract / neither}
+- Safe against the currently deployed code: {yes, and why}}
   OR: No database changes in this PR.
+
+**Every migration in this list RUNS AUTOMATICALLY ON MERGE** (ACC-127) —
+`backend/scripts/pre-deploy.sh` executes `prisma migrate deploy` as Railway's
+pre-deploy step, before the new container is promoted. So the migration runs
+**while the OLD container is still serving**, and a destructive one breaks the
+running application for the length of the deployment.
+
+State the last two fields for every migration, or write "No database changes
+in this PR." Do not leave the section as a bare list of names: the reviewer is
+being asked to confirm the migration is safe against code that is already
+deployed, which a name does not answer. If a migration is a CONTRACT step,
+say which earlier PR shipped its EXPAND half and confirm nothing deployed
+still reads the old shape.
 
 ## Commits ({N} total)
 

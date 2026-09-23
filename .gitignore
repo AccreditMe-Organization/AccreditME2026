@@ -13,6 +13,13 @@ backend/.env
 
 # Frontend
 frontend/node_modules/
+
+# ACC-127 — the Railway IaC SDK is installed beside the authoring file.
+# This file uses path-anchored node_modules entries rather than a bare
+# `node_modules/`, so a third one needs its own line: without it `.railway/`
+# brings in a Windows esbuild.exe. `.railway/package.json` and its lockfile
+# ARE committed — they pin the SDK version the authoring file compiles with.
+.railway/node_modules/
 frontend/dist/
 frontend/.angular/
 

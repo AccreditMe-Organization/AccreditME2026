@@ -885,6 +885,9 @@ User departure triggers bulk-reassignment flow:
 - Always run npx prisma generate after schema changes
 - AuditLog table is append-only — no UPDATE or DELETE ever permitted
 - Use npx prisma studio to inspect data during development
+- **Every migration is EXPAND-THEN-CONTRACT** — mandatory since ACC-127,
+  see Key Architecture Decisions (ACC-127) below for why a rule that used
+  to be advice is now a requirement
 
 ### TypeScript Rules
 - Always strict mode — zero any types without explicit documented justification
@@ -2362,6 +2365,54 @@ tokens, type and states.
   owns it wholesale (see `frontend/DESIGN-REFERENCE.md`). **It needs a design
   pass**, and this line exists so the next design run picks it up rather than
   the discrepancy being rediscovered from the code.
+
+---
+
+## Key Architecture Decisions (ACC-127)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 15.
+
+- **Deployment configuration lives ONLY in `.railway/railway.ts`.**
+  `railway.json` is deleted — Railway refuses to let Config-as-Code and
+  Infrastructure-as-Code manage one service at once, so there was no
+  coexistence period to sit in until CaC stops being read on 2026-12-01.
+- **`railway config apply` TRIGGERS A DEPLOYMENT.** It is not a settings
+  write. `serviceInstanceUpdate` alone does not, which is what misled us.
+  Plan for a deployment every time.
+- **EVERY MIGRATION IS EXPAND-THEN-CONTRACT. This is now a REQUIREMENT,
+  not advice, and ACC-127 is what changed it.** Migrations run as a
+  pre-deploy step, which means **the migration runs while the OLD container
+  is still serving** — the new one is not promoted until it succeeds. So a
+  destructive migration is no longer merely risky against a shared
+  database; it breaks the running application for the length of the
+  deployment, every time, by design.
+
+  In practice: **add, backfill, and deploy the code that reads the new
+  shape FIRST; remove the old shape in a LATER migration, after nothing
+  reads it.** Add a nullable column, never rename one. Add an enum value,
+  never remove one in the same release. Write to both shapes while the
+  code that reads the old one is still deployed.
+
+  This supersedes ACC-54's additive-vs-destructive refinement as the
+  operative rule. That refinement was about what is safe to apply to
+  shared infrastructure ahead of a merge, and it still holds for that
+  question. This is stricter and applies to every migration regardless of
+  timing, because the pre-deploy step removes the human who used to choose
+  the moment.
+- **The migration's 600-second cap lives in `backend/scripts/pre-deploy.sh`,
+  not in Railway's own `preDeployTimeoutSeconds` setting.** Railway's
+  default is no limit at all. Its setting cannot be expressed in the
+  authoring file while the imported graph does carry it, so every apply
+  would null it — meaning a manual re-set after every release with no
+  signal if forgotten, which is the exact silent failure this ticket
+  existed to remove. Do not move it back.
+- **A value the plan is silent about has not been verified.** `config plan`
+  diffs the authoring file against the imported GRAPH, never against stored
+  service state, and the two can disagree. Conversely, a value the graph
+  surfaces but the file cannot express is NULLED on the next apply.
+- **`restartPolicyType` round-trips, so `config plan` is never empty** on
+  this service. Do not use an empty plan as a drift check; it will never
+  come.
 
 ---
 

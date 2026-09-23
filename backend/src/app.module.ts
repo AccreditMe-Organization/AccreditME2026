@@ -8,6 +8,7 @@ import { WorkingCalendarModule } from './foundation/working-calendar/working-cal
 import { LookupModule } from './foundation/lookup/lookup.module';
 import { RolesModule } from './foundation/roles/roles.module';
 import { QueueModule } from './common/queue/queue.module';
+import { HealthModule } from './common/health/health.module';
 import { WorkflowModule } from './foundation/workflow/workflow.module';
 import { NotificationModule } from './foundation/notification/notification.module';
 import { OrgPositionModule } from './foundation/org-position/org-position.module';
@@ -39,6 +40,7 @@ import { PlatformModule } from './platform/tenant/platform.module';
     LookupModule,
     RolesModule,
     QueueModule,
+    HealthModule,
     WorkflowModule,
     NotificationModule,
     OrgPositionModule,

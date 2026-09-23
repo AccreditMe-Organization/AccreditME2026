@@ -18,6 +18,8 @@ describe('IdleService (ACC-122)', () => {
   let service: IdleService;
   let router: { navigate: jasmine.Spy; url: string };
   let authService: { logout: jasmine.Spy; clearSession: jasmine.Spy };
+  /** Whether THIS spec built the fixture — see the afterEach below. */
+  let fixtureBuilt = false;
 
   function setup(logoutFails = false): void {
     router = { navigate: jasmine.createSpy('navigate'), url: '/committees/abc' };
@@ -36,6 +38,7 @@ describe('IdleService (ACC-122)', () => {
       ],
     });
     service = TestBed.inject(IdleService);
+    fixtureBuilt = true;
     try {
       localStorage.clear();
     } catch {
@@ -43,8 +46,36 @@ describe('IdleService (ACC-122)', () => {
     }
   }
 
+  /**
+   * ACC-127 — the teardown REFUSES a fixture that was never built, rather
+   * than tolerating one.
+   *
+   * `setup()` runs inside each spec, not in a `beforeEach`, and that is
+   * deliberate: two of IdleService's fields capture the clock at construction
+   * (`lastActivity = signal(Date.now())`, `now = signal(Date.now())`), so the
+   * service has to be constructed INSIDE fakeAsync's zone or those baselines
+   * come from the real clock while tick() moves a different one.
+   *
+   * The cost of that is this: nothing guarantees `service` was assigned. A
+   * spec that skipped `setup()` used to fail here only when it happened to run
+   * FIRST — jasmine randomises order, so roughly 6% of seeds — and on every
+   * other order it silently stopped the PREVIOUS spec's instance. That is how
+   * a broken spec reached dev and only surfaced in an unrelated ticket's CI
+   * run. Reproduce the failing order with JASMINE_SEED=39.
+   *
+   * Throwing, and clearing the flag afterwards, makes a missing `setup()` fail
+   * on EVERY order with a message that says what to do. `service?.stop()`
+   * would have made this green and hidden the next one.
+   */
   afterEach(() => {
+    if (!fixtureBuilt) {
+      throw new Error(
+        'setup() was not called — every spec in this describe must build the fixture. ' +
+          'A spec that needs no fixture does not belong in this describe.',
+      );
+    }
     service.stop();
+    fixtureBuilt = false;
   });
 
   /** Moves the fake clock — timers and Date.now() together. */
@@ -275,11 +306,6 @@ describe('IdleService (ACC-122)', () => {
   // nothing in the code derives that "2" from the constant — they agree by
   // convention. Changing the lead without changing the string would leave the
   // dialog quietly lying, which no other test would notice.
-  it('keeps the warning lead at the 2 minutes the dialog text promises', () => {
-    expect(IDLE_WARNING_LEAD_MS).toBe(2 * 60 * 1000);
-    expect(IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000);
-  });
-
   // ── Announcement cadence (ACC-122 review item 3) ─────────────────────────
   //
   // aria-live="polite" QUEUES. A value changing once a second for two minutes
@@ -392,4 +418,24 @@ describe('IdleService (ACC-122)', () => {
     expect(args.queryParams.reason).toBeUndefined();
     discardPeriodicTasks();
   }));
+});
+
+// ACC-127 — a SIBLING describe, deliberately, and this is the actual fix.
+//
+// These two assertions are about exported module constants. They need no
+// service, no TestBed and no fake clock, so they were the one spec in the
+// describe above that never called setup() — while that describe's afterEach
+// unconditionally stopped a service only setup() creates. On the ~6% of
+// jasmine seeds that ran this spec first, teardown threw
+// `Cannot read properties of undefined (reading 'stop')`; on every other
+// order it quietly stopped the previous spec's instance and passed.
+//
+// A fixture-less spec does not belong under a fixture-owning teardown. Moving
+// it out is the cause; the guard in that afterEach is what stops the next one
+// being invisible.
+describe('IdleService constants (ACC-122)', () => {
+  it('keeps the warning lead at the 2 minutes the dialog text promises', () => {
+    expect(IDLE_WARNING_LEAD_MS).toBe(2 * 60 * 1000);
+    expect(IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000);
+  });
 });
