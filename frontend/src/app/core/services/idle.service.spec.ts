@@ -279,4 +279,117 @@ describe('IdleService (ACC-122)', () => {
     expect(IDLE_WARNING_LEAD_MS).toBe(2 * 60 * 1000);
     expect(IDLE_TIMEOUT_MS).toBe(30 * 60 * 1000);
   });
+
+  // ── Announcement cadence (ACC-122 review item 3) ─────────────────────────
+  //
+  // aria-live="polite" QUEUES. A value changing once a second for two minutes
+  // is 120 queued utterances: the user hears a countdown long after the
+  // dialog has gone and cannot hear anything else meanwhile, including their
+  // own attempt to dismiss it. So the live region moves only at milestones
+  // while the visible number keeps ticking.
+  describe('screen-reader announcements', () => {
+    it('announces at 2 min, 1 min, 30s and each of the last ten — and nowhere else', fakeAsync(() => {
+      setup();
+      service.start();
+
+      const announced: number[] = [];
+      // Walk the whole warning window one second at a time, recording every
+      // distinct value the live region is given.
+      advance(IDLE_TIMEOUT_MS - IDLE_WARNING_LEAD_MS);
+      for (let i = 0; i < IDLE_WARNING_LEAD_MS / 1000; i++) {
+        const value = service.announceSeconds();
+        if (value !== null && announced[announced.length - 1] !== value) announced.push(value);
+        advance(1000);
+      }
+
+      expect(announced).toEqual([120, 60, 30, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      discardPeriodicTasks();
+    }));
+
+    it('keeps the VISIBLE countdown ticking every second regardless', fakeAsync(() => {
+      setup();
+      service.start();
+      advance(IDLE_TIMEOUT_MS - IDLE_WARNING_LEAD_MS);
+
+      const seen = new Set<number>();
+      for (let i = 0; i < 20; i++) {
+        seen.add(service.secondsRemaining());
+        advance(1000);
+      }
+
+      // 20 ticks, 20 distinct values — the sparse series is the ANNOUNCEMENT
+      // only, never the display.
+      expect(seen.size).toBe(20);
+      discardPeriodicTasks();
+    }));
+
+    it('says nothing before the warning and falls silent when it is extended', fakeAsync(() => {
+      setup();
+      service.start();
+
+      advance(IDLE_TIMEOUT_MS - IDLE_WARNING_LEAD_MS - 5000);
+      expect(service.announceSeconds()).toBeNull();
+
+      advance(5000);
+      expect(service.announceSeconds()).toBe(120);
+
+      service.extend();
+      expect(service.announceSeconds()).toBeNull();
+
+      service.stop();
+      discardPeriodicTasks();
+    }));
+  });
+
+  // ── Cross-tab sign-out (ACC-122 review item 4) ───────────────────────────
+
+  it('tells the other tabs WHY, so every tab explains itself the same way', fakeAsync(() => {
+    setup();
+    service.start();
+    const posted: unknown[] = [];
+    spyOn(service['channel'] as BroadcastChannel, 'postMessage').and.callFake((m: unknown) => {
+      posted.push(m);
+    });
+
+    advance(IDLE_TIMEOUT_MS);
+    tick();
+
+    expect(posted).toContain(jasmine.objectContaining({ type: 'signed-out', reason: 'idle' }));
+    discardPeriodicTasks();
+  }));
+
+  it('a tab receiving the broadcast keeps its OWN returnUrl and adopts the reason', fakeAsync(() => {
+    setup();
+    service.start();
+
+    // This tab was looking at something else when the other tab timed out.
+    router.url = '/users/abc';
+    service['channel']?.onmessage?.(
+      new MessageEvent('message', { data: { type: 'signed-out', reason: 'idle' } }),
+    );
+    tick();
+
+    expect(authService.clearSession).toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/login'],
+      jasmine.objectContaining({
+        queryParams: jasmine.objectContaining({ returnUrl: '/users/abc', reason: 'idle' }),
+      }),
+    );
+    discardPeriodicTasks();
+  }));
+
+  it('does not claim inactivity when the other tab signed out deliberately', fakeAsync(() => {
+    setup();
+    service.start();
+
+    service['channel']?.onmessage?.(
+      new MessageEvent('message', { data: { type: 'signed-out', reason: 'user' } }),
+    );
+    tick();
+
+    const args = router.navigate.calls.mostRecent().args[1] as { queryParams: { reason?: string } };
+    expect(args.queryParams.reason).toBeUndefined();
+    discardPeriodicTasks();
+  }));
 });

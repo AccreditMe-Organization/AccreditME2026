@@ -52,10 +52,35 @@ const ACTIVITY_THROTTLE_MS = 15 * 1000;
 /** How often idleness is evaluated. 1s so the countdown reads honestly. */
 const TICK_MS = 1000;
 
+/**
+ * The seconds at which the countdown is ANNOUNCED to a screen reader.
+ *
+ * The visible number still changes every second. This is a separate, much
+ * sparser series, and the difference is the whole point: aria-live="polite"
+ * QUEUES rather than replaces, so a value changing 120 times would build a
+ * backlog the reader works through for minutes — during which the user hears
+ * nothing else, including anything they do to escape the warning. An
+ * announcement channel that drowns out the rest of the page is worse than no
+ * announcement at all.
+ *
+ * Two minutes, one minute, thirty seconds, then every second of the last ten.
+ * Sparse while there is time to spare, complete once there is not — a spoken
+ * countdown is exactly what is wanted in the last ten seconds and nowhere
+ * near it before.
+ */
+const ANNOUNCE_AT_SECONDS: readonly number[] = [120, 60, 30, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
 const STORAGE_KEY = 'am.session.lastActivity';
 const CHANNEL_NAME = 'am-session';
 
-type ChannelMessage = { type: 'activity'; at: number } | { type: 'signed-out' };
+type SignOutReason = 'idle' | 'user';
+
+type ChannelMessage =
+  | { type: 'activity'; at: number }
+  // ACC-122 — the reason travels with it. Without it the OTHER tabs jumped to
+  // a bare /login and explained nothing, so the same event told one tab "you
+  // were signed out for inactivity" and its neighbour nothing at all.
+  | { type: 'signed-out'; reason: SignOutReason };
 
 @Injectable({ providedIn: 'root' })
 export class IdleService {
@@ -81,6 +106,15 @@ export class IdleService {
     return idleFor >= IDLE_TIMEOUT_MS - IDLE_WARNING_LEAD_MS && idleFor < IDLE_TIMEOUT_MS;
   });
 
+  /**
+   * The last milestone reached, for the live region. null while no warning is
+   * showing. Held as state rather than derived, because "announce only when
+   * crossing a threshold" is a fact about time passing, not about the current
+   * instant.
+   */
+  private readonly _announceSeconds = signal<number | null>(null);
+  readonly announceSeconds = this._announceSeconds.asReadonly();
+
   /** Whole seconds left before sign-out; 0 once past. */
   readonly secondsRemaining = computed(() => {
     const left = IDLE_TIMEOUT_MS - (this.now() - this.lastActivity());
@@ -103,6 +137,7 @@ export class IdleService {
     this.timer = setInterval(() => {
       this.now.set(Date.now());
       const idleFor = Date.now() - this.lastActivity();
+      this.updateAnnouncement();
       if (idleFor >= IDLE_TIMEOUT_MS) void this.signOut('idle');
     }, TICK_MS);
 
@@ -126,14 +161,33 @@ export class IdleService {
   extend(): void {
     this.recordActivity(true);
     this.now.set(Date.now());
+    this._announceSeconds.set(null);
+  }
+
+  /** Moves the live region on only when a milestone is crossed. */
+  private updateAnnouncement(): void {
+    if (!this.warningVisible()) {
+      if (this._announceSeconds() !== null) this._announceSeconds.set(null);
+      return;
+    }
+    const remaining = this.secondsRemaining();
+    if (ANNOUNCE_AT_SECONDS.includes(remaining) && this._announceSeconds() !== remaining) {
+      this._announceSeconds.set(remaining);
+    }
   }
 
   /** The user chose to sign out from the warning, or the countdown ran out. */
-  async signOut(reason: 'idle' | 'user'): Promise<void> {
+  async signOut(reason: SignOutReason): Promise<void> {
     if (this.signingOut) return;
     this.signingOut = true;
+
+    // POST BEFORE STOPPING. stop() closes the BroadcastChannel and nulls it,
+    // and post() is a no-op on a null channel — so doing this the other way
+    // round meant the 'signed-out' message was never sent at all, silently.
+    // The other tabs then found out only when their own clock ran out or
+    // their next request 401'd, which is the "no notice" this fixes.
+    this.post({ type: 'signed-out', reason });
     this.stop();
-    this.post({ type: 'signed-out' });
 
     const returnUrl = this.router.url;
     try {
@@ -195,7 +249,15 @@ export class IdleService {
           this.stop();
           this.signingOut = true;
           this.authService.clearSession();
-          void this.router.navigate(['/login']);
+          // This tab keeps ITS OWN returnUrl — the user was looking at a
+          // different page here — but adopts the other tab's reason, so every
+          // tab gives the same account of what just happened.
+          void this.router.navigate(['/login'], {
+            queryParams: {
+              returnUrl: this.router.url,
+              reason: message.reason === 'idle' ? 'idle' : undefined,
+            },
+          });
         }
       };
     } catch {

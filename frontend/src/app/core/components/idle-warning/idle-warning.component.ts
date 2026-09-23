@@ -1,4 +1,4 @@
-// ACC-122 — "You'll be signed out in 2 minutes. Stay signed in?"
+// ACC-122 — the idle warning: "Stay signed in?" over a live countdown.
 //
 // WCAG 2.2.1 (Timing Adjustable) is the reason this exists rather than a
 // silent sign-out: a time limit is allowed when the user is warned before it
@@ -13,9 +13,15 @@
 // work the ticket is about.
 //
 // role="alertdialog", not "dialog": the announcement has to reach a screen
-// reader when it appears, not when focus happens to land on it. The countdown
-// then lives in a polite live region — assertive would interrupt the user
-// every single second, which is worse than not announcing it at all.
+// reader when it appears, not when focus happens to land on it.
+//
+// The countdown is then split in two, which is the non-obvious part. The
+// VISIBLE number ticks every second and is aria-hidden. A separate sr-only
+// live region carries the same sentence but only at milestones, because
+// aria-live="polite" queues rather than replaces: 120 updates would be read
+// out one after another, long after the dialog had gone, drowning the page.
+// Assertive is worse still — it interrupts every second. See
+// ANNOUNCE_AT_SECONDS in idle.service.ts.
 //
 // ESCAPE MEANS "STAY SIGNED IN" HERE, deliberately. Every exit from this
 // dialog other than the countdown running out is the user telling us they are
@@ -45,18 +51,25 @@ import { IdleService } from '../../services/idle.service';
     />
 
     <ng-template #body>
-      <p class="text-sm text-[var(--am-text-primary)]">
-        {{ 'session.idle.message' | translate }}
+      <!-- ONE statement of the time, and it is the live one.
+           There used to be a fixed line above this reading "You'll be signed
+           out in 2 minutes", which was wrong from the first tick: by the time
+           anyone read it the countdown beneath already said 117 seconds. Two
+           numbers for one fact means one of them is always stale, and the
+           stale one was the one in larger type. -->
+      <p class="text-sm font-medium text-[var(--am-text-primary)]" aria-hidden="true">
+        {{ remainingLabel() }}
       </p>
 
-      <!-- The live countdown. polite, so it is announced between the user's
-           own actions rather than cutting across them once a second. -->
-      <p
-        class="mt-2 text-sm font-medium"
-        aria-live="polite"
-        [attr.aria-label]="remainingLabel()"
-      >
-        {{ remainingLabel() }}
+      <!-- The announcement channel, separate from the visible number above.
+           aria-live="polite" QUEUES rather than replaces, so a value changing
+           once a second for two minutes builds a backlog that drowns out
+           everything else on the page — including whatever the user does to
+           dismiss this. IdleService therefore moves announceSeconds() only at
+           milestones (2 min, 1 min, 30s, then the last ten), while the
+           visible text keeps ticking every second. -->
+      <p class="sr-only" role="status" aria-live="polite">
+        {{ announcement() }}
       </p>
 
       <!-- ACC-122 — said out loud rather than assumed. The sign-out cannot
@@ -94,6 +107,15 @@ export class IdleWarningComponent {
   protected readonly remainingLabel = computed(() =>
     this.format.count('session.secondsRemaining', this.idle.secondsRemaining()),
   );
+
+  /**
+   * The same sentence, but only at the milestones IdleService publishes.
+   * Empty between them, so the live region stays silent rather than queueing.
+   */
+  protected readonly announcement = computed(() => {
+    const seconds = this.idle.announceSeconds();
+    return seconds === null ? '' : this.format.count('session.secondsRemaining', seconds);
+  });
 
   protected onStay(): void {
     this.idle.extend();

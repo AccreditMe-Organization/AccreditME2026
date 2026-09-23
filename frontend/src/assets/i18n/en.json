@@ -895,7 +895,6 @@
   "session": {
     "idle": {
       "title": "Stay signed in?",
-      "message": "You'll be signed out in 2 minutes.",
       "unsavedWarning": "Anything you haven't saved will be lost.",
       "staySignedIn": "Stay signed in",
       "signOutNow": "Sign out now"
