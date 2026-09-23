@@ -1,0 +1,9 @@
+# Shell scripts must keep LF endings wherever they are checked out.
+#
+# ACC-127: backend/scripts/pre-deploy.sh runs in an Alpine container as the
+# deployment's migration step. With CRLF, `/bin/sh` reads the shebang line as
+# `/bin/sh\r` and the script fails in a way that reads as a missing
+# interpreter rather than a line-ending problem. This repository is developed
+# on Windows with core.autocrlf=true, so without this rule the guarantee rests
+# on each developer's local git configuration rather than on the repository.
+*.sh text eol=lf
