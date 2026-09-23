@@ -72,6 +72,7 @@ audit's starting point, not be mistaken for having already done it.
 12. User Management — ✅ complete
 13. Setup Health — standing conditions (ACC-82) — ✅ built (13.10 = the cached-state rule)
 14. Queue workers — which process runs them (ACC-92) — ✅ built
+15. Deployment — Railway IaC and migrations (ACC-127) — ✅ built (15.3 = what survives an apply; 15.5 = the migration step)
 
 ---
 
@@ -6405,3 +6406,201 @@ and no stop script. What orphans a watcher is a session killing the `npm`
 parent and leaving the Nest child holding the port. The handover's rule
 stands — a stop is confirmed by the PORT being free or the PID being gone,
 never by what the kill printed.
+
+---
+
+## 15. Deployment — Railway IaC and Migrations (ACC-127)
+
+### 15.1 Where deployment configuration lives
+
+**`.railway/railway.ts` is the only place. `railway.json` is deleted.** Railway
+refuses to let both manage one service — the error is literal: *"AccreditME2026
+is already managed by /railway.json"* — so there was no coexistence period to
+sit in until Config-as-Code stops being read on **2026-12-01**.
+
+The file was produced by **`railway config pull`, not `railway config migrate`**.
+`migrate` translates `railway.json` and emits the builder and Dockerfile path as
+COMMENTS rather than code, omits databases and volumes, and cannot map a
+monorepo (railwayapp/cli#1224). If it ever needs regenerating, pull.
+
+Deployed URLs:
+
+```
+backend    https://accreditme2026-production.up.railway.app   (port 3000)
+service    fd82c530-7fd9-43a6-8092-22737e1a1232
+env        79e906ea-f95e-4521-8ffc-569cff4d5908
+project    affd8063-7fb5-4857-a8ab-866f6c4bb4da
+```
+
+### 15.2 Five corrections to what we believed going in
+
+**1. `railway config apply` TRIGGERS A DEPLOYMENT.** Via a change set
+(`patchId: iac-change-set/…`, `reason: "deploy"`, 985 ms after the apply, with
+`ignoreWatchPatterns: true`). `serviceInstanceUpdate` alone does NOT deploy —
+that was established by probe and then over-generalised. **`apply` is not a
+settings write. Plan for a deployment every time.**
+
+**2. `apply` writes only the DIFFED fields**, not full resource state.
+Established as fact: `builder`, `dockerfilePath`, `watchPatterns` and
+`rootDirectory` were all untouched by an apply that changed three other fields.
+
+**3. `builder` has no `DOCKERFILE` member server-side.** The enum is
+`HEROKU` / `NIXPACKS` / `PAKETO` / `RAILPACK` and the API rejects `DOCKERFILE`
+outright. Stored `RAILPACK` is the fallback for when no Dockerfile path is set;
+**a Dockerfile build is carried entirely by `dockerfilePath`.** Confirmed by a
+live build whose resolved manifest read `builder: "DOCKERFILE"` with
+Config-as-Code off and storage saying `RAILPACK`. The apparent drift was in our
+model, not in Railway — **do not try to "fix" the stored value.**
+
+**4. Stored service settings and the imported IaC graph can disagree, and
+`config plan` will not tell you.** It diffs the authoring file against the
+GRAPH, never against stored state. `builder` read `RAILPACK` in storage and
+`DOCKERFILE` in the graph and the plan said nothing. **A value the plan is
+silent about has not been verified against what the service actually stores.**
+
+**5. Clearing the config pointer takes `""`, not `null`.** An explicit `null`
+on `serviceInstanceUpdate` returns `true` and does nothing — `updatedAt` never
+moves. `null` means "leave alone". The escape hatch is `""` to clear and
+`"/railway.json"` to restore.
+
+### 15.3 What survives an apply, and what does not — the rule that matters
+
+Correction 2 does NOT mean "a value set outside the authoring file survives".
+It means **a value the plan does not DIFF survives**, and whether a value is
+diffed depends on whether the GRAPH surfaces it, not on whether the file can
+express it.
+
+Both halves have a worked example, and they behave oppositely:
+
+- **`builder`** — graph derives it and agrees with the file, so no diff, so it
+  survives untouched.
+- **`preDeployTimeoutSeconds`** — the graph carries it, the SDK has no such
+  property, and `preserve()` is env-vars only, so there is no way to declare it.
+  The file omitting it is a genuine diff. With the cap set to 600 on the
+  service, `config plan` printed `deploy.preDeployTimeoutSeconds (600 → null)`.
+
+**So a value the graph surfaces but the authoring file cannot express gets
+NULLED on the next apply.** This is why the migration timeout does not live in
+Railway's own setting (15.5), and it puts a limit on the "emergency floor":
+writing `preDeployCommand`/`preDeployTimeoutSeconds` directly does restore
+migrations-on-deploy in one mutation, but only **until the next `config apply`**.
+
+### 15.4 `restartPolicyType` round-trips, so the plan is NEVER empty
+
+The graph reports `restartPolicyType` as `null` however it is stored. It was
+applied as `ON_FAILURE` and confirmed stored as `ON_FAILURE`, and the very next
+plan still showed `null → "ON_FAILURE"`. Every apply rewrites it.
+
+Idempotent and harmless in itself, but it **costs us "run `plan`, expect no
+changes" as a drift check on this service.** Anyone reaching for an empty plan
+as a signal that nothing has drifted will never get one, and should not read
+the permanent one-field diff as drift either.
+
+### 15.5 Migrations run as a pre-deploy step, capped in the script
+
+`preDeploy` is `sh scripts/pre-deploy.sh`. The script is
+`backend/scripts/pre-deploy.sh`, copied into the image by `backend/Dockerfile`.
+
+**`preDeployCommand` accepts AT MOST ONE item.** An inline `["sh","-c",script]`
+argv is rejected by the change-set validator before anything is written —
+*"Too big: expected array to have <=1 items"* — so the script cannot be carried
+inline even if that were preferred.
+
+**THE 600s CAP LIVES IN THE SCRIPT AND MUST STAY THERE.** Railway's default is
+**no limit at all** — a pre-deploy command runs until it exits — and its own
+`preDeployTimeoutSeconds` setting would be nulled by every apply (15.3), which
+would mean re-setting it by hand after every release with no signal if
+forgotten. That is the silent-failure class this ticket existed to remove, so
+building it into the fix was not acceptable.
+
+**The advisory lock is safe, and this was measured rather than assumed.**
+`prisma migrate deploy` takes a Postgres SESSION-scoped advisory lock. Against
+this database, through Supabase's session-mode pooler: a holder was hard-killed
+with no unlock and no graceful close, and a separate session went `FREE →
+HELD → FREE`. The middle reading is the control — the probe can fail, so the
+final `FREE` is a real release. **A retry never blocks behind a lock whose
+owner is gone.**
+
+`-k 30` guards a DIFFERENT failure from the lock: if prisma ignores `TERM` the
+process outlives the cap and the deployment hangs regardless.
+
+**`prisma.config.ts` must be in the image.** `schema.prisma`'s datasource block
+is bare `provider = "postgresql"` with no url — Prisma 7 takes both the schema
+path and the connection string from `prisma.config.ts`, which prefers
+`DIRECT_URL` over `DATABASE_URL`. That preference is correct for a migration:
+the session lock belongs on a direct connection, not a pooled one.
+
+**Why a failed migration is safe:** a non-zero pre-deploy exit fails the
+deployment and the PREVIOUS container keeps serving. A bad migration costs a
+red deployment, not an outage.
+
+### 15.6 A health endpoint that says which commit is serving
+
+`GET /api/v1/health` — unguarded, returns `status`, `commit` /`commitShort`
+from `RAILWAY_GIT_COMMIT_SHA`, `environment`, `uptimeSeconds`, `timestamp`.
+
+**Liveness, not readiness, deliberately:** it touches no database and no queue,
+so a connection blip cannot report a healthy service as down. A readiness probe,
+if ever wanted, belongs on a separate path so the two questions keep separate
+answers. `commit` is `null` locally and in tests, which is correct — there is no
+deployed commit to report, and inventing a placeholder would read as a real
+answer to whoever is checking what shipped.
+
+### 15.7 CLI traps, each of which cost real time
+
+- **`railway config apply` needs `--yes`** non-interactively; without it it
+  exits 1 telling you so.
+- **`railway api --raw-var` passes values as STRINGS.** A variable typed `Int!`
+  fails with an opaque *"Problem processing request"*. Inline the integer
+  literal in the query instead.
+- **The IaC SDK misreads the CLI version on Windows** when `process.env._` is
+  unset, claiming it "requires Railway CLI 5.42.1 or newer" against 5.59.0. Set
+  `_` to the `railway.exe` path.
+- **`railway config pull --json` and the authoring file it RENDERS are not the
+  same.** The JSON graph carries `networking.serviceDomains` in full; the
+  rendered file dropped the public domain. **What pull writes for you to edit is
+  not what pull knows** — applying a rendered file unedited could remove the one
+  thing making the service reachable, and that failure is invisible: the
+  container keeps running and serving while nothing can reach it.
+- **`isUpdatable: false` is not a safety interlock.** The service instance
+  reports it and mutations succeed anyway. Do not treat it as a guard.
+
+### 15.8 Reading a deployment, and the two traps that make the commands necessary
+
+| Need | Command |
+| -- | -- |
+| Deployed URL per environment | `railway domain list -e <env>` |
+| Newest deployment and its id | `railway deployment list --json` |
+| That deployment's logs | `railway logs <DEPLOYMENT_ID> -d --lines N` |
+
+**Trap 1 — `railway logs` with no id reads the wrong container.** It defaults
+to the most recent *successful* deployment, or the latest if none succeeded.
+That is not the same as the newest. While a new deployment is building or after
+one has failed, the bare command returns the OLD container's log and looks
+entirely plausible — the ACC-92 mistake, handed to you by a command that
+appears to be doing the right thing. **The deployment id must always be passed
+explicitly**, taken from `deployment list`.
+
+**Trap 2 — `railway domain` with no subcommand CREATES a domain.** Its own
+help: *"Running without a subcommand preserves the original create behavior."*
+A command that reads like a query mutates. Only ever `railway domain list`.
+
+**The CLI keeps its config and directory-keyed project links in
+`C:\Users\<user>\.railway\`**, outside the repository. Worth stating because
+this repository now HAS a `.railway/` directory of its own: they are unrelated,
+and only the repository one is committed.
+
+### 15.9 The dashboard, and what it is safe to change there
+
+Railway's docs say configuration defined in code overrides the dashboard, and
+that is true of what the authoring file DECLARES. The practical rule:
+
+- **Environment variables are safe to edit in the dashboard.** Every one is
+  declared with `preserve()`, which means "this key exists, I am not managing
+  its value".
+- **A variable ADDED in the dashboard and not added to the authoring file must
+  be captured with `railway config pull` before the next apply**, or an apply
+  can remove it.
+- **Anything else — start command, restart policy, pre-deploy, domains,
+  replicas — belongs in the file.** Editing it in the dashboard produces a
+  change the next apply silently reverts, with no record of what was intended.
