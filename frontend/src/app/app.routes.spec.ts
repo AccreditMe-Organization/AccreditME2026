@@ -55,4 +55,73 @@ describe('unauthenticated navigation to a pre-auth route (ACC-24)', () => {
     expect(TestBed.inject(Router).url).toContain('/accept-invitation');
     expect(harness.routeDebugElement?.componentInstance).toBeInstanceOf(AcceptInvitationComponent);
   });
+
+  // ACC-122 — the regression, pinned as the behaviour a user would notice.
+  //
+  // WRITTEN THIS WAY AFTER THE FIRST ATTEMPT WAS WORTHLESS. Awaiting the
+  // initializer and THEN navigating with the harness passes whether or not
+  // the bug is present: the harness's own navigation lands last and hides the
+  // stray redirect. In the real app the boot refresh's navigate() races the
+  // router's initial navigation, and won.
+  //
+  // So the assertion is the one that actually distinguishes them: booting
+  // while signed out must not navigate AT ALL. Mutation-checked — putting
+  // endSession() back in the interceptor's auth-endpoint branch fails this.
+  it('does not navigate anywhere when a signed-out boot 401s on BOTH restore and renewal', async () => {
+    const router = TestBed.inject(Router);
+    const navigate = spyOn(router, 'navigate').and.callThrough();
+    const byUrl = spyOn(router, 'navigateByUrl').and.callThrough();
+
+    const initPromise = TestBed.runInInjectionContext(() => initializeSession());
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/me`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/refresh`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    await initPromise;
+
+    // The boot decided nothing about where the user should be. That is what
+    // leaves /forgot-password, /accept-invitation and a guard's returnUrl
+    // intact, and it is the whole of ACC-24's promise.
+    expect(navigate).not.toHaveBeenCalled();
+    expect(byUrl).not.toHaveBeenCalled();
+  });
+
+  it('leaves a signed-out visitor on /forgot-password after such a boot', async () => {
+    const initPromise = TestBed.runInInjectionContext(() => initializeSession());
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/me`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/refresh`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    await initPromise;
+
+    await RouterTestingHarness.create('/forgot-password');
+
+    const url = TestBed.inject(Router).url;
+    expect(url).toContain('/forgot-password');
+    expect(url).not.toContain('/login');
+  });
+
+  // The second symptom of the same cause: authGuard sets a correct returnUrl
+  // for a deep URL typed while signed out, and the boot refresh overwrote it
+  // with '/'. Asserts the DESTINATION survives.
+  it('keeps the guard returnUrl for a deep URL typed while signed out', async () => {
+    const initPromise = TestBed.runInInjectionContext(() => initializeSession());
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/me`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/refresh`)
+      .flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+    await initPromise;
+
+    await RouterTestingHarness.create('/committees');
+
+    const url = TestBed.inject(Router).url;
+    expect(url).toContain('/login');
+    expect(url).toContain('returnUrl=%2Fcommittees');
+  });
 });

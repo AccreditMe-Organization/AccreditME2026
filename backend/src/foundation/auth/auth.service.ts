@@ -65,13 +65,19 @@ const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
  * Deliberately not wired to NODE_ENV: the override has to be something a
  * person sets on purpose for one run, not something that switches itself on
  * in an environment that merely looks non-production.
+ *
+ * IT CAN ONLY EVER SHORTEN. The value is clamped to the 15-minute default, so
+ * a stray variable on a deployed environment cannot lengthen the access token
+ * — to days, say — and quietly weaken every session on the platform. A
+ * test-only affordance that can make production LESS safe is not test-only.
+ * Shortening is harmless: a shorter token just renews more often.
  */
 function resolveAccessTokenTtlSeconds(): number {
   const raw = process.env['AUTH_ACCESS_TOKEN_TTL_SECONDS'];
   if (!raw) return DEFAULT_ACCESS_TOKEN_TTL_SECONDS;
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_ACCESS_TOKEN_TTL_SECONDS;
-  return parsed;
+  return Math.min(parsed, DEFAULT_ACCESS_TOKEN_TTL_SECONDS);
 }
 
 export const ACCESS_TOKEN_TTL_SECONDS = resolveAccessTokenTtlSeconds();

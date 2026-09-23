@@ -184,10 +184,36 @@ describe('authInterceptor (ACC-24, ACC-122)', () => {
 
   // ── ACC-122: the endpoints that must never renew ──────────────────────────
 
-  it('never renews on /auth/login — a 401 there is a wrong password', (done) => {
+  // ── THE REGRESSION. Pinned as BEHAVIOUR: "does not navigate", not "takes
+  // branch X". ─────────────────────────────────────────────────────────────
+  //
+  // A 401 on /auth/refresh used to sign the user out from right here. That
+  // looked harmless and reintroduced ACC-24: restoreSession()'s renewal is an
+  // ordinary HTTP call, so it lands in this interceptor, and the interceptor
+  // redirected on its behalf — bouncing a signed-out visitor off
+  // /forgot-password to /login?returnUrl=%2F.
+  //
+  // The caller owns this failure. Whoever asked for the refresh already knows
+  // what to do about it.
+  it('does NOT navigate on a 401 from /auth/refresh — the caller decides', (done) => {
+    http.post(REFRESH_URL, {}).subscribe({
+      error: () => {
+        expect(router.navigate).not.toHaveBeenCalled();
+        expect(authService.clearSession).not.toHaveBeenCalled();
+        done();
+      },
+    });
+
+    // Exactly one request total: the one we made. No recursion.
+    httpMock.expectOne(REFRESH_URL).flush({}, unauthorized);
+  });
+
+  it('does NOT navigate on a 401 from /auth/login — the form shows the error', (done) => {
     http.post(`${environment.apiUrl}/auth/login`, {}).subscribe({
       error: () => {
-        httpMock.expectNone(REFRESH_URL);
+        // Navigating here would also wipe query parameters the login page is
+        // showing — reason=idle among them.
+        expect(router.navigate).not.toHaveBeenCalled();
         done();
       },
     });
@@ -195,10 +221,12 @@ describe('authInterceptor (ACC-24, ACC-122)', () => {
     httpMock.expectOne(`${environment.apiUrl}/auth/login`).flush({}, unauthorized);
   });
 
-  it('never renews on /auth/logout', (done) => {
+  it('does NOT navigate on a 401 from /auth/logout — the caller already is', (done) => {
     http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
       error: () => {
-        httpMock.expectNone(REFRESH_URL);
+        // IdleService navigates with reason and returnUrl; a redirect from
+        // here would race it and overwrite both with something worse.
+        expect(router.navigate).not.toHaveBeenCalled();
         done();
       },
     });
@@ -206,15 +234,18 @@ describe('authInterceptor (ACC-24, ACC-122)', () => {
     httpMock.expectOne(`${environment.apiUrl}/auth/logout`).flush({}, unauthorized);
   });
 
-  it('never renews on /auth/refresh itself — that would recurse', (done) => {
-    http.post(REFRESH_URL, {}).subscribe({
+  it('still signs out exactly ONCE when an ordinary request cannot be renewed', (done) => {
+    http.get(`${environment.apiUrl}/users`).subscribe({
       error: () => {
+        // Before the fix both the inner branch and the outer catchError
+        // navigated, and the inner one used the wrong url.
+        expect(router.navigate).toHaveBeenCalledTimes(1);
         expectSignedOut();
         done();
       },
     });
 
-    // Exactly one request total: the one we made.
+    httpMock.expectOne(`${environment.apiUrl}/users`).flush({}, unauthorized);
     httpMock.expectOne(REFRESH_URL).flush({}, unauthorized);
   });
 
