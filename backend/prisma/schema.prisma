@@ -217,11 +217,21 @@ enum NotificationStatus {
 // ACC-82 — Setup health. The four condition types that ship (SYSTEM-REFERENCE
 // §13.2). Two are deliberately absent — recorded deferrals, not missing values:
 // "lookup value in use but deactivated" and stale invitations.
+//
+// ACC-120 slice 2 adds ACTING_HEAD_OPEN_ENDED. THIS MIGRATION DELIBERATELY DOES
+// NOT REGISTER ITS DETECTOR, and the separation is the point: adding the value
+// is safe for the container already running, but WRITING it is not. Until the
+// old container is gone, it reads SetupCondition with a Prisma client whose
+// enum lacks this variant and would throw on the unknown value. So the value
+// ships and deploys first, alone; the detector that writes it follows in its
+// own PR. Expand, then write — see CLAUDE.md, Key Architecture Decisions
+// (ACC-127).
 enum SetupConditionType {
   ORG_UNIT_WITHOUT_HEAD
   STAGE_WITHOUT_ASSIGNEE
   TASK_WITHOUT_OWNER
   POSITION_WITHOUT_ROLE
+  ACTING_HEAD_OPEN_ENDED
 }
 
 // No HYGIENE tier yet: the only hygiene condition (stale invitations) was
@@ -308,28 +318,29 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users              User[]
-  roles              Role[]
-  lookupValues       LookupValue[]
-  lookupCategories   LookupCategory[]
-  workflowTemplates  WorkflowTemplate[]
-  workflowInstances  WorkflowInstance[]
-  workflowActionLogs WorkflowActionLog[]
-  workingCalendar    WorkingCalendar?
-  orgUnits           OrgUnit[]
-  orgPositions       OrgPosition[]
-  tasks              Task[]
-  taskEvidence       TaskEvidence[]
-  notifications      Notification[]
-  setupConditions    SetupCondition[]
-  setupConditionRuns SetupConditionRun[]
-  committees         Committee[]
-  meetings           Meeting[]
-  auditLogs          AuditLog[]
-  aiInteractionLogs  AiInteractionLog[]
-  loginAttempts      LoginAttempt[]
-  refreshTokens      RefreshToken[]
-  userTransferEvents UserTransferEvent[] // ACC-46 Section 2.6.f
+  users                  User[]
+  roles                  Role[]
+  lookupValues           LookupValue[]
+  lookupCategories       LookupCategory[]
+  workflowTemplates      WorkflowTemplate[]
+  workflowInstances      WorkflowInstance[]
+  workflowActionLogs     WorkflowActionLog[]
+  workingCalendar        WorkingCalendar?
+  orgUnits               OrgUnit[]
+  orgPositions           OrgPosition[]
+  tasks                  Task[]
+  taskEvidence           TaskEvidence[]
+  notifications          Notification[]
+  setupConditions        SetupCondition[]
+  setupConditionRuns     SetupConditionRun[]
+  committees             Committee[]
+  meetings               Meeting[]
+  auditLogs              AuditLog[]
+  aiInteractionLogs      AiInteractionLog[]
+  loginAttempts          LoginAttempt[]
+  refreshTokens          RefreshToken[]
+  userTransferEvents     UserTransferEvent[] // ACC-46 Section 2.6.f
+  orgUnitHeadAssignments OrgUnitHeadAssignment[]
 
   @@index([slug])
   @@index([status])
@@ -471,6 +482,10 @@ model User {
   pendingHeadForOrgUnits          OrgUnit[]                  @relation("OrgUnitPendingHead")
   actingHeadForOrgUnits           OrgUnit[]                  @relation("OrgUnitActingHead")
   orgUnitHeadEvents               OrgUnitHeadEvent[]         @relation("OrgUnitHeadEventUser")
+  // ACC-120 slice 2 — three distinct roles on one assignment row.
+  headAssignments                 OrgUnitHeadAssignment[]    @relation("OrgUnitHeadAssignmentUser")
+  headAssignmentsCreated          OrgUnitHeadAssignment[]    @relation("OrgUnitHeadAssignmentCreatedBy")
+  headAssignmentsEnded            OrgUnitHeadAssignment[]    @relation("OrgUnitHeadAssignmentEndedBy")
   // ACC-46 Section 2.6.f — back-relations for UserTransferEvent's three
   // distinct User FKs (the transferred person, an optional succession
   // replacement, an optional new manager — all on the same model, so each
@@ -697,22 +712,37 @@ model OrgUnit {
   isHeadFullyUnresolved             Boolean   @default(false)
   headFullyUnresolvedLastRemindedAt DateTime?
   // ACC-40 Section 2.6 — independent of position-holding entirely.
+  //
+  // ACC-120 slice 2 — KEPT FOR COMPATIBILITY, NOT AS A DESIGN CHOICE, AND
+  // DROPPED IN THE CONTRACT STEP. OrgUnitHeadAssignment is the truth now.
+  // Anything new reads that table; this column exists only so the container
+  // already running keeps working across the deploy, and so existing callers
+  // are migrated deliberately rather than in one sweep.
+  //
+  // Its recomputer is SlaMonitorProcessor's sweep (ACC-82's rule: a cached
+  // flag names its recomputer in the same change). AND THE HONEST CAVEAT,
+  // written down rather than left implied: the sweep is a scheduled job, and
+  // per ACC-93 nothing reports a scheduled job that fails to run. So this
+  // cache can go stale silently — in exactly the case it exists for, an
+  // appointment that expires by DATE with nobody pressing anything. That is
+  // a reason to finish the contract step, not a reason to trust the column.
   actingHeadUserId                  String?
 
-  organization                    Organization        @relation(fields: [organizationId], references: [id])
-  parent                          OrgUnit?            @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
-  children                        OrgUnit[]           @relation("OrgUnitHierarchy")
+  organization                    Organization            @relation(fields: [organizationId], references: [id])
+  parent                          OrgUnit?                @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
+  children                        OrgUnit[]               @relation("OrgUnitHierarchy")
   users                           User[]
-  actingUsers                     User[]              @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
+  actingUsers                     User[]                  @relation("UserActingOrgUnit") // back-relation for User.actingOrgUnitId (ACC-40 Section 2.7)
   // ACC-54 — back-relation for WorkflowStage.assigneeOrgUnitId (POSITION_FIXED).
-  assigneeForWorkflowStages       WorkflowStage[]     @relation("WorkflowStageAssigneeOrgUnit")
-  pendingHead                     User?               @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
-  actingHead                      User?               @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
+  assigneeForWorkflowStages       WorkflowStage[]         @relation("WorkflowStageAssigneeOrgUnit")
+  pendingHead                     User?                   @relation("OrgUnitPendingHead", fields: [pendingHeadUserId], references: [id])
+  actingHead                      User?                   @relation("OrgUnitActingHead", fields: [actingHeadUserId], references: [id])
   headEvents                      OrgUnitHeadEvent[]
   // ACC-46 Section 2.6.f — back-relations for UserTransferEvent's two
   // distinct OrgUnit FKs (source and destination of a transfer).
-  userTransferEventsAsSource      UserTransferEvent[] @relation("UserTransferEventSourceUnit")
-  userTransferEventsAsDestination UserTransferEvent[] @relation("UserTransferEventDestinationUnit")
+  userTransferEventsAsSource      UserTransferEvent[]     @relation("UserTransferEventSourceUnit")
+  userTransferEventsAsDestination UserTransferEvent[]     @relation("UserTransferEventDestinationUnit")
+  headAssignments                 OrgUnitHeadAssignment[] // ACC-120 slice 2
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -744,6 +774,93 @@ model OrgUnitHeadEvent {
   @@index([organizationId])
   @@index([orgUnitId])
   @@index([userId])
+}
+
+// ACC-120 slice 2 — WHO HELD A UNIT'S HEADSHIP, OVER WHAT PERIOD.
+//
+// A PERIOD TABLE, not an event log, and the difference is the reason it
+// exists. OrgUnitHeadEvent records that something HAPPENED, stamped with
+// `new Date()` at the moment of the API call. That was sufficient while an
+// acting appointment had no dates of its own: the button-press time WAS the
+// real time, and ACTING_ASSIGNED paired with the next ACTING_ENDED.
+//
+// It stops being sufficient the moment an appointment carries its own dates.
+// A period may start in the future, and — decisively — AN APPOINTMENT WITH AN
+// END DATE ENDS BY TIME, WITH NOBODY PRESSING ANYTHING, so no ACTING_ENDED
+// event is ever written. Without this table the previous period's real dates
+// would be overwritten by the next appointment and no other copy would exist:
+// "who was acting head of Pharmacy last March" becomes permanently
+// unanswerable, and an accreditation surveyor asks exactly that.
+//
+// OrgUnitHeadEvent is NOT replaced. It keeps recording handover mechanics
+// (declared, completed, cancelled, vacated) which are events, not periods.
+model OrgUnitHeadAssignment {
+  id             String @id @default(cuid())
+  organizationId String // denormalized from OrgUnit.organizationId, set once at creation
+  orgUnitId      String
+  userId         String
+
+  // KIND IS PRESENT FROM DAY ONE BECAUSE ADDING IT LATER COSTS A MIGRATION —
+  // not because substantive headship moves here soon. It does not: substantive
+  // headship is still derived from position-holding (User.position.
+  // isUnitHeadPosition + primaryOrgUnitId) and restructuring that competes with
+  // OrgPosition and belongs in its own ticket. One enum with one value unused
+  // for now is the cheapest this decision will ever be.
+  kind OrgUnitHeadAssignmentKind
+
+  // Acting only; null for SUBSTANTIVE. Distinguishes covering a post whose
+  // holder has LEFT from covering one whose holder is in post but away beyond
+  // what out-of-office may carry (capped at 60 days).
+  //
+  // NEITHER REASON AUTO-ENDS, and that is written here so nobody infers
+  // automation that does not exist. An ABSENCE appointment SHOULD end when the
+  // head returns and nothing makes it. A VACANCY one should end when a head is
+  // appointed and nothing makes that either. The 90-day
+  // ACTING_HEAD_OPEN_ENDED condition is a LATE BACKSTOP that reports the
+  // situation to a human — it is not the mechanism, and must not be mistaken
+  // for one.
+  reason OrgUnitActingReason?
+
+  // The head-conferring position, when one is involved. Null for acting, per
+  // OrgUnitHeadEvent's own 2.3 convention: acting authority never derives from
+  // position-holding.
+  positionId String?
+
+  validFrom DateTime
+  // NULL IS MEANINGFUL: "until it is ended by hand". This is the state the
+  // 90-day condition reports, so it stays nullable permanently — it is not a
+  // column awaiting a contract step.
+  validTo   DateTime?
+
+  endedAt     DateTime? // set when a period is ended EARLY, distinct from validTo lapsing
+  endedById   String?
+  endedReason String?
+
+  createdAt   DateTime @default(now())
+  createdById String
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  orgUnit      OrgUnit      @relation(fields: [orgUnitId], references: [id])
+  user         User         @relation("OrgUnitHeadAssignmentUser", fields: [userId], references: [id])
+  endedBy      User?        @relation("OrgUnitHeadAssignmentEndedBy", fields: [endedById], references: [id])
+  createdBy    User         @relation("OrgUnitHeadAssignmentCreatedBy", fields: [createdById], references: [id])
+  position     OrgPosition? @relation(fields: [positionId], references: [id])
+
+  @@index([organizationId])
+  @@index([orgUnitId])
+  @@index([userId])
+  // "who held this unit's headship on date X" — the surveyor's question.
+  @@index([orgUnitId, kind, validFrom])
+}
+
+enum OrgUnitHeadAssignmentKind {
+  SUBSTANTIVE // unused until substantive headship moves here; see the model comment
+  ACTING
+}
+
+enum OrgUnitActingReason {
+  VACANCY // the holder has left; no substantive head exists
+  ABSENCE // the head is in post but unavailable beyond out-of-office's 60-day cap
 }
 
 enum OrgUnitHeadAction {
@@ -825,12 +942,13 @@ model OrgPosition {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  organization Organization       @relation(fields: [organizationId], references: [id])
-  role         Role?              @relation(fields: [roleId], references: [id])
-  users        User[]
-  headEvents   OrgUnitHeadEvent[] // back-relation for OrgUnitHeadEvent.positionId (ACC-40 Section 2.3)
+  organization    Organization            @relation(fields: [organizationId], references: [id])
+  role            Role?                   @relation(fields: [roleId], references: [id])
+  users           User[]
+  headEvents      OrgUnitHeadEvent[] // back-relation for OrgUnitHeadEvent.positionId (ACC-40 Section 2.3)
+  headAssignments OrgUnitHeadAssignment[] // ACC-120 slice 2
   // ACC-54 — back-relation for WorkflowStage.assigneePositionId (POSITION_FIXED).
-  workflowStages WorkflowStage[]
+  workflowStages  WorkflowStage[]
 
   @@unique([organizationId, nameEn])
   @@index([organizationId])
