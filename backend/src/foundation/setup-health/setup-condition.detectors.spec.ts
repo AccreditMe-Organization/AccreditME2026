@@ -53,8 +53,19 @@ describe('SetupConditionDetectors (ACC-82)', () => {
 
   // ACC-82 — deferred, not forgotten: the enum value stays, and returns narrowed
   // to head-conferring positions once a saved role reaches current holders.
-  it('defers POSITION_WITHOUT_ROLE, and gives no deferred type a detector', () => {
-    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
+  //
+  // ACC-120 slice 2 — the two entries are deferred for DIFFERENT REASONS and on
+  // different timescales, which is why this asserts the exact list rather than
+  // membership. POSITION_WITHOUT_ROLE waits on ACC-84. ACTING_HEAD_OPEN_ENDED
+  // waits ONE DEPLOY: its enum value ships ahead of the code that writes it, so
+  // the container already running never reads a variant its Prisma client lacks.
+  // The next PR removes it from this list and adds its detector, and this
+  // assertion failing is how that PR knows it has to.
+  it('defers POSITION_WITHOUT_ROLE and ACTING_HEAD_OPEN_ENDED, and gives no deferred type a detector', () => {
+    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual([
+      'POSITION_WITHOUT_ROLE',
+      'ACTING_HEAD_OPEN_ENDED',
+    ]);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
       expect(Object.keys(detectors.byType)).not.toContain(type);
     }

@@ -54,8 +54,18 @@ export type SetupConditionDetector = (
 // consequence it stated stayed true. Unblocked by ACC-84 (a saved
 // head-position role reaching its current holders); the type then returns
 // narrowed to head-conferring positions, with a new detector.
+// ACC-120 slice 2 — ACTING_HEAD_OPEN_ENDED is deferred for ONE DEPLOY, not
+// because it is unbuildable. The enum value ships in its own migration ahead of
+// the code that writes it: adding the value is safe for the container already
+// running, but WRITING it is not — that container reads SetupCondition with a
+// Prisma client whose enum lacks the variant and throws on the unknown value.
+// Listing it here is what makes that split structural rather than merely
+// intended, because ActiveSetupConditionType below then keeps every Record<>
+// map honest without a detector existing yet. The following PR removes this
+// line and adds the detector in the same change.
 export const DEFERRED_SETUP_CONDITION_TYPES = [
   'POSITION_WITHOUT_ROLE',
+  'ACTING_HEAD_OPEN_ENDED',
 ] as const satisfies readonly SetupConditionType[];
 
 export type ActiveSetupConditionType = Exclude<
