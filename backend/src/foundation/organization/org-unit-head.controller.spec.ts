@@ -83,7 +83,7 @@ describe('OrgUnitHeadController', () => {
   });
 
   it('assignActingHead delegates to the service with tenant and actor', async () => {
-    const dto = { userId: 'acting-user', coveringForUserId: 'absent-user' };
+    const dto = { userId: 'acting-user', coveringForUserId: 'absent-user' , actingReason: 'VACANCY' as const, validFrom: '2026-10-01T00:00:00.000Z' };
     await controller.assignActingHead(UNIT_ID, dto, TENANT_ID, USER_ID);
     expect(service.assignActingHead).toHaveBeenCalledWith(UNIT_ID, dto, TENANT_ID, USER_ID);
   });
