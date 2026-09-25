@@ -31,33 +31,58 @@
 // under-reports, deliberately — a missed p-datepicker in a dialog is the bug
 // this exists to prevent, and a false positive costs a reader one look.
 //
-// A RATCHET, like check-icon-labels.mjs: it prints what has not migrated and
-// fails only when the count grows. Lower BASELINE as dialogs are converted.
+// ## An ALLOWLIST, not a baseline (ACC-120 slice 2)
+//
+// It used to be a ratchet: one number, lowered as dialogs migrated. That number
+// reached 0 real defects while still reading 9, because every remaining finding
+// was the over-report described above — a page-level control in a file that
+// also hosts a dialog. A single number cannot tell those apart, so it was
+// simultaneously too weak (a NEW p-select in user-profile's dialog would have
+// sat inside the 9 and passed) and uninformative (nobody could tell which of
+// the 9 were real).
+//
+// Now every finding must be matched by an explicit entry naming the file, the
+// tag, HOW MANY are expected, and why. The count is checked for EQUALITY, not
+// as a ceiling, which is what stops a casual fifth: adding one more p-datepicker
+// to user-profile makes its 3 a 4, no entry matches, and CI fails naming the
+// file. Removing one fails too, and says to lower the entry — so an allowance
+// cannot outlive the thing it was written for.
 //
 // Run: npm run check:dialog-overlays   (CI: frontend job)
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const appDir = join(root, 'src', 'app');
 
-// Measured on the branch that introduced this scan, lowered as screens migrate.
+// Every allowed finding, with its reason. An entry is a claim that the scan's
+// per-FILE resolution is over-reporting: the control exists on the page, not in
+// the dialog the file happens to host. Nothing here is a deferred defect.
 //
-// 12 -> 10 (ACC-96, first pass): task-form's and org-unit-head-panel's date
-// pickers stopped building floating overlays.
-//
-// 10 -> 9 (ACC-96, rebuilt to the approved design): task-form's last p-select
-// (priority) moved to OverlaySelectComponent, and its assignee p-listbox went
-// the same way. task-form now contributes NOTHING to this count.
-//
-// The nine that remain are org-unit-head-panel's five p-selects — a different
-// defect with a different remedy, and that dialog is being SPLIT rather than
-// restyled (ACC-120 slice 2), so it is deliberately untouched here — plus
-// user-profile's three and public-holiday-list's one, which the scan
-// over-reports per FILE: those controls are page-level, not in a dialog.
-const BASELINE = 9;
+// `count` is EXACT. A file drifting either way fails.
+const ALLOWED = [
+  {
+    file: 'src/app/foundation/user/components/user-profile/user-profile.component.ts',
+    tag: 'p-datepicker',
+    count: 3,
+    reason:
+      "Page-level: actingOrgUnitUntil, outOfOfficeFrom and outOfOfficeTo sit in " +
+      "the profile form on the page. The dialog this file hosts holds only " +
+      "<app-transfer-user-wizard>, which is a separate file and is scanned on " +
+      "its own. Reported because resolution is per file, not per template region.",
+  },
+  {
+    file: 'src/app/foundation/working-calendar/components/public-holiday-list/public-holiday-list.component.ts',
+    tag: 'p-select',
+    count: 1,
+    reason:
+      "Page-level: the year filter, in the page header's pageActions slot. The " +
+      "dialog this file hosts holds only <app-public-holiday-form>, whose own " +
+      "date field is already an [inline] layer at the root.",
+  },
+];
 
 const OVERLAY_TAGS =
   /<(p-select|p-multiSelect|p-multiselect|p-datepicker|p-datePicker|p-overlayPanel|p-overlaypanel|p-autoComplete|p-autocomplete|p-cascadeSelect)\b([^>]*)>/g;
@@ -126,22 +151,60 @@ for (const file of [...toScan].sort()) {
     // [inline] is the artboard-7 answer: it expands in flow, so there is no
     // overlay to dismiss.
     if (/\binline\b/.test(attrs)) continue;
-    findings.push(`${name}:${lineOf(source, m.index)}: <${tag}> reachable inside a dialog`);
+    findings.push({
+      file: name,
+      tag,
+      text: `${name}:${lineOf(source, m.index)}: <${tag}> reachable inside a dialog`,
+    });
   }
 }
 
-const count = findings.length;
-console.log(`Dialog overlays (ACC-111): ${count} PrimeNG overlay(s) inside dialogs; baseline ${BASELINE}.`);
-if (count > 0) console.log(findings.map((f) => `  ${f}`).join('\n'));
-
-if (count > BASELINE) {
-  console.error(
-    `\nFAIL: ${count - BASELINE} more than the baseline. Inside a dialog a panel expands in flow —` +
-      ` use [inline], OverlaySelectComponent, or a picker dialog at the root (artboard 7).`,
-  );
-  process.exit(1);
+// Group the findings the way the allowlist describes them: file + tag.
+const observed = new Map();
+for (const f of findings) {
+  const key = `${f.file}::${f.tag}`;
+  observed.set(key, (observed.get(key) ?? 0) + 1);
 }
 
-if (count < BASELINE) {
-  console.log(`\n${BASELINE - count} fewer than the baseline. Lower BASELINE to ${count} in this script.`);
+const problems = [];
+const allowedKeys = new Set();
+
+for (const entry of ALLOWED) {
+  const key = `${entry.file.split('/').join(sep)}::${entry.tag}`;
+  allowedKeys.add(key);
+  const seen = observed.get(key) ?? 0;
+  if (seen === entry.count) continue;
+  problems.push(
+    seen === 0
+      ? `${entry.file}: allowlisted for ${entry.count} <${entry.tag}>, but none remain. ` +
+          `Delete the entry — an allowance must not outlive what it allowed.`
+      : `${entry.file}: allowlisted for ${entry.count} <${entry.tag}>, found ${seen}. ` +
+          (seen > entry.count
+            ? `A NEW overlay was added. If it is in the dialog, use [inline], ` +
+              `OverlaySelectComponent, or a picker dialog at the root (artboard 7). ` +
+              `If it is genuinely page-level, raise the count AND say so in the reason.`
+            : `Raise nothing — lower the count to ${seen}.`),
+  );
+}
+
+for (const [key, seen] of observed) {
+  if (allowedKeys.has(key)) continue;
+  const [file, tag] = key.split('::');
+  problems.push(
+    `${file.split(sep).join('/')}: ${seen} <${tag}> reachable inside a dialog, with no allowlist entry.`,
+  );
+}
+
+console.log(
+  `Dialog overlays (ACC-111): ${findings.length} PrimeNG overlay(s) reachable inside dialogs; ` +
+    `${ALLOWED.reduce((n, e) => n + e.count, 0)} allowlisted as page-level.`,
+);
+if (findings.length > 0) {
+  for (const f of findings) console.log(`  ${f.text}`);
+}
+
+if (problems.length > 0) {
+  console.error('\nFAIL:');
+  for (const problem of problems) console.error(`  ${problem}`);
+  process.exit(1);
 }
