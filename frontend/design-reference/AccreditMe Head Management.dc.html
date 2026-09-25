@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · Proposal · 25 Sep 2026 · supersedes Templates Rev 6, template 3 head dialogs</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Unit head management</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 96ch; text-wrap: pretty;">The surface is organised around <strong>what the unit's headship is</strong>, not around the seven backend endpoints. A Headship panel on the org unit record shows the current state and offers only the actions that state allows, each named in the user's words. Two dialogs and four confirms sit behind it. The word “handover” appears nowhere.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 10px;">The seven questions, answered</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px;">
+      <sc-for list="{{ answers }}" as="a" hint-placeholder-count="7">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ a.q }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ a.a }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="h1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The Headship panel — six states, actions derived from state</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">A record-page panel (template 2) on the org unit. Each state is what the backend already knows; nothing is chosen that the unit's data already answers.</span>
+    </div>
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-end: 14px;">
+      <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">State × action — the reference for the build</span>
+        <span style="font-size: 11.5px; color: #5A6779;">Three independent facts (head in post, cover running, successor pending) give six reachable states. Absent actions are absent, not disabled.</span>
+      </div>
+      <div style="overflow-x: auto;">
+        <div style="min-width: 880px;">
+          <div style="display: flex; background: #FBFCFD; border-block-end: 1px solid #E2E8F0;">
+            <span style="flex: none; width: 210px; padding: 7px 12px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">State</span>
+            <sc-for list="{{ matrixCols }}" as="c" hint-placeholder-count="7">
+              <span style="flex: 1 1 0; min-width: 92px; padding: 7px 4px; text-align: center; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #5A6779; border-inline-start: 1px solid #F0F3F7;">{{ c }}</span>
+            </sc-for>
+          </div>
+          <sc-for list="{{ matrix }}" as="m" hint-placeholder-count="6">
+            <div style="display: flex; border-block-end: 1px solid #F0F3F7;">
+              <span style="flex: none; width: 210px; padding: 7px 12px; font-size: 12.5px; font-weight: 500;">{{ m.state }}</span>
+              <sc-for list="{{ m.cells }}" as="x" hint-placeholder-count="7">
+                <span style="{{ x.style }}">{{ x.label }}</span>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 16px; padding: 10px 12px; background: #F4F7FA; border-block-start: 1px solid #E2E8F0;">
+        <sc-for list="{{ matrixRules }}" as="r" hint-placeholder-count="5">
+          <div style="font-size: 11.5px; color: #4A5568; padding: 3px 0; text-wrap: pretty;"><strong>{{ r.k }}</strong> {{ r.v }}</div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 12px;">
+      <sc-for list="{{ panelStates }}" as="p" hint-placeholder-count="4">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">{{ p.caption }}</div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; background: #fff;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Headship</span>
+              <sc-if value="{{ p.sev }}" hint-placeholder-val="{{ false }}"><span style="{{ p.sevStyle }}">{{ p.sev }}</span></sc-if>
+            </div>
+            <sc-for list="{{ p.rows }}" as="r" hint-placeholder-count="2">
+              <div style="padding: 9px 12px; border-block-end: 1px solid #F0F3F7;">
+                <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">{{ r.label }}</div>
+                <div style="{{ r.valueStyle }}">{{ r.value }}</div>
+                <div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ r.meta }}</div>
+                <sc-if value="{{ r.bar }}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; align-items: center; gap: 0; margin-block-start: 7px;">
+                    <span style="flex: 3 1 0; height: 6px; background: #2E6FA3; border-radius: 3px 0 0 3px;"></span>
+                    <span style="flex: 2 1 0; height: 0; border-block-start: 2px dashed #8A94A6;"></span>
+                    <span style="flex: none; width: 2px; height: 14px; background: #B54708;"></span>
+                    <span style="flex: 1 1 0; height: 0; border-block-start: 2px dashed #CBD5E0;"></span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: #5A6779; margin-block-start: 3px;">
+                    <span dir="ltr">from 25 Sep</span><span style="color: #B54708; font-weight: 600;">▲ flagged 24 Dec if still open</span><span>no end date</span>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px;">
+              <sc-for list="{{ p.actions }}" as="b" hint-placeholder-count="2">
+                <button style="{{ b.style }}">{{ b.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ p.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="margin-block-start: 14px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 12px 14px;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 7px;">Meta lines that read from the event ledger — every one, and what it says when the ledger is empty</div>
+      <div style="font-size: 12px; color: #4A5568; margin-block-end: 8px; text-wrap: pretty;">OrgUnitHeadEvent only covers units that have had an event since ACC-40. Any line built from it needs a true fallback. That means a statement of what isn't recorded. It never means a made-up date, the tenant's creation date, or the date the migration ran.</div>
+      <sc-for list="{{ ledgerLines }}" as="l" hint-placeholder-count="5">
+        <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 0; border-block-start: 1px solid #C5DAEA;">
+          <span style="flex: 1 1 200px; font-size: 12px; font-weight: 600;">{{ l.where }}</span>
+          <span style="flex: 1 1 220px; font-size: 12px; color: #4A5568;">{{ l.withEvent }}</span>
+          <span style="flex: 1 1 220px; font-size: 12px; color: #1F5480; font-weight: 500;">{{ l.without }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div dir="rtl" style="margin-block-start: 14px; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; max-width: 420px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+        <span style="font-size: 12px; font-weight: 700; color: #5A6779;">رئاسة الوحدة</span>
+      </div>
+      <div style="padding: 9px 12px; border-block-end: 1px solid #F0F3F7;">
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779;">الرئيس</div>
+        <div style="font-size: 15px; font-weight: 500;"><a href="#h1" style="text-decoration: none;">د. فهد العنزي</a> · مدير</div>
+        <div style="font-size: 12.5px; color: #5A6779;">منذ <span dir="ltr" style="unicode-bidi: isolate;">3 Mar 2024</span> · صلاحياته حتى <span dir="ltr" style="unicode-bidi: isolate;">30 Sep 2026</span></div>
+      </div>
+      <div style="padding: 9px 12px; border-block-end: 1px solid #F0F3F7;">
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779;">رئيسة أيضًا · قادمة</div>
+        <div style="font-size: 15px; font-weight: 500;"><a href="#h1" style="text-decoration: none;">د. هدى الزهراني</a> · مدير</div>
+        <div style="font-size: 12.5px; color: #5A6779;">لديها صلاحيات الرئاسة منذ <span dir="ltr" style="unicode-bidi: isolate;">25 Sep 2026</span> · رئيسة منفردة من <span dir="ltr" style="unicode-bidi: isolate;">1 Oct</span></div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px;"><button style="font-family: inherit; font-size: 13.5px; border-radius: 6px; padding: 6px 12px; background: #fff; color: #2D3748; border: 1px solid #8A94A6; font-weight: 500;">بدء الرئيس الجديد اليوم</button><button style="font-family: inherit; font-size: 13.5px; border-radius: 6px; padding: 6px 12px; background: transparent; color: #B42318; border: 1px solid transparent; font-weight: 500;">سحب التعيين</button></div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 10px;">The four confirms — 420, one question, and what happens to the unit</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px;">
+      <sc-for list="{{ confirms }}" as="c" hint-placeholder-count="4">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ c.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ c.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="h2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Appoint head — one dialog, titled by the unit's state</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Vacant → assignHead. Occupied → declareHandover. The user never chooses between them; the unit already knows which it is.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px;">
+
+      <div>
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">A · Vacant unit · Horizon 1 (ships first)</span>
+          <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px;">211 / 420</span>
+        </div>
+        <div style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px;">
+          <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+              <div style="min-width: 0;">
+                <h4 style="margin: 0; font-size: 15px; font-weight: 600;">Appoint head of Pharmacy</h4>
+                <div style="font-size: 11.5px; color: #5A6779;">Pharmacy has no head</div>
+              </div>
+              <button aria-label="Close dialog" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 12px 13px;">
+              <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Head</label>
+              <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">Dr. Huda Zahrani</span>
+                <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">Change…</span>
+              </div>
+              <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Pharmacist · Pharmacy</div>
+              <div style="margin-block-start: 12px;">
+                <div style="font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568;">Position</div>
+                <div style="font-size: 14px; line-height: 20px; font-weight: 500;">Director</div>
+                <div style="font-size: 11.5px; line-height: 16px; color: #5A6779;">The only position that confers headship</div>
+              </div>
+              <div style="margin-block-start: 12px;">
+                <div style="font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568;">From</div>
+                <div style="font-size: 14px; line-height: 20px; font-weight: 500;">Now, when you save</div>
+                <div style="font-size: 11.5px; line-height: 16px; color: #5A6779;">Today, 25 Sep 2026 — a start date can't be set yet</div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;">Cancel</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Appoint now</button>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">The <strong>From</strong> row is present, in its final position, as a read-only pair saying exactly what the backend will do. The button says <strong>Appoint now</strong>, not Save. No note field: assignHead takes none, so offering one would collect text that is silently dropped.</div>
+      </div>
+
+      <div>
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">B · Vacant unit · Horizon 2 (after ACC-131)</span>
+          <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px;">357 / 420</span>
+        </div>
+        <div style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px;">
+          <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+              <div style="min-width: 0;">
+                <h4 style="margin: 0; font-size: 15px; font-weight: 600;">Appoint head of Pharmacy</h4>
+                <div style="font-size: 11.5px; color: #5A6779;">Pharmacy has no head</div>
+              </div>
+              <button aria-label="Close dialog" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 12px 13px;">
+              <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Head</label>
+              <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">Dr. Huda Zahrani</span>
+                <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">Change…</span>
+              </div>
+              <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Pharmacist · Pharmacy</div>
+              <div style="margin-block-start: 12px;">
+                <div style="font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568;">Position</div>
+                <div style="font-size: 14px; line-height: 20px; font-weight: 500;">Director</div>
+                <div style="font-size: 11.5px; line-height: 16px; color: #5A6779;">The only position that confers headship</div>
+              </div>
+              <div style="margin-block-start: 12px;">
+                <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">From</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">01 Oct 2026</span>
+                  <button aria-label="Show calendar" title="Show calendar" aria-expanded="false" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px; cursor: pointer;">▢</button>
+                </div>
+                <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Today or later · Pharmacy stays vacant until then</div>
+              </div>
+              <div style="margin-block-start: 12px;">
+                <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Note for the record <span style="font-weight: 400; color: #5A6779;">· optional</span></label>
+                <div style="border: 1px solid #8A94A6; border-radius: 4px; background: #fff; padding: 8px 10px; height: 66px; box-sizing: border-box; font-size: 13px; color: #8A94A6;">e.g. Appointed by board resolution 2026-14</div>
+                <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 4px; min-height: 17px; text-align: end;">0 / 500</div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;">Cancel</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Appoint from 1 Oct</button>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">Same title, same order, same From row — it has become editable, and a note row has been added under it. That's the whole difference between the horizons, and it reads as the form being finished, not redesigned. The button label carries the date, so the commitment is stated where it's made.</div>
+      </div>
+
+      <div>
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">C · Occupied unit · both horizons · compact density</span>
+          <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px;">385 / 420</span>
+        </div>
+        <div style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px;">
+          <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+              <div style="min-width: 0;">
+                <h4 style="margin: 0; font-size: 15px; font-weight: 600;">Appoint the next head of Pharmacy</h4>
+                <div style="font-size: 11.5px; color: #B54708; font-weight: 600;">▲ Head access starts when you save, not on the date below</div>
+              </div>
+              <button aria-label="Close dialog" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 12px 13px;">
+              <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px;">
+                <span style="flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">Replaces</span>
+                <span style="flex: 1 1 auto; min-width: 0;">
+                  <a href="#h2" style="display: block; font-size: 13px; line-height: 18px; font-weight: 500; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Dr. Fahad Al-Anazi</a>
+                  <span style="display: block; font-size: 11.5px; line-height: 16px; color: #5A6779;">Director · since 3 Mar 2024 · until 30 Sep</span>
+                </span>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 2px;">Next head</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">Dr. Huda Zahrani</span>
+                  <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">Change…</span>
+                </div>
+                <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 2px; min-height: 17px;">Pharmacist · Pharmacy</div>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <div style="font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568;">Position</div>
+                <div style="font-size: 14px; line-height: 20px; font-weight: 500;">Director</div>
+                <div style="font-size: 11.5px; line-height: 16px; color: #5A6779;">Same as Dr. Fahad · the only head position</div>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 2px;">Sole head from</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">01 Oct 2026</span>
+                  <button aria-label="Show calendar" title="Show calendar" aria-expanded="false" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px; cursor: pointer;">▢</button>
+                </div>
+                <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 2px; min-height: 17px;">Until then both are head · Dr. Fahad's access ends 30 Sep</div>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 2px;">Note for the record <span style="font-weight: 400; color: #5A6779;">· optional</span></label>
+                <div style="border: 1px solid #8A94A6; border-radius: 4px; background: #fff; padding: 8px 10px; height: 66px; box-sizing: border-box; font-size: 13px; color: #2D3748;">Dr. Fahad retires 30 Sep; appointment approved by the Medical Director.</div>
+                <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 2px; min-height: 17px; text-align: end;">74 / 500</div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;">Cancel</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Give head access now</button>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">At standard density this body is 421px, 1px over the cap, so by §13 the whole dialog is declared compact: 32px controls, 2px label and message gaps, 8px field gaps, and the same type sizes. The person being replaced is shown in a <strong>Replaces</strong> strip, not as a field. It's a read-only relation (§4 of the system) you can open. It carries only what's needed to confirm you've got the right person. <strong>Head access starts when the button is pressed</strong>, not on the date. declareHandover grants the position and syncs head authority in the same call, and there's no maximum window. So the fact is stated in the two places the approver can't miss: the header, directly under the title, and the primary button, <strong>“Give head access now”</strong>. The date field is labelled for what it really controls: the day she becomes <em style="font-style: normal; font-weight: 600;">sole</em> head, when the sweep clears Dr. Fahad. None of this adds height. The header line and the button already existed, so 385 / 402 still stand.</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 460px) minmax(0, 1fr); gap: 14px; margin-block-start: 14px; align-items: start;">
+      <div>
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">C · Arabic · compact · 2+ head positions (worst case)</span>
+          <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px;">404 / 420</span>
+        </div>
+        <div dir="rtl" style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+          <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+              <div style="min-width: 0;">
+                <h4 style="margin: 0; font-size: 16px; font-weight: 600;">تعيين الرئيس التالي لقسم الصيدلة</h4>
+                <div style="font-size: 12.5px; color: #B54708; font-weight: 600;">▲ تبدأ صلاحيات الرئاسة فور الحفظ، لا في التاريخ أدناه</div>
+              </div>
+              <button aria-label="إغلاق" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 12px 13px;">
+              <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px;">
+                <span style="flex: none; font-size: 12px; font-weight: 700; color: #5A6779;">يحلّ محل</span>
+                <span style="flex: 1 1 auto; min-width: 0;">
+                  <a href="#h2" style="display: block; font-size: 14px; line-height: 20px; font-weight: 500; text-decoration: none;">د. فهد العنزي</a>
+                  <span style="display: block; font-size: 12.5px; line-height: 18px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">مدير · منذ <span dir="ltr" style="unicode-bidi: isolate;">3 Mar 2024</span> · حتى <span dir="ltr" style="unicode-bidi: isolate;">30 Sep</span></span>
+                </span>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568; margin-block-end: 2px;">الرئيس التالي</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;"><span style="flex: 1 1 auto; min-width: 0; font-size: 14px;">د. هدى الزهراني</span><span style="flex: none; font-size: 12.5px; font-weight: 600; color: #2E6FA3;">تغيير…</span></div>
+                <div style="font-size: 12.5px; line-height: 20px; color: #5A6779; margin-block-start: 2px; min-height: 20px;">صيدلانية · قسم الصيدلة</div>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568; margin-block-end: 2px;">المنصب</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;"><span style="flex: 1 1 auto; min-width: 0; font-size: 14px;">مدير</span><span style="flex: none; color: #5A6779; font-size: 10px;">▼</span></div>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568; margin-block-end: 2px;">رئيسة منفردة اعتبارًا من</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;"><span dir="ltr" style="flex: 1 1 auto; font-size: 14px; unicode-bidi: isolate; text-align: start; font-variant-numeric: tabular-nums;">01 Oct 2026</span><button aria-label="إظهار التقويم" aria-expanded="false" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px;">▢</button></div>
+                <div style="font-size: 12.5px; line-height: 20px; color: #5A6779; margin-block-start: 2px; min-height: 20px;">حتى ذلك الحين كلاهما رئيس · تنتهي صلاحيات د. فهد في <span dir="ltr" style="unicode-bidi: isolate;">30 Sep</span></div>
+              </div>
+              <div style="margin-block-start: 8px;">
+                <label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568; margin-block-end: 2px;">ملاحظة للسجل <span style="font-weight: 400; color: #5A6779;">· اختيارية</span></label>
+                <div style="border: 1px solid #8A94A6; border-radius: 4px; background: #fff; padding: 8px 10px; height: 66px; box-sizing: border-box; font-size: 14px; line-height: 22px; color: #2D3748;">يتقاعد د. فهد في <span dir="ltr" style="unicode-bidi: isolate;">30 Sep</span>؛ اعتمد المدير الطبي التعيين.</div>
+                <div style="font-size: 12.5px; line-height: 20px; color: #5A6779; margin-block-start: 2px; min-height: 20px; text-align: end;"><span dir="ltr" style="unicode-bidi: isolate;">44 / 500</span></div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 500;">إلغاء</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">منح صلاحيات الرئاسة الآن</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 6px;">The worst case was 6px over — here's the fix</div>
+        <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Arabic makes every block 5px taller (84 vs 79 at standard, 76 vs 71 at compact), and the strip is 4px taller (56 vs 52). If the position select kept a message slot, the worst case would be <strong>426</strong>. The fix is the §13 rule, applied correctly. The position select is required, it's a closed list, and it defaults to the incumbent's position. So it can never produce a message, and it declares <code style="font-size: 11px;">message: 'none'</code>. Without the slot the dialog is <strong>404 in Arabic and 383 in English</strong>. It's the same rule, in the same place, in both languages. We didn't raise the cap. We didn't shorten helper text, because text doesn't set a slot's height. We didn't hide the note: it's the audit record the brief asked us to keep. And we didn't let the body scroll, because a scrolling body would put the select and the calendar inside a scroll container, which is exactly the fault artboard 7 exists to prevent. <strong>16px of headroom remains in Arabic</strong>, so a two-line strip would still fit. That's why the strip's meta line is clamped to one line with an ellipsis, with the full text on the record it links to.</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Body measurements · standard density, sizes named</div>
+        <sc-for list="{{ fits }}" as="f" hint-placeholder-count="5">
+          <div style="display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;">
+            <span style="flex: 1 1 150px; font-size: 12px; font-weight: 600;">{{ f.name }}</span>
+            <span dir="ltr" style="flex: 2 1 240px; font-size: 11.5px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ f.math }}</span>
+            <span style="{{ f.totalStyle }}">{{ f.total }}</span>
+          </div>
+        </sc-for>
+        <div style="padding: 9px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Sizes used, all set as explicit line-heights so the drawing renders them: field block 79 (label 18 + 4 + control 36 + 4 + slot 17), compact 71 (18 + 2 + 32 + 2 + 17); Arabic block 84 (label 20 + 4 + 36 + 4 + slot 20). Read-only pair 54 (label 18, value 20, helper 16). Replaces strip 52 (value 18 + meta 16 + padding 16 + border 2). Textarea block 109 (18 + 4 + 66 + 4 + 17). Gaps 12. Calendar 258 (28×28 cells) — it takes over the body in the date view, so it's never added to these sums.</div>
+      </div>
+      <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 6px;">Position picker — three configurations, one slot</div>
+        <sc-for list="{{ positionCases }}" as="c" hint-placeholder-count="3">
+          <div style="display: grid; grid-template-columns: 104px 1fr; gap: 10px; padding: 6px 0; border-block-end: 1px solid #C5DAEA;">
+            <span style="font-size: 12px; font-weight: 600; color: #1F5480;">{{ c.k }}</span>
+            <span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ c.v }}</span>
+          </div>
+        </sc-for>
+        <div style="font-size: 11.5px; color: #4A5568; margin-block-start: 8px; text-wrap: pretty;">The slot always names the position, because being head means holding a position — a surveyor reading the record should see “Director” and not have to infer it. What changes between the three cases is whether the user can change it.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="h3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Arrange cover — the reason is derived, and the open end is made visible</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">assignActingHead. Same dialog in both horizons.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px;">
+      <sc-for list="{{ coverDialogs }}" as="d" hint-placeholder-count="2">
+        <div>
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">{{ d.caption }}</span>
+            <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px;">{{ d.fit }}</span>
+          </div>
+          <div style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px;">
+            <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+              <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+                <div style="min-width: 0;">
+                  <h4 style="margin: 0; font-size: 15px; font-weight: 600;">{{ d.title }}</h4>
+                  <div style="font-size: 11.5px; color: #5A6779;">{{ d.sub }}</div>
+                </div>
+                <button aria-label="Close dialog" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779; cursor: pointer;">✕</button>
+              </div>
+              <div style="padding: 12px 13px;">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px;">
+                  <span style="flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">{{ d.stripLabel }}</span>
+                  <span style="flex: 1 1 auto; min-width: 0;">
+                    <span style="{{ d.stripValueStyle }}">{{ d.stripValue }}</span>
+                    <span style="display: block; font-size: 11.5px; line-height: 16px; color: #5A6779;">{{ d.stripMeta }}</span>
+                  </span>
+                </div>
+                <div style="margin-block-start: 12px;">
+                  <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Acting head</label>
+                  <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                    <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">Dr. Huda Zahrani</span>
+                    <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">Change…</span>
+                  </div>
+                  <div style="font-size: 11.5px; line-height: 17px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Pharmacist · Pharmacy</div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-block-start: 12px;">
+                  <div style="flex: 1 1 130px; min-width: 120px;">
+                    <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">From</label>
+                    <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                      <span dir="ltr" style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">25 Sep 2026</span>
+                      <button aria-label="Show calendar for From" aria-expanded="false" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px; cursor: pointer;">▢</button>
+                    </div>
+                  </div>
+                  <div style="flex: 1 1 130px; min-width: 120px;">
+                    <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Until <span style="font-weight: 400; color: #5A6779;">· {{ d.untilHint }}</span></label>
+                    <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                      <span dir="ltr" style="{{ d.untilStyle }}">{{ d.until }}</span>
+                      <button aria-label="Show calendar for Until" aria-expanded="false" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px; cursor: pointer;">▢</button>
+                    </div>
+                  </div>
+                </div>
+                <div style="{{ d.groupMsgStyle }}">
+                  <span style="flex: none; font-weight: 700;">{{ d.groupGlyph }}</span>
+                  <span style="text-wrap: pretty;">{{ d.groupMsg }}</span>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+                <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer;">Cancel</button>
+                <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">{{ d.cta }}</button>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;">{{ d.note }}</div>
+        </div>
+      </sc-for>
+
+      <div>
+        <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Arabic · the RTL range</span>
+          <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6; border-radius: 4px; padding: 1px 7px;">262 / 420</span>
+        </div>
+        <div dir="rtl" style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+          <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+              <div style="min-width: 0;">
+                <h4 style="margin: 0; font-size: 16px; font-weight: 600;">ترتيب تكليف لقسم الصيدلة</h4>
+                <div style="font-size: 12.5px; color: #5A6779;">الرئيس غائب مؤقتًا</div>
+              </div>
+              <button aria-label="إغلاق" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 12px 13px;">
+              <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px;">
+                <span style="flex: none; font-size: 12px; font-weight: 700; color: #5A6779;">ينوب عن</span>
+                <span style="flex: 1 1 auto; min-width: 0;">
+                  <a href="#h3" style="display: block; font-size: 14px; line-height: 20px; font-weight: 500; text-decoration: none;">د. فهد العنزي</a>
+                  <span style="display: block; font-size: 12.5px; line-height: 18px; color: #5A6779;">الرئيس · غائب</span>
+                </span>
+              </div>
+              <div style="margin-block-start: 12px;">
+                <label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">القائم بالأعمال</label>
+                <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 14px;">د. هدى الزهراني</span>
+                  <span style="flex: none; font-size: 12.5px; font-weight: 600; color: #2E6FA3;">تغيير…</span>
+                </div>
+                <div style="font-size: 12.5px; line-height: 20px; color: #5A6779; margin-block-start: 4px; min-height: 20px;">صيدلانية · قسم الصيدلة</div>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-block-start: 12px;">
+                <div style="flex: 1 1 130px; min-width: 120px;">
+                  <label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">من</label>
+                  <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                    <span dir="ltr" style="flex: 1 1 auto; font-size: 14px; unicode-bidi: isolate; text-align: start; font-variant-numeric: tabular-nums;">25 Sep 2026</span>
+                    <button aria-label="إظهار التقويم لتاريخ البداية" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px;">▢</button>
+                  </div>
+                </div>
+                <div style="flex: 1 1 130px; min-width: 120px;">
+                  <label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">حتى <span style="font-weight: 400; color: #5A6779;">· تاريخ العودة</span></label>
+                  <div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;">
+                    <span dir="ltr" style="flex: 1 1 auto; font-size: 14px; unicode-bidi: isolate; text-align: start; font-variant-numeric: tabular-nums;">20 Oct 2026</span>
+                    <button aria-label="إظهار التقويم لتاريخ النهاية" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #4A5568; font-size: 12px;">▢</button>
+                  </div>
+                </div>
+              </div>
+              <div style="font-size: 12.5px; line-height: 17px; color: #5A6779; margin-block-start: 4px; min-height: 34px;"><span dir="ltr" style="unicode-bidi: isolate;">26</span> يومًا · ينتهي التكليف تلقائيًا في <span dir="ltr" style="unicode-bidi: isolate;">20 Oct 2026</span></div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 500;">إلغاء</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">تكليف حتى <span dir="ltr" style="unicode-bidi: isolate;">20 Oct</span></button>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 9px; text-wrap: pretty;"><strong>“From” (من) comes at the inline start — on the right in Arabic — because the order is set by <code style="font-size: 11px;">dir</code>, never by left or right.</strong> Each date inside is isolated as LTR, so “25 Sep 2026” stays whole instead of reversing. There's no arrow between the two fields: an arrow would have to mirror, and a label can't point the wrong way. Keyboard: arrow keys move day by day in visual direction (→ is earlier in RTL). Tab moves From → Until in reading order.</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; margin-block-start: 14px;">
+      <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 6px;">Why the reason is not a field</div>
+        <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">For an acting appointment, the reason follows from the unit's state. A unit with a head can only need cover because the head is away: <strong>ABSENCE</strong>, covering for that head. A vacant unit can only need cover because the post is empty: <strong>VACANCY</strong>, covering for nobody. If the user picked the reason, they could make the record say something false — “Post is vacant” on a unit with a head. So the dialog sends reason and coveringForUserId without showing them as controls, and states them in the strip at the top. <strong>Confirmed by the backend:</strong> the reason is forced by whether a head is in post. When a head leaves, Vacate records it, and any cover still running becomes a VACANCY cover.</div>
+      </div>
+      <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 6px;">Warning about the 90-day rule when the choice is made</div>
+        <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">The Until field has a group message line below it, and that line always describes what the cover will do. <strong>With a date:</strong> “26 days · the cover ends on its own on 20 Oct 2026”. <strong>Without a date:</strong> the actual date the condition will fire — “No end date. If this cover is still running on 24 Dec 2026, Setup health will mark Pharmacy At risk” — plus what to do about it, which depends on the reason, the same way the condition's own Fix does. The button changes too: “Cover until 20 Oct” versus “Cover with no end date”. That way the open end is visible in the thing the user clicks. Once saved, the panel shows the cover as a bar that turns dashed after the last known date, with a marker on the day it will be flagged.</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">End cover now — clearActingHead, a 420 confirm</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+          <div style="padding: 10px 12px; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 14px; font-weight: 600;">End Dr. Huda's cover of Pharmacy now?</div>
+            <div style="font-size: 12px; color: #4A5568; margin-block-start: 3px; text-wrap: pretty;">It was due to end on 20 Oct 2026. Dr. Fahad Al-Anazi is still recorded as head, so Pharmacy won't be without a head.</div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 9px 12px; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 12.5px; font-weight: 500;">Keep cover</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 12.5px; font-weight: 600;">End cover now</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;"><strong>Under VACANCY</strong>, the second sentence changes to “Pharmacy will have <strong>no head and no cover</strong>”, and the confirm button becomes the destructive variant. Either way the dialog says what happens to the unit, not just what happens to the appointment.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="h4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Headship history — “who was head of Pharmacy, and since when?”</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">A second view of the same panel, not a new page. The panel's own header has a Current / History switch.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Headship · History · Horizon 2</span>
+          <span style="display: flex; gap: 2px; padding: 2px; background: #fff; border: 1px solid #E2E8F0; border-radius: 4px;">
+            <span style="font-size: 11.5px; font-weight: 500; color: #4A5568; padding: 2px 8px;">Current</span>
+            <span style="font-size: 11.5px; font-weight: 600; color: #fff; background: #2E6FA3; border-radius: 3px; padding: 2px 8px;">History</span>
+          </span>
+        </div>
+        <sc-for list="{{ history }}" as="h" hint-placeholder-count="5">
+          <div style="display: flex; gap: 10px; padding: 9px 12px; border-block-end: 1px solid #F0F3F7;">
+            <span dir="ltr" style="flex: none; width: 150px; font-size: 12px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ h.period }}</span>
+            <span style="flex: 1 1 auto; min-width: 0;">
+              <span style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;">
+                <span style="font-size: 13px; font-weight: 500;">{{ h.who }}</span>
+                <span style="{{ h.kindStyle }}">{{ h.kind }}</span>
+              </span>
+              <span style="display: block; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ h.meta }}</span>
+            </span>
+          </div>
+        </sc-for>
+        <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; background: #F4F7FA;">Export follows the template 1 export rules — provenance header, rows marked if restricted.</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Horizon 1 — the same frame, fewer rows</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Today the backend knows the current head, a scheduled successor and an active cover. It doesn't keep past periods. So in Horizon 1 the panel shows only the Current view, with those rows, and there's <strong>no History switch</strong>. We don't show a switch that leads to an empty list, and we don't add a “coming soon” note. ACC-131 adds the switch and the past rows, in the frame the Current view already uses. We shouldn't piece together a Horizon 1 history from the audit log: <code style="font-size: 11px;">isHeadVacant</code> is wrong on 32 of 34 units, and a reconstructed history would repeat those errors to a surveyor.</div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Where the note ends up</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">The note is part of the audit trail, so we collect it only where the backend stores it. In Horizon 1 that's the successor path, declareHandover. It appears on that history row and in the unit's audit trail, word for word, with the name of the person who recorded it. In Horizon 2, every dated assignment row should accept a note. <strong>Proposed for ACC-131, not drawn in Horizon 1:</strong> a note on appointments to a vacant unit and on covers. We'll add those fields once the backend stores them, and not before.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="h5" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Named, not drawn — what this proposal implies elsewhere</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Checked against the seven endpoints. Two items from the first draft are withdrawn, and they are kept here, marked as withdrawn.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px;">
+      <sc-for list="{{ gaps }}" as="g" hint-placeholder-count="5">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 11px 13px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ g.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ g.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const btn = (label, kind) => ({
+      label,
+      style: "font-family: inherit; font-size: 12.5px; border-radius: 6px; padding: 6px 12px; cursor: pointer; "
+        + (kind === "primary" ? "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;"
+          : kind === "danger" ? "background: transparent; color: #B42318; border: 1px solid transparent; font-weight: 500;"
+          : "background: #fff; color: #2D3748; border: 1px solid #8A94A6; font-weight: 500;")
+    });
+    const row = (label, value, meta, opts) => ({
+      label, value, meta, bar: !!(opts && opts.bar),
+      valueStyle: "font-size: 14px; font-weight: 500; " + (opts && opts.muted ? "color: #5A6779;" : "color: #2E6FA3;")
+    });
+    const tot = (ok) => "flex: none; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 7px; font-variant-numeric: tabular-nums; " + (ok ? "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;" : "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;");
+    const sev = "display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 999px; padding: 1px 8px;";
+    const kindStyle = (k) => "font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 6px; " + (k === "head" ? "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;" : k === "vacant" ? "color: #4A5568; background: #F1F4F8; border: 1px dashed #8A94A6;" : "color: #4A5568; background: #fff; border: 1px solid #8A94A6;");
+
+    const infoPill = "display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 999px; padding: 1px 8px;";
+    return {
+      answers: [
+        { q: "1 · How many dialogs?", a: "Two dialogs and four confirms, behind a Headship panel that has six states. Appoint head adapts its title to the unit's state: vacant or occupied. Arrange cover handles acting heads. Vacate, Start new head today, Withdraw appointment and End cover are confirms. The user never picks between assign and handover. The unit already knows which applies." },
+        { q: "2 · Where does the vacant case live?", a: "It's the Headship panel's first state. A vacant unit shows “Pharmacy has no head” and Appoint head is its primary button. Every new tenant opens on this state, so it's what a demo shows first, and it's one click away." },
+        { q: "3 · How is the outgoing head shown?", a: "In a Replaces strip at the top of the body: a read-only relation you can open, with their position, their start date and the day their headship ends. It isn't a field, so it doesn't count as a field block." },
+        { q: "4 · How does an open-ended cover look open-ended?", a: "Three places. The message under Until gives the date Setup health will flag it. The button reads “Cover with no end date”. On the panel, the bar turns dashed after the last known date and has a marker on the flag date. Words and shape carry it, not only colour." },
+        { q: "5 · What if the position picker isn't needed?", a: "It shows as a read-only pair naming the only head position. It becomes a select once there are two, and blocks the dialog with a fix link if there are none. The slot is always there, so the position is always named." },
+        { q: "6 · Is there a home for headship history?", a: "Yes. A History view inside the same Headship panel, added with ACC-131. Horizon 1 shows only the current rows, and doesn't rebuild history from vacancy flags we know are unreliable." },
+        { q: "7 · Where does the optional reason go?", a: "In a field called “Note for the record”, only on the successor path, the one place the backend stores it. It shows on the history row and in the audit trail. We propose adding it to all dated rows in ACC-131, and won't draw it until then." }
+      ],
+
+      panelStates: [
+        { caption: "1 · Vacant · no event recorded (a new tenant)", sev: null, sevStyle: "",
+          rows: [row("Head", "No head", "No head recorded", { muted: true })],
+          actions: [btn("Appoint head", "primary"), btn("Arrange cover")],
+          note: "Where a new tenant starts, and also any unit that was vacant before ACC-40, when the ledger began. There's no VACATED event, so there's no date or name to show. “No head recorded” is true in both cases. “Never had a head” would be false for units vacated before the ledger existed. Any cover arranged here is VACANCY. That's set by the state, not chosen." },
+        { caption: "1 · Vacant · after a Vacate (event recorded)", sev: null, sevStyle: "",
+          rows: [row("Head", "No head", "Vacated 1 Sep 2026 by Nora Al-Otaibi", { muted: true })],
+          actions: [btn("Appoint head", "primary"), btn("Arrange cover")],
+          note: "Same state and same actions. The only difference is that a VACATED event exists, so the meta line can say when and by whom. The matrix has one row for both." },
+        { caption: "2 · Vacant · covered", sev: null, sevStyle: "",
+          rows: [
+            row("Head", "No head", "No head recorded", { muted: true }),
+            row("Acting head", "Dr. Tariq Suleiman", "Covering the vacancy · 1 Sep – 31 Oct 2026")
+          ],
+          actions: [btn("Appoint head", "primary"), btn("End cover", "danger")],
+          note: "Appoint head stays primary, because filling the post is what resolves this state. Arrange cover isn't shown, because a cover is already running." },
+        { caption: "3 · Held", sev: null, sevStyle: "",
+          rows: [row("Head", "Dr. Fahad Al-Anazi · Director", "Since 3 Mar 2024")],
+          actions: [btn("Appoint successor", "primary"), btn("Arrange cover"), btn("Vacate", "danger")],
+          ledgerNote: true,
+          note: "Vacate records a departure with no successor. It's the answer to “Dr. Fahad left”, and it's followed naturally by Arrange cover, which then records VACANCY." },
+        { caption: "4 · Held · covered", sev: "▲ At risk from 24 Dec", sevStyle: sev,
+          rows: [
+            row("Head", "Dr. Fahad Al-Anazi · Director", "Away · covered"),
+            row("Acting head", "Dr. Huda Zahrani", "Covering for Dr. Fahad since 25 Sep 2026 · no end date", { bar: true })
+          ],
+          actions: [btn("End cover", "primary"), btn("Appoint successor"), btn("Vacate", "danger")],
+          note: "This is an intended state, not a stop on the way to another one: ABSENCE requires a head in post. End cover is primary because the expected next event is the head coming back." },
+        { caption: "5 · Held · successor scheduled", sev: "⇆ Two heads until 1 Oct", sevStyle: infoPill,
+          rows: [
+            row("Head", "Dr. Fahad Al-Anazi · Director", "Head access until 30 Sep 2026"),
+            row("Also head · incoming", "Dr. Huda Zahrani · Director", "Head access since 25 Sep 2026 · sole head from 1 Oct · noted: “Dr. Fahad retires 30 Sep…”")
+          ],
+          actions: [btn("Start new head today"), btn("Withdraw appointment", "danger")],
+          note: "Both people hold head access now. The incoming head got it when the appointment was saved, and routed work (assignments, approvals, escalations) already reaches her. The pill and the “Also head” label say so, because this panel is where someone comes to find out who can act. No primary: both actions are exceptions to a plan that finishes on its own date. Arrange cover isn't shown, because the backend refuses it while a successor is pending (see section 5)." },
+        { caption: "6 · Held · covered · successor scheduled", sev: "⇆ Two heads until 1 Oct", sevStyle: infoPill,
+          rows: [
+            row("Head", "Dr. Fahad Al-Anazi · Director", "Away · leaves 30 Sep 2026"),
+            row("Acting head", "Dr. Huda Zahrani", "Covering for Dr. Fahad · until 30 Sep 2026"),
+            row("Also head · incoming", "Dr. Omar Haddad · Director", "Head access since 25 Sep 2026 · sole head from 1 Oct")
+          ],
+          actions: [btn("Start new head today"), btn("Withdraw appointment", "danger"), btn("End cover", "danger")],
+          note: "The only three-row state. You reach it by scheduling a successor while a cover is already running. The cover arranged earlier survives, and its end date is visible next to the successor's start date, so a gap between them shows up before it happens." }
+      ],
+
+      ledgerLines: [
+        { where: "Where", withEvent: "With an event", without: "No event (new tenant, or before ACC-40)" },
+        { where: "Panel · vacant head row (states 1, 2)", withEvent: "Vacated 1 Sep 2026 by Nora Al-Otaibi", without: "No head recorded" },
+        { where: "Panel · held head row (states 3–6)", withEvent: "Since 3 Mar 2024", without: "Start date not recorded" },
+        { where: "Appoint · Replaces strip (dialog C)", withEvent: "Director · since 3 Mar 2024 · until 30 Sep", without: "Director · start date not recorded · until 30 Sep" },
+        { where: "Arrange cover · VACANCY strip", withEvent: "Vacant since 1 Sep 2026", without: "Vacant · no head recorded" },
+        { where: "History view (Horizon 2)", withEvent: "A row per event", without: "The earliest row reads “Before records began” and has no start date. After ACC-131 the backfill fills it in only where the source is known." }
+      ],
+      matrixCols: ["Appoint head", "Appoint successor", "Start today", "Withdraw", "Vacate", "Arrange cover", "End cover"],
+      matrix: (() => {
+        const P = "primary", O = "offer", D = "danger", X = "absent";
+        const rows = [
+          { state: "1 · Vacant", cells: [P, X, X, X, X, O, X] },
+          { state: "2 · Vacant · covered", cells: [P, X, X, X, X, X, D] },
+          { state: "3 · Held", cells: [X, P, X, X, D, O, X] },
+          { state: "4 · Held · covered", cells: [X, O, X, X, D, X, P] },
+          { state: "5 · Held · successor", cells: [X, X, O, D, X, X, X] },
+          { state: "6 · Held · covered · successor", cells: [X, X, O, D, X, X, D] }
+        ];
+        const cellStyle = (k) => "flex: 1 1 0; min-width: 92px; text-align: center; font-size: 11px; font-weight: 600; padding: 7px 4px; border-inline-start: 1px solid #F0F3F7; "
+          + (k === P ? "color: #fff; background: #2E6FA3;" : k === O ? "color: #2D3748; background: #fff; box-shadow: inset 0 0 0 1px #8A94A6;" : k === D ? "color: #B42318; background: #fff;" : "color: #8A94A6; background: #FBFCFD;");
+        const label = { primary: "Primary", offer: "Offered", danger: "Offered · confirm", absent: "—" };
+        return rows.map(r => ({ state: r.state, cells: r.cells.map(k => ({ label: label[k], style: cellStyle(k) })) }));
+      })(),
+      matrixRules: [
+        { k: "Appoint head", v: "needs no head and no pending successor. Uniqueness refuses a second head." },
+        { k: "Appoint successor · Vacate", v: "need a head and no pending successor. Whether a cover is running doesn't matter." },
+        { k: "Start today · Withdraw", v: "need a pending successor." },
+        { k: "Arrange cover", v: "needs no cover and no pending successor. The reason is set by whether a head is in post: ABSENCE if one is, VACANCY if not." },
+        { k: "End cover", v: "needs a running cover." }
+      ],
+      confirms: [
+        { t: "Vacate — “Record that Dr. Fahad has left Pharmacy?”", b: "“Pharmacy will have no head from now. His headship ends today in the history.” If a cover is running it's named: “Dr. Huda's cover continues, and will now be recorded as covering a vacancy.” Destructive button: Record departure." },
+        { t: "Start new head today — “Make Dr. Huda head of Pharmacy today?”", b: "“Dr. Huda already has head access. This ends Dr. Fahad's today, 6 days before the planned 1 Oct 2026, and makes her sole head.” In state 6 it adds: “Dr. Huda's cover ends as well.” Primary button: Make head today." },
+        { t: "Withdraw appointment — “Withdraw Dr. Huda's appointment from 1 Oct?”", b: "“Dr. Huda loses the head access she has had since 25 Sep. Work routed to her as head goes back to Dr. Fahad. The note you recorded stays in the history.” Destructive button: Cancel appointment. Keep button: Keep appointment." },
+        { t: "End cover — as drawn in section 3", b: "Its wording depends on the reason: under ABSENCE the head is still recorded; under VACANCY the unit is left with no head and no cover." }
+      ],
+            fits: [
+        { name: "A · vacant, Horizon 1", math: "person 79 + 12 + position 54 + 12 + from (read-only) 54", total: "211", ok: true },
+        { name: "B · vacant, Horizon 2", math: "person 79 + 12 + position 54 + 12 + from 79 + 12 + note 109", total: "357", ok: true },
+        { name: "C · occupied, standard", math: "strip 52 + 12 + 79 + 12 + 54 + 12 + 79 + 12 + note 109 = 421 — over the cap", total: "421", ok: false },
+        { name: "C · occupied, compact (drawn)", math: "strip 52 + 8 + next head 71 + 8 + position 54 + 8 + from 71 + 8 + note 105", total: "385", ok: true },
+        { name: "C · 2+ head positions · EN", math: "position becomes a select with no message slot (closed list, defaults to the incumbent's position) — block 52 (18 + 2 + 32): 52 + 8 + 71 + 8 + 52 + 8 + 71 + 8 + 105", total: "383", ok: true },
+        { name: "C · occupied · AR · compact", math: "strip 56 (20 + 18 + 18) + 8 + next head 76 (20 + 2 + 32 + 2 + 20) + 8 + position pair 60 (20 + 22 + 18) + 8 + from 76 + 8 + note 110 (20 + 2 + 66 + 2 + 20)", total: "410", ok: true },
+        { name: "C · AR · 2+ positions, with a slot", math: "the same, with position as a full select block 76: 56 + 8 + 76 + 8 + 76 + 8 + 76 + 8 + 110 = 426 — 6 over, which is why the select has no slot", total: "426", ok: false },
+        { name: "C · AR · 2+ positions (drawn)", math: "position select with no slot 54 (20 + 2 + 32): 56 + 8 + 76 + 8 + 54 + 8 + 76 + 8 + 110", total: "404", ok: true },
+        { name: "Arrange cover · EN, both reasons", math: "strip 52 (value 18 + meta 16 + 18) + 12 + acting head 79 + 12 + range row 58 (label 18 + 4 + control 36) + 6 + group message 34 (2 × 17, copy kept to two lines)", total: "253", ok: true },
+        { name: "Arrange cover · AR", math: "strip 56 (value 20 + meta 18 + 18) + 12 + acting head 84 (label 20 + 4 + 36 + 4 + slot 20) + 12 + range 60 (label 20 + 4 + 36) + 4 + message 34 (2 × 17)", total: "262", ok: true },
+        { name: "Any · date view", math: "Pressing ▢ swaps the body for the calendar: back link 26 + date field 79 + 8 + calendar 258", total: "371", ok: true }
+      ].map(f => ({ name: f.name, math: f.math, total: f.total + " / 420", totalStyle: tot(f.ok) })),
+
+      positionCases: [
+        { k: "One (every seeded tenant)", v: "Read-only pair: “Position · Director”, with the helper “The only position that confers headship”. No control, and nothing for the user to decide." },
+        { k: "Two to fifteen", v: "A select using OverlaySelectComponent, with the incumbent's position as the default when appointing a successor. It declares message: 'none'. It's a closed list, it's required, and it defaults to the incumbent's position, so it can't produce a message (§13). The block is 52 in English and 54 in Arabic, shorter than the read-only pair. Worst case: C is 383 in English and 404 in Arabic. With a slot, Arabic would be 426, 6 over the cap. It's the same rule in both languages, not an Arabic exception." },
+        { k: "None", v: "The dialog doesn't open. The Appoint button stays visible with the reason next to it: “No position confers headship — flag one in Org positions”. Tenant admins get a link there. We propose adding this to Setup health as a condition too." }
+      ],
+
+      coverDialogs: [
+        { caption: "Held unit, head away · ABSENCE", fit: "253 / 420", title: "Arrange cover for Pharmacy", sub: "The head is temporarily away",
+          stripLabel: "Covers for", stripValue: "Dr. Fahad Al-Anazi", stripMeta: "Head · away",
+          stripValueStyle: "display: block; font-size: 13px; line-height: 18px; font-weight: 500; color: #2E6FA3;",
+          untilHint: "their return date", until: "DD MMM YYYY",
+          untilStyle: "flex: 1 1 auto; font-size: 13px; color: #8A94A6;",
+          groupGlyph: "!", groupMsg: "No end date — if still running on 24 Dec 2026, Setup health marks Pharmacy At risk.",
+          groupMsgStyle: "display: flex; gap: 7px; align-items: flex-start; margin-block-start: 6px; min-height: 34px; font-size: 11.5px; line-height: 17px; color: #B54708;",
+          cta: "Cover with no end date",
+          note: "Until is optional, as it is in the backend. Leaving it empty is allowed, but the dialog says what that sets up. Once a date is entered, the message line reads “26 days · the cover ends on its own on 20 Oct 2026” and the button reads “Cover until 20 Oct”." },
+        { caption: "Vacant unit · VACANCY", fit: "253 / 420", title: "Arrange cover for Pharmacy", sub: "Pharmacy has no head",
+          stripLabel: "Post", stripValue: "Vacant since 1 Sep 2026", stripMeta: "Nobody is being covered for",
+          stripValueStyle: "display: block; font-size: 13px; line-height: 18px; font-weight: 500; color: #2D3748;",
+          untilHint: "optional", until: "DD MMM YYYY",
+          untilStyle: "flex: 1 1 auto; font-size: 13px; color: #8A94A6;",
+          groupGlyph: "ⓘ", groupMsg: "Open-ended is normal for a vacancy. On 24 Dec 2026 Setup health will ask for a head.",
+          groupMsgStyle: "display: flex; gap: 7px; align-items: flex-start; margin-block-start: 6px; min-height: 34px; font-size: 11.5px; line-height: 17px; color: #1F5480;",
+          cta: "Cover with no end date",
+          note: "Same dialog, same fields. Only the strip and the message change. The message uses info styling rather than a warning, because an open-ended cover for a vacant post is normal. It still names the date and the fix, which is Appoint head, matching the condition's own Fix." }
+      ],
+
+      history: [
+        { period: "1 Oct 2026 –", who: "Dr. Huda Zahrani", kind: "Head", k: "head", meta: "Director · recorded by Nora Al-Otaibi · “Dr. Fahad retires 30 Sep; appointment approved by the Medical Director.”" },
+        { period: "25 Sep – 30 Sep 2026", who: "Dr. Huda Zahrani", kind: "Acting · absence", k: "acting", meta: "Covering for Dr. Fahad Al-Anazi · ended early by Nora Al-Otaibi" },
+        { period: "3 Mar 2024 – 30 Sep 2026", who: "Dr. Fahad Al-Anazi", kind: "Head", k: "head", meta: "Director · recorded by Omar Bakri" },
+        { period: "1 Jan – 2 Mar 2024", who: "No head", kind: "Vacant", k: "vacant", meta: "62 days · covered by Dr. Tariq Suleiman (acting · vacancy) 8 Jan – 2 Mar" },
+        { period: "– 31 Dec 2023", who: "Dr. Omar Haddad", kind: "Head", k: "head", meta: "Director · earliest row recorded" }
+      ].map(h => ({ period: h.period, who: h.who, kind: h.kind, meta: h.meta, kindStyle: kindStyle(h.k) })),
+
+      gaps: [
+        { t: "A cover's end date can't be moved — and ending and recreating it restarts the clock", b: "Only clear exists. Extending an absence means ending the cover and arranging a new one. That splits one continuous cover into two history periods, and it restarts the 90-day Setup health clock. So a cover that has really run 120 days shows as 30, and the condition that exists to catch it goes quiet. Proposed: an endpoint that changes validTo on the running cover and writes its own event (for example ACTING_PERIOD_CHANGED), keeping one period and one clock. Until then, Arrange cover warns when it's about to recreate a cover that ended within the last 7 days for the same person: “This starts a new 90-day period. The cover that ended on 20 Oct won't count towards it.”" },
+        { t: "Arrange cover is refused while a successor is pending", b: "This proposal follows the backend: states 5 and 6 don't offer Arrange cover. The consequence is worth checking: if a head goes off sick in the three weeks before a scheduled successor starts, the only options are to start the new head early or withdraw the appointment. Nobody can be put in as cover for those three weeks. If that's intended, the panel is right. If not, it's a backend rule to revisit, not a screen to change." },
+        { t: "Withdrawn — “no departure action” and “no way to cancel a successor”", b: "Both were listed here in the first draft, from a brief that named four actions. They exist: POST /vacate and POST /handover/cancel, alongside /handover/complete. All three are now in the state matrix, the panels and the confirm wording above. There's nothing left to propose for ACC-131." },
+        { t: "Confirmed — the acting reason is set by state", b: "The draft asked for backend confirmation. It's confirmed: the reason is forced by whether a head is in post, which is what the Arrange cover dialog already assumed. No reason picker." },
+        { t: "No head-conferring position — a Setup health candidate", b: "A tenant whose catalogue has no head-conferring position can't appoint any head. That fits Setup health well: only an admin can fix it, and the system can detect it on every run." }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
