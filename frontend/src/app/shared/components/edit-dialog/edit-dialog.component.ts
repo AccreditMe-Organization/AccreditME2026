@@ -20,6 +20,7 @@ import { ConfirmationService, PrimeTemplate } from 'primeng/api';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { LayerStackService } from '../../overlay/layer-stack.service';
 import { ListFocusService } from '../data-list/list-focus.service';
+import { DIALOG_DENSITY, DialogDensity } from './dialog-density';
 
 /**
  * The three dialog sizes (ACC-111, artboard 7). A size is a KIND of dialog,
@@ -46,6 +47,9 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
   selector: 'app-edit-dialog',
   standalone: true,
   imports: [DialogModule, NgTemplateOutlet, PrimeTemplate, TranslatePipe],
+  // ACC-120 slice 2 — ONLY this component provides the density token, which is
+  // what stops compact density reaching a page. See dialog-density.ts.
+  providers: [{ provide: DIALOG_DENSITY, useFactory: () => inject(EditDialogComponent).density }],
   template: `
     <p-dialog
       [visible]="visible()"
@@ -58,6 +62,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
       [role]="role()"
       [appendTo]="appendTo()"
       [style]="{ width: resolvedWidth() }"
+      [attr.data-density]="density()"
     >
       <!-- ACC-96 — the title and, when the caller gives one, a context line
            under it: "on Infection Control Committee". Template 3 draws it
@@ -296,6 +301,20 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    * and hearing nothing until they happen to tab into it.
    */
   readonly role = input<'dialog' | 'alertdialog'>('dialog');
+
+  /**
+   * ACC-120 slice 2 — artboard 13. Declared ONCE, for the whole dialog, and
+   * computed from the field list at design time rather than per screen: a
+   * dialog is compact when its standard-density body would exceed the 420px cap
+   * or it holds five or more field blocks. `check:dialog-density` mechanises
+   * the field-count half; the height half is a measurement recorded in the
+   * dialog's own comment, because a static scan cannot measure rendered height
+   * honestly.
+   *
+   * NEVER mixed inside one dialog — two field rhythms in one form reads as a
+   * rendering fault.
+   */
+  readonly density = input<DialogDensity>('form');
 
   protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
 
