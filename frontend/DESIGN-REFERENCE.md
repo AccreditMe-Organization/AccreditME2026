@@ -38,6 +38,86 @@ The four single-screen files came before the two consolidated files and are kept
 for the detail they carry. **Where one of them and the Templates file disagree, the
 Templates file is the later decision.**
 
+## Templates was HAND-PATCHED at Rev 8 — an export will silently revert it
+
+**This section exists because the patch below lives inside a folder that the
+next Claude Design export replaces wholesale.** It is recorded here, one level
+above, precisely so the correction is recoverable rather than lost in silence.
+
+### What happened
+
+Design System Rev 8 corrected the standard field block from **75px to 79px**
+(label 18 + 4 + control 36 + 4 + slot 17). Its own changelog is explicit that
+*"the drawings always rendered 79; only the arithmetic was wrong"*. Compact is
+unchanged at 71 (can message) and 52 (cannot).
+
+**Templates was not regenerated in that export**, so every body sum it printed
+was still computed at 75 — and ACC-120 slices 4 through 10 read their
+measurements from that file. Claude Code hand-patched the live figures rather
+than leave seven unbuilt slices working from arithmetic 4px light per block.
+
+### The rule applied, because the file is not uniformly "live"
+
+`694px` appears five times in Templates, `279px` three, spread across artboard
+captions, changelog entries, an FAQ answer and an instances list. Patching
+some and not others would leave mixed-vintage numbers in one file, which is
+worse than uniformly stale — a reader could no longer tell which were updated.
+So:
+
+* **CORRECTED** — artboard captions and the prose that measures what is drawn
+  now, plus the live instances entry.
+* **LEFT INTACT** — dated changelog entries. They record what a past revision
+  said and are history, not claims about the current drawing. Rev 6's
+  "249px — three field blocks", "414px to 358px" and "750px to 694px" are
+  deliberately untouched.
+
+### The corrections
+
+| drawing | was | now |
+| -- | -- | -- |
+| New Task, one step | 694 (274 over) | **710 (290 over)** |
+| New Task, step 1 | 279 | **287** |
+| New Task, date view | 358 | **362** (58 spare, was 62) |
+| Assign head | 341 | **345** (75 spare, was 79) |
+| Set acting head | 249 | **261** |
+| Set acting head, date view | 358 | **362** |
+| Add holiday (historical "was") | 515 | **~527** — composition not printed, so the tilde is kept rather than inventing precision |
+
+**No density decision flips.** A flip needs standard ≤ 420 at 75 and > 420 at
+79, so a candidate must sit within 4px × blocks of the cap; the closest has
+58px of spare. Nothing new exceeds 420 even at compact — every sum above the
+cap is already resolved by a decision (Add holiday became an inline row, New
+Task became two steps, the editors are page panels).
+
+Two clarifications were added while patching: Assign head now **states** its
+composition (79 + 8 + 258 = 345) rather than leaving it reconstructable only
+by arithmetic coincidence, and the stage editor's 536px now says the 420 cap
+is a diagnostic comparison rather than a violation, since the cap governs
+dialog bodies and a page panel has none.
+
+The stage/transition editors' 536px is **unchanged**: its parts are 77 / 172 /
+77 / 77 / 56, none of them standard field blocks.
+
+Compact List Panel, Users List, App Shell and Committee Record carry **no
+arithmetic at all** — no body sums, no mention of the field block or the cap —
+so 79 cannot invalidate anything in them.
+
+### The process lesson, which is the durable part
+
+Four files came back from the export as *"churn — zero content diff"* and that
+read as the safe outcome. **The file most in need of regenerating was in that
+group.** "Unchanged" and "correct" came apart: Templates didn't change because
+nothing in it was edited, while the constant it depends on moved in another
+file.
+
+The Design System **owns** the field-block constant; Templates **prints sums
+derived from it**. An export that changes a constant in one file should warn
+when a consumer of it was not regenerated in the same run. Until it does, the
+reader's rule is: **a "churn" verdict is only reassuring once you have checked
+whether the file carries arithmetic.**
+
+---
+
 ## Revisions: read "What changed", not this document
 
 Both the system file and the templates file carry a **"What changed" artboard**
