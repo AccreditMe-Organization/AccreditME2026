@@ -220,6 +220,7 @@ describe('SetupConditionReconciler (ACC-82)', () => {
       ORG_UNIT_WITHOUT_HEAD: jest.fn().mockResolvedValue([]),
       STAGE_WITHOUT_ASSIGNEE: jest.fn().mockResolvedValue([]),
       TASK_WITHOUT_OWNER: jest.fn().mockResolvedValue([]),
+      ACTING_HEAD_OPEN_ENDED: jest.fn().mockResolvedValue([]),
     };
     reconciler = new SetupConditionReconciler(
       db.prisma as unknown as PrismaService,
@@ -506,6 +507,7 @@ describe('SetupConditionReconciler (ACC-82)', () => {
         ['ORG_UNIT_WITHOUT_HEAD', 'SUCCEEDED'],
         ['STAGE_WITHOUT_ASSIGNEE', 'FAILED'],
         ['TASK_WITHOUT_OWNER', 'SUCCEEDED'],
+        ['ACTING_HEAD_OPEN_ENDED', 'SUCCEEDED'],
       ]);
       expect(db.rows()).toEqual([
         expect.objectContaining({ objectId: 'task-1' }),
