@@ -27,6 +27,33 @@ import { ConfirmationService } from 'primeng/api';
 import { environment } from '../../../../../environments/environment';
 import { TaskFormComponent } from './task-form.component';
 
+// EVERY DATE BELOW IS COMPUTED. Three tests in this file used literals —
+// "24 Sep 2026", "25 Sep 2026", and a picked 25 Sep 09:00 — and all three
+// expired, turning dev red on a date rather than on a change.
+//
+// The shape, stated so it is recognisable rather than rediscovered: a method
+// that defaults `now` to the real clock, plus an assertion whose result depends
+// on today. A due date in the PAST warns 'past' rather than 'none', and the form
+// refuses to submit one at all. The literals were future-dated when written, so
+// the tests passed for as long as that stayed true and not one day longer.
+//
+// This tenant works Sun–Thu (workingDays [0,1,2,3,4] below).
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const typedDate = (d: Date): string =>
+  `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+const nextDayWhere = (isWanted: (day: number) => boolean): Date => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  do {
+    d.setDate(d.getDate() + 1);
+  } while (!isWanted(d.getDay()));
+  return d;
+};
+/** Sun–Thu here. */
+const NEXT_WORKING_DAY = nextDayWhere((day) => day >= 0 && day <= 4);
+/** Fri or Sat here. */
+const NEXT_NON_WORKING_DAY = nextDayWhere((day) => day === 5 || day === 6);
+
 describe('TaskFormComponent — due control (ACC-96)', () => {
   let fixture: ComponentFixture<TaskFormComponent>;
   let component: TaskFormComponent;
@@ -141,8 +168,7 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
 
   describe('a date named with no time', () => {
     it('takes the end of the working day on a working day', () => {
-      // 24 Sep 2026 is a Thursday — a working day in this tenant's Sun–Thu week.
-      component.onDateTyped('24 Sep 2026');
+      component.onDateTyped(typedDate(NEXT_WORKING_DAY));
       component.commitTypedDate();
 
       expect(component.dueTimeText()).toBe('17:00');
@@ -152,22 +178,22 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     });
 
     it('takes the SAME end time on a non-working day, and warns', () => {
-      // 25 Sep 2026 is a Friday. The configured end time still applies — the
+      // The next non-working day. The configured end time still applies — the
       // alternative, rolling to the next working day, would change the DAY the
       // user was explicit about. The warning is what makes that visible.
-      component.onDateTyped('25 Sep 2026');
+      component.onDateTyped(typedDate(NEXT_NON_WORKING_DAY));
       component.commitTypedDate();
 
       expect(component.dueTimeText()).toBe('17:00');
       expect(component.form.controls.dueDate.value?.getDate())
         .withContext('the day the user typed, not the next working one')
-        .toBe(25);
+        .toBe(NEXT_NON_WORKING_DAY.getDate());
       expect(component.warning().kind).toBe('nonWorkingDay');
     });
 
     it('never overrides a time the user set — typed, picked or from a preset', () => {
       component.onTimeTyped('08:15');
-      component.onDateTyped('24 Sep 2026');
+      component.onDateTyped(typedDate(NEXT_WORKING_DAY));
       component.commitTypedDate();
       expect(component.dueTimeText()).toBe('08:15');
 
@@ -179,20 +205,22 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     it('applies the same default to a day picked in the grid', () => {
       component.onDayPicked(new Date(2026, 8, 24));
       expect(component.dueTimeText())
-        .withContext('picking 24 Sep and typing "24 Sep 2026" are the same statement')
+        .withContext('picking a day and typing it are the same statement')
         .toBe('17:00');
     });
   });
 
   it('accepts a typed date and keeps the typed time', () => {
     component.onTimeTyped('16:45');
-    component.onDateTyped('25 Sep 2026');
+    component.onDateTyped(typedDate(NEXT_NON_WORKING_DAY));
     component.commitTypedDate();
 
     const value = component.form.controls.dueDate.value!;
-    expect(value.getFullYear()).toBe(2026);
-    expect(value.getMonth()).toBe(8);
-    expect(value.getDate()).toBe(25);
+    // Compared against the SAME computed day that was typed — the point is that
+    // what was typed is what was parsed.
+    expect(value.getFullYear()).toBe(NEXT_NON_WORKING_DAY.getFullYear());
+    expect(value.getMonth()).toBe(NEXT_NON_WORKING_DAY.getMonth());
+    expect(value.getDate()).toBe(NEXT_NON_WORKING_DAY.getDate());
     expect(component.dueTimeText()).toBe('16:45');
   });
 
@@ -201,7 +229,7 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     component.commitTypedDate();
     expect(component.form.controls.dueDate.hasError('invalidDate')).toBe(true);
 
-    component.onDateTyped('25 Sep 2026');
+    component.onDateTyped(typedDate(NEXT_NON_WORKING_DAY));
     component.commitTypedDate();
     expect(component.form.controls.dueDate.hasError('invalidDate')).toBe(false);
   });
@@ -369,7 +397,11 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     // wall-clock time is read in the BROWSER's zone, exactly as dev does.
     // That is the defect Part B fixes, so the fix belongs there and pinning
     // TZ in CI or Karma would only hide it.
-    const picked = new Date(2026, 8, 25, 9, 0, 0, 0);
+    // Tomorrow at 09:00, not a literal: the form REFUSES a past due date, so a
+    // fixed instant stops producing a request at all once it passes — which is
+    // how this test failed with "found none" rather than a wrong body.
+    const picked = new Date(NEXT_WORKING_DAY);
+    picked.setHours(9, 0, 0, 0);
     const wire =
       '{"title":"ACC-96 payload probe","sourceType":"DOCUMENT","sourceId":"acc96-probe",' +
       `"priority":"MEDIUM","dueDate":"${picked.toISOString()}","assigneeUserIds":[]}`;
@@ -381,7 +413,7 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     });
     // A LOCAL date, not an instant: "2026-09-25T06:00:00.000Z" is 24 Sep in
     // any zone west of UTC-6, so the day itself moved, not only the time.
-    component.onDayPicked(new Date(2026, 8, 25));
+    component.onDayPicked(new Date(picked.getFullYear(), picked.getMonth(), picked.getDate()));
     component.onTimeTyped('09:00');
 
     component.onSubmit();
