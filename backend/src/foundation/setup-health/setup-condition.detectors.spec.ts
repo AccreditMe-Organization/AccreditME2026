@@ -381,15 +381,33 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toEqual([]);
     });
 
-    // endedAt beside validTo is not belt-and-braces: a row ended early has both,
-    // so one without the other means a write path forgot one — and an
-    // appointment somebody already ended must not be reported either way.
+    // Ending early sets validTo AND endedAt to the same instant
+    // (clearActingHead), so this is the real shape of an ended row — and
+    // validTo alone is what excludes it. The detector does NOT filter on
+    // endedAt; see the next test for why that matters.
     it('ignores an appointment that was ended early', async () => {
+      const when = daysAgo(2);
       prisma.orgUnitHeadAssignment.findMany.mockImplementation(
-        assignmentTable([row({ endedAt: daysAgo(2) })]),
+        assignmentTable([row({ validTo: when, endedAt: when })]),
       );
 
       await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toEqual([]);
+    });
+
+    // PINS A KNOWN BLIND SPOT RATHER THAN ASSERTING IT IS CORRECT.
+    //
+    // "validTo null, endedAt set" is unreachable from either write path, so it
+    // is an invariant violation. The detector used to filter on endedAt: null,
+    // which made it SILENT on exactly this row — the one case where the data is
+    // wrong. Removing that filter means the row is now REPORTED instead of
+    // disappearing, which is the safe direction, not a fix: nothing enforces
+    // the invariant and nothing else would surface a breach.
+    it('REPORTS a row whose endedAt is set with no validTo — the invariant nothing enforces', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row({ validTo: null, endedAt: daysAgo(2) })]),
+      );
+
+      await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toHaveLength(1);
     });
 
     it('ignores a SUBSTANTIVE assignment, however old', async () => {

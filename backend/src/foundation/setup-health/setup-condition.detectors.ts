@@ -235,10 +235,19 @@ export class SetupConditionDetectors {
    * an acting head is temporary by design, and only an UNBOUNDED one that has
    * outlasted any reasonable temporariness is worth reporting.
    *
-   * `validTo: null` is the open-ended test. `endedAt: null` looks redundant
-   * beside it and is not: ending a period early sets both, so a row with an
-   * `endedAt` but no `validTo` would mean a write path forgot one of them, and
-   * this detector must not report an appointment somebody has already ended.
+   * `validTo: null` IS THE WHOLE OPEN-ENDED TEST, and there is deliberately no
+   * `endedAt: null` beside it.
+   *
+   * An earlier version had one, described as a guard against a write path that
+   * set one field and not the other. It was not a guard, it was a filter, and
+   * it pointed the wrong way. Ending a period early (clearActingHead) sets BOTH
+   * fields to the same instant, so `endedAt` is null on exactly the rows
+   * `validTo` is null on, and adding it excluded nothing extra — except the one
+   * combination that cannot arise from either write path: `validTo` null with
+   * `endedAt` set. That row is an invariant violation, and the pair made the
+   * detector SILENT on it. Now it is reported, as an open-ended acting head,
+   * which is the safe direction: a visible wrong row beats an invisible one.
+   *
    * A future-dated appointment cannot match either — `validFrom` 90 days in the
    * past excludes it by construction.
    *
@@ -258,7 +267,6 @@ export class SetupConditionDetectors {
         organizationId,
         kind: 'ACTING',
         validTo: null,
-        endedAt: null,
         validFrom: { lte: threshold },
       },
       select: {
