@@ -233,7 +233,7 @@ import { DIALOG_DENSITY } from '../edit-dialog/dialog-density';
       }
       .am-field--compact .am-field__control ::ng-deep .p-inputtext,
       .am-field--compact .am-field__control ::ng-deep .p-select,
-      .am-field--compact .am-field__control ::ng-deep .am-overlay-select__trigger {
+      .am-field--compact .am-field__control ::ng-deep .am-overlay-select-trigger {
         min-height: 32px;
         height: 32px;
       }
@@ -297,7 +297,7 @@ export class FieldComponent {
    * with validation, a persistent helper line, or an async state. A required
    * select over a closed list with a default, or a toggle, can produce none, so
    * they get no slot — and in compact density that is the largest single saving
-   * (a block drops 75 -> 52 rather than 75 -> 71).
+   * (a block drops 79 -> 52 rather than 79 -> 71).
    *
    * THE CLAUSE: a field that declared 'none' may NEVER show a runtime message.
    * If one later needs one — a server-side conflict on Assigned to, say — it

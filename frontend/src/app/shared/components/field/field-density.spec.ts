@@ -91,8 +91,8 @@ describe('am-field — compact density (ACC-120 slice 2)', () => {
       ).not.toBeNull();
     });
 
-    // The largest single saving in compact density (a block drops 75 -> 52
-    // rather than 75 -> 71) and it costs nothing: a slot reserved for a message
+    // The largest single saving in compact density (a block drops 79 -> 52
+    // rather than 79 -> 71) and it costs nothing: a slot reserved for a message
     // that cannot happen is pure whitespace.
     it('is absent entirely when the field declared it can never message', () => {
       const fixture = setup('compact');

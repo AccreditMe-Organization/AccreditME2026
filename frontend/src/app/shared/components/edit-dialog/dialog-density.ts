@@ -4,9 +4,16 @@ import { InjectionToken, Signal } from '@angular/core';
  * ACC-120 slice 2 — Design System Rev 7, artboard 13.
  *
  * A SECOND DENSITY FOR CROWDED DIALOGS, and the finding behind it: the space is
- * in the slots and the gaps, not in the type. A standard field block is 75px,
- * of which 36 is the control and 39 is label, gaps and a reserved message slot.
- * Compact recovers 23px of that 39 **without touching a single type size**.
+ * in the slots and the gaps, not in the type. A standard field block is 79px
+ * (label 18 + 4 + control 36 + 4 + slot 17), of which 36 is the control and 43
+ * is label, gaps and a reserved message slot. Compact recovers 23px of that 43
+ * **without touching a single type size**.
+ *
+ * THE BLOCK IS 79, NOT 75. Rev 7 of the design system said 75; Rev 8 re-measured
+ * it and the four extra pixels are real, so every sum built on 75 was 4px per
+ * block short. Recorded rather than silently swapped, because the number appears
+ * in dialog comments as a design-time measurement that no test can re-derive:
+ * a reader who finds 75 anywhere is looking at something written against Rev 7.
  *
  * | | form | compact |
  * | -- | -- | -- |
@@ -15,8 +22,8 @@ import { InjectionToken, Signal } from '@angular/core';
  * | control → message | 4 | 2 |
  * | message slot | 17 always | 17 or 0 |
  * | field gap | 12 | 8 |
- * | block, can message | 75 | 71 |
- * | block, cannot | 75 | **52** — the real saving |
+ * | block, can message | 79 | 71 |
+ * | block, cannot | 79 | **52** — the real saving |
  * | two-column grid | col gap 12 | col gap 8 |
  *
  * **Type size is the obvious lever and it is the wrong one.** Latin label 12px
