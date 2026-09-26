@@ -72,6 +72,9 @@ const mockPrisma = {
     create: jest.fn(),
     update: jest.fn(),
   },
+  auditLog: {
+    findMany: jest.fn(),
+  },
   publicHoliday: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
@@ -479,6 +482,94 @@ describe('WorkingCalendarService', () => {
         'actor-1',
       );
       expect(result.nameEn).toBe('Renamed');
+    });
+  });
+
+  // ACC-120 slice 1 — Template 5's settings header names who last changed the
+  // calendar, and its reset note promises "your name and the previous values".
+  // Both were already recorded; what was missing was a way to read them.
+  describe('getChangeHistory', () => {
+    const ROWS = [
+      {
+        id: 'audit-2',
+        createdAt: new Date('2026-09-20T10:00:00.000Z'),
+        before: { workingHoursEnd: '16:00' },
+        after: { workingHoursEnd: '17:00' },
+        actor: { name: 'Nora Al-Otaibi' },
+      },
+      {
+        id: 'audit-1',
+        createdAt: new Date('2026-09-02T08:00:00.000Z'),
+        before: { timezone: 'UTC' },
+        after: { timezone: 'Asia/Riyadh' },
+        actor: null,
+      },
+    ];
+
+    beforeEach(() => mockPrisma.auditLog.findMany.mockResolvedValue(ROWS));
+
+    it('returns the changes newest first, with who made each one', async () => {
+      const result = await service.getChangeHistory(ORG_A);
+
+      expect(result.map((c) => c.id)).toEqual(['audit-2', 'audit-1']);
+      expect(result[0].actorName).toBe('Nora Al-Otaibi');
+      expect(result[0].changedAt).toEqual(new Date('2026-09-20T10:00:00.000Z'));
+      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
+      );
+    });
+
+    // A system change genuinely has no actor: AuditLog.actorId is nullable. The
+    // service must hand the caller null rather than an invented name, so the
+    // screen can say "not recorded" instead of rendering a blank byline.
+    it('reports a missing actor as null, not as an empty name', async () => {
+      const result = await service.getChangeHistory(ORG_A);
+
+      expect(result[1].actorName).toBeNull();
+    });
+
+    it('carries the previous values through, undiffed', async () => {
+      const result = await service.getChangeHistory(ORG_A);
+
+      expect(result[0].before).toEqual({ workingHoursEnd: '16:00' });
+      expect(result[0].after).toEqual({ workingHoursEnd: '17:00' });
+    });
+
+    // Bounded rather than paginated — a settings history answers "what changed
+    // lately", and an append-only table read without a cap grows forever.
+    it('is bounded, and the cap is overridable', async () => {
+      await service.getChangeHistory(ORG_A);
+      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 20 }),
+      );
+
+      await service.getChangeHistory(ORG_A, 5);
+      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 5 }),
+      );
+    });
+
+    itEnforcesTenantIsolation('working calendar change history', async () => {
+      await service.getChangeHistory(ORG_B);
+
+      // organizationId AND objectId in ONE where clause. The calendar id alone
+      // would find the rows, which is exactly why it is not enough to ask with:
+      // a wrong or guessed id must not be able to reach another tenant's
+      // history, and only naming the tenant in the same clause guarantees that.
+      expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            organizationId: ORG_B,
+            objectType: 'WorkingCalendar',
+            objectId: CAL_B.id,
+          },
+        }),
+      );
+      expect(mockPrisma.auditLog.findMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_A }),
+        }),
+      );
     });
   });
 });

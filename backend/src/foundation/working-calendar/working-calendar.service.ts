@@ -3,6 +3,7 @@ import { DateTime, IANAZone } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { IWorkingCalendar } from './interfaces/working-calendar.interface';
+import { IWorkingCalendarChange } from './interfaces/working-calendar-change.interface';
 import { IPublicHoliday } from './interfaces/public-holiday.interface';
 import { UpdateWorkingCalendarDto } from './dto/update-working-calendar.dto';
 import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
@@ -21,6 +22,60 @@ export class WorkingCalendarService {
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
   ) {}
+
+  /**
+   * Who changed the working calendar, when, and what it was before.
+   *
+   * ACC-120 slice 1. A READ over rows that already existed: every calendar
+   * update in this service writes an AuditLog entry with `actorId`, `before`
+   * and `after`, and the table is indexed on `(objectType, objectId)` — so this
+   * query is already covered by an index rather than needing one.
+   *
+   * SCOPED BY organizationId AND objectId TOGETHER, in one `where`. The
+   * calendar id alone would be enough to find the row, which is exactly why it
+   * is not enough to ask with: the rule is that a tenant-scoped read names its
+   * tenant in the same clause, so a wrong or guessed id cannot reach another
+   * tenant's history.
+   *
+   * BOUNDED, NOT PAGINATED. `take` caps it at the most recent changes, because
+   * a settings page's history answers "what changed lately" and an unbounded
+   * read of an append-only table grows without limit. Paging it would be a
+   * design decision about a surface that is not drawn yet, so the cap is
+   * stated here instead of a page size being invented.
+   */
+  async getChangeHistory(
+    organizationId: string,
+    limit = 20,
+  ): Promise<IWorkingCalendarChange[]> {
+    const calendar = await this.getOrCreate(organizationId);
+
+    const rows = await this.prisma.auditLog.findMany({
+      where: {
+        organizationId,
+        objectType: 'WorkingCalendar',
+        objectId: calendar.id,
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        before: true,
+        after: true,
+        actor: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      changedAt: row.createdAt,
+      // `?? null` rather than a fallback string: a missing actor is the
+      // caller's to word, and it is genuinely missing rather than unknown.
+      actorName: row.actor?.name ?? null,
+      before: row.before,
+      after: row.after,
+    }));
+  }
 
   async getOrCreate(organizationId: string): Promise<IWorkingCalendar> {
     const existing = await this.prisma.workingCalendar.findUnique({
