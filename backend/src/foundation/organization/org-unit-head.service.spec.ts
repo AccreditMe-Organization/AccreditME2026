@@ -6,6 +6,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { UserService } from '../user/user.service';
 import { RoleService } from '../roles/role.service';
 import { OrganizationService } from './organization.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 const ORG_A = 'org-a-id';
 const ORG_B = 'org-b-id';
@@ -27,6 +28,7 @@ const mockPrisma = {
   orgPosition: { findFirst: jest.fn() },
   user: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   orgUnitHeadEvent: { create: jest.fn(), findFirst: jest.fn() },
+  orgUnitHeadAssignment: { findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
 };
 const mockAuditLog = { log: jest.fn() };
 const mockUserService = {
@@ -39,12 +41,26 @@ const mockRoleService = {
   revokeRoleViaHeadAuthority: jest.fn(),
 };
 
+// ACC-120 slice 2 — an acting appointment now requires a reason and a start
+// date, so every call site supplies them. VACANCY is the default because it is
+// what the pre-existing tests were implicitly exercising: coverage of a unit
+// with nobody in post.
+const actingDto = (over: Record<string, unknown> = {}) => ({
+  userId: ACTING_USER.id,
+  actingReason: 'VACANCY' as const,
+  validFrom: '2026-10-01T00:00:00.000Z',
+  ...over,
+});
+
 describe('OrgUnitHeadService', () => {
   let service: OrgUnitHeadService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockPrisma.orgUnitHeadEvent.create.mockResolvedValue({});
+    mockPrisma.orgUnitHeadAssignment.findFirst.mockResolvedValue(null);
+    mockPrisma.orgUnitHeadAssignment.create.mockResolvedValue({});
+    mockPrisma.orgUnitHeadAssignment.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.orgUnit.update.mockResolvedValue({});
     mockPrisma.user.update.mockResolvedValue({});
     mockUserService.validatePositionAssignment.mockResolvedValue(undefined);
@@ -677,7 +693,7 @@ describe('OrgUnitHeadService', () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1'),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -685,7 +701,7 @@ describe('OrgUnitHeadService', () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, pendingHeadUserId: 'someone' });
 
       await expect(
-        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1'),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -693,7 +709,7 @@ describe('OrgUnitHeadService', () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue({ ...BASE_ORG_UNIT, actingHeadUserId: 'someone-else' });
 
       await expect(
-        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1'),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -702,7 +718,7 @@ describe('OrgUnitHeadService', () => {
       mockPrisma.user.findFirst.mockResolvedValueOnce(OUTGOING_HOLDER); // current-holder lookup finds one
 
       await expect(
-        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_A, 'actor-1'),
+        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'actor-1'),
       ).rejects.toThrow(ConflictException);
       expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
     });
@@ -714,7 +730,7 @@ describe('OrgUnitHeadService', () => {
         .mockResolvedValueOnce(null); // acting user lookup — not found
 
       await expect(
-        service.assignActingHead(UNIT_1, { userId: 'nonexistent' }, ORG_A, 'actor-1'),
+        service.assignActingHead(UNIT_1, actingDto({ userId: 'nonexistent' }), ORG_A, 'actor-1'),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -724,7 +740,7 @@ describe('OrgUnitHeadService', () => {
         .mockResolvedValueOnce(null) // no current real holder
         .mockResolvedValueOnce(ACTING_USER); // acting user found
 
-      await service.assignActingHead(UNIT_1, { userId: ACTING_USER.id, reason: 'covering during recruitment' }, ORG_A, 'admin-1');
+      await service.assignActingHead(UNIT_1, actingDto({ reason: 'covering during recruitment' }), ORG_A, 'admin-1');
 
       expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith({
         where: { id: UNIT_1 },
@@ -756,7 +772,7 @@ describe('OrgUnitHeadService', () => {
       );
 
       await expect(
-        service.assignActingHead(UNIT_1, { userId: ACTING_USER.id }, ORG_B, 'actor-1'),
+        service.assignActingHead(UNIT_1, actingDto(), ORG_B, 'actor-1'),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -777,7 +793,7 @@ describe('OrgUnitHeadService', () => {
 
         await service.assignActingHead(
           UNIT_1,
-          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          actingDto({ coveringForUserId: PREDECESSOR_ID }),
           ORG_A,
           'admin-1',
         );
@@ -799,7 +815,7 @@ describe('OrgUnitHeadService', () => {
 
         await service.assignActingHead(
           UNIT_1,
-          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          actingDto({ coveringForUserId: PREDECESSOR_ID }),
           ORG_A,
           'admin-1',
         );
@@ -824,7 +840,7 @@ describe('OrgUnitHeadService', () => {
 
         await service.assignActingHead(
           UNIT_1,
-          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          actingDto({ coveringForUserId: PREDECESSOR_ID }),
           ORG_A,
           'admin-1',
         );
@@ -844,7 +860,7 @@ describe('OrgUnitHeadService', () => {
 
         await service.assignActingHead(
           UNIT_1,
-          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          actingDto({ coveringForUserId: PREDECESSOR_ID }),
           ORG_A,
           'admin-1',
         );
@@ -877,13 +893,13 @@ describe('OrgUnitHeadService', () => {
 
         await service.assignActingHead(
           UNIT_1,
-          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          actingDto({ coveringForUserId: PREDECESSOR_ID }),
           ORG_A,
           'admin-1',
         );
         await service.assignActingHead(
           UNIT_1,
-          { userId: ACTING_USER.id, coveringForUserId: PREDECESSOR_ID },
+          actingDto({ coveringForUserId: PREDECESSOR_ID }),
           ORG_B,
           'admin-1',
         );
@@ -960,6 +976,200 @@ describe('OrgUnitHeadService', () => {
       await expect(service.clearActingHead(UNIT_1, ORG_B, 'actor-1')).rejects.toThrow(NotFoundException);
     });
   });
+  // ── ACC-120 slice 2 — dated acting appointments ──────────────────────────
+  describe('assignActingHead — reason, dates and overlap (ACC-120 slice 2)', () => {
+    // THE CONTRADICTION THIS SLICE RESOLVED. The old guard refused an acting
+    // head whenever the unit had one, unconditionally: "coverage is only for a
+    // vacant unit". That matched a model where acting-as meant permanent
+    // departure. Out-of-office being capped at 60 days changed it — someone on
+    // three months' leave is still the head, and covering them is now exactly
+    // what an acting appointment is for.
+    it('ALLOWS an ABSENCE appointment over a head who is in post', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce({ ...OUTGOING_HOLDER, name: 'Dr. Fahad Al-Anazi' })
+        .mockResolvedValueOnce(ACTING_USER);
+
+      await service.assignActingHead(
+        UNIT_1,
+        actingDto({ actingReason: 'ABSENCE' }),
+        ORG_A,
+        'admin-1',
+      );
+
+      expect(mockPrisma.orgUnitHeadAssignment.create).toHaveBeenCalled();
+    });
+
+    it('refuses a VACANCY appointment over a head who is in post, and names them', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst.mockResolvedValueOnce({
+        ...OUTGOING_HOLDER,
+        name: 'Dr. Fahad Al-Anazi',
+      });
+
+      await expect(
+        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'admin-1'),
+      ).rejects.toThrow(/is the head of this unit and is in post/);
+      expect(mockPrisma.orgUnitHeadAssignment.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an ABSENCE appointment when there is nobody to be absent', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.assignActingHead(
+          UNIT_1,
+          actingDto({ actingReason: 'ABSENCE' }),
+          ORG_A,
+          'admin-1',
+        ),
+      ).rejects.toThrow(/nobody to be absent/);
+    });
+
+    // The old message was "clear it first", which named nothing. The design
+    // requires the conflicting period to be named and dated, because the real
+    // intent is almost always a handover.
+    it('refuses an overlap by NAMING the conflicting period and its dates', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgUnitHeadAssignment.findFirst.mockResolvedValue({
+        id: 'existing',
+        validFrom: new Date('2026-09-15T00:00:00.000Z'),
+        validTo: new Date('2026-09-30T00:00:00.000Z'),
+        user: { name: 'Tariq Suleiman' },
+      });
+
+      await expect(
+        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'admin-1'),
+      ).rejects.toThrow(
+        /Tariq Suleiman is already acting head of this unit from 2026-09-15 to 2026-09-30/,
+      );
+    });
+
+    it('says "no end date" in the overlap message for an open-ended period', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.orgUnitHeadAssignment.findFirst.mockResolvedValue({
+        id: 'existing',
+        validFrom: new Date('2026-06-01T00:00:00.000Z'),
+        validTo: null,
+        user: { name: 'Tariq Suleiman' },
+      });
+
+      await expect(
+        service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'admin-1'),
+      ).rejects.toThrow(/to no end date/);
+    });
+
+    it('refuses an end date that is not after the start date', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+
+      await expect(
+        service.assignActingHead(
+          UNIT_1,
+          actingDto({
+            validFrom: '2026-10-01T00:00:00.000Z',
+            validTo: '2026-09-01T00:00:00.000Z',
+          }),
+          ORG_A,
+          'admin-1',
+        ),
+      ).rejects.toThrow(/end date must be after the start date/);
+    });
+
+    it('writes the period row with its kind, reason and dates, and an open-ended validTo of null', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(ACTING_USER);
+
+      await service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'admin-1');
+
+      expect(mockPrisma.orgUnitHeadAssignment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_A,
+          orgUnitId: UNIT_1,
+          userId: ACTING_USER.id,
+          kind: 'ACTING',
+          reason: 'VACANCY',
+          validFrom: new Date('2026-10-01T00:00:00.000Z'),
+          validTo: null,
+          createdById: 'admin-1',
+        }),
+      });
+    });
+
+    // The ledger event carries the BUSINESS date now. An appointment starting
+    // next month stamped with today would disagree with the period it records —
+    // which is the divergence this whole slice exists to prevent.
+    it('stamps ACTING_ASSIGNED with validFrom, not the moment of the call', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(ACTING_USER);
+
+      await service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'admin-1');
+
+      expect(mockPrisma.orgUnitHeadEvent.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'ACTING_ASSIGNED',
+          effectiveDate: new Date('2026-10-01T00:00:00.000Z'),
+        }),
+      });
+    });
+
+    itEnforcesTenantIsolation('assignActingHead overlap check', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_ORG_UNIT);
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(ACTING_USER);
+
+      await service.assignActingHead(UNIT_1, actingDto(), ORG_A, 'admin-1');
+
+      expect(
+        mockPrisma.orgUnitHeadAssignment.findFirst.mock.calls[0][0].where,
+      ).toEqual(expect.objectContaining({ organizationId: ORG_A }));
+    });
+  });
+
+  describe('clearActingHead — closing the period (ACC-120 slice 2)', () => {
+    // Ending early CLOSES the period; it does not delete it. validTo stops the
+    // row being open-ended (and stops ACTING_HEAD_OPEN_ENDED reporting it),
+    // while endedAt records that a person ended it rather than it lapsing.
+    it('sets validTo, endedAt and endedById on the open period', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({
+        ...BASE_ORG_UNIT,
+        actingHeadUserId: ACTING_USER.id,
+      });
+
+      await service.clearActingHead(UNIT_1, ORG_A, 'admin-1');
+
+      const call = mockPrisma.orgUnitHeadAssignment.updateMany.mock.calls[0][0];
+      expect(call.where).toEqual(
+        expect.objectContaining({
+          organizationId: ORG_A,
+          orgUnitId: UNIT_1,
+          kind: 'ACTING',
+          endedAt: null,
+        }),
+      );
+      expect(call.data.endedById).toBe('admin-1');
+      expect(call.data.validTo).toEqual(call.data.endedAt);
+    });
+
+    itEnforcesTenantIsolation('clearActingHead period close', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue({
+        ...BASE_ORG_UNIT,
+        actingHeadUserId: ACTING_USER.id,
+      });
+
+      await service.clearActingHead(UNIT_1, ORG_A, 'admin-1');
+
+      expect(
+        mockPrisma.orgUnitHeadAssignment.updateMany.mock.calls[0][0].where,
+      ).toEqual(expect.objectContaining({ organizationId: ORG_A }));
+    });
+  });
+
 });
 
 // ACC-40 Section 2.5.1 gap fix — regression proof, not a mock-call
@@ -1035,4 +1245,5 @@ describe('vacateHead() -> refreshOrgUnitHeadVacancy() end-to-end wiring (ACC-40 
       data: expect.objectContaining({ isHeadVacant: true }),
     });
   });
+
 });

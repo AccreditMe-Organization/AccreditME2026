@@ -7,10 +7,12 @@ import {
   effect,
   inject,
   input,
+  isDevMode,
   signal,
 } from '@angular/core';
 import { AbstractControl } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { DIALOG_DENSITY } from '../edit-dialog/dialog-density';
 
 /**
  * The field wrapper (ACC-111) — artboards 3 and 6 of the design system.
@@ -62,7 +64,11 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
   imports: [TranslatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="am-field" [class.am-field--readonly]="readonly()">
+    <div
+      class="am-field"
+      [class.am-field--readonly]="readonly()"
+      [class.am-field--compact]="isCompact()"
+    >
       <label class="am-field__label" [attr.for]="controlId()">
         {{ label() }}
         @if (required()) {
@@ -85,7 +91,11 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
         </div>
       }
 
-      <!-- Always rendered. See the class comment. -->
+      <!-- Rendered unless the field DECLARED it can never produce a message.
+           That declaration is the largest single saving in compact density
+           (23px of the 39 non-control pixels) and it costs nothing, because a
+           slot reserved for a message that cannot happen is pure whitespace. -->
+      @if (message() === 'reserved') {
       <p
         class="am-field__message"
         [class.am-field__message--error]="showError()"
@@ -98,6 +108,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
           {{ hint() }}
         }
       </p>
+      }
     </div>
   `,
   styles: [
@@ -210,6 +221,26 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
         text-wrap: pretty;
       }
 
+      /* ACC-120 slice 2 — artboard 13. Geometry only: no type size changes, and
+         the control's own height is the one thing a reader's finger has to hit,
+         so 36 -> 32 is the floor the artboard sets and not a free variable. */
+      .am-field--compact .am-field__label {
+        margin-block-end: 2px;
+      }
+      .am-field--compact .am-field__control,
+      .am-field--compact .am-field__value {
+        min-height: 32px;
+      }
+      .am-field--compact .am-field__control ::ng-deep .p-inputtext,
+      .am-field--compact .am-field__control ::ng-deep .p-select,
+      .am-field--compact .am-field__control ::ng-deep .am-overlay-select-trigger {
+        min-height: 32px;
+        height: 32px;
+      }
+      .am-field--compact .am-field__message {
+        margin-block-start: 2px;
+      }
+
       .am-field__message--error {
         color: var(--am-danger-ink);
         font-weight: 500;
@@ -258,11 +289,45 @@ export class FieldComponent {
    */
   readonly forceShowErrors = input(false);
 
+  /**
+   * ACC-120 slice 2 — artboard 13's message-slot rule, WITH the clause that
+   * keeps "the layout never jumps" true.
+   *
+   * The slot is reserved only on fields that CAN produce a message: anything
+   * with validation, a persistent helper line, or an async state. A required
+   * select over a closed list with a default, or a toggle, can produce none, so
+   * they get no slot — and in compact density that is the largest single saving
+   * (a block drops 79 -> 52 rather than 79 -> 71).
+   *
+   * THE CLAUSE: a field that declared 'none' may NEVER show a runtime message.
+   * If one later needs one — a server-side conflict on Assigned to, say — it
+   * changes its declaration and pays the 17px, rather than growing a slot the
+   * first time the server disagrees. Without that, removing the slot just moves
+   * the jump from every form to the rare one, which is worse: it happens
+   * exactly when the user is already being told something went wrong.
+   *
+   * Enforced, not documented: declaring 'none' and then producing a message
+   * throws in development (see the effect below).
+   */
+  readonly message = input<'reserved' | 'none'>('reserved');
+
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly translate = inject(TranslateService);
 
   private readonly generatedId = `am-field-${FieldComponent.nextId++}`;
   protected readonly messageId = `${this.generatedId}-message`;
+
+  /**
+   * ACC-120 slice 2 — density comes from the DIALOG, never from the field, and
+   * never from a page. `optional: true` is the whole mechanism: only
+   * EditDialogComponent provides this token, so a field on a page injects
+   * nothing and stays at form density by construction rather than by review.
+   */
+  private readonly dialogDensity = inject(DIALOG_DENSITY, { optional: true });
+
+  protected readonly isCompact = computed(
+    () => this.dialogDensity?.() === 'compact',
+  );
 
   /** The resolved id of the projected control, for the label's `for`. */
   protected readonly controlId = signal<string>('');
@@ -320,6 +385,23 @@ export class FieldComponent {
   });
 
   constructor() {
+    // ACC-120 slice 2 — the message-slot clause, enforced rather than trusted.
+    // A field that declared it can never message, and then messages, has a
+    // layout that jumps exactly when the user is being told something is wrong.
+    // Dev-only: in production the message is simply not rendered, which is a
+    // missing hint rather than a broken page.
+    effect(() => {
+      if (!isDevMode()) return;
+      if (this.message() === 'none' && this.showError()) {
+        throw new Error(
+          `am-field "${this.label()}" declared message="none" but produced an ` +
+            `error message. A field that can produce a message must declare ` +
+            `message="reserved" and pay the 17px, rather than growing a slot ` +
+            `the first time the server disagrees.`,
+        );
+      }
+    });
+
     // Blur anywhere inside the field marks it touched: that is the "validate on
     // blur" half. Leaving a field is the moment the user has finished with it.
     this.host.nativeElement.addEventListener('focusout', () => {

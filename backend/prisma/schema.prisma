@@ -832,7 +832,24 @@ model OrgUnitHeadAssignment {
   // column awaiting a contract step.
   validTo   DateTime?
 
-  endedAt     DateTime? // set when a period is ended EARLY, distinct from validTo lapsing
+  // THE INVARIANT, in the words the code actually enforces: ending a period
+  // early sets validTo AND endedAt TO THE SAME INSTANT
+  // (OrgUnitHeadService.clearActingHead). endedAt is therefore never set while
+  // validTo is null, and "validTo null, endedAt set" is unreachable from either
+  // write path — creation leaves endedAt null, and the only close sets both.
+  //
+  // NOTHING ENFORCES OR SURFACES A VIOLATION. No database constraint, no check,
+  // no detector. The 90-day detector used to filter on endedAt: null, which made
+  // it SILENT on exactly that row; the filter was removed, so a violating row is
+  // now reported as an open-ended acting head rather than disappearing. That is
+  // a side effect of dropping a misleading filter, NOT a guard — real
+  // enforcement would want a constraint or its own check, and neither exists.
+  //
+  // The two are not interchangeable: validTo is when the period STOPS COUNTING,
+  // whether planned at creation or written on an early close; endedAt records
+  // that A PERSON ended it rather than it lapsing on its own date, which is why
+  // a row can carry validTo without endedAt.
+  endedAt     DateTime?
   endedById   String?
   endedReason String?
 

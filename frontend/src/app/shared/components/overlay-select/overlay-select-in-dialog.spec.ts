@@ -79,7 +79,10 @@ describe('OverlaySelectComponent inside a dialog (ACC-111 Escape contract)', () 
   });
 
   const openDropdown = async (): Promise<void> => {
-    const trigger = fixture.nativeElement.querySelector(
+    // `document`, not fixture.nativeElement (ACC-120). EditDialogComponent
+    // appends every dialog to <body>, so the projected content is no longer a
+    // descendant of the host component — a fixture-scoped query finds nothing.
+    const trigger = document.querySelector(
       'app-overlay-select [role="combobox"], app-overlay-select button, app-overlay-select div[tabindex]',
     ) as HTMLElement;
     trigger.click();

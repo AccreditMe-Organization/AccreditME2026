@@ -209,6 +209,14 @@ jobs:
       - name: Dialog overlays
         run: npm run check:dialog-overlays
         working-directory: frontend
+      # ACC-120 slice 2 — artboard 13 applies compact density to a WHOLE dialog
+      # at 5+ field blocks. This enforces the half a machine can count; the
+      # "body would exceed 420px" half stays a design-time measurement recorded
+      # in each dialog's own comment, because a static scan cannot measure
+      # rendered height honestly.
+      - name: Dialog density
+        run: npm run check:dialog-density
+        working-directory: frontend
       # ACC-47 — the actual gap this ticket exists to close: this frontend
       # job never ran any test-runner step before, at any point in this
       # repo's history (confirmed via full commit-history audit, not a

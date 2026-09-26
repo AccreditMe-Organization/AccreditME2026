@@ -151,7 +151,11 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
     <ng-template #headPanelTpl>
       @if (managingHeadUnitId(); as unitId) {
-        <app-org-unit-head-panel [orgUnitId]="unitId" (saved)="onHeadPanelSaved()" />
+        <app-org-unit-head-panel
+          [orgUnitId]="unitId"
+          [unitName]="managingHeadUnitName()"
+          (saved)="onHeadPanelSaved()"
+        />
       }
     </ng-template>
     <app-edit-dialog
@@ -191,11 +195,21 @@ export class OrgUnitTreeComponent implements OnInit {
   // ACC-82 — the panel names its unit. A Setup health Fix opens it directly
   // from a list of many units, and "Manage Head" alone does not say which.
   private readonly managingHeadUnit = signal<OrgUnitDto | null>(null);
-  readonly headPanelHeader = computed(() => {
+  /**
+   * Tenant data: chosen by language, never translated (SYSTEM-REFERENCE §9.3).
+   * Lifted out of headPanelHeader so the panel's own dialogs can name the unit
+   * with the SAME string the header uses — two resolutions of one name is how
+   * a title and a dialog end up disagreeing.
+   */
+  readonly managingHeadUnitName = computed(() => {
     const unit = this.managingHeadUnit();
-    if (!unit) return this.translate.instant('orgUnitHead.manageHead');
-    // Tenant data: chosen by language, never translated (SYSTEM-REFERENCE §9.3).
-    const name = (this.languageService.isArabic() && unit.nameAr) || unit.nameEn;
+    if (!unit) return '';
+    return (this.languageService.isArabic() && unit.nameAr) || unit.nameEn;
+  });
+
+  readonly headPanelHeader = computed(() => {
+    const name = this.managingHeadUnitName();
+    if (!name) return this.translate.instant('orgUnitHead.manageHead');
     return this.translate.instant('orgUnitHead.manageHeadNamed', { unit: name });
   });
 

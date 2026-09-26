@@ -550,18 +550,68 @@ export class OrgUnitHeadService {
     actorId: string,
   ): Promise<void> {
     const orgUnit = await this.getOrgUnitOrThrow(orgUnitId, organizationId);
+
+    const validFrom = new Date(dto.validFrom);
+    const validTo = dto.validTo ? new Date(dto.validTo) : null;
+    if (validTo && validTo <= validFrom) {
+      throw new ConflictException('The end date must be after the start date.');
+    }
+
     if (orgUnit.pendingHeadUserId) {
       throw new ConflictException('A handover is in progress for this unit — cannot assign Acting Head coverage');
     }
-    if (orgUnit.actingHeadUserId) {
-      throw new ConflictException('An Acting Head is already assigned for this unit — clear it first');
+    // ACC-120 slice 2 — THE OVERLAP REFUSAL NAMES THE PERIOD IT CONFLICTS WITH.
+    // "clear it first" told the admin nothing about what they were clearing.
+    // The real intent is almost always a handover, so the message carries who
+    // and when, and the dialog offers "End that period early" against it.
+    const openActing = await this.prisma.orgUnitHeadAssignment.findFirst({
+      where: {
+        organizationId,
+        orgUnitId,
+        kind: 'ACTING',
+        endedAt: null,
+        OR: [{ validTo: null }, { validTo: { gte: validFrom } }],
+      },
+      include: { user: { select: { name: true } } },
+    });
+    if (openActing) {
+      const until = openActing.validTo
+        ? openActing.validTo.toISOString().slice(0, 10)
+        : 'no end date';
+      throw new ConflictException(
+        `${openActing.user.name} is already acting head of this unit from ` +
+          `${openActing.validFrom.toISOString().slice(0, 10)} to ${until}. ` +
+          `End that period early to replace it.`,
+      );
     }
 
+    // ACC-120 slice 2 — the substantive-head check is now REASON-DEPENDENT,
+    // and the old unconditional refusal was wrong.
+    //
+    // It used to throw whenever the unit had an active head at all: "Acting
+    // Head coverage is only for a vacant unit". That matched the original
+    // model, where acting-as covered a permanent departure and there was by
+    // definition nobody to conflict with. It stopped being right once
+    // out-of-office was capped at 60 days: someone on three months' medical
+    // leave IS still the head, and covering them is exactly what an acting
+    // appointment is now for.
+    //
+    // So each reason is refused only where it is INCOHERENT — a vacancy with
+    // somebody in post, or an absence with nobody to be absent.
     const currentHolder = await this.prisma.user.findFirst({
       where: { organizationId, primaryOrgUnitId: orgUnitId, status: 'ACTIVE', position: { isUnitHeadPosition: true } },
+      select: { id: true, name: true },
     });
-    if (currentHolder) {
-      throw new ConflictException('This unit already has an active Head — Acting Head coverage is only for a vacant unit');
+    if (dto.actingReason === 'VACANCY' && currentHolder) {
+      throw new ConflictException(
+        `${currentHolder.name} is the head of this unit and is in post, so this is not a vacancy. ` +
+          `Use Absence if they are unavailable, or vacate the position first.`,
+      );
+    }
+    if (dto.actingReason === 'ABSENCE' && !currentHolder) {
+      throw new ConflictException(
+        'This unit has no substantive head, so there is nobody to be absent. Use Vacancy instead.',
+      );
     }
 
     const actingUser = await this.prisma.user.findFirst({
@@ -570,6 +620,24 @@ export class OrgUnitHeadService {
     if (!actingUser) {
       throw new NotFoundException('User not found or not active in this tenant');
     }
+
+    // ACC-120 slice 2 — THE PERIOD ROW IS THE RECORD; the column below is a
+    // cache kept for compatibility and dropped in the contract step (ACC-131).
+    // Both are written here so nothing that still reads the column breaks
+    // mid-migration.
+    await this.prisma.orgUnitHeadAssignment.create({
+      data: {
+        organizationId,
+        orgUnitId,
+        userId: actingUser.id,
+        kind: 'ACTING',
+        reason: dto.actingReason,
+        positionId: null,
+        validFrom,
+        validTo,
+        createdById: actorId,
+      },
+    });
 
     await this.prisma.orgUnit.update({
       where: { id: orgUnitId },
@@ -583,7 +651,10 @@ export class OrgUnitHeadService {
         userId: actingUser.id,
         positionId: null, // ACTING_* events never carry a position — 2.3's schema note
         action: 'ACTING_ASSIGNED',
-        effectiveDate: new Date(),
+        // ACC-120 slice 2 — the BUSINESS date, not the button-press time. An
+        // appointment may start in the future, and an event stamped now would
+        // disagree with the period it describes.
+        effectiveDate: validFrom,
         reason: dto.reason ?? null,
         approvedBy: actorId,
       },
@@ -676,6 +747,17 @@ export class OrgUnitHeadService {
     }
 
     const actingHeadUserId = orgUnit.actingHeadUserId;
+    const endedAt = new Date();
+
+    // ACC-120 slice 2 — ENDING EARLY IS CLOSING THE PERIOD, not deleting it.
+    // validTo is set so the row stops being open-ended (and stops being
+    // reported by ACTING_HEAD_OPEN_ENDED); endedAt records that a person ended
+    // it rather than it lapsing on its own date. This is the operation the
+    // overlap refusal offers as "End that period early".
+    await this.prisma.orgUnitHeadAssignment.updateMany({
+      where: { organizationId, orgUnitId, kind: 'ACTING', endedAt: null },
+      data: { validTo: endedAt, endedAt, endedById: actorId },
+    });
 
     await this.prisma.orgUnit.update({
       where: { id: orgUnitId },

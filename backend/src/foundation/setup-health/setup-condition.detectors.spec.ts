@@ -1,5 +1,6 @@
 import {
   DEFERRED_SETUP_CONDITION_TYPES,
+  OPEN_ENDED_ACTING_DAYS,
   SetupConditionDetectors,
 } from './setup-condition.detectors';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -19,6 +20,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
     orgUnit: { findMany: jest.Mock };
     workflowInstanceStage: { findMany: jest.Mock };
     task: { findMany: jest.Mock };
+    orgUnitHeadAssignment: { findMany: jest.Mock };
   };
   let detectors: SetupConditionDetectors;
 
@@ -27,6 +29,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       orgUnit: { findMany: jest.fn().mockResolvedValue([]) },
       workflowInstanceStage: { findMany: jest.fn().mockResolvedValue([]) },
       task: { findMany: jest.fn().mockResolvedValue([]) },
+      orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
     };
     detectors = new SetupConditionDetectors(prisma as unknown as PrismaService);
   });
@@ -45,6 +48,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
 
   it('covers every condition type with a detector, except the deferred ones', () => {
     expect(Object.keys(detectors.byType).sort()).toEqual([
+      'ACTING_HEAD_OPEN_ENDED',
       'ORG_UNIT_WITHOUT_HEAD',
       'STAGE_WITHOUT_ASSIGNEE',
       'TASK_WITHOUT_OWNER',
@@ -54,18 +58,14 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   // ACC-82 — deferred, not forgotten: the enum value stays, and returns narrowed
   // to head-conferring positions once a saved role reaches current holders.
   //
-  // ACC-120 slice 2 — the two entries are deferred for DIFFERENT REASONS and on
-  // different timescales, which is why this asserts the exact list rather than
-  // membership. POSITION_WITHOUT_ROLE waits on ACC-84. ACTING_HEAD_OPEN_ENDED
-  // waits ONE DEPLOY: its enum value ships ahead of the code that writes it, so
-  // the container already running never reads a variant its Prisma client lacks.
-  // The next PR removes it from this list and adds its detector, and this
-  // assertion failing is how that PR knows it has to.
-  it('defers POSITION_WITHOUT_ROLE and ACTING_HEAD_OPEN_ENDED, and gives no deferred type a detector', () => {
-    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual([
-      'POSITION_WITHOUT_ROLE',
-      'ACTING_HEAD_OPEN_ENDED',
-    ]);
+  // ACC-120 slice 2, PR 2 — ACTING_HEAD_OPEN_ENDED came OFF this list, and this
+  // assertion is the gate that made the split safe. PR 1 shipped the enum value
+  // with the type deferred and no detector; removing the deferral without adding
+  // the detector fails `tsc` on three Record<ActiveSetupConditionType> maps AND
+  // fails this test, which asserts the EXACT list rather than membership. That
+  // is deliberate: membership would have let the two halves land apart.
+  it('defers POSITION_WITHOUT_ROLE, and gives no deferred type a detector', () => {
+    expect(DEFERRED_SETUP_CONDITION_TYPES).toEqual(['POSITION_WITHOUT_ROLE']);
     for (const type of DEFERRED_SETUP_CONDITION_TYPES) {
       expect(Object.keys(detectors.byType)).not.toContain(type);
     }
@@ -269,4 +269,167 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       expect(await detectors.tasksWithoutOwner(ORG_A)).toEqual([]);
     });
   });
+
+  // ACC-120 slice 2 — an ACTING appointment with no end date, past 90 days.
+  describe('openEndedActingHeads', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const daysAgo = (n: number) => new Date(Date.now() - n * DAY);
+
+    // A table that honours EVERY clause the detector sends, not just the tenant
+    // one. This matters more than usual here: the 90-day threshold, the
+    // open-ended test and the not-already-ended test are all expressed as WHERE
+    // clauses, so a mock that ignored them would return the row regardless and
+    // every negative test below would pass without the query being right —
+    // the vacuous shape this file's own header warns about.
+    const assignmentTable =
+      (rows: Record<string, unknown>[]) =>
+      ({ where }: { where: Record<string, unknown> }) =>
+        Promise.resolve(
+          rows.filter((r) => {
+            if (
+              where['organizationId'] !== undefined &&
+              r['organizationId'] !== where['organizationId']
+            ) {
+              return false;
+            }
+            if (where['kind'] !== undefined && r['kind'] !== where['kind']) {
+              return false;
+            }
+            if (where['validTo'] === null && r['validTo'] !== null) return false;
+            if (where['endedAt'] === null && r['endedAt'] !== null) return false;
+            const vf = where['validFrom'] as { lte?: Date } | undefined;
+            if (vf?.lte && (r['validFrom'] as Date) > vf.lte) return false;
+            return true;
+          }),
+        );
+
+    const row = (over: Record<string, unknown> = {}) => ({
+      organizationId: ORG_A,
+      id: 'assign-1',
+      kind: 'ACTING',
+      validTo: null,
+      endedAt: null,
+      validFrom: daysAgo(OPEN_ENDED_ACTING_DAYS + 10),
+      reason: 'VACANCY',
+      orgUnit: { id: 'unit-1', nameEn: 'Pharmacy', nameAr: 'الصيدلية' },
+      user: { id: 'user-1', name: 'Dr. Huda Zahrani' },
+      ...over,
+    });
+
+    it('reports a unit whose acting appointment is open-ended and past the threshold', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row()]),
+      );
+
+      const found = await detectors.openEndedActingHeads(ORG_A);
+
+      expect(found).toHaveLength(1);
+      // The UNIT, not the assignment row: the condition is about a unit whose
+      // headship has been provisional, and the Fix opens that unit.
+      expect(found[0]!.objectId).toBe('unit-1');
+      expect(found[0]!.subject).toEqual(
+        expect.objectContaining({
+          orgUnitNameEn: 'Pharmacy',
+          actingUserName: 'Dr. Huda Zahrani',
+          reason: 'VACANCY',
+        }),
+      );
+    });
+
+    // Not BLOCKS_WORK. An acting head resolves for assignment and for
+    // escalation, so work reaches a person — the same reason a vacant unit
+    // COVERED by an acting head is AT_RISK rather than blocking.
+    it('is AT_RISK, because an acting head still resolves', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row()]),
+      );
+
+      const found = await detectors.openEndedActingHeads(ORG_A);
+
+      expect(found[0]!.severity).toBe('AT_RISK');
+    });
+
+    // The age the page shows is the age of the CONDITION, not of the
+    // appointment. An appointment 100 days old entered this condition 10 days
+    // ago; reporting validFrom would age it 90 days too far.
+    it('opens at validFrom + the threshold, not at validFrom', async () => {
+      const validFrom = daysAgo(OPEN_ENDED_ACTING_DAYS + 10);
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row({ validFrom })]),
+      );
+
+      const found = await detectors.openEndedActingHeads(ORG_A);
+
+      expect(found[0]!.openedAt!.getTime()).toBe(
+        validFrom.getTime() + OPEN_ENDED_ACTING_DAYS * DAY,
+      );
+    });
+
+    it('ignores an open-ended appointment younger than the threshold', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row({ validFrom: daysAgo(OPEN_ENDED_ACTING_DAYS - 1) })]),
+      );
+
+      await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toEqual([]);
+    });
+
+    it('ignores an appointment that has an end date', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row({ validTo: daysAgo(1) })]),
+      );
+
+      await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toEqual([]);
+    });
+
+    // Ending early sets validTo AND endedAt to the same instant
+    // (clearActingHead), so this is the real shape of an ended row — and
+    // validTo alone is what excludes it. The detector does NOT filter on
+    // endedAt; see the next test for why that matters.
+    it('ignores an appointment that was ended early', async () => {
+      const when = daysAgo(2);
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row({ validTo: when, endedAt: when })]),
+      );
+
+      await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toEqual([]);
+    });
+
+    // PINS A KNOWN BLIND SPOT RATHER THAN ASSERTING IT IS CORRECT.
+    //
+    // "validTo null, endedAt set" is unreachable from either write path, so it
+    // is an invariant violation. The detector used to filter on endedAt: null,
+    // which made it SILENT on exactly this row — the one case where the data is
+    // wrong. Removing that filter means the row is now REPORTED instead of
+    // disappearing, which is the safe direction, not a fix: nothing enforces
+    // the invariant and nothing else would surface a breach.
+    it('REPORTS a row whose endedAt is set with no validTo — the invariant nothing enforces', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row({ validTo: null, endedAt: daysAgo(2) })]),
+      );
+
+      await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toHaveLength(1);
+    });
+
+    it('ignores a SUBSTANTIVE assignment, however old', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([row({ kind: 'SUBSTANTIVE', validFrom: daysAgo(900) })]),
+      );
+
+      await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toEqual([]);
+    });
+
+    itEnforcesTenantIsolation('openEndedActingHeads', async () => {
+      prisma.orgUnitHeadAssignment.findMany.mockImplementation(
+        assignmentTable([
+          row({ organizationId: ORG_B, id: 'assign-b', orgUnit: { id: 'unit-b', nameEn: 'Other tenant unit', nameAr: null } }),
+        ]),
+      );
+
+      await expect(detectors.openEndedActingHeads(ORG_A)).resolves.toEqual([]);
+      expect(
+        prisma.orgUnitHeadAssignment.findMany.mock.calls[0][0].where,
+      ).toEqual(expect.objectContaining({ organizationId: ORG_A }));
+    });
+  });
+
 });

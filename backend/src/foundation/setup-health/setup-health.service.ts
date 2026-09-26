@@ -28,6 +28,7 @@ export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'ORG_UNIT_WITHOUT_HEAD',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
+  'ACTING_HEAD_OPEN_ENDED',
 ];
 
 // §13.3. Per type, because it follows from what each detector can read: units
@@ -39,6 +40,10 @@ const AGE_BASIS: Record<ActiveSetupConditionType, SetupConditionAgeBasis> = {
   ORG_UNIT_WITHOUT_HEAD: 'OBJECT',
   STAGE_WITHOUT_ASSIGNEE: 'OBJECT',
   TASK_WITHOUT_OWNER: 'FIRST_DETECTED',
+  // OBJECT: the assignment carries validFrom, and the detector reports
+  // validFrom + 90 days — the day it became this condition, not the day the
+  // appointment began.
+  ACTING_HEAD_OPEN_ENDED: 'OBJECT',
 };
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = {

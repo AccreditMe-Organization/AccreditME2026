@@ -357,6 +357,7 @@ describe('SetupHealthService (ACC-82)', () => {
         'ORG_UNIT_WITHOUT_HEAD',
         'STAGE_WITHOUT_ASSIGNEE',
         'TASK_WITHOUT_OWNER',
+        'ACTING_HEAD_OPEN_ENDED',
       ]);
     });
 

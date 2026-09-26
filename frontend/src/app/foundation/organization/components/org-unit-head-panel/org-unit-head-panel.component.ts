@@ -2,7 +2,6 @@ import { Component, OnInit, computed, inject, input, output, signal } from '@ang
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
-import { SelectModule } from 'primeng/select';
 import { DatePickerModule } from 'primeng/datepicker';
 // ACC-96 — the effective-date calendar is its own LAYER rather than a floating
 // panel inside this dialog. See the template comment beside it.
@@ -20,6 +19,8 @@ import { DatePickerModule } from 'primeng/datepicker';
 // New Task. Its measured defect (the panel ran 165px below the dialog's edge
 // and closed on a scroll of <main>) is fixed; its SHAPE is pending.
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { SetActingHeadDialogComponent } from '../set-acting-head-dialog/set-acting-head-dialog.component';
 import { FormatService } from '../../../../core/formatting';
 import { InputTextModule } from 'primeng/inputtext';
 import { MessageModule } from 'primeng/message';
@@ -47,8 +48,9 @@ import { AmDatePipe } from '../../../../core/formatting';
     TranslatePipe,
     AmDatePipe,
     ButtonModule,
-    SelectModule,
     DatePickerModule,
+    OverlaySelectComponent,
+    SetActingHeadDialogComponent,
     EditDialogComponent,
     InputTextModule,
     MessageModule,
@@ -97,20 +99,22 @@ import { AmDatePipe } from '../../../../core/formatting';
           <form [formGroup]="assignForm" (ngSubmit)="onAssign()" class="flex flex-col gap-3">
             <div class="flex flex-col gap-1">
               <label class="text-sm font-medium">{{ 'orgUnitHead.position' | translate }}</label>
-              <p-select
+              <app-overlay-select
                 formControlName="positionId"
                 [options]="headPositions()"
                 optionLabel="nameEn"
                 optionValue="id"
+                [placeholder]="'orgUnitHead.position' | translate"
               />
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-sm font-medium">{{ 'orgUnitHead.candidate' | translate }}</label>
-              <p-select
+              <app-overlay-select
                 formControlName="userId"
                 [options]="unitUsers()"
                 optionLabel="name"
                 optionValue="id"
+                [placeholder]="'orgUnitHead.candidate' | translate"
               />
             </div>
             <p-button
@@ -134,37 +138,17 @@ import { AmDatePipe } from '../../../../core/formatting';
               (onClick)="onClearActingHead()"
             />
           } @else {
-            <form [formGroup]="actingHeadForm" (ngSubmit)="onAssignActingHead()" class="flex flex-col gap-3">
-              <div class="flex flex-col gap-1">
-                <label class="text-sm font-medium">{{ 'orgUnitHead.actingHeadCandidate' | translate }}</label>
-                <p-select
-                  formControlName="userId"
-                  [options]="unitUsers()"
-                  optionLabel="name"
-                  optionValue="id"
-                />
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="text-sm font-medium">{{ 'orgUnitHead.actingHeadCoveringFor' | translate }}</label>
-                <p-select
-                  formControlName="coveringForUserId"
-                  [options]="unitUsers()"
-                  optionLabel="name"
-                  optionValue="id"
-                  [showClear]="true"
-                />
-              </div>
-              <div class="flex flex-col gap-1">
-                <label class="text-sm font-medium">{{ 'orgUnitHead.reason' | translate }}</label>
-                <input pInputText formControlName="reason" />
-              </div>
-              <p-button
-                [label]="'orgUnitHead.actingHeadAssign' | translate"
-                type="submit"
-                [loading]="acting()"
-                [disabled]="actingHeadForm.invalid"
-              />
-            </form>
+            <!-- ACC-120 slice 2 — the inline form is gone. Arranging cover is a
+                 decision with a date range and a derived reason, which is a
+                 dialog (head-management design, section 3), not three controls
+                 wedged under a heading. The button is the only change to THIS
+                 panel: its layout, its states and its action visibility are
+                 ACC-133 and are deliberately untouched here. -->
+            <p-button
+              [label]="'orgUnitHead.cover.open' | translate"
+              [outlined]="true"
+              (onClick)="coverDialogOpen.set(true)"
+            />
           }
         </div>
       } @else {
@@ -185,11 +169,12 @@ import { AmDatePipe } from '../../../../core/formatting';
           <form [formGroup]="handoverForm" (ngSubmit)="onDeclareHandover()" class="flex flex-col gap-3">
             <div class="flex flex-col gap-1">
               <label class="text-sm font-medium">{{ 'orgUnitHead.successor' | translate }}</label>
-              <p-select
+              <app-overlay-select
                 formControlName="incomingUserId"
                 [options]="unitUsers()"
                 optionLabel="name"
                 optionValue="id"
+                [placeholder]="'orgUnitHead.successor' | translate"
               />
             </div>
             <div class="flex flex-col gap-1">
@@ -259,12 +244,31 @@ import { AmDatePipe } from '../../../../core/formatting';
       [header]="'orgUnitHead.chooseEffectiveDate' | translate"
       [content]="effectiveDateTpl"
       size="picker"
-      appendTo="body"
     />
+
+    @if (status(); as s) {
+      <app-set-acting-head-dialog
+        [orgUnitId]="orgUnitId()"
+        [unitName]="unitName()"
+        [status]="s"
+        [people]="unitUsers()"
+        [visible]="coverDialogOpen()"
+        (visibleChange)="coverDialogOpen.set($event)"
+        (saved)="onCoverSaved()"
+      />
+    }
   `,
 })
 export class OrgUnitHeadPanelComponent implements OnInit {
   readonly orgUnitId = input.required<string>();
+
+  /**
+   * The unit's own name, resolved by the host (which already picks nameEn or
+   * nameAr by language for the panel's header). Passed in rather than fetched:
+   * tenant data is chosen by language, never translated, and the host is the
+   * one place that already does that.
+   */
+  readonly unitName = input.required<string>();
 
   readonly saved = output<void>();
 
@@ -281,7 +285,7 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly status = signal<IOrgUnitHeadStatus | null>(null);
   readonly headPositions = signal<IOrgPositionDto[]>([]);
-  readonly unitUsers = signal<{ id: string; name: string }[]>([]);
+  readonly unitUsers = signal<{ id: string; name: string; email: string }[]>([]);
 
   readonly assignForm = this.fb.group({
     positionId: [null as string | null, [Validators.required]],
@@ -294,18 +298,15 @@ export class OrgUnitHeadPanelComponent implements OnInit {
     reason: [''],
   });
 
-  readonly actingHeadForm = this.fb.group({
-    userId: [null as string | null, [Validators.required]],
-    coveringForUserId: [null as string | null],
-    reason: [''],
-  });
+  readonly coverDialogOpen = signal(false);
 
   ngOnInit(): void {
     this.orgPositionService.listPositions().subscribe({
       next: (positions) => this.headPositions.set(positions.filter((p) => p.isUnitHeadPosition)),
     });
     this.userService.listAllUsers({ status: 'ACTIVE', orgUnitId: this.orgUnitId() }).subscribe({
-      next: (users) => this.unitUsers.set(users.map((u) => ({ id: u.id, name: u.name }))),
+      next: (users) =>
+        this.unitUsers.set(users.map((u) => ({ id: u.id, name: u.name, email: u.email }))),
     });
     this.load();
   }
@@ -444,29 +445,10 @@ export class OrgUnitHeadPanelComponent implements OnInit {
     });
   }
 
-  onAssignActingHead(): void {
-    if (this.actingHeadForm.invalid) return;
-    const { userId, coveringForUserId, reason } = this.actingHeadForm.getRawValue();
-    this.acting.set(true);
-    this.error.set(null);
-    this.orgUnitHeadService
-      .assignActingHead(this.orgUnitId(), {
-        userId: userId!,
-        coveringForUserId: coveringForUserId || undefined,
-        reason: reason || undefined,
-      })
-      .subscribe({
-        next: () => {
-          this.acting.set(false);
-          this.actingHeadForm.reset();
-          this.load();
-          this.saved.emit();
-        },
-        error: (err: unknown) => {
-          this.acting.set(false);
-          this.error.set(extractErrorMessage(err, 'orgUnitHead.errorSave'));
-        },
-      });
+  /** The dialog owns the save; the panel only re-reads what it changed. */
+  onCoverSaved(): void {
+    this.load();
+    this.saved.emit();
   }
 
   onClearActingHead(): void {
