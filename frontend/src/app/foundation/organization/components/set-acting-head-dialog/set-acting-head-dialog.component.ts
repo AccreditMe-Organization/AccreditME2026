@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -130,7 +130,6 @@ import {
                 pInputText
                 dir="ltr"
                 [id]="fromId"
-                class="flex-1"
                 [attr.aria-describedby]="messageId"
                 [value]="fromText()"
                 (input)="onTyped('from', $any($event.target).value)"
@@ -155,7 +154,6 @@ import {
                 pInputText
                 dir="ltr"
                 [id]="untilId"
-                class="flex-1"
                 [attr.aria-describedby]="messageId"
                 [value]="untilText()"
                 (input)="onTyped('until', $any($event.target).value)"
@@ -300,9 +298,12 @@ import {
         gap: 10px;
         margin-block-start: 12px;
       }
+      /* min-width 0, NOT a 120px floor. A floor here plus an input that
+         cannot shrink is what put the body 104px over its 488px in English and
+         108px over in Arabic, scrolling every label mid-sentence. */
       .am-cover-range__col {
         flex: 1 1 130px;
-        min-width: 120px;
+        min-width: 0;
       }
       .am-cover-range__label {
         display: block;
@@ -320,6 +321,17 @@ import {
         align-items: center;
         gap: var(--am-space-8);
         min-height: 36px;
+      }
+      /* THE FIX, and the reason it is not obvious: an <input> carries an
+         intrinsic width from its size attribute (default 20 characters), and a
+         flex item's automatic minimum size (min-width: auto) refuses to go
+         below it. So flex: 1 1 0% does NOT make an input shrinkable — a
+         flex-basis of 0 is overridden by that minimum. Only min-width: 0
+         releases it. Measured, not reasoned about: the layout spec beside this
+         file pins the body against horizontal overflow in both directions. */
+      .am-cover-range__control input {
+        flex: 1 1 auto;
+        min-width: 0;
       }
 
       /* 34px = two lines at 17. Reserved at that height whatever the copy, so
@@ -383,6 +395,19 @@ export class SetActingHeadDialogComponent {
   readonly saveError = signal<string | null>(null);
   readonly showErrors = signal(false);
 
+  constructor() {
+    // Clear on the open -> closed transition, so a discard genuinely discards
+    // and the next open starts from today. Not on open: resetting then would
+    // leave abandoned state readable by anything that inspects the component
+    // while it is shut, and would fight a save's own reset.
+    let wasVisible = false;
+    effect(() => {
+      const visible = this.visible();
+      if (wasVisible && !visible) this.reset();
+      wasVisible = visible;
+    });
+  }
+
   readonly form = this.fb.group({
     userId: [null as string | null, [Validators.required]],
   });
@@ -391,6 +416,14 @@ export class SetActingHeadDialogComponent {
   // the same reason: a start date nobody chose is still a fact the record needs.
   readonly validFrom = signal<Date | null>(startOfToday());
   readonly validTo = signal<Date | null>(null);
+
+  /**
+   * The start date this opening BEGAN with, so `dirty` can tell "still today"
+   * from "the user moved it". Re-stamped on every open rather than fixed at
+   * construction: the component is never destroyed, so a session left open
+   * overnight would otherwise compare against yesterday.
+   */
+  private readonly openedWithFrom = signal(startOfToday().getTime());
 
   private readonly typedFrom = signal<string | null>(null);
   private readonly typedUntil = signal<string | null>(null);
@@ -519,8 +552,25 @@ export class SetActingHeadDialogComponent {
     initialValue: null as string | null,
   });
 
-  /** An end date the user picked is work too, and no form control records it. */
-  readonly dirty = computed(() => this.chosenUserId() !== null || this.validTo() !== null);
+  /**
+   * Unsaved work is ANY of four things, and three of them live outside the
+   * form. Ahmad's browser pass found only `validTo` was counted: changing the
+   * START date and pressing Escape closed silently, discarding it without
+   * asking. The fix is to enumerate the state rather than to trust the form,
+   * because the dates deliberately are not form controls.
+   *
+   * A part-typed date counts too. Escape does not blur first, so
+   * `commitTyped()` never runs — without this, a half-written date is thrown
+   * away with no prompt.
+   */
+  readonly dirty = computed(
+    () =>
+      this.chosenUserId() !== null ||
+      this.validTo() !== null ||
+      this.validFrom()?.getTime() !== this.openedWithFrom() ||
+      this.typedFrom() !== null ||
+      this.typedUntil() !== null,
+  );
 
   canSave(): boolean {
     return this.form.valid && !this.rangeInvalid() && !!this.validFrom() && !this.saving();
@@ -557,13 +607,27 @@ export class SetActingHeadDialogComponent {
       });
   }
 
+  /**
+   * Called on every close, not only after a save.
+   *
+   * The dialog component is never destroyed — `EditDialogComponent` re-attaches
+   * the TEMPLATE through ngTemplateOutlet (ACC-29), so the signals holding the
+   * dates outlive the dialog being shut. Ahmad's browser pass found the
+   * consequence: set From to 30 Sep, discard, reopen, and it still read 30 Sep.
+   * That is worse than untidy — a user who believes they abandoned a date can
+   * reopen and submit it.
+   */
   private reset(): void {
+    const today = startOfToday();
     this.form.reset();
-    this.validFrom.set(startOfToday());
+    this.validFrom.set(today);
+    this.openedWithFrom.set(today.getTime());
     this.validTo.set(null);
     this.typedFrom.set(null);
     this.typedUntil.set(null);
     this.showErrors.set(false);
+    this.saveError.set(null);
+    this.calendarFor.set(null);
   }
 
   // ── The date fields ─────────────────────────────────────────────────────

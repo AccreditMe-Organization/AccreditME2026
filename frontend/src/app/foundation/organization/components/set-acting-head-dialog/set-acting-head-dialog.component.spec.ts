@@ -27,12 +27,13 @@ import { SetActingHeadDialogComponent } from './set-acting-head-dialog.component
       unitName="Pharmacy"
       [status]="status()"
       [people]="people"
-      [visible]="true"
+      [visible]="visible()"
     />
   `,
 })
 class HostComponent {
   readonly status = signal<IOrgUnitHeadStatus>(VACANT);
+  readonly visible = signal(true);
   readonly people = [
     { id: 'u-huda', name: 'Dr. Huda Zahrani', email: 'huda@example.com' },
     { id: 'u-fahad', name: 'Dr. Fahad Al-Anazi', email: 'fahad@example.com' },
@@ -268,6 +269,76 @@ describe('SetActingHeadDialogComponent (ACC-120 slice 2)', () => {
       dialog.validTo.set(new Date(dialog.validFrom()!.getTime() + DAY));
 
       expect(dialog.dirty()).toBeTrue();
+    });
+
+    // FOUND IN A BROWSER, NOT HERE — the original guard counted only validTo,
+    // so moving the START date and pressing Escape closed silently and threw it
+    // away. The lesson is that "a date is not a form control" cuts both ways:
+    // every such value has to be named in dirty explicitly.
+    it('is dirty once the START date is moved, which the first version missed', () => {
+      const { dialog } = setup(VACANT);
+      dialog.validFrom.set(new Date(dialog.validFrom()!.getTime() + 4 * DAY));
+
+      expect(dialog.dirty()).toBeTrue();
+    });
+
+    it('is NOT dirty when the start date is re-set to the same day', () => {
+      const { dialog } = setup(VACANT);
+      dialog.validFrom.set(new Date(dialog.validFrom()!.getTime()));
+
+      expect(dialog.dirty()).toBeFalse();
+    });
+
+    // Escape does not blur first, so commitTyped() never runs on that path. A
+    // half-written date is still work the user would not expect to lose.
+    it('is dirty while a date is part-typed and not yet committed', () => {
+      const { dialog } = setup(VACANT);
+      dialog.onTyped('until', '20 Oct');
+
+      expect(dialog.dirty()).toBeTrue();
+    });
+  });
+
+  // ALSO FOUND IN A BROWSER. EditDialogComponent re-attaches the TEMPLATE on
+  // reopen (ACC-29), but this component instance is never destroyed, so every
+  // signal outlived the close. Set From to 30 Sep, discard, reopen, and it
+  // still read 30 Sep — a user who believed they had abandoned a date could
+  // reopen and submit it.
+  describe('closing the dialog', () => {
+    it('restores the start date to today, so a discard genuinely discards', () => {
+      const { fixture, dialog } = setup(VACANT);
+      const today = dialog.validFrom()!.getTime();
+      dialog.validFrom.set(new Date(today + 4 * DAY));
+      dialog.validTo.set(new Date(today + 30 * DAY));
+      dialog.form.controls.userId.setValue('u-huda');
+      dialog.onTyped('from', '30 Sep 20');
+
+      fixture.componentInstance.visible.set(false);
+      fixture.detectChanges();
+
+      expect(dialog.validFrom()!.getTime()).toBe(today);
+      expect(dialog.validTo()).toBeNull();
+      expect(dialog.form.controls.userId.value).toBeNull();
+      // The part-typed text is cleared too, not left hanging over a reset
+      // value: fromText() prefers `typed` while it is non-null, so a stale
+      // '30 Sep 20' would keep showing over a validFrom that had gone back to
+      // today — the field and the value disagreeing.
+      expect(dialog.fromText()).not.toBe('30 Sep 20');
+      expect(dialog.untilText()).toBe('');
+      expect(dialog.dirty()).toBeFalse();
+    });
+
+    it('leaves the reopened dialog clean, not merely blank', () => {
+      const { fixture, dialog } = setup(VACANT);
+      dialog.validTo.set(new Date(dialog.validFrom()!.getTime() + 30 * DAY));
+
+      fixture.componentInstance.visible.set(false);
+      fixture.detectChanges();
+      fixture.componentInstance.visible.set(true);
+      fixture.detectChanges();
+
+      expect(dialog.dirty()).toBeFalse();
+      expect(dialog.ctaKey()).toBe('orgUnitHead.cover.ctaOpen');
     });
   });
 });
