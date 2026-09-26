@@ -303,17 +303,12 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    * shape of a bad default: whoever meets it works around it locally, and the
    * next dialog opened from inside a dialog reproduces it exactly.
    *
-   * TWO THINGS THAT WILL MISLEAD ANYONE MEASURING THIS LATER:
-   *
-   * - `--pui-motion-height` IS STALE AND MEANS NOTHING. PrimeNG captures it when
-   *   the dialog opens and never re-measures, so it read 392.390625px (English)
-   *   and 404.09375px (Arabic) while the dialog actually rendered 413/514 and
-   *   423/526. It is not binding anything. Do not read it as the dialog's height
-   *   and conclude the dialog is short.
-   * - THE DIALOG ANIMATES IN. Sampled 900ms after opening a date view, the
-   *   content measured 293 with the calendar at 0 — mid-transition. It settles
-   *   at ~2s. Any snippet or spec that measures height must wait for the
-   *   transition or it records a number that was never on screen.
+   * ONE THING THAT WILL MISLEAD ANYONE MEASURING THIS LATER:
+   * `--pui-motion-height` IS STALE AND MEANS NOTHING. PrimeNG captures it when
+   * the dialog opens and never re-measures, so it read 392.390625px (English)
+   * and 404.09375px (Arabic) while the dialog actually rendered 413/514 and
+   * 423/526. It is not binding anything. Do not read it as the dialog's height
+   * and conclude the dialog is short.
    *
    * WHAT 'self' EXISTED FOR, and why removing it is safe: the two ACC-36
    * overscroll rules below were `:host ::ng-deep`, which compiles to
