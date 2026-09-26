@@ -36,6 +36,42 @@ import {
  * a unit that has a substantive head, so a hand-built request cannot record
  * the false version either. The dialog is not the only thing holding this.
  *
+ * ## appendTo="body", and it is load-bearing rather than tidy
+ *
+ * THIS DIALOG IS OPENED FROM INSIDE ANOTHER DIALOG. The head panel lives in
+ * `org-unit-tree`'s own `app-edit-dialog`, and this one renders inside the
+ * panel — so with the default `appendTo="self"` its `.p-dialog` was a
+ * DESCENDANT of the parent dialog's `.am-dialog__body`, which is
+ * `max-height: min(420px, 60vh)` with `overflow-y: auto`.
+ *
+ * Measured in the browser, one viewport throughout: this dialog froze at 392px
+ * in BOTH views, with the same fractional `--pui-motion-height:
+ * 392.390625px`, while New Task — the same shell, the same `max-height: 90%`,
+ * but hosted at PAGE level — grew to 551px. The date view needed 381 and got
+ * 259. The form view needed 280 and got 259, so IT HAD BEEN CLIPPED BY 21px
+ * SINCE THE DAY IT WAS WRITTEN, before any date-view work existed.
+ *
+ * Two things this cost, both worth keeping:
+ *
+ * - **The scroller was `.p-dialog-content`, not `.am-dialog__body`.** Our own
+ *   element reports its natural height and is NOT overflowing in either view —
+ *   it renders correctly inside a parent that clips it. So a spec measuring
+ *   `.am-dialog__body` can never see this, which is why two rounds of Karma
+ *   measurement found nothing. Assert on `.p-dialog-content`, on the dialog's
+ *   height against its content's, or — as the spec beside this file does — on
+ *   the STRUCTURE that causes it.
+ * - **Neither candidate cause survived measurement.** The 420 cap was never
+ *   binding (60vh of 927 is 556), and the grid renders identically in both
+ *   dialogs: 242px, six rows. Recorded so neither gets re-proposed.
+ *
+ * `appendTo="body"` is the documented remedy — `EditDialogComponent`'s own
+ * comment calls it "for a layer that must have NO scrollable ancestor at all".
+ * Its attached condition is satisfied here: the ACC-36 overscroll rules are
+ * `:host ::ng-deep` and are lost by a body-appended dialog, and this dialog
+ * holds no `p-select` or `p-multiselect` for them to protect — the pickers are
+ * `OverlaySelectComponent` (CDK) and `am-inline-calendar` (`[inline]`), neither
+ * of which builds a PrimeNG connected overlay.
+ *
  * ## Body height — 253px against the 420 cap, so FORM density
  *
  *     strip 52 + 12 + acting head 79 + 12 + range row 58 + 6 + message 34
@@ -298,6 +334,7 @@ import {
       [dirty]="dirty()"
       [saving]="saving()"
       size="form"
+      appendTo="body"
     />
 
   `,

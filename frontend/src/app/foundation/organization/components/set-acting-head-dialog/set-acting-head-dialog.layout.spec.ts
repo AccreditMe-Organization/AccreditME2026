@@ -8,6 +8,7 @@ import { providePrimeNG } from 'primeng/config';
 import { AccreditMePreset } from '../../../../core/theme/accreditme-preset';
 import { IOrgUnitHeadStatus } from '../../services/org-unit-head.service';
 import { SetActingHeadDialogComponent } from './set-acting-head-dialog.component';
+import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
 const dialogOf = (f: ComponentFixture<HostComponent>): SetActingHeadDialogComponent =>
   f.debugElement.children[0].children[0].componentInstance as SetActingHeadDialogComponent;
@@ -57,6 +58,54 @@ class HostComponent {
     actingHeadUserId: null,
   });
   readonly people = [{ id: 'u-huda', name: 'Dr. Huda Zahrani', email: 'huda@example.com' }];
+}
+
+/**
+ * The PRODUCTION structure: the cover dialog opens from inside the head panel,
+ * which itself lives in org-unit-tree's own dialog. Without a host that nests
+ * it, a test cannot see the ancestor clip that froze the real dialog at 392px —
+ * and the flat host above cannot, which is part of why this went unnoticed.
+ */
+@Component({
+  standalone: true,
+  imports: [SetActingHeadDialogComponent, EditDialogComponent],
+  template: `
+    <ng-template #panelTpl>
+      <app-set-acting-head-dialog
+        orgUnitId="unit-pharmacy"
+        unitName="Pharmacy"
+        [status]="status()"
+        [people]="[]"
+        [visible]="true"
+      />
+    </ng-template>
+    <app-edit-dialog [visible]="true" header="Manage Head" [content]="panelTpl" />
+  `,
+})
+class NestedHostComponent {
+  readonly status = signal<IOrgUnitHeadStatus>({
+    holders: [],
+    pendingHeadUserId: null,
+    headHandoverEffectiveDate: null,
+    actingHeadUserId: null,
+  });
+}
+
+function setupNested(): ComponentFixture<NestedHostComponent> {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({
+    imports: [NestedHostComponent],
+    providers: [
+      provideHttpClient(),
+      provideHttpClientTesting(),
+      ConfirmationService,
+      providePrimeNG({ theme: { preset: AccreditMePreset, options: { darkModeSelector: false } } }),
+      provideTranslateService({ lang: 'en' }),
+    ],
+  });
+  const fixture = TestBed.createComponent(NestedHostComponent);
+  fixture.detectChanges();
+  return fixture;
 }
 
 function setup(dir: 'ltr' | 'rtl'): ComponentFixture<HostComponent> {
@@ -233,6 +282,84 @@ describe('SetActingHeadDialogComponent — the body does not scroll sideways (AC
       expect(dialog.calendarFor()).toBeNull();
       expect(document.querySelector('.am-cover-range')).not.toBeNull();
     });
+  });
+
+  // ── NOT NESTED INSIDE ANOTHER DIALOG'S SCROLLING BODY ───────────────────
+  //
+  // The defect these pin is the one two rounds of Karma measurement missed, and
+  // the reason they missed it is worth stating: this dialog opens from INSIDE
+  // the head-panel dialog, so with appendTo="self" its .p-dialog was a
+  // descendant of that dialog's .am-dialog__body — max-height min(420px, 60vh),
+  // overflow-y auto. It froze at 392px in both views while New Task, the same
+  // shell at PAGE level, grew to 551.
+  //
+  // .am-dialog__body reports its NATURAL height and never overflows here: it
+  // renders correctly inside a parent that clips it. So the pixels live on
+  // .p-dialog-content, and no assertion on our own element can see them.
+  //
+  // These tests therefore assert the STRUCTURE that causes it, which is
+  // layout-free and so survives a harness that cannot lay PrimeNG out at all.
+  // The pixel re-measurement belongs in a browser.
+  describe('the dialog is a root layer', () => {
+    it('declares appendTo="body", so it has no scrollable ancestor', () => {
+      const fixture = setup('ltr');
+      const dialog = document.querySelector('.p-dialog');
+
+      expect(dialog).not.toBeNull();
+      // Appended to body means its .p-dialog is NOT inside the component's own
+      // DOM, which is where a self-appended one would sit.
+      expect(fixture.nativeElement.contains(dialog))
+        .withContext('a self-appended dialog inherits every ancestor clip')
+        .toBeFalse();
+    });
+
+    for (const view of ['form', 'date'] as const) {
+      it(`is not inside another dialog's scrolling body — ${view} view`, () => {
+        const fixture = setup('ltr');
+        if (view === 'date') {
+          dialogOf(fixture).openCalendar('from');
+          fixture.detectChanges();
+        }
+
+        const panel = document.querySelector('.p-dialog') as HTMLElement;
+        expect(panel).not.toBeNull();
+        // Walk up: nothing between this dialog and <body> may clip or scroll it.
+        const clipping: string[] = [];
+        for (let el = panel.parentElement; el && el !== document.body; el = el.parentElement) {
+          const style = getComputedStyle(el);
+          if (el.classList.contains('am-dialog__body')) clipping.push('.am-dialog__body');
+          else if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+            clipping.push(el.className || el.tagName);
+          }
+        }
+        expect(clipping)
+          .withContext('an ancestor that scrolls is what froze this dialog at 392px')
+          .toEqual([]);
+      });
+    }
+  });
+
+  // THE REAL STRUCTURE, and the test that would have caught the original defect.
+  it('escapes the HEAD PANEL dialog it is opened from', () => {
+    const fixture = setupNested();
+
+    // Two dialogs exist; find the cover one by the content only it renders.
+    const strip = document.querySelector('.am-cover-strip');
+    expect(strip).withContext('the cover dialog did not render').not.toBeNull();
+
+    const clipping: string[] = [];
+    for (let el = strip!.parentElement; el && el !== document.body; el = el.parentElement) {
+      if (el.classList.contains('am-dialog__body')) clipping.push('.am-dialog__body');
+      if (el.classList.contains('p-dialog-content')) clipping.push('.p-dialog-content');
+    }
+    // Its OWN body and content are expected once each; a SECOND pair means it is
+    // sitting inside the parent dialog, which is what clipped it to 392px.
+    expect(clipping.filter((c) => c === '.am-dialog__body').length)
+      .withContext(`ancestors: ${clipping.join(' < ')}`)
+      .toBe(1);
+    expect(fixture.nativeElement.querySelector('.am-cover-strip'))
+      .withContext('still inside the parent component tree, so still clipped')
+      .toBeNull();
   });
 
   // The specific mechanism, so a regression names itself instead of showing up
