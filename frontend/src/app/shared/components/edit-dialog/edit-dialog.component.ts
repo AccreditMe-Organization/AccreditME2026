@@ -60,7 +60,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
       [dismissableMask]="false"
       [closable]="false"
       [role]="role()"
-      [appendTo]="appendTo()"
+      appendTo="body"
       [style]="{ width: resolvedWidth() }"
       [attr.data-density]="density()"
     >
@@ -216,8 +216,15 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
         color: var(--am-ink-500);
       }
 
-      :host ::ng-deep .p-select-list-container,
-      :host ::ng-deep .p-multiselect-list-container {
+      /* NO :host (ACC-120). These are ACC-36's scroll-chaining fix, and
+         the :host ::ng-deep form scoped them to a descendant of this component, so
+         they silently stopped applying the moment a dialog was appended to
+         <body>, which is now every dialog. Without it they are global,
+         which is the only way they can still do their job and is correct
+         everywhere anyway: a dropdown listbox should never chain its scroll to
+         an ancestor, in a dialog or on a page. */
+      ::ng-deep .p-select-list-container,
+      ::ng-deep .p-multiselect-list-container {
         overscroll-behavior: contain;
       }
 
@@ -278,17 +285,44 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    */
   readonly saving = input(false);
 
-  /**
-   * Where the dialog's own DOM goes. 'self' (the default) keeps it a
-   * descendant of this component, which the ACC-36 overscroll rules depend on:
-   * they are :host ::ng-deep, so a body-appended dialog silently loses them.
+  /*
+   * appendTo IS NO LONGER AN INPUT. Every dialog is appended to <body> and a
+   * consumer cannot opt out (ACC-120).
    *
-   * 'body' is for a layer that must have NO scrollable ancestor at all — a
-   * calendar or picker stacked above another dialog (ACC-111, dialog rule 4).
-   * Safe there precisely because such a layer holds no PrimeNG overlay of its
-   * own, so there is nothing for those rules to protect.
+   * It used to default to 'self', and THAT DEFAULT was the defect rather than
+   * any one consumer's configuration. A dialog opened from INSIDE another
+   * dialog then rendered as a descendant of the parent's `.am-dialog__body` —
+   * `max-height: min(420px, 60vh)`, `overflow-y: auto` — and was clipped by it.
+   * Measured in the browser: the Arrange-cover dialog froze at 392px in both
+   * its views while New Task, the same shell at page level, reached 551. Its
+   * form view had been losing 21px since the day it was written, and nobody
+   * caught it, because the clip lands on `.p-dialog-content` while OUR
+   * `.am-dialog__body` reports its natural height and never overflows.
+   *
+   * Three consumers had already hit this and set 'body' by hand. That is the
+   * shape of a bad default: whoever meets it works around it locally, and the
+   * next dialog opened from inside a dialog reproduces it exactly.
+   *
+   * TWO THINGS THAT WILL MISLEAD ANYONE MEASURING THIS LATER:
+   *
+   * - `--pui-motion-height` IS STALE AND MEANS NOTHING. PrimeNG captures it when
+   *   the dialog opens and never re-measures, so it read 392.390625px (English)
+   *   and 404.09375px (Arabic) while the dialog actually rendered 413/514 and
+   *   423/526. It is not binding anything. Do not read it as the dialog's height
+   *   and conclude the dialog is short.
+   * - THE DIALOG ANIMATES IN. Sampled 900ms after opening a date view, the
+   *   content measured 293 with the calendar at 0 — mid-transition. It settles
+   *   at ~2s. Any snippet or spec that measures height must wait for the
+   *   transition or it records a number that was never on screen.
+   *
+   * WHAT 'self' EXISTED FOR, and why removing it is safe: the two ACC-36
+   * overscroll rules below were `:host ::ng-deep`, which compiles to
+   * `[_nghost…] …` — the host element stays put while the dialog moves, so a
+   * body-appended dialog lost them. They now omit `:host` and survive the move.
+   * Nothing else here is host-scoped, no consumer styles dialog content that
+   * way, and the `(wheel)` handler is bound in THIS template so it travels with
+   * the dialog.
    */
-  readonly appendTo = input<'self' | 'body'>('self');
 
   /**
    * ACC-122 — the ARIA role, forwarded to p-dialog.
@@ -461,8 +495,21 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    * away" instead of on the work.
    */
   private focusFirstField(): void {
-    const field = this.host.nativeElement.querySelector<HTMLElement>(
-      '.p-dialog-content input:not([type="hidden"]), .p-dialog-content select, .p-dialog-content textarea, .p-dialog-content [tabindex]:not([tabindex="-1"])',
+    // FROM #contentWrapper, NOT from this component's host element (ACC-120).
+    //
+    // The dialog is appended to <body>, so the host no longer contains it and a
+    // host-scoped query found nothing — opening any dialog silently stopped
+    // moving focus to its first field. Caught by this component's own specs
+    // when appendTo moved into the shell, which is the whole argument for the
+    // spec living here rather than on one consumer.
+    //
+    // #contentWrapper is inside the dialog, so it travels with it, and it sits
+    // within .p-dialog-content — which is what used to make the old selector's
+    // prefixes necessary. Scoping to the wrapper excludes the header's close
+    // button by structure instead of by selector.
+    const root = this.contentWrapperRef?.nativeElement;
+    const field = root?.querySelector<HTMLElement>(
+      'input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])',
     );
     field?.focus();
   }

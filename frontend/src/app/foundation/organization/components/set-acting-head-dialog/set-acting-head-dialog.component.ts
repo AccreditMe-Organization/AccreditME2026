@@ -334,7 +334,6 @@ import {
       [dirty]="dirty()"
       [saving]="saving()"
       size="form"
-      appendTo="body"
     />
 
   `,

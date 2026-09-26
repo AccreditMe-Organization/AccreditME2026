@@ -153,7 +153,6 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       [header]="'workingCalendar.chooseDate' | translate"
       [content]="calendarTpl"
       size="picker"
-      appendTo="body"
     />
   `,
 })

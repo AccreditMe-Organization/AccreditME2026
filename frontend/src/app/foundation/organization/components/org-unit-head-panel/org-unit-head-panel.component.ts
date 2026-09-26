@@ -244,7 +244,6 @@ import { AmDatePipe } from '../../../../core/formatting';
       [header]="'orgUnitHead.chooseEffectiveDate' | translate"
       [content]="effectiveDateTpl"
       size="picker"
-      appendTo="body"
     />
 
     @if (status(); as s) {
