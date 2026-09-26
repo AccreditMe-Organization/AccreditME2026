@@ -11,6 +11,7 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { FormatService } from '../../../../core/formatting';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { withArabicLam } from '../../../../shared/utils/arabic-prefix.util';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 import {
   IOrgUnitHeadStatus,
@@ -328,7 +329,7 @@ import {
       #dialog
       [visible]="visible()"
       (visibleChange)="visibleChange.emit($event)"
-      [header]="'orgUnitHead.cover.title' | translate: { unit: unitName() }"
+      [header]="'orgUnitHead.cover.title' | translate: nameParams()"
       [content]="bodyTpl"
       [footer]="footerTpl"
       [dirty]="dirty()"
@@ -693,8 +694,22 @@ export class SetActingHeadDialogComponent {
       : 'orgUnitHead.cover.messageOpenVacancy';
   });
 
+  /**
+   * BOTH forms of the unit's name, because the component cannot know which
+   * language will render the string — ngx-translate chooses at render time.
+   * English reads {{unit}}; Arabic reads {{unitWithLam}}, where the preposition
+   * is attached and the definite article's alif elided. Same pattern ACC-94 set
+   * for duration and relative time: pass both, let each language use the one its
+   * grammar needs.
+   */
+  readonly nameParams = computed(() => ({
+    unit: this.unitName(),
+    unitWithLam: withArabicLam(this.unitName()),
+  }));
+
   readonly messageParams = computed(() => ({
     unit: this.unitName(),
+    unitWithLam: withArabicLam(this.unitName()),
     date: this.format.date(this.validTo() ?? this.flagDate()),
     // NAMED `duration`, not `days`, and the name is load-bearing. It holds a
     // whole formatted phrase — "26 days" — produced by the layer's duration
