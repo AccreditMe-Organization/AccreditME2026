@@ -157,6 +157,48 @@ describe('FormatService (ACC-94)', () => {
     });
   });
 
+  // ACC-120 slice 1 — the add row's Hijri line is ENTRY CONFIRMATION, which is a
+  // different thing from the reader preference date() consults.
+  describe('hijri() — the equivalent, always, whatever the reader prefers', () => {
+    // THE POINT OF THE METHOD. Nothing in the product can set hijriDisplay yet
+    // (ACC-98), so every user is `gregory` — a preference-gated confirmation
+    // line would have rendered for nobody.
+    it('returns the Hijri date for a reader who has NOT opted in', () => {
+      expect(context.hijri()).toBeFalse();
+
+      expect(format.hijri('2026-09-23T12:00:00Z')).toBe('12 Rabiʻ II 1448 AH');
+    });
+
+    it('returns the same for a reader who HAS opted in', () => {
+      context.hijri.set(true);
+
+      expect(format.hijri('2026-09-23T12:00:00Z')).toBe('12 Rabiʻ II 1448 AH');
+    });
+
+    // The design's own worked example, asserted rather than trusted: Templates
+    // Rev 6 draws "12 ربيع الآخر 1448 — equals 23 Sep 2026" on the add row, and
+    // Design System Rev 7 corrected that day from 11 to 12. It agrees with the
+    // published Umm al-Qura table already used below — 16 Sep is 5 Rabiʻ II, so
+    // 1 Rabiʻ II is 12 Sep and 12 Rabiʻ II is 23 Sep.
+    it("agrees with the design's drawn example, in Arabic", () => {
+      inArabic();
+
+      expect(format.hijri('2026-09-23T12:00:00Z')).toBe('12 ربيع الآخر 1448 هـ');
+    });
+
+    it('never returns a bare date for a missing value', () => {
+      expect(format.hijri(null)).toBe('—');
+      expect(format.hijri(undefined)).toBe('—');
+      expect(format.hijri('not a date')).toBe('—');
+    });
+
+    // It is a string to READ. dateForInput() stays Gregorian with English
+    // months, because that is the value a person types back (ACC-94 D4).
+    it('does not change what an editable field shows', () => {
+      expect(format.dateForInput('2026-09-23T12:00:00Z')).toBe('23 Sep 2026');
+    });
+  });
+
   describe('Hijri (D4) — display only, Hijri first, Gregorian in brackets', () => {
     beforeEach(() => context.hijri.set(true));
 
