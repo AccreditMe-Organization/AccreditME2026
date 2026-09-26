@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -11,6 +11,7 @@ import { IconButtonComponent } from '../../../../shared/components/icon-button/i
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { FormatService } from '../../../../core/formatting';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
 import {
   IOrgUnitHeadStatus,
   OrgUnitActingReason,
@@ -484,6 +485,8 @@ export class SetActingHeadDialogComponent {
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
   private readonly headService = inject(OrgUnitHeadService);
+  private readonly layers = inject(LayerStackService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private static nextId = 0;
   private readonly uid = `am-cover-${SetActingHeadDialogComponent.nextId++}`;
@@ -496,6 +499,8 @@ export class SetActingHeadDialogComponent {
   readonly saveError = signal<string | null>(null);
   readonly showErrors = signal(false);
 
+  private dateViewLayerId: number | null = null;
+
   constructor() {
     // Clear on the open -> closed transition, so a discard genuinely discards
     // and the next open starts from today. Not on open: resetting then would
@@ -506,6 +511,45 @@ export class SetActingHeadDialogComponent {
       const visible = this.visible();
       if (wasVisible && !visible) this.reset();
       wasVisible = visible;
+    });
+
+    // ── THE DATE VIEW IS A LAYER, even though nothing floats ──────────────
+    //
+    // Artboard 12's Escape ladder, copied from task-form because it IS the
+    // behaviour and not merely a convention: the first press collapses the
+    // calendar and leaves the dialog open, "otherwise a user who opened it to
+    // look at next month loses the whole form to a single key".
+    //
+    // Checked in New Task before writing this, rather than assumed. An earlier
+    // version of this dialog let Escape close the whole dialog and claimed that
+    // matched New Task. It did not — New Task returns to the form — and the
+    // claim was wrong on exactly the axis it cited.
+    effect(() => {
+      const open = this.calendarFor() !== null;
+      if (open && this.dateViewLayerId === null) {
+        this.dateViewLayerId = this.layers.push();
+      } else if (!open && this.dateViewLayerId !== null) {
+        this.layers.remove(this.dateViewLayerId);
+        this.dateViewLayerId = null;
+      }
+    });
+
+    // BUBBLE phase, not capture. EditDialogComponent listens in capture and
+    // returns early once it sees it is not on top, so by the time this runs the
+    // dialog has already declined. Listening in capture here would race it, and
+    // a dirty form would go straight to "Discard changes?" with the calendar
+    // still open.
+    const onKeydown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || this.calendarFor() === null) return;
+      if (this.dateViewLayerId === null || !this.layers.isTop(this.dateViewLayerId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeDateView();
+    };
+    document.addEventListener('keydown', onKeydown);
+    this.destroyRef.onDestroy(() => {
+      document.removeEventListener('keydown', onKeydown);
+      if (this.dateViewLayerId !== null) this.layers.remove(this.dateViewLayerId);
     });
   }
 

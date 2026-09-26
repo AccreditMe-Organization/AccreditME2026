@@ -184,6 +184,43 @@ describe('SetActingHeadDialogComponent — the body does not scroll sideways (AC
       });
     }
 
+    // Artboard 12's Escape ladder. Verified in New Task first this time: the
+    // first press returns to the form with every value intact. An earlier
+    // version let Escape close the whole dialog and claimed that matched New
+    // Task — it did not.
+    it('ESCAPE returns to the fields and leaves the dialog open', () => {
+      const fixture = setup('ltr');
+      const dialog = dialogOf(fixture);
+      dialog.openCalendar('until');
+      fixture.detectChanges();
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+
+      expect(dialog.calendarFor()).withContext('date view should have closed').toBeNull();
+      expect(document.querySelector('.am-cover-range'))
+        .withContext('the fields should be back')
+        .not.toBeNull();
+    });
+
+    // The half that makes the ladder a ladder rather than a swallow: once the
+    // date view is closed, Escape belongs to the dialog again.
+    it('stops intercepting Escape once the date view is closed', () => {
+      const fixture = setup('ltr');
+      const dialog = dialogOf(fixture);
+      dialog.openCalendar('from');
+      fixture.detectChanges();
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      document.dispatchEvent(event);
+
+      expect(event.defaultPrevented)
+        .withContext('a second press must not be swallowed by the date view')
+        .toBeFalse();
+    });
+
     it('returns to the fields by the back link, not by closing the dialog', () => {
       const fixture = setup('ltr');
       const dialog = dialogOf(fixture);
