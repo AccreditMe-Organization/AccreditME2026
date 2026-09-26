@@ -512,8 +512,9 @@ describe('WorkingCalendarService', () => {
       const result = await service.getChangeHistory(ORG_A);
 
       expect(result.map((c) => c.id)).toEqual(['audit-2', 'audit-1']);
-      expect(result[0].actorName).toBe('Nora Al-Otaibi');
-      expect(result[0].changedAt).toEqual(new Date('2026-09-20T10:00:00.000Z'));
+      expect(result).toHaveLength(2);
+      expect(result[0]!.actorName).toBe('Nora Al-Otaibi');
+      expect(result[0]!.changedAt).toEqual(new Date('2026-09-20T10:00:00.000Z'));
       expect(mockPrisma.auditLog.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ orderBy: { createdAt: 'desc' } }),
       );
@@ -525,14 +526,14 @@ describe('WorkingCalendarService', () => {
     it('reports a missing actor as null, not as an empty name', async () => {
       const result = await service.getChangeHistory(ORG_A);
 
-      expect(result[1].actorName).toBeNull();
+      expect(result[1]!.actorName).toBeNull();
     });
 
     it('carries the previous values through, undiffed', async () => {
       const result = await service.getChangeHistory(ORG_A);
 
-      expect(result[0].before).toEqual({ workingHoursEnd: '16:00' });
-      expect(result[0].after).toEqual({ workingHoursEnd: '17:00' });
+      expect(result[0]!.before).toEqual({ workingHoursEnd: '16:00' });
+      expect(result[0]!.after).toEqual({ workingHoursEnd: '17:00' });
     });
 
     // Bounded rather than paginated — a settings history answers "what changed

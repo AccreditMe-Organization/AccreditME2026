@@ -27,7 +27,12 @@
     "close": "إغلاق",
     "remove": "إزالة",
     "saveFailed": "تعذّر الحفظ.",
-    "selectedCount": "{count} محدد"
+    "selectedCount": "{count} محدد",
+    "unsaved": "غير محفوظ",
+    "discard": "تجاهل",
+    "retry": "إعادة المحاولة",
+    "notRecorded": "غير مسجّل",
+    "listSeparator": "، "
   },
   "nav": {
     "dashboard": "لوحة التحكم",
@@ -225,7 +230,25 @@
     "deleteFailed": "لم يتم حذف العطلة.",
     "deleteConfirmHeader": "حذف هذه العطلة؟",
     "deleteConfirmMessage": "لن يبقى {{name}} في {{date}} يوم عطلة، وستتعامل حسابات مواعيد الاستحقاق بعد ذلك مع هذا اليوم كيوم عمل عادي.",
-    "deleteConfirmAccept": "حذف العطلة"
+    "deleteConfirmAccept": "حذف العطلة",
+    "workingDaysHelp": "أيام عمل المنشأة. تُحسب مواعيد استحقاق المهام واتفاقيات مستوى الخدمة بهذه الأيام فقط.",
+    "workingHoursHelp": "بداية يوم العمل ونهايته، والمنطقة الزمنية التي يُحفظ بها التقويم.",
+    "workingHoursStart": "يبدأ في",
+    "workingHoursEnd": "ينتهي في",
+    "timezoneHint": "المنطقة الزمنية التي تُحسب بها مواعيد الاستحقاق لجميع العاملين في هذه المنشأة.",
+    "endBeforeStart": "يجب أن ينتهي يوم العمل بعد بدايته.",
+    "atLeastOneDay": "اختر يوم عمل واحدًا على الأقل.",
+    "saveWorkingDays": "حفظ أيام العمل",
+    "saveWorkingHours": "حفظ ساعات العمل",
+    "lastChangedBy": "آخر تغيير بواسطة {{who}} في",
+    "neverChanged": "لم يُغيَّر أي شيء في هذه الصفحة بعد.",
+    "changeHistory": "سجل التغييرات",
+    "noFieldsChanged": "لم يتغيّر أي حقل متتبَّع في هذه العملية.",
+    "loadFailed": "لم يتم تحميل تقويم العمل.",
+    "deniedCalendar": "لا تملك صلاحية عرض تقويم العمل.",
+    "suggestHolidaysHelp": "اقترح العطلات الرسمية لدولة وسنة محددة، بدلًا من إدخالها واحدة تلو الأخرى.",
+    "suggestHolidaysUnavailable": "هذه الميزة غير مبنية بعد. عند تشغيل ميزات الذكاء الاصطناعي للمنصة ستظهر الاقتراحات هنا — وحتى ذلك الحين أضف العطلات من صفحة العطلات الرسمية.",
+    "notAvailableYet": "غير متاحة بعد"
   },
   "roles": {
     "title": "الأدوار والصلاحيات",
