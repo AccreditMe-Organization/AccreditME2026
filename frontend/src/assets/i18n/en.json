@@ -126,14 +126,14 @@
       "untilHintOptional": "optional",
       "showCalendarFrom": "Show calendar for From",
       "showCalendarUntil": "Show calendar for Until",
-      "chooseFrom": "Choose the start date",
-      "chooseUntil": "Choose the end date",
       "messageEnds": "{{duration}} · the cover ends on its own on {{date}}.",
       "messageOpenAbsence": "No end date — if this cover is still running on {{date}}, Setup health marks {{unit}} At risk. Set an end date, or end the cover when the head returns.",
       "messageOpenVacancy": "Open-ended is normal for a vacancy. On {{date}} Setup health will ask for a head to be appointed to {{unit}}.",
       "messageRangeInvalid": "The end date must be after the start date.",
       "ctaUntil": "Cover until {{date}}",
-      "ctaOpen": "Cover with no end date"
+      "ctaOpen": "Cover with no end date",
+      "backToDetails": "Back to details",
+      "dateTypeHint": "Type a date, or pick one below."
     }
   },
   "lookup": {

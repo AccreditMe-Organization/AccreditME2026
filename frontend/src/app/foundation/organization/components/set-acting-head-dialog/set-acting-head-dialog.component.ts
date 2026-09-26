@@ -4,7 +4,7 @@ import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angu
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
-import { DatePickerModule } from 'primeng/datepicker';
+import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
@@ -57,14 +57,48 @@ import {
  * geometry it would have saved. So the row is built here, as a labelled group
  * whose two inputs both describe to the single group message.
  *
- * ## The calendar is the ACC-96 interim layer, deliberately
+ * ## The calendar is `am-inline-calendar` — THE one in the product
  *
- * A root layer with `[inline]`, exactly as `public-holiday-form` does it: no
- * PrimeNG overlay is constructed, so there is nothing for
- * `ConnectedOverlayScrollHandler` to close and nothing for this dialog's body
- * to clip. The design draws a different shape — the body swapping to a date
- * view — and that belongs to ACC-133 along with the rest of the panel. Keeping
- * the interim layer costs nothing and does not pre-empt it.
+ * Not a `p-datepicker` of our own. The first version of this dialog rendered
+ * one, copying `public-holiday-form`'s stacked picker layer, and that was
+ * wrong twice over:
+ *
+ * - **It silently dropped most of a calendar.** `InlineCalendarComponent`
+ *   exists because artboard 12 needs four things PrimeNG does not give an
+ *   inline picker: RTL arrow direction (`case 37` is hard-wired to
+ *   `previousElementSibling`), Shift+PageUp/Down by year, a real per-day
+ *   announcement, and A TAB STOP ON THE GRID AT ALL — `initFocusableCell()`
+ *   runs from the overlay's show path, and inline there is no overlay, so all
+ *   42 cells stay `tabIndex -1` and Tab skips the calendar entirely. A local
+ *   copy loses every one of those and looks fine while doing it.
+ * - **It left the body half empty.** A raw `p-datepicker` panel is
+ *   `max-content` wide, so it sat at ~258px in a 488px body. The shared
+ *   component sets `inline-size: 100%` on the panel, with a comment recording
+ *   the same defect being fixed once before ("it used to be max-content, which
+ *   left the calendar at ~226px in a 520px dialog body").
+ *
+ * And the VIEW is in this body, substituting for the fields, as New Task's
+ * does — not a second stacked dialog. The design's fits table budgets it
+ * against the 420 cap, which only means anything for a view inside this body.
+ *
+ * ## No hatching and no minDate here, and both are decisions
+ *
+ * The shared component hatches nothing by default: `workingDays` and
+ * `holidays` are null unless a caller passes them, so the look is identical
+ * and the difference is opt-in.
+ *
+ * New Task passes them because a due date IS working-day aware — the SLA
+ * engine computes in working days, so a Friday means something. **A cover
+ * period is not.** `validFrom`/`validTo` are calendar dates, and the 90-day
+ * condition ages them in calendar days (`now - 90 * 24 * 60 * 60 * 1000` in
+ * `setup-condition.detectors.ts`), not working ones. Worse, cover often starts
+ * *because* someone is away over a weekend — hatching Friday would imply an
+ * unusual choice where it is the normal one. So the hatch is omitted because
+ * it would state something false here, not to save work.
+ *
+ * `minDate` is omitted for the same kind of reason: a cover may legitimately
+ * be recorded as having begun last Monday, and the condition ages from
+ * `validFrom`, so a backdated start is meaningful rather than a mistake.
  */
 @Component({
   selector: 'app-set-acting-head-dialog',
@@ -75,7 +109,7 @@ import {
     TranslatePipe,
     ButtonModule,
     InputTextModule,
-    DatePickerModule,
+    InlineCalendarComponent,
     EditDialogComponent,
     FieldComponent,
     IconButtonComponent,
@@ -83,6 +117,48 @@ import {
   ],
   template: `
     <ng-template #bodyTpl>
+      @if (calendarFor(); as which) {
+        <!-- THE DATE VIEW — it SUBSTITUTES for the fields in this same body,
+             exactly as New Task's does. Same dialog, same footer, every value
+             still live; the back link returns. It is not a second stacked
+             dialog: the design's own fits table budgets this view against the
+             420 cap ("back link 26 + date field 79 + 8 + calendar 258"), which
+             only means anything for a view inside THIS body. -->
+        <div class="am-cover-dateview">
+          <button type="button" class="am-backlink" (click)="closeDateView()">
+            <i class="pi pi-arrow-left am-backlink__icon" aria-hidden="true"></i>
+            {{ 'orgUnitHead.cover.backToDetails' | translate }}
+          </button>
+
+          <am-field
+            [label]="
+              (which === 'until'
+                ? 'orgUnitHead.cover.until'
+                : 'orgUnitHead.cover.from'
+              ) | translate
+            "
+            [hint]="'orgUnitHead.cover.dateTypeHint' | translate"
+          >
+            <input
+              pInputText
+              dir="ltr"
+              [id]="dateViewInputId"
+              [value]="which === 'until' ? untilText() : fromText()"
+              (input)="onTyped(which, $any($event.target).value)"
+              (blur)="commitTyped(which)"
+              autocomplete="off"
+            />
+          </am-field>
+
+          <!-- THE ONE CALENDAR IN THE PRODUCT (ACC-96, artboard 12) — the same
+               component New Task renders, not a p-datepicker of our own. See
+               this class's header for what a local one silently loses. -->
+          <am-inline-calendar
+            [value]="which === 'until' ? validTo() : validFrom()"
+            (valueChange)="onPicked($event)"
+          />
+        </div>
+      } @else {
       <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col">
         <!-- The strip: a read-only relation stating what the dialog derived,
              so the user sees the record it is about to write. -->
@@ -188,6 +264,7 @@ import {
           <p class="text-meta text-[var(--am-danger-ink)] mt-2">{{ saveError()! | translate }}</p>
         }
       </form>
+      }
     </ng-template>
 
     <ng-template #footerTpl>
@@ -222,28 +299,51 @@ import {
       size="form"
     />
 
-    <!-- One calendar layer serving both ends of the range: which one it writes
-         is held in a signal, so a second layer is never stacked over the first. -->
-    <ng-template #calendarTpl>
-      <p-datepicker
-        [inline]="true"
-        [ngModel]="calendarValue()"
-        [ngModelOptions]="{ standalone: true }"
-        (ngModelChange)="onPicked($event)"
-        styleClass="w-full"
-      />
-    </ng-template>
-    <app-edit-dialog
-      [visible]="calendarFor() !== null"
-      (visibleChange)="onCalendarVisibleChange($event)"
-      [header]="calendarHeader() | translate"
-      [content]="calendarTpl"
-      size="picker"
-      appendTo="body"
-    />
   `,
   styles: [
     `
+      /* THE DATE VIEW — 8px gaps, not the form's 12, because the design's own
+         fits table budgets it that way: back link 26 + date field 79 + 8 +
+         calendar 258 = 371 against the 420 cap. With the 8px under the back
+         link that this rule adds it measures 379, still 41px clear; the design
+         does not count that one, and 379 is stated rather than rounded to its
+         figure. The calendar is 258 and fills the body's width, because
+         am-inline-calendar sets inline-size 100% — which is the whole reason a
+         local p-datepicker left ~160px of the body empty. */
+      .am-cover-dateview {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      /* DUPLICATED FROM task-form, deliberately and with the duplication
+         named. These twelve lines are the second copy in the app; the third is
+         where they should become a shared am-back-link. Extracting now would
+         edit New Task's template, which this PR's scope excludes — and the
+         thing whose divergence actually costs behaviour, the calendar, IS
+         shared. If you move these, move both copies in one change and keep the
+         RTL mirror: an arrow that does not flip points the wrong way in Arabic. */
+      .am-backlink {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        align-self: flex-start;
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        font-size: 12.5px;
+        color: var(--am-primary-600);
+        cursor: pointer;
+      }
+      :dir(rtl) .am-backlink__icon {
+        transform: scaleX(-1);
+      }
+      .am-backlink:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+
       /* Geometry from the head-management design's own measurement table.
          Sizes are explicit because the body sum (253) is only true if they
          are — a block inheriting a different line-height silently moves it. */
@@ -390,6 +490,7 @@ export class SetActingHeadDialogComponent {
   protected readonly fromId = `${this.uid}-from`;
   protected readonly untilId = `${this.uid}-until`;
   protected readonly messageId = `${this.uid}-message`;
+  protected readonly dateViewInputId = `${this.uid}-dateview`;
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
@@ -630,31 +731,29 @@ export class SetActingHeadDialogComponent {
     this.calendarFor.set(null);
   }
 
-  // ── The date fields ─────────────────────────────────────────────────────
+  // ── The date view ───────────────────────────────────────────────────────
+  /**
+   * Which end of the range the date view is editing, or null for the fields.
+   * Doubles as the view switch, so the calendar cannot be open for two dates.
+   */
   readonly calendarFor = signal<'from' | 'until' | null>(null);
-
-  readonly calendarValue = computed(() =>
-    this.calendarFor() === 'until' ? this.validTo() : this.validFrom(),
-  );
-
-  readonly calendarHeader = computed(() =>
-    this.calendarFor() === 'until'
-      ? 'orgUnitHead.cover.chooseUntil'
-      : 'orgUnitHead.cover.chooseFrom',
-  );
 
   openCalendar(which: 'from' | 'until'): void {
     this.calendarFor.set(which);
   }
 
-  onCalendarVisibleChange(visible: boolean): void {
-    if (!visible) {
-      const which = this.calendarFor();
-      this.calendarFor.set(null);
-      this.focusBack(which);
-    }
+  /** Returns to the fields and puts focus back on the date that was edited. */
+  closeDateView(): void {
+    const which = this.calendarFor();
+    this.calendarFor.set(null);
+    this.focusBack(which);
   }
 
+  /**
+   * STAYS IN THE DATE VIEW, matching New Task: picking a day is not the same
+   * act as finishing with the field, and a grid that closes under the cursor
+   * makes correcting a mis-click a second navigation.
+   */
   onPicked(value: Date | null): void {
     const which = this.calendarFor();
     if (which === 'until') {
@@ -665,8 +764,6 @@ export class SetActingHeadDialogComponent {
       this.typedFrom.set(null);
     }
     this.form.markAsDirty();
-    this.calendarFor.set(null);
-    this.focusBack(which);
   }
 
   onTyped(which: 'from' | 'until', value: string): void {
