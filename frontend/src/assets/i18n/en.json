@@ -206,7 +206,26 @@
     "toggleDatePanel": "Choose a date from a calendar",
     "editHolidayNamed": "Edit {{name}}",
     "deleteHolidayNamed": "Delete {{name}}",
-    "chooseDate": "Choose a date"
+    "chooseDate": "Choose a date",
+    "row": {
+      "addLabel": "Add a public holiday",
+      "editLabel": "Edit a public holiday",
+      "add": "Add holiday",
+      "saveChanges": "Save changes",
+      "enterHint": "Enter adds it and keeps this row open for the next one.",
+      "showCalendar": "Show the calendar",
+      "hideCalendar": "Hide the calendar",
+      "repeats": "Repeats every year, on the same Gregorian date",
+      "repeatsHint": "Leave this unticked for a holiday set by the Hijri calendar, such as Eid — those fall on a different Gregorian date each year, and repeating one would move the non-working day to the wrong day from next year on."
+    },
+    "searchPlaceholder": "Search holidays by name",
+    "noHolidaysReason": "No public holidays are recorded for {{year}}.",
+    "filterByYear": "Filter by year",
+    "saveFailed": "The holiday could not be saved.",
+    "deleteFailed": "The holiday could not be deleted.",
+    "deleteConfirmHeader": "Delete this holiday?",
+    "deleteConfirmMessage": "{{name}} on {{date}} will stop being a non-working day, and task due dates calculated after this will treat it as an ordinary working day.",
+    "deleteConfirmAccept": "Delete holiday"
   },
   "roles": {
     "title": "Roles & Permissions",

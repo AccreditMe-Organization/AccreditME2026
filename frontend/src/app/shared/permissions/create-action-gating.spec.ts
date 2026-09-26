@@ -92,6 +92,22 @@ interface Case {
    * default stays "returns nothing" and a page needing more has to say so.
    */
   readonly overrides?: ReadonlyMap<Type<unknown>, unknown>;
+  /**
+   * How to count this page's create action, when it is NOT a header button.
+   *
+   * The default below counts `[pageActions] button` with a plus marker, which
+   * is the shape eleven of these twelve pages use. Public holidays stopped
+   * being one in ACC-120 slice 1: its create action is the submit button on an
+   * inline add row, because eight ministry holidays arriving at once is eight
+   * open-fill-save cycles through a dialog and one through a row that stays
+   * open.
+   *
+   * Per-case rather than by widening the default, deliberately. Teaching the
+   * shared counter to find "any submit button anywhere" would let a page pass
+   * this gate with a control that is not a create action at all, and the other
+   * eleven pages would silently lose the strict header rule they are asserting.
+   */
+  readonly countCreateActions?: (root: HTMLElement) => number;
 }
 
 // The permission on each row is the one its endpoint's decorator carries, not
@@ -153,6 +169,10 @@ const CASES: readonly Case[] = [
   {
     page: 'public-holiday-list',
     component: PublicHolidayListComponent,
+    // The inline add row itself is the create action: present in full or absent
+    // in full, which is what this gate asks. Keyed on the form's own class, not
+    // on a label, so the assertion does not depend on copy.
+    countCreateActions: (root) => root.querySelectorAll('form.am-holiday-row').length,
     permission: 'org:manage',
     services: [WorkingCalendarService],
   },
@@ -255,8 +275,9 @@ function render(testCase: Case, permissions: string[]): ComponentFixture<unknown
  * slot. Queried by that rather than by translated label text, which would make
  * the assertion depend on copy.
  */
-function createActionCount(fixture: ComponentFixture<unknown>): number {
+function createActionCount(fixture: ComponentFixture<unknown>, testCase?: Case): number {
   const root = fixture.nativeElement as HTMLElement;
+  if (testCase?.countCreateActions) return testCase.countCreateActions(root);
   // Counts BUTTONS, not icon markers. A rendered p-button carries both the
   // `icon="pi pi-plus"` attribute and a `.pi-plus` child, so matching markers
   // counted every control twice and made the PRESENT direction expect 2.
@@ -272,12 +293,12 @@ describe('ACC-118 — a list page hides its create action from a caller who cann
     describe(testCase.page, () => {
       it(`is ABSENT without ${testCase.permission}`, () => {
         const fixture = render(testCase, []);
-        expect(createActionCount(fixture)).toBe(0);
+        expect(createActionCount(fixture, testCase)).toBe(0);
       });
 
       it(`is PRESENT with ${testCase.permission}`, () => {
         const fixture = render(testCase, [testCase.permission]);
-        expect(createActionCount(fixture)).toBe(1);
+        expect(createActionCount(fixture, testCase)).toBe(1);
       });
 
       // Hidden, not disabled: a disabled control still announces an action that

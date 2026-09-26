@@ -98,7 +98,8 @@ import {
  * ## The calendar is `am-inline-calendar` — THE one in the product
  *
  * Not a `p-datepicker` of our own. The first version of this dialog rendered
- * one, copying `public-holiday-form`'s stacked picker layer, and that was
+ * one, copying `public-holiday-form`'s stacked picker layer — a component ACC-120
+ * slice 1 has since deleted, for the same reason — and that was
  * wrong twice over:
  *
  * - **It silently dropped most of a calendar.** `InlineCalendarComponent`

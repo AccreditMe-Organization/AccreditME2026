@@ -62,6 +62,13 @@ const appDir = join(root, 'src', 'app');
 // the dialog the file happens to host. Nothing here is a deferred defect.
 //
 // `count` is EXACT. A file drifting either way fails.
+//
+// public-holiday-list's entry was REMOVED in ACC-120 slice 1, and the scan is
+// what asked for it: "allowlisted for 1 <p-select>, but none remain. Delete the
+// entry." Add holiday stopped being a dialog, so that file no longer hosts one
+// and is no longer scanned. Its year filter is still a p-select and still
+// correct — four options, below CLAUDE.md's five-option threshold, so PrimeNG's
+// scroll-chaining close cannot be reached.
 const ALLOWED = [
   {
     file: 'src/app/foundation/user/components/user-profile/user-profile.component.ts',
@@ -72,15 +79,6 @@ const ALLOWED = [
       "the profile form on the page. The dialog this file hosts holds only " +
       "<app-transfer-user-wizard>, which is a separate file and is scanned on " +
       "its own. Reported because resolution is per file, not per template region.",
-  },
-  {
-    file: 'src/app/foundation/working-calendar/components/public-holiday-list/public-holiday-list.component.ts',
-    tag: 'p-select',
-    count: 1,
-    reason:
-      "Page-level: the year filter, in the page header's pageActions slot. The " +
-      "dialog this file hosts holds only <app-public-holiday-form>, whose own " +
-      "date field is already an [inline] layer at the root.",
   },
 ];
 
