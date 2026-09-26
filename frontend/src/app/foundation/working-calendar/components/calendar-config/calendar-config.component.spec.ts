@@ -233,6 +233,39 @@ describe('CalendarConfigComponent (ACC-120 slice 1)', () => {
       expect(fields.map((f) => f.labelKey)).toEqual(['workingCalendar.workingHoursEnd']);
     });
 
+    // THE MEANING MUST BE IN WORDS. The first version put it in a line-through
+    // and an aria-hidden arrow, so a screen reader heard two day lists with
+    // nothing saying which was old — the sibling of colour-only, which the design
+    // system already forbids.
+    it('says which value is old IN WORDS, not only as a decoration', async () => {
+      const { fixture, http } = setup(['org:view', 'org:manage']);
+      await settle(fixture, http, {
+        history: [
+          {
+            id: 'a1',
+            changedAt: '2026-09-20T10:00:00.000Z',
+            actorName: 'Nora Al-Otaibi',
+            before: { ...CALENDAR, workingDays: [0, 1, 2, 3, 4] },
+            after: { ...CALENDAR, workingDays: [0, 1, 2, 3] },
+          },
+        ],
+      });
+      fixture.componentInstance.historyOpen.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const row = document.querySelector('.am-history__fields li');
+      expect(row).withContext('history row not rendered').not.toBeNull();
+
+      // Semantic elements, so a reader that announces them gets it...
+      expect(row!.querySelector('del')).not.toBeNull();
+      expect(row!.querySelector('ins')).not.toBeNull();
+      // ...and the words, for the many that do not.
+      const hidden = Array.from(row!.querySelectorAll('.sr-only')).map((e) => e.textContent?.trim());
+      expect(hidden).toEqual(['workingCalendar.wasValue', 'workingCalendar.nowValue']);
+    });
+
     it('shows nothing rather than an empty byline when no change is recorded', async () => {
       const { fixture, http, page } = setup(['org:view', 'org:manage']);
       await settle(fixture, http, { history: [] });

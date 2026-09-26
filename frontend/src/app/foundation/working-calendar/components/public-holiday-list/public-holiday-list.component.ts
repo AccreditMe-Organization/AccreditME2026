@@ -283,44 +283,56 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         <span></span>
       </ng-template>
 
+      <!-- THE ROW SUPPLIES ITS OWN GRID. app-data-list wraps the HEADER in
+           grid-template-columns: var(--am-list-cols) but renders this template
+           straight into the rows body, so a consumer that emits bare cells gets
+           inline flow: the headers spread across the full width while the data
+           bunched into the first ~230px, with the action icons stranded 1300px
+           away and sitting 27px below the text line. items-center is the other
+           half of that same omission. -->
       <ng-template #listRow let-holiday let-visible="visible">
-        @if (visible('nameEn')) {
-          <span class="truncate">{{ holiday.nameEn }}</span>
-        }
-        @if (visible('nameAr')) {
-          <span class="truncate" dir="rtl">{{ holiday.nameAr || '—' }}</span>
-        }
-        @if (visible('date')) {
-          <span>{{ holiday.date | amDate }}</span>
-        }
-        @if (visible('isRecurring')) {
-          <span>
-            <!-- The tag carries its own word, not a bare "Yes" beside a column
-                 header that is somewhere else on the row. -->
-            @if (holiday.isRecurring) {
-              <p-tag severity="info" [value]="'workingCalendar.recurring' | translate" />
-            } @else {
-              <span class="text-meta text-[var(--am-text-secondary)]">—</span>
+        <div
+          class="am-holiday-list__row grid items-center gap-3 px-3 py-2 border-b border-[var(--am-border)]"
+          style="grid-template-columns: var(--am-list-cols)"
+        >
+          @if (visible('nameEn')) {
+            <span class="truncate text-[13px] font-medium">{{ holiday.nameEn }}</span>
+          }
+          @if (visible('nameAr')) {
+            <span class="truncate text-[13px]" dir="rtl">{{ holiday.nameAr || '—' }}</span>
+          }
+          @if (visible('date')) {
+            <span class="text-[13px]" dir="ltr">{{ holiday.date | amDate }}</span>
+          }
+          @if (visible('isRecurring')) {
+            <span>
+              <!-- The tag carries its own word, not a bare "Yes" beside a column
+                   header that is somewhere else on the row. -->
+              @if (holiday.isRecurring) {
+                <p-tag severity="info" [value]="'workingCalendar.recurring' | translate" />
+              } @else {
+                <span class="text-meta text-[var(--am-text-secondary)]">—</span>
+              }
+            </span>
+          }
+          <span class="flex gap-1 justify-end items-center">
+            @if (canManage()) {
+              <!-- The label names the OBJECT: a screen reader on row nine hears
+                   "Edit Eid Al-Fitr", not the ninth "Edit" (ACC-111). -->
+              <am-icon-button
+                icon="pi pi-pencil"
+                [label]="'workingCalendar.editHolidayNamed' | translate: { name: holiday.nameEn }"
+                (activated)="startEdit(holiday)"
+              />
+              <am-icon-button
+                icon="pi pi-trash"
+                severity="danger"
+                [label]="'workingCalendar.deleteHolidayNamed' | translate: { name: holiday.nameEn }"
+                (activated)="confirmDelete(holiday)"
+              />
             }
           </span>
-        }
-        <span class="flex gap-1 justify-end">
-          @if (canManage()) {
-            <!-- The label names the OBJECT: a screen reader on row nine hears
-                 "Edit Eid Al-Fitr", not the ninth "Edit" (ACC-111). -->
-            <am-icon-button
-              icon="pi pi-pencil"
-              [label]="'workingCalendar.editHolidayNamed' | translate: { name: holiday.nameEn }"
-              (activated)="startEdit(holiday)"
-            />
-            <am-icon-button
-              icon="pi pi-trash"
-              severity="danger"
-              [label]="'workingCalendar.deleteHolidayNamed' | translate: { name: holiday.nameEn }"
-              (activated)="confirmDelete(holiday)"
-            />
-          }
-        </span>
+        </div>
       </ng-template>
     </app-data-list>
   `,

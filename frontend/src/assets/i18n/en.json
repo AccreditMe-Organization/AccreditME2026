@@ -199,7 +199,7 @@
     "holidayNameAr": "Holiday Name (Arabic)",
     "holidayDate": "Date",
     "isRecurring": "Repeats every year",
-    "noHolidays": "No public holidays defined for this year.",
+    "noHolidays": "No public holidays",
     "suggestHolidays": "Suggest Holidays with AI",
     "aiSuggesting": "AI is generating suggestions...",
     "aiSuggestionsTitle": "AI-Suggested Holidays",
@@ -224,7 +224,7 @@
       "repeatsHint": "Leave this unticked for a holiday set by the Hijri calendar, such as Eid — those fall on a different Gregorian date each year, and repeating one would move the non-working day to the wrong day from next year on."
     },
     "searchPlaceholder": "Search holidays by name",
-    "noHolidaysReason": "No public holidays are recorded for {{year}}.",
+    "noHolidaysReason": "None are recorded for {{year}}. Add one using the row above.",
     "filterByYear": "Filter by year",
     "saveFailed": "The holiday could not be saved.",
     "deleteFailed": "The holiday could not be deleted.",
@@ -248,7 +248,9 @@
     "deniedCalendar": "You do not have permission to view the working calendar.",
     "suggestHolidaysHelp": "Suggest a country's public holidays for a year, so they do not have to be entered one by one.",
     "suggestHolidaysUnavailable": "This is not built yet. When AI features are switched on for the platform, suggestions will appear here — until then, add holidays on the Public holidays page.",
-    "notAvailableYet": "Not available yet"
+    "notAvailableYet": "Not available yet",
+    "wasValue": "was",
+    "nowValue": "now"
   },
   "roles": {
     "title": "Roles & Permissions",

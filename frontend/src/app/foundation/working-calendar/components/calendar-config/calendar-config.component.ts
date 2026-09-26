@@ -411,11 +411,31 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
             }
             <ul class="am-history__fields">
               @for (field of fieldsOf(change); track field.labelKey) {
+                <!-- THE MEANING IS IN WORDS, not in a decoration.
+                     The first version marked the old value with
+                     text-decoration: line-through and separated the two with an
+                     aria-hidden arrow, so a screen reader heard two day lists
+                     back to back with nothing saying which was which — the whole
+                     content of the row lived in a CSS rule and a hidden
+                     character. That is the sibling of colour-only, which the
+                     design system already forbids.
+                     <del>/<ins> carry the semantics, and the visually-hidden
+                     "was"/"now" carry it for the readers that do not announce
+                     those elements — support is genuinely patchy, and the cost
+                     of redundancy where both are announced is a slightly long
+                     phrase, while the cost of omitting the words is total loss
+                     of meaning. -->
                 <li>
-                  <span class="am-history__label">{{ field.labelKey | translate }}:</span>
-                  <span class="am-history__from">{{ renderValue(field.from) }}</span>
+                  <span class="am-history__label">{{ field.labelKey | translate }}</span>
+                  <del class="am-history__from">
+                    <span class="sr-only">{{ 'workingCalendar.wasValue' | translate }}</span>
+                    {{ renderValue(field.from) }}
+                  </del>
                   <span aria-hidden="true">→</span>
-                  <span class="am-history__to">{{ renderValue(field.to) }}</span>
+                  <ins class="am-history__to">
+                    <span class="sr-only">{{ 'workingCalendar.nowValue' | translate }}</span>
+                    {{ renderValue(field.to) }}
+                  </ins>
                 </li>
               }
             </ul>
@@ -606,6 +626,16 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
         font-size: var(--am-type-meta-size);
       }
 
+      /* Flex with a gap, so the label does not run into its value and the arrow
+         has air on both sides. Wraps rather than overflows, because a long day
+         list in Arabic is wider than the dialog. */
+      .am-history__fields li {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 6px;
+      }
+
       .am-history__label {
         font-weight: 500;
         color: var(--am-ink-900);
@@ -619,6 +649,9 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
       .am-history__to {
         color: var(--am-ink-900);
         font-weight: 500;
+        /* <ins> underlines by default, which reads as a link. The word "now"
+           and the position carry it instead. */
+        text-decoration: none;
       }
 
       .am-history__none {
