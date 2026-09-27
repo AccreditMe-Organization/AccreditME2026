@@ -522,12 +522,21 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
         color: var(--am-warning-ink);
       }
 
+      /* The documented neutral-chip pair, not a border-strong outline.
+         border-strong is 1.49:1 on white — one of the four pairs
+         check:contrast asserts as FAILING on purpose — so an outline drawn in
+         it is very nearly invisible and the badge reads as unstyled text. The
+         token's own rule only forbids it as a CONTROL border, so this was
+         within the letter of it; the chip pair is better anyway, because it is
+         a pair the design system already defines and the scan already asserts
+         passes (6.82:1). */
       .am-settings__badge {
         flex: none;
         font-size: 11px;
         font-weight: 600;
-        color: var(--am-ink-500);
-        border: 1px solid var(--am-border-strong);
+        color: var(--am-neutral-chip-ink);
+        background: var(--am-neutral-chip-bg);
+        border: 1px solid var(--am-neutral-chip-border);
         border-radius: 4px;
         padding: 1px 7px;
       }
