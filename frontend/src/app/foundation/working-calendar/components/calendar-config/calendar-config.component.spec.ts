@@ -94,7 +94,12 @@ async function settle(
 }
 
 describe('CalendarConfigComponent (ACC-120 slice 1)', () => {
-  afterEach(() => TestBed.inject(HttpTestingController).verify());
+  afterEach(() => {
+    // The direction is global, so a spec that sets it must put it back or every
+    // later spec inherits an RTL document.
+    document.documentElement.dir = 'ltr';
+    TestBed.inject(HttpTestingController).verify();
+  });
 
   describe('two sections, each saved on its own', () => {
     it('saves ONLY the working days from the working-week section', async () => {
@@ -265,6 +270,50 @@ describe('CalendarConfigComponent (ACC-120 slice 1)', () => {
       const hidden = Array.from(row!.querySelectorAll('.sr-only')).map((e) => e.textContent?.trim());
       expect(hidden).toEqual(['workingCalendar.wasValue', 'workingCalendar.nowValue']);
     });
+
+    // THE ARROW MUST FOLLOW THE READING DIRECTION. U+2192 is not bidi-mirrored
+    // by the renderer, so in Arabic the values ordered correctly — old on the
+    // right, new on the left — while the glyph kept pointing left-to-right and
+    // therefore ran from the new value back to the old one. It is the row's only
+    // visual direction cue.
+    //
+    // Asserted on the computed transform, and on the box NOT being inline — a
+    // transform does not apply to a non-replaced inline element, so the rule
+    // could parse, match and do nothing at all. It computes to `block` rather
+    // than `inline-block` because the glyph is a flex item and flex items are
+    // blockified; asserting inline-block would have been asserting the
+    // declaration rather than the effect.
+    for (const [dir, expected] of [
+      ['ltr', 'none'],
+      ['rtl', 'matrix(-1, 0, 0, 1, 0, 0)'],
+    ] as const) {
+      it(`renders the arrow ${dir === 'rtl' ? 'mirrored' : 'unmirrored'} in ${dir}`, async () => {
+        document.documentElement.dir = dir;
+        const { fixture, http } = setup(['org:view', 'org:manage']);
+        await settle(fixture, http, {
+          history: [
+            {
+              id: 'a1',
+              changedAt: '2026-09-20T10:00:00.000Z',
+              actorName: 'Nora Al-Otaibi',
+              before: { ...CALENDAR, workingHoursEnd: '16:00' },
+              after: { ...CALENDAR, workingHoursEnd: '17:00' },
+            },
+          ],
+        });
+        fixture.componentInstance.historyOpen.set(true);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        const arrow = document.querySelector('.am-history__arrow') as HTMLElement | null;
+        expect(arrow).withContext('arrow not rendered').not.toBeNull();
+        expect(getComputedStyle(arrow!).display)
+          .withContext('a transform does not apply to an inline element')
+          .not.toBe('inline');
+        expect(getComputedStyle(arrow!).transform).toBe(expected);
+      });
+    }
 
     it('shows nothing rather than an empty byline when no change is recorded', async () => {
       const { fixture, http, page } = setup(['org:view', 'org:manage']);

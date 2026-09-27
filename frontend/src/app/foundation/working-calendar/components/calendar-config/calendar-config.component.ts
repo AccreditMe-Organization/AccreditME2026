@@ -431,7 +431,7 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
                     <span class="sr-only">{{ 'workingCalendar.wasValue' | translate }}</span>
                     {{ renderValue(field.from) }}
                   </del>
-                  <span aria-hidden="true">→</span>
+                  <span class="am-history__arrow" aria-hidden="true">→</span>
                   <ins class="am-history__to">
                     <span class="sr-only">{{ 'workingCalendar.nowValue' | translate }}</span>
                     {{ renderValue(field.to) }}
@@ -639,6 +639,33 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
       .am-history__label {
         font-weight: 500;
         color: var(--am-ink-900);
+      }
+
+      /* MIRRORED IN RTL, because U+2192 is not bidi-mirrored by the renderer.
+         The VALUES order correctly by themselves — old on the right, new on the
+         left in Arabic — but the glyph kept pointing left-to-right, so it ran
+         from the new value back to the old one. Correct in English, inverted for
+         every Arabic reader, and it is the row's only visual direction cue.
+         (aria-hidden, so a screen reader was never affected: the "was"/"now"
+         words carry it there.)
+         Mirrored rather than swapped for U+2190, to match the idiom this
+         codebase already uses for directional icons — :dir(rtl) +
+         scaleX(-1), as on .am-backlink__icon in two other components. One
+         idiom for "this glyph follows the reading direction" beats two.
+         display: inline-block is a SAFETY NET, not the thing that makes this work
+         today. A transform does not apply to a non-replaced inline element, so
+         the rule could parse, match and silently do nothing — but this glyph is a
+         flex item (its li is display: flex), and flex items are blockified, so it
+         already computes to block. The declaration keeps the mirror working if
+         that row ever stops being a flex container. Measured, not assumed: the
+         spec asserts the computed box is not inline rather than asserting
+         inline-block, which is what it would wrongly have expected. */
+      .am-history__arrow {
+        display: inline-block;
+        color: var(--am-ink-500);
+      }
+      :dir(rtl) .am-history__arrow {
+        transform: scaleX(-1);
       }
 
       .am-history__from {
