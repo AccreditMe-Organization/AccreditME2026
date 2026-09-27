@@ -196,6 +196,30 @@ describe('WorkingCalendarController — read access (ACC-96)', () => {
     }
   });
 
+  // ACC-120 slice 1 — the change history is NOT ungated like the two reads above,
+  // and the difference is the point of this test. GET / is office hours: facts on
+  // the front door that disclose nothing about a person. The history names the
+  // people who changed the configuration and carries the values they replaced, so
+  // it takes the permission that can MANAGE the calendar. A VIEWER holds org:view
+  // and would otherwise be handed a list of who did what.
+  it('gates the change history on org:manage, unlike the calendar read', () => {
+    expect(permissionsOn('getChangeHistory')).toEqual(['org:manage']);
+    expect(permissionsOn('getCalendar')).toBeUndefined();
+  });
+
+  it('refuses the change history to a non-admin who may still read the calendar', () => {
+    expect(guardAllows('getCalendar', QUALITY_OFFICER_ISH)).toBe(true);
+    expect(() => guardAllows('getChangeHistory', QUALITY_OFFICER_ISH)).toThrow(ForbiddenException);
+  });
+
+  // org:view is NOT enough either, which is the half a reader would assume wrong:
+  // a VIEWER can open the page and read the calendar, and still must not see who
+  // changed it.
+  it('refuses the change history to a caller holding only org:view', () => {
+    expect(() => guardAllows('getChangeHistory', ['org:view'])).toThrow(ForbiddenException);
+    expect(guardAllows('getChangeHistory', ['org:manage'])).toBe(true);
+  });
+
   // The gate reads the caller's OWN tenant id, which TenantGuard resolves from
   // the JWT and never from the request body. Ungating the read did not touch
   // that, and this pins it: the handler passes through whatever tenant it was

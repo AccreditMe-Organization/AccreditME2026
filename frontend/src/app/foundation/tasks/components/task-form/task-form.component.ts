@@ -905,7 +905,8 @@ export class TaskFormComponent implements OnInit {
   /**
    * On BLUR, not per keystroke — "15 Sep" is not yet a date, and validating it
    * as one would put an error under someone mid-word. Same parse and the same
-   * invalidDate error shape as public-holiday-form: one way to fail, not two.
+   * invalidDate error shape as the public-holiday add row (which replaced
+   * public-holiday-form in ACC-120 slice 1): one way to fail, not two.
    */
   commitTypedDate(): void {
     const text = this.typedDate();

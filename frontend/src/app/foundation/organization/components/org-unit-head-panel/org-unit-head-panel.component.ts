@@ -223,7 +223,8 @@ import { AmDatePipe } from '../../../../core/formatting';
     }
 
     <!-- ACC-96 — the calendar as its own layer at the root, as
-         public-holiday-form does it (ACC-111 a613fcb). [inline] means PrimeNG
+         public-holiday-form did it (ACC-111 a613fcb; that component was deleted
+         in ACC-120 slice 1 when Add holiday became an inline row). [inline] means PrimeNG
          builds no overlay, so there is nothing for ConnectedOverlayScrollHandler
          to close and nothing for the dialog to clip; appendTo="body" keeps the
          layer out of THIS dialog's scrolling body. EditDialogComponent
@@ -476,7 +477,9 @@ export class OrgUnitHeadPanelComponent implements OnInit {
   }
 
   // ── Effective date (ACC-96) ────────────────────────────────────────────
-  // Mirrors public-holiday-form's date field. `typed` holds what is part-way
+  // Mirrored public-holiday-form's date field, which ACC-120 slice 1 deleted;
+  // the live example of the same idiom is now the public-holiday add ROW.
+  // `typed` holds what is part-way
   // written, `controlEffectiveDate` the committed value; the text prefers the
   // former, so re-rendering mid-keystroke cannot rewrite the field under the
   // cursor.

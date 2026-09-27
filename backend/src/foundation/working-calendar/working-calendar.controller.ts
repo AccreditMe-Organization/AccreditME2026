@@ -23,6 +23,7 @@ import { CreatePublicHolidayDto } from './dto/create-public-holiday.dto';
 import { UpdatePublicHolidayDto } from './dto/update-public-holiday.dto';
 import { IWorkingCalendar } from './interfaces/working-calendar.interface';
 import { IPublicHoliday } from './interfaces/public-holiday.interface';
+import { IWorkingCalendarChange } from './interfaces/working-calendar-change.interface';
 
 @Controller('working-calendar')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -50,6 +51,25 @@ export class WorkingCalendarController {
   @Get()
   getCalendar(@CurrentTenant() tenantId: string): Promise<IWorkingCalendar> {
     return this.workingCalendarService.getOrCreate(tenantId);
+  }
+
+  // ACC-120 slice 1 — who changed the calendar, when, and what it was before.
+  //
+  // org:manage, NOT the ungated read above, and the difference is deliberate.
+  // GET / is office hours: public-facing facts that disclose nothing about any
+  // person. THIS payload is different in kind — it names the people who changed
+  // the configuration and carries the values they replaced. That is management
+  // information about colleagues, so it takes the permission that can manage the
+  // calendar rather than the one that can read it. A VIEWER holding org:view
+  // would otherwise be handed a list of who did what.
+  //
+  // The page itself stays reachable with admin:access + org:view; a caller
+  // without org:manage simply sees no "Last changed" line, which is an absent
+  // annotation rather than a broken page.
+  @Get('history')
+  @Permissions(ORG_PERMISSIONS.MANAGE)
+  getChangeHistory(@CurrentTenant() tenantId: string): Promise<IWorkingCalendarChange[]> {
+    return this.workingCalendarService.getChangeHistory(tenantId);
   }
 
   @Patch()

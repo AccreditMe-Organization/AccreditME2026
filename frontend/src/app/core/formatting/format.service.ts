@@ -65,6 +65,51 @@ export class FormatService {
     return calendar === 'islamic-umalqura' ? `${this.hijriDate(at, language, timeZone)} (${gregorian})` : gregorian;
   }
 
+  /**
+   * The Hijri equivalent of a date, ALWAYS, whatever the reader prefers.
+   *
+   * ## This is ENTRY CONFIRMATION, not a reader preference
+   *
+   * Two different things, and conflating them is how this went wrong once
+   * already (ACC-120 slice 1):
+   *
+   * - `User.hijriDisplay` — read by `date()` above — is a READER PREFERENCE. It
+   *   governs how an already-stored date is SHOWN to someone reading the app,
+   *   and a reader who has not opted in sees Gregorian only.
+   * - THIS is confirmation of what a person just typed. The public-holiday add
+   *   row shows it beside the date before the row is saved, because ministry
+   *   holidays are published in Hijri and entered here in Gregorian, so the
+   *   person needs to see that the two agree. That need does not depend on how
+   *   they like to read dates.
+   *
+   * So this method deliberately does NOT consult `calendar`. Gating it on the
+   * preference would have rendered it for NOBODY: nothing in the product can
+   * set `hijriDisplay` yet (ACC-98), so every user is `gregory` today.
+   *
+   * ## Hijri stays DISPLAY ONLY (ACC-94 D4, restored with no exception)
+   *
+   * Dates are entered in Gregorian everywhere in the application. This returns
+   * a string to read, never a value to type back or send — that is what
+   * `dateForInput()` is for, and it is Gregorian with English months for
+   * exactly this reason.
+   *
+   * ## FORWARD NOTE — do not build this yet
+   *
+   * When the ORGANISATION-level Hijri switch lands (ACC-98), an organisation
+   * that has turned Hijri off entirely should not see this confirmation line
+   * either: the hospital has said it does not use Hijri, and showing it anyway
+   * would be the product overriding that. The PERSONAL preference must still
+   * never affect it. Nothing can turn it off today, so there is nothing to read
+   * here — the suppression belongs to the caller once an organisation setting
+   * exists to read.
+   */
+  hijri(value: DateInput): string {
+    const at = toDate(value);
+    if (!at) return EMPTY_VALUE;
+    const { language, timeZone } = this.snapshot();
+    return this.hijriDate(at, language, timeZone);
+  }
+
   dateTime(value: DateInput): string {
     const at = toDate(value);
     const { language, timeZone, calendar } = this.snapshot();
