@@ -1,4 +1,3 @@
-import { ForbiddenException } from '@nestjs/common';
 import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 
 /**
@@ -31,25 +30,42 @@ import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.int
  * configuration error that starts cleanly is the defect, and that half of the
  * report was exactly right.
  *
- * ## Why the origin is a FUNCTION and not the string
+ * ## The origin is the STRING, and row three is the whole reason
  *
- * A string origin never refuses. The table above is measured: with
- * `origin: 'https://accreditme.app'` and a request from `https://evil.example`,
- * `cors` emits `Access-Control-Allow-Origin: https://accreditme.app` and calls
- * `next()` — no error, status 200. Only the BROWSER refuses, by comparing that
- * header with its own origin.
+ * ACC-128's second criterion reads: *"A request from an unlisted origin is
+ * **refused rather than reflected**."*
  *
- * That is adequate protection in a browser and untestable server-side, and
- * ACC-128 asks for a test proving an unlisted origin is refused. A function
- * origin that calls back with an error makes the refusal real, observable and
- * assertable — so the behaviour the old comment claimed is now the behaviour the
- * code has.
+ * **Reflected** means the server echoes back the REQUESTER's origin, which is
+ * what makes a permissive policy dangerous. Row three is measured: with a string
+ * origin and a request from `https://evil.example`, `cors` emits
+ * `Access-Control-Allow-Origin: https://accreditme.app` — the CONFIGURED value,
+ * never the requester's. So a plain string already satisfies that criterion, and
+ * the spec beside this file proves it against the real middleware rather than
+ * against a callback of our own.
+ *
+ * An earlier version of this file used a function origin that called back with a
+ * `ForbiddenException`, to make the refusal observable server-side. **That was a
+ * behaviour change nobody asked for and it is reverted.** It would have turned
+ * 200 into 403 for every non-browser client that happens to send an `Origin`
+ * header — health probes, proxies, webhooks, some HTTP clients — while the
+ * browser-visible outcome was identical either way, since a browser blocks on
+ * the header mismatch regardless.
+ *
+ * It also bought no security. Session cookies are `sameSite: 'strict'`, so a
+ * cross-site request carries no credentials at all; even a "simple" request that
+ * a browser sends before discarding the response arrives unauthenticated. **The
+ * cookie policy is the defence**, which is the argument ACC-128 itself makes.
+ *
+ * WHAT THAT GIVES UP, stated rather than glossed: there is no server-side signal
+ * that an unlisted origin tried — nothing refused and nothing logged. If that
+ * visibility is wanted it is a log line and a deliberate decision, not a status
+ * code smuggled in beside a configuration fix.
  *
  * ## One exact origin, no list and no pattern
  *
  * Deliberately not a comma-separated list and not a wildcard pattern. See
- * `SYSTEM-REFERENCE.md`'s deployment notes for the preview-deployment decision
- * and why `*.vercel.app` in particular is unsafe.
+ * `SYSTEM-REFERENCE.md` §15.9 for the preview-deployment decision and why
+ * `*.vercel.app` in particular is unsafe.
  */
 
 /** The message a boot failure carries. Asserted by spec, so it is a constant. */
@@ -71,28 +87,12 @@ export function resolveFrontendOrigin(env: NodeJS.ProcessEnv = process.env): str
   return value;
 }
 
-/** What a refused origin is told. */
-export const ORIGIN_NOT_ALLOWED = 'This origin is not allowed to call this API.';
-
 /**
- * `CorsOptions` allowing exactly `allowedOrigin`, and refusing anything else
- * with a 403 rather than a 500 — a disallowed origin is a policy decision, not
- * an internal fault, and ACC-27's error shape should describe it as one.
+ * `CorsOptions` allowing exactly `allowedOrigin`.
+ *
+ * `credentials: true` is what forbids a wildcard: browsers reject `*` whenever
+ * credentials are set, which is why there is no permissive fallback to reach for.
  */
 export function buildCorsOptions(allowedOrigin: string): CorsOptions {
-  return {
-    origin: (requestOrigin, callback) => {
-      // NO Origin HEADER IS NOT A CROSS-ORIGIN REQUEST, and must be allowed.
-      // curl, server-to-server calls, Railway's own health check and same-origin
-      // navigations all arrive without one. Refusing them would take the API
-      // down for everything that is not a browser, which is most of what calls
-      // it today.
-      if (!requestOrigin) return callback(null, true);
-
-      if (requestOrigin === allowedOrigin) return callback(null, true);
-
-      return callback(new ForbiddenException(ORIGIN_NOT_ALLOWED), false);
-    },
-    credentials: true,
-  };
+  return { origin: allowedOrigin, credentials: true };
 }

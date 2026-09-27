@@ -6629,14 +6629,29 @@ constrains browsers only. It was never a hole a site could read this API
 through. The real cost was the opposite — **a deployed front end would not have
 been able to call the API at all**, after a clean boot with nothing logged.
 
-**The origin is a FUNCTION, not the string.** Row three above is why: a string
-origin never refuses server-side, it emits the configured value and leaves the
-browser to compare. A function that calls back with a `ForbiddenException` makes
-the refusal real, observable and testable — a **403**, because a disallowed
-origin is a policy decision and not an internal fault. A request with **no**
-`Origin` header is allowed: curl, server-to-server calls and Railway's own
-health probe send none, and refusing them would take the API down for everything
-that is not a browser.
+**The origin is the STRING, and row three is why that is enough.** The criterion
+is *"refused rather than **reflected**"*, and reflected means the server echoes
+the REQUESTER's origin back — which is what makes a permissive policy dangerous.
+Row three is measured: a string origin emits the CONFIGURED value for any caller,
+never the caller's own, so a browser compares, finds a mismatch and blocks. The
+spec proves that against the real middleware through a Nest app, and
+`origin: true` — the form that genuinely does reflect — fails four of its tests.
+
+**An unlisted origin is therefore blocked BY THE BROWSER, and the handler still
+answers 200.** That is asserted, so the absence of a 4xx is not read later as an
+oversight. An earlier version of this fix used a function origin that refused with
+a **403** to make the refusal observable server-side; **that was an unrequested
+behaviour change and was reverted.** It would have turned 200 into 403 for every
+non-browser client that happens to send an `Origin` header — health probes,
+proxies, webhooks — while the browser-visible outcome was identical either way.
+It also bought no security: session cookies are `sameSite: 'strict'`, so a
+cross-site request carries no credentials at all, and the cookie policy is the
+actual defence.
+
+**What that gives up, stated rather than glossed:** there is no server-side signal
+that an unlisted origin tried — nothing refused, nothing logged. If that
+visibility is wanted it is a log line and its own decision, not a status code
+smuggled in beside a configuration fix.
 
 **PREVIEW DEPLOYMENTS DO NOT AUTHENTICATE AGAINST THIS API.** Decided rather
 than left to be discovered. Every preview gets its own hostname and
