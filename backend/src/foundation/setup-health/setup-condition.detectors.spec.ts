@@ -50,6 +50,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
     expect(Object.keys(detectors.byType).sort()).toEqual([
       'ACTING_HEAD_OPEN_ENDED',
       'ORG_UNIT_WITHOUT_HEAD',
+      'ORG_UNIT_WITHOUT_TYPE',
       'STAGE_WITHOUT_ASSIGNEE',
       'TASK_WITHOUT_OWNER',
     ]);

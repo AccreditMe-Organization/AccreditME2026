@@ -26,6 +26,7 @@ export const RECENTLY_CLEARED_DAYS = 7;
 // so that listing a deferred type here is a compile error.
 export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'ORG_UNIT_WITHOUT_HEAD',
+  'ORG_UNIT_WITHOUT_TYPE',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
   'ACTING_HEAD_OPEN_ENDED',
@@ -38,6 +39,10 @@ export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
 // sweep, so that is not expected.)
 const AGE_BASIS: Record<ActiveSetupConditionType, SetupConditionAgeBasis> = {
   ORG_UNIT_WITHOUT_HEAD: 'OBJECT',
+  // OBJECT: the unit's own createdAt. The condition has been true since the unit
+  // existed, so FIRST_DETECTED would report every pre-existing untyped unit as a
+  // brand-new gap on the day this ships.
+  ORG_UNIT_WITHOUT_TYPE: 'OBJECT',
   STAGE_WITHOUT_ASSIGNEE: 'OBJECT',
   TASK_WITHOUT_OWNER: 'FIRST_DETECTED',
   // OBJECT: the assignment carries validFrom, and the detector reports
