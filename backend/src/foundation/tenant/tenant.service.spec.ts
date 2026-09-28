@@ -197,6 +197,51 @@ describe('TenantService', () => {
   // ── bootstrap ─────────────────────────────────────────────────────────────
 
   describe('bootstrap', () => {
+    // ── ordering (ACC-145) ────────────────────────────────────────────────────
+
+    it('seeds the global SYSTEM lookups BEFORE creating the root org unit', async () => {
+      // The ordering fix, pinned by call order rather than by reading the file.
+      //
+      // It only ever failed for the FIRST tenant on a fresh database: the values
+      // are global, so the second and every later tenant found them already
+      // seeded by an earlier bootstrap. That is why it passed every manual test
+      // on dev and would have failed on a clean production database — and why an
+      // assertion that merely checks both were called would not catch a
+      // regression that reorders them.
+      const order: string[] = [];
+      lookupService.seedSystemData.mockImplementation(() => {
+        order.push('seedSystemData');
+        return Promise.resolve();
+      });
+      prisma.orgUnit.create.mockImplementation(() => {
+        order.push('orgUnit.create');
+        return Promise.resolve(undefined);
+      });
+
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.organization.update.mockResolvedValue({ ...ORG_A, isBootstrapped: true });
+      prisma.orgUnit.findFirst.mockResolvedValue(null); // no root yet
+
+      await service.bootstrap('org-a', 'user-1');
+
+      expect(order).toEqual(['seedSystemData', 'orgUnit.create']);
+    });
+
+    it('still seeds the lookups when the root org unit already exists', async () => {
+      // The seeding call sits OUTSIDE the `if (!rootUnitExists)` branch. Moving
+      // it above the create made it easy to land inside that branch by accident,
+      // which would skip it on any re-bootstrap of a tenant that already has a
+      // root — the exact population whose lookups nobody would think to check.
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.organization.update.mockResolvedValue({ ...ORG_A, isBootstrapped: true });
+      prisma.orgUnit.findFirst.mockResolvedValue({ id: 'existing-root' });
+
+      await service.bootstrap('org-a', 'user-1');
+
+      expect(lookupService.seedSystemData).toHaveBeenCalledTimes(1);
+      expect(prisma.orgUnit.create).not.toHaveBeenCalled();
+    });
+
     it('sets isBootstrapped and logs audit entry', async () => {
       prisma.organization.findUnique.mockResolvedValue(ORG_A);
       prisma.organization.update.mockResolvedValue({

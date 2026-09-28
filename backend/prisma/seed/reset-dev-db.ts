@@ -54,7 +54,36 @@ async function main(): Promise<void> {
     throw new Error(`prisma migrate reset exited with status ${String(result.status)}.`);
   }
 
+  // ACC-145 - the GLOBAL SYSTEM lookups, immediately after the reset.
+  //
+  // WITHOUT THIS, "reset and stop" stops being a usable state. `migrate reset`
+  // drops every table including the lookup rows, and until ACC-145 the only
+  // thing that recreated them was TenantService.bootstrap(). So a developer who
+  // reset and went straight to the Create Tenant form met the same deadlock
+  // ACC-145 fixes for production: the type picker is empty, the field is
+  // required, and the tenant creation that would seed the values is the thing
+  // being blocked.
+  //
+  // It looked covered before only because seed:realistic calls bootstrap()
+  // programmatically with a fixture type - a different path from the UI. That
+  // made local correctness depend on the habit of always seeding first. Now
+  // local and production have the same guarantee by the same reasoning.
+  console.log('\nSeeding global SYSTEM lookups...\n');
+  const seed = spawnSync('npm', ['run', '--silent', 'seed:system-lookups'], {
+    stdio: 'inherit',
+    shell: true,
+  });
+
+  if (seed.status !== 0) {
+    throw new Error(
+      `seed:system-lookups exited with status ${String(seed.status)}. The database is `
+        + 'reset but has no lookup values, so the Create Tenant form cannot be used. '
+        + 'Re-run `npm run seed:system-lookups` before continuing.',
+    );
+  }
+
   console.log('\nDatabase reset. It is now EMPTY — no platform org, no tenants.');
+  console.log('The global SYSTEM lookups ARE present, so Create Tenant is usable.');
   console.log('Next:  npm run seed:demo    then    npm run seed:realistic\n');
 }
 
