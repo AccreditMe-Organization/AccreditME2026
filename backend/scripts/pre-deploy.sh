@@ -85,6 +85,23 @@ fi
 #
 # AFTER the migration, not before: the rows it writes need the schema the
 # migration may have just changed.
+# ACC-145 - GUARD THE PATH, because it is a build OUTPUT and not a published
+# entry point. `node_modules/.bin/prisma` above is a stable published binary;
+# this is dist/src/... only as a consequence of tsconfig's rootDir and outDir. A
+# tsconfig tidy-up that moves output to dist/foundation/... would fail the deploy
+# with a bare "Cannot find module" - exactly the kind of unexplained non-zero
+# exit this file's header exists to replace with a named message.
+SEED_ENTRY="dist/src/foundation/lookup/seed-system-lookups.cli.js"
+
+if [ ! -f "$SEED_ENTRY" ]; then
+  echo "[pre-deploy] FAILED: compiled seed entry not found at ${SEED_ENTRY}"
+  echo "[pre-deploy] The deployment is stopped before it can fail less clearly."
+  echo "[pre-deploy] Likely causes: tsconfig.build.json's output layout changed and"
+  echo "[pre-deploy] this path did not follow it, or the Dockerfile stopped copying dist."
+  echo "[pre-deploy] Without these rows a fresh database cannot create its first tenant."
+  exit 1
+fi
+
 echo "[pre-deploy] seed system lookups (cap ${SEED_CAP_SECONDS}s)"
 
 # The COMPILED entry point, run with plain node — not `npm run`, and not
@@ -93,7 +110,7 @@ echo "[pre-deploy] seed system lookups (cap ${SEED_CAP_SECONDS}s)"
 # `npm ci`, and slimming that image with `--omit=dev` would break this step and
 # fail the deployment. Calling node directly also matches how the migration
 # above invokes node_modules/.bin/prisma rather than going through npm.
-timeout -k "$KILL_GRACE" "$SEED_CAP_SECONDS" node dist/src/foundation/lookup/seed-system-lookups.cli.js
+timeout -k "$KILL_GRACE" "$SEED_CAP_SECONDS" node "$SEED_ENTRY"
 seed_code=$?
 
 if [ "$seed_code" -eq 124 ] || [ "$seed_code" -eq 137 ] || [ "$seed_code" -eq 143 ]; then
