@@ -10,6 +10,7 @@ import { environment } from '../../../../environments/environment';
 // but is deferred (backend DEFERRED_SETUP_CONDITION_TYPES) and never returned.
 export type SetupConditionType =
   | 'ORG_UNIT_WITHOUT_HEAD'
+  | 'ORG_UNIT_WITHOUT_TYPE'
   | 'STAGE_WITHOUT_ASSIGNEE'
   | 'TASK_WITHOUT_OWNER';
 
