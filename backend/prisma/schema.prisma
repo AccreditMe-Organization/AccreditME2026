@@ -228,6 +228,7 @@ enum NotificationStatus {
 // (ACC-127).
 enum SetupConditionType {
   ORG_UNIT_WITHOUT_HEAD
+  ORG_UNIT_WITHOUT_TYPE
   STAGE_WITHOUT_ASSIGNEE
   TASK_WITHOUT_OWNER
   POSITION_WITHOUT_ROLE
@@ -634,6 +635,7 @@ model LookupValue {
 
   organization Organization?  @relation(fields: [organizationId], references: [id])
   category     LookupCategory @relation(fields: [categoryId], references: [id])
+  orgUnits     OrgUnit[]      @relation("OrgUnitType") // ACC-137
 
   @@unique([categoryId, key, organizationId])
   @@index([organizationId])
@@ -685,7 +687,30 @@ model OrgUnit {
   nameEn         String
   nameAr         String?
   code           String
+  // ACC-137 — SUPERSEDED BY typeValueId, and kept only for the expand step.
+  // Free text with no validation of any kind: the org_unit_type lookup has been
+  // seeded since day one and OrgUnit was the only module ignoring it, while
+  // Committee and Meeting both carry a required type value id.
+  //
+  // It is not dropped here. Expand then contract (ACC-127): the migration runs
+  // while the OLD container is still serving, and that container still selects
+  // this column. It goes in a later migration, once nothing reads it.
   type           String?
+  // ACC-137 — the unit's type, as a lookup value id.
+  //
+  // NULLABLE, and it stays nullable for a reason that is structural rather than
+  // transitional: the PLATFORM organization's root is not a tenant org unit and
+  // no org_unit_type value is meaningful for it. That row is permanently null by
+  // design, so NOT NULL would be wrong rather than merely premature — see the
+  // service for why the exemption is not a branch in the validator.
+  //
+  // A REAL RELATION, unlike Committee.typeValueId and Meeting.typeValueId, which
+  // are bare String columns with no `@relation`. The divergence is deliberate:
+  // nothing hard-deletes a lookup value (removeValue() soft-deletes by setting
+  // isActive, and SYSTEM values refuse deletion outright — "Use hide instead"),
+  // so the foreign key constrains nothing anyone does and buys real referential
+  // integrity for free.
+  typeValueId    String?
   description    String?
   isActive       Boolean  @default(true)
   isCodeLocked   Boolean  @default(false)
@@ -729,6 +754,15 @@ model OrgUnit {
   actingHeadUserId                  String?
 
   organization                    Organization            @relation(fields: [organizationId], references: [id])
+  // ACC-137 — onDelete: Restrict, NOT Prisma's default of SetNull for an
+  // optional relation. SetNull would silently blank a unit's type if a lookup
+  // value were ever hard-deleted, manufacturing exactly the untyped state this
+  // ticket exists to remove, with no error and nothing to notice. Restrict makes
+  // the database refuse instead. Nothing hard-deletes a lookup value today
+  // (removeValue() sets isActive: false, SYSTEM values refuse outright), so this
+  // constrains no current behaviour — it closes the door before someone adds a
+  // real delete later and discovers the consequence in production.
+  typeValue                       LookupValue?            @relation("OrgUnitType", fields: [typeValueId], references: [id], onDelete: Restrict)
   parent                          OrgUnit?                @relation("OrgUnitHierarchy", fields: [parentId], references: [id])
   children                        OrgUnit[]               @relation("OrgUnitHierarchy")
   users                           User[]
@@ -747,6 +781,7 @@ model OrgUnit {
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([parentId])
+  @@index([typeValueId]) // ACC-137
   @@index([pendingHeadUserId])
   @@index([actingHeadUserId])
 }
