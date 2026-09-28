@@ -196,7 +196,7 @@ describe('OrganizationService', () => {
       // root lookup would return undefined and the creation would SUCCEED —
       // which is how this assertion failed on its first run.
       const error = await service
-        .create(ORG_A, { nameEn: 'Another Top Level', code: 'TOP2' }, 'actor-1')
+        .create(ORG_A, { nameEn: 'Another Top Level', code: 'TOP2', typeValueId: 'lv-dept' }, 'actor-1')
         .then(
           () => null,
           (e: unknown) => e,
@@ -218,7 +218,7 @@ describe('OrganizationService', () => {
       mockPrisma.orgUnit.create.mockResolvedValue(ROOT);
 
       await expect(
-        service.create(ORG_A, { nameEn: 'Al Nakheel Specialist Hospital', code: 'NAKHEEL' }, 'a'),
+        service.create(ORG_A, { nameEn: 'Al Nakheel Specialist Hospital', code: 'NAKHEEL', typeValueId: 'lv-dept' }, 'a'),
       ).resolves.toEqual(expect.objectContaining({ code: 'NAKHEEL' }));
       expect(mockPrisma.orgUnit.create).toHaveBeenCalled();
     });
@@ -229,7 +229,7 @@ describe('OrganizationService', () => {
         .mockResolvedValueOnce(null); // no code conflict
       mockPrisma.orgUnit.create.mockResolvedValue(BASE_UNIT);
 
-      await service.create(ORG_A, { nameEn: 'Child', code: 'CHILD', parentId: 'parent-1' }, 'a');
+      await service.create(ORG_A, { nameEn: 'Child', code: 'CHILD', parentId: 'parent-1', typeValueId: 'lv-dept' }, 'a');
 
       // A child unit is never a root, so asking about roots would be a wasted
       // query on the common path.
@@ -278,7 +278,7 @@ describe('OrganizationService', () => {
         .mockResolvedValueOnce(null); // no code conflict
       mockPrisma.orgUnit.create.mockResolvedValue(ROOT);
 
-      await service.create(ORG_A, { nameEn: 'New Root', code: 'NEW' }, 'actor-1');
+      await service.create(ORG_A, { nameEn: 'New Root', code: 'NEW', typeValueId: 'lv-dept' }, 'actor-1');
 
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenNthCalledWith(
         1,
@@ -296,7 +296,7 @@ describe('OrganizationService', () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
       mockPrisma.orgUnit.create.mockResolvedValue(BASE_UNIT);
 
-      await service.create(ORG_A, { nameEn: 'Root', code: 'ROOT' }, 'actor-1');
+      await service.create(ORG_A, { nameEn: 'Root', code: 'ROOT', typeValueId: 'lv-dept' }, 'actor-1');
 
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenNthCalledWith(
         1,
@@ -329,7 +329,7 @@ describe('OrganizationService', () => {
     it('throws ForbiddenException when attempting to change a locked code', async () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ isCodeLocked: true }));
       await expect(
-        service.update('unit-1', ORG_A, { code: 'NEW' }, 'actor-1'),
+        service.update('unit-1', ORG_A, { code: 'NEW', typeValueId: 'lv-dept' }, 'actor-1'),
       ).rejects.toThrow(ForbiddenException);
     });
 
