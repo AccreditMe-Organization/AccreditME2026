@@ -6663,8 +6663,24 @@ responses. That is the permissive hole this ticket was wrongly believed to
 already have. A preview that needs a real API points at a non-production one with
 its own `FRONTEND_URL`.
 
-`CORS_ORIGIN` is **dead** — read nowhere in the code, present only in a comment,
-and still set on Railway while the live variable was missing: exactly inverted.
+`CORS_ORIGIN` was **dead** — read nowhere in the code, present only in a comment,
+and set on Railway while the live variable was missing: exactly inverted. It is
+now deleted from the dashboard and undeclared in `.railway/railway.ts`.
+
+**Both variables are declared in `.railway/railway.ts`'s `env` block, by hand.**
+That block is not decoration: a variable the authoring file does not declare can
+be removed by the next `railway config apply`, and `FRONTEND_URL` is the one
+whose removal stops the boot rather than degrading quietly — so an apply made for
+an unrelated reason (ACC-130 adds `api.accreditme.app`) would have taken the
+service down. It is declared with `preserve()`, meaning the key is managed here
+and its value is not.
+
+**Capture such a variable by HAND, never with `railway config pull`.** That file
+used to instruct the opposite, in two places, and both were wrong: pull's
+RENDERED authoring file omits fields pull itself knows — the public domain, the
+start command, the restart policy — so regenerating to capture one variable drops
+three others, and the domain loss is invisible because the container keeps
+serving while nothing can reach it (§15.3).
 
 > **SEQUENCING, AND IT MATTERS.** Because the boot now fails without
 > `FRONTEND_URL`, **the variable must be set on Railway BEFORE this code
