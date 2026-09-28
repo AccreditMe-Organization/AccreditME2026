@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · Proposal · 27 Sep 2026 · ACC-120 slice 2</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Organization Structure, the chart, and the Org unit record</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 96ch; text-wrap: pretty;">Three surfaces show hierarchy, and each answers a different question. The <strong>Tree</strong> is where you <em style="font-style: normal; font-weight: 600;">find and act on</em> any unit. The <strong>Chart</strong> is where you <em style="font-style: normal; font-weight: 600;">read the structure and the people in it</em>, and it's the one that gets printed. The <strong>record</strong> is <em style="font-style: normal; font-weight: 600;">one unit and everything linked to it</em>: its parent above, its direct children below, and nothing deeper. None of the three repeats another.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 10px;">§0 checked — five places where the facts collide with each other or with ACC-133</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px;">
+      <sc-for list="{{ factFindings }}" as="f" hint-placeholder-count="5">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; background: #fff;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ f.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ f.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="o1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">/organization · Tree view</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">p-treeTable, restyled to the list template. The document scrolls and the table never scrolls sideways: columns shrink and names wrap, and below 900px of content width the Type and People columns are dropped (both are in the record). With no scrollable ancestor the row menu is safe, and it's mounted through the CDK reposition strategy as well.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-end: 12px;">
+      <div style="padding: 12px 14px 10px; border-block-end: 1px solid #E2E8F0;">
+        <div style="font-size: 12px; color: #5A6779;">Administration › Organization Structure</div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-block-start: 4px;">
+          <div style="display: flex; align-items: baseline; gap: 10px;">
+            <span style="font-size: 22px; font-weight: 600;">Organization Structure</span>
+            <span dir="ltr" style="font-size: 13px; color: #5A6779; font-variant-numeric: tabular-nums;">21 units · 4 levels</span>
+          </div>
+          <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 14px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;">Add unit</button>
+        </div>
+        <div style="display: flex; gap: 0; margin-block-start: 10px; border-block-end: 1px solid #E2E8F0;">
+          <span style="padding: 6px 12px; font-size: 13px; font-weight: 600; color: #1F5480; border-block-end: 2px solid #2E6FA3; margin-block-end: -1px;">Tree</span>
+          <span style="padding: 6px 12px; font-size: 13px; color: #4A5568;">Chart</span>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 14px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border: 1px solid #5A6779; border-radius: 4px; background: #fff; flex: 0 1 300px; min-width: 200px;">
+          <span style="color: #5A6779; font-size: 12px;">⌕</span><span style="font-size: 13px;">pharm</span><span style="margin-inline-start: auto; font-size: 11px; color: #5A6779;">✕</span>
+        </div>
+        <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 999px; padding: 3px 10px;">Type: Department, Section, (No type) ✕</span>
+        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #2D3748;"><span style="width: 16px; height: 16px; border: 1px solid #5A6779; border-radius: 3px; background: #fff;"></span>Show deactivated</label>
+        <span style="margin-inline-start: auto; font-size: 12px; color: #5A6779;">3 units match · shown with 2 ancestors</span>
+        <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 5px 10px; font-family: inherit; font-size: 12.5px; cursor: pointer;">Expand all</button>
+      </div>
+      <div>
+        <div>
+          <div style="display: flex; gap: 12px; padding: 7px 14px; background: #FBFCFD; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">
+            <span style="flex: 2.4 1 0; min-width: 0;">Unit</span><span style="flex: 0 1 104px; min-width: 0;">Type</span><span style="flex: 1.4 1 0; min-width: 0;">Head</span><span style="flex: none; width: 64px; text-align: end;">People</span><span style="flex: none; width: 120px;">Attention</span><span style="flex: none; width: 40px;"></span>
+          </div>
+          <sc-for list="{{ treeRows }}" as="r" hint-placeholder-count="7">
+            <div style="{{ r.rowStyle }}">
+              <span style="flex: 2.4 1 0; min-width: 0; display: flex; align-items: center; gap: 6px;">
+                <span style="{{ r.indent }}"></span>
+                <span style="flex: none; width: 16px; font-size: 10px; color: #5A6779; text-align: center;">{{ r.caret }}</span>
+                <span style="min-width: 0;">
+                  <a href="#o3" style="{{ r.nameStyle }}">{{ r.name }}</a>
+                  <span dir="rtl" style="display: block; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 12.5px; line-height: 18px; color: #5A6779; text-align: start; unicode-bidi: isolate;">{{ r.nameAr }}</span>
+                </span>
+              </span>
+              <span style="flex: 0 1 104px; min-width: 0; font-size: 12.5px; color: #4A5568; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.type }}</span>
+              <span style="flex: 1.4 1 0; min-width: 0; font-size: 12.5px; overflow-wrap: anywhere;"><span style="{{ r.headStyle }}">{{ r.head }}</span><span style="display: block; font-size: 11.5px; color: #5A6779;">{{ r.headMeta }}</span></span>
+              <span dir="ltr" style="flex: none; width: 64px; text-align: end; font-size: 12.5px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ r.people }}</span>
+              <span style="flex: none; width: 120px;"><sc-if value="{{ r.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ r.chipStyle }}">{{ r.chip }}</span></sc-if></span>
+              <span style="flex: none; width: 40px; display: flex; justify-content: flex-end;"><button aria-label="{{ r.menuLabel }}" style="width: 30px; height: 30px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #4A5568; cursor: pointer;">⋯</button></span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 12px; align-items: start;">
+      <div style="border: 1px solid #8A94A6; border-radius: 8px; background: #fff; box-shadow: 0 12px 28px rgba(16,24,40,0.14); padding: 4px 0;">
+        <div style="padding: 6px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Pharmacy</div>
+        <sc-for list="{{ rowMenu }}" as="m" hint-placeholder-count="12">
+          <div style="{{ m.style }}">{{ m.label }}</div>
+        </sc-for>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+        <sc-for list="{{ treeDecisions }}" as="d" hint-placeholder-count="8">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-block-start: 14px;">
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Deactivate · confirm (420) — before the request</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; box-shadow: 0 12px 28px rgba(16,24,40,0.14);">
+          <div style="padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 15px; font-weight: 600;">Deactivate Outpatient Pharmacy?</div>
+            <div style="font-size: 12.5px; color: #4A5568; margin-block-start: 4px; text-wrap: pretty;">It disappears from pickers, the chart and new assignments. Its history stays.</div>
+            <div style="display: flex; gap: 8px; align-items: flex-start; margin-block-start: 8px; padding: 8px 10px; border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 6px; font-size: 12px; color: #7A2E0E;"><span style="font-weight: 700;">!</span><span style="text-wrap: pretty;"><strong>This can't be undone here.</strong> There's no way to reactivate a unit from AccreditMe yet; it would need support.</span></div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 13px;">Cancel</button>
+            <button style="background: #B42318; color: #fff; border: 1px solid #912018; border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 13px; font-weight: 600;">Deactivate</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Refused · the same dialog, now listing blockers</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; box-shadow: 0 12px 28px rgba(16,24,40,0.14);">
+          <div style="padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 15px; font-weight: 600;">Pharmacy can't be deactivated yet</div>
+            <div style="font-size: 12.5px; color: #4A5568; margin-block-start: 4px;">Resolve these first. Nothing has changed.</div>
+          </div>
+          <sc-for list="{{ blockers }}" as="b" hint-placeholder-count="2">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 0 13px; min-height: 44px; border-block-end: 1px solid #F0F3F7;">
+              <span dir="ltr" style="flex: none; width: 28px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: center;">{{ b.n }}</span>
+              <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">{{ b.text }}</span>
+              <a href="#o1" style="flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none;">{{ b.link }}</a>
+            </div>
+          </sc-for>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 13px;">Close</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Each blocker is a 44px row: count, sentence, where to fix it. At five blockers that's 76 header + 220 = 296, inside the 420 cap. The two commented-out blockers will add rows, not new layouts. Following a link closes the dialog and carries the filter, e.g. Users filtered to “Org unit: Pharmacy”.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="o2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">/organization?view=chart · Chart view</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">A second tab on the same page and the same data, so there's one address and one permission. The chosen tab is kept in the URL.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 14px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+        <span style="font-size: 12.5px; color: #4A5568;">Showing from</span>
+        <a href="#o2" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">Al Nakheel Specialist Hospital</a>
+        <span style="font-size: 12.5px; color: #5A6779;">· 4 levels · shows the administrative reporting line only</span>
+        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; margin-inline-start: 10px;"><span style="width: 16px; height: 16px; border: 1px solid #1F5480; border-radius: 3px; background: #2E6FA3; color: #fff; font-size: 11px; line-height: 14px; text-align: center;">✓</span>Show committees <span style="font-size: 11px; color: #5A6779;">· only after ACC-135</span></label>
+        <span style="margin-inline-start: auto; display: flex; gap: 6px;">
+          <button aria-label="Zoom out" style="width: 30px; height: 30px; border: 1px solid #5A6779; border-radius: 6px; background: #fff;">−</button>
+          <button style="height: 30px; border: 1px solid #5A6779; border-radius: 6px; background: #fff; padding: 0 10px; font-family: inherit; font-size: 12.5px;">Fit</button>
+          <button aria-label="Zoom in" style="width: 30px; height: 30px; border: 1px solid #5A6779; border-radius: 6px; background: #fff;">+</button>
+          <button style="height: 30px; border: 1px solid #5A6779; border-radius: 6px; background: #fff; padding: 0 12px; font-family: inherit; font-size: 12.5px;">Print…</button>
+        </span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr) 280px;">
+        <div style="overflow-x: auto; padding: 18px 16px 22px; background: #FBFCFD;">
+          <div style="width: max-content; margin-inline: auto; display: flex; flex-direction: column; align-items: center;">
+            <div style="width: 210px; box-sizing: border-box; border: 2px solid #2E6FA3; border-radius: 8px; background: #fff; padding: 9px 11px;">
+              <div style="font-size: 13px; line-height: 18px; font-weight: 600;">Al Nakheel Specialist Hospital</div>
+              <div style="font-size: 11.5px; color: #5A6779;">Administration · selected</div>
+              <div style="display: flex; align-items: center; gap: 6px; margin-block-start: 6px;"><span style="width: 20px; height: 20px; border-radius: 50%; background: #E4EEF6; color: #1F5480; font-size: 9.5px; font-weight: 600; display: flex; align-items: center; justify-content: center;">SQ</span><span style="font-size: 12.5px;">Dr. Saleh Al-Qahtani</span></div>
+              <div style="font-size: 11.5px; color: #4A5568; margin-block-start: 4px;">6 people · 3 positions</div>
+            </div>
+            <div style="width: 1px; height: 14px; background: #8A94A6;"></div>
+            <div style="align-self: stretch; height: 1px; background: #8A94A6; margin-inline: 115px;"></div>
+            <div style="display: flex; gap: 20px; align-items: flex-start; justify-content: center;">
+              <sc-for list="{{ chartL2 }}" as="a" hint-placeholder-count="3">
+                <div style="display: flex; flex-direction: column; align-items: center;">
+                  <div style="width: 1px; height: 14px; background: #8A94A6;"></div>
+                  <div style="width: 210px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 8px; background: #fff; padding: 9px 11px;">
+                    <div style="font-size: 13px; line-height: 18px; font-weight: 600;">{{ a.name }}</div>
+                    <div style="font-size: 11.5px; color: #5A6779;">{{ a.type }}</div>
+                    <div style="display: flex; align-items: center; gap: 6px; margin-block-start: 6px;"><span style="{{ a.avatarStyle }}">{{ a.initials }}</span><span style="{{ a.headStyle }}">{{ a.head }}</span></div>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-block-start: 4px;"><span style="font-size: 11.5px; color: #4A5568;">{{ a.summary }}</span><sc-if value="{{ a.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ a.chipStyle }}">{{ a.chip }}</span></sc-if></div>
+                    <sc-if value="{{ a.committees }}" hint-placeholder-val="{{ false }}"><div style="margin-block-start: 6px; padding-block-start: 6px; border-block-start: 1px solid #F0F3F7; font-size: 11.5px; color: #4A5568;">◇ {{ a.committees }}</div></sc-if>
+                  </div>
+                  <sc-if value="{{ a.hasKids }}" hint-placeholder-val="{{ false }}">
+                    <div style="width: 1px; height: 14px; background: #8A94A6;"></div>
+                    <div style="{{ a.barStyle }}"></div>
+                    <div style="display: flex; gap: 14px; align-items: flex-start;">
+                      <sc-for list="{{ a.kids }}" as="b" hint-placeholder-count="2">
+                        <div style="display: flex; flex-direction: column; align-items: center;">
+                          <div style="width: 1px; height: 14px; background: #8A94A6;"></div>
+                          <div style="width: 180px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 8px; background: #fff; padding: 8px 10px;">
+                            <div style="font-size: 12.5px; line-height: 17px; font-weight: 600;">{{ b.name }}</div>
+                            <div style="display: flex; align-items: center; gap: 6px; margin-block-start: 5px;"><span style="{{ b.avatarStyle }}">{{ b.initials }}</span><span style="{{ b.headStyle }}">{{ b.head }}</span></div>
+                            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-block-start: 4px;"><span style="font-size: 11.5px; color: #4A5568;">{{ b.summary }}</span><sc-if value="{{ b.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ b.chipStyle }}">{{ b.chip }}</span></sc-if></div>
+                            <sc-if value="{{ b.below }}" hint-placeholder-val="{{ false }}"><button style="display: block; width: 100%; margin-block-start: 7px; background: #F2F7FB; color: #1F5480; border: 1px solid #C5DAEA; border-radius: 5px; padding: 4px 6px; font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;">{{ b.below }}</button></sc-if>
+                          </div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="border-inline-start: 1px solid #E2E8F0; padding: 12px 14px; background: #fff;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Selected unit</div>
+          <div style="font-size: 16px; font-weight: 600; margin-block-start: 2px;">Pharmacy</div>
+          <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13px; color: #5A6779; text-align: start;">الصيدلية</div>
+          <div style="font-size: 12px; color: #5A6779; margin-block-start: 6px;">Head</div>
+          <a href="#o3" style="font-size: 13.5px; font-weight: 500; text-decoration: none;">Dr. Fahad Al-Anazi</a><span style="font-size: 12.5px; color: #4A5568;"> · Director</span>
+          <div style="font-size: 12px; color: #5A6779; margin-block-start: 8px; margin-block-end: 3px;">Positions · 14 people</div>
+          <sc-for list="{{ positions }}" as="p" hint-placeholder-count="5">
+            <div style="display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-block-end: 1px solid #F0F3F7; font-size: 12.5px;"><span>{{ p.name }}</span><span dir="ltr" style="font-variant-numeric: tabular-nums; color: #4A5568;">{{ p.n }}</span></div>
+          </sc-for>
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-block-start: 12px;">
+            <a href="#o3" style="display: block; text-align: center; background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 600; text-decoration: none;">Open unit</a>
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 13px;">Show chart from here</button>
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 6px 10px; font-family: inherit; font-size: 13px;">Find in tree</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 10px; margin-block-start: 12px;">
+      <sc-for list="{{ chartDecisions }}" as="d" hint-placeholder-count="9">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; margin-block-start: 12px;">
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Arabic · the same chart, mirrored by dir alone</div>
+        <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; background: #FBFCFD; padding: 16px; font-family: 'IBM Plex Sans Arabic', sans-serif; overflow-x: auto;">
+          <div style="width: max-content; margin-inline: auto; display: flex; flex-direction: column; align-items: center;">
+            <div style="width: 190px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 8px; background: #fff; padding: 8px 10px;">
+              <div style="font-size: 14px; line-height: 20px; font-weight: 600;">الخدمات الطبية</div>
+              <div style="font-size: 12.5px; color: #5A6779;">إدارة</div>
+              <div style="font-size: 13px; margin-block-start: 4px;">د. ريم الحربي</div>
+              <div style="font-size: 12.5px; color: #4A5568;"><span dir="ltr" style="unicode-bidi: isolate;">31</span> شخصًا · <span dir="ltr" style="unicode-bidi: isolate;">7</span> مسميات</div>
+            </div>
+            <div style="width: 1px; height: 14px; background: #8A94A6;"></div>
+            <div style="align-self: stretch; height: 1px; background: #8A94A6; margin-inline: 95px;"></div>
+            <div style="display: flex; gap: 20px;">
+              <div style="display: flex; flex-direction: column; align-items: center;"><div style="width: 1px; height: 14px; background: #8A94A6;"></div>
+                <div style="width: 190px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 8px; background: #fff; padding: 8px 10px;">
+                  <div style="font-size: 14px; line-height: 20px; font-weight: 600;">الصيدلية</div>
+                  <div style="font-size: 13px; margin-block-start: 4px;">د. فهد العنزي</div>
+                  <div style="font-size: 12.5px; color: #4A5568;"><span dir="ltr" style="unicode-bidi: isolate;">14</span> شخصًا · <span dir="ltr" style="unicode-bidi: isolate;">5</span> مسميات</div>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: center;"><div style="width: 1px; height: 14px; background: #8A94A6;"></div>
+                <div style="width: 190px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 8px; background: #fff; padding: 8px 10px;">
+                  <div style="font-size: 14px; line-height: 20px; font-weight: 600;">المختبر</div>
+                  <div style="font-size: 13px; margin-block-start: 4px; color: #5A6779;">لا يوجد رئيس</div>
+                  <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;"><span style="font-size: 12.5px; color: #4A5568;"><span dir="ltr" style="unicode-bidi: isolate;">9</span> أشخاص</span><span style="font-size: 11.5px; font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 999px; padding: 0 8px;">▲ بلا رئيس</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The first child sits at the inline start: on the right in Arabic. Connectors are logical (margin-inline, border-inline), so they mirror with no RTL stylesheet. The Arabic box is 190 wide against 180 for English level 3, because Arabic names run about 20% longer. Names wrap to two lines and are then clamped, never broken mid-word.</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Endpoint contract · GET /organization/units/chart?rootId=&amp;depth=4</div>
+        <sc-for list="{{ contract }}" as="c" hint-placeholder-count="10">
+          <div style="display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7;">
+            <code style="flex: 0 0 180px; font-size: 11.5px; color: #1F5480;">{{ c.k }}</code>
+            <span style="flex: 1 1 220px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ c.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 12px;">
+      <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">§3.3 · Behaviours the chart needs. The build tests p-organizationChart against each one, in this order.</div>
+      <sc-for list="{{ behaviours }}" as="b" hint-placeholder-count="9">
+        <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7;">
+          <span style="flex: 0 0 34px; font-size: 12px; font-weight: 700; color: #5A6779;">{{ b.id }}</span>
+          <span style="flex: 1 1 260px; font-size: 12.5px; font-weight: 500;">{{ b.need }}</span>
+          <span style="flex: 1 1 260px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ b.why }}</span>
+          <span style="{{ b.gateStyle }}">{{ b.gate }}</span>
+        </div>
+      </sc-for>
+      <div style="padding: 9px 12px; font-size: 12px; color: #4A5568; background: #F2F7FB; text-wrap: pretty;"><strong>If PrimeNG fails a required behaviour, the fallback is our own component, not a new library.</strong> The chart is a nested flex tree with logical-property connectors, exactly what's drawn above. Keyboard traversal and zoom are small, and a charting library would spend a large part of the 187 kB on layout we don't need. The build should report which behaviour it fails on, and that decides it.</div>
+    </div>
+  </section>
+
+  <section id="o3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Org unit record — a sibling of the Committee record</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Same header anatomy, same panel grid, each panel owns its request (template 2). No tabs: the whole record fits in a single set of panels.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+      <div style="padding: 14px 16px; border-block-end: 1px solid #E2E8F0;">
+        <div style="font-size: 12px; color: #5A6779;">Organization Structure › Al Nakheel Specialist Hospital › Medical Services › Pharmacy</div>
+        <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-block-start: 6px;">
+          <div style="min-width: 0;">
+            <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;">
+              <span style="font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.015em;">Pharmacy</span>
+              <span dir="rtl" style="font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 17px; color: #5A6779; unicode-bidi: isolate;">الصيدلية</span>
+            </div>
+            <div style="font-size: 12.5px; color: #4A5568; margin-block-start: 2px;">Department · <span dir="ltr" style="font-family: ui-monospace, Menlo, monospace; font-size: 12px;">PHARM</span> · active</div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Edit</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Add sub-unit</button>
+            <button aria-label="More actions for Pharmacy" style="width: 34px; height: 34px; border: 1px solid #5A6779; border-radius: 6px; background: #fff;">⋯</button>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 10px 28px; margin-block-start: 12px;">
+          <div><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Parent unit</div><span style="color: #5A6779;">▦ </span><a href="#o3" style="font-size: 14px; font-weight: 500; text-decoration: none;">Medical Services</a></div>
+          <div><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Head</div><span style="color: #5A6779;">◉ </span><a href="#o3" style="font-size: 14px; font-weight: 500; text-decoration: none;">Dr. Fahad Al-Anazi</a><span style="font-size: 13px; color: #4A5568;"> · Director · away</span></div>
+          <div><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Acting head</div><span style="color: #5A6779;">◉ </span><a href="#o3" style="font-size: 14px; font-weight: 500; text-decoration: none;">Dr. Huda Zahrani</a><span style="font-size: 13px; color: #4A5568;"> · no end date</span></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 16px; background: #FFFAEB; border-block-end: 1px solid #FEDF89;">
+        <span style="font-size: 11.5px; font-weight: 600; color: #B54708; background: #fff; border: 1px solid #FEDF89; border-radius: 999px; padding: 1px 9px;">▲ At risk from 24 Dec</span>
+        <span style="flex: 1 1 300px; font-size: 12.5px; color: #7A2E0E;">Open-ended acting head · Setup health will raise this in 88 days</span>
+        <a href="#o3" style="font-size: 12.5px; font-weight: 600; text-decoration: none; color: #1F5480;">Fix in Headship</a>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; padding: 14px 16px; background: #F4F7FA;">
+        <sc-for list="{{ recordPanels }}" as="p" hint-placeholder-count="6">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; overflow: hidden; display: flex; flex-direction: column;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 11px; border-block-end: 1px solid #E2E8F0;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">{{ p.title }}</span>
+              <span dir="ltr" style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 0 6px;">{{ p.count }}</span>
+            </div>
+            <sc-for list="{{ p.rows }}" as="r" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 11px; border-block-end: 1px solid #F0F3F7;">
+                <span style="min-width: 0;"><span style="{{ r.aStyle }}">{{ r.a }}</span><span style="display: block; font-size: 11.5px; color: #5A6779;">{{ r.b }}</span></span>
+                <span dir="ltr" style="flex: none; font-size: 12px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ r.c }}</span>
+              </div>
+            </sc-for>
+            <div style="padding: 8px 11px; font-size: 11.5px; color: #5A6779; margin-block-start: auto; text-wrap: pretty;">{{ p.note }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 10px; margin-block-start: 12px;">
+      <sc-for list="{{ recordDecisions }}" as="d" hint-placeholder-count="5">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="o4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Add / edit unit — form dialog, 560</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">One dialog for all three entry points. From a row or a record, the parent is prefilled and can be changed.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 14px; align-items: start;">
+      <div style="background: rgba(30,42,56,0.45); border-radius: 8px; padding: 14px;">
+        <div style="background: #fff; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+            <div><div style="font-size: 15px; font-weight: 600;">Add sub-unit to Pharmacy</div><div style="font-size: 11.5px; color: #5A6779;">It will appear last among Pharmacy's sub-units · once B-ORD-1 ships</div></div>
+            <button aria-label="Close dialog" style="width: 26px; height: 26px; border: none; background: none; color: #5A6779;">✕</button>
+          </div>
+          <div style="padding: 12px 13px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div><label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Name · English</label><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-size: 13px;">Inpatient Pharmacy</div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px;"></div></div>
+              <div><label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Name · Arabic</label><div dir="rtl" style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px;">صيدلية المرضى المنومين</div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px;"></div></div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div><label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Code</label><div dir="ltr" style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-family: ui-monospace, Menlo, monospace; font-size: 13px;">PHARM-IP</div><div style="display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px; color: #5A6779;"><span>Up to 10 · capitals, numbers, hyphens</span><span dir="ltr" style="font-variant-numeric: tabular-nums;">8 / 10</span></div></div>
+              <div><label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Type</label><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; font-size: 13px;"><span>Section</span><span style="font-size: 10px; color: #5A6779;">▼</span></div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px;"></div></div>
+            </div>
+            <div><label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Parent unit</label><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; font-size: 13px;"><span>Al Nakheel › Medical Services › <strong style="font-weight: 600;">Pharmacy</strong></span><span style="font-size: 10px; color: #5A6779;">▼</span></div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px; color: #5A6779;">overlay-select, hierarchy mode · a unit's own sub-units can't be chosen</div></div>
+            <div><label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Description <span style="font-weight: 400; color: #5A6779;">· optional</span></label><div style="height: 66px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 8px 10px; font-size: 13px; color: #8A94A6;">What this unit is responsible for</div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px; color: #5A6779; text-align: end;">0 / 1000</div></div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 13px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #8A94A6; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Cancel</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Add sub-unit</button>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <sc-for list="{{ formDecisions }}" as="d" hint-placeholder-count="6">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="o6" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">6</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Read-only · org:view without org:manage</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Same page, same tree and chart, outside Administration. Every write affordance is absent, never disabled.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; align-items: start;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 12px 14px 10px; border-block-end: 1px solid #E2E8F0;">
+          <div style="font-size: 12px; color: #5A6779;">Organization</div>
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-block-start: 4px;">
+            <span style="font-size: 22px; font-weight: 600;">Organization</span>
+            <span dir="ltr" style="font-size: 13px; color: #5A6779; font-variant-numeric: tabular-nums;">21 units · 4 levels</span>
+          </div>
+          <div style="display: flex; gap: 0; margin-block-start: 10px; border-block-end: 1px solid #E2E8F0;">
+            <span style="padding: 6px 12px; font-size: 13px; font-weight: 600; color: #1F5480; border-block-end: 2px solid #2E6FA3; margin-block-end: -1px;">Tree</span>
+            <span style="padding: 6px 12px; font-size: 13px; color: #4A5568;">Chart</span>
+          </div>
+        </div>
+        <sc-for list="{{ roRows }}" as="r" hint-placeholder-count="4">
+          <div style="display: flex; gap: 12px; align-items: center; padding: 6px 14px; min-height: 36px; box-sizing: border-box; border-block-end: 1px solid #F0F3F7;">
+            <span style="flex: 2.4 1 0; min-width: 0; display: flex; align-items: center; gap: 6px;"><span style="{{ r.indent }}"></span><span style="flex: none; width: 16px; font-size: 10px; color: #5A6779; text-align: center;">{{ r.caret }}</span><a href="#o6" style="font-size: 13px; font-weight: 500; text-decoration: none;">{{ r.name }}</a></span>
+            <span style="flex: 0 1 104px; min-width: 0; font-size: 12.5px; color: #4A5568;">{{ r.type }}</span>
+            <span style="{{ r.headStyle }}">{{ r.head }}</span>
+            <span dir="ltr" style="flex: none; width: 56px; text-align: end; font-size: 12.5px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ r.people }}</span>
+          </div>
+        </sc-for>
+        <div style="padding: 8px 14px; font-size: 11.5px; color: #5A6779; background: #F4F7FA;">No ⋯ column, no Add unit, no Attention column. The row still opens the record.</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Absent for a read-only viewer</div>
+          <sc-for list="{{ roAbsent }}" as="a" hint-placeholder-count="7">
+            <div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12px;">
+              <span style="flex: 0 0 130px; font-weight: 600;">{{ a.where }}</span>
+              <span style="flex: 1 1 auto; color: #4A5568; text-wrap: pretty;">{{ a.what }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #4A5568; text-wrap: pretty;"><strong style="color: #1F5480;">Why Attention goes.</strong> Setup health conditions are for the only person who can fix them, the tenant admin. A read-only viewer seeing “▲ No head” with no Fix is an alarm they can't act on. The fact itself stays visible: “No head” is still muted text in the Head column and on the chart box.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="o5" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Settled 27 Sep, and what each settlement means on screen</h2>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px;">
+      <sc-for list="{{ forAhmad }}" as="q" hint-placeholder-count="5">
+        <div style="border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 8px; padding: 11px 13px;">
+          <div style="font-size: 12.5px; font-weight: 600; color: #1F5480; margin-block-end: 4px;">{{ q.t }}</div>
+          <sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2">
+            <div style="font-size: 12px; color: #4A5568; padding: 3px 0; text-wrap: pretty;">· {{ o }}</div>
+          </sc-for>
+          <div style="font-size: 12px; color: #1F5480; font-weight: 500; margin-block-start: 5px; text-wrap: pretty;">{{ q.rec }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px; margin-block-start: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 10px;">What changed · Rev 2, 27 Sep</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 16px;">
+      <sc-for list="{{ rev2 }}" as="c" hint-placeholder-count="11">
+        <div style="font-size: 12px; color: #4A5568; padding: 6px 0; border-block-end: 1px solid #F0F3F7; text-wrap: pretty;"><strong>{{ c.t }}</strong> {{ c.b }}</div>
+      </sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const warn = "display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 999px; padding: 1px 8px; white-space: nowrap;";
+    const av = (on) => "flex: none; width: 20px; height: 20px; border-radius: 50%; font-size: 9.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; " + (on ? "background: #E4EEF6; color: #1F5480;" : "border: 1px dashed #8A94A6; color: #5A6779;");
+    const hs = (on) => "font-size: 12.5px; " + (on ? "color: #2D3748;" : "color: #5A6779;");
+
+    const tr = (depth, caret, name, nameAr, type, head, headMeta, people, opts) => {
+      const o = opts || {};
+      return {
+        caret, name, nameAr, type, head, headMeta, people,
+        chip: o.chip || null, chipStyle: warn, menuLabel: "Actions for " + name,
+        indent: "flex: none; width: " + (depth * 20) + "px;",
+        nameStyle: "display: block; font-size: 13px; line-height: 18px; text-decoration: none; " + (o.match ? "font-weight: 600; color: #1F5480;" : o.ctx ? "font-weight: 400; color: #5A6779;" : "font-weight: 500;"),
+        headStyle: "display: block; " + (head === "No head" ? "color: #5A6779;" : "color: #2E6FA3; font-weight: 500;"),
+        rowStyle: "display: flex; gap: 12px; align-items: center; padding: 6px 14px; min-height: 36px; box-sizing: border-box; border-block-end: 1px solid #F0F3F7; background: " + (o.match ? "#F2F7FB" : "#fff") + ";"
+      };
+    };
+
+    return {
+      factFindings: [
+        { t: "During a scheduled successor, a unit has two heads", b: "ACC-133 gives the incoming head authority when the appointment is saved, not on its date. A “head derived from a user holding a head-conferring position there” returns two people in that window. The chart box and the tree's Head column show both: “Dr. Fahad · + incoming Dr. Huda”. The endpoint must return a list, not a single head." },
+        { t: "A head's own headcount depends on primaryOrgUnitId", b: "Headship comes from the position. Headcount comes from primaryOrgUnitId. A head whose primary unit is the parent is head here but counted there. The endpoint has to choose, and it should say which. Proposed: count people by primaryOrgUnitId, as agreed, and return the head separately, flagged countedHere: true/false. That way the box never shows a head who seems to be missing from the count." },
+        { t: "org:view does nothing on these pages today", b: "The endpoints read with org:view, but ACC-123 makes the pages tenant-admin only, and Yasser (org:view) is redirected. So org:view currently gives no access to any surface. That makes the chart an admin-only screen, and it's the one screen quality managers and surveyors most want to see. It's in §5 as a decision." },
+        { t: "Neither tenant can reach the depth cut-off", b: "Both tenants have a maximum depth of 4, and the chart shows 4 levels. The “sub-units below” control will never render on the demo data. Before the build ships, seed one depth-5 branch in a test tenant, or the drill-in will ship untested." },
+        { t: "“Set acting head” is now “Arrange cover”", b: "§2 names a row-menu item “Set acting head”. ACC-133 renamed it Arrange cover and derived the reason from the unit's state. The row menu below uses ACC-133's six state-derived labels, so the tree offers exactly what the Headship panel offers." }
+      ],
+
+      treeRows: [
+        tr(0, "▾", "Al Nakheel Specialist Hospital", "مستشفى النخيل التخصصي", "Administration", "Dr. Saleh Al-Qahtani", "Director", "6", { ctx: true }),
+        tr(1, "▾", "Medical Services", "الخدمات الطبية", "Administration", "Dr. Reem Al-Harbi", "Director", "31", { ctx: true }),
+        tr(2, "▾", "Pharmacy", "الصيدلية", "Department", "Dr. Fahad Al-Anazi", "Away · Dr. Huda covering", "14", { match: true, chip: "▲ At risk 24 Dec" }),
+        tr(3, "", "Inpatient Pharmacy", "صيدلية المرضى المنومين", "Section", "No head", "", "8", { match: true, chip: "▲ No head" }),
+        tr(3, "", "Outpatient Pharmacy", "صيدلية العيادات الخارجية", "Section", "Dr. Omar Haddad", "Director", "5", { match: true })
+      ],
+
+      rowMenu: [
+        { label: "Open unit", k: "a" }, { label: "Add sub-unit", k: "a" }, { label: "Edit", k: "a" },
+        { label: "Move up among siblings", k: "a" }, { label: "Move down among siblings", k: "a" },
+        { label: "HEADSHIP · state 4, held · covered", k: "h" },
+        { label: "End cover", k: "a" }, { label: "Appoint successor…", k: "a" }, { label: "Vacate…", k: "d" },
+        { label: "Show on chart", k: "a" },
+        { label: "Deactivate…", k: "d" }
+      ].map(m => ({ label: m.label, style: m.k === "h"
+        ? "padding: 8px 12px 3px; margin-block-start: 4px; border-block-start: 1px solid #E2E8F0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;"
+        : "padding: 0 12px; min-height: 32px; display: flex; align-items: center; font-size: 13px; cursor: pointer; color: " + (m.k === "d" ? "#B42318" : "#2D3748") + ";" })),
+
+      treeDecisions: [
+        { t: "Search keeps ancestors, and dims them", b: "Matches are bold and tinted. Their ancestors stay in place as muted context, so the path is readable. Siblings that don't match are hidden. Flattening would lose the one thing that tells three “Pharmacy” sections apart. Highlighting in place at 300 units would leave matches off-screen. The count names both numbers: “3 units match · shown with 2 ancestors”." },
+        { t: "No column sort. Order is sortOrder, set in the row menu.", b: "Sorting a tree by head or headcount would break sibling groups, and sibling order means something because the author sets it. Headers aren't sortable, and none carries aria-sort. Reordering is Move up / Move down in the row menu, which is also the keyboard path. Drag is left out: p-treeTable row drag isn't reliable in RTL, and a menu item is enough for an action this rare. Needs backend work that doesn't exist, to be ticketed. B-ORD-1: create sets sortOrder to max + 1 among siblings. Today it writes 0 and ties break alphabetically, so new units land mid-list. B-ORD-2: a reorder endpoint. Nothing exists for Move up/down. Until they ship, the Move items are absent and the create dialog doesn't promise “last”." },
+        { t: "No pagination, at 20 units or 300", b: "Paginating a tree splits siblings across pages and loses parents. Instead: collapsed to level 2 by default, expand state kept per user, and the header count “21 units · 4 levels”. At 300 units, collapsed to level 2, that's about 20 rows on first load. No virtual scroll: it would add an inner scroll container, and the row menu would become exactly the overlay artboard 7 prohibits." },
+        { t: "Bilingual names: adopted as recommended", b: "Reader's language on the main line, the other language below it in 12.5 muted, in its own direction with unicode-bidi: isolate. In Arabic the lines swap, and the English line runs LTR inside the RTL cell. This replaces both the bracketed version and the separate Arabic column (UX-15)." },
+        { t: "Type: the org_unit_type lookup, resolved", b: "Options come from lookupService.getValues('org_unit_type') at runtime, as the committee form does for committee_type. Six are seeded and tenants can add more, so there's never a list in the client. Every label is labelOverride ?? label in the reader's language, in the column, the filter chip and the chart box, never the stored key (department). No type: muted “No type” in the column, nothing on the chart box's type line, and “(No type)” as a filter value so untyped units never silently drop out. Hidden or inactive value still held by units: its label still renders on those units, followed by “· retired”, and it stays in the filter while any unit holds it. It's absent from the create/edit select, except on a unit that already holds it, where it's shown as the current value with “retired” in its helper. Plain text, never a chip: taxonomy, under artboard 3." },
+        { t: "Status: Active is plain, everything else earns space", b: "Active has no chip (UX-16). Deactivated units are hidden by default. With “Show deactivated” on, they appear with a grey dot and the word “Deactivated”, and their name isn't a link to edit. The Attention column holds one severity chip, drawn from Setup health: no head, or an open-ended cover. It's empty on most rows, and that's the point." },
+        { t: "Row actions: an open-able name, plus one worded menu", b: "The unit name is the link to the record. Everything else is in a single ⋯ menu, named “Actions for Pharmacy” (UX-13). Items are grouped Unit / Headship / View / Deactivate. Headship items are generated from ACC-133's state matrix, so in any state the menu offers the actions that state allows: up to three headship items, eleven in total. No icon strips." },
+        { t: "Head column: the relation field, not a string", b: "The head renders as a §4 relation link, plus a meta line for the headship state (Away · covering, + incoming, Acting). “No head” is muted text. The severity sits in Attention, so the Head column never carries colour." }
+      ],
+
+      blockers: [
+        { n: "3", text: "active sub-units must be deactivated first", link: "Show in tree" },
+        { n: "14", text: "active people are assigned to this unit", link: "Show in Users" }
+      ],
+
+      chartL2: [
+        { name: "Medical Services", type: "Administration", initials: "RH", head: "Dr. Reem Al-Harbi", on: true, summary: "31 people · 7 positions", chip: null, committees: "2 committees",
+          kids: [
+            { name: "Pharmacy", initials: "FA", head: "Dr. Fahad Al-Anazi", on: true, summary: "14 · 5 positions", chip: null, below: "3 sub-units below · show from here" },
+            { name: "Laboratory", initials: "–", head: "No head", on: false, summary: "9 people", chip: "▲ No head", below: null }
+          ] },
+        { name: "Nursing", type: "Administration", initials: "NS", head: "Nadia Saeed", on: true, summary: "58 people · 4 positions", chip: null, committees: null,
+          kids: [
+            { name: "Ward 3 · Surgical", initials: "LK", head: "Layla Khalil", on: true, summary: "22 · 3 positions", chip: null, below: null },
+            { name: "Ward 5 · Medical", initials: "–", head: "No head", on: false, summary: "No one assigned", chip: "▲ No head", below: null }
+          ] },
+        { name: "Quality & Patient Safety", type: "Department", initials: "NO", head: "Nora Al-Otaibi", on: true, summary: "5 people · 2 positions", chip: null, committees: "4 committees", kids: [] }
+      ].map(a => ({
+        name: a.name, type: a.type, initials: a.initials, head: a.head, summary: a.summary, chip: a.chip, chipStyle: warn, committees: a.committees,
+        avatarStyle: av(a.on), headStyle: hs(a.on), hasKids: a.kids.length > 0,
+        barStyle: "align-self: stretch; height: 1px; background: #8A94A6; margin-inline: 90px;",
+        kids: a.kids.map(b => ({ name: b.name, initials: b.initials, head: b.head, summary: b.summary, chip: b.chip, chipStyle: warn, below: b.below, avatarStyle: av(b.on), headStyle: hs(b.on) }))
+      })),
+
+      positions: [
+        { name: "Director", n: "1" }, { name: "Clinical Pharmacist", n: "5" }, { name: "Pharmacist", n: "4" }, { name: "Pharmacy Technician", n: "3" }, { name: "Secretary", n: "1" }
+      ],
+
+      chartDecisions: [
+        { t: "At rest: name, type, head, one summary line", b: "Level 1–2: 210 × 96. Level 3: 180 × 84, with name, head, “14 · 5 positions”, and one chip. Level 4: 180 × 84 when it has no hidden children, 180 × 118 when it does (84 + 7 gap + a 27px full-width “N sub-units below · show from here” button: 11.5 type, 4px padding, 1px border). A level-4 row takes the tallest box's height, so connectors stay level. Arabic: +4 per text line, and 190 wide. Position rows aren't in the box. Four rows on forty boxes make a wall. Selecting a box opens the docked side panel with the full position list and counts, the actions, and Open unit." },
+        { t: "Depth: 4 levels from the current root, then a drill-in", b: "A box on level 4 whose children aren't rendered shows a full-width “3 sub-units below · show from here” button. It re-roots the chart at that box, and the “Showing from” path above becomes breadcrumb links back up. That's a required behaviour. The number is childCount, so it's true even when nothing below is loaded." },
+        { t: "Actions live in a docked panel, not on the box", b: "At 45 boxes the chart is wider than the content area, so it has to scroll horizontally. That makes it an inner scroll container, and artboard 7 then forbids overlays inside it. So a box has no menu. Clicking selects it, and the docked panel outside the scroll area carries the actions. This also keeps each box a single tab stop." },
+        { t: "Committees: a count on the owning box, expandable", b: "Until ACC-135 lands, the Show committees switch is absent, not just off. There's no relation for it to reveal, which is the same rule as the record's Committees panel. After ACC-135, with it off: nothing. With it on, a “◇ 4 committees” line on the owning box, which lists them in the side panel with their stage. They aren't nodes in the tree: a committee isn't a unit, and drawing it as one would imply it has units under it. Committee-to-committee relations stay on the committee record's Sub-committees panel. Two hierarchies on one tree would draw edges across branches." },
+        { t: "Colour means one thing here: attention", b: "No branch colours. Branch identity is carried by position and by the “Showing from” root. The only colour is the Setup health chip, which always has a glyph and text, so it passes the greyscale test. The selected box has a 2px border, not a fill." },
+        { t: "Empty cases are normal, and they read that way", b: "No head: a dashed avatar with “No head” muted, plus the chip. No people: “No one assigned” instead of a count, so no “0 · 0 positions”. A tenant that has assigned no one: one strip above the chart, “Nobody is assigned to a unit yet. The chart shows structure only.” and a link to Users. A tenant with only its root: the root box plus “Add the first unit under …”." },
+        { t: "Two heads during a scheduled successor", b: "The head line reads “Dr. Fahad Al-Anazi · + incoming Dr. Huda”, in line with ACC-133 state 5. An acting head adds “(acting)”, and the side panel shows all three people from the Headship state." },
+        { t: "Print is in scope, as a fixed-geometry print", b: "“Print…” prints the current root at 4 levels, boxes at rest, A3 landscape (A4 when there are 24 boxes or fewer). It carries a provenance footer under the export rules: tenant, printed by, date and time, root, levels, “N units below level 4 not shown”, and “Shows the administrative reporting line only”. That last line matters for a binder, see §5." },
+        { t: "Keyboard", b: "The chart is a tree for assistive technology: role=tree, one tab stop. Arrow keys move parent/child/sibling in visual direction, mirrored in RTL. Enter selects, and the side panel follows. Shift+Enter shows the chart from the focused box. Focus uses the 2px ring from the system file." }
+      ],
+
+      contract: [
+        { k: "root", v: "{ id, path: [{ id, nameEn, nameAr }] }, for the breadcrumb when the chart is re-rooted" },
+        { k: "nodes[].id, parentId, depth", v: "depth relative to root, 0–3" },
+        { k: "nameEn, nameAr, code", v: "as stored" },
+        { k: "type", v: "{ valueId, label, isRetired } | null. label is already resolved server-side in the reader's language (labelOverride ?? label). isRetired is true when the value is hidden or inactive. Works however type is stored, and saves the client a lookup per box" },
+        { k: "sortOrder", v: "siblings in this order; the client doesn't re-sort" },
+        { k: "childCount", v: "active direct children, including ones below the depth cut-off, for the “N sub-units below” button" },
+        { k: "heads[]", v: "{ userId, nameEn, nameAr, positionNameEn/Ar, role: 'substantive' | 'incoming', countedHere }, from OrgUnitHeadAssignment. countedHere: true if this head's primaryOrgUnitId is this unit, so they're inside headcount. When it's false, the box summary appends “+ head from <unit>”, so the head never looks uncounted. A list, because a scheduled successor makes two" },
+        { k: "acting", v: "{ userId, names, reason, validTo | null } or null. Source: OrgUnitHeadAssignment. Never OrgUnit.actingHeadUserId: it's a compatibility cache refreshed by an unreported scheduled sweep, so it goes stale silently when a cover expires by date" },
+        { k: "headcount", v: "active users with primaryOrgUnitId = this unit" },
+        { k: "positions[]", v: "{ positionId, nameEn, nameAr, count, isUnitHeadPosition }, sorted by grade then count. Only the side panel reads it, so the endpoint can return it lazily" },
+        { k: "committees", v: "Omitted until ACC-135. After it: { count, items: [{ id, nameEn, nameAr, stage }] }, items lazy like positions" },
+        { k: "attention", v: "the one highest-severity open Setup health condition for the unit: { code, severity, flagDate? }, or null" },
+        { k: "asOf", v: "server timestamp, printed in the footer" }
+      ],
+
+      behaviours: [
+        { id: "B1", need: "A custom box template per node", why: "The box drawn above: name, type, head list, summary, chip, and the below-button.", gate: "required" },
+        { id: "B2", need: "Connectors mirror under dir=rtl", why: "If the connectors are drawn with physical left/right borders, Arabic lines point the wrong way. Test with the Arabic mini-chart.", gate: "required" },
+        { id: "B3", need: "A subtree can be passed as the root", why: "Drill-in and “show from here” re-root the chart. That's our data work, if the component accepts any node as root.", gate: "required" },
+        { id: "B4", need: "Keyboard traversal as a tree", why: "WCAG AA. p-organizationChart's selection keyboard support needs checking. If it's missing, we add it in our wrapper.", gate: "required" },
+        { id: "B5", need: "Selection event, no built-in popups", why: "The docked panel does the rest. The component must not open anything of its own inside the scroll area.", gate: "required" },
+        { id: "B6", need: "Per-node collapse", why: "Useful above 30 boxes. It must not be the only way to control depth.", gate: "nice" },
+        { id: "B7", need: "Zoom and Fit", why: "A CSS scale on the chart's wrapper. Our code, independent of the library.", gate: "ours" },
+        { id: "B8", need: "Print at fixed geometry", why: "Print CSS on our wrapper, and the provenance footer. Independent of the library.", gate: "ours" },
+        { id: "B9", need: "Performance at about 150 rendered boxes", why: "At 4 levels on a large hospital. Measure first render and re-root time.", gate: "required" }
+      ].map(b => ({ id: b.id, need: b.need, why: b.why, gate: b.gate === "required" ? "Required" : b.gate === "nice" ? "Nice to have" : "Ours, any library",
+        gateStyle: "flex: none; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 7px; align-self: flex-start; " + (b.gate === "required" ? "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;" : "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;") })),
+
+      recordPanels: [
+        { title: "Headship", count: "state 4", rows: [{ a: "ACC-133 panel, as designed", b: "Held · covered · End cover / Appoint successor / Vacate", c: "" }], note: "Sits first, and isn't redrawn here. It's the Head Management file's panel, unchanged." },
+        { title: "Sub-units", count: "3", rows: [
+          { a: "Inpatient Pharmacy", b: "Section · No head", c: "8" }, { a: "Outpatient Pharmacy", b: "Section · Dr. Omar Haddad", c: "5" }, { a: "Pharmacy Stores", b: "Unit · Aisha Rahman", c: "3" }], note: "Direct children only, each with its own count. “Show in tree” opens the tree with Pharmacy expanded. Empty: “No sub-units” with Add sub-unit." },
+        { title: "People", count: "14", rows: [
+          { a: "Dr. Huda Zahrani", b: "Clinical Pharmacist · acting head", c: "" }, { a: "Salem Al-Dosari", b: "Pharmacist", c: "" }, { a: "Mona Fathy", b: "Pharmacy Technician", c: "" }], note: "Primary unit = Pharmacy, grouped by position when there are more than 10. Compact list panel. Empty: “No one has Pharmacy as their unit”, with a link to Users." },
+        { title: "Positions in use", count: "5", rows: [
+          { a: "Director", b: "confers headship", c: "1" }, { a: "Clinical Pharmacist", b: "", c: "5" }, { a: "Pharmacist", b: "", c: "4" }], note: "Derived from People, never edited here. Positions are organisation-wide. Empty with People: the panel is absent, since it's derived." },
+        { title: "Committees", count: "1", rows: [
+          { a: "Pharmacy & Therapeutics", b: "Active · 3/4", c: "" }], note: "Owned by this unit (ACC-135). Until ACC-135 lands the panel is absent, not empty, because the relation doesn't exist yet." },
+        { title: "History", count: "", rows: [
+          { a: "Huda Zahrani set as acting head", b: "25 Sep 2026 · Nora Al-Otaibi", c: "" }, { a: "Parent changed to Medical Services", b: "2 Mar 2025 · Omar Bakri", c: "" }], note: "The unit's AuditLog and OrgUnitHeadEvent rows, newest first, following the export rules. The empty-ledger wording follows the Head Management file." }
+      ].map(p => ({ title: p.title, count: p.count, note: p.note, rows: p.rows.map(r => ({ a: r.a, b: r.b, c: r.c, aStyle: "display: block; font-size: 13px; font-weight: 500; color: #2E6FA3;" })) })),
+
+      recordDecisions: [
+        { t: "Header relations: parent, head, acting head", b: "Each is the §4 relation field: a type glyph (▦ unit, ◉ person), the name in the reader's language, and its current state as text (“away”, “no end date”). The same component renders the same relation in the tree, the chart panel and here, which closes “a string on one screen, a chip on another, an id on a third”." },
+        { t: "Setup health surfaces as one strip under the header", b: "The single highest open condition, with its date and a Fix link. That's the “one severity chip” from the description. More than one: “+ 1 more” opens Setup health filtered to this unit. The strip isn't there when nothing is open." },
+        { t: "Three hierarchy views, three jobs", b: "The Tree is the whole structure, for finding and acting. The Chart is the whole structure with people, for reading and printing. The record is this unit's neighbours: ancestors in the breadcrumb, direct children in a panel. “Child units get a small tree” is replaced by “direct children only”: a tree in the panel would duplicate the Tree view at a worse size." },
+        { t: "Panel order", b: "Headship, Sub-units, People, Positions, Committees, History. That's ordered by how often an admin comes here for each, and it matches the Committee record: state first, then relations, then audit." },
+        { t: "Deactivated units", b: "The header reads “Deactivated 3 Jun 2026 by …”, and Edit, Add sub-unit and the headship actions are absent. There's no Reactivate button, because nothing would handle it. The page says so in one line under the header: “Deactivated units can't be reactivated from AccreditMe.”" }
+      ],
+
+      formDecisions: [
+        { t: "Arabic beside English: confirmed", b: "Two columns, 50/50, each field in its own direction. The pair reads as one name in two languages. In the Arabic UI the columns swap, so Arabic comes first." },
+        { t: "Type and Description join the form. sortOrder does not.", b: "Type is a 5-option select, so it has no message slot. Description is the standard textarea: 1000 limit (@MaxLength(1000)), counter amber from 900. sortOrder isn't a number field: a new unit goes last among its siblings, and Move up/down in the tree sets the order. A number field would ask the user to know where every sibling sits." },
+        { t: "Code, and the locked state", b: "While editable: monospace, auto-uppercased as you type, maxlength 10 with a counter (@MaxLength(10)), and the pattern in the helper. Locked: a read-only pair, “Code · PHARM · locked”. UNREACHABLE TODAY: nothing in backend/src or the seed ever sets isCodeLocked. The drawing stays for when something does, but the build doesn't ship it as a tested state until then." },
+        { t: "One dialog for all three entry points", b: "Header “Add unit” (no parent → parent required), row or record “Add sub-unit to Pharmacy” (parent prefilled, changeable). Edit is titled “Edit Pharmacy”. Changing the parent in Edit shows a helper: “Moves Pharmacy and its 3 sub-units”." },
+        { t: "Measured against the 420 cap", b: "Two-column name row 79 + 12, code/type row 79 + 12, parent 79 + 12, description 109: 382 in English. Arabic: 84 + 84 + 84 + textarea 114 + 36 = 402. Standard density fits both, with 4 field blocks. No compact declaration." },
+        { t: "Cycles can't be picked", b: "overlay-select greys out this unit and its descendants as parents, with the reason in each option's accessible name. The server rule stays the source of truth." }
+      ],
+
+      roRows: [
+        { d: 0, caret: "▾", name: "Al Nakheel Specialist Hospital", type: "Administration", head: "Dr. Saleh Al-Qahtani", people: "6" },
+        { d: 1, caret: "▾", name: "Medical Services", type: "Administration", head: "Dr. Reem Al-Harbi", people: "31" },
+        { d: 2, caret: "▸", name: "Pharmacy", type: "Department", head: "Dr. Fahad Al-Anazi", people: "14" },
+        { d: 2, caret: "", name: "Laboratory", type: "Department", head: "No head", people: "9" }
+      ].map(r => ({ caret: r.caret, name: r.name, type: r.type, head: r.head, people: r.people, indent: "flex: none; width: " + (r.d * 20) + "px;",
+        headStyle: "flex: 1.4 1 0; min-width: 0; font-size: 12.5px; " + (r.head === "No head" ? "color: #5A6779;" : "color: #2E6FA3; font-weight: 500;") })),
+      roAbsent: [
+        { where: "Page header", what: "Add unit. The breadcrumb reads “Organization”, not “Administration ›”." },
+        { where: "Tree", what: "The ⋯ column, Move up/down, the Attention column, and Show deactivated (deactivated units aren't shown at all)." },
+        { where: "Chart", what: "The docked panel keeps Open unit, Show chart from here and Find in tree, and drops everything else. No severity chips on boxes." },
+        { where: "Print", what: "Stays. It's the reason a quality manager needs this page. The footer names the viewer." },
+        { where: "Record", what: "Edit, Add sub-unit and ⋯ are absent, and so is the Setup health strip. The Headship panel shows its state rows with no action buttons." },
+        { where: "Relations", what: "People and heads are links only where the viewer can open users. Otherwise they're named (§4 access states)." },
+        { where: "Empty states", what: "No action button. “Pharmacy has no sub-units”, and nothing to add." }
+      ],
+      rev2: [
+        { t: "1 · Type is a lookup.", b: "org_unit_type, six seeded values, extensible, labels resolved with overrides. No-type and retired-type states, a “(No type)” filter value, and the contract returns { valueId, label, isRetired }." },
+        { t: "2 · Level-4 box:", b: "180 × 84, or 118 with the below-button. The row takes the tallest height." },
+        { t: "3 · countedHere", b: "means the head is inside this unit's headcount. When false the summary names the head's unit." },
+        { t: "4 · Acting source", b: "is OrgUnitHeadAssignment. The actingHeadUserId cache is named as the column not to read." },
+        { t: "5 · Code:", b: "maxlength 10, with a counter." },
+        { t: "6 · Description:", b: "1000, amber from 900." },
+        { t: "7 · isCodeLocked", b: "has no setter. The locked pair is marked unreachable." },
+        { t: "8 · Show committees", b: "is absent until ACC-135, and so is the contract field." },
+        { t: "9 · Sibling order", b: "needs B-ORD-1 (max + 1 on create) and B-ORD-2 (reorder endpoint). Both are named for ticketing." },
+        { t: "Settled:", b: "no dotted-line reporting now, and the footer statement is kept. The org:view read-only page is drawn in §6." },
+        { t: "Not touched:", b: "AccreditMe Templates.dc.html. The copy in this workspace is known to be stale, so don't export it." }
+      ],
+      forAhmad: [
+        { t: "Dotted-line / secondary reporting: not now", opts: ["No schema change. The chart shows “Shows the administrative reporting line only” as a line under the “Showing from” bar, on screen, and the same sentence in the print footer."], rec: "Revisit only if a surveyor asks." },
+        { t: "org:view holders see the organisation, read-only", opts: ["A read-only /organization outside Administration, with its own nav entry for non-admins (drawn in §6). Same tree and chart. Every write and every Setup health prompt is absent, not disabled."], rec: "Admins keep the full page under Administration. It's one component with two permission shapes, not two pages." }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
