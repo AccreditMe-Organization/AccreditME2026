@@ -6604,3 +6604,89 @@ that is true of what the authoring file DECLARES. The practical rule:
 - **Anything else — start command, restart policy, pre-deploy, domains,
   replicas — belongs in the file.** Editing it in the dashboard produces a
   change the next apply silently reverts, with no record of what was intended.
+
+### 15.10 CORS: one exact origin, and the preview-deployment decision (ACC-128)
+
+`FRONTEND_URL` is the **one** browser origin allowed to send credentialed
+requests, and **the API refuses to start without it**. There is no safe default:
+httpOnly cookies need `credentials: true`, and a browser rejects a wildcard
+origin whenever credentials are set, so a missing value cannot be guessed at.
+`common/config/cors.config.ts` owns both halves; `FRONTEND_URL_MISSING` is the
+message, asserted by spec.
+
+**What `origin: undefined` actually did, because the defect report had it
+backwards.** Measured against the `cors` package rather than inferred:
+
+| configuration | headers emitted |
+| -- | -- |
+| `origin: undefined` + `credentials: true` — the deployed state | **none at all** |
+| `origin` omitted entirely | `Access-Control-Allow-Origin: *` + credentials, which browsers reject |
+| an exact string, non-matching request origin | the **configured** origin, and `next()` with no error |
+
+So the deployed behaviour was **fail-closed, not permissive**: with no
+`Access-Control-Allow-Origin` header a browser blocks the response, and CORS
+constrains browsers only. It was never a hole a site could read this API
+through. The real cost was the opposite — **a deployed front end would not have
+been able to call the API at all**, after a clean boot with nothing logged.
+
+**The origin is the STRING, and row three is why that is enough.** The criterion
+is *"refused rather than **reflected**"*, and reflected means the server echoes
+the REQUESTER's origin back — which is what makes a permissive policy dangerous.
+Row three is measured: a string origin emits the CONFIGURED value for any caller,
+never the caller's own, so a browser compares, finds a mismatch and blocks. The
+spec proves that against the real middleware through a Nest app, and
+`origin: true` — the form that genuinely does reflect — fails four of its tests.
+
+**An unlisted origin is therefore blocked BY THE BROWSER, and the handler still
+answers 200.** That is asserted, so the absence of a 4xx is not read later as an
+oversight. An earlier version of this fix used a function origin that refused with
+a **403** to make the refusal observable server-side; **that was an unrequested
+behaviour change and was reverted.** It would have turned 200 into 403 for every
+non-browser client that happens to send an `Origin` header — health probes,
+proxies, webhooks — while the browser-visible outcome was identical either way.
+It also bought no security: session cookies are `sameSite: 'strict'`, so a
+cross-site request carries no credentials at all, and the cookie policy is the
+actual defence.
+
+**What that gives up, stated rather than glossed:** there is no server-side signal
+that an unlisted origin tried — nothing refused, nothing logged. If that
+visibility is wanted it is a log line and its own decision, not a status code
+smuggled in beside a configuration fix.
+
+**PREVIEW DEPLOYMENTS DO NOT AUTHENTICATE AGAINST THIS API.** Decided rather
+than left to be discovered. Every preview gets its own hostname and
+`credentials: true` forbids a wildcard, so the alternatives were a validated
+list — unmaintainable against per-commit hostnames — or a pattern. **A pattern is
+the one to refuse:** `*.vercel.app` is a **public namespace**, so allowing it
+lets *any* third party's deployment make credentialed calls and read the
+responses. That is the permissive hole this ticket was wrongly believed to
+already have. A preview that needs a real API points at a non-production one with
+its own `FRONTEND_URL`.
+
+`CORS_ORIGIN` was **dead** — read nowhere in the code, present only in a comment,
+and set on Railway while the live variable was missing: exactly inverted. It is
+now deleted from the dashboard and undeclared in `.railway/railway.ts`.
+
+**Both variables are declared in `.railway/railway.ts`'s `env` block, by hand.**
+That block is not decoration: a variable the authoring file does not declare can
+be removed by the next `railway config apply`, and `FRONTEND_URL` is the one
+whose removal stops the boot rather than degrading quietly — so an apply made for
+an unrelated reason (ACC-130 adds `api.accreditme.app`) would have taken the
+service down. It is declared with `preserve()`, meaning the key is managed here
+and its value is not.
+
+**Capture such a variable by HAND, never with `railway config pull`.** That file
+used to instruct the opposite, in two places, and both were wrong: pull's
+RENDERED authoring file omits fields pull itself knows — the public domain, the
+start command, the restart policy — so regenerating to capture one variable drops
+three others, and the domain loss is invisible because the container keeps
+serving while nothing can reach it (§15.3).
+
+> **SEQUENCING, AND IT MATTERS.** Because the boot now fails without
+> `FRONTEND_URL`, **the variable must be set on Railway BEFORE this code
+> merges.** Otherwise every deploy fails at boot — the pre-deploy migration
+> runs, the new container refuses to start, and ACC-127's promotion gate
+> correctly declines to promote it, so the old container keeps serving and the
+> deploy goes red. That is the safe failure rather than an outage, but it blocks
+> every release until the variable exists. Expand then contract: set the variable
+> first, merge second.

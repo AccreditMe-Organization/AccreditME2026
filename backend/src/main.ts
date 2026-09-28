@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { buildCorsOptions, resolveFrontendOrigin } from './common/config/cors.config';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -22,14 +23,17 @@ async function bootstrap(): Promise<void> {
   // access_token httpOnly cookie (Step 9, Section 12 Discussion 4).
   app.use(cookieParser());
 
-  // FRONTEND_URL replaces the old CORS_ORIGIN/localhost fallback — an exact,
-  // required origin. httpOnly cookies require credentials: true, and browsers
-  // reject a wildcard origin whenever credentials: true is set, so a silently
-  // wrong/missing origin must fail loudly rather than fall back to a guess.
-  app.enableCors({
-    origin: process.env['FRONTEND_URL'],
-    credentials: true,
-  });
+  // FRONTEND_URL is an exact, required origin, and the API refuses to start
+  // without it (ACC-128). httpOnly cookies require credentials: true, and
+  // browsers reject a wildcard origin whenever credentials is set — so there is
+  // no safe default to fall back to, and a missing value must stop the boot
+  // rather than be guessed at.
+  //
+  // This comment made that promise before the code kept it: the origin was
+  // `process.env['FRONTEND_URL']` with no check, and that variable is unset on
+  // Railway. See cors.config.ts for what the middleware measurably does with
+  // `undefined` — it is not what the defect report assumed.
+  app.enableCors(buildCorsOptions(resolveFrontendOrigin()));
 
   app.setGlobalPrefix('api/v1');
 
