@@ -6605,7 +6605,7 @@ that is true of what the authoring file DECLARES. The practical rule:
   replicas — belongs in the file.** Editing it in the dashboard produces a
   change the next apply silently reverts, with no record of what was intended.
 
-### 15.9 CORS: one exact origin, and the preview-deployment decision (ACC-128)
+### 15.10 CORS: one exact origin, and the preview-deployment decision (ACC-128)
 
 `FRONTEND_URL` is the **one** browser origin allowed to send credentialed
 requests, and **the API refuses to start without it**. There is no safe default:

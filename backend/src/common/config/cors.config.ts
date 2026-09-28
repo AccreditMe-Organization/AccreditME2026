@@ -64,7 +64,7 @@ import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.int
  * ## One exact origin, no list and no pattern
  *
  * Deliberately not a comma-separated list and not a wildcard pattern. See
- * `SYSTEM-REFERENCE.md` §15.9 for the preview-deployment decision and why
+ * `SYSTEM-REFERENCE.md` §15.10 for the preview-deployment decision and why
  * `*.vercel.app` in particular is unsafe.
  */
 
