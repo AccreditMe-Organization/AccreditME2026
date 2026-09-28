@@ -102,7 +102,13 @@ describe('OrganizationService', () => {
 
   describe('create', () => {
     it('creates a unit with valid data', async () => {
-      mockPrisma.orgUnit.findFirst.mockResolvedValueOnce(null); // no code conflict
+      // ACC-134 — this dto has no parentId, so the root check runs FIRST and
+      // the code check second. Both are mocked by position rather than with one
+      // blanket mockResolvedValue, so a future change to the order fails here
+      // instead of passing for a reason the test never meant.
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(null) // no existing root
+        .mockResolvedValueOnce(null); // no code conflict
       mockPrisma.orgUnit.create.mockResolvedValue(BASE_UNIT);
 
       const result = await service.create(
@@ -121,10 +127,16 @@ describe('OrganizationService', () => {
     });
 
     it('throws ConflictException when code is already in use', async () => {
-      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT); // code conflict
+      // Asserts on the MESSAGE, not just the type. Both this and ACC-134's
+      // second-root refusal are ConflictException, so a type-only assertion
+      // would pass if the root check swallowed this case — which is exactly
+      // what a blanket mockResolvedValue(BASE_UNIT) used to do here.
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(null) // no existing root — reach the code check
+        .mockResolvedValueOnce(BASE_UNIT); // code conflict
       await expect(
         service.create(ORG_A, { nameEn: 'ICU Copy', code: 'ICU' }, 'actor-1'),
-      ).rejects.toThrow(ConflictException);
+      ).rejects.toThrow('Code "ICU" is already in use in this organization');
       expect(mockPrisma.orgUnit.create).not.toHaveBeenCalled();
     });
 
@@ -137,6 +149,135 @@ describe('OrganizationService', () => {
           'actor-1',
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── one root per tenant (ACC-134) ─────────────────────────────────────────────
+
+  describe('one root per tenant (ACC-134)', () => {
+    const ROOT = makeUnit({ id: 'root-1', nameEn: 'Al Nakheel Specialist Hospital', code: 'NAKHEEL' });
+
+    it('refuses a second root on create, and NAMES the existing one', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValueOnce(ROOT); // a root exists
+
+      // Caught once rather than awaited twice: a second `service.create` call
+      // would consume a mockResolvedValueOnce that is no longer queued, so the
+      // root lookup would return undefined and the creation would SUCCEED —
+      // which is how this assertion failed on its first run.
+      const error = await service
+        .create(ORG_A, { nameEn: 'Another Top Level', code: 'TOP2' }, 'actor-1')
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+
+      expect(error).toBeInstanceOf(ConflictException);
+      // The acceptance criterion is that the refusal NAMES the root, not that
+      // it merely refuses — a bare constraint error satisfies the first half
+      // and defeats the point of it.
+      expect((error as Error).message).toMatch(/Al Nakheel Specialist Hospital/);
+      expect((error as Error).message).toMatch(/NAKHEEL/);
+      expect(mockPrisma.orgUnit.create).not.toHaveBeenCalled();
+    });
+
+    it('allows the FIRST root, when the organization has none', async () => {
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(null) // no existing root
+        .mockResolvedValueOnce(null); // no code conflict
+      mockPrisma.orgUnit.create.mockResolvedValue(ROOT);
+
+      await expect(
+        service.create(ORG_A, { nameEn: 'Al Nakheel Specialist Hospital', code: 'NAKHEEL' }, 'a'),
+      ).resolves.toEqual(expect.objectContaining({ code: 'NAKHEEL' }));
+      expect(mockPrisma.orgUnit.create).toHaveBeenCalled();
+    });
+
+    it('does NOT run the root check when a parent is supplied', async () => {
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(makeUnit({ id: 'parent-1' })) // parent found
+        .mockResolvedValueOnce(null); // no code conflict
+      mockPrisma.orgUnit.create.mockResolvedValue(BASE_UNIT);
+
+      await service.create(ORG_A, { nameEn: 'Child', code: 'CHILD', parentId: 'parent-1' }, 'a');
+
+      // A child unit is never a root, so asking about roots would be a wasted
+      // query on the common path.
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ parentId: null }) }),
+      );
+    });
+
+    it('refuses promoting a child to root by PATCHing parentId to null', async () => {
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(makeUnit({ id: 'unit-9', parentId: 'parent-1' })) // the unit
+        .mockResolvedValueOnce(ROOT); // a root already exists
+
+      await expect(
+        service.update('unit-9', ORG_A, { parentId: null }, 'actor-1'),
+      ).rejects.toThrow(/already has a root unit.*Al Nakheel Specialist Hospital/);
+
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+    });
+
+    it('lets the EXISTING root re-save its own null parent — it is not a second root', async () => {
+      const self = makeUnit({ id: 'root-1', parentId: null });
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(self) // the unit being updated
+        .mockResolvedValueOnce(null); // no OTHER root, because self is excluded
+      mockPrisma.orgUnit.update.mockResolvedValue(self);
+
+      await expect(
+        service.update('root-1', ORG_A, { parentId: null, nameEn: 'Renamed' }, 'actor-1'),
+      ).resolves.toEqual(expect.objectContaining({ id: 'root-1' }));
+
+      // The exclusion is what makes this idempotent rather than self-blocking.
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { not: 'root-1' } }),
+        }),
+      );
+    });
+
+    it('ignores an INACTIVE root, so an archived unit cannot block the tenant forever', async () => {
+      // findActiveRoot filters isActive, so the query must carry it. There is
+      // no reactivate path on this service, so counting an inactive root would
+      // be an unrecoverable dead end.
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(null) // no ACTIVE root found
+        .mockResolvedValueOnce(null); // no code conflict
+      mockPrisma.orgUnit.create.mockResolvedValue(ROOT);
+
+      await service.create(ORG_A, { nameEn: 'New Root', code: 'NEW' }, 'actor-1');
+
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: expect.objectContaining({ parentId: null, isActive: true }),
+        }),
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // The root lookup must be scoped by organizationId. Unscoped, ORG_B's
+      // root would be found while creating in ORG_A — and the refusal would
+      // name another tenant's unit, which both blocks a legitimate write and
+      // leaks that tenant's structure in the message.
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.create.mockResolvedValue(BASE_UNIT);
+
+      await service.create(ORG_A, { nameEn: 'Root', code: 'ROOT' }, 'actor-1');
+
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_A, parentId: null }),
+        }),
+      );
+      expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_B }),
+        }),
+      );
     });
   });
 

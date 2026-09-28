@@ -160,6 +160,64 @@ export class OrganizationService {
     });
   }
 
+  /**
+   * The organization's existing root unit, if it has one — ACC-134.
+   *
+   * A tenant has exactly ONE root org unit (Ahmad, 27 Sep). `parentId` was a
+   * plain nullable column with nothing stopping a second, and `update()`
+   * explicitly supported creating one. Both entry points now ask this first.
+   *
+   * ## It counts ACTIVE roots only, and that is a decision, not an oversight
+   *
+   * The ticket says "exactly one root" without saying what an archived one is.
+   * A deactivated unit keeps its row and its null `parentId`, so counting every
+   * root would mean a deactivated root blocks a new one forever — and there is
+   * NO reactivate method on this service, so nothing could undo it. That is an
+   * unrecoverable state reachable by an ordinary action, which is worse than
+   * the problem the constraint exists to prevent.
+   *
+   * Measured before choosing (`npm run verify:acc134-roots`, 28 Sep): 3
+   * organizations, one root each, ZERO of them inactive. So this is a
+   * forward-looking choice about a state that does not exist yet, not a
+   * accommodation of existing data.
+   *
+   * Whatever database constraint follows MUST use the same predicate, or the
+   * service and the index will disagree about what "one root" means.
+   *
+   * Scoped by organizationId — a root in another tenant must never be found
+   * here, or one tenant's structure would refuse another tenant's write.
+   */
+  private async findActiveRoot(
+    organizationId: string,
+    excludeUnitId?: string,
+  ): Promise<{ id: string; nameEn: string; code: string } | null> {
+    return this.prisma.orgUnit.findFirst({
+      where: {
+        organizationId,
+        parentId: null,
+        isActive: true,
+        ...(excludeUnitId ? { id: { not: excludeUnitId } } : {}),
+      },
+      select: { id: true, nameEn: true, code: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
+   * The refusal, naming the root that is already there — ACC-134 acceptance.
+   *
+   * "The refusal names the existing root rather than reporting a constraint
+   * error." A bare 500 from a unique index tells the caller nothing about what
+   * to do next; the name and code tell them the parent they probably meant.
+   */
+  private rootAlreadyExists(root: { nameEn: string; code: string }): ConflictException {
+    return new ConflictException(
+      `This organization already has a root unit: "${root.nameEn}" (${root.code}). ` +
+        'An org unit with no parent would be a second root, which is not allowed. ' +
+        'Choose a parent unit instead.',
+    );
+  }
+
   async create(
     organizationId: string,
     dto: CreateOrgUnitDto,
@@ -170,6 +228,10 @@ export class OrganizationService {
         where: { id: dto.parentId, organizationId },
       });
       if (!parent) throw new NotFoundException('Parent org unit not found');
+    } else {
+      // ACC-134 — no parent means this would be a root. Refuse if one exists.
+      const root = await this.findActiveRoot(organizationId);
+      if (root) throw this.rootAlreadyExists(root);
     }
 
     const existing = await this.prisma.orgUnit.findFirst({
@@ -232,8 +294,18 @@ export class OrganizationService {
       }
     }
 
-    // Setting parentId to null promotes the unit to root level — intentional
-    // Setting parentId to another unit moves it in the hierarchy
+    // Setting parentId to another unit moves it in the hierarchy.
+    //
+    // ACC-134 — setting parentId to NULL no longer promotes the unit to root
+    // level. This comment used to read "promotes the unit to root level —
+    // intentional", and it was: the service deliberately supported a second
+    // root. A tenant now has exactly one, so the path is refused rather than
+    // removed, because callers still send it and a silent no-op would be worse
+    // than a stated refusal.
+    //
+    // Promoting the unit that is ALREADY the root is not a second root, so it
+    // stays allowed — the exclusion below is what makes the write idempotent
+    // instead of a unit being unable to re-save its own unchanged parent.
     if (dto.parentId !== undefined && dto.parentId !== null) {
       if (dto.parentId === id) {
         throw new ConflictException('An org unit cannot be its own parent');
@@ -242,6 +314,9 @@ export class OrganizationService {
         where: { id: dto.parentId, organizationId },
       });
       if (!parent) throw new NotFoundException('Parent org unit not found');
+    } else if (dto.parentId === null) {
+      const root = await this.findActiveRoot(organizationId, id);
+      if (root) throw this.rootAlreadyExists(root);
     }
 
     const before = this.toInterface(unit);
