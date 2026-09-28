@@ -22,6 +22,10 @@ AI suggests → human reviews → human approves → system records with audit t
 ```
 Tier 1 — Cloud SaaS (default)
   Shared infrastructure managed by AccreditMe.
+  Hosted in the EU: Frankfurt (database), Amsterdam (application).
+  NOT the Middle East — no provider we use offers a Middle East region.
+  Customers with an in-region data-residency requirement are served by
+  Tier 2 (AWS Bahrain or UAE), not by Tier 1.
   Target: small to mid-size organizations.
   Pricing: monthly subscription via Stripe.
 
@@ -44,7 +48,7 @@ Tier 3 — On-premises / private cloud (future)
 - Runtime: Node.js with TypeScript — strict mode always
 - Framework: NestJS
 - ORM: Prisma
-- Database: PostgreSQL (Supabase — Bahrain region)
+- Database: PostgreSQL (Supabase — eu-central-1, Frankfurt)
 - Auth: Better Auth (self-hostable, runs inside NestJS app)
 - Job queues: BullMQ with Redis
 - Real-time: NestJS WebSocket gateway (Socket.io)
@@ -141,10 +145,19 @@ already sits above this line, so this documents the floor rather than lowering
 the app to it. A feature below this baseline is a real constraint to design
 around; anything above it may be used freely.
 
-### Infrastructure
-- Backend hosting: Railway (auto-deploy from GitHub)
-- Database: Supabase — Bahrain region (me-south-1)
-- File storage: AWS S3 — Bahrain region (me-south-1)
+### Infrastructure — measured 2026-09-28, not aspirational
+- Backend + frontend hosting: Railway — `europe-west4-drams3a` (Amsterdam),
+  auto-deploy from GitHub
+- Database: Supabase PostgreSQL — `aws-1-eu-central-1` (Frankfurt)
+- Redis + `redis-volume`: Railway — `sfo` (San Francisco). **KNOWN OPEN ITEM,
+  ACC-143.** Every cache call crosses the Atlantic twice, and "cache in the
+  United States" is a poor answer in a Gulf tender. Not a one-line fix: the
+  volume is region-bound with 5 GB attached, and `REDIS_URL` is `preserve()`d,
+  so recreating the service produces a URL something has to carry across.
+- File storage: AWS S3 — **NOT PROVISIONED.** No bucket, no credentials, no
+  AWS variable in `.railway/railway.ts`, and no feature injects
+  `STORAGE_PROVIDER` — it is registered in `tenant.module.ts` and consumed by
+  nothing. The region is undecided rather than wrong.
 - On-premises storage alternative: MinIO (S3-compatible)
 - CDN: Cloudflare (free tier)
 - Containers: Docker (every service containerized from day one)
@@ -578,7 +591,8 @@ SSO tenants are redirected to their IdP. Local tenants use Better Auth directly.
 
 ### Storage Providers Per Tenant
 ```
-Option 1: AWS S3 — Bahrain region (default)
+Option 1: AWS S3 (default) — region undecided; not provisioned yet,
+        see Infrastructure
 Option 2: MinIO on customer infrastructure (on-premises S3-compatible)
 Option 3: Local filesystem / NAS mount (legacy on-premises)
 ```
@@ -1305,7 +1319,8 @@ Extra storage:        per 10 GB block
 ```
 Tier 1/2 (cloud):
   Database: Supabase automated daily backup, 30-day point-in-time recovery
-  Files: AWS S3 versioning + cross-region replication
+  Files: AWS S3 versioning + cross-region replication — PLANNED;
+         no bucket exists yet, see Infrastructure
   RTO: 4 hours (Tier 1), 2 hours (Tier 2)
   RPO: 24 hours (Tier 1), 4 hours (Tier 2)
 
@@ -3102,23 +3117,47 @@ complete, not just the currently-in-review ones.
   — but it is the more precise interim rule, and it is worth knowing
   that treating every migration as equally dangerous would block
   ordinary additive work for no real safety gain.
-- **The documented database region does not match the live one.** CLAUDE.md
-  states "Supabase — Bahrain region (me-south-1)" in three places (Tech Stack,
-  Infrastructure, and the Tier 1/2 deployment description). The live
-  `DATABASE_URL` points at **`aws-1-eu-central-1.pooler.supabase.com`** —
-  Frankfurt, not Bahrain. Found during ACC-62's investigation and recorded
-  here rather than silently corrected, because the two possible fixes are
-  very different decisions and only Ahmad can pick:
-  - the **documentation** is wrong and the instance is deliberately in
-    eu-central-1 — in which case the region claims here need updating; or
-  - the **instance** is in the wrong region and should be moved.
-  This is not cosmetic for this product. Deployment Tiers 1 and 2 make
-  regional data-residency claims to a GCC/MENA market, and several GCC
-  customers in regulated sectors (healthcare especially) have data-residency
-  requirements that a Frankfurt-hosted database would not satisfy. Worth
-  settling before any real customer data exists, not after. Note the same
-  question applies separately to `AWS_REGION=me-south-1` for S3, which has
-  not been verified against a live bucket.
+- **Hosting regions — CORRECTED 2026-09-28. The claims above now match what
+  was measured; what remains open is stated as open.**
+
+  **Where things actually are:** database `aws-1-eu-central-1` (Frankfurt),
+  application `europe-west4-drams3a` (Amsterdam), Redis and its volume `sfo`
+  (San Francisco — ACC-143). S3 is not provisioned at all.
+
+  **Frankfurt is where the instance is. It was not chosen for residency, and
+  calling it deliberate would assert a decision nobody took** — the same error
+  as replacing a wrong claim with a confident-sounding one, which is why S3
+  above reads "not provisioned" rather than naming a region. Moving the
+  application to Amsterdam WAS a decision, and a correct one, but it addressed
+  application-to-database latency; it does nothing for a Gulf user's round trip
+  to Europe, which is unavoidable while both sit in the EU.
+
+  **Tier 1 could never have been in Bahrain.** Supabase has no Middle East
+  region, and Railway has none either — so that claim was unachievable rather
+  than merely inaccurate. **Whether the EU is the right permanent home is still
+  open.**
+
+  **Tier 2 is the answer for a customer who requires in-region data**, and it
+  is unchanged: AWS Bahrain or UAE are real regions and Tier 2 is a dedicated
+  instance, not Supabase. That is the tier a public-sector tender is answered
+  with.
+
+  **Moving the database is connection strings plus a data migration, not a
+  rewrite.** Verified 2026-09-28: **zero Supabase coupling** — no Supabase
+  package in either `package.json`, no Supabase reference anywhere in
+  `backend/src` or `frontend/src`, and Prisma uses plain
+  `provider = "postgresql"`. That fact is what makes the residency question
+  answerable rather than blocking, which is why it is written down here rather
+  than rediscovered each time it is asked.
+
+  **Known, and NOT fixed by this correction:**
+  `s3-storage.provider.ts:18` reads `process.env['AWS_REGION'] ?? 'me-south-1'`
+  — a hardcoded Bahrain fallback in code. Both `.env.example` templates now
+  leave the region blank, but that line still supplies Bahrain to anything that
+  constructs the provider. It is harmless today (nothing injects
+  `STORAGE_PROVIDER`) and is the same "default chosen by nobody" shape the
+  templates were just cleared of. Remove it when S3 is actually provisioned and
+  a region is chosen.
   **This geography is also, measurably, why local development feels slow**
   (ACC-60) — a workflow transition is ~240ms of application work, but takes
   6–11 seconds from a Middle East client against the Frankfurt database,
@@ -3231,7 +3270,9 @@ BETTER_AUTH_SECRET=
 JWT_SECRET=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
-AWS_REGION=me-south-1
+# Region deliberately blank: S3 is not provisioned and no region has been
+# chosen. A placeholder here becomes a real region picked by nobody.
+AWS_REGION=
 AWS_S3_BUCKET=
 ANTHROPIC_API_KEY=
 RESEND_API_KEY=
