@@ -12,7 +12,15 @@
 // produces ONE of this project's three resources, with the builder and
 // Dockerfile path emitted as COMMENTS rather than code (railwayapp/cli#1224 —
 // it omits databases and volumes and cannot map a monorepo). `pull` reads what
-// Railway actually holds. If this file ever needs regenerating, pull.
+// Railway actually holds, which is why it produced this file rather than
+// `migrate`.
+//
+// THAT IS NOT A RECOMMENDATION TO REGENERATE THIS FILE. `pull` is the better of
+// the two generators and still lossy: the authoring file it RENDERS omits things
+// pull itself knows — the public domain, the start command, the restart policy —
+// so a regeneration silently drops them, and the domain loss is invisible
+// (the container keeps serving while nothing can reach it). Prefer a hand edit.
+// See the `networking`, `startCommand` and `env` comments below for each case.
 //
 // APPLY 1 — ADOPTION ONLY. Nothing here changes what is running. It describes
 // the deployment exactly as it stands at commit 5f9ba89, so the plan should
@@ -127,17 +135,39 @@ export default defineRailway(() => {
 
     // Declared so they are not removed; `preserve()` means "this key exists,
     // I am not managing its value". Editing any of these in the Railway
-    // dashboard is safe and will not be reverted. A variable added in the
-    // dashboard and NOT added here must be captured with `railway config pull`
-    // before the next apply, or an apply can remove it.
+    // dashboard is safe and will not be reverted.
+    //
+    // A variable added in the dashboard and NOT declared here can be removed by
+    // the next apply. ADD THE KEY TO THIS BLOCK BY HAND, alphabetically, with
+    // `preserve()`.
+    //
+    // DO NOT REGENERATE THIS FILE WITH `railway config pull` TO CAPTURE IT.
+    // This comment used to say exactly that, and it was wrong — it sent the
+    // reader into the one path that silently loses configuration. Pull's
+    // RENDERED authoring file omits fields that pull itself knows about: see the
+    // `networking` comment, where the rendered file dropped the public domain
+    // that is the only thing making this backend reachable, and the
+    // `startCommand` and restart-policy comments, both marked RESTORED for the
+    // same reason. A pull would regenerate this file missing all three, and the
+    // domain failure in particular is invisible — the container keeps serving
+    // perfectly while nothing can reach it.
     env: {
       ANTHROPIC_API_KEY: preserve(),
       APP_BASE_DOMAIN: preserve(),
       BETTER_AUTH_SECRET: preserve(),
-      CORS_ORIGIN: preserve(),
+      // CORS_ORIGIN is gone, not merely undeclared: it was a placeholder the
+      // code never read, and FRONTEND_URL replaces it. Removed from this block
+      // in the same change as its deletion from the dashboard, so nothing is
+      // declared-but-absent.
       DATABASE_URL: preserve(),
       DIRECT_URL: preserve(),
       ENCRYPTION_KEY: preserve(),
+      // The API REFUSES TO BOOT without this one — it is the exact browser
+      // origin allowed to send credentialed requests and there is no safe
+      // default, so an apply that dropped it would take the service down on the
+      // next deployment rather than degrade quietly. That is why it is declared
+      // here the same day it is set, and not left for a later pull to notice.
+      FRONTEND_URL: preserve(),
       JWT_EXPIRY: preserve(),
       JWT_SECRET: preserve(),
       NODE_ENV: preserve(),
