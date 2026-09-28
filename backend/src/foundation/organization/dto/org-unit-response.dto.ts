@@ -1,4 +1,4 @@
-import { IOrgUnit } from '../interfaces/org-unit.interface';
+import { IOrgUnit, IOrgUnitType } from '../interfaces/org-unit.interface';
 
 export class OrgUnitResponseDto implements IOrgUnit {
   id!: string;
@@ -7,7 +7,11 @@ export class OrgUnitResponseDto implements IOrgUnit {
   nameEn!: string;
   nameAr!: string | null;
   code!: string;
+  /** ACC-137 — the superseded free-text key. Unchanged in name and shape so
+   *  org-unit-tree's `{{ rowData.type }}` keeps rendering a string. */
   type!: string | null;
+  typeValueId!: string | null;
+  typeValue!: IOrgUnitType | null;
   description!: string | null;
   isActive!: boolean;
   isCodeLocked!: boolean;

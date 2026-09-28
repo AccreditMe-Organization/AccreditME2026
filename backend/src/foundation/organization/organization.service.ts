@@ -6,9 +6,15 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
-import { IOrgUnit } from './interfaces/org-unit.interface';
+import { IOrgUnit, IOrgUnitType } from './interfaces/org-unit.interface';
 import { CreateOrgUnitDto } from './dto/create-org-unit.dto';
 import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
+
+// ACC-137 — the lookup category a unit's type comes from. Seeded as a SYSTEM
+// category (organizationId null) and extensible, so a tenant may add its own
+// values beside the six shipped ones — the seed already does, with `ward` for
+// the hospital and `faculty`/`school`/`program`/`deanship` for the university.
+const ORG_UNIT_TYPE_CATEGORY = 'org_unit_type';
 
 @Injectable()
 export class OrganizationService {
@@ -22,7 +28,11 @@ export class OrganizationService {
       where: { organizationId },
       orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
     });
-    return this.buildTree(all, null);
+    // ACC-137 — ONE resolver for the whole tree, not one lookup per unit. A
+    // per-unit join would be a query per node on a hierarchy with no depth
+    // limit; the type vocabulary is a handful of rows either way.
+    const types = await this.buildTypeResolver(organizationId);
+    return this.buildTree(all, null, types);
   }
 
   async listFlat(organizationId: string): Promise<IOrgUnit[]> {
@@ -30,7 +40,8 @@ export class OrganizationService {
       where: { organizationId },
       orderBy: [{ sortOrder: 'asc' }, { nameEn: 'asc' }],
     });
-    return units.map((u) => this.toInterface(u));
+    const types = await this.buildTypeResolver(organizationId);
+    return units.map((u) => this.toInterface(u, types));
   }
 
   async findById(id: string, organizationId: string): Promise<IOrgUnit> {
@@ -38,7 +49,8 @@ export class OrganizationService {
       where: { id, organizationId },
     });
     if (!unit) throw new NotFoundException('Org unit not found');
-    return this.toInterface(unit);
+    const types = await this.buildTypeResolver(organizationId);
+    return this.toInterface(unit, types);
   }
 
   // ACC-40 Section 2.5 — a genuine resolver, not isInSameOrParentOrgUnit()
@@ -218,6 +230,102 @@ export class OrganizationService {
     );
   }
 
+  /**
+   * The org_unit_type values visible to a tenant, by value id — ACC-137.
+   *
+   * ## Why this is not `LookupService.getValues()`
+   *
+   * `getValues()` is the SELECTION list: it drops hidden values and inactive
+   * ones, which is right for a picker and wrong here. A unit that already holds
+   * a value the admin has since hidden must keep rendering its type, marked as
+   * retired — an acceptance criterion, and the alternative is a type silently
+   * vanishing from a column because someone tidied the Lookups page, which reads
+   * as data loss.
+   *
+   * So this resolves the same TWO LAYERS by the same rules, and keeps what
+   * `getValues()` discards:
+   *
+   *   - a SYSTEM value (organizationId null) is visible to every tenant;
+   *   - a tenant row with the same key OVERRIDES its labels, and the id stays
+   *     the SYSTEM row's, which is why the foreign key works for both layers;
+   *   - a tenant row with a different key is that tenant's own value;
+   *   - hidden or deactivated marks `isRetired` instead of removing the entry.
+   *
+   * One query per read, not per unit — the caller resolves the whole tree from
+   * this map.
+   */
+  private async buildTypeResolver(
+    organizationId: string,
+  ): Promise<Map<string, IOrgUnitType>> {
+    const category = await this.prisma.lookupCategory.findFirst({
+      where: { key: ORG_UNIT_TYPE_CATEGORY, organizationId: null },
+      select: { id: true },
+    });
+    if (!category) return new Map();
+
+    const rows = await this.prisma.lookupValue.findMany({
+      where: {
+        categoryId: category.id,
+        OR: [{ organizationId: null }, { organizationId }],
+      },
+    });
+
+    const tenantByKey = new Map(
+      rows.filter((r) => r.organizationId === organizationId).map((r) => [r.key, r]),
+    );
+
+    const resolved = new Map<string, IOrgUnitType>();
+    for (const row of rows) {
+      if (row.organizationId === null) {
+        const override = tenantByKey.get(row.key);
+        resolved.set(row.id, {
+          id: row.id,
+          key: row.key,
+          labelEn: override?.labelOverrideEn ?? row.labelEn,
+          labelAr: override?.labelOverrideAr ?? row.labelAr,
+          isRetired: !row.isActive || (override ? override.isHidden || !override.isActive : false),
+        });
+      } else {
+        resolved.set(row.id, {
+          id: row.id,
+          key: row.key,
+          labelEn: row.labelOverrideEn ?? row.labelEn,
+          labelAr: row.labelOverrideAr ?? row.labelAr,
+          isRetired: !row.isActive || row.isHidden,
+        });
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Validate a `typeValueId` for WRITING, and return the value — ACC-137.
+   *
+   * Stricter than the read resolver on purpose: a retired value still RENDERS on
+   * a unit that holds it, but must not be newly CHOSEN. Selecting a value the
+   * tenant has just hidden would re-introduce it through a side door.
+   *
+   * The tenant scoping is the part worth stating. A value is acceptable when it
+   * is SYSTEM (`organizationId` null, shared by every tenant) OR belongs to this
+   * tenant. `ward` and `faculty` are real TENANT-layer values in the seed, so a
+   * check that only compared KEYS, or that ignored `organizationId`, would let
+   * one tenant's private type be set on another tenant's unit.
+   */
+  private async resolveTypeValueForWrite(
+    typeValueId: string,
+    organizationId: string,
+  ): Promise<IOrgUnitType> {
+    const resolver = await this.buildTypeResolver(organizationId);
+    const value = resolver.get(typeValueId);
+
+    if (!value || value.isRetired) {
+      throw new NotFoundException(
+        `Unit type '${typeValueId}' is not an available ${ORG_UNIT_TYPE_CATEGORY} value in this organization`,
+      );
+    }
+    return value;
+  }
+
   async create(
     organizationId: string,
     dto: CreateOrgUnitDto,
@@ -241,6 +349,10 @@ export class OrganizationService {
       throw new ConflictException(`Code "${dto.code}" is already in use in this organization`);
     }
 
+    // ACC-137 — required, and validated against this tenant's own available
+    // values. The DTO makes it mandatory; this makes it MEAN something.
+    const typeValue = await this.resolveTypeValueForWrite(dto.typeValueId, organizationId);
+
     const unit = await this.prisma.orgUnit.create({
       data: {
         organizationId,
@@ -248,7 +360,14 @@ export class OrganizationService {
         nameEn: dto.nameEn,
         nameAr: dto.nameAr ?? null,
         code: dto.code,
-        type: dto.type ?? null,
+        // ACC-137 — BOTH shapes are written, deliberately. `type` is the legacy
+        // free-text column and the container running the old code still selects
+        // it; writing only `typeValueId` would leave rows this deploy created
+        // looking untyped to the deployment still serving. Expand then contract
+        // (ACC-127): write both, drop `type` once nothing reads it. The key is
+        // taken from the resolved value, so the two cannot disagree.
+        type: typeValue.key,
+        typeValueId: typeValue.id,
         description: dto.description ?? null,
         sortOrder: dto.sortOrder ?? 0,
       },
@@ -319,7 +438,16 @@ export class OrganizationService {
       if (root) throw this.rootAlreadyExists(root);
     }
 
-    const before = this.toInterface(unit);
+    // ACC-137 — validated only when supplied. An edit that does not mention the
+    // type must not have to resend it, and must not silently clear it: the type
+    // is required to CREATE a unit, not required in every PATCH body.
+    const updatedType =
+      dto.typeValueId !== undefined
+        ? await this.resolveTypeValueForWrite(dto.typeValueId, organizationId)
+        : null;
+
+    const types = await this.buildTypeResolver(organizationId);
+    const before = this.toInterface(unit, types);
 
     const updated = await this.prisma.orgUnit.update({
       where: { id },
@@ -327,7 +455,9 @@ export class OrganizationService {
         ...(dto.nameEn !== undefined && { nameEn: dto.nameEn }),
         ...(dto.nameAr !== undefined && { nameAr: dto.nameAr }),
         ...(dto.code !== undefined && { code: dto.code }),
-        ...(dto.type !== undefined && { type: dto.type }),
+        // ACC-137 — both shapes again, from the resolved value, so `type` and
+        // `typeValueId` can never drift apart on an edit.
+        ...(updatedType ? { type: updatedType.key, typeValueId: updatedType.id } : {}),
         ...(dto.description !== undefined && { description: dto.description }),
         ...(dto.sortOrder !== undefined && { sortOrder: dto.sortOrder }),
         ...(dto.parentId !== undefined && { parentId: dto.parentId }),
@@ -341,10 +471,10 @@ export class OrganizationService {
       objectType: 'OrgUnit',
       objectId: id,
       before: before as unknown as Record<string, unknown>,
-      after: this.toInterface(updated) as unknown as Record<string, unknown>,
+      after: this.toInterface(updated, types) as unknown as Record<string, unknown>,
     });
 
-    return this.toInterface(updated);
+    return this.toInterface(updated, types);
   }
 
   async deactivate(
@@ -435,27 +565,36 @@ export class OrganizationService {
     all: Array<{
       id: string; organizationId: string; parentId: string | null;
       nameEn: string; nameAr: string | null; code: string;
-      type: string | null; description: string | null;
+      type: string | null; typeValueId: string | null; description: string | null;
       isActive: boolean; isCodeLocked: boolean; sortOrder: number;
       createdAt: Date; updatedAt: Date;
     }>,
     parentId: string | null,
+    types: Map<string, IOrgUnitType>,
   ): IOrgUnit[] {
     return all
       .filter((u) => u.parentId === parentId)
       .map((u) => ({
-        ...this.toInterface(u),
-        children: this.buildTree(all, u.id),
+        ...this.toInterface(u, types),
+        children: this.buildTree(all, u.id, types),
       }));
   }
 
-  private toInterface(record: {
-    id: string; organizationId: string; parentId: string | null;
-    nameEn: string; nameAr: string | null; code: string;
-    type: string | null; description: string | null;
-    isActive: boolean; isCodeLocked: boolean; sortOrder: number;
-    createdAt: Date; updatedAt: Date;
-  }): IOrgUnit {
+  private toInterface(
+    record: {
+      id: string; organizationId: string; parentId: string | null;
+      nameEn: string; nameAr: string | null; code: string;
+      type: string | null; typeValueId: string | null; description: string | null;
+      isActive: boolean; isCodeLocked: boolean; sortOrder: number;
+      createdAt: Date; updatedAt: Date;
+    },
+    // ACC-137 — defaulted so every existing caller keeps compiling and simply
+    // gets an unresolved type. A REQUIRED parameter would have been the tidier
+    // signature and the wrong trade: it turns "this read forgot to resolve" into
+    // a compile error at dozens of call sites that do not care, and the failure
+    // it prevents is visible the moment anything renders a type.
+    types: Map<string, IOrgUnitType> = new Map(),
+  ): IOrgUnit {
     return {
       id: record.id,
       organizationId: record.organizationId,
@@ -464,6 +603,8 @@ export class OrganizationService {
       nameAr: record.nameAr,
       code: record.code,
       type: record.type,
+      typeValueId: record.typeValueId,
+      typeValue: record.typeValueId ? (types.get(record.typeValueId) ?? null) : null,
       description: record.description,
       isActive: record.isActive,
       isCodeLocked: record.isCodeLocked,

@@ -17,6 +17,7 @@ const BASE_UNIT = {
   nameAr: null,
   code: 'ICU',
   type: null,
+  typeValueId: null,
   description: null,
   isActive: true,
   isCodeLocked: false,
@@ -56,6 +57,27 @@ const mockPrisma = {
   userRole: {
     findMany: jest.fn(),
   },
+  // ACC-137 — buildTypeResolver() reads the org_unit_type category and its
+  // values on every read path, so every org-unit test goes through these two.
+  lookupCategory: {
+    findFirst: jest.fn(),
+  },
+  lookupValue: {
+    findMany: jest.fn(),
+  },
+};
+
+// ACC-137 — the SYSTEM 'department' value, as buildTypeResolver() sees it.
+const SYSTEM_DEPARTMENT = {
+  id: 'lv-dept',
+  organizationId: null as string | null,
+  key: 'department',
+  labelEn: 'Department',
+  labelAr: 'قسم',
+  labelOverrideEn: null as string | null,
+  labelOverrideAr: null as string | null,
+  isActive: true,
+  isHidden: false,
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -67,6 +89,11 @@ describe('OrganizationService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // ACC-137 — a working lookup by default, so tests that are not about the
+    // type do not each have to stub it. Tests that ARE about it override these.
+    mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-org-unit-type' });
+    mockPrisma.lookupValue.findMany.mockResolvedValue([SYSTEM_DEPARTMENT]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -113,7 +140,7 @@ describe('OrganizationService', () => {
 
       const result = await service.create(
         ORG_A,
-        { nameEn: 'Intensive Care Unit', code: 'ICU' },
+        { nameEn: 'Intensive Care Unit', code: 'ICU', typeValueId: 'lv-dept' },
         'actor-1',
       );
 
@@ -135,7 +162,11 @@ describe('OrganizationService', () => {
         .mockResolvedValueOnce(null) // no existing root — reach the code check
         .mockResolvedValueOnce(BASE_UNIT); // code conflict
       await expect(
-        service.create(ORG_A, { nameEn: 'ICU Copy', code: 'ICU' }, 'actor-1'),
+        service.create(
+          ORG_A,
+          { nameEn: 'ICU Copy', code: 'ICU', typeValueId: 'lv-dept' },
+          'actor-1',
+        ),
       ).rejects.toThrow('Code "ICU" is already in use in this organization');
       expect(mockPrisma.orgUnit.create).not.toHaveBeenCalled();
     });
@@ -145,7 +176,7 @@ describe('OrganizationService', () => {
       await expect(
         service.create(
           ORG_A,
-          { nameEn: 'Sub Unit', code: 'SUB', parentId: 'foreign-parent' },
+          { nameEn: 'Sub Unit', code: 'SUB', parentId: 'foreign-parent', typeValueId: 'lv-dept' },
           'actor-1',
         ),
       ).rejects.toThrow(NotFoundException);

@@ -45,6 +45,30 @@ export class CreateOrgUnitDto {
   @IsOptional()
   parentId?: string | null;
 
+  /**
+   * ACC-137 — REQUIRED on create, and the service validates it resolves.
+   *
+   * The ticket's phrase is "nullable in the database, required in the API", and
+   * the two are not in tension. The column is nullable because the PLATFORM
+   * organization's root is not a tenant org unit and no org_unit_type value is
+   * meaningful for it — a permanent structural exception, not a migration
+   * backlog. That row is created by `demo-seed.ts` writing Prisma directly, so
+   * it never passes through this DTO, which is why the exemption needs no
+   * carve-out here. A validator branch for it would be inventing a rule the
+   * decision did not make.
+   */
+  @IsString()
+  @IsNotEmpty()
+  typeValueId!: string;
+
+  /**
+   * ACC-137 — the superseded free-text field, kept only for the expand step.
+   *
+   * No longer read: `create()` and `update()` write this column from the
+   * RESOLVED value's key, so the two cannot drift. It stays in the DTO so a
+   * caller still sending it is not rejected by `forbidNonWhitelisted`, which
+   * would turn a harmless stale field into a 400 during the deploy window.
+   */
   @IsString()
   @IsOptional()
   type?: string;
