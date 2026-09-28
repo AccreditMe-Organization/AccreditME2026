@@ -347,6 +347,20 @@ export class TenantService {
       throw new ConflictException('Tenant has already been bootstrapped');
     }
 
+    // ACC-145 — BEFORE the root unit, not after. The global SYSTEM lookups are
+    // what a unit's type resolves against, and creating the thing that needs
+    // them before the thing that creates them is an ordering that only works by
+    // accident: the values are global, so the second and every later tenant
+    // finds them already seeded by an earlier bootstrap. Only the very first
+    // tenant on a fresh database hit the gap — which is why it passed every
+    // manual test on dev and would have failed on a clean production database.
+    //
+    // This is belt-and-braces, not the fix. The real guarantee is the pre-deploy
+    // step (ACC-145), because the values must exist before the REQUEST is made,
+    // not before this line runs. Kept because relying on a previous tenant
+    // having seeded the globals is not a guarantee.
+    await this.lookupService.seedSystemData();
+
     // Prisma called directly — importing OrganizationService would be circular
     // (OrganizationModule → TenantModule → OrganizationService).
     const rootUnitExists = await this.prisma.orgUnit.findFirst({
@@ -366,7 +380,6 @@ export class TenantService {
     }
 
     await this.orgPositionService.seedDefaultPositions(id);
-    await this.lookupService.seedSystemData();
     await this.roleService.seedSystemRoles(id);
     await this.workflowTemplateService.seedDefaultWorkflows(id);
 
