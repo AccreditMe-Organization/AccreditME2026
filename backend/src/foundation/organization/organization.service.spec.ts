@@ -17,6 +17,7 @@ const BASE_UNIT = {
   nameAr: null,
   code: 'ICU',
   type: null,
+  typeValueId: null as string | null,
   description: null,
   isActive: true,
   isCodeLocked: false,
@@ -56,6 +57,27 @@ const mockPrisma = {
   userRole: {
     findMany: jest.fn(),
   },
+  // ACC-137 — buildTypeResolver() reads the org_unit_type category and its
+  // values on every read path, so every org-unit test goes through these two.
+  lookupCategory: {
+    findFirst: jest.fn(),
+  },
+  lookupValue: {
+    findMany: jest.fn(),
+  },
+};
+
+// ACC-137 — the SYSTEM 'department' value, as buildTypeResolver() sees it.
+const SYSTEM_DEPARTMENT = {
+  id: 'lv-dept',
+  organizationId: null as string | null,
+  key: 'department',
+  labelEn: 'Department',
+  labelAr: 'قسم',
+  labelOverrideEn: null as string | null,
+  labelOverrideAr: null as string | null,
+  isActive: true,
+  isHidden: false,
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -67,6 +89,11 @@ describe('OrganizationService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    // ACC-137 — a working lookup by default, so tests that are not about the
+    // type do not each have to stub it. Tests that ARE about it override these.
+    mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-org-unit-type' });
+    mockPrisma.lookupValue.findMany.mockResolvedValue([SYSTEM_DEPARTMENT]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -113,7 +140,7 @@ describe('OrganizationService', () => {
 
       const result = await service.create(
         ORG_A,
-        { nameEn: 'Intensive Care Unit', code: 'ICU' },
+        { nameEn: 'Intensive Care Unit', code: 'ICU', typeValueId: 'lv-dept' },
         'actor-1',
       );
 
@@ -135,7 +162,11 @@ describe('OrganizationService', () => {
         .mockResolvedValueOnce(null) // no existing root — reach the code check
         .mockResolvedValueOnce(BASE_UNIT); // code conflict
       await expect(
-        service.create(ORG_A, { nameEn: 'ICU Copy', code: 'ICU' }, 'actor-1'),
+        service.create(
+          ORG_A,
+          { nameEn: 'ICU Copy', code: 'ICU', typeValueId: 'lv-dept' },
+          'actor-1',
+        ),
       ).rejects.toThrow('Code "ICU" is already in use in this organization');
       expect(mockPrisma.orgUnit.create).not.toHaveBeenCalled();
     });
@@ -145,7 +176,7 @@ describe('OrganizationService', () => {
       await expect(
         service.create(
           ORG_A,
-          { nameEn: 'Sub Unit', code: 'SUB', parentId: 'foreign-parent' },
+          { nameEn: 'Sub Unit', code: 'SUB', parentId: 'foreign-parent', typeValueId: 'lv-dept' },
           'actor-1',
         ),
       ).rejects.toThrow(NotFoundException);
@@ -165,7 +196,7 @@ describe('OrganizationService', () => {
       // root lookup would return undefined and the creation would SUCCEED —
       // which is how this assertion failed on its first run.
       const error = await service
-        .create(ORG_A, { nameEn: 'Another Top Level', code: 'TOP2' }, 'actor-1')
+        .create(ORG_A, { nameEn: 'Another Top Level', code: 'TOP2', typeValueId: 'lv-dept' }, 'actor-1')
         .then(
           () => null,
           (e: unknown) => e,
@@ -187,7 +218,7 @@ describe('OrganizationService', () => {
       mockPrisma.orgUnit.create.mockResolvedValue(ROOT);
 
       await expect(
-        service.create(ORG_A, { nameEn: 'Al Nakheel Specialist Hospital', code: 'NAKHEEL' }, 'a'),
+        service.create(ORG_A, { nameEn: 'Al Nakheel Specialist Hospital', code: 'NAKHEEL', typeValueId: 'lv-dept' }, 'a'),
       ).resolves.toEqual(expect.objectContaining({ code: 'NAKHEEL' }));
       expect(mockPrisma.orgUnit.create).toHaveBeenCalled();
     });
@@ -198,7 +229,7 @@ describe('OrganizationService', () => {
         .mockResolvedValueOnce(null); // no code conflict
       mockPrisma.orgUnit.create.mockResolvedValue(BASE_UNIT);
 
-      await service.create(ORG_A, { nameEn: 'Child', code: 'CHILD', parentId: 'parent-1' }, 'a');
+      await service.create(ORG_A, { nameEn: 'Child', code: 'CHILD', parentId: 'parent-1', typeValueId: 'lv-dept' }, 'a');
 
       // A child unit is never a root, so asking about roots would be a wasted
       // query on the common path.
@@ -247,7 +278,7 @@ describe('OrganizationService', () => {
         .mockResolvedValueOnce(null); // no code conflict
       mockPrisma.orgUnit.create.mockResolvedValue(ROOT);
 
-      await service.create(ORG_A, { nameEn: 'New Root', code: 'NEW' }, 'actor-1');
+      await service.create(ORG_A, { nameEn: 'New Root', code: 'NEW', typeValueId: 'lv-dept' }, 'actor-1');
 
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenNthCalledWith(
         1,
@@ -265,7 +296,7 @@ describe('OrganizationService', () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
       mockPrisma.orgUnit.create.mockResolvedValue(BASE_UNIT);
 
-      await service.create(ORG_A, { nameEn: 'Root', code: 'ROOT' }, 'actor-1');
+      await service.create(ORG_A, { nameEn: 'Root', code: 'ROOT', typeValueId: 'lv-dept' }, 'actor-1');
 
       expect(mockPrisma.orgUnit.findFirst).toHaveBeenNthCalledWith(
         1,
@@ -274,6 +305,170 @@ describe('OrganizationService', () => {
         }),
       );
       expect(mockPrisma.orgUnit.findFirst).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_B }),
+        }),
+      );
+    });
+  });
+
+  // ── the type is a lookup value (ACC-137) ──────────────────────────────────────
+
+  describe('unit type as a lookup value (ACC-137)', () => {
+    const TENANT_WARD = {
+      id: 'lv-ward',
+      organizationId: ORG_A,
+      key: 'ward',
+      labelEn: 'Ward',
+      labelAr: 'جناح',
+      labelOverrideEn: null as string | null,
+      labelOverrideAr: null as string | null,
+      isActive: true,
+      isHidden: false,
+    };
+
+    const withValues = (values: unknown[]): void => {
+      mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-org-unit-type' });
+      mockPrisma.lookupValue.findMany.mockResolvedValue(values);
+    };
+
+    it('refuses a typeValueId that resolves to nothing this tenant can see', async () => {
+      // Another tenant's value and another category's value reach the service
+      // the same way: absent from this tenant's resolved set. One refusal covers
+      // both, because the resolver never loads either.
+      withValues([SYSTEM_DEPARTMENT]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create(ORG_A, { nameEn: 'X', code: 'X', typeValueId: 'lv-from-org-b' }, 'a'),
+      ).rejects.toThrow(/not an available org_unit_type value in this organization/);
+      expect(mockPrisma.orgUnit.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an INACTIVE value, which renders but cannot be newly chosen', async () => {
+      withValues([{ ...TENANT_WARD, isActive: false }]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create(ORG_A, { nameEn: 'X', code: 'X', typeValueId: 'lv-ward' }, 'a'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('refuses a SYSTEM value the tenant has HIDDEN', async () => {
+      // Hiding a system value writes a TENANT row with the same key and
+      // isHidden true. The system row itself is untouched, so a resolver that
+      // only looked at the system layer would accept it happily.
+      withValues([
+        SYSTEM_DEPARTMENT,
+        { ...TENANT_WARD, id: 'lv-dept-override', key: 'department', isHidden: true },
+      ]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create(ORG_A, { nameEn: 'X', code: 'X', typeValueId: 'lv-dept' }, 'a'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('accepts a TENANT value belonging to this tenant, and writes BOTH shapes', async () => {
+      withValues([SYSTEM_DEPARTMENT, TENANT_WARD]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.create.mockResolvedValue(makeUnit({ typeValueId: 'lv-ward' }));
+
+      await service.create(ORG_A, { nameEn: 'Ward 3', code: 'W3', typeValueId: 'lv-ward' }, 'a');
+
+      // The legacy key comes from the RESOLVED value, so `type` and
+      // `typeValueId` cannot drift apart during the expand step.
+      expect(mockPrisma.orgUnit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ type: 'ward', typeValueId: 'lv-ward' }),
+      });
+    });
+
+    it('returns the per-tenant labelOverrideEn rather than the seeded labelEn', async () => {
+      // The whole reason the read path resolves at all. A client mapping keys to
+      // labels from its own table would show "Department" to a tenant that
+      // renamed it — the tenant seeing the wrong word for its own data.
+      withValues([
+        SYSTEM_DEPARTMENT,
+        {
+          ...TENANT_WARD,
+          id: 'lv-dept-override',
+          key: 'department',
+          labelOverrideEn: 'Clinical Department',
+          labelOverrideAr: 'قسم إكلينيكي',
+        },
+      ]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ typeValueId: 'lv-dept' }));
+
+      const result = await service.findById('unit-1', ORG_A);
+
+      expect(result.typeValue).toEqual({
+        id: 'lv-dept',
+        key: 'department',
+        labelEn: 'Clinical Department',
+        labelAr: 'قسم إكلينيكي',
+        isRetired: false,
+      });
+    });
+
+    it('still resolves a HIDDEN value for a unit that holds it, marked retired', async () => {
+      // An acceptance criterion in its own right: a type must not vanish from a
+      // column because an admin tidied the Lookups page. That reads as data loss.
+      withValues([
+        SYSTEM_DEPARTMENT,
+        { ...TENANT_WARD, id: 'lv-dept-override', key: 'department', isHidden: true },
+      ]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ typeValueId: 'lv-dept' }));
+
+      const result = await service.findById('unit-1', ORG_A);
+
+      expect(result.typeValue).toEqual(
+        expect.objectContaining({ id: 'lv-dept', isRetired: true }),
+      );
+    });
+
+    it('leaves typeValue null for a unit with no type, without inventing one', async () => {
+      withValues([SYSTEM_DEPARTMENT]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ typeValueId: null }));
+
+      const result = await service.findById('unit-1', ORG_A);
+
+      expect(result.typeValueId).toBeNull();
+      expect(result.typeValue).toBeNull();
+    });
+
+    it('does not touch the type on an update that does not mention it', async () => {
+      withValues([SYSTEM_DEPARTMENT]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT);
+      mockPrisma.orgUnit.update.mockResolvedValue(BASE_UNIT);
+
+      await service.update('unit-1', ORG_A, { nameEn: 'Renamed' }, 'actor-1');
+
+      // A PATCH that renames a unit must not have to resend its type, and must
+      // not silently clear it.
+      expect(mockPrisma.orgUnit.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ typeValueId: expect.anything() }),
+        }),
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // The value set is SYSTEM (organizationId null, shared by every tenant) OR
+      // this tenant's own. `ward` belongs to Al Nakheel and `faculty` to Al
+      // Manara, so dropping the organizationId arm would let one tenant set the
+      // other's private type on its units — a cross-tenant WRITE, not a read.
+      withValues([SYSTEM_DEPARTMENT]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ typeValueId: 'lv-dept' }));
+
+      await service.findById('unit-1', ORG_A);
+
+      expect(mockPrisma.lookupValue.findMany).toHaveBeenCalledWith({
+        where: {
+          categoryId: 'cat-org-unit-type',
+          OR: [{ organizationId: null }, { organizationId: ORG_A }],
+        },
+      });
+      expect(mockPrisma.lookupValue.findMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ organizationId: ORG_B }),
         }),
@@ -298,7 +493,7 @@ describe('OrganizationService', () => {
     it('throws ForbiddenException when attempting to change a locked code', async () => {
       mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ isCodeLocked: true }));
       await expect(
-        service.update('unit-1', ORG_A, { code: 'NEW' }, 'actor-1'),
+        service.update('unit-1', ORG_A, { code: 'NEW', typeValueId: 'lv-dept' }, 'actor-1'),
       ).rejects.toThrow(ForbiddenException);
     });
 

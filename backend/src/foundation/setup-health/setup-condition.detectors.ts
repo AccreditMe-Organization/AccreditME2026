@@ -88,6 +88,8 @@ export class SetupConditionDetectors {
   readonly byType: Record<ActiveSetupConditionType, SetupConditionDetector> = {
     ORG_UNIT_WITHOUT_HEAD: (organizationId) =>
       this.orgUnitsWithoutHead(organizationId),
+    ORG_UNIT_WITHOUT_TYPE: (organizationId) =>
+      this.orgUnitsWithoutType(organizationId),
     STAGE_WITHOUT_ASSIGNEE: (organizationId) =>
       this.stagesWithoutAssignee(organizationId),
     TASK_WITHOUT_OWNER: (organizationId) =>
@@ -125,6 +127,68 @@ export class SetupConditionDetectors {
         nameAr: unit.nameAr,
         escalationResolves: !unit.isHeadFullyUnresolved,
       },
+    }));
+  }
+
+  /**
+   * ACTIVE units with no type — ACC-137.
+   *
+   * ## Why this detector exists at all, when the API makes the type required
+   *
+   * It was very nearly dropped, on the reasoning that a required field cannot
+   * produce an empty one — the `isCodeLocked` trap: a branch built for a state
+   * nothing can reach, which then gets ticked off as done. Going to look rather
+   * than reasoning about it found a real path, and it is not an edge case:
+   *
+   * `TenantService.bootstrap()` creates every tenant's ROOT unit with a direct
+   * `prisma.orgUnit.create({ data: { organizationId, nameEn, code, sortOrder } })`
+   * — no type, bypassing this service and its validation entirely. So every
+   * tenant provisioned through the real Create Tenant flow starts with exactly
+   * one untyped unit, on day one, and nothing sets it afterwards.
+   *
+   * It does not show in the seeded tenants because `apply-org-tree.ts`'s
+   * `reconcileRoot()` overwrites the bootstrap root with the fixture's type. A
+   * real customer has no equivalent step.
+   *
+   * The other candidates were checked and are NOT paths: `removeValue()` is a
+   * soft delete (`isActive: false`) and SYSTEM values refuse deletion outright,
+   * so a type retires rather than vanishing; and the foreign key is
+   * `onDelete: Restrict`, so even a hard delete refuses instead of blanking the
+   * column.
+   *
+   * ## Severity is AT_RISK, never BLOCKS_WORK
+   *
+   * An untyped unit works perfectly — it appears in the tree, holds people and
+   * positions, and routes tasks. What it cannot do is be filtered or grouped by
+   * type, which is a reporting gap rather than stalled work. BLOCKS_WORK is
+   * reserved for a condition that stops something, and reaching for it here
+   * would devalue it everywhere else.
+   *
+   * ## The PLATFORM organization is exempt structurally, not by a branch here
+   *
+   * Its root is not a tenant org unit and no `org_unit_type` value is meaningful
+   * for it. The exemption comes from the platform org not being a tenant — the
+   * reconciler iterates tenants — so there is no `isPlatformOrg` test in this
+   * method. A carve-out here would be inventing a rule the decision did not
+   * make, and would quietly hide a real tenant's unit if the flag were ever set
+   * wrongly.
+   */
+  async orgUnitsWithoutType(
+    organizationId: string,
+  ): Promise<DetectedCondition[]> {
+    const units = await this.prisma.orgUnit.findMany({
+      where: { organizationId, isActive: true, typeValueId: null },
+      select: { id: true, nameEn: true, nameAr: true, createdAt: true },
+    });
+
+    return units.map((unit) => ({
+      objectId: unit.id,
+      severity: 'AT_RISK' as const,
+      // The unit's own createdAt: the condition has been true since the unit
+      // existed, so dating it from first detection would report a three-week-old
+      // gap as new the day this ships.
+      openedAt: unit.createdAt,
+      subject: { nameEn: unit.nameEn, nameAr: unit.nameAr },
     }));
   }
 

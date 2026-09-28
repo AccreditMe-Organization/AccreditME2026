@@ -28,7 +28,8 @@
     "cleanup:acc82-condition-data": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/cleanup-acc82-condition-data.ts",
     "backfill:remove-base-user-tasks-view": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-remove-base-user-tasks-view.ts",
     "backfill:admin-access-permission": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-admin-access-permission.ts",
-    "verify:acc134-roots": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/verify-acc134-roots.ts"
+    "verify:acc134-roots": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/verify-acc134-roots.ts",
+    "backfill:acc137-org-unit-type": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc137-org-unit-type.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

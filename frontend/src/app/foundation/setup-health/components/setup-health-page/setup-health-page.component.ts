@@ -36,6 +36,7 @@ export type SeverityFilter = 'ALL' | SetupConditionSeverity;
 // Group order when severities tie. Matches §13.2's table.
 const TYPE_ORDER: SetupConditionType[] = [
   'ORG_UNIT_WITHOUT_HEAD',
+  'ORG_UNIT_WITHOUT_TYPE',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
 ];
@@ -58,6 +59,20 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
       return {
         link: ['/organization'],
         queryParams: { head: condition.objectId },
+        permissions: ['org:view', 'org:manage'],
+      };
+    case 'ORG_UNIT_WITHOUT_TYPE':
+      // ACC-137 — the same page, a different one-time parameter, because the
+      // fix is editing the unit rather than appointing anyone.
+      //
+      // `unit` is not read by anything YET: org-unit-tree reads only
+      // injectFixLinkParam('head'), and that component belongs to ACC-120 slice
+      // 11, which is gated on its design round and must not be touched here. So
+      // the Fix opens the right page and does not yet open the right row.
+      // Deferred to slice 11, which already redraws this surface.
+      return {
+        link: ['/organization'],
+        queryParams: { unit: condition.objectId },
         permissions: ['org:view', 'org:manage'],
       };
     case 'STAGE_WITHOUT_ASSIGNEE':
@@ -499,6 +514,8 @@ export class SetupHealthPageComponent implements OnInit {
     switch (condition.type) {
       case 'ORG_UNIT_WITHOUT_HEAD':
         return t(s.escalationResolves === false ? 'unitUncovered' : 'unitCovered');
+      case 'ORG_UNIT_WITHOUT_TYPE':
+        return t('unitUntyped');
       case 'STAGE_WITHOUT_ASSIGNEE':
         return this.format.count('setupHealth.stageItemsBlocked', s.affectedInstances ?? 0);
       case 'TASK_WITHOUT_OWNER':

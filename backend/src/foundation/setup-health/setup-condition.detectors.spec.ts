@@ -50,6 +50,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
     expect(Object.keys(detectors.byType).sort()).toEqual([
       'ACTING_HEAD_OPEN_ENDED',
       'ORG_UNIT_WITHOUT_HEAD',
+      'ORG_UNIT_WITHOUT_TYPE',
       'STAGE_WITHOUT_ASSIGNEE',
       'TASK_WITHOUT_OWNER',
     ]);
@@ -141,6 +142,64 @@ describe('SetupConditionDetectors (ACC-82)', () => {
         ]),
       );
       expect(await detectors.orgUnitsWithoutHead(ORG_A)).toEqual([]);
+    });
+  });
+
+  describe('orgUnitsWithoutType (ACC-137)', () => {
+    it('queries ACTIVE units of this tenant with no typeValueId', async () => {
+      await detectors.orgUnitsWithoutType(ORG_A);
+      expect(prisma.orgUnit.findMany.mock.calls[0][0].where).toEqual({
+        organizationId: ORG_A,
+        isActive: true,
+        typeValueId: null,
+      });
+    });
+
+    it("is always AT_RISK, and dates the condition from the unit's own createdAt", async () => {
+      // AT_RISK, never BLOCKS_WORK: an untyped unit works — it appears in the
+      // tree, holds people and positions, and routes tasks. What it cannot do is
+      // be grouped or filtered by type, which is a reporting gap rather than
+      // stalled work. Reaching for BLOCKS_WORK here devalues it everywhere else.
+      //
+      // createdAt, not first detection: the condition has been true since the
+      // unit existed, so FIRST_DETECTED would report every pre-existing untyped
+      // unit as a brand-new gap on the day this ships.
+      const created = new Date('2026-08-14T06:00:00.000Z');
+      prisma.orgUnit.findMany.mockResolvedValue([
+        { id: 'unit-7', nameEn: 'Pharmacy', nameAr: 'الصيدلية', createdAt: created },
+      ]);
+
+      const result = await detectors.orgUnitsWithoutType(ORG_A);
+
+      expect(result).toEqual([
+        {
+          objectId: 'unit-7',
+          severity: 'AT_RISK',
+          openedAt: created,
+          subject: { nameEn: 'Pharmacy', nameAr: 'الصيدلية' },
+        },
+      ]);
+    });
+
+    it('has NO isPlatformOrg branch — the platform exemption is structural', async () => {
+      // The platform organization's root is permanently untyped by design, and
+      // it is excluded because the reconciler iterates TENANTS, not because this
+      // detector tests a flag. A carve-out here would hide a real tenant's unit
+      // the day that flag was ever set wrongly.
+      await detectors.orgUnitsWithoutType(ORG_A);
+      expect(prisma.orgUnit.findMany.mock.calls[0][0].where).not.toHaveProperty(
+        'organization',
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      await detectors.orgUnitsWithoutType(ORG_A);
+      expect(prisma.orgUnit.findMany.mock.calls[0][0].where.organizationId).toBe(ORG_A);
+      expect(prisma.orgUnit.findMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ organizationId: ORG_B }),
+        }),
+      );
     });
   });
 

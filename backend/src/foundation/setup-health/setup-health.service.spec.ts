@@ -355,6 +355,7 @@ describe('SetupHealthService (ACC-82)', () => {
       expect(recentlyCleared).toEqual([]);
       expect(freshness.map((f) => f.type)).toEqual([
         'ORG_UNIT_WITHOUT_HEAD',
+        'ORG_UNIT_WITHOUT_TYPE',
         'STAGE_WITHOUT_ASSIGNEE',
         'TASK_WITHOUT_OWNER',
         'ACTING_HEAD_OPEN_ENDED',

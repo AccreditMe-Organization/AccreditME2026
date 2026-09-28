@@ -21,6 +21,8 @@ const MOCK_UNIT: IOrgUnit = {
   nameAr:         null,
   code:           'ICU',
   type:           null,
+  typeValueId:    null,
+  typeValue:      null,
   description:    null,
   isActive:       true,
   isCodeLocked:   false,

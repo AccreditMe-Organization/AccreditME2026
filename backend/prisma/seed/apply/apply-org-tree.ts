@@ -24,6 +24,7 @@ async function reconcileRoot(
   prisma: PrismaService,
   organizationId: string,
   root: UnitFixture,
+  rootTypeValueId: string,
 ): Promise<string> {
   const existing = await prisma.orgUnit.findFirst({
     where: { organizationId, parentId: null },
@@ -42,7 +43,10 @@ async function reconcileRoot(
       nameEn: root.nameEn,
       nameAr: root.nameAr,
       code: root.key,
+      // ACC-137 — the root is reconciled with a direct Prisma update rather than
+      // through the service, so both shapes are written here explicitly.
       type: root.type,
+      typeValueId: rootTypeValueId,
     },
   });
 
@@ -85,9 +89,50 @@ export async function applyOrgTree(
   // before recursing), so a single forward pass always has the parent id
   // already resolved by the time a child needs it. No second pass, and no
   // possibility of a dangling parentId.
+  // ACC-137 — the type is now a lookup value id, so every fixture `type` key
+  // has to resolve to one before the tree is built. ctx.lookupValueIdByKey
+  // already holds the TENANT values added just above; the six SYSTEM values
+  // (organizationId null) are shared and have to be read.
+  //
+  // Resolved by KEY, but only among values this tenant can see — SYSTEM rows
+  // plus its own. `ward` belongs to the hospital and `faculty` to the
+  // university, so a global key match would hand one tenant the other's value.
+  const typeCategory = await prisma.lookupCategory.findFirst({
+    where: { key: 'org_unit_type', organizationId: null },
+    select: { id: true },
+  });
+  if (!typeCategory) {
+    throw new Error('org_unit_type lookup category not found — has seedSystemData() run?');
+  }
+  const typeValues = await prisma.lookupValue.findMany({
+    where: {
+      categoryId: typeCategory.id,
+      OR: [{ organizationId: null }, { organizationId: ctx.organizationId }],
+      isActive: true,
+    },
+    select: { id: true, key: true },
+  });
+  const typeValueIdByKey = new Map(typeValues.map((v) => [v.key, v.id]));
+
+  const resolveTypeValueId = (key: string, unitKey: string): string => {
+    const id = typeValueIdByKey.get(key);
+    if (!id) {
+      throw new Error(
+        `Unit '${unitKey}' has type '${key}', which is not an org_unit_type value ` +
+          'visible to this tenant. Add it to orgUnitTypes on the fixture.',
+      );
+    }
+    return id;
+  };
+
   const units = flattenUnits(fixture.tree);
 
-  const rootId = await reconcileRoot(prisma, ctx.organizationId, fixture.tree);
+  const rootId = await reconcileRoot(
+    prisma,
+    ctx.organizationId,
+    fixture.tree,
+    resolveTypeValueId(fixture.tree.type, fixture.tree.key),
+  );
   ctx.unitIdByKey.set(fixture.tree.key, rootId);
 
   for (const { unit, parentKey } of units) {
@@ -109,7 +154,7 @@ export async function applyOrgTree(
         nameEn: unit.nameEn,
         nameAr: unit.nameAr,
         code: unit.key,
-        type: unit.type,
+        typeValueId: resolveTypeValueId(unit.type, unit.key),
         parentId,
       },
       actorId,

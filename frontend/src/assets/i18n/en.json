@@ -818,6 +818,7 @@
     },
     "types": {
       "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
+      "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
       "TASK_WITHOUT_OWNER": "Task with no actionable owner"
     },
@@ -827,6 +828,7 @@
     "consequence": {
       "unitCovered": "No head. Work routed to its head escalates to a parent unit or an acting head in the meantime.",
       "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
+      "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
       "task": "No one is assigned, so it is in no one’s task list."
     },
     "hint": {
@@ -840,11 +842,13 @@
     },
     "fix": {
       "ORG_UNIT_WITHOUT_HEAD": "Assign head",
+      "ORG_UNIT_WITHOUT_TYPE": "Set type",
       "STAGE_WITHOUT_ASSIGNEE": "Review stage",
       "TASK_WITHOUT_OWNER": "Reassign"
     },
     "fixNeeds": {
       "ORG_UNIT_WITHOUT_HEAD": "Fixing this needs permission to manage the organization structure.",
+      "ORG_UNIT_WITHOUT_TYPE": "Fixing this needs permission to manage the organization structure.",
       "STAGE_WITHOUT_ASSIGNEE": "Fixing this needs permission to manage workflows.",
       "TASK_WITHOUT_OWNER": "Fixing this needs permission to manage and reassign tasks."
     },
