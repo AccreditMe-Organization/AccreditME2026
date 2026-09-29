@@ -23,9 +23,12 @@ export interface CommitteeDto {
   quorumCount: number;
   meetingFrequency: CommitteeMeetingFrequency;
   parentCommitteeId: string | null;
+  // ACC-135 — the org unit that owns this committee. Nullable in the column for
+  // the expand step only; the backend always writes one, and the contract
+  // migration makes it NOT NULL.
+  orgUnitId: string | null;
   termsOfReferenceDocumentId: string | null;
   reportingToCommitteeId: string | null;
-  reportingToRoleId: string | null;
   formedAt: string | null;
   dissolvedAt: string | null;
   isActive: boolean;
@@ -78,9 +81,13 @@ export interface CreateCommitteeDto {
   quorumCount?: number;
   meetingFrequency?: CommitteeMeetingFrequency;
   parentCommitteeId?: string;
+  // ACC-135 — OPTIONAL HERE, REQUIRED IN THE RECORD. Omitting it means "the whole
+  // organisation", which the backend resolves to the tenant's root unit rather
+  // than storing an absence. The form always sends one, so this stays optional
+  // for the API's shape rather than for the form's convenience.
+  orgUnitId?: string;
   termsOfReferenceDocumentId?: string;
   reportingToCommitteeId?: string;
-  reportingToRoleId?: string;
 }
 
 export type UpdateCommitteeDto = Partial<CreateCommitteeDto>;
