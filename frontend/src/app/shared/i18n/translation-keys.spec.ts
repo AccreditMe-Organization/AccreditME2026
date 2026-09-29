@@ -113,11 +113,10 @@ const CONCATENATED_KEYS: { site: string; prefix: string; values: string[] }[] = 
     prefix: 'committee.frequency',
     values: ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'BIANNUAL', 'ANNUAL', 'AS_NEEDED'],
   },
-  {
-    site: 'committee-form',
-    prefix: 'committee.reportingToMode',
-    values: ['NONE', 'COMMITTEE', 'ROLE'],
-  },
+  // ACC-135 — committee.reportingToMode is gone. The three-way None/Committee/Role
+  // toggle it labelled had one option left once "reports to a role" was removed,
+  // and a toggle with one option is ceremony: the control is now a single
+  // clearable committee picker, with the owning unit as its own separate field.
 ];
 
 describe('translation keys (ACC-78)', () => {

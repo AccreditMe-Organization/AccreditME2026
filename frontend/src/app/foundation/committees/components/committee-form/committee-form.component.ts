@@ -1,10 +1,9 @@
-import { Component, OnInit, effect, inject, input, output, signal } from '@angular/core';
-import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { InputNumberModule } from 'primeng/inputnumber';
-import { SelectButtonModule } from 'primeng/selectbutton';
 import { ButtonModule } from 'primeng/button';
 import {
   CommitteeService,
@@ -13,7 +12,13 @@ import {
   COMMITTEE_MEETING_FREQUENCIES,
 } from '../../services/committee.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
-import { RoleService, RoleDto } from '../../../roles/services/role.service';
+// ACC-135 — the owning unit's picker. RoleService is gone from this file: the
+// "reports to a role" option it served does not exist any more.
+import {
+  OrgUnitService,
+  OrgUnitDto,
+  buildOrgUnitCascadeOptions,
+} from '../../../organization/services/org-unit.service';
 import { LanguageService } from '../../../../core/services/language.service';
 // ACC-42 Phase 3 — OverlaySelectComponent replaces p-select on this field:
 // EditDialogComponent context. See CLAUDE.md's PrimeNG-components-only
@@ -21,20 +26,16 @@ import { LanguageService } from '../../../../core/services/language.service';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
-type ReportingToMode = 'none' | 'committee' | 'role';
-
 @Component({
   selector: 'app-committee-form',
   standalone: true,
   imports: [
     ReactiveFormsModule,
-    FormsModule,
     TranslatePipe,
     InputTextModule,
     TextareaModule,
     InputNumberModule,
     InputNumberLatinDigits,
-    SelectButtonModule,
     ButtonModule,
     OverlaySelectComponent,
   ],
@@ -93,6 +94,23 @@ type ReportingToMode = 'none' | 'committee' | 'role';
       </div>
 
       <div class="flex flex-col gap-1">
+        <label for="orgUnitId" class="text-sm font-medium">
+          {{ 'committee.owningUnit' | translate }}
+          <span class="text-red-500">*</span>
+        </label>
+        <app-overlay-select
+          formControlName="orgUnitId"
+          [options]="orgUnitCascadeOptions()"
+          optionLabel="label"
+          optionValue="value"
+          optionGroupLabel="label"
+          optionGroupChildren="items"
+          [placeholder]="'committee.selectOwningUnit' | translate"
+        />
+        <small class="text-[var(--am-text-secondary)]">{{ 'committee.owningUnitHint' | translate }}</small>
+      </div>
+
+      <div class="flex flex-col gap-1">
         <label for="parentCommitteeId" class="text-sm font-medium">{{ 'committee.parentCommittee' | translate }}</label>
         <app-overlay-select
           formControlName="parentCommitteeId"
@@ -104,39 +122,18 @@ type ReportingToMode = 'none' | 'committee' | 'role';
         />
       </div>
 
-      <div class="flex flex-col gap-2 pt-2 border-t border-[var(--am-border)]">
-        <label class="text-sm font-medium">{{ 'committee.reportingTo' | translate }}</label>
-        <p-selectButton
-          [options]="reportingToModeOptions"
-          [(ngModel)]="reportingToMode"
-          [ngModelOptions]="{ standalone: true }"
-          optionValue="value"
-          (onChange)="onReportingToModeChange()"
-        >
-          <ng-template #item let-mode>
-            {{ ('committee.reportingToMode.' + mode.value) | translate }}
-          </ng-template>
-        </p-selectButton>
-
-        @if (reportingToMode === 'committee') {
-          <app-overlay-select
-            formControlName="reportingToCommitteeId"
-            [options]="parentOptions()"
-            [optionLabel]="nameLabelField()"
-            optionValue="id"
-            [placeholder]="'committee.selectCommittee' | translate"
-          />
-        }
-
-        @if (reportingToMode === 'role') {
-          <app-overlay-select
-            formControlName="reportingToRoleId"
-            [options]="roles()"
-            optionLabel="nameEn"
-            optionValue="id"
-            [placeholder]="'committee.selectRole' | translate"
-          />
-        }
+      <div class="flex flex-col gap-1">
+        <label for="reportingToCommitteeId" class="text-sm font-medium">
+          {{ 'committee.reportingTo' | translate }}
+        </label>
+        <app-overlay-select
+          formControlName="reportingToCommitteeId"
+          [options]="parentOptions()"
+          [optionLabel]="nameLabelField()"
+          optionValue="id"
+          [showClear]="true"
+          [placeholder]="'committee.noneOption' | translate"
+        />
       </div>
 
       <div class="flex justify-end gap-2 pt-2">
@@ -156,7 +153,7 @@ export class CommitteeFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly committeeService = inject(CommitteeService);
   private readonly lookupService = inject(LookupService);
-  private readonly roleService = inject(RoleService);
+  private readonly orgUnitService = inject(OrgUnitService);
   private readonly languageService = inject(LanguageService);
 
   readonly committee = input<CommitteeDto | null>(null);
@@ -166,20 +163,16 @@ export class CommitteeFormComponent implements OnInit {
   readonly saving = signal(false);
   readonly committeeTypes = signal<LookupValueDto[]>([]);
   readonly parentOptions = signal<CommitteeDto[]>([]);
-  readonly roles = signal<RoleDto[]>([]);
+  readonly orgUnits = signal<OrgUnitDto[]>([]);
 
-  reportingToMode: ReportingToMode = 'none';
+  // ACC-135 — no excludeId: a committee is not itself an org unit, so there is no
+  // self/descendant relationship to exclude (unlike org-unit-form's parentId).
+  readonly orgUnitCascadeOptions = computed(() => buildOrgUnitCascadeOptions(this.orgUnits(), null, null));
 
   readonly frequencyOptions = COMMITTEE_MEETING_FREQUENCIES.map((value) => ({
     value,
     label: value,
   }));
-
-  readonly reportingToModeOptions: { value: ReportingToMode }[] = [
-    { value: 'none' },
-    { value: 'committee' },
-    { value: 'role' },
-  ];
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(150)]],
@@ -189,8 +182,14 @@ export class CommitteeFormComponent implements OnInit {
     quorumCount: [0, [Validators.min(0)]],
     meetingFrequency: ['AS_NEEDED'],
     parentCommitteeId: [null as string | null],
+    // ACC-135 — required, and prefilled with the root on create rather than left
+    // empty. "The whole organisation" is a real, common answer, and the root unit
+    // IS the organisation (ACC-141) — so the honest control is a required field
+    // that arrives already holding that answer, which the creator may change.
+    // Leaving it empty would disable Save on a question most people do not need
+    // to answer.
+    orgUnitId: [null as string | null, [Validators.required]],
     reportingToCommitteeId: [null as string | null],
-    reportingToRoleId: [null as string | null],
   });
 
   typeLabelField(): 'labelAr' | 'labelEn' {
@@ -213,21 +212,21 @@ export class CommitteeFormComponent implements OnInit {
           quorumCount: current.quorumCount,
           meetingFrequency: current.meetingFrequency,
           parentCommitteeId: current.parentCommitteeId,
+          orgUnitId: current.orgUnitId,
           reportingToCommitteeId: current.reportingToCommitteeId,
-          reportingToRoleId: current.reportingToRoleId,
         });
-        this.reportingToMode = current.reportingToCommitteeId
-          ? 'committee'
-          : current.reportingToRoleId
-            ? 'role'
-            : 'none';
       }
     });
   }
 
   ngOnInit(): void {
     this.lookupService.getValues('committee_type').subscribe({ next: (values) => this.committeeTypes.set(values) });
-    this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
+    this.orgUnitService.getFlat().subscribe({
+      next: (units) => {
+        this.orgUnits.set(units);
+        this.prefillRootUnit(units);
+      },
+    });
     this.committeeService.listCommittees().subscribe({
       next: (committees) => {
         const currentId = this.committee()?.id;
@@ -236,12 +235,22 @@ export class CommitteeFormComponent implements OnInit {
     });
   }
 
-  onReportingToModeChange(): void {
-    if (this.reportingToMode !== 'committee') {
-      this.form.patchValue({ reportingToCommitteeId: null });
-    }
-    if (this.reportingToMode !== 'role') {
-      this.form.patchValue({ reportingToRoleId: null });
+  /**
+   * A NEW committee starts owned by the organisation — ACC-135.
+   *
+   * Only on create, and only when the field is still empty: an EDIT already
+   * patched the committee's own unit in, and overwriting that with the root would
+   * silently move it.
+   *
+   * TWO ACTIVE ROOTS PREFILLS NOTHING. That is an ACC-134 violation rather than a
+   * choice between them, and the backend refuses it with a message naming both.
+   * Picking one here would hide that refusal behind a value the user never chose.
+   */
+  private prefillRootUnit(units: OrgUnitDto[]): void {
+    if (this.committee() || this.form.controls.orgUnitId.value) return;
+    const roots = units.filter((u) => u.parentId === null && u.isActive);
+    if (roots.length === 1) {
+      this.form.patchValue({ orgUnitId: roots[0]!.id });
     }
   }
 
@@ -261,8 +270,8 @@ export class CommitteeFormComponent implements OnInit {
       quorumCount: value.quorumCount ?? undefined,
       meetingFrequency: value.meetingFrequency as CreateCommitteeDto['meetingFrequency'],
       parentCommitteeId: value.parentCommitteeId || undefined,
+      orgUnitId: value.orgUnitId || undefined,
       reportingToCommitteeId: value.reportingToCommitteeId || undefined,
-      reportingToRoleId: value.reportingToRoleId || undefined,
     };
 
     const current = this.committee();
