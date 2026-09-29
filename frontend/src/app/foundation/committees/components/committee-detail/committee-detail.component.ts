@@ -23,7 +23,11 @@ import {
 } from '../../services/committee.service';
 import { LookupService, LookupValueDto } from '../../../lookup/services/lookup.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
-import { RoleService, RoleDto } from '../../../roles/services/role.service';
+// ACC-135 — the owning unit is resolved from the org units; RoleService is gone.
+// Its only consumer here was the "reports to a role" label, and the unconditional
+// listAllRoles() call it needed is what gave a Quality Manager a 403 on opening
+// any committee — rendered as "No results found" in the form's picker.
+import { OrgUnitService, OrgUnitDto, orgUnitDisplayName } from '../../../organization/services/org-unit.service';
 import { WorkflowService, WorkflowInstanceDto } from '../../../workflow/services/workflow.service';
 import { WorkflowTransitionActionsComponent } from '../../../workflow/components/workflow-transition-actions/workflow-transition-actions.component';
 import { LanguageService } from '../../../../core/services/language.service';
@@ -171,6 +175,12 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                   —
                 }
               </div>
+            </div>
+            <div class="px-[18px] py-2.5 flex-[1_1_170px] min-w-0 border-t border-e border-[var(--am-border)]">
+              <div class="text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)] mb-1">
+                {{ 'committee.owningUnit' | translate }}
+              </div>
+              <div class="text-[13px]">{{ owningUnitName(c) }}</div>
             </div>
             <div class="px-[18px] py-2.5 flex-[1_1_170px] min-w-0 border-t border-e border-[var(--am-border)]">
               <div class="text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)] mb-1">
@@ -556,7 +566,7 @@ export class CommitteeDetailComponent implements OnInit {
   private readonly committeeService = inject(CommitteeService);
   private readonly lookupService = inject(LookupService);
   private readonly userService = inject(UserService);
-  private readonly roleService = inject(RoleService);
+  private readonly orgUnitService = inject(OrgUnitService);
   private readonly taskService = inject(TaskService);
   private readonly workflowService = inject(WorkflowService);
   private readonly languageService = inject(LanguageService);
@@ -588,7 +598,7 @@ export class CommitteeDetailComponent implements OnInit {
   readonly committeeTypes = signal<LookupValueDto[]>([]);
   readonly memberRoles = signal<LookupValueDto[]>([]);
   readonly users = signal<IUserDto[]>([]);
-  readonly roles = signal<RoleDto[]>([]);
+  readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly currentInstance = signal<WorkflowInstanceDto | null>(null);
 
   // ACC-76 — derived from listCommittees(), which this page already loaded
@@ -682,7 +692,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.lookupService.getValues('committee_type').subscribe({ next: (v) => this.committeeTypes.set(v) });
     this.lookupService.getValues('committee_member_role').subscribe({ next: (v) => this.memberRoles.set(v) });
     this.userService.listAllUsers().subscribe({ next: (v) => this.users.set(v) });
-    this.roleService.listAllRoles().subscribe({ next: (v) => this.roles.set(v) });
+    this.orgUnitService.getFlat().subscribe({ next: (v) => this.orgUnits.set(v) });
 
     this.loadCommitteeList();
     this.loadCommittee();
@@ -776,11 +786,15 @@ export class CommitteeDetailComponent implements OnInit {
       const target = this.allCommittees().find((c) => c.id === committee.reportingToCommitteeId);
       return target ? this.displayName(target) : '—';
     }
-    if (committee.reportingToRoleId) {
-      const role = this.roles().find((r) => r.id === committee.reportingToRoleId);
-      return role ? (this.languageService.isArabic() ? role.nameAr : role.nameEn) : '—';
-    }
     return '—';
+  }
+
+  // ACC-135 — the owning unit. Separate from "reports to", and always present on
+  // the record even though the column is nullable until the contract migration.
+  owningUnitName(committee: CommitteeDto): string {
+    if (!committee.orgUnitId) return '—';
+    const unit = this.orgUnits().find((u) => u.id === committee.orgUnitId);
+    return unit ? orgUnitDisplayName(unit) : '—';
   }
 
   onEdit(): void {

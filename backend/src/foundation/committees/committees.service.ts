@@ -114,9 +114,7 @@ export class CommitteesService {
         'Reporting-to committee',
       );
     }
-    if (dto.reportingToRoleId) {
-      await this.validateRoleReference(dto.reportingToRoleId, organizationId);
-    }
+    const orgUnitId = await this.resolveOwningOrgUnitId(dto.orgUnitId, organizationId);
 
     const committee = await this.prisma.committee.create({
       data: {
@@ -128,11 +126,11 @@ export class CommitteesService {
         quorumCount: dto.quorumCount ?? 0,
         meetingFrequency: dto.meetingFrequency ?? 'AS_NEEDED',
         parentCommitteeId: dto.parentCommitteeId ?? null,
+        orgUnitId,
         // Deliberately unpopulated — Document Management doesn't exist yet
         // (ACC-22 Pending Discussion #1, resolved: option (a)).
         termsOfReferenceDocumentId: dto.termsOfReferenceDocumentId ?? null,
         reportingToCommitteeId: dto.reportingToCommitteeId ?? null,
-        reportingToRoleId: dto.reportingToRoleId ?? null,
       },
     });
 
@@ -172,8 +170,12 @@ export class CommitteesService {
         'Reporting-to committee',
       );
     }
-    if (dto.reportingToRoleId) {
-      await this.validateRoleReference(dto.reportingToRoleId, organizationId);
+    // An UPDATE validates but never defaults. Omitting the field means "leave it
+    // alone", which is not the same statement as create()'s "the whole
+    // organisation" — a committee that already has an owner must not silently
+    // acquire the root because a caller sent a partial body.
+    if (dto.orgUnitId) {
+      await this.validateOrgUnitReference(dto.orgUnitId, organizationId);
     }
 
     const committee = await this.prisma.committee.update({
@@ -186,13 +188,13 @@ export class CommitteesService {
         ...(dto.quorumCount !== undefined && { quorumCount: dto.quorumCount }),
         ...(dto.meetingFrequency !== undefined && { meetingFrequency: dto.meetingFrequency }),
         ...(dto.parentCommitteeId !== undefined && { parentCommitteeId: dto.parentCommitteeId }),
+        ...(dto.orgUnitId !== undefined && { orgUnitId: dto.orgUnitId }),
         ...(dto.termsOfReferenceDocumentId !== undefined && {
           termsOfReferenceDocumentId: dto.termsOfReferenceDocumentId,
         }),
         ...(dto.reportingToCommitteeId !== undefined && {
           reportingToCommitteeId: dto.reportingToCommitteeId,
         }),
-        ...(dto.reportingToRoleId !== undefined && { reportingToRoleId: dto.reportingToRoleId }),
       },
     });
 
@@ -399,10 +401,13 @@ export class CommitteesService {
     return member;
   }
 
-  // Two DISTINCT validation paths (ACC-22 Pending Discussion #4) —
-  // parentCommitteeId/reportingToCommitteeId both resolve against the
-  // Committee model; reportingToRoleId resolves against the Role model.
+  // Two DISTINCT validation paths — parentCommitteeId/reportingToCommitteeId both
+  // resolve against the Committee model; orgUnitId resolves against OrgUnit.
   // Never a single shared helper that only actually checks one.
+  //
+  // This note used to name reportingToRoleId as the second path (ACC-22 Pending
+  // Discussion #4). ACC-135 removed that field; the shape of the rule is
+  // unchanged, only which models it spans.
   private async validateCommitteeReference(
     committeeId: string,
     organizationId: string,
@@ -416,11 +421,82 @@ export class CommitteesService {
     }
   }
 
-  private async validateRoleReference(roleId: string, organizationId: string): Promise<void> {
-    const role = await this.prisma.role.findFirst({ where: { id: roleId, organizationId } });
-    if (!role) {
-      throw new NotFoundException('Reporting-to role not found in this tenant');
+  private async validateOrgUnitReference(orgUnitId: string, organizationId: string): Promise<void> {
+    const orgUnit = await this.prisma.orgUnit.findFirst({
+      where: { id: orgUnitId, organizationId },
+    });
+    if (!orgUnit) {
+      throw new NotFoundException('Owning org unit not found in this tenant');
     }
+  }
+
+  /**
+   * The owning unit for a NEW committee — ACC-135.
+   *
+   * A caller who names a unit gets that unit, validated against their own tenant.
+   * A caller who names none is not saying "no owner"; they are saying "the whole
+   * organisation", and the root unit IS the organisation (ACC-141 fixed its type
+   * to `organization` to make exactly that explicit). So the absence resolves to
+   * the root rather than being stored.
+   *
+   * ## This duplicates OrganizationService's own root definition, deliberately
+   *
+   * `OrganizationService.findActiveRoot()` is private and says the same thing:
+   * parentId null, isActive true. Importing OrganizationModule to share it would
+   * add a fifth forwardRef() edge to a DI graph where every existing one carries
+   * a comment about the real `nest start` failure that proved it necessary. Four
+   * lines of query cost less than a boot-proving cycle.
+   *
+   * THE TWO MUST CHANGE TOGETHER. "What is the root" now has two definitions, and
+   * that is the price of not taking the module edge — recorded here and at
+   * findActiveRoot(), the way ACC-141 recorded its two validation deciders.
+   *
+   * ## Two roots is refused, not resolved
+   *
+   * findActiveRoot() orders by createdAt and takes the first, which is right for
+   * ACC-134's "is there already a root" question — it only needs to know one
+   * exists. Here the answer becomes a real owner written onto a real record, so
+   * picking one on a row ordering nobody chose is the wrong failure. ACC-134 says
+   * a tenant has exactly one root; two is a violation of that invariant.
+   *
+   * ## No root at all is refused too, and it is reachable
+   *
+   * ACC-134 enforced AT MOST one root. It never enforced AT LEAST one, and
+   * nothing blocks deactivating the root (ACC-152). Writing null instead would
+   * put a committee into the state this ticket exists to remove.
+   */
+  private async resolveOwningOrgUnitId(
+    requestedOrgUnitId: string | undefined,
+    organizationId: string,
+  ): Promise<string> {
+    if (requestedOrgUnitId) {
+      await this.validateOrgUnitReference(requestedOrgUnitId, organizationId);
+      return requestedOrgUnitId;
+    }
+
+    const roots = await this.prisma.orgUnit.findMany({
+      where: { organizationId, parentId: null, isActive: true },
+      select: { id: true, code: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (roots.length === 0) {
+      throw new ConflictException(
+        'This organization has no active root org unit, so a committee created without ' +
+          'an owning unit has nothing to belong to. Name an owning unit explicitly, or ' +
+          'reactivate the root unit.',
+      );
+    }
+    if (roots.length > 1) {
+      throw new ConflictException(
+        `This organization has ${roots.length} active root org units ` +
+          `(${roots.map((r) => r.code).join(', ')}), so "the whole organisation" has no ` +
+          'single answer. A tenant is meant to have exactly one root — fix the org ' +
+          'structure, or name an owning unit explicitly.',
+      );
+    }
+
+    return roots[0]!.id;
   }
 
   private async validateUserReference(userId: string, organizationId: string): Promise<void> {

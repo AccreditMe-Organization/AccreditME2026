@@ -698,11 +698,19 @@ model OrgUnit {
   type           String?
   // ACC-137 — the unit's type, as a lookup value id.
   //
-  // NULLABLE, and it stays nullable for a reason that is structural rather than
-  // transitional: the PLATFORM organization's root is not a tenant org unit and
-  // no org_unit_type value is meaningful for it. That row is permanently null by
-  // design, so NOT NULL would be wrong rather than merely premature — see the
-  // service for why the exemption is not a branch in the validator.
+  // NULLABLE ONLY UNTIL THE CONTRACT STEP — CORRECTED ACC-135.
+  //
+  // This comment used to say the PLATFORM organization's root was permanently
+  // null by design, because no org_unit_type value could be meaningful for it,
+  // and that NOT NULL would therefore be wrong rather than merely premature.
+  // ACC-141 made that false: the root's type is `organization`, the platform
+  // root is an organisation, and its backfill took units with no type at all
+  // from 1 to 0. So the one structural exemption is gone and NOT NULL is
+  // achievable — measured, not assumed.
+  //
+  // It is left here as the original claim rather than deleted, because a reader
+  // who finds only the correction cannot tell whether the exemption was removed
+  // or never existed. The migration that applies NOT NULL is still outstanding.
   //
   // A REAL RELATION, unlike Committee.typeValueId and Meeting.typeValueId, which
   // are bare String columns with no `@relation`. The divergence is deliberate:
@@ -777,6 +785,10 @@ model OrgUnit {
   userTransferEventsAsSource      UserTransferEvent[]     @relation("UserTransferEventSourceUnit")
   userTransferEventsAsDestination UserTransferEvent[]     @relation("UserTransferEventDestinationUnit")
   headAssignments                 OrgUnitHeadAssignment[] // ACC-120 slice 2
+  // ACC-135 — the committees this unit owns. `deactivate()` blocks on the active
+  // ones, the same way it already blocks on active users: the relation and its
+  // guard ship together.
+  committees                      Committee[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -1436,9 +1448,27 @@ model Committee {
   quorumCount                Int                       @default(0)
   meetingFrequency           CommitteeMeetingFrequency @default(AS_NEEDED)
   parentCommitteeId          String?
+  // ACC-135 — the org unit that OWNS this committee. Required in meaning, and
+  // the service never writes null: a committee created without one is given the
+  // tenant's root unit, because a committee serving the whole organisation is
+  // owned by the organisation and the root unit IS the organisation (ACC-141).
+  //
+  // NULLABLE HERE ONLY FOR THE EXPAND STEP (ACC-127). The migration runs while
+  // the OLD container is still serving, and that container's INSERT does not
+  // supply this column — a NOT NULL with no default would fail every committee
+  // create for the length of the deploy. There is no static default that can
+  // express "that tenant's root", so NOT NULL waits for the contract migration,
+  // once the code that always writes it is deployed.
+  orgUnitId                  String?
   termsOfReferenceDocumentId String? // nullable, unpopulated until Document Management ships (ACC-22 Pending Discussion #1)
-  reportingToCommitteeId     String? // mutually exclusive with reportingToRoleId, enforced at service layer
-  reportingToRoleId          String? // mutually exclusive with reportingToCommitteeId, enforced at service layer
+  // ACC-135 — "reports to" is another committee, or nothing. The owning unit
+  // above is a separate, always-present fact, not an alternative to this.
+  reportingToCommitteeId     String?
+  // ACC-135 — REMOVED IN THE CONTRACT MIGRATION, written by nothing as of this
+  // release. Kept only so the container already running keeps working across the
+  // deploy: its Prisma client still SELECTs this column, and dropping it while
+  // that container serves is exactly the ACC-48 outage.
+  reportingToRoleId          String?
   formedAt                   DateTime?
   dissolvedAt                DateTime?
   isActive                   Boolean                   @default(true) // soft-deactivate flag, independent of workflow lifecycle stage
@@ -1446,6 +1476,12 @@ model Committee {
   updatedAt                  DateTime                  @updatedAt
 
   organization         Organization               @relation(fields: [organizationId], references: [id])
+  // ACC-135 — onDelete defaults to Restrict for a required relation and is set
+  // explicitly here because this one is nullable for now: SetNull (Prisma's
+  // default for an optional relation) would blank a committee's owner silently.
+  // Nothing hard-deletes an org unit — there is no delete endpoint at all, only
+  // deactivate — so this constrains no current behaviour.
+  orgUnit              OrgUnit?                   @relation(fields: [orgUnitId], references: [id], onDelete: Restrict)
   parentCommittee      Committee?                 @relation("SubCommittees", fields: [parentCommitteeId], references: [id])
   subCommittees        Committee[]                @relation("SubCommittees")
   reportingToCommittee Committee?                 @relation("CommitteeReportingTo", fields: [reportingToCommitteeId], references: [id])
@@ -1456,9 +1492,10 @@ model Committee {
   meetings             Meeting[]
 
   @@index([organizationId])
+  @@index([orgUnitId]) // ACC-135
   @@index([parentCommitteeId])
   @@index([reportingToCommitteeId])
-  @@index([reportingToRoleId])
+  @@index([reportingToRoleId]) // ACC-135 — dropped with the column in the contract migration
 }
 
 enum CommitteeMeetingFrequency {

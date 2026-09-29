@@ -57,16 +57,30 @@ export class CreateCommitteeDto {
   @IsOptional()
   termsOfReferenceDocumentId?: string;
 
-  // Mutually exclusive with reportingToRoleId — enforced in
-  // CommitteeService, each with its OWN distinct org-scoped validation
-  // query (a Committee lookup vs. a Role lookup — two different Prisma
-  // models, never a single shared helper that only checks one).
-  // (ACC-22 Pending Discussion #4.)
+  // ACC-135 — the org unit that OWNS this committee.
+  //
+  // OPTIONAL HERE, REQUIRED IN THE RECORD. Omitting it means "the whole
+  // organisation", which the service resolves to the tenant's root unit rather
+  // than storing an absence — the root unit IS the organisation (ACC-141). So the
+  // caller may leave it out; the committee still ends up owned.
+  //
+  // Re-validated against the caller's org in CommitteeService before write, the
+  // same way parentCommitteeId is.
+  @IsString()
+  @IsOptional()
+  orgUnitId?: string;
+
+  // ACC-135 — "reports to" is another committee, or nothing.
+  //
+  // It used to be a committee OR A ROLE, and both this comment and the interface
+  // claimed the two were mutually exclusive, "enforced in CommitteeService". No
+  // such check ever existed: create() validated each id independently and wrote
+  // both. The only thing that enforced it was a three-way toggle in the form.
+  // Removing the role half therefore deletes two false claims, not a safeguard.
+  //
+  // The owning unit above is a separate, always-present fact, not an alternative
+  // to this one.
   @IsString()
   @IsOptional()
   reportingToCommitteeId?: string;
-
-  @IsString()
-  @IsOptional()
-  reportingToRoleId?: string;
 }

@@ -206,6 +206,24 @@ export class OrganizationService {
    * Scoped by organizationId — a root in another tenant must never be found
    * here, or one tenant's structure would refuse another tenant's write.
    */
+  /**
+   * ACC-135 — THIS DEFINITION IS DUPLICATED, AND THE TWO MUST CHANGE TOGETHER.
+   *
+   * `CommitteesService.resolveOwningOrgUnitId()` asks the same question — parentId
+   * null, isActive true — because a committee created with no owning unit is given
+   * the tenant's root. It queries directly rather than calling this, which is
+   * private: sharing it would mean a fifth forwardRef() edge into this module's DI
+   * graph, where every existing edge carries a comment about the real `nest start`
+   * failure that proved it necessary. Four lines of query cost less than a
+   * boot-proving cycle, and the cost of that choice is this note.
+   *
+   * The two are NOT identical, deliberately. This one orders by createdAt and
+   * takes the first, which is right for its own question — "is there already a
+   * root" only needs to know that one exists. The committee resolver REFUSES on
+   * two, because there the answer becomes a real owner written onto a real record,
+   * and ACC-134 says a tenant has exactly one root: two is a violation of that
+   * invariant, not a tie to break.
+   */
   private async findActiveRoot(
     organizationId: string,
     excludeUnitId?: string,
@@ -558,6 +576,19 @@ export class OrganizationService {
       where: { primaryOrgUnitId: id, organizationId, status: 'ACTIVE' },
     });
     if (activeUsers > 0) blockers.push(`${activeUsers} active user(s) are assigned to this unit`);
+
+    // ACC-135 — ships with the relation that made it possible, not after it.
+    //
+    // The TODOs below are deferred because those tables do not exist. Committee
+    // does, and Committee.orgUnitId is required in meaning, so deactivating a unit
+    // that still owns active committees would leave them owned by a unit nobody
+    // can reach. Same shape as the active-users blocker directly above.
+    const activeCommittees = await this.prisma.committee.count({
+      where: { orgUnitId: id, organizationId, isActive: true },
+    });
+    if (activeCommittees > 0) {
+      blockers.push(`${activeCommittees} active committee(s) are owned by this unit`);
+    }
 
     // TODO(Step 17 — Documents): check for active documents owned by this org unit
     // const activeDocs = await this.prisma.document.count({

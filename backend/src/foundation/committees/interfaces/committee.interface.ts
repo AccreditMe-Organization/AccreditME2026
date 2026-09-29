@@ -8,13 +8,17 @@ export interface ICommittee {
   quorumCount: number;
   meetingFrequency: string;
   parentCommitteeId: string | null;
+  // ACC-135 — the org unit that owns this committee. Nullable in the column for
+  // the expand step only (see schema.prisma); the service always writes one, and
+  // the contract migration makes it NOT NULL.
+  orgUnitId: string | null;
   // Nullable, deliberately unpopulated until Document Management ships
   // (ACC-22 Pending Discussion #1) — see committee.service.ts.
   termsOfReferenceDocumentId: string | null;
-  // Mutually exclusive — enforced at the service layer, not the DB
-  // (ACC-22 Pending Discussion #4).
+  // ACC-135 — a committee, or nothing. The "mutually exclusive with
+  // reportingToRoleId, enforced at the service layer" claim this comment used to
+  // carry was never true: no such check existed anywhere in the service.
   reportingToCommitteeId: string | null;
-  reportingToRoleId: string | null;
   formedAt: Date | null;
   dissolvedAt: Date | null;
   isActive: boolean;

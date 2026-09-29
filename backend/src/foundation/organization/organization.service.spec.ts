@@ -3,6 +3,7 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { OrganizationService } from './organization.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,10 @@ const mockPrisma = {
     count: jest.fn(),
     findMany: jest.fn(),
   },
+  // ACC-135 — deactivate() blocks on the committees a unit owns.
+  committee: {
+    count: jest.fn(),
+  },
   role: {
     findFirst: jest.fn(),
   },
@@ -94,6 +99,9 @@ describe('OrganizationService', () => {
     // type do not each have to stub it. Tests that ARE about it override these.
     mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-org-unit-type' });
     mockPrisma.lookupValue.findMany.mockResolvedValue([SYSTEM_DEPARTMENT]);
+    // ACC-135 — no owned committees by default, so the tests about the other
+    // blockers do not each have to stub this one.
+    mockPrisma.committee.count.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -696,6 +704,46 @@ describe('OrganizationService', () => {
       await expect(service.deactivate('missing', ORG_A, 'actor-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    // ACC-135 — the relation and its guard ship together. Committee.orgUnitId is
+    // required in meaning, so a unit that still owns active committees cannot be
+    // deactivated out from under them.
+
+    it('throws ConflictException when the unit still owns active committees', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT);
+      mockPrisma.orgUnit.count.mockResolvedValue(0);
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.committee.count.mockResolvedValue(2);
+
+      try {
+        await service.deactivate('unit-1', ORG_A, 'actor-1');
+        fail('expected ConflictException to be thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ConflictException);
+        const body = (err as ConflictException).getResponse() as {
+          message: string;
+          blockers: string[];
+        };
+        expect(body.blockers).toHaveLength(1);
+        expect(body.blockers[0]).toMatch(/2 active committee\(s\)/);
+      }
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('deactivate owned-committee blocker count', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(BASE_UNIT);
+      mockPrisma.orgUnit.count.mockResolvedValue(0);
+      mockPrisma.user.count.mockResolvedValue(0);
+      mockPrisma.orgUnit.update.mockResolvedValue({ ...BASE_UNIT, isActive: false });
+
+      await service.deactivate('unit-1', ORG_A, 'actor-1');
+
+      // Without organizationId this counts another tenant's committees and blocks
+      // a deactivation for a reason the caller can neither see nor fix.
+      expect(mockPrisma.committee.count).toHaveBeenCalledWith({
+        where: { orgUnitId: 'unit-1', organizationId: ORG_A, isActive: true },
+      });
     });
   });
 

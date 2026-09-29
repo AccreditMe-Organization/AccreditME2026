@@ -407,13 +407,10 @@
     "parentCommittee": "اللجنة الرئيسية",
     "noneOption": "بدون",
     "reportingTo": "ترفع تقاريرها إلى",
-    "reportingToMode": {
-      "none": "بدون",
-      "committee": "لجنة",
-      "role": "دور"
-    },
+    "owningUnit": "الوحدة المالكة",
+    "owningUnitHint": "الوحدة التنظيمية التي تتبع لها هذه اللجنة. اترك المنشأة إذا كانت اللجنة تخدم المنشأة بأكملها.",
+    "selectOwningUnit": "اختر الوحدة المالكة",
     "selectCommittee": "اختر لجنة",
-    "selectRole": "اختر دورًا",
     "currentStage": "المرحلة الحالية",
     "noCommittees": "لا توجد لجان معرفة بعد.",
     "errorLoad": "فشل تحميل اللجان.",

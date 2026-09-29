@@ -407,13 +407,10 @@
     "parentCommittee": "Parent Committee",
     "noneOption": "None",
     "reportingTo": "Reports To",
-    "reportingToMode": {
-      "none": "None",
-      "committee": "Committee",
-      "role": "Role"
-    },
+    "owningUnit": "Owning Unit",
+    "owningUnitHint": "The organisation unit this committee belongs to. Leave it on the organisation for a committee that serves all of it.",
+    "selectOwningUnit": "Select an owning unit",
     "selectCommittee": "Select a committee",
-    "selectRole": "Select a role",
     "currentStage": "Current Stage",
     "noCommittees": "No committees defined yet.",
     "errorLoad": "Failed to load committees.",
