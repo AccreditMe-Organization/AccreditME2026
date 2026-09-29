@@ -10,7 +10,12 @@ export interface OrgUnitDto {
   nameEn: string;
   nameAr: string | null;
   code: string;
+  // ACC-137 - superseded by typeValueId/typeValue and kept under its own name
+  // and shape, because org-unit-tree renders it directly. Dropped in the
+  // contract step, once nothing reads it.
   type: string | null;
+  typeValueId: string | null;
+  typeValue: OrgUnitTypeDto | null;
   description: string | null;
   isActive: boolean;
   isCodeLocked: boolean;
@@ -20,12 +25,43 @@ export interface OrgUnitDto {
   children?: OrgUnitDto[];
 }
 
+/**
+ * A unit's type, resolved from the org_unit_type lookup - ACC-137.
+ *
+ * Both labels arrive already override-resolved, so the client never maps a KEY
+ * to a label from a table of its own. isRetired marks a value the tenant has
+ * since hidden or deactivated: it still renders on a unit that holds it, and is
+ * not offered as a new choice.
+ */
+export interface OrgUnitTypeDto {
+  id: string;
+  key: string;
+  labelEn: string;
+  labelAr: string;
+  isRetired: boolean;
+}
+
+/**
+ * ACC-149 - THESE INTERFACES MIRROR THE BACKEND DTOs AND MUST BE KEPT IN STEP.
+ *
+ * They are separate declarations: nothing makes them agree. ACC-137 made
+ * `typeValueId` required on the backend's CreateOrgUnitDto and this interface
+ * was not updated, so it still described the old free-text `type`. The form
+ * then posted a payload matching THIS interface, cast it with
+ * `as CreateOrgUnitDto`, and the compiler had nothing to object to - Add Unit
+ * returned 400 for every user while tsc and 1495 tests passed.
+ *
+ * The cast is gone. Keeping these fields accurate is what makes its absence
+ * useful: with a correct interface and no cast, a payload missing a required
+ * field is a compile error.
+ */
 export interface CreateOrgUnitDto {
   nameEn: string;
   nameAr?: string;
   code: string;
-  type?: string;
-  parentId?: string;
+  /** Required by the API since ACC-137. A lookup value id, not a key. */
+  typeValueId: string;
+  parentId?: string | null;
   description?: string;
   sortOrder?: number;
 }
@@ -34,8 +70,9 @@ export interface UpdateOrgUnitDto {
   nameEn?: string;
   nameAr?: string;
   code?: string;
-  type?: string;
-  parentId?: string;
+  /** Optional on update: an edit that does not mention the type leaves it. */
+  typeValueId?: string;
+  parentId?: string | null;
   description?: string;
   sortOrder?: number;
 }
