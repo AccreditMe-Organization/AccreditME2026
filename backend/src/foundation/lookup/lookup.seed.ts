@@ -231,6 +231,21 @@ export const SYSTEM_LOOKUP_SEED: SeedCategory[] = [
       { key: 'section',        labelEn: 'Section',        labelAr: 'شعبة',   sortOrder: 40 },
       { key: 'administration', labelEn: 'Administration', labelAr: 'مديرية', sortOrder: 50 },
       { key: 'office',         labelEn: 'Office',         labelAr: 'مكتب',   sortOrder: 60 },
+      // ACC-141 - RESERVED FOR THE ROOT UNIT, and the only value here that names
+      // the organisation rather than a part of it. Every other value ('department',
+      // 'section', 'office') describes something INSIDE an organisation; a root
+      // unit IS the organisation.
+      //
+      // The system sets it on the root at bootstrap and there is no edit path, so
+      // nobody ever chooses it: OrganizationService refuses it on any non-root
+      // unit, and the type picker filters it out of the selection list.
+      //
+      // It stays a NORMAL SYSTEM value rather than a hidden one because it must
+      // still RESOLVE for display - otherwise every tenant's root renders with no
+      // type - and must still be available to filter the tree by. Selection,
+      // filtering and resolution are three different questions with three
+      // different answers (ACC-137 settled the same split for retired values).
+      { key: 'organization',   labelEn: 'Organization',   labelAr: 'منشأة', sortOrder: 5 },
     ],
   },
 ];

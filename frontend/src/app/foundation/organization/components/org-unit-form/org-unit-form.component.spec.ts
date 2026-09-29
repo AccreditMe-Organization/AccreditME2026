@@ -156,6 +156,66 @@ describe('OrgUnitFormComponent — the unit type (ACC-149)', () => {
     expect(component.typeOptions()[0].label).toBe('Clinical Department');
   });
 
+  // ── organization is never offered (ACC-141) ─────────────────────────────────
+
+  const ORG_VALUE = {
+    ...VALUES[0],
+    id: 'lv-org',
+    key: 'organization',
+    labelEn: 'Organization',
+    labelAr: 'منشأة',
+    sortOrder: 5,
+  };
+
+  it('excludes organization from the SELECTION list, unconditionally', () => {
+    // Reserved for the root unit, which the system types at bootstrap and which
+    // has no edit path — so no picker exists for it and there is no "is this the
+    // root" question to ask. One filter, permanently.
+    const { component, http } = setup();
+    flushTypes(http, [ORG_VALUE, ...VALUES]);
+
+    expect(component.typeOptions().map((o) => o.value)).not.toContain('lv-org');
+    expect(component.typeOptions().map((o) => o.value)).toContain('lv-dept');
+  });
+
+  it('still shows organization on the ROOT, which holds it — selection and display differ', () => {
+    // The test that stops someone later "fixing" a blank root by putting the
+    // value back in the picker. Excluding it from SELECTION must not remove it
+    // from DISPLAY: the root holds it, and a unit that renders no type reads as
+    // missing data.
+    const root = {
+      id: 'root-1',
+      nameEn: 'Al Nakheel Specialist Hospital',
+      code: 'NAKHEEL',
+      parentId: null,
+      typeValueId: 'lv-org',
+      typeValue: { id: 'lv-org', key: 'organization', labelEn: 'Organization', labelAr: 'منشأة', isRetired: false },
+      isActive: true,
+      sortOrder: 0,
+    } as unknown as OrgUnitDto;
+
+    const { component, http } = setup({ unit: root });
+    flushTypes(http, [ORG_VALUE, ...VALUES]);
+
+    // Excluded from what can be CHOSEN — and NOT re-added as "retired" either,
+    // which is what the first version of this did: the filter removed it, the
+    // retired-value re-add noticed the root's own value was missing, and put it
+    // back labelled retired. Wrong twice over.
+    expect(component.typeOptions().map((o) => o.value)).not.toContain('lv-org');
+
+    // The root gets read-only text instead of a picker, because rule 2 says its
+    // type has no edit path at all.
+    expect(component.isRootUnit()).toBeTrue();
+    expect(component.rootTypeLabel()).toBe('Organization');
+
+    // Its saved value is still carried, so opening the form and saving cannot
+    // silently retype the organisation, and `required` cannot block the save on
+    // a field the user may not touch.
+    expect(component.form.getRawValue().typeValueId).toBe('lv-org');
+    expect(component.form.get('typeValueId')?.disabled).toBeTrue();
+    expect(component.form.valid).toBeTrue();
+  });
+
   // ── the list's own outcomes (gate 6) ────────────────────────────────────────
 
   it('reports loading, then clears it', () => {

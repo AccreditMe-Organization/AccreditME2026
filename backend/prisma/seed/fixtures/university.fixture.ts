@@ -37,7 +37,11 @@ const TREE: UnitFixture = {
   key: 'MANARA',
   nameEn: 'Al Manara University',
   nameAr: 'جامعة المنارة',
-  type: 'administration',
+  // ACC-141 - the ROOT unit's type is 'organization'. It was 'administration',
+  // which ACC-137's backfill mapped cleanly and which was still wrong: a
+  // hospital is not a directorate, and a university is not a directorate.
+  // "0 unresolvable" measured the mapping, not the meaning.
+  type: 'organization',
   children: [
     {
       key: 'ENG',

@@ -34,12 +34,26 @@ export interface UnitFixture {
   key: string;
   nameEn: string;
   nameAr: string;
-  // Free text — OrgUnit.type is String? with NO validation anywhere, and the
-  // org_unit_type SYSTEM lookup category has zero consumers in backend or
-  // frontend (confirmed by grep, ACC-62 investigation). Values outside that
-  // category ('ward', 'faculty') are therefore legal; ACC-62 PD #4 adds them
-  // as tenant lookup values anyway so the data is internally consistent for
-  // whenever that lookup does get wired up.
+  // A KEY in the org_unit_type lookup, and validated as one since ACC-137.
+  //
+  // This comment said the opposite until 2026-09-29: that OrgUnit.type was free
+  // text with no validation anywhere, and that the org_unit_type category had
+  // zero consumers. Both were true when written and both became false with
+  // ACC-137, which made typeValueId a required, validated lookup reference.
+  // Restated rather than deleted, because a reader who finds a gap where a
+  // constraint used to be documented learns nothing; the constraint is what they
+  // are now subject to.
+  //
+  // applyOrgTree() resolves this key to a LookupValue id before calling
+  // OrganizationService.create(), among the values the tenant can see - SYSTEM
+  // plus its own. A key that resolves to nothing fails the seed loudly rather
+  // than writing an untyped unit. So a value outside the six SYSTEM ones
+  // ('ward', 'faculty') is still legal, but only because ACC-62 PD #4 adds it as
+  // a TENANT lookup value first - it is no longer legal merely by being a
+  // string.
+  //
+  // ACC-141: the ROOT unit's type must be 'organization'. Any other unit's must
+  // NOT be - the API refuses it on create and on update.
   type: string;
   children?: UnitFixture[];
 }

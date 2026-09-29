@@ -312,6 +312,116 @@ describe('OrganizationService', () => {
     });
   });
 
+  // ── the root's type is `organization` (ACC-141) ───────────────────────────────
+
+  describe('the organization type is reserved for the root (ACC-141)', () => {
+    const ORG_VALUE = {
+      id: 'lv-org',
+      organizationId: null as string | null,
+      key: 'organization',
+      labelEn: 'Organization',
+      labelAr: 'منشأة',
+      labelOverrideEn: null as string | null,
+      labelOverrideAr: null as string | null,
+      isActive: true,
+      isHidden: false,
+    };
+
+    const withValues = (values: unknown[]): void => {
+      mockPrisma.lookupCategory.findFirst.mockResolvedValue({ id: 'cat-org-unit-type' });
+      mockPrisma.lookupValue.findMany.mockResolvedValue(values);
+    };
+
+    it('refuses organization on CREATE, without asking whether it is the root', async () => {
+      // The asymmetry with update() is the point. ACC-134 already forbids a
+      // second root and bootstrap() writes the only one through Prisma directly,
+      // so every unit created through this API is non-root by construction —
+      // there is no root to detect. Verified in a browser: a create with no
+      // parentId is refused by ACC-134's guard before reaching here.
+      withValues([SYSTEM_DEPARTMENT, ORG_VALUE]);
+      mockPrisma.orgUnit.findFirst
+        .mockResolvedValueOnce(makeUnit({ id: 'parent-1' })) // parent found
+        .mockResolvedValueOnce(null); // no code conflict
+
+      await expect(
+        service.create(ORG_A, { nameEn: 'X', code: 'X', parentId: 'parent-1', typeValueId: 'lv-org' }, 'a'),
+      ).rejects.toThrow(/reserved for the organization's root unit/);
+      expect(mockPrisma.orgUnit.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses organization on UPDATE of a non-root unit', async () => {
+      withValues([SYSTEM_DEPARTMENT, ORG_VALUE]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(
+        makeUnit({ id: 'child-1', parentId: 'parent-1', typeValueId: 'lv-dept' }),
+      );
+
+      await expect(
+        service.update('child-1', ORG_A, { typeValueId: 'lv-org' }, 'actor-1'),
+      ).rejects.toThrow(/reserved for the organization's root unit/);
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses changing the ROOT's type at all — there is no edit path", async () => {
+      // Rule 2. Not a default that can be changed: a root unit IS the
+      // organisation, so the value is structurally determined.
+      withValues([SYSTEM_DEPARTMENT, ORG_VALUE]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(
+        makeUnit({ id: 'root-1', parentId: null, typeValueId: 'lv-org' }),
+      );
+
+      await expect(
+        service.update('root-1', ORG_A, { typeValueId: 'lv-dept' }, 'actor-1'),
+      ).rejects.toThrow(/root unit's type is set by the system/);
+      expect(mockPrisma.orgUnit.update).not.toHaveBeenCalled();
+    });
+
+    it('lets the root re-save the SAME type, so a round-tripping form is not refused', async () => {
+      withValues([SYSTEM_DEPARTMENT, ORG_VALUE]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(
+        makeUnit({ id: 'root-1', parentId: null, typeValueId: 'lv-org' }),
+      );
+      mockPrisma.orgUnit.update.mockResolvedValue(
+        makeUnit({ id: 'root-1', parentId: null, typeValueId: 'lv-org', nameEn: 'Renamed' }),
+      );
+
+      await expect(
+        service.update('root-1', ORG_A, { typeValueId: 'lv-org', nameEn: 'Renamed' }, 'actor-1'),
+      ).resolves.toEqual(expect.objectContaining({ id: 'root-1' }));
+    });
+
+    it('RESOLVES organization for display — the root must not render blank', async () => {
+      // The third of the three answers. Selection excludes this value; filtering
+      // and resolution include it. A test pins that, so nobody later "fixes" a
+      // blank root by putting it back in the picker.
+      withValues([SYSTEM_DEPARTMENT, ORG_VALUE]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(
+        makeUnit({ id: 'root-1', parentId: null, typeValueId: 'lv-org' }),
+      );
+
+      const result = await service.findById('root-1', ORG_A);
+
+      expect(result.typeValue).toEqual({
+        id: 'lv-org',
+        key: 'organization',
+        labelEn: 'Organization',
+        labelAr: 'منشأة',
+        isRetired: false,
+      });
+    });
+
+    it('keeps organization ACTIVE and not hidden, so it stays filterable', async () => {
+      // Filtering the tree by type is a legitimate query and the root holds this
+      // value, so it must not be hidden or deactivated to keep it out of the
+      // picker. The picker filters by KEY instead; the value itself stays normal.
+      withValues([SYSTEM_DEPARTMENT, ORG_VALUE]);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(makeUnit({ typeValueId: 'lv-org' }));
+
+      const result = await service.findById('unit-1', ORG_A);
+
+      expect(result.typeValue?.isRetired).toBe(false);
+    });
+  });
+
   // ── the type is a lookup value (ACC-137) ──────────────────────────────────────
 
   describe('unit type as a lookup value (ACC-137)', () => {

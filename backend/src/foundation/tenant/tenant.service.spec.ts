@@ -51,6 +51,10 @@ describe('TenantService', () => {
     planModule: { findMany: jest.Mock };
     orgUnit: { findFirst: jest.Mock; create: jest.Mock };
     orgPosition: { findFirst: jest.Mock };
+    // ACC-141 — bootstrap() resolves the `organization` lookup value for the
+    // root unit it creates.
+    lookupCategory: { findFirst: jest.Mock };
+    lookupValue: { findFirst: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
   let lookupService: { seedSystemData: jest.Mock };
@@ -69,6 +73,10 @@ describe('TenantService', () => {
       orgUnit: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(undefined),
+      },
+      lookupCategory: { findFirst: jest.fn().mockResolvedValue({ id: 'cat-org-unit-type' }) },
+      lookupValue: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'lv-org', key: 'organization' }),
       },
       orgPosition: {
         findFirst: jest.fn(),
@@ -197,6 +205,38 @@ describe('TenantService', () => {
   // ── bootstrap ─────────────────────────────────────────────────────────────
 
   describe('bootstrap', () => {
+    // ── the root's type (ACC-141) ─────────────────────────────────────────────
+
+    it("types the root unit 'organization', with nobody choosing it", async () => {
+      // A root unit IS the organisation, so asking would be ceremony that also
+      // permits a wrong answer. Both shapes are written, as everywhere else
+      // during the expand step.
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.organization.update.mockResolvedValue({ ...ORG_A, isBootstrapped: true });
+      prisma.orgUnit.findFirst.mockResolvedValue(null);
+
+      await service.bootstrap('org-a', 'user-1');
+
+      expect(prisma.orgUnit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ type: 'organization', typeValueId: 'lv-org' }),
+      });
+    });
+
+    it('FAILS provisioning rather than creating an untyped root', async () => {
+      // A root with no type is exactly the state ACC-137's Setup health
+      // condition exists to report. Creating one silently while provisioning
+      // would put every new customer into it on day one, which is worse than a
+      // loud failure during a platform-admin action.
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.orgUnit.findFirst.mockResolvedValue(null);
+      prisma.lookupValue.findFirst.mockResolvedValue(null);
+
+      await expect(service.bootstrap('org-a', 'user-1')).rejects.toThrow(
+        /'organization' not found/,
+      );
+      expect(prisma.orgUnit.create).not.toHaveBeenCalled();
+    });
+
     // ── ordering (ACC-145) ────────────────────────────────────────────────────
 
     it('seeds the global SYSTEM lookups BEFORE creating the root org unit', async () => {

@@ -340,6 +340,45 @@ export class TenantService {
     });
   }
 
+  /**
+   * The `organization` lookup value, for the root unit bootstrap() creates.
+   *
+   * ACC-141. Throws rather than falling back: a root with no type is the exact
+   * state ACC-137's Setup health condition exists to report, and creating one
+   * silently while provisioning a tenant would put every new customer into it.
+   * seedSystemData() runs immediately above the caller, so by this point the
+   * value exists unless the seed itself is broken - in which case failing the
+   * provisioning loudly is right.
+   *
+   * Not resolved through OrganizationService: importing it here is circular
+   * (OrganizationModule -> TenantModule -> OrganizationService), which is why
+   * this file already talks to Prisma directly for the root unit.
+   */
+  private async resolveOrganizationTypeValue(): Promise<{ id: string; key: string }> {
+    const category = await this.prisma.lookupCategory.findFirst({
+      where: { key: 'org_unit_type', organizationId: null },
+      select: { id: true },
+    });
+    if (!category) {
+      throw new Error(
+        "Lookup category 'org_unit_type' not found. seedSystemData() runs immediately " +
+          'before this and should have created it.',
+      );
+    }
+
+    const value = await this.prisma.lookupValue.findFirst({
+      where: { categoryId: category.id, key: 'organization', organizationId: null },
+      select: { id: true, key: true },
+    });
+    if (!value) {
+      throw new Error(
+        "SYSTEM lookup value 'organization' not found in org_unit_type. The tenant's root " +
+          'unit cannot be typed without it (ACC-141).',
+      );
+    }
+    return value;
+  }
+
   async bootstrap(id: string, actorId: string): Promise<void> {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
@@ -374,8 +413,28 @@ export class TenantService {
           .trim()
           .replace(/\s+/g, '-')
           .slice(0, 10) || 'ROOT';
+      // ACC-141 - the root's type is `organization`, resolved here and written
+      // with the unit. Nobody chooses it: a root unit IS the organisation, so
+      // asking would be ceremony that also permits a wrong answer. It is NOT
+      // the "guessed default" this ticket's earlier draft rejected - that was
+      // about guessing among six plausible options for a unit whose type
+      // genuinely varies. Here there is exactly one correct answer.
+      //
+      // Resolved by KEY among the values this tenant can see, not hardcoded by
+      // id, because ids are generated per database.
+      //
+      // Both shapes are written, as everywhere else during the expand step.
+      const organizationType = await this.resolveOrganizationTypeValue();
+
       await this.prisma.orgUnit.create({
-        data: { organizationId: id, nameEn: org.name, code, sortOrder: 0 },
+        data: {
+          organizationId: id,
+          nameEn: org.name,
+          code,
+          sortOrder: 0,
+          type: organizationType.key,
+          typeValueId: organizationType.id,
+        },
       });
     }
 
