@@ -223,6 +223,34 @@ async function main(): Promise<void> {
       },
     });
     if (!platformRootUnit) {
+      // ACC-141 — the platform organisation's root is typed like any other root:
+      // `organization`. ACC-137 recorded it as a PERMANENT structural exemption
+      // on the belief that no lookup value could be meaningful for it. That was
+      // true of the six values then seeded, all of which name a part of an
+      // organisation. It stops being true once `organization` exists — the
+      // platform organisation's root IS an organisation.
+      //
+      // This seed does not call seedSystemData(), so the value has to be there
+      // already. `db:reset:dev` seeds it (ACC-145) and the documented order is
+      // reset, then seed:demo. Failing loudly beats creating the one untyped
+      // unit in the system inside the script whose job is a clean genesis state.
+      const orgTypeCategory = await prisma.lookupCategory.findFirst({
+        where: { key: 'org_unit_type', organizationId: null },
+        select: { id: true },
+      });
+      const orgTypeValue = orgTypeCategory
+        ? await prisma.lookupValue.findFirst({
+            where: { categoryId: orgTypeCategory.id, key: 'organization', organizationId: null },
+            select: { id: true, key: true },
+          })
+        : null;
+      if (!orgTypeValue) {
+        throw new Error(
+          "SYSTEM lookup value 'organization' not found in org_unit_type, so the platform " +
+            'root unit cannot be typed (ACC-141). Run `npm run seed:system-lookups` first.',
+        );
+      }
+
       platformRootUnit = await prisma.orgUnit.create({
         data: {
           organizationId: platformOrg.id,
@@ -230,6 +258,8 @@ async function main(): Promise<void> {
           nameAr: 'منصة أكريدت مي',
           code: 'PLATFORM',
           sortOrder: 0,
+          type: orgTypeValue.key,
+          typeValueId: orgTypeValue.id,
         },
       });
       console.log(`Created root org unit: ${platformRootUnit.code}`);
