@@ -460,6 +460,23 @@ describe('CommitteesService', () => {
       );
     });
 
+    itEnforcesTenantIsolation('createCommittee root-unit resolution', async () => {
+      // The THIRD new query, and the one whose unscoped failure is worst: an
+      // unscoped root lookup returns some other tenant's root and writes it onto
+      // this tenant's committee — a cross-tenant write, not a leak of a read.
+      mockPrisma.committee.create.mockResolvedValue(makeCommittee());
+
+      await service.createCommittee(
+        { nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'quality_committee' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+      );
+    });
+
     it('uses the named owning unit without looking for a root', async () => {
       mockPrisma.committee.create.mockResolvedValue(makeCommittee());
 
