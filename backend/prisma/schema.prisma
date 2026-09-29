@@ -698,11 +698,19 @@ model OrgUnit {
   type           String?
   // ACC-137 — the unit's type, as a lookup value id.
   //
-  // NULLABLE, and it stays nullable for a reason that is structural rather than
-  // transitional: the PLATFORM organization's root is not a tenant org unit and
-  // no org_unit_type value is meaningful for it. That row is permanently null by
-  // design, so NOT NULL would be wrong rather than merely premature — see the
-  // service for why the exemption is not a branch in the validator.
+  // NULLABLE ONLY UNTIL THE CONTRACT STEP — CORRECTED ACC-135.
+  //
+  // This comment used to say the PLATFORM organization's root was permanently
+  // null by design, because no org_unit_type value could be meaningful for it,
+  // and that NOT NULL would therefore be wrong rather than merely premature.
+  // ACC-141 made that false: the root's type is `organization`, the platform
+  // root is an organisation, and its backfill took units with no type at all
+  // from 1 to 0. So the one structural exemption is gone and NOT NULL is
+  // achievable — measured, not assumed.
+  //
+  // It is left here as the original claim rather than deleted, because a reader
+  // who finds only the correction cannot tell whether the exemption was removed
+  // or never existed. The migration that applies NOT NULL is still outstanding.
   //
   // A REAL RELATION, unlike Committee.typeValueId and Meeting.typeValueId, which
   // are bare String columns with no `@relation`. The divergence is deliberate:
