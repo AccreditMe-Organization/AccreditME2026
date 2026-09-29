@@ -3209,17 +3209,57 @@ model OrgUnit {
   gap — nothing in the seeded data or tests currently creates one, but
   the guard rejecting it does not exist.
 - **`deactivate()`** — idempotent. Blocker list is a real
-  `ConflictException` on active child units (queried live), but **four
-  of five documented blocker checks are TODO-commented-out, not
-  implemented**: users assigned to the unit, active documents owned by
-  it, open incidents referencing it, active workflow instances in it.
-  **The Users check is stale, not just deferred**: its TODO comment
-  reads `TODO(Step 9 — Users): check for active users assigned to this
-  org unit` — but Users (`User.primaryOrgUnitId`, Section 5.1) has been
-  built and shipped since ACC-12, well before this session. **Today,
-  deactivating an `OrgUnit` with active users still assigned to it
-  succeeds with no warning or block** — the one blocker check that
-  could be wired against already-existing data isn't.
+  `ConflictException` carrying a structured `blockers: string[]`.
+  **THREE checks are live, and three remain TODO-commented:**
+  - live: **active child units**, **active users assigned to the unit**
+    (`User.primaryOrgUnitId` + `status: 'ACTIVE'`), and **active
+    committees owned by the unit** (`Committee.orgUnitId` +
+    `isActive: true`, ACC-135).
+  - still TODO: active documents owned by it, open incidents
+    referencing it, active workflow instances in it — all three
+    deferred because those tables do not exist yet, which is a real
+    reason rather than an oversight.
+
+  **CORRECTED ACC-135 — this entry previously said the Users check was
+  commented out**, and concluded that "deactivating an `OrgUnit` with
+  active users still assigned to it succeeds with no warning or block".
+  That was true when written and is not true now; the check is real and
+  a spec pins it. Recorded as a correction rather than silently
+  overwritten, because the old text is the kind a reader acts on.
+
+  **The committee blocker shipped in the same change as the relation it
+  guards** (ACC-135), deliberately: `Committee.orgUnitId` is required in
+  meaning, so a unit deactivated out from under its committees would
+  leave them owned by a unit nobody can reach. The rule this follows —
+  *if you create the relation, you create its guard in the same change* —
+  is why it is not a follow-up ticket.
+
+  **There is no delete path at all.** No `@Delete` exists on the org-unit
+  controller, only deactivate, which is what makes `Committee.orgUnitId`'s
+  `onDelete: Restrict` constrain nothing today (ACC-135) and what makes a
+  deactivated unit a one-way state (ACC-151).
+
+### 7.2a "What Is The Root" Has TWO Definitions (ACC-135)
+
+`OrganizationService.findActiveRoot()` (private) and
+`CommitteesService.resolveOwningOrgUnitId()` both answer it, with the same
+predicate — `parentId: null, isActive: true` — and **they must change
+together**. Both carry a comment saying so.
+
+The duplication is deliberate. `findActiveRoot()` is private, and sharing it
+would add a fifth `forwardRef()` edge into `OrganizationModule`'s DI graph,
+where **every existing edge carries a comment about the real `nest start`
+failure that proved it necessary** (7.x, and Section 5's own notes). Four lines
+of query were judged cheaper than another boot-proving cycle.
+
+**They differ on purpose in one place, and the difference matters.**
+`findActiveRoot()` orders by `createdAt` and takes the first — correct for
+ACC-134's question, which is only "is there already a root". The committee
+resolver **REFUSES on two**, naming both codes, because there the answer becomes
+a real owner written onto a real record and picking one on a row ordering nobody
+chose is the wrong failure. It also refuses on **none**, which is reachable:
+ACC-134 enforced *at most* one root and never *at least* one, and nothing blocks
+deactivating the root (ACC-152).
 
 ### 7.3 `isCodeLocked` — Schema Exists, Trigger Does Not
 
