@@ -153,11 +153,16 @@ around; anything above it may be used freely.
   `backend/src` serves static assets.
 - Frontend hosting: **NOWHERE.** The Angular app is not deployed, so there is no
   URL to show anyone and no environment in which a frontend change can be
-  verified after merging — only locally. ACC-130 is the ticket that deploys it.
+  verified after merging — only locally.
+  **This is a KNOWN, TICKETED state, not a discovery: ACC-130 recorded it on
+  23 September** ("the Angular frontend is deployed nowhere") and owns deploying
+  it. Read that ticket rather than re-deriving this.
   Corrected 2026-09-29: this line previously read "Backend + frontend hosting:
   Railway", which was wrong, and wrong in the way this whole section exists to
   prevent — the measurement it came from said "backend + frontend (Railway)" and
-  was transcribed without checking the IaC.
+  was transcribed without checking the IaC. The answer was already filed; nobody
+  read it. That is the second time in two days — ACC-97 likewise already held the
+  authoritative-timezone answer that was set up as an investigation.
 - Database: Supabase PostgreSQL — `aws-1-eu-central-1` (Frankfurt)
 - Redis + `redis-volume`: Railway — `sfo` (San Francisco). **KNOWN OPEN ITEM,
   ACC-143.** Every cache call crosses the Atlantic twice, and "cache in the
