@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 29 Sep 2026 · on Design System Rev 8, Templates Rev 7</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Users and roles — Manage roles, Invite user, the matrix in Arabic</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 96ch; text-wrap: pretty;">Three items, drawn on the code facts measured 29 Sep. <strong>Naming: “Manage roles”</strong> everywhere (the dialog, the row-menu item, the bulk action and template 1's button), because the dialog both adds and removes. “Assign role” doesn't appear in the interface.</p>
+  </div>
+
+  <section id="m1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Manage roles · form dialog 560</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">One dialog for a single row and for a bulk selection. The difference is the checkbox's third state, so it's drawn twice here only to show that state.</span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;">
+
+      <div style="flex: 1 1 520px; max-width: 560px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">A · one user, from the row menu · 2 changes pending</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
+            <div style="min-width: 0;"><div style="font-size: 16px; font-weight: 600;">Manage roles · Layla Kassem</div><div style="font-size: 12px; color: #5A6779;">Pharmacist · Pharmacy · 4 roles</div></div>
+            <button aria-label="Close dialog" style="flex: none; width: 28px; height: 28px; border: none; background: none; color: #5A6779; font-size: 13px;">✕</button>
+          </div>
+          <div style="padding: 10px 14px 4px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 4px;">From their head position · 2</div>
+            <sc-for list="{{ lockedRows }}" as="r" hint-placeholder-count="2">
+              <div style="display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-block-end: 1px solid #F0F3F7;">
+                <span aria-hidden="true" style="flex: none; width: 16px; height: 16px; margin-block-start: 2px; font-size: 11px; color: #5A6779; text-align: center;">⊡</span>
+                <span style="flex: 1 1 auto; min-width: 0;">
+                  <span style="display: block; font-size: 13px; font-weight: 500;">{{ r.name }} <span style="font-weight: 400; color: #5A6779;">· {{ r.scope }}</span></span>
+                  <span style="display: block; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Comes with their head position, {{ r.position }}. It ends when that headship ends, so change it in Headship, not here.</span>
+                </span>
+              </div>
+            </sc-for>
+            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-block: 10px 4px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Granted directly</span>
+              <span style="font-size: 11.5px; color: #5A6779;">11 roles · ticked = held</span>
+            </div>
+            <div style="border: 1px solid #E2E8F0; border-radius: 6px; max-height: 176px; overflow-y: auto; box-shadow: inset 0 -10px 8px -8px rgba(16,24,40,0.14);">
+              <sc-for list="{{ singleRows }}" as="r" hint-placeholder-count="5">
+                <div style="{{ r.rowStyle }}">
+                  <span style="{{ r.boxStyle }}">{{ r.mark }}</span>
+                  <span style="flex: 1 1 auto; min-width: 0;">
+                    <span style="display: block; font-size: 13px; font-weight: 500;">{{ r.name }}</span>
+                    <span style="display: block; font-size: 11.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.desc }}</span>
+                  </span>
+                  <span style="{{ r.metaStyle }}">{{ r.meta }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block: 5px 8px;">The list scrolls within its frame. It holds checkboxes only, so nothing inside can float.</div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <span style="font-size: 12.5px; color: #4A5568;"><strong>2 changes:</strong> + Committee Secretary · − Viewer</span>
+            <span style="display: flex; gap: 8px;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Cancel</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Save 2 changes</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1 1 520px; max-width: 560px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">B · 12 users, from the bulk bar · tri-state</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
+            <div style="min-width: 0;"><div style="font-size: 16px; font-weight: 600;">Manage roles · 12 users</div><div style="font-size: 12px; color: #5A6779;">Only roles you change are applied. Everything else is left as each person has it.</div></div>
+            <button aria-label="Close dialog" style="flex: none; width: 28px; height: 28px; border: none; background: none; color: #5A6779; font-size: 13px;">✕</button>
+          </div>
+          <div style="padding: 10px 14px 4px;">
+            <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; font-size: 12px; color: #1F5480; margin-block-end: 10px;"><span style="flex: none;">ⓘ</span><span style="text-wrap: pretty;">3 of these users also hold roles through a head position. Those aren't listed here and aren't changed.</span></div>
+            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 4px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Granted directly</span>
+              <span style="font-size: 11.5px; color: #5A6779;">click cycles: all → none → leave as is</span>
+            </div>
+            <div style="border: 1px solid #E2E8F0; border-radius: 6px; max-height: 240px; overflow: hidden;">
+              <sc-for list="{{ bulkRows }}" as="r" hint-placeholder-count="5">
+                <div style="{{ r.rowStyle }}">
+                  <span style="{{ r.boxStyle }}">{{ r.mark }}</span>
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 500;">{{ r.name }}</span>
+                  <span style="{{ r.metaStyle }}">{{ r.meta }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block: 5px 8px; text-wrap: pretty;">Each row states what Save will do, not just what's held. That's the only way a tri-state stays safe at twelve people.</div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <span style="font-size: 12.5px; color: #4A5568;"><strong>2 changes</strong> for up to 12 people</span>
+            <span style="display: flex; gap: 8px;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Cancel</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Apply to 12 users</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div dir="rtl" style="flex: 1 1 520px; max-width: 560px; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">ج · العربية — مستخدم واحد</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
+            <div style="min-width: 0;"><div style="font-size: 17px; font-weight: 600;">إدارة الأدوار · ليلى قاسم</div><div style="font-size: 12.5px; color: #5A6779;">صيدلانية · الصيدلية · <span dir="ltr" style="unicode-bidi: isolate;">4</span> أدوار</div></div>
+            <button aria-label="إغلاق" style="flex: none; width: 28px; height: 28px; border: none; background: none; color: #5A6779;">✕</button>
+          </div>
+          <div style="padding: 10px 14px 4px;">
+            <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 4px;">من منصب الرئاسة · <span dir="ltr" style="unicode-bidi: isolate;">2</span></div>
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-block-end: 1px solid #F0F3F7;">
+              <span aria-hidden="true" style="flex: none; width: 16px; font-size: 11px; color: #5A6779; text-align: center; margin-block-start: 3px;">⊡</span>
+              <span style="min-width: 0;"><span style="display: block; font-size: 14px; font-weight: 500;">رئيس وحدة <span style="font-weight: 400; color: #5A6779;">· الصيدلية فقط</span></span><span style="display: block; font-size: 12.5px; color: #5A6779; text-wrap: pretty;">يأتي مع منصب الرئاسة، مدير. وينتهي بانتهاء الرئاسة، فيُعدَّل من «الرئاسة» لا من هنا.</span></span>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-block-end: 1px solid #F0F3F7;">
+              <span aria-hidden="true" style="flex: none; width: 16px; font-size: 11px; color: #5A6779; text-align: center; margin-block-start: 3px;">⊡</span>
+              <span style="min-width: 0;"><span style="display: block; font-size: 14px; font-weight: 500;">مراجع الجودة <span style="font-weight: 400; color: #5A6779;">· على مستوى المنشأة</span></span><span style="display: block; font-size: 12.5px; color: #5A6779; text-wrap: pretty;">يأتي مع منصب الرئاسة، مدير. وينتهي بانتهاء الرئاسة، فيُعدَّل من «الرئاسة» لا من هنا.</span></span>
+            </div>
+            <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block: 10px 4px;">ممنوحة مباشرة</div>
+            <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+              <sc-for list="{{ singleRowsAr }}" as="r" hint-placeholder-count="4">
+                <div style="{{ r.rowStyle }}">
+                  <span style="{{ r.boxStyle }}">{{ r.mark }}</span>
+                  <span style="flex: 1 1 auto; min-width: 0; font-size: 14px; font-weight: 500;">{{ r.name }}</span>
+                  <span style="{{ r.metaStyle }}">{{ r.meta }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="height: 8px;"></div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <span style="font-size: 13px; color: #4A5568;"><strong>تغييران:</strong> + أمين اللجنة · − مُطَّلِع</span>
+            <span style="display: flex; gap: 8px;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px;">إلغاء</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">حفظ التغييرين</button>
+            </span>
+          </div>
+        </div>
+        <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The granted date is a Latin-digit Gregorian date, isolated LTR. The + and − in the change summary lead in reading order, so they sit at the right.</div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-block-start: 14px;">
+      <div style="flex: 1 1 380px; max-width: 420px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Last role removed · confirm 420 (Ahmad, 29 Sep: warn, then allow)</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="padding: 13px 14px;">
+            <div style="font-size: 16px; font-weight: 600;">Leave Omar Haddad with no roles?</div>
+            <div style="font-size: 13px; color: #4A5568; margin-block-start: 6px; text-wrap: pretty;">He'll still be able to sign in, but <strong>he won't be able to do anything in AccreditMe</strong> until a role is given back.</div>
+            <div style="font-size: 13px; color: #4A5568; margin-block-start: 6px; text-wrap: pretty;">His user record, position, org unit and history are kept.</div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Cancel</button>
+            <button style="background: #B42318; color: #fff; border: 1px solid #912018; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Remove anyway</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;"><strong>Bulk:</strong> the same dialog, titled “Leave 3 of 12 users with no roles?”, listing the three by name (up to 5, then “+ n more”). Cancel returns to the dialog with nothing saved. Remove anyway applies everything, the three included. It only appears when a user has no head-position roles either: a person who still holds a derived role isn't left with none.</div>
+      </div>
+
+      <div dir="rtl" style="flex: 1 1 380px; max-width: 420px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">العربية</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="padding: 13px 14px;">
+            <div style="font-size: 17px; font-weight: 600;">هل تترك عمر حداد بلا أدوار؟</div>
+            <div style="font-size: 14px; color: #4A5568; margin-block-start: 6px; text-wrap: pretty;">سيظل قادرًا على تسجيل الدخول، لكنه <strong>لن يستطيع القيام بأي شيء في النظام</strong> حتى يُمنح دورًا من جديد.</div>
+            <div style="font-size: 14px; color: #4A5568; margin-block-start: 6px;">يُحتفظ بسجله ومنصبه ووحدته وتاريخه.</div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px;">إلغاء</button>
+            <button style="background: #B42318; color: #fff; border: 1px solid #912018; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">إزالة على أي حال</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1 1 360px; min-width: 0; display: flex; flex-direction: column; gap: 8px;">
+        <sc-for list="{{ rolesDecisions }}" as="d" hint-placeholder-count="5">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 2px;">{{ d.t }}</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 14px;">
+      <div style="padding: 9px 13px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Six outcomes · Manage roles</div>
+      <sc-for list="{{ rolesOutcomes }}" as="o" hint-placeholder-count="6">
+        <div style="display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 13px; border-block-end: 1px solid #F0F3F7;">
+          <span style="{{ o.tagStyle }}">{{ o.tag }}</span>
+          <span style="flex: 1 1 300px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.en }}</span>
+          <span dir="rtl" style="flex: 1 1 260px; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13px; color: #4A5568; text-wrap: pretty;">{{ o.ar }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="m2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Invite user · form dialog 560 · compact density</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Exactly InviteUserDto's five fields. No roles on this dialog (Ahmad, 29 Sep); they're prompted right after sending.</span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;">
+      <div style="flex: 1 1 520px; max-width: 560px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">A · the usual case · all five fields, a validation error on email</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
+            <div><div style="font-size: 16px; font-weight: 600;">Invite user</div><div style="font-size: 12px; color: #5A6779;">They'll get an email with a link to set their password.</div></div>
+            <button aria-label="Close dialog" style="flex: none; width: 28px; height: 28px; border: none; background: none; color: #5A6779;">✕</button>
+          </div>
+          <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+            <sc-for list="{{ inviteFields }}" as="f" hint-placeholder-count="5">
+              <div>
+                <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568;">{{ f.label }} <span style="font-weight: 400; color: #5A6779;">{{ f.req }}</span></label>
+                <div style="{{ f.boxStyle }}">
+                  <span style="{{ f.valStyle }}">{{ f.value }}</span>
+                  <span style="flex: none; font-size: 11.5px; font-weight: 600; color: #2E6FA3;">{{ f.action }}</span>
+                </div>
+                <div style="{{ f.helpStyle }}">{{ f.help }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Cancel</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Send invitation</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;"><strong>Measured, compact density</strong> (5 field blocks, so the rule applies): block = label 18 + 2 + control 32 + 2 + slot 17 = 71. Body 12 + 5 × 71 + 4 × 8 + 12 = <strong>411 / 420</strong>. Arabic: block 20 + 2 + 32 + 2 + 20 = 76, body 12 + 5 × 76 + 32 + 12 = <strong>436, which is 16 over</strong>. That's resolved below, the same way in both languages.</div>
+      </div>
+
+      <div style="flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 11px 13px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 5px;">Arabic is 16px over — resolved for both languages</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Name and Email share one row, 50/50, in both languages. Five blocks become four rows: English 12 + 4 × 71 + 3 × 8 + 12 = <strong>332</strong>, Arabic 12 + 4 × 76 + 24 + 12 = <strong>352</strong>. Both fit with room for the conditional sentences below. The single-column A drawing shows the fields and their rules. The build uses the paired row, as the Arabic drawing does.</div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">The two conditional rules, drawn as the field's replacement</div>
+          <div style="padding: 11px 12px; border-block-end: 1px solid #F0F3F7;">
+            <div style="font-size: 12px; font-weight: 600; margin-block-end: 5px;">Org unit, when the tenant has no active units</div>
+            <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568;">Org unit</label>
+            <div style="display: flex; gap: 8px; align-items: flex-start; min-height: 32px; box-sizing: border-box; padding: 6px 10px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 4px; font-size: 12px; color: #1F5480;"><span style="flex: none;">ⓘ</span><span style="text-wrap: pretty;">Your organisation has no units yet, so this person won't be placed in one. <a href="#m2" style="font-weight: 600; text-decoration: none;">Set up units</a></span></div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 5px; text-wrap: pretty;">The field is replaced by a sentence (artboard 10's zero-field rule), not hidden and not disabled. This is the first tenant admin's case. They're usually inviting colleagues before building the structure.</div>
+          </div>
+          <div style="padding: 11px 12px;">
+            <div style="font-size: 12px; font-weight: 600; margin-block-end: 5px;">Manager, when inviting the root unit's own head</div>
+            <label style="display: block; font-size: 12px; line-height: 18px; font-weight: 500; color: #4A5568;">Manager</label>
+            <div style="display: flex; gap: 8px; align-items: flex-start; min-height: 32px; box-sizing: border-box; padding: 6px 10px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 4px; font-size: 12px; color: #1F5480;"><span style="flex: none;">ⓘ</span><span style="text-wrap: pretty;">Not needed. As head of Al Nakheel Specialist Hospital, they report to no one.</span></div>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 5px; text-wrap: pretty;">This appears as soon as Position is a head-conferring position and Org unit is the root. Change either and the Manager field comes back, required, with any earlier choice restored (artboard 10: switching is non-destructive). The rule reads the same inputs the service checks, so the dialog never makes a claim the server would refuse.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-block-start: 14px;">
+      <div dir="rtl" style="flex: 1 1 520px; max-width: 560px; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">ب · العربية — الاسم والبريد في صف واحد</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
+            <div><div style="font-size: 17px; font-weight: 600;">دعوة مستخدم</div><div style="font-size: 12.5px; color: #5A6779;">سيصله بريد برابط لتعيين كلمة المرور.</div></div>
+            <button aria-label="إغلاق" style="flex: none; width: 28px; height: 28px; border: none; background: none; color: #5A6779;">✕</button>
+          </div>
+          <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div><label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568;">الاسم</label><div style="height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px; display: flex; align-items: center; font-size: 14px;">ليلى قاسم</div><div style="font-size: 12.5px; line-height: 20px; min-height: 20px; margin-block-start: 2px; color: #5A6779;">حقل اسم واحد</div></div>
+              <div><label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568;">البريد الإلكتروني</label><div style="height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px; display: flex; align-items: center;"><span dir="ltr" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; unicode-bidi: isolate;">l.kassem@kfmc.med.sa</span></div><div style="min-height: 20px; margin-block-start: 2px;"></div></div>
+            </div>
+            <div><label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568;">المنصب</label><div style="height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; font-size: 14px;"><span>صيدلاني</span><span style="font-size: 10px; color: #5A6779;">▼</span></div><div style="font-size: 12.5px; line-height: 20px; min-height: 20px; margin-block-start: 2px; color: #5A6779;">مطلوب</div></div>
+            <div><label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568;">الوحدة التنظيمية</label><div style="height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; font-size: 14px;"><span>النخيل › الخدمات الطبية › <strong style="font-weight: 600;">الصيدلية</strong></span><span style="font-size: 10px; color: #5A6779;">▼</span></div><div style="min-height: 20px; margin-block-start: 2px;"></div></div>
+            <div><label style="display: block; font-size: 13px; line-height: 20px; font-weight: 500; color: #4A5568;">المدير المباشر</label><div style="height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; font-size: 14px;"><span>د. فهد العنزي</span><span style="font-size: 12.5px; font-weight: 600; color: #2E6FA3;">تغيير…</span></div><div style="min-height: 20px; margin-block-start: 2px;"></div></div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px;">إلغاء</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">إرسال الدعوة</button>
+          </div>
+        </div>
+        <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Email stays LTR and isolated in an RTL field. There's no Arabic-name field, because the DTO has one name field. The helper under Name doesn't promise that an Arabic name can be added later, because nothing here confirms that.</div>
+      </div>
+
+      <div style="flex: 1 1 520px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">After sending · the Users list</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 9px 12px; background: #ECFDF3; border-block-end: 1px solid #ABEFC6;">
+            <span style="flex: none; color: #067647; font-weight: 700;">✓</span>
+            <span style="flex: 1 1 260px; min-width: 0; font-size: 12.5px; color: #05603A; text-wrap: pretty;"><strong>Invitation sent to Layla Kassem.</strong> The link expires 6 Oct 2026. She has no roles yet, so once she signs in she won't be able to do anything.</span>
+            <a href="#m1" style="flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none; color: #1F5480;">Manage her roles</a>
+            <button aria-label="Dismiss" style="flex: none; border: none; background: none; color: #05603A;">✕</button>
+          </div>
+          <div style="display: flex; gap: 10px; padding: 7px 12px; background: #FBFCFD; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">
+            <span style="flex: 1.6 1 0; min-width: 0;">Name</span><span style="flex: 1 1 0; min-width: 0;">Position</span><span style="flex: none; width: 92px;">Status</span><span style="flex: 1.2 1 0; min-width: 0;">Last login</span><span style="flex: none; width: 34px;"></span>
+          </div>
+          <sc-for list="{{ listRows }}" as="r" hint-placeholder-count="4">
+            <div style="{{ r.rowStyle }}">
+              <span style="flex: 1.6 1 0; min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 500; color: #2E6FA3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.name }}</span><span dir="ltr" style="display: block; font-size: 11.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate; text-align: start;">{{ r.email }}</span></span>
+              <span style="flex: 1 1 0; min-width: 0; font-size: 12.5px; color: #4A5568;">{{ r.pos }}</span>
+              <span style="flex: none; width: 92px;"><span style="{{ r.statusStyle }}"><sc-if value="{{ r.dot }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.status }}</span></span>
+              <span style="flex: 1.2 1 0; min-width: 0; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ r.last }}</span>
+              <span style="flex: none; width: 34px; display: flex; justify-content: flex-end;"><button aria-label="{{ r.menu }}" style="width: 30px; height: 30px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #4A5568;">⋯</button></span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-block-start: 10px;">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">Invited row menu</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">Edit and Manage roles. <strong>No Resend, no Revoke:</strong> neither has an endpoint, so both are absent (ACC-83 adds them). Transfer and Deactivate are absent too until acceptance. An invited user holds no unit work yet.</div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">Expired</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">A grey dot and “Invitation expired”. Last login reads “Link expired 6 Oct”. It's neutral, not amber: nobody can act on it until ACC-83 lands. The ⋯ menu keeps Edit and Manage roles, and ends with a non-interactive note line: “Re-sending arrives with ACC-83”. No Resend item exists to be disabled.</div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">Empty state · import promise dropped</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">“No users yet · Invite colleagues so they can sign in and be assigned work.” [Invite user]. The HR import is a separate screen that isn't designed. The sentence and the “Import from HR file” menu item come back with it.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 14px;">
+      <div style="padding: 9px 13px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Six outcomes · Invite user</div>
+      <sc-for list="{{ inviteOutcomes }}" as="o" hint-placeholder-count="6">
+        <div style="display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 8px 13px; border-block-end: 1px solid #F0F3F7;">
+          <span style="{{ o.tagStyle }}">{{ o.tag }}</span>
+          <span style="flex: 1 1 300px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.en }}</span>
+          <span dir="rtl" style="flex: 1 1 260px; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13px; color: #4A5568; text-wrap: pretty;">{{ o.ar }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="m3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Permission matrix (6a) · Arabic sticky column, and the Review dialog</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The populated English state isn't redrawn. This closes the open risk in Design System Rev 8.</span>
+    </div>
+
+    <div dir="rtl" style="border: 1px solid #CBD5E0; border-radius: 8px; overflow: hidden; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 12px 14px; border-block-end: 1px solid #E2E8F0;">
+        <div><div style="font-size: 23px; line-height: 32px; font-weight: 600;">محرر الجودة</div><div style="font-size: 13px; color: #5A6779;">الصلاحيات · يحملها <span dir="ltr" style="unicode-bidi: isolate;">14</span> مستخدمًا · يسري التغيير عليهم فور الحفظ</div></div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 12.5px; font-weight: 600; color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89; border-radius: 4px; padding: 3px 8px;"><span dir="ltr" style="unicode-bidi: isolate;">3</span> تغييرات غير محفوظة</span>
+          <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 12px; font-family: inherit; font-size: 14px;">تجاهل</button>
+          <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">مراجعة <span dir="ltr" style="unicode-bidi: isolate;">3</span> تغييرات…</button>
+        </div>
+      </div>
+      <div ref="{{ matrixScroll }}" style="overflow-x: auto;">
+        <div style="min-width: 1080px;">
+          <div style="display: flex; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; position: sticky; top: 0; z-index: 2;">
+            <div style="flex: none; width: 300px; box-sizing: border-box; position: sticky; inset-inline-start: 0; z-index: 3; background: #F4F7FA; padding: 8px 12px; font-size: 12px; font-weight: 700; color: #5A6779; box-shadow: -6px 0 8px -6px rgba(16,24,40,0.18); border-inline-end: 1px solid #CBD5E0;">الوحدة / الصلاحية</div>
+            <sc-for list="{{ matrixCols }}" as="c" hint-placeholder-count="7">
+              <div style="flex: 1 0 110px; padding: 8px 6px; font-size: 12px; font-weight: 700; color: #5A6779; text-align: center;">{{ c }}</div>
+            </sc-for>
+          </div>
+          <sc-for list="{{ matrixRows }}" as="m" hint-placeholder-count="8">
+            <div style="{{ m.rowStyle }}">
+              <div style="{{ m.headStyle }}">
+                <span style="{{ m.boxStyle }}">{{ m.boxMark }}</span>
+                <span style="min-width: 0;"><span style="{{ m.labelStyle }}">{{ m.label }}</span><span style="display: block; font-size: 12px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ m.desc }}</span></span>
+              </div>
+              <sc-for list="{{ m.cells }}" as="c" hint-placeholder-count="7">
+                <div style="flex: 1 0 110px; display: flex; align-items: center; justify-content: center; padding: 6px;">
+                  <span style="{{ c.style }}">{{ c.mark }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; padding: 9px 14px; background: #F4F7FA; border-block-start: 1px solid #E2E8F0; font-size: 12.5px; color: #4A5568;">
+        <span>✓ ممنوحة</span><span>– بعضها (رأس الوحدة)</span><span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 14px; height: 14px; border: 2px solid #B54708; border-radius: 3px; box-sizing: border-box;"></span>تغيّرت ولم تُحفظ</span>
+        <span style="margin-inline-start: auto; color: #5A6779;">Drawn scrolled 150px towards the end: «عرض» has slid under the sticky column, which holds on the right, with its shadow on its left. Scroll the table to test it live.</span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-block-start: 12px;">
+      <sc-for list="{{ rtlSpec }}" as="s" hint-placeholder-count="8">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 2px;">{{ s.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ s.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-block-start: 14px;">
+      <div style="flex: 1 1 520px; max-width: 560px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Review 7 changes · form dialog 560</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 16px; font-weight: 600;">Review 7 changes to Quality Editor</div>
+            <div style="font-size: 12.5px; color: #4A5568;">These apply to <strong>14 users</strong> as soon as you save. <a href="#m3" style="text-decoration: none; font-weight: 600;">See who</a></div>
+          </div>
+          <div style="padding: 8px 14px 10px;">
+            <sc-for list="{{ reviewGroups }}" as="g" hint-placeholder-count="3">
+              <div style="margin-block-start: 8px;">
+                <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 3px;">{{ g.module }}</div>
+                <sc-for list="{{ g.items }}" as="i" hint-placeholder-count="2">
+                  <div style="display: flex; align-items: center; gap: 10px; min-height: 32px; border-block-end: 1px solid #F0F3F7;">
+                    <span style="{{ i.glyphStyle }}">{{ i.glyph }}</span>
+                    <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">{{ i.perm }}</span>
+                    <span style="{{ i.wordStyle }}">{{ i.word }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <span style="font-size: 12px; color: #5A6779;">Saved as one change: all or nothing</span>
+            <span style="display: flex; gap: 8px;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Back to editing</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Save 7 changes</button>
+            </span>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;"><strong>Measured:</strong> header 62. Body: 3 module labels × (8 + 18) + 7 rows × 33 = 309, plus 18 padding = 327. Footer 52. Body 327 / 420. Past 9 changes the list scrolls inside the body. It holds no controls, so nothing in it can float. Grants and revocations differ by glyph <em style="font-style: normal;">and</em> by word, never by colour alone. Revocations are listed first within each module, because they're the ones that stop someone's work.</div>
+      </div>
+
+      <div dir="rtl" style="flex: 1 1 520px; max-width: 560px; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">العربية</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 17px; font-weight: 600;">مراجعة <span dir="ltr" style="unicode-bidi: isolate;">3</span> تغييرات على «محرر الجودة»</div>
+            <div style="font-size: 13px; color: #4A5568;">تسري على <strong><span dir="ltr" style="unicode-bidi: isolate;">14</span> مستخدمًا</strong> فور الحفظ. <a href="#m3" style="text-decoration: none; font-weight: 600;">عرضهم</a></div>
+          </div>
+          <div style="padding: 8px 14px 10px;">
+            <sc-for list="{{ reviewAr }}" as="i" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 10px; min-height: 34px; border-block-end: 1px solid #F0F3F7;">
+                <span style="{{ i.glyphStyle }}">{{ i.glyph }}</span>
+                <span style="flex: 1 1 auto; min-width: 0; font-size: 14px;">{{ i.perm }}</span>
+                <span style="{{ i.wordStyle }}">{{ i.word }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px;">العودة إلى التعديل</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">حفظ <span dir="ltr" style="unicode-bidi: isolate;">3</span> تغييرات</button>
+          </div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 10px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;" dir="ltr">
+          <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Six outcomes · Review dialog</div>
+          <sc-for list="{{ reviewOutcomes }}" as="o" hint-placeholder-count="6">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7;">
+              <span style="{{ o.tagStyle }}">{{ o.tag }}</span>
+              <span style="flex: 1 1 240px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.en }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 16px 18px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 10px;">What this file carries · and what it assumes</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0 16px;">
+      <sc-for list="{{ ledger }}" as="c" hint-placeholder-count="8">
+        <div style="font-size: 12px; color: #4A5568; padding: 6px 0; border-block-end: 1px solid #F0F3F7; text-wrap: pretty;"><strong>{{ c.t }}</strong> {{ c.b }}</div>
+      </sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  matrixScroll = React.createRef();
+  componentDidMount() {
+    const set = () => { const el = this.matrixScroll.current; if (el) el.scrollLeft = -150; };
+    set(); setTimeout(set, 300); setTimeout(set, 1200);
+  }
+  renderVals() {
+    const BOX = "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; font-size: 11px; line-height: 14px; text-align: center; ";
+    const box = (state, changed) => BOX + (state === "on"
+      ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;"
+      : state === "some" ? "background: #fff; border: 1px solid #1F5480; color: #1F5480; font-weight: 700;"
+      : "background: #fff; border: 1px solid #8A94A6; color: transparent;") + (changed ? " box-shadow: 0 0 0 2px #fff, 0 0 0 4px #B54708;" : "");
+    const mk = (state) => state === "on" ? "✓" : state === "some" ? "–" : "";
+    const rowS = (changed) => "display: flex; align-items: center; gap: 10px; padding: 0 10px; min-height: 44px; border-block-end: 1px solid #F0F3F7; background: " + (changed ? "#FFFAEB" : "#fff") + ";";
+    const meta = (tone) => "flex: none; font-size: 11.5px; white-space: nowrap; " + (tone === "add" ? "font-weight: 600; color: #B54708;" : tone === "rem" ? "font-weight: 600; color: #B42318;" : "color: #5A6779; font-variant-numeric: tabular-nums;");
+    const tag = (t) => ({ loading: ["Loading", "#1F5480", "#E4EEF6", "#C5DAEA"], rows: ["Populated", "#067647", "#ECFDF3", "#ABEFC6"], empty: ["Empty", "#4A5568", "#F1F4F8", "#E2E8F0"], denied: ["Denied", "#B54708", "#FFFAEB", "#FEDF89"], error: ["Error + retry", "#B42318", "#FEF3F2", "#FECDCA"], partial: ["Partial", "#B54708", "#FFFAEB", "#FEDF89"] })[t];
+    const out = (arr) => arr.map(o => { const g = tag(o.k); return { tag: g[0], en: o.en, ar: o.ar || "", tagStyle: "flex: 0 0 104px; align-self: flex-start; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 8px; text-align: center; color: " + g[1] + "; background: " + g[2] + "; border: 1px solid " + g[3] + ";" }; });
+
+    const single = [
+      { name: "Quality Editor", desc: "Edit documents and records in their units", st: "on", meta: "Granted 3 Mar 2025" },
+      { name: "Committee Secretary", desc: "Schedule meetings, record minutes", st: "on", changed: true, meta: "+ will be granted", tone: "add" },
+      { name: "Viewer", desc: "Read everything they can reach", st: "off", changed: true, meta: "− will be removed", tone: "rem" },
+      { name: "Committee Member", desc: "Take part in committees they sit on", st: "on", meta: "Granted 14 Jan 2025" },
+      { name: "Auditor", desc: "Plan and record audits", st: "off", meta: "" }
+    ];
+    const singleAr = [
+      { name: "محرر الجودة", st: "on", meta: "3 Mar 2025" },
+      { name: "أمين اللجنة", st: "on", changed: true, meta: "+ سيُمنح", tone: "add" },
+      { name: "مُطَّلِع", st: "off", changed: true, meta: "− سيُزال", tone: "rem" },
+      { name: "عضو لجنة", st: "on", meta: "14 Jan 2025" }
+    ];
+    const bulk = [
+      { name: "Quality Editor", st: "on", meta: "all 12 · no change" },
+      { name: "Committee Member", st: "some", meta: "4 of 12 · left as is" },
+      { name: "Committee Secretary", st: "on", changed: true, meta: "+ 8 will gain it", tone: "add" },
+      { name: "Viewer", st: "off", changed: true, meta: "− 5 will lose it", tone: "rem" },
+      { name: "Auditor", st: "off", meta: "none · no change" }
+    ];
+    const mapRows = (rs) => rs.map(r => ({ name: r.name, desc: r.desc || "", mark: mk(r.st), meta: r.meta, boxStyle: box(r.st, r.changed), rowStyle: rowS(r.changed), metaStyle: meta(r.tone) }));
+
+    const fieldBox = (err, act) => "display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: #fff; border: 1px solid " + (err ? "#B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12)" : "#8A94A6") + ";";
+    const help = (err) => "font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 2px; color: " + (err ? "#B42318; font-weight: 500" : "#5A6779") + "; text-wrap: pretty;";
+    const f = (label, req, value, action, h, err, ph) => ({ label, req, value, action, help: h, boxStyle: fieldBox(err), helpStyle: help(err),
+      valStyle: "flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: " + (ph ? "#8A94A6" : "#2D3748") + ";" });
+
+    const lr = (name, email, pos, status, last, tone, fresh) => ({
+      name, email, pos, status, last, menu: "Actions for " + name, dot: tone !== "plain",
+      dotStyle: "width: 6px; height: 6px; border-radius: 50%; margin-inline-end: 6px; flex: none; background: " + (tone === "warn" ? "#F79009" : "#8A94A6") + ";",
+      statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; " + (tone === "warn" ? "font-weight: 500; color: #B54708;" : tone === "muted" ? "font-weight: 500; color: #4A5568;" : "color: #4A5568;"),
+      rowStyle: "display: flex; align-items: center; gap: 10px; padding: 6px 12px; min-height: 44px; box-sizing: border-box; border-block-end: 1px solid #F0F3F7; background: " + (fresh ? "#F2F7FB" : "#fff") + ";"
+    });
+
+    const MC = ["عرض", "إنشاء", "تعديل", "حذف", "اعتماد", "تصدير", "إدارة"];
+    const cell = (v, changed) => ({ mark: v === "on" ? "✓" : "", style: "display: inline-block; width: 18px; height: 18px; box-sizing: border-box; border-radius: 3px; font-size: 12px; line-height: 16px; text-align: center; " + (v === "on" ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : v === "na" ? "border: none; background: none; color: #A7B2C2;" : "background: #fff; border: 1px solid #8A94A6;") + (changed ? " box-shadow: 0 0 0 2px #fff, 0 0 0 4px #B54708;" : "") });
+    const mrow = (kind, label, desc, vals, changed, group) => {
+      const isG = kind === "g";
+      return {
+        label, desc, boxMark: group === "on" ? "✓" : group === "some" ? "–" : "",
+        boxStyle: box(group || "off", false),
+        labelStyle: "display: block; font-size: " + (isG ? "14px; font-weight: 700" : "14px; font-weight: 500") + ";",
+        rowStyle: "display: flex; border-block-end: 1px solid #F0F3F7; background: " + (isG ? "#FBFCFD" : "#fff") + ";",
+        headStyle: "flex: none; width: 300px; box-sizing: border-box; position: sticky; inset-inline-start: 0; z-index: 1; display: flex; gap: 10px; align-items: center; padding: 6px 12px; padding-inline-start: " + (isG ? "12px" : "32px") + "; min-height: 48px; background: " + (isG ? "#FBFCFD" : "#fff") + "; border-inline-end: 1px solid #CBD5E0; box-shadow: -6px 0 8px -6px rgba(16,24,40,0.18);",
+        cells: vals.map((v, i) => v === "-" ? { mark: "", style: "display: inline-block; width: 18px; height: 18px;" } : cell(v, changed && changed.indexOf(i) >= 0))
+      };
+    };
+
+    const rv = (g, p, w) => ({ glyph: g === "+" ? "+" : "−", perm: p, word: w,
+      glyphStyle: "flex: none; width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; " + (g === "+" ? "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;" : "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;"),
+      wordStyle: "flex: none; font-size: 12px; font-weight: 600; color: " + (g === "+" ? "#1F5480" : "#B42318") + ";" });
+
+    return {
+      matrixScroll: this.matrixScroll,
+      lockedRows: [
+        { name: "Unit Head", scope: "Pharmacy only", position: "Director" },
+        { name: "Quality Reviewer", scope: "organisation-wide", position: "Director" }
+      ],
+      singleRows: mapRows(single),
+      singleRowsAr: mapRows(singleAr),
+      bulkRows: mapRows(bulk),
+
+      rolesDecisions: [
+        { t: "Add and remove, in one list", b: "Every tenant role is a row, ticked when held. Ticking adds, unticking removes. Nothing is sent until Save, and the footer names every change in words. Save sends one POST or DELETE per changed role, because the API is per role (the partial outcome below covers a failed call)." },
+        { t: "Head-position roles: locked, and true for both kinds", b: "Shown above the list with no checkbox. The sentence doesn't depend on the marker: it names the head position, then the scope (“Pharmacy only” for grantedViaHeadPositionOrgUnitId, “organisation-wide” for grantedViaHeadPositionId). It also says where the grant is actually ended, so the admin isn't left wondering why the row can't be changed." },
+        { t: "Granted date, and no author", b: "UserRole.createdAt gives “Granted 3 Mar 2025”. There's no granted-by, so nothing is invented. Rows being added or removed show what Save will do in place of the date." },
+        { t: "Bulk: tri-state, applying only touched rows", b: "“–” means some of them hold it, with the count. That state is also “leave as is”, and it's the only one that sends nothing. Clicking a row cycles it: all, none, back to as-is. Each row's meta always says what Save will do, and to how many people." },
+        { t: "Permission", b: "roles:manage. Without it, the row-menu item and the bulk action are absent (shell rule). With only roles:view, the user record's Roles panel still lists them read-only. The dialog doesn't exist for that reader." }
+      ],
+
+      rolesOutcomes: out([
+        { k: "loading", en: "Opens at once with the header filled from the row. The list shows 5 skeleton rows at 44px, and Save is disabled. Bulk shows its skeleton until every selected user's roles have loaded, since counts can't be partial.", ar: "يُفتح فورًا بعنوان من الصف، وخمسة صفوف هيكلية، والحفظ معطَّل." },
+        { k: "rows", en: "Drawn: A (single), B (bulk), C (Arabic).", ar: "مرسوم أعلاه." },
+        { k: "empty", en: "The user holds no roles: the list is unchanged, every box is unticked, and one line sits above it: “Layla has no roles. She can sign in but can't do anything yet.” The tenant has no roles at all: the list is replaced by “No roles exist yet” and a link to Roles.", ar: "لا أدوار لديها: القائمة كما هي مع سطر «ليلى بلا أدوار؛ يمكنها الدخول لكنها لا تستطيع فعل شيء بعد»." },
+        { k: "denied", en: "Doesn't apply inside the dialog: without roles:manage it can't be opened, because the entry points are absent. A 403 on save (permission revoked mid-session) is treated as an error: “You no longer have permission to change roles. Nothing was saved.”", ar: "لا ينطبق داخل النافذة؛ نقاط الدخول غائبة بلا صلاحية. ورفض 403 عند الحفظ يُعامل كخطأ: «لم يُحفظ شيء»." },
+        { k: "error", en: "Roles couldn't load: an inline error in place of the list, with Retry, and Save stays disabled. Save failed entirely (network): “Nothing was saved”, the ticks are kept, and Try again.", ar: "تعذّر التحميل: رسالة مع «إعادة المحاولة». فشل الحفظ كليًا: «لم يُحفظ شيء» مع إبقاء الاختيارات." },
+        { k: "partial", en: "Some of the per-role calls fail. The dialog stays open, succeeded rows lose their change mark and show “Saved”, failed rows keep theirs with the reason, the footer reads “1 of 2 changes saved”, and Retry sends only the failures. Bulk does the same per user and per role: “Committee Secretary: 7 of 8 gained it · Omar Haddad failed”. The last-role confirm is re-checked against what actually succeeded.", ar: "بعض الطلبات تفشل: الناجح يُعلَّم «حُفظ»، والفاشل يبقى مع سببه، و«إعادة المحاولة» لما فشل فقط." }
+      ]),
+
+      inviteFields: [
+        f("Email", "· required", "l.kassem@kfmc", "", "Enter a full email address, like name@kfmc.med.sa", true),
+        f("Name", "· required", "Layla Kassem", "", "As it will appear to colleagues. Up to 255 characters."),
+        f("Position", "· required", "Pharmacist", "Change…", "Every invitation needs a position (ACC-40)."),
+        f("Org unit", "· required", "Al Nakheel › Medical Services › Pharmacy", "Change…", "overlay-select, hierarchy mode"),
+        f("Manager", "· required", "Dr. Fahad Al-Anazi", "Change…", "Picker dialog: 312 users. The head of Pharmacy is listed first.")
+      ],
+
+      listRows: [
+        lr("Layla Kassem", "l.kassem@kfmc.med.sa", "Pharmacist", "Invited", "Invited 29 Sep", "warn", true),
+        lr("Salem Al-Dosari", "s.aldosari@kfmc.med.sa", "Pharmacist", "Invitation expired", "Link expired 6 Oct", "muted"),
+        lr("Mona Fathy", "m.fathy@kfmc.med.sa", "Pharmacy Technician", "Active", "Today 08:14", "plain"),
+        lr("Omar Haddad", "o.haddad@kfmc.med.sa", "Director", "Active", "28 Sep 16:02", "plain")
+      ],
+
+      inviteOutcomes: out([
+        { k: "loading", en: "The dialog opens at once. Position and Org unit show a skeleton inside their controls until their options load, and the conditional rules can't be evaluated until the active-unit count arrives, so Send is disabled until then. Sending: the button keeps its label with a spinner, and the fields become read-only.", ar: "الحقول تُظهر هيكلًا حتى تُحمَّل الخيارات، والإرسال معطَّل حتى تُعرف القواعد الشرطية." },
+        { k: "rows", en: "Drawn: A, the two conditional replacements, and B (Arabic).", ar: "مرسوم أعلاه." },
+        { k: "empty", en: "The tenant has no positions. Since position is required, invitation is impossible, and the dialog says so in place of its fields: “Add a position before inviting anyone. Every user needs one.” with a link to Org positions. No units: the org-unit sentence drawn above, and the invitation still goes through.", ar: "لا مناصب: الدعوة مستحيلة، فتقول النافذة «أضف منصبًا قبل دعوة أي شخص» مع رابط." },
+        { k: "denied", en: "Without users:invite, the Invite user button and the empty state's action are absent, so the dialog can't be reached. A 403 on send is an error: “You no longer have permission to invite users. Nothing was sent.”", ar: "بلا الصلاحية: الزر غائب. ورفض 403 عند الإرسال: «لم يُرسل شيء»." },
+        { k: "error", en: "Validation errors are shown per field, from the server as well (the email already exists in this organisation: “Someone with this email is already a user here”, safe because the reader is an admin of the same tenant). Network or 5xx: “Nothing was sent”, the fields are kept, and Try again. The conditional rules re-check on the server: if it refuses a missing manager, that's a field error on Manager, not a banner.", ar: "أخطاء الحقول تظهر تحت كل حقل، بما فيها «البريد مستخدم هنا». الشبكة: «لم يُرسل شيء» مع إعادة المحاولة." },
+        { k: "partial", en: "Doesn't apply. invite() creates the user and queues an EMAIL notification, but it doesn't send anything itself. So the request either creates the user or fails, with nothing in between. There's one success and one failure. Delivery failures happen later and aren't visible here (recorded against the unreported-job-failures ticket).", ar: "لا ينطبق: الطلب يُنشئ المستخدم ويضع إشعار البريد في الطابور، فإما ينجح كله أو يفشل." }
+      ]),
+
+      matrixCols: MC,
+      matrixRows: [
+        mrow("g", "العمل", "", ["-", "-", "-", "-", "-", "-", "-"], null, "some"),
+        mrow("p", "اللجان", "تشكيل اللجان وإدارة أعضائها ولوائحها", ["on", "on", "on", "off", "on", "off", "na"], [4]),
+        mrow("p", "المهام", "إنشاء المهام وإسنادها ومتابعتها", ["on", "on", "on", "off", "na", "on", "na"], [5]),
+        mrow("p", "سير العمل", "عرض المراحل وتنفيذ الانتقالات", ["on", "na", "off", "na", "on", "na", "off"], null),
+        mrow("g", "الإدارة", "", ["-", "-", "-", "-", "-", "-", "-"], null, "off"),
+        mrow("p", "المستخدمون", "دعوة المستخدمين وتعديل بياناتهم", ["off", "off", "off", "na", "na", "off", "na"], null),
+        mrow("p", "الهيكل التنظيمي", "الوحدات والمناصب ورئاسة الوحدات", ["on", "off", "off", "na", "na", "off", "off"], [0]),
+        mrow("p", "القوائم المرجعية", "قيم القوائم وتسمياتها لكل منشأة", ["off", "off", "off", "off", "na", "na", "na"], null)
+      ],
+
+      rtlSpec: [
+        { t: "Don't use pFrozenColumn. Use our own sticky cell.", b: "PrimeNG's frozen columns set a physical left: offset, so in RTL they pin to the wrong side. The first column is position: sticky; inset-inline-start: 0 on both the header cell and the body cells, and it pins right in Arabic and left in English with no RTL code. The header row is also sticky (top: 0). The corner cell carries both and gets the highest z-index." },
+        { t: "The shadow falls on the inline-end side", b: "The edge shadow sits on the side facing the scrolled content: right of the column in English, left in Arabic. Draw it with box-shadow and a sign that flips with dir, or with a pseudo-element placed at inset-inline-end. A physical-sided shadow is the bug that looks right in English only." },
+        { t: "Scroll origin", b: "In RTL, a scroll container starts at its right edge. Chromium and Firefox report scrollLeft as 0 → negative, and old WebKit reports it differently. Nothing in our code may read or set scrollLeft. Use scrollIntoView-free focus management: the focused cell is kept visible by the browser's own focus scrolling." },
+        { t: "Keyboard follows the eye", b: "In Arabic, → moves to the previous action column, which is visually right, and ← to the next one. ↑/↓ are unchanged. Home and End go to the row's first and last cells in reading order. Space toggles, Shift+Space toggles the row, and the group checkbox is a real tri-state." },
+        { t: "Column order is logical", b: "View is first in both languages: rightmost in Arabic, leftmost in English. Nobody reorders the columns for Arabic. The array is the same, and dir does the mirroring." },
+        { t: "Width and truncation", b: "The sticky column is 300 wide in both languages. Arabic descriptions run about 20% longer, so they clamp to one line with the full text in title. The row height is 48, because Arabic labels at 14/22 plus a 12/18 description don't fit in 44." },
+        { t: "The unsaved mark is a ring, not a fill", b: "A 2px amber ring outside the checkbox, the same as the Manage roles dialog. It works on ticked and unticked cells alike, and survives greyscale as a shape. The header counts the changes." },
+        { t: "Test before build, not after", b: "Three checks in both languages at 1130 content width. One: scroll to the far end, and the sticky column and its shadow hold on the correct side. Two: tab into the grid and arrow across 7 columns with scroll following focus. Three: a screen reader announces “Committees, Approve, not granted, changed” in reading order." }
+      ],
+
+      reviewGroups: [
+        { module: "Committees", items: [rv("-", "Delete committees", "revoked"), rv("+", "Approve committee terms", "granted")] },
+        { module: "Tasks", items: [rv("-", "Reassign any task", "revoked"), rv("+", "Export task lists", "granted"), rv("+", "Close tasks raised by others", "granted")] },
+        { module: "Organization", items: [rv("+", "View units and positions", "granted"), rv("+", "View headship history", "granted")] }
+      ],
+      reviewAr: [
+        rv("+", "اللجان · اعتماد لوائح اللجان", "مُنحت"),
+        rv("+", "المهام · تصدير قوائم المهام", "مُنحت"),
+        rv("+", "الهيكل التنظيمي · عرض الوحدات والمناصب", "مُنحت")
+      ],
+      reviewOutcomes: out([
+        { k: "loading", en: "Nothing to load: the list is built from local changes. “See who” loads the 14 users lazily, in its own picker layer." },
+        { k: "rows", en: "Drawn, in English and Arabic." },
+        { k: "empty", en: "Can't occur: Review is only reachable with at least one change. If every change is undone, the header's button disappears." },
+        { k: "denied", en: "A 403 on save: “You no longer have permission to change this role. Nothing was saved.” The changes are kept in the matrix." },
+        { k: "error", en: "Network or 5xx: “Nothing was saved. Your 7 changes are still here.” Try again, and the dialog stays open." },
+        { k: "partial", en: "Doesn't apply. The save is one transaction, and the footer says “all or nothing” so no one expects otherwise." }
+      ]),
+
+      ledger: [
+        { t: "Naming:", b: "“Manage roles” everywhere. Templates Rev 7 already uses it, so no change is needed there." },
+        { t: "Drawn:", b: "Manage roles (single, bulk, Arabic, last-role confirm in both languages, six outcomes). Invite user (fields, both conditional replacements, Arabic, the after-send list with invited and expired rows, the corrected empty state, six outcomes). Matrix: the Arabic sticky-column state with its build and test rules, and the Review dialog in both languages with six outcomes." },
+        { t: "Not redrawn:", b: "6a's populated English state." },
+        { t: "Supersedes:", b: "the Users list's empty-state sentence and “Import from HR file” item. Both are absent until the import screen exists. Also Resend/Revoke on invited rows, absent until ACC-83." },        { t: "Confirmed 1 · roles before acceptance:", b: "The roles service has no status gate, and invite() already grants position-derived roles to invited users on purpose. The after-send “Manage her roles” prompt stays." },
+        { t: "Confirmed 2 · no partial on Invite:", b: "invite() queues a notification and sends nothing, so the dialog has one success and one failure." },
+        { t: "Confirmed 3 · no inviter field:", b: "The row reads “Invited 29 Sep”, with no name. The inviter is not lost: invite() writes an audit entry with actorId, so “by …” can be recovered from the audit log if it's ever wanted. It was captured, just not denormalised." },
+        { t: "Confirmed 4 · permission:", b: "users:invite (common/constants/permissions.ts:16)." },
+        { t: "Export:", b: "only AccreditMe Users and Roles.dc.html. Templates and Organization Structure are unchanged in this workspace." }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
