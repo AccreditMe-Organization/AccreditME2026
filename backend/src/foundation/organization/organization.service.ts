@@ -16,6 +16,13 @@ import { UpdateOrgUnitDto } from './dto/update-org-unit.dto';
 // the hospital and `faculty`/`school`/`program`/`deanship` for the university.
 const ORG_UNIT_TYPE_CATEGORY = 'org_unit_type';
 
+// ACC-141 - the type reserved for the ROOT unit, and for nothing else.
+//
+// A root unit IS the organisation; every other value in org_unit_type names a
+// part of one. The system sets this at bootstrap and there is no edit path, so
+// it is never a choice anyone makes.
+const ORGANIZATION_TYPE_KEY = 'organization';
+
 @Injectable()
 export class OrganizationService {
   constructor(
@@ -353,6 +360,23 @@ export class OrganizationService {
     // values. The DTO makes it mandatory; this makes it MEAN something.
     const typeValue = await this.resolveTypeValueForWrite(dto.typeValueId, organizationId);
 
+    // ACC-141 rule 3 - UNCONDITIONAL HERE, and asymmetric with update() on
+    // purpose. The next reader will wonder why create() does not ask whether
+    // this is the root and update() does, so: ACC-134 already forbids a second
+    // root, and bootstrap() creates the only one by writing Prisma directly.
+    // So EVERY unit created through this API is non-root by construction, and
+    // `organization` is simply never valid on POST - there is no root to detect.
+    //
+    // Verified in a browser, not inferred: a create with no parentId is refused
+    // by ACC-134's guard with "This organization already has a root unit", so
+    // the parentless path cannot reach here at all.
+    if (typeValue.key === ORGANIZATION_TYPE_KEY) {
+      throw new ConflictException(
+        `"${typeValue.labelEn}" is reserved for the organization's root unit and cannot be ` +
+          'set on any other unit. Choose the type that describes this part of the organization.',
+      );
+    }
+
     const unit = await this.prisma.orgUnit.create({
       data: {
         organizationId,
@@ -445,6 +469,35 @@ export class OrganizationService {
       dto.typeValueId !== undefined
         ? await this.resolveTypeValueForWrite(dto.typeValueId, organizationId)
         : null;
+
+    // ACC-141 - the two rules that need to know whether this unit is the root,
+    // which is why update() asks and create() does not.
+    if (updatedType) {
+      const isRoot = unit.parentId === null;
+
+      if (isRoot && updatedType.id !== unit.typeValueId) {
+        // RULE 2 - the root's type is system-set and FIXED. Not a default that
+        // can be changed: there is no edit path at all. A root unit is the
+        // organisation, so the value is structurally determined and there is no
+        // judgement for anyone to exercise.
+        //
+        // Re-saving the SAME value is allowed, so a form that round-trips every
+        // field is not refused for changing nothing.
+        throw new ConflictException(
+          "The root unit's type is set by the system and cannot be changed. " +
+            'It is the organization itself, not a part of it.',
+        );
+      }
+
+      if (!isRoot && updatedType.key === ORGANIZATION_TYPE_KEY) {
+        // RULE 3 on the update path, where a root DOES have to be detected -
+        // unlike create(), a non-root unit already exists and can be edited.
+        throw new ConflictException(
+          `"${updatedType.labelEn}" is reserved for the organization's root unit and cannot be ` +
+            'set on any other unit. Choose the type that describes this part of the organization.',
+        );
+      }
+    }
 
     const types = await this.buildTypeResolver(organizationId);
     const before = this.toInterface(unit, types);
