@@ -80,6 +80,7 @@
     "type": "Unit Type",
     "parentUnit": "Parent Unit",
     "unitType": "Unit Type",
+    "rootTypeFixed": "The root unit is the organization itself. Its type is set by the system and cannot be changed.",
     "typeLoading": "Loading unit types...",
     "typesEmpty": "No unit types are configured. An administrator can add them under Lookups.",
     "typeLoadFailed": "Could not load unit types.",

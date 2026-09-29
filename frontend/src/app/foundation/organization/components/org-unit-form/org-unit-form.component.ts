@@ -114,7 +114,15 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
           {{ 'organization.unitType' | translate }} *
         </label>
 
-        @if (typesLoading()) {
+        @if (isRootUnit()) {
+          <!-- ACC-141 rule 2 - the root's type is system-set and has no edit
+               path. Shown, not offered: a disabled picker would still imply a
+               choice exists. -->
+          <p class="text-sm">{{ rootTypeLabel() }}</p>
+          <p class="text-xs text-[var(--am-text-secondary)]">
+            {{ 'organization.rootTypeFixed' | translate }}
+          </p>
+        } @else if (typesLoading()) {
           <p class="text-sm text-[var(--am-text-secondary)]">
             {{ 'organization.typeLoading' | translate }}
           </p>
@@ -214,6 +222,26 @@ export class OrgUnitFormComponent implements OnInit {
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
   private readonly typeValues = signal<LookupValueDto[]>([]);
+  /**
+   * Editing the organisation's own root unit - ACC-141.
+   *
+   * Its type is system-set with NO edit path (rule 2), so the picker is replaced
+   * by read-only text. That is rule 2 rendered rather than merely enforced: the
+   * API refuses the change anyway, and offering a control that always fails is
+   * the "do not offer what will be refused" principle this project applies
+   * everywhere else.
+   */
+  readonly isRootUnit = computed(() => {
+    const unit = this.unit();
+    return unit != null && unit.parentId === null;
+  });
+
+  readonly rootTypeLabel = computed(() => {
+    const held = this.unit()?.typeValue ?? null;
+    if (!held) return '';
+    return this.languageService.isArabic() ? held.labelAr : held.labelEn;
+  });
+
   readonly typesLoading = signal(true);
   readonly typesError = signal<string | null>(null);
 
@@ -228,12 +256,34 @@ export class OrgUnitFormComponent implements OnInit {
    * type is re-added here when the list does not contain it.
    */
   readonly typeOptions = computed(() => {
-    const options = this.typeValues().map((v) => ({
+    const options = this.typeValues()
+      // ACC-141 - `organization` is never offered. It is reserved for the root
+      // unit, which the system types at bootstrap and which has NO edit path, so
+      // no picker exists for it and there is no "is this the root" question to
+      // ask here. One filter, unconditional.
+      //
+      // THIS DOES NOT REPLACE THE API GUARD, and must not be read as doing so.
+      // Filtering a list is an affordance for a human; a client can post any
+      // value, so OrganizationService refuses `organization` on create and on
+      // update independently. Both hold.
+      //
+      // And it is a SELECTION filter only. The same values serve three
+      // questions with three different answers: selecting excludes this value,
+      // filtering the tree by type includes it (the root holds it), and
+      // resolving a label for display includes it (or every root renders blank).
+      // Same split ACC-137 settled for hidden and retired values.
+      .filter((v) => v.key !== 'organization')
+      .map((v) => ({
       label: this.labelFor(v),
       value: v.id,
     }));
     const held = this.unit()?.typeValue ?? null;
-    if (held && !options.some((o) => o.value === held.id)) {
+    // ACC-141 - the re-add is for RETIRED values only, never for the excluded
+    // one. Without this guard the two rules collide: the filter removes
+    // `organization`, the re-add notices the root's own value is missing, and
+    // puts it back LABELLED RETIRED - wrong twice over, since it is neither
+    // retired nor selectable. Caught by its own test, not by reading.
+    if (held && held.key !== 'organization' && !options.some((o) => o.value === held.id)) {
       options.push({
         label: `${this.languageService.isArabic() ? held.labelAr : held.labelEn} (${this.translate.instant('organization.typeRetired')})`,
         value: held.id,
@@ -275,6 +325,14 @@ export class OrgUnitFormComponent implements OnInit {
         this.form.get('code')?.disable();
       }
       this.codeManuallyEdited.set(true);
+
+      if (unit.parentId === null) {
+        // ACC-141 - disabled, not merely hidden. The control keeps its value
+        // (getRawValue() still returns it, so the payload is unchanged and the
+        // API's "same value" path accepts it), but `required` can no longer
+        // block a save on a field the user is not allowed to touch.
+        this.form.get('typeValueId')?.disable();
+      }
 
       this.form.patchValue({
         nameEn: unit.nameEn,
