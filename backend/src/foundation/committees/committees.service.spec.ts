@@ -20,9 +20,9 @@ const BASE_COMMITTEE = {
   quorumCount: 3,
   meetingFrequency: 'MONTHLY',
   parentCommitteeId: null as string | null,
+  orgUnitId: 'root-unit-a' as string | null,
   termsOfReferenceDocumentId: null as string | null,
   reportingToCommitteeId: null as string | null,
-  reportingToRoleId: null as string | null,
   formedAt: null as Date | null,
   dissolvedAt: null as Date | null,
   isActive: true,
@@ -67,8 +67,12 @@ const mockPrisma = {
     findMany: jest.fn(),
     create: jest.fn(),
   },
-  role: {
+  // ACC-135 — findFirst validates an explicitly named unit; findMany resolves
+  // "the whole organisation" to the tenant's root, and is the one that has to see
+  // more than one row to refuse.
+  orgUnit: {
     findFirst: jest.fn(),
+    findMany: jest.fn(),
   },
   // ACC-76 — listCommittees() resolves each committee live workflow stage.
   workflowInstance: {
@@ -93,7 +97,8 @@ describe('CommitteesService', () => {
     // Defaults matching this file's usual "happy path" org — tests
     // exercising cross-tenant rejection override these per-case.
     mockPrisma.committee.findFirst.mockResolvedValue(makeCommittee());
-    mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-a', organizationId: ORG_A });
+    mockPrisma.orgUnit.findFirst.mockResolvedValue({ id: 'unit-a', organizationId: ORG_A });
+    mockPrisma.orgUnit.findMany.mockResolvedValue([{ id: 'root-unit-a', code: 'ROOT' }]);
     mockPrisma.user.findFirst.mockResolvedValue({ id: 'user-a', organizationId: ORG_A });
     mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
     mockPrisma.workflowInstance.findMany.mockResolvedValue([]);
@@ -339,10 +344,11 @@ describe('CommitteesService', () => {
       );
     });
 
-    // ACC-22 Pending Discussion #4 — parentCommitteeId and
+    // ACC-22 Pending Discussion #4, as amended by ACC-135 — parentCommitteeId and
     // reportingToCommitteeId are TWO DISTINCT validation calls (both
     // against the Committee model, but independently invoked), and
-    // reportingToRoleId is a SEPARATE call against the Role model.
+    // orgUnitId is a SEPARATE call against the OrgUnit model. The rule's shape
+    // is unchanged; reportingToRoleId, which used to be the second path, is gone.
 
     it('throws NotFoundException when parentCommitteeId does not belong to this org', async () => {
       mockPrisma.committee.findFirst.mockResolvedValue(null);
@@ -388,8 +394,8 @@ describe('CommitteesService', () => {
       expect(mockPrisma.committee.create).not.toHaveBeenCalled();
     });
 
-    it('throws NotFoundException when reportingToRoleId does not belong to this org (a SEPARATE Role lookup)', async () => {
-      mockPrisma.role.findFirst.mockResolvedValue(null);
+    itEnforcesTenantIsolation('createCommittee owning org unit lookup', async () => {
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
 
       await expect(
         service.createCommittee(
@@ -397,15 +403,15 @@ describe('CommitteesService', () => {
             nameEn: 'Quality Committee',
             nameAr: 'لجنة الجودة',
             typeValueId: 'quality_committee',
-            reportingToRoleId: 'foreign-role',
+            orgUnitId: 'foreign-unit',
           } as never,
           ORG_A,
           ACTOR,
         ),
       ).rejects.toThrow(NotFoundException);
 
-      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith({
-        where: { id: 'foreign-role', organizationId: ORG_A },
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-unit', organizationId: ORG_A },
       });
       expect(mockPrisma.committee.create).not.toHaveBeenCalled();
     });
@@ -429,6 +435,86 @@ describe('CommitteesService', () => {
       expect(mockPrisma.committee.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ termsOfReferenceDocumentId: 'doc-1' }) }),
       );
+    });
+
+    // ACC-135 — the owning unit.
+
+    it('defaults an omitted owning unit to the tenant root, never null', async () => {
+      mockPrisma.committee.create.mockResolvedValue(makeCommittee());
+
+      await service.createCommittee(
+        { nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'quality_committee' } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      // An absent value is not "no owner" — it is "the whole organisation", and
+      // the root unit IS the organisation (ACC-141).
+      expect(mockPrisma.orgUnit.findMany).toHaveBeenCalledWith({
+        where: { organizationId: ORG_A, parentId: null, isActive: true },
+        select: { id: true, code: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(mockPrisma.committee.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ orgUnitId: 'root-unit-a' }) }),
+      );
+    });
+
+    it('uses the named owning unit without looking for a root', async () => {
+      mockPrisma.committee.create.mockResolvedValue(makeCommittee());
+
+      await service.createCommittee(
+        {
+          nameEn: 'Quality Committee',
+          nameAr: 'لجنة الجودة',
+          typeValueId: 'quality_committee',
+          orgUnitId: 'unit-a',
+        } as never,
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.committee.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ orgUnitId: 'unit-a' }) }),
+      );
+    });
+
+    it('refuses to create when the organization has NO active root unit', async () => {
+      // Reachable, not theoretical: ACC-134 enforced at most one root and never
+      // at least one, and nothing blocks deactivating the root (ACC-152).
+      mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.createCommittee(
+          { nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'quality_committee' } as never,
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(ConflictException);
+
+      expect(mockPrisma.committee.create).not.toHaveBeenCalled();
+    });
+
+    it('REFUSES rather than picking one when the organization has TWO active roots', async () => {
+      // THE TEST THAT MATTERS MOST HERE. The obvious implementation orders by
+      // createdAt and takes the first, which silently writes a real owner onto a
+      // real record on a row ordering nobody chose. ACC-134 says a tenant has
+      // exactly one root, so two is a violation of that invariant, not a tie.
+      mockPrisma.orgUnit.findMany.mockResolvedValue([
+        { id: 'root-1', code: 'ALPHA' },
+        { id: 'root-2', code: 'BETA' },
+      ]);
+
+      await expect(
+        service.createCommittee(
+          { nameEn: 'Quality Committee', nameAr: 'لجنة الجودة', typeValueId: 'quality_committee' } as never,
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(/ALPHA, BETA/);
+
+      expect(mockPrisma.committee.create).not.toHaveBeenCalled();
     });
   });
 
@@ -454,19 +540,35 @@ describe('CommitteesService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('throws NotFoundException when reportingToRoleId does not belong to this org', async () => {
+    itEnforcesTenantIsolation('updateCommittee owning org unit lookup', async () => {
       mockPrisma.committee.findFirst.mockResolvedValueOnce(makeCommittee()); // getCommitteeById
-      mockPrisma.role.findFirst.mockResolvedValue(null);
+      mockPrisma.orgUnit.findFirst.mockResolvedValue(null);
 
       await expect(
-        service.updateCommittee(
-          'committee-1',
-          { reportingToRoleId: 'foreign-role' } as never,
-          ORG_A,
-          ACTOR,
-        ),
+        service.updateCommittee('committee-1', { orgUnitId: 'foreign-unit' } as never, ORG_A, ACTOR),
       ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.orgUnit.findFirst).toHaveBeenCalledWith({
+        where: { id: 'foreign-unit', organizationId: ORG_A },
+      });
       expect(mockPrisma.committee.update).not.toHaveBeenCalled();
+    });
+
+    it('does NOT default an omitted owning unit on update', async () => {
+      // Different statement from create's. "Leave it alone" is not "the whole
+      // organisation" — a committee that already has an owner must not silently
+      // acquire the root because a caller sent a partial body.
+      mockPrisma.committee.findFirst.mockResolvedValueOnce(makeCommittee());
+      mockPrisma.committee.update.mockResolvedValue(makeCommittee());
+
+      await service.updateCommittee('committee-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.orgUnit.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.committee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({ orgUnitId: expect.anything() }),
+        }),
+      );
     });
   });
 
