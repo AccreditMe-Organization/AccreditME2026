@@ -297,8 +297,11 @@ export class OrgPositionService {
     }
   }
 
-  // ACC-40 Section 2.9c — same validateRoleReference() shape as
-  // CommitteesService's reportingToRoleId check, plus the PLATFORM_ADMIN/
+  // ACC-40 Section 2.9c — the validateRoleReference() shape this was modelled on
+  // was CommitteesService's `reportingToRoleId` check, which ACC-135 removed: a
+  // committee reports to a committee or to nothing, never to a role. Named here
+  // as history so the cross-reference does not send a reader looking for a method
+  // that no longer exists. What is specific to THIS field is the PLATFORM_ADMIN/
   // TENANT_ADMIN hard-exclusion specific to this field: granting either
   // automatically as a side effect of holding an ordinary-sounding position
   // (rather than through the deliberate Roles UI) is a real self-escalation

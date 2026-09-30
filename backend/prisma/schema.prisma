@@ -523,11 +523,10 @@ model Role {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization        Organization     @relation(fields: [organizationId], references: [id])
-  userRoles           UserRole[]
-  rolePermissions     RolePermission[]
-  reportingCommittees Committee[] // back-relation for Committee.reportingToRoleId (ACC-22)
-  mappedPositions     OrgPosition[] // back-relation for OrgPosition.roleId (ACC-40 Section 2.9)
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+  mappedPositions OrgPosition[] // back-relation for OrgPosition.roleId (ACC-40 Section 2.9)
 
   @@unique([organizationId, key])
   @@unique([organizationId, nameEn])
@@ -1464,11 +1463,29 @@ model Committee {
   // ACC-135 — "reports to" is another committee, or nothing. The owning unit
   // above is a separate, always-present fact, not an alternative to this.
   reportingToCommitteeId     String?
-  // ACC-135 — REMOVED IN THE CONTRACT MIGRATION, written by nothing as of this
-  // release. Kept only so the container already running keeps working across the
-  // deploy: its Prisma client still SELECTs this column, and dropping it while
-  // that container serves is exactly the ACC-48 outage.
-  reportingToRoleId          String?
+  // ACC-135 STEP 2 — `reportingToRoleId` WAS HERE, AND THE COLUMN STILL EXISTS IN
+  // THE DATABASE. It is removed from this schema and from every line of code, but
+  // NOT dropped: the DROP is step 3, a release of its own.
+  //
+  // READ THIS BEFORE RUNNING `prisma migrate dev`. Your schema no longer declares
+  // a column the database still has, so Prisma will offer to generate the DROP.
+  // Accepting it ships step 3 early and unreviewed, in the middle of whatever you
+  // were doing. Decline it, or work on a branch where you have checked that step 3
+  // has not already landed.
+  //
+  // Why the drop is a separate release, and not caution for its own sake:
+  // migrations run as a pre-deploy step, so they complete BEFORE the new container
+  // is promoted (ACC-127). Dropping the column in the same release that removes
+  // the code leaves a window in which the OLD container — whose Prisma client
+  // still SELECTs `reportingToRoleId` — is serving against a table that no longer
+  // has it. Every committee read 500s for the length of that window. That is the
+  // ACC-48 outage exactly, and Railway's current slowness widens the window rather
+  // than narrowing it: the last deploy sat ~20 minutes queued and took 107 seconds
+  // between stopping and starting.
+  //
+  // Measured on the live database 2026-09-29, after the step 1 deploy: ZERO
+  // committees hold a non-null value, across both tenants. The eventual DROP
+  // discards no data.
   formedAt                   DateTime?
   dissolvedAt                DateTime?
   isActive                   Boolean                   @default(true) // soft-deactivate flag, independent of workflow lifecycle stage
@@ -1486,7 +1503,6 @@ model Committee {
   subCommittees        Committee[]                @relation("SubCommittees")
   reportingToCommittee Committee?                 @relation("CommitteeReportingTo", fields: [reportingToCommitteeId], references: [id])
   reportsToMe          Committee[]                @relation("CommitteeReportingTo")
-  reportingToRole      Role?                      @relation(fields: [reportingToRoleId], references: [id])
   members              CommitteeMember[]
   membershipEvents     CommitteeMembershipEvent[]
   meetings             Meeting[]
@@ -1495,7 +1511,6 @@ model Committee {
   @@index([orgUnitId]) // ACC-135
   @@index([parentCommitteeId])
   @@index([reportingToCommitteeId])
-  @@index([reportingToRoleId]) // ACC-135 — dropped with the column in the contract migration
 }
 
 enum CommitteeMeetingFrequency {
