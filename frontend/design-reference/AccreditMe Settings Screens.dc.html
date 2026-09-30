@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 30 Sep 2026 · Template 5 instances · on Design System Rev 8</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Email provider, AI credits, and the organisation logo</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 96ch; text-wrap: pretty;">Drawn as the finished product. The storage follows the screen. Each is a section of the Settings page at 1130px of content, in template 5's two-column form: a heading and explanation at the start, the fields at the end. The “Not active yet” treatment is at the end, defined once. The Tweaks panel switches it on across all three, and switches the AI state.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 8px;">§4 · Does template 5 cover these? Partly. It's missing four things, and the first two matter most. Two notes follow.</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+      <sc-for list="{{ findings }}" as="f" hint-placeholder-count="6">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; background: #fff;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ f.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ f.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="e1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Email provider</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Settings › Email. The provider is a variant form (artboard 10): the choice decides which fields exist.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">A · unconfigured · the true default</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+          <sc-if value="{{ notActive }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px; margin-block-end: 12px;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">Not active yet</span><span style="font-size: 12.5px; color: #2D3748; text-wrap: pretty;">You can choose a provider and save it, but AccreditMe won't use it yet. Mail keeps going out through AccreditMe's own delivery.</span></div>
+          </sc-if>
+          <div style="font-size: 16px; font-weight: 600;">How AccreditMe sends your organisation's email</div>
+          <div style="display: flex; gap: 10px; align-items: flex-start; margin-block-start: 10px; padding: 11px 12px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px;">
+            <span style="flex: none; width: 30px; height: 30px; border-radius: 6px; background: #fff; border: 1px solid #C5DAEA; display: flex; align-items: center; justify-content: center; color: #1F5480; font-size: 13px;">✉</span>
+            <span style="min-width: 0;">
+              <span style="display: block; font-size: 13.5px; font-weight: 600; color: #1F5480;">AccreditMe's default delivery</span>
+              <span style="display: block; font-size: 12.5px; color: #4A5568; text-wrap: pretty;">Invitations, reminders and notifications go out from <span dir="ltr" style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; unicode-bidi: isolate;">no-reply@accreditme.app</span> via Resend. Nobody chose this. It's what happens until you connect your own provider.</span>
+            </span>
+          </div>
+          <div style="font-size: 12.5px; color: #4A5568; margin-block-start: 10px; text-wrap: pretty;">Connect your own if mail must come from your domain, or your IT policy requires your own server.</div>
+          <div style="display: flex; gap: 8px; margin-block-start: 12px;">
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Connect a provider</button>
+            <sc-if value="{{ active }}" hint-placeholder-val="{{ true }}"><button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Send test email</button></sc-if>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">No form sits on a pre-selected value. The resting state is a sentence about what's actually happening, and the form opens only when someone chooses to connect. “Resend” appears as the mechanism, not as a selection in a dropdown.</div>
+
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block: 16px 6px;">The five providers · the select's options</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <sc-for list="{{ providers }}" as="p" hint-placeholder-count="5">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 7px 12px; border-block-end: 1px solid #F0F3F7;">
+              <span style="flex: 0 0 170px; font-size: 13px; font-weight: 500;">{{ p.en }}</span>
+              <span dir="rtl" style="flex: 0 0 180px; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px;">{{ p.ar }}</span>
+              <span style="flex: 1 1 200px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">{{ p.fields }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Product names stay in Latin script inside Arabic (they're names, not words). The descriptor around them is translated. One select with five options, because artboard 10 permits a select above three. It's a plain select: the list is short.</div>
+      </div>
+
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">B · SMTP / on-premises Exchange · saved, one secret set</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+          <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Provider</label>
+          <div style="display: flex; align-items: center; justify-content: space-between; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; font-size: 13px;"><span>SMTP / on-premises Exchange</span><span style="font-size: 10px; color: #5A6779;">▼</span></div>
+          <div style="font-size: 11.5px; color: #5A6779; min-height: 17px; margin-block: 4px 10px;">Changing provider keeps these values until you save (artboard 10)</div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+            <sc-for list="{{ exchange }}" as="f" hint-placeholder-count="7">
+              <div style="{{ f.wrap }}">
+                <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">{{ f.label }}</label>
+                <div style="{{ f.box }}"><span dir="{{ f.dir }}" style="flex: 1 1 auto; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate;">{{ f.value }}</span><span style="flex: none; font-size: 12px; font-weight: 600; color: #2E6FA3;">{{ f.action }}</span></div>
+                <div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px; color: #5A6779; text-wrap: pretty;">{{ f.help }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; border-block-start: 1px solid #E2E8F0; padding-block-start: 12px; margin-block-start: 4px;">
+            <sc-if value="{{ active }}" hint-placeholder-val="{{ true }}"><button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Send test email…</button></sc-if>
+            <span style="display: flex; gap: 8px; margin-inline-start: auto;">
+              <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Disconnect</button>
+              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">{{ saveLabel }}</button>
+            </span>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Section-level Save: this section is self-contained and has its own test. <strong>Secrets</strong> follow the write-once rule (artboard 10): “●●●●●●●● · set 29 Sep” with Replace, never echoed and never exported. Port changes with encryption (STARTTLS → 587, SSL/TLS → 465, None → 25) unless it's been edited. “Disconnect” returns to the default delivery after a confirm naming it.</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-block-start: 14px;">
+      <div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Send test email · inline, in flow (no floating panel)</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; border-block-end: 1px solid #F0F3F7;">
+            <div style="flex: 1 1 240px; min-width: 0;"><label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Send to</label><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-size: 13px;" dir="ltr">n.alotaibi@kfmc.med.sa</div></div>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 8px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Send test</button>
+          </div>
+          <sc-for list="{{ testStates }}" as="t" hint-placeholder-count="4">
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-block-end: 1px solid #F0F3F7;">
+              <span style="{{ t.tagStyle }}">{{ t.tag }}</span>
+              <span style="min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 600;">{{ t.title }}</span><span style="display: block; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ t.body }}</span></span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The test uses the values on screen, <em style="font-style: normal; font-weight: 600;">saved or not</em>, because an evaluator tests before committing. Each result states what was proved: “accepted by the server” is not “delivered”. The failure names the stage (connect, TLS, auth, sender refused) and gives the server's own reply verbatim in a copyable block, because that's what IT will ask for. Defaults to the signed-in admin's address.</div>
+      </div>
+
+      <div dir="rtl" style="font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">ج · العربية — Exchange</div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+          <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">مزوّد البريد</label>
+          <div style="display: flex; align-items: center; justify-content: space-between; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; font-size: 14px;"><span>SMTP / خادم Exchange داخلي</span><span style="font-size: 10px; color: #5A6779;">▼</span></div>
+          <div style="min-height: 20px; margin-block-end: 8px;"></div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+            <sc-for list="{{ exchangeAr }}" as="f" hint-placeholder-count="7">
+              <div style="{{ f.wrap }}">
+                <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">{{ f.label }}</label>
+                <div style="{{ f.box }}"><span dir="{{ f.dir }}" style="flex: 1 1 auto; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: isolate; text-align: start;">{{ f.value }}</span><span style="flex: none; font-size: 12.5px; font-weight: 600; color: #2E6FA3;">{{ f.action }}</span></div>
+                <div style="font-size: 12.5px; line-height: 20px; min-height: 20px; margin-block-start: 2px; color: #5A6779;">{{ f.help }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; gap: 8px; justify-content: flex-end; border-block-start: 1px solid #E2E8F0; padding-block-start: 12px; margin-block-start: 4px;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px;">إرسال بريد تجريبي…</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">حفظ</button>
+          </div>
+        </div>
+        <div dir="ltr" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Hostnames, addresses and ports are LTR and isolated inside RTL fields, and start-aligned so they sit at the right edge like the Arabic labels above them. The two-column grid mirrors, so Host is first on the right. The secret's dots are direction-neutral.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="e2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">AI credits</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Settings › AI. Showing: {{ aiStateLabel }}. Switch in Tweaks between normal, spent, and no allowance.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+        <sc-if value="{{ notActive }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px; margin-block-end: 12px;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">Not active yet</span><span style="font-size: 12.5px; color: #2D3748; text-wrap: pretty;">Usage shown here is illustrative. Credits aren't metered or billed yet.</span></div>
+        </sc-if>
+        <sc-if value="{{ aiHas }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px;">
+            <div style="font-size: 16px; font-weight: 600;">September allowance</div>
+            <div style="font-size: 12.5px; color: #5A6779;">Resets <strong style="color: #2D3748; font-weight: 600;">1 Oct 2026</strong> · in 1 day</div>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 8px; margin-block-start: 8px;">
+            <span dir="ltr" style="font-size: 28px; line-height: 34px; font-weight: 600; font-variant-numeric: tabular-nums;">{{ ai.left }}</span>
+            <span style="font-size: 13px; color: #4A5568;">credits left of <span dir="ltr" style="font-variant-numeric: tabular-nums;">{{ ai.total }}</span></span>
+            <sc-if value="{{ ai.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ ai.chipStyle }}">{{ ai.chip }}</span></sc-if>
+          </div>
+          <div role="meter" aria-label="{{ ai.aria }}" style="display: flex; height: 14px; border-radius: 4px; overflow: hidden; border: 1px solid #8A94A6; margin-block-start: 8px; background: #fff;">
+            <sc-for list="{{ ai.segments }}" as="g" hint-placeholder-count="4"><span style="{{ g.style }}"></span></sc-for>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11.5px; color: #5A6779; margin-block-start: 4px;"><span>Used <span dir="ltr" style="font-variant-numeric: tabular-nums;">{{ ai.used }}</span></span><span>Left <span dir="ltr" style="font-variant-numeric: tabular-nums;">{{ ai.left }}</span></span></div>
+
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block: 14px 4px;">What used them</div>
+          <sc-for list="{{ ai.breakdown }}" as="b" hint-placeholder-count="4">
+            <div style="display: flex; align-items: center; gap: 10px; min-height: 32px; border-block-end: 1px solid #F0F3F7;">
+              <span style="{{ b.swatch }}">{{ b.glyph }}</span>
+              <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">{{ b.name }}</span>
+              <span dir="ltr" style="flex: none; width: 44px; text-align: end; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums;">{{ b.n }}</span>
+              <span dir="ltr" style="flex: none; width: 40px; text-align: end; font-size: 12px; color: #5A6779; font-variant-numeric: tabular-nums;">{{ b.pct }}</span>
+            </div>
+          </sc-for>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px;"><a href="#e2" style="text-decoration: none; font-weight: 600;">See each use</a> · who, when, and which record (opens the usage log)</div>
+        </sc-if>
+        <sc-if value="{{ aiNone }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size: 16px; font-weight: 600;">AI features aren't part of your plan</div>
+          <div style="display: flex; gap: 10px; align-items: flex-start; margin-block-start: 10px; padding: 12px; border: 1px dashed #8A94A6; border-radius: 6px;">
+            <span style="flex: none; width: 30px; height: 30px; border-radius: 6px; border: 1px dashed #8A94A6; display: flex; align-items: center; justify-content: center; color: #5A6779;">✦</span>
+            <span style="min-width: 0; font-size: 12.5px; color: #4A5568; text-wrap: pretty;">The Starter plan has no AI allowance, so there's nothing to meter. This is not the same as having spent it all. Minutes summaries, translation and the holiday helper appear once AI is added.</span>
+          </div>
+          <div style="display: flex; gap: 8px; margin-block-start: 12px;"><button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">See plans with AI</button></div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">No meter, no zero, no overage setting. There's no allowance to show in proportion, and a “0 of 0” bar would look exactly like spent. The dashed outline is the “not included” shape from Plan &amp; modules.</div>
+        </sc-if>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <sc-if value="{{ aiActions }}" hint-placeholder-val="{{ true }}">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+            <div style="font-size: 14px; font-weight: 600;">Get more credits</div>
+            <sc-for list="{{ packs }}" as="p" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 10px; min-height: 44px; border-block-end: 1px solid #F0F3F7;">
+                <span dir="ltr" style="flex: none; width: 70px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;">{{ p.n }}</span>
+                <span style="flex: 1 1 auto; font-size: 12.5px; color: #4A5568;">{{ p.note }}</span>
+                <span dir="ltr" style="flex: none; font-size: 13px; font-variant-numeric: tabular-nums;">{{ p.price }}</span>
+                <button style="flex: none; background: #fff; color: #2E6FA3; border: 1px solid #5A6779; border-radius: 6px; padding: 5px 11px; font-family: inherit; font-size: 12.5px; font-weight: 600;">Buy</button>
+              </div>
+            </sc-for>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">Pack credits are used after the monthly allowance and don't expire at reset. Buying confirms the price and the invoice recipient first.</div>
+          </div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+            <div style="font-size: 14px; font-weight: 600;">When credits run out</div>
+            <sc-for list="{{ overage }}" as="o" hint-placeholder-count="2">
+              <div style="display: flex; gap: 9px; align-items: flex-start; padding: 8px 0; border-block-end: 1px solid #F0F3F7;">
+                <span style="{{ o.radio }}">{{ o.dot }}</span>
+                <span style="min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 500;">{{ o.t }}</span><span style="display: block; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.b }}</span></span>
+              </div>
+            </sc-for>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">A stated choice, not a checkbox: each option says what the user will see mid-task. Radio, because there are two (artboard 6). Saved with a section-level Save.</div>
+          </div>
+        </sc-if>
+        <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+          <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">العربية</div>
+          <div style="display: flex; align-items: baseline; gap: 8px;"><span dir="ltr" style="font-size: 29px; line-height: 40px; font-weight: 600; font-variant-numeric: tabular-nums; unicode-bidi: isolate;">22</span><span style="font-size: 14px; color: #4A5568;">رصيدًا متبقيًا من <span dir="ltr" style="unicode-bidi: isolate;">40</span></span></div>
+          <div style="display: flex; height: 14px; border-radius: 4px; overflow: hidden; border: 1px solid #8A94A6; margin-block-start: 6px; background: #fff;"><span style="width: 45%; background: #2E6FA3;"></span></div>
+          <div style="font-size: 12.5px; color: #5A6779; margin-block-start: 4px;">يُعاد التعيين في <span dir="ltr" style="unicode-bidi: isolate;">1 Oct 2026</span></div>
+          <div dir="ltr" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The meter fills from the inline start, which is the right in Arabic. It's a flex row, so this needs no code. Used and left keep their meaning, not their side.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="e3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Organization profile · name pair and logo</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Settings › Organization. Replaces the “S3 key” text box, and closes ACC-89 on this screen.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+        <sc-if value="{{ notActive }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px; margin-block-end: 12px;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">Not active yet</span><span style="font-size: 12.5px; color: #2D3748; text-wrap: pretty;">Logo upload isn't live yet. The monogram is shown everywhere a logo would appear.</span></div>
+        </sc-if>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div><label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Name · English <span style="color: #5A6779; font-weight: 400;">· required</span></label><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-size: 13px;">King Fahad Medical City</div><div style="min-height: 17px; margin-block-start: 4px;"></div></div>
+          <div><label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Name · Arabic <span style="color: #5A6779; font-weight: 400;">· required</span></label><div dir="rtl" style="height: 36px; box-sizing: border-box; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12); border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px; color: #8A94A6;">مدينة الملك فهد الطبية</div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px; color: #B42318; font-weight: 500;">Required. Arabic screens show it on sign-in and invitations.</div></div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block: 2px 12px; text-wrap: pretty;">Both are required as a pair. Until an existing tenant fills in the Arabic, this field opens in its error state with the sentence above: the one place the missing name gets fixed. Once saved, the declared-fallback line on Login and Accept invitation disappears.</div>
+
+        <div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Logo</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch;">
+          <sc-if value="{{ active }}" hint-placeholder-val="{{ true }}"><div style="flex: 1 1 220px; min-height: 118px; border: 1.5px dashed #5A6779; border-radius: 8px; background: #F2F7FB; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 12px; text-align: center;">
+            <span style="font-size: 13px; font-weight: 600; color: #1F5480;">Drop a file here, or <span style="text-decoration: underline;">choose a file</span></span>
+            <span style="font-size: 11.5px; color: #4A5568;">PNG or SVG · up to 1 MB · square, at least 256 × 256</span>
+            <span style="font-size: 11.5px; color: #5A6779;">A transparent background works best</span>
+          </div></sc-if>
+          <div style="flex: 1 1 220px; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Current · actual sizes</div>
+            <div style="display: flex; align-items: flex-end; gap: 14px;">
+              <sc-for list="{{ logoSizes }}" as="z" hint-placeholder-count="3">
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                  <span style="{{ z.style }}">KF</span>
+                  <span dir="ltr" style="font-size: 10.5px; color: #5A6779; font-variant-numeric: tabular-nums;">{{ z.px }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ active }}" hint-placeholder-val="{{ true }}"><div style="display: flex; gap: 12px; margin-block-start: 10px;"><a href="#e3" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">Replace</a><a href="#e3" style="font-size: 12.5px; font-weight: 600; text-decoration: none; color: #B42318;">Remove</a></div></sc-if>
+          </div>
+        </div>
+        <div style="font-size: 12px; color: #4A5568; margin-block-start: 8px; text-wrap: pretty;"><strong>Where it appears:</strong> the sign-in page for your address (34px), the top of the sidebar (28px), and the footer of every printed report and export (20px high).</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Upload states</div>
+          <sc-for list="{{ uploadStates }}" as="u" hint-placeholder-count="5">
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-block-end: 1px solid #F0F3F7;">
+              <span style="{{ u.tagStyle }}">{{ u.tag }}</span>
+              <span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ u.b }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+          <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">العربية</div>
+          <div style="font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">الشعار</div>
+          <div style="min-height: 96px; border: 1.5px dashed #5A6779; border-radius: 8px; background: #F2F7FB; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px; text-align: center;">
+            <span style="font-size: 14px; font-weight: 600; color: #1F5480;">اسحب ملفًا هنا، أو <span style="text-decoration: underline;">اختر ملفًا</span></span>
+            <span style="font-size: 12.5px; color: #4A5568;"><span dir="ltr" style="unicode-bidi: isolate;">PNG</span> أو <span dir="ltr" style="unicode-bidi: isolate;">SVG</span> · حتى <span dir="ltr" style="unicode-bidi: isolate;">1 MB</span> · مربع، <span dir="ltr" style="unicode-bidi: isolate;">256 × 256</span> على الأقل</span>
+          </div>
+          <div style="font-size: 13px; color: #4A5568; margin-block-start: 8px; text-wrap: pretty;"><strong>أين يظهر:</strong> صفحة الدخول لعنوان منشأتك، وأعلى الشريط الجانبي، وتذييل كل تقرير مطبوع أو مُصدَّر.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="e4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">System pattern</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">“Not active yet” · one definition, off by default</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">For Design System Rev 9, beside the absent-not-disabled rule. Drawn here once. Turn on “Show not-active treatment” in Tweaks to see it in all three sections.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+      <div>
+        <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">Not active yet</span><span style="font-size: 12.5px; color: #2D3748; text-wrap: pretty;">You can set this up now, but AccreditMe won't use it yet. &lt;One sentence: what happens instead, today.&gt;</span></div>
+        <div dir="rtl" style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(-135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px; margin-block-start: 8px; font-family: 'IBM Plex Sans Arabic', sans-serif;"><span style="flex: none; font-size: 12px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">غير مُفعَّل بعد</span><span style="font-size: 13.5px; color: #2D3748; text-wrap: pretty;">يمكنك الإعداد الآن، لكن النظام لن يستخدمه بعد. &lt;جملة واحدة: ما يحدث بدلًا منه اليوم.&gt;</span></div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 12px;">
+          <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Adopted by</div>
+          <sc-for list="{{ adoption }}" as="a" hint-placeholder-count="3">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7;">
+              <span style="flex: 0 0 150px; font-size: 12.5px; font-weight: 600;">{{ a.screen }}</span>
+              <span style="flex: 1 1 260px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ a.b }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <sc-for list="{{ patternRules }}" as="r" hint-placeholder-count="6">
+          <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 12px;">
+            <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 2px;">{{ r.t }}</div>
+            <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ r.b }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showNotActive&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;States&quot;}, &quot;aiState&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;normal&quot;, &quot;spent&quot;, &quot;none&quot;], &quot;default&quot;: &quot;normal&quot;, &quot;tsType&quot;: &quot;'normal' | 'spent' | 'none'&quot;, &quot;section&quot;: &quot;States&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const notActive = !!this.props.showNotActive;
+    const aiState = this.props.aiState || "normal";
+    const tag = (label, tone) => ({ tag: label, tagStyle: "flex: none; width: 92px; text-align: center; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 6px; " + ({ info: "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;", ok: "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;", danger: "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;", warn: "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;", neutral: "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;" })[tone] });
+    const box = "display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff;";
+    const F = (label, value, opts = {}) => ({ label, value, action: opts.action || "", help: opts.help || "", dir: opts.ltr ? "ltr" : "auto", box: opts.secret ? box + " background: #F4F7FA;" : box, wrap: opts.full ? "grid-column: 1 / -1;" : "" });
+
+    const AI = {
+      normal: { total: 40, used: 18, chip: null, parts: [["Minutes summaries", 9], ["Translation, Arabic ↔ English", 6], ["Holiday helper", 3]] },
+      spent: { total: 40, used: 40, chip: "0 left · AI paused until 1 Oct", parts: [["Minutes summaries", 21], ["Translation, Arabic ↔ English", 14], ["Holiday helper", 5]] }
+    };
+    const a = AI[aiState] || AI.normal;
+    const inks = ["#1F5480", "#2E6FA3", "#6E9CC0"];
+    const glyphs = ["▲", "●", "■"];
+    const segs = a.parts.map((p, i) => ({ style: "width: " + (p[1] / a.total * 100) + "%; background: " + inks[i] + "; border-inline-end: 1px solid #fff;" }));
+    const ai = {
+      total: a.total + "", used: a.used + "", left: (a.total - a.used) + "", aria: (a.total - a.used) + " of " + a.total + " credits left",
+      chip: a.chip, chipStyle: "font-size: 11.5px; font-weight: 600; color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 999px; padding: 1px 9px;",
+      segments: segs,
+      breakdown: a.parts.map((p, i) => ({ name: p[0], n: p[1] + "", pct: Math.round(p[1] / a.used * 100) + "%", glyph: glyphs[i],
+        swatch: "flex: none; width: 16px; height: 16px; border-radius: 3px; background: " + inks[i] + "; color: #fff; font-size: 8px; display: flex; align-items: center; justify-content: center;" }))
+    };
+    const radio = (on) => "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; margin-block-start: 2px; font-size: 9px; line-height: 14px; text-align: center; border: 1px solid " + (on ? "#1F5480; color: #2E6FA3" : "#8A94A6; color: transparent") + "; background: #fff;";
+
+    return {
+      notActive, active: !notActive,
+      saveLabel: notActive ? "Save for later" : "Save",
+      aiHas: aiState !== "none", aiNone: aiState === "none", aiActions: aiState !== "none" && !notActive,
+      aiStateLabel: aiState === "none" ? "no AI allowance" : aiState === "spent" ? "allowance spent" : "normal use",
+      ai,
+
+      findings: [
+        { t: "1 · No file upload control exists anywhere in the system", b: "Artboard 6 has no upload. The logo drop zone here is the first, and it should move into artboard 6 with every state (idle, drag-over, uploading, rejected, done), not live in one screen." },
+        { t: "2 · No “check it works” action", b: "Template 5 saves settings but never tests them. Send test email needs a pattern: runs on unsaved values, reports what was proved, shows the far end's own error. Every future integration (SSO, webhooks) will want the same one." },
+        { t: "3 · A variant form inside a settings section", b: "Artboard 10 was specified for dialogs, with the cap sized to the tallest variant. On a page there's no cap, so the section simply grows. The template should say so, or someone will impose the dialog rule here." },
+        { t: "4 · A quota meter", b: "Nothing in the system shows an allowance in proportion. The AI meter (segmented, labelled ends, a meter role, a reset date) is the second reusable piece, and storage and seats will need it." },
+        { t: "Note · The reference screen is deferred", b: "Task SLA remains the only drawn reference, and it's not being built. Section headings, section-level Save and dirty state carry over from it unchanged. These three now prove them on screens that ship." },
+        { t: "Note · “Not active yet” (below)", b: "Not a gap in the template. It's a treatment for configured-but-not-live, distinct from the absent rule, and it belongs in the system rather than the template." }
+      ],
+
+      providers: [
+        { en: "Resend", ar: "Resend (الافتراضي)", fields: "API key · sender address · sender name. The platform default, and only chosen explicitly when a tenant uses its own Resend account." },
+        { en: "SMTP / on-premises Exchange", ar: "SMTP / خادم Exchange داخلي", fields: "Host · port · encryption · username · password · sender address · sender name" },
+        { en: "Office 365", ar: "Office 365", fields: "Tenant ID · client ID · client secret · sender mailbox" },
+        { en: "SendGrid", ar: "SendGrid", fields: "API key · sender address (verified) · sender name" },
+        { en: "Amazon SES", ar: "Amazon SES", fields: "Region · access key ID · secret access key · sender (verified identity)" }
+      ],
+
+      exchange: [
+        F("Host", "mail.kfmc.med.sa", { ltr: true }),
+        F("Port", "587", { ltr: true, help: "Set by encryption unless edited" }),
+        F("Encryption", "STARTTLS", { action: "▼" }),
+        F("Username", "svc-accreditme", { ltr: true }),
+        F("Password", "●●●●●●●● · set 29 Sep", { secret: true, action: "Replace", help: "Never shown again", full: true }),
+        F("Sender address", "quality@kfmc.med.sa", { ltr: true, help: "Must be allowed to send as" }),
+        F("Sender name", "KFMC Quality Office", { help: "Shown in the From line" })
+      ],
+      exchangeAr: [
+        F("الخادم", "mail.kfmc.med.sa", { ltr: true }),
+        F("المنفذ", "587", { ltr: true, help: "يتبع التشفير ما لم يُعدَّل" }),
+        F("التشفير", "STARTTLS", { action: "▼", ltr: true }),
+        F("اسم المستخدم", "svc-accreditme", { ltr: true }),
+        F("كلمة المرور", "●●●●●●●● · 29 Sep", { secret: true, action: "استبدال", help: "لا تُعرض مرة أخرى", full: true }),
+        F("عنوان المرسِل", "quality@kfmc.med.sa", { ltr: true }),
+        F("اسم المرسِل", "مكتب الجودة", { help: "يظهر في خانة «من»" })
+      ],
+
+      testStates: [
+        Object.assign(tag("Sending", "info"), { title: "Connecting to mail.kfmc.med.sa:587…", body: "The button keeps its label with a spinner. Times out at 20 seconds." }),
+        Object.assign(tag("Accepted", "ok"), { title: "The server accepted the message · 14:32", body: "Accepted by mail.kfmc.med.sa for n.alotaibi@kfmc.med.sa. Check the inbox and spam folder. Acceptance isn't the same as delivery." }),
+        Object.assign(tag("Refused", "danger"), { title: "Sign-in to the mail server failed", body: "Stage: authentication. The server replied: 535 5.7.3 Authentication unsuccessful [copy]. Nothing was sent. Usually a wrong password, or SMTP AUTH disabled for this mailbox." }),
+        Object.assign(tag("Unreachable", "warn"), { title: "Couldn't reach mail.kfmc.med.sa on port 587", body: "Stage: connect. Check the host, the port, and that your firewall allows AccreditMe's outbound addresses (listed in the help link)." })
+      ],
+
+      packs: [
+        { n: "+100", note: "About 5 months of your current use", price: "SAR 190" },
+        { n: "+500", note: "Best for a survey year", price: "SAR 850" },
+        { n: "+2,000", note: "Across all departments", price: "SAR 3,000" }
+      ],
+      overage: [
+        { t: "Pause AI features", b: "AI buttons show “No credits left until 1 Oct”, and no cost is added. Current setting.", dot: "●", radio: radio(true) },
+        { t: "Keep going, and bill the extra", b: "Up to 100 extra credits a month at SAR 2.10 each, then pause. The monthly cap is shown on the invoice.", dot: "", radio: radio(false) }
+      ],
+
+      logoSizes: [
+        { px: "34 · sign-in", style: "width: 34px; height: 34px; border-radius: 6px; border: 1px solid #C5DAEA; background: #fff; color: #1F5480; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;" },
+        { px: "28 · sidebar", style: "width: 28px; height: 28px; border-radius: 6px; background: #31465E; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;" },
+        { px: "20 · print", style: "width: 20px; height: 20px; border-radius: 3px; border: 1px solid #E2E8F0; background: #fff; color: #1F5480; font-size: 7.5px; font-weight: 700; display: flex; align-items: center; justify-content: center;" }
+      ],
+      uploadStates: [
+        Object.assign(tag("Drag over", "info"), { b: "The zone turns solid-bordered in primary: “Drop to upload”." }),
+        Object.assign(tag("Uploading", "info"), { b: "A progress line inside the zone with the file name. Cancel stops it. The current logo stays until the new one is saved." }),
+        Object.assign(tag("Preview", "ok"), { b: "The three actual-size previews re-render with the new file, on the dark sidebar ground too, before anything is saved. Save commits, Cancel restores." }),
+        Object.assign(tag("Rejected", "danger"), { b: "It says which rule failed: “This file is 3.4 MB. The limit is 1 MB.” or “JPG isn't accepted. Use PNG or SVG.” Nothing replaces the current logo." }),
+        Object.assign(tag("Removed", "neutral"), { b: "It falls back to the two-letter monogram everywhere, shown in the previews before confirming." })
+      ],
+
+      adoption: [
+        { screen: "Email provider", b: "Fields stay editable. Save becomes “Save for later”. Send test email is absent: you can't test machinery that isn't there. The sentence names the default delivery." },
+        { screen: "AI credits", b: "The meter and breakdown render, labelled illustrative. Buy and the overage choice are absent: nothing can be bought or billed." },
+        { screen: "Organization logo", b: "The upload zone is absent, and the monogram previews stay. The name pair is live and unaffected." }
+      ],
+      patternRules: [
+        { t: "One flag per feature, set by the platform", b: "featureStatus: 'live' | 'not-active' in the tenant's config. It's off in demos by default. Platform admin turns it on per feature when a public trial opens." },
+        { t: "The banner sits at the top of the section it governs", b: "Never page-wide, and never on screens that are fully live. Dashed outline plus hatch, the same texture as “restricted” (artboard 4). It means “present, but held back”, and survives greyscale by texture, not colour." },
+        { t: "It always says what happens instead", b: "“Mail keeps going out through AccreditMe's own delivery.” A banner that only says “not active” leaves the user guessing whether their setting did anything." },
+        { t: "Actions that would claim success are absent", b: "Test, Buy, Upload: anything whose result would be fake. Configuration that can simply be stored stays editable, with Save relabelled “Save for later”." },
+        { t: "Not the same as absent-not-disabled", b: "Absent is for things the user may not have. This is for things the product doesn't do yet. The two never apply to the same control." },
+        { t: "Arabic: «غير مُفعَّل بعد»", b: "Hatch angle flips with dir, like the restricted field. The label chip is 12/700 with no tracking." }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
