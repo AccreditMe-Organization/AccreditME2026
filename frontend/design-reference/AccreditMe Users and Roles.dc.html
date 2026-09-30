@@ -347,11 +347,23 @@
   <section id="m3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
     <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
       <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
-      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Permission matrix (6a) · Arabic sticky column, and the Review dialog</h2>
-      <span style="font-size: 12.5px; color: #5A6779;">The populated English state isn't redrawn. This closes the open risk in Design System Rev 8.</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Permission matrix (6a) · Arabic frozen column, save confirmation, missing states</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Additions to Templates 6a. Its populated English state isn't redrawn. Cells, marks, columns and module rows are taken from 6a exactly. Every role, system roles included, is editable (decided 30 Sep).</span>
     </div>
 
-    <div dir="rtl" style="border: 1px solid #CBD5E0; border-radius: 8px; overflow: hidden; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-end: 14px;">
+      <div style="padding: 9px 13px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">What 6a already covers · what this section adds</div>
+      <sc-for list="{{ coverage }}" as="c" hint-placeholder-count="5">
+        <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 13px; border-block-end: 1px solid #F0F3F7;">
+          <span style="flex: 0 0 230px; font-size: 12.5px; font-weight: 600;">{{ c.state }}</span>
+          <span style="{{ c.verdictStyle }}">{{ c.verdict }}</span>
+          <span style="flex: 1 1 300px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ c.note }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">3a · Arabic, populated, 1130px of content, scrolled to the end · 3 unsaved changes</div>
+    <div dir="rtl" style="max-width: 1130px; border: 1px solid #CBD5E0; border-radius: 8px; overflow: hidden; font-family: 'IBM Plex Sans Arabic', sans-serif;">
       <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 12px 14px; border-block-end: 1px solid #E2E8F0;">
         <div><div style="font-size: 23px; line-height: 32px; font-weight: 600;">محرر الجودة</div><div style="font-size: 13px; color: #5A6779;">الصلاحيات · يحملها <span dir="ltr" style="unicode-bidi: isolate;">14</span> مستخدمًا · يسري التغيير عليهم فور الحفظ</div></div>
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -361,36 +373,37 @@
         </div>
       </div>
       <div ref="{{ matrixScroll }}" style="overflow-x: auto;">
-        <div style="min-width: 1080px;">
-          <div style="display: flex; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; position: sticky; top: 0; z-index: 2;">
-            <div style="flex: none; width: 300px; box-sizing: border-box; position: sticky; inset-inline-start: 0; z-index: 3; background: #F4F7FA; padding: 8px 12px; font-size: 12px; font-weight: 700; color: #5A6779; box-shadow: -6px 0 8px -6px rgba(16,24,40,0.18); border-inline-end: 1px solid #CBD5E0;">الوحدة / الصلاحية</div>
-            <sc-for list="{{ matrixCols }}" as="c" hint-placeholder-count="7">
-              <div style="flex: 1 0 110px; padding: 8px 6px; font-size: 12px; font-weight: 700; color: #5A6779; text-align: center;">{{ c }}</div>
+        <div style="width: 1210px;">
+          <div style="display: flex; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+            <div style="flex: none; width: 300px; box-sizing: border-box; position: sticky; inset-inline-start: 0; z-index: 3; background: #F4F7FA; padding: 8px 12px; font-size: 12px; font-weight: 700; color: #5A6779; border-inline-end: 1px solid #CBD5E0; box-shadow: -6px 0 8px -6px rgba(16,24,40,0.22);">الوحدة / الصلاحية</div>
+            <sc-for list="{{ arCols }}" as="c" hint-placeholder-count="6">
+              <div style="flex: none; width: 150px; box-sizing: border-box; padding: 8px 6px; font-size: 12.5px; font-weight: 700; color: #5A6779; text-align: center;">{{ c }}</div>
             </sc-for>
           </div>
-          <sc-for list="{{ matrixRows }}" as="m" hint-placeholder-count="8">
+          <sc-for list="{{ arRows }}" as="m" hint-placeholder-count="10">
             <div style="{{ m.rowStyle }}">
               <div style="{{ m.headStyle }}">
                 <span style="{{ m.boxStyle }}">{{ m.boxMark }}</span>
-                <span style="min-width: 0;"><span style="{{ m.labelStyle }}">{{ m.label }}</span><span style="display: block; font-size: 12px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ m.desc }}</span></span>
+                <span style="min-width: 0;"><span style="{{ m.labelStyle }}">{{ m.label }}</span><sc-if value="{{ m.desc }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 12px; line-height: 18px; color: #5A6779;">{{ m.desc }}</span></sc-if></span>
               </div>
-              <sc-for list="{{ m.cells }}" as="c" hint-placeholder-count="7">
-                <div style="flex: 1 0 110px; display: flex; align-items: center; justify-content: center; padding: 6px;">
-                  <span style="{{ c.style }}">{{ c.mark }}</span>
-                </div>
+              <sc-for list="{{ m.cells }}" as="c" hint-placeholder-count="6">
+                <div style="flex: none; width: 150px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; padding: 6px;"><span style="{{ c.style }}">{{ c.mark }}</span></div>
               </sc-for>
             </div>
           </sc-for>
         </div>
       </div>
       <div style="display: flex; flex-wrap: wrap; gap: 14px; padding: 9px 14px; background: #F4F7FA; border-block-start: 1px solid #E2E8F0; font-size: 12.5px; color: #4A5568;">
-        <span>✓ ممنوحة</span><span>– بعضها (رأس الوحدة)</span><span style="display: inline-flex; align-items: center; gap: 6px;"><span style="width: 14px; height: 14px; border: 2px solid #B54708; border-radius: 3px; box-sizing: border-box;"></span>تغيّرت ولم تُحفظ</span>
-        <span style="margin-inline-start: auto; color: #5A6779;">Drawn scrolled 150px towards the end: «عرض» has slid under the sticky column, which holds on the right, with its shadow on its left. Scroll the table to test it live.</span>
+        <span>✓ ممنوحة</span><span>– بعضها</span><span>منح غير محفوظ: علامة بحلقة خضراء</span><span>سحب غير محفوظ: ✕ بحلقة حمراء</span><span>مظلَّل: لا ينطبق</span>
       </div>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-block-start: 12px;">
-      <sc-for list="{{ rtlSpec }}" as="s" hint-placeholder-count="8">
+      <div style="grid-column: 1 / -1; border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 11px 13px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 5px;">The shadow's sign flips. This is a deliberate instruction, not something that mirrors by itself.</div>
+        <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">box-shadow has no logical form, so its x-offset is physical. <strong>English: <code style="font-size: 11.5px;">6px 0 8px -6px</code>. Arabic: <code style="font-size: 11.5px;">-6px 0 8px -6px</code>.</strong> Set it from <code style="font-size: 11.5px;">:dir(rtl)</code> or a <code style="font-size: 11.5px;">--shadow-x</code> custom property that the dir flips. <strong>One place where I've drawn differently from the brief:</strong> the shadow falls on the column's <em style="font-style: normal; font-weight: 600;">inner</em> edge, the one facing the data, which is left of the column in Arabic. That's the edge the scrolling cells pass beneath, and the shadow exists to show that. On the outer edge it would sit against the table's own border, be clipped by overflow, and show nothing. If “toward the outer edge” meant something else, say so and I'll redraw it.</div>
+      </div>
+      <sc-for list="{{ rtlSpec }}" as="s" hint-placeholder-count="6">
         <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 12px;">
           <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 2px;">{{ s.t }}</div>
           <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ s.b }}</div>
@@ -398,69 +411,100 @@
       </sc-for>
     </div>
 
-    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; margin-block-start: 14px;">
-      <div style="flex: 1 1 520px; max-width: 560px; min-width: 0;">
-        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Review 7 changes · form dialog 560</div>
-        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
-          <div style="padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
-            <div style="font-size: 16px; font-weight: 600;">Review 7 changes to Quality Editor</div>
-            <div style="font-size: 12.5px; color: #4A5568;">These apply to <strong>14 users</strong> as soon as you save. <a href="#m3" style="text-decoration: none; font-weight: 600;">See who</a></div>
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block: 16px 6px;">3b · Save changes · confirm, one column (Ahmad, 30 Sep)</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;">
+      <sc-for list="{{ confirms }}" as="d" hint-placeholder-count="3">
+        <div dir="{{ d.dir }}" style="{{ d.wrapStyle }}">
+          <div style="{{ d.capStyle }}">{{ d.cap }}</div>
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+            <div style="padding: 12px 14px 4px;">
+              <div style="{{ d.titleStyle }}">{{ d.title }}</div>
+              <div style="{{ d.subStyle }}">{{ d.sub }}</div>
+            </div>
+            <div style="padding: 4px 14px 12px;">
+              <sc-for list="{{ d.groups }}" as="g" hint-placeholder-count="2">
+                <div style="margin-block-start: 8px;">
+                  <div style="{{ g.headStyle }}">{{ g.head }}</div>
+                  <sc-for list="{{ g.items }}" as="i" hint-placeholder-count="3">
+                    <div style="{{ d.itemStyle }}"><span style="{{ g.glyphStyle }}">{{ g.glyph }}</span><span style="min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ i }}</span></div>
+                  </sc-for>
+                  <sc-if value="{{ g.more }}" hint-placeholder-val="{{ false }}"><div style="{{ d.moreStyle }}">{{ g.more }}</div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+              <button style="{{ d.btn2Style }}">{{ d.cancel }}</button>
+              <button style="{{ d.btnStyle }}">{{ d.save }}</button>
+            </div>
           </div>
-          <div style="padding: 8px 14px 10px;">
-            <sc-for list="{{ reviewGroups }}" as="g" hint-placeholder-count="3">
-              <div style="margin-block-start: 8px;">
-                <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 3px;">{{ g.module }}</div>
-                <sc-for list="{{ g.items }}" as="i" hint-placeholder-count="2">
-                  <div style="display: flex; align-items: center; gap: 10px; min-height: 32px; border-block-end: 1px solid #F0F3F7;">
-                    <span style="{{ i.glyphStyle }}">{{ i.glyph }}</span>
-                    <span style="flex: 1 1 auto; min-width: 0; font-size: 13px;">{{ i.perm }}</span>
-                    <span style="{{ i.wordStyle }}">{{ i.word }}</span>
-                  </div>
-                </sc-for>
-              </div>
-            </sc-for>
-          </div>
-          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
-            <span style="font-size: 12px; color: #5A6779;">Saved as one change: all or nothing</span>
-            <span style="display: flex; gap: 8px;">
-              <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Back to editing</button>
-              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Save 7 changes</button>
-            </span>
-          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;" dir="ltr">{{ d.note }}</div>
         </div>
-        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;"><strong>Measured:</strong> header 62. Body: 3 module labels × (8 + 18) + 7 rows × 33 = 309, plus 18 padding = 327. Footer 52. Body 327 / 420. Past 9 changes the list scrolls inside the body. It holds no controls, so nothing in it can float. Grants and revocations differ by glyph <em style="font-style: normal;">and</em> by word, never by colour alone. Revocations are listed first within each module, because they're the ones that stop someone's work.</div>
-      </div>
+      </sc-for>
+    </div>
 
-      <div dir="rtl" style="flex: 1 1 520px; max-width: 560px; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif;">
-        <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">العربية</div>
-        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
-          <div style="padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
-            <div style="font-size: 17px; font-weight: 600;">مراجعة <span dir="ltr" style="unicode-bidi: isolate;">3</span> تغييرات على «محرر الجودة»</div>
-            <div style="font-size: 13px; color: #4A5568;">تسري على <strong><span dir="ltr" style="unicode-bidi: isolate;">14</span> مستخدمًا</strong> فور الحفظ. <a href="#m3" style="text-decoration: none; font-weight: 600;">عرضهم</a></div>
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block: 16px 6px;">3c · The three states 6a doesn't draw</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;">
+
+      <div style="flex: 1 1 510px; max-width: 520px; min-width: 510px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6; margin-block-end: 6px;">Read-only · roles:view without roles:manage</div>
+        <div style="border: 1px solid #CBD5E0; border-radius: 8px; overflow: hidden;">
+          <div style="padding: 11px 13px; border-block-end: 1px solid #E2E8F0;">
+            <div style="font-size: 18px; font-weight: 600;">Quality Editor</div>
+            <div style="font-size: 12.5px; color: #5A6779;">Permissions · held by 14 users</div>
+            <div style="display: flex; gap: 8px; align-items: flex-start; margin-block-start: 8px; padding: 7px 10px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; font-size: 12px; color: #1F5480;"><span>ⓘ</span><span style="text-wrap: pretty;">You can view this role's permissions. Changing them needs <code style="font-size: 11px;">roles:manage</code>.</span></div>
           </div>
-          <div style="padding: 8px 14px 10px;">
-            <sc-for list="{{ reviewAr }}" as="i" hint-placeholder-count="3">
-              <div style="display: flex; align-items: center; gap: 10px; min-height: 34px; border-block-end: 1px solid #F0F3F7;">
-                <span style="{{ i.glyphStyle }}">{{ i.glyph }}</span>
-                <span style="flex: 1 1 auto; min-width: 0; font-size: 14px;">{{ i.perm }}</span>
-                <span style="{{ i.wordStyle }}">{{ i.word }}</span>
-              </div>
-            </sc-for>
+          <div style="display: flex; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; color: #5A6779;">
+            <span style="flex: none; width: 190px; box-sizing: border-box; padding: 6px 10px;">Module / permission</span>
+            <sc-for list="{{ roCols }}" as="c" hint-placeholder-count="6"><span style="flex: 1 1 0; min-width: 0; padding: 6px 2px; text-align: center; white-space: nowrap;">{{ c }}</span></sc-for>
           </div>
-          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
-            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px;">العودة إلى التعديل</button>
-            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">حفظ <span dir="ltr" style="unicode-bidi: isolate;">3</span> تغييرات</button>
-          </div>
-        </div>
-        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 10px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;" dir="ltr">
-          <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Six outcomes · Review dialog</div>
-          <sc-for list="{{ reviewOutcomes }}" as="o" hint-placeholder-count="6">
-            <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7;">
-              <span style="{{ o.tagStyle }}">{{ o.tag }}</span>
-              <span style="flex: 1 1 240px; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.en }}</span>
+          <sc-for list="{{ roRows }}" as="r" hint-placeholder-count="4">
+            <div style="{{ r.rowStyle }}">
+              <span style="{{ r.labelStyle }}">{{ r.label }}</span>
+              <sc-for list="{{ r.cells }}" as="c" hint-placeholder-count="6"><span style="flex: 1 1 0; min-width: 0; display: flex; justify-content: center; align-items: center;"><span style="{{ c.style }}">{{ c.mark }}</span></span></sc-for>
             </div>
           </sc-for>
         </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Absent, not disabled: no save bar, no change count, no Discard, no Review, no module checkboxes. Cells are glyphs, not checkboxes: ✓ granted, a muted “·” not granted, and the 6a hatch for not applicable. Granted and not-granted differ by glyph, so this passes greyscale. Keyboard traversal and each cell's accessible name (“Committees · Approve · granted”) are kept. The Keys column is still available.</div>
+      </div>
+
+      <div style="flex: 1 1 400px; max-width: 460px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6; margin-block-end: 6px;">Saving · the confirm, committed</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="padding: 12px 14px 4px;"><div style="font-size: 16px; font-weight: 600;">Save changes to Quality Editor?</div><div style="font-size: 12.5px; color: #4A5568;">Applies to 14 users as soon as it's saved.</div></div>
+          <div style="padding: 4px 14px 12px; opacity: 1;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #1F5480; margin-block: 8px 2px;">Adding 3</div>
+            <div style="display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px; color: #4A5568;"><span style="font-weight: 700; color: #067647;">+</span>Committees · Approve terms and advance the stage</div>
+            <div style="display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px; color: #4A5568;"><span style="font-weight: 700; color: #067647;">+</span>Tasks · Export task lists</div>
+            <div style="font-size: 12px; color: #5A6779; min-height: 24px; display: flex; align-items: center;">+ 1 more</div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <button disabled="disabled" style="background: #F4F7FA; color: #5A6779; border: 1px solid #E2E8F0; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; cursor: not-allowed;">Cancel</button>
+            <button aria-busy="true" style="display: inline-flex; align-items: center; gap: 7px; background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: progress;"><span style="width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.45); border-top-color: #fff; border-radius: 50%; box-sizing: border-box;"></span>Save changes</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The dialog stays open, the primary keeps its label and width with a spinner, and Cancel, Escape and the backdrop are inert: a half-committed permission change can't be walked away from. The grid behind stays as it was. On success the dialog closes, the grid's rings clear, and the header shows “Saved · 4 changes” for 5 seconds. Suppressed under 200ms.</div>
+      </div>
+
+      <div style="flex: 1 1 400px; max-width: 460px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6; margin-block-end: 6px;">Save failed · nothing saved</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+          <div style="padding: 12px 14px 4px;"><div style="font-size: 16px; font-weight: 600;">Save changes to Quality Editor?</div></div>
+          <div style="padding: 6px 14px 4px;">
+            <div role="alert" style="display: flex; gap: 8px; align-items: flex-start; padding: 9px 11px; border: 1px solid #FECDCA; background: #FEF3F2; border-radius: 6px;"><span style="flex: none; font-weight: 700; color: #B42318;">!</span><span style="min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 600; color: #7A271A;">Nothing was saved</span><span style="display: block; font-size: 12px; color: #4A5568; margin-block-start: 2px; text-wrap: pretty;">The save is all or nothing, so no one's access changed. Your 4 changes are still here. <span dir="ltr" style="font-family: ui-monospace, Menlo, monospace; font-size: 11px;">ref 9c02e</span></span></span></div>
+          </div>
+          <div style="padding: 4px 14px 12px;">
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #1F5480; margin-block: 8px 2px;">Adding 3</div>
+            <div style="display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px;"><span style="font-weight: 700; color: #067647;">+</span>Committees · Approve terms and advance the stage</div>
+            <div style="font-size: 12px; color: #5A6779; min-height: 24px; display: flex; align-items: center;">+ 2 more</div>
+            <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #B42318; margin-block: 8px 2px;">Removing 1</div>
+            <div style="display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 13px;"><span style="font-weight: 700; color: #B42318;">−</span>Lookups · Delete values</div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Cancel</button>
+            <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Try again</button>
+          </div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The banner (70, with its 8px gap 78) goes above the list. At the long-list maximum that's 380 + 78 = 458, so each heading drops to 3 lines while the banner shows: 458 − 2 × 32 = 394 English, 400 + 80 − 2 × 34 = 412 Arabic. Both are under 420. Cancel returns to the grid with every change still ringed, which is 6a's own error rule, now drawn. A 403 reads “You no longer have permission to change roles. Nothing was saved.” with Try again removed. A 409 (someone else saved this role first) reads “Quality Editor was changed by someone else since you opened it. Nothing was saved.” with “Reload role”, because retrying would overwrite their change without either of you seeing it.</div>
       </div>
     </div>
   </section>
@@ -480,7 +524,7 @@
 class Component extends DCLogic {
   matrixScroll = React.createRef();
   componentDidMount() {
-    const set = () => { const el = this.matrixScroll.current; if (el) el.scrollLeft = -150; };
+    const set = () => { const el = this.matrixScroll.current; if (el) el.scrollLeft = -(el.scrollWidth - el.clientWidth); };
     set(); setTimeout(set, 300); setTimeout(set, 1200);
   }
   renderVals() {
@@ -598,52 +642,98 @@ class Component extends DCLogic {
         { k: "partial", en: "Doesn't apply. invite() creates the user and queues an EMAIL notification, but it doesn't send anything itself. So the request either creates the user or fails, with nothing in between. There's one success and one failure. Delivery failures happen later and aren't visible here (recorded against the unreported-job-failures ticket).", ar: "لا ينطبق: الطلب يُنشئ المستخدم ويضع إشعار البريد في الطابور، فإما ينجح كله أو يفشل." }
       ]),
 
-      matrixCols: MC,
-      matrixRows: [
-        mrow("g", "العمل", "", ["-", "-", "-", "-", "-", "-", "-"], null, "some"),
-        mrow("p", "اللجان", "تشكيل اللجان وإدارة أعضائها ولوائحها", ["on", "on", "on", "off", "on", "off", "na"], [4]),
-        mrow("p", "المهام", "إنشاء المهام وإسنادها ومتابعتها", ["on", "on", "on", "off", "na", "on", "na"], [5]),
-        mrow("p", "سير العمل", "عرض المراحل وتنفيذ الانتقالات", ["on", "na", "off", "na", "on", "na", "off"], null),
-        mrow("g", "الإدارة", "", ["-", "-", "-", "-", "-", "-", "-"], null, "off"),
-        mrow("p", "المستخدمون", "دعوة المستخدمين وتعديل بياناتهم", ["off", "off", "off", "na", "na", "off", "na"], null),
-        mrow("p", "الهيكل التنظيمي", "الوحدات والمناصب ورئاسة الوحدات", ["on", "off", "off", "na", "na", "off", "off"], [0]),
-        mrow("p", "القوائم المرجعية", "قيم القوائم وتسمياتها لكل منشأة", ["off", "off", "off", "off", "na", "na", "na"], null)
-      ],
+      ...(() => {
+        const cell = (kind) => ({ mark: kind === "on" || kind === "granted" ? "✓" : kind === "revoked" ? "✕" : "", style: "display: inline-block; box-sizing: border-box; width: 17px; height: 17px; border-radius: 3px; font-size: 11px; line-height: 15px; text-align: center; flex: none; " + (kind === "on" ? "border: 1px solid #1F5480; background: #2E6FA3; color: #fff;" : kind === "granted" ? "border: 1px solid #067647; background: #067647; color: #fff; box-shadow: 0 0 0 3px #ECFDF3, 0 0 0 4px #067647;" : kind === "revoked" ? "border: 1px solid #B42318; background: #fff; color: #B42318; box-shadow: 0 0 0 3px #FEF3F2, 0 0 0 4px #B42318;" : kind === "na" ? "border: 1px dashed #CBD5E0; background: repeating-linear-gradient(-135deg,#F4F7FA 0 3px,#E9EEF4 3px 6px);" : "border: 1px solid #8A94A6; background: #fff; color: transparent;") });
+        const row = (kind, label, desc, cells, group) => {
+          const mod = kind === "module";
+          return { label, desc: desc || null, cells: cells.map(cell),
+            boxMark: group === "some" ? "–" : group === "on" ? "✓" : "",
+            boxStyle: "flex: none; box-sizing: border-box; width: 15px; height: 15px; border-radius: 3px; margin-block-start: 4px; font-size: 10px; line-height: 13px; text-align: center; " + (mod ? (group === "off" ? "border: 1px solid #8A94A6; background: #fff; color: transparent;" : "border: 1px solid #1F5480; background: #2E6FA3; color: #fff;") : "visibility: hidden;"),
+            labelStyle: "display: block; font-size: " + (mod ? "14px; font-weight: 600" : "14px; font-weight: 400") + "; line-height: 22px; color: #2D3748;",
+            rowStyle: "display: flex; align-items: stretch; border-block-end: 1px solid " + (mod ? "#E2E8F0" : "#F0F3F7") + "; background: " + (mod ? "#FBFCFD" : "#fff") + ";",
+            headStyle: "flex: none; width: 300px; box-sizing: border-box; position: sticky; inset-inline-start: 0; z-index: 1; display: flex; gap: 9px; align-items: flex-start; padding: " + (mod ? "8px 12px" : "7px 30px 7px 12px") + "; min-height: 44px; background: " + (mod ? "#FBFCFD" : "#fff") + "; border-inline-end: 1px solid #CBD5E0; box-shadow: -6px 0 8px -6px rgba(16,24,40,0.22);" };
+        };
+        const roCell = (k) => ({ mark: k === "on" ? "✓" : k === "off" ? "·" : "", style: k === "na" ? "display: inline-block; width: 15px; height: 15px; box-sizing: border-box; border: 1px dashed #CBD5E0; border-radius: 3px; background: repeating-linear-gradient(135deg,#F4F7FA 0 3px,#E9EEF4 3px 6px);" : "font-size: " + (k === "on" ? "13px; font-weight: 700; color: #1F5480" : "14px; color: #8A94A6") + ";" });
+        const roRow = (label, cells, mod) => ({ label, cells: cells.map(roCell),
+          labelStyle: "flex: none; width: 190px; box-sizing: border-box; padding: 0 10px; padding-inline-start: " + (mod ? "10px" : "22px") + "; font-size: 12.5px; " + (mod ? "font-weight: 600;" : "") + " overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+          rowStyle: "display: flex; align-items: center; min-height: 36px; border-block-end: 1px solid #F0F3F7; background: " + (mod ? "#FBFCFD" : "#fff") + ";" });
 
-      rtlSpec: [
-        { t: "Don't use pFrozenColumn. Use our own sticky cell.", b: "PrimeNG's frozen columns set a physical left: offset, so in RTL they pin to the wrong side. The first column is position: sticky; inset-inline-start: 0 on both the header cell and the body cells, and it pins right in Arabic and left in English with no RTL code. The header row is also sticky (top: 0). The corner cell carries both and gets the highest z-index." },
-        { t: "The shadow falls on the inline-end side", b: "The edge shadow sits on the side facing the scrolled content: right of the column in English, left in Arabic. Draw it with box-shadow and a sign that flips with dir, or with a pseudo-element placed at inset-inline-end. A physical-sided shadow is the bug that looks right in English only." },
-        { t: "Scroll origin", b: "In RTL, a scroll container starts at its right edge. Chromium and Firefox report scrollLeft as 0 → negative, and old WebKit reports it differently. Nothing in our code may read or set scrollLeft. Use scrollIntoView-free focus management: the focused cell is kept visible by the browser's own focus scrolling." },
-        { t: "Keyboard follows the eye", b: "In Arabic, → moves to the previous action column, which is visually right, and ← to the next one. ↑/↓ are unchanged. Home and End go to the row's first and last cells in reading order. Space toggles, Shift+Space toggles the row, and the group checkbox is a real tri-state." },
-        { t: "Column order is logical", b: "View is first in both languages: rightmost in Arabic, leftmost in English. Nobody reorders the columns for Arabic. The array is the same, and dir does the mirroring." },
-        { t: "Width and truncation", b: "The sticky column is 300 wide in both languages. Arabic descriptions run about 20% longer, so they clamp to one line with the full text in title. The row height is 48, because Arabic labels at 14/22 plus a 12/18 description don't fit in 44." },
-        { t: "The unsaved mark is a ring, not a fill", b: "A 2px amber ring outside the checkbox, the same as the Manage roles dialog. It works on ticked and unticked cells alike, and survives greyscale as a shape. The header counts the changes." },
-        { t: "Test before build, not after", b: "Three checks in both languages at 1130 content width. One: scroll to the far end, and the sticky column and its shadow hold on the correct side. Two: tab into the grid and arrow across 7 columns with scroll following focus. Three: a screen reader announces “Committees, Approve, not granted, changed” in reading order." }
-      ],
+        const en = { dir: "ltr", font: "'Helvetica Neue', Helvetica, Arial, sans-serif", t: 16, b: 13, item: 32 };
+        const ar = { dir: "rtl", font: "'IBM Plex Sans Arabic', sans-serif", t: 17, b: 14, item: 34 };
+        const conf = (L, cap, title, sub, groups, cancel, save, note) => ({
+          dir: L.dir, cap, title, sub, cancel, save, note,
+          wrapStyle: "flex: 1 1 400px; max-width: 460px; min-width: 0; font-family: " + L.font + ";",
+          capStyle: "font-size: 11px; font-weight: 700; letter-spacing: " + (L.dir === "rtl" ? "0" : "0.05em") + "; text-transform: uppercase; color: #8A94A6; margin-block-end: 6px;",
+          titleStyle: "font-size: " + L.t + "px; font-weight: 600;",
+          subStyle: "font-size: " + (L.b - 0.5) + "px; color: #4A5568; margin-block-start: 2px;",
+          itemStyle: "display: flex; align-items: center; gap: 8px; min-height: " + L.item + "px; font-size: " + L.b + "px; color: #2D3748; border-block-end: 1px solid #F0F3F7;",
+          moreStyle: "display: flex; align-items: center; min-height: 26px; font-size: " + (L.b - 1) + "px; color: #5A6779;",
+          btnStyle: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: " + L.b + "px; font-weight: 600;",
+          btn2Style: "background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: " + L.b + "px;",
+          groups: groups.map(g => ({ head: g.head, items: g.items, more: g.more || null, glyph: g.add ? "+" : "−",
+            glyphStyle: "flex: none; width: 14px; text-align: center; font-weight: 700; color: " + (g.add ? "#067647" : "#B42318") + ";",
+            headStyle: "font-size: " + (L.dir === "rtl" ? "12px" : "11px") + "; font-weight: 700; letter-spacing: " + (L.dir === "rtl" ? "0" : "0.06em") + "; text-transform: uppercase; color: " + (g.add ? "#1F5480" : "#B42318") + "; margin-block-end: 2px;" }))
+        });
+        return {
+          coverage: [
+            { state: "Some permissions in a group ticked", v: "drawn", note: "6a draws the module header row with a real tri-state checkbox (“–”) and describes it in its spec. Nothing added." },
+            { state: "Unsaved changes present", v: "drawn", note: "6a draws the “7 changes unsaved” counter, Discard, and ringed granted ✓ / revoked ✕ cells. The Arabic matrix below reuses those exact marks." },
+            { state: "Can see, can't change", v: "words only", note: "6a's denied outcome describes it in one sentence (glyphs, no save bar) but doesn't draw it. Drawn in 3c." },
+            { state: "Saving in progress", v: "not covered", note: "Neither drawn nor described anywhere in 6a. Drawn in 3c." },
+            { state: "A save that fails", v: "words only", note: "6a's error outcome describes it (changes kept, ID, retry) but doesn't draw it. Drawn in 3c, with the 403 and 409 cases." }
+          ].map(c => ({ state: c.state, verdict: c.v === "drawn" ? "Covered · drawn" : c.v === "words only" ? "Described only" : "Missing",
+            note: c.note, verdictStyle: "flex: 0 0 118px; align-self: flex-start; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 8px; text-align: center; " + (c.v === "drawn" ? "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;" : c.v === "words only" ? "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;" : "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;") })),
 
-      reviewGroups: [
-        { module: "Committees", items: [rv("-", "Delete committees", "revoked"), rv("+", "Approve committee terms", "granted")] },
-        { module: "Tasks", items: [rv("-", "Reassign any task", "revoked"), rv("+", "Export task lists", "granted"), rv("+", "Close tasks raised by others", "granted")] },
-        { module: "Organization", items: [rv("+", "View units and positions", "granted"), rv("+", "View headship history", "granted")] }
-      ],
-      reviewAr: [
-        rv("+", "اللجان · اعتماد لوائح اللجان", "مُنحت"),
-        rv("+", "المهام · تصدير قوائم المهام", "مُنحت"),
-        rv("+", "الهيكل التنظيمي · عرض الوحدات والمناصب", "مُنحت")
-      ],
-      reviewOutcomes: out([
-        { k: "loading", en: "Nothing to load: the list is built from local changes. “See who” loads the 14 users lazily, in its own picker layer." },
-        { k: "rows", en: "Drawn, in English and Arabic." },
-        { k: "empty", en: "Can't occur: Review is only reachable with at least one change. If every change is undone, the header's button disappears." },
-        { k: "denied", en: "A 403 on save: “You no longer have permission to change this role. Nothing was saved.” The changes are kept in the matrix." },
-        { k: "error", en: "Network or 5xx: “Nothing was saved. Your 7 changes are still here.” Try again, and the dialog stays open." },
-        { k: "partial", en: "Doesn't apply. The save is one transaction, and the footer says “all or nothing” so no one expects otherwise." }
-      ]),
+          arCols: ["عرض", "إنشاء", "تعديل", "حذف", "اعتماد", "تدقيق"],
+          arRows: [
+            row("module", "اللجان", "من يرى اللجان ويديرها ويعتمدها", ["on", "on", "on", "off", "granted", "off"], "some"),
+            row("perm", "فتح سجل اللجنة وأعضائها", null, ["on", "na", "na", "na", "na", "na"]),
+            row("perm", "إنشاء لجنة وتحديد لائحتها", null, ["na", "on", "na", "na", "na", "na"]),
+            row("perm", "تعديل الاسم والغرض والنصاب والدورية", null, ["na", "na", "on", "na", "na", "na"]),
+            row("perm", "اعتماد اللائحة ونقل المرحلة", null, ["na", "na", "na", "na", "granted", "na"]),
+            row("module", "المهام", "إنشاء المهام وإسنادها ومتابعتها", ["on", "on", "on", "na", "na", "granted"], "some"),
+            row("perm", "تصدير قوائم المهام", null, ["na", "na", "na", "na", "na", "granted"]),
+            row("module", "القوائم المرجعية", "قيم القوائم وتسمياتها لكل منشأة", ["on", "off", "off", "revoked", "na", "na"], "some"),
+            row("perm", "حذف القيم", null, ["na", "na", "na", "revoked", "na", "na"])
+          ],
 
+          rtlSpec: [
+            { t: "Our sticky cell, not pFrozenColumn", b: "PrimeNG's frozen columns write a physical left offset, so in RTL they pin to the wrong side. Both header and body cells use position: sticky; inset-inline-start: 0, which pins right in Arabic and left in English with no RTL code. The corner cell also gets the highest z-index." },
+            { t: "Columns: the same order, mirrored by dir", b: "View is first in both languages: rightmost here. The column array is never reordered for Arabic." },
+            { t: "Scroll origin", b: "An RTL scroller starts at its right edge, and browsers disagree on the sign of scrollLeft. Product code never reads or writes it. Keyboard focus keeps the focused cell in view." },
+            { t: "Arrow keys follow the eye", b: "In Arabic, ← moves to the next action column, which is visually left, and → to the previous one. Home and End go to the row's ends in reading order." },
+            { t: "Row height 44, both languages", b: "Arabic labels at 14/22 plus 7 + 7 padding need 36. 44 keeps one row geometry for EN and AR, and for the 44px touch target on tablets." },
+            { t: "Test before build", b: "At 1130 in both languages: scroll to the far end, and the frozen column and its shadow stay put. Arrow across all 6 columns and scroll follows focus. A screen reader reads “اللجان · اعتماد · مُنحت، غير محفوظ” in reading order." }
+          ],
+
+          confirms: [
+            conf(en, "English · short", "Save changes to Quality Editor?", "Applies to 14 users as soon as it's saved.", [
+              { head: "Adding 3", add: true, items: ["Committees · Approve terms and advance the stage", "Tasks · Export task lists", "Organization · View headship history"] },
+              { head: "Removing 1", add: false, items: ["Lookups · Delete values"] }
+            ], "Cancel", "Save changes", "One column, so nothing mirrors. Each line is “Module · permission sentence”, the same words as the matrix row, never the key. Removals get their own heading, so a revocation is never mistaken for a grant: the + and − differ by glyph as well as colour."),
+            conf(en, "English · long · capped at 4 lines per heading", "Save changes to Quality Editor?", "Applies to 14 users as soon as it's saved.", [
+              { head: "Adding 38", add: true, items: ["Committees · Approve terms and advance the stage", "Committees · Dissolve a committee", "Documents · Publish a new version", "Tasks · Export task lists"], more: "+ 34 more · each is ringed in the matrix" },
+              { head: "Removing 9", add: false, items: ["Lookups · Delete values", "Lookups · Rename values", "Users · Invite users", "Users · Deactivate users"], more: "+ 5 more · each is ringed in the matrix" }
+            ], "Cancel", "Save 47 changes", "The cut-off: at most 4 lines per heading, then “+ N more”. It's text, not a control, so the dialog can't grow and there's nothing inside it to scroll or float. The full list is the matrix itself, where every change is ringed; Cancel goes back to it. The button carries the total once the list is truncated. Measured, body only (header and footer sit outside the cap): 4 top + 2 × (8 gap + 20 heading + 4 × 32 lines + 26 “more”) + 12 bottom = 4 + 2 × 182 + 12 = 380 / 420. That's the maximum at any length, because the body never holds more than 8 lines."),
+            conf(ar, "العربية · قصيرة", "حفظ التغييرات على «محرر الجودة»؟", "تسري على 14 مستخدمًا فور الحفظ.", [
+              { head: "إضافة 3", add: true, items: ["اللجان · اعتماد اللائحة ونقل المرحلة", "المهام · تصدير قوائم المهام", "الهيكل التنظيمي · عرض سجل الرئاسة"] },
+              { head: "إزالة 1", add: false, items: ["القوائم المرجعية · حذف القيم"] }
+            ], "إلغاء", "حفظ التغييرات", "The same single column, which is why it needs no mirroring decision. Items at 14/22 on 34px lines, headings 12/20 with no tracking. The same cap of 4 lines per heading: 4 + 2 × (8 + 22 + 4 × 34 + 26) + 12 = 4 + 2 × 192 + 12 = 400 / 420. One rule in both languages, the same N.")
+          ],
+
+          roCols: ["View", "Create", "Edit", "Delete", "Approve", "Audit"],
+          roRows: [
+            roRow("Committees", ["on", "on", "on", "off", "off", "off"], true),
+            roRow("Open a committee record", ["on", "na", "na", "na", "na", "na"]),
+            roRow("Dissolve a committee", ["na", "na", "na", "off", "na", "na"]),
+            roRow("Approve terms", ["na", "na", "na", "na", "off", "na"])
+          ]
+        };
+      })(),
       ledger: [
         { t: "Naming:", b: "“Manage roles” everywhere. Templates Rev 7 already uses it, so no change is needed there." },
-        { t: "Drawn:", b: "Manage roles (single, bulk, Arabic, last-role confirm in both languages, six outcomes). Invite user (fields, both conditional replacements, Arabic, the after-send list with invited and expired rows, the corrected empty state, six outcomes). Matrix: the Arabic sticky-column state with its build and test rules, and the Review dialog in both languages with six outcomes." },
-        { t: "Not redrawn:", b: "6a's populated English state." },
+        { t: "Drawn:", b: "Manage roles (single, bulk, Arabic, last-role confirm in both languages, six outcomes). Invite user (fields, both conditional replacements, Arabic, the after-send list with invited and expired rows, the corrected empty state, six outcomes). Matrix: a 6a coverage table, the Arabic frozen column populated at 1130 (6a's own marks and columns), the one-column Save confirm (short and long in English, and Arabic), and the three states 6a lacked: read-only, saving, save failed." },
+        { t: "Not redrawn:", b: "6a's populated English state. Replaced: this file's earlier module-grouped “Review n changes” dialog and its amber ring marks, which didn't match 6a. The confirm is now Ahmad's one-column form, and the marks are 6a's own." },
         { t: "Supersedes:", b: "the Users list's empty-state sentence and “Import from HR file” item. Both are absent until the import screen exists. Also Resend/Revoke on invited rows, absent until ACC-83." },        { t: "Confirmed 1 · roles before acceptance:", b: "The roles service has no status gate, and invite() already grants position-derived roles to invited users on purpose. The after-send “Manage her roles” prompt stays." },
         { t: "Confirmed 2 · no partial on Invite:", b: "invite() queues a notification and sends nothing, so the dialog has one success and one failure." },
         { t: "Confirmed 3 · no inviter field:", b: "The row reads “Invited 29 Sep”, with no name. The inviter is not lost: invite() writes an audit entry with actorId, so “by …” can be recovered from the audit log if it's ever wanted. It was captured, just not denormalised." },
