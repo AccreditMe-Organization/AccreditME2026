@@ -4,6 +4,7 @@
 // assignablePositions() is the fix — same client-side isActive-filter
 // convention already used for role pickers (user-role-assignment.
 // component.ts, position-form.component.ts's own assignableRoles getter).
+import { provideRouter } from '@angular/router';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { Validators } from '@angular/forms';
 import { provideHttpClient } from '@angular/common/http';
@@ -46,6 +47,10 @@ describe('InviteUserComponent (ACC-43)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        // ACC-120 slice 5 — the dialog now offers "Set up units" as a
+        // routerLink when the tenant has none, so the component injects
+        // ActivatedRoute.
+        provideRouter([]),
       ],
     });
 
@@ -87,6 +92,10 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        // ACC-120 slice 5 — the dialog now offers "Set up units" as a
+        // routerLink when the tenant has none, so the component injects
+        // ActivatedRoute.
+        provideRouter([]),
       ],
     });
 

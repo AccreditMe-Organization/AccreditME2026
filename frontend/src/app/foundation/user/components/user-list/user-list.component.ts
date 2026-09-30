@@ -251,12 +251,25 @@ export type RowAction = 'transfer' | 'deactivate';
     </div>
 
     <ng-template #inviteTpl>
-      <app-invite-user (saved)="onInviteSaved()" (cancelled)="inviteVisible.set(false)" />
+      <app-invite-user
+        (saved)="onInviteSaved()"
+        (cancelled)="inviteVisible.set(false)"
+        (dirtyChange)="inviteDirty.set($event)"
+      />
     </ng-template>
+    <!-- ACC-120 slice 5 — [dirty] is an opt-in input on the DIALOG, and
+         invite-user sits inside it, so the state travels outward through
+         (dirtyChange). Without it, Escape discards a half-typed invitation
+         silently. density="compact" is declared ONCE for the whole dialog,
+         never per field: the drawing measures five compact blocks at 411/420
+         in English and 436 in Arabic, which is why Name and Email share a
+         row. -->
     <app-edit-dialog
       [(visible)]="inviteVisible"
       [header]="'user.invite' | translate"
       [content]="inviteTpl"
+      density="compact"
+      [dirty]="inviteDirty()"
     />
 
     <!-- ACC-79 — the same wizard the user profile hosts (ACC-46), opened from
@@ -306,6 +319,7 @@ export class UserListComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly infoMessage = signal<string | null>(null);
   readonly inviteVisible = signal(false);
+  readonly inviteDirty = signal(false);
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly statusCounts = signal<Record<string, number>>({});
@@ -485,10 +499,15 @@ export class UserListComponent implements OnInit {
   }
 
   onInvite(): void {
+    this.inviteDirty.set(false);
     this.inviteVisible.set(true);
   }
 
   onInviteSaved(): void {
+    // Cleared before closing: the dialog is reopened with a fresh component
+    // (TemplateRef), but this signal lives on the host and would otherwise
+    // still read dirty on the next open, making Escape ask about nothing.
+    this.inviteDirty.set(false);
     this.inviteVisible.set(false);
     this.list().reload();
     this.loadCounts();
