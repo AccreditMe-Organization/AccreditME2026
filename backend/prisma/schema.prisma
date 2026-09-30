@@ -1447,45 +1447,19 @@ model Committee {
   quorumCount                Int                       @default(0)
   meetingFrequency           CommitteeMeetingFrequency @default(AS_NEEDED)
   parentCommitteeId          String?
-  // ACC-135 — the org unit that OWNS this committee. Required in meaning, and
-  // the service never writes null: a committee created without one is given the
-  // tenant's root unit, because a committee serving the whole organisation is
-  // owned by the organisation and the root unit IS the organisation (ACC-141).
+  // ACC-135 — the org unit that OWNS this committee. REQUIRED as of step 3.
   //
-  // NULLABLE HERE ONLY FOR THE EXPAND STEP (ACC-127). The migration runs while
-  // the OLD container is still serving, and that container's INSERT does not
-  // supply this column — a NOT NULL with no default would fail every committee
-  // create for the length of the deploy. There is no static default that can
-  // express "that tenant's root", so NOT NULL waits for the contract migration,
-  // once the code that always writes it is deployed.
-  orgUnitId                  String?
+  // The service is what guarantees a value, not this constraint: a committee
+  // created without an owning unit is given the tenant's ROOT unit, because a
+  // committee serving the whole organisation is owned by the organisation and the
+  // root unit IS the organisation (ACC-141). NOT NULL is the backstop behind that
+  // default, not the mechanism — `resolveOwningOrgUnitId()` is the mechanism, and
+  // it also refuses when a tenant has two active roots or none.
+  orgUnitId                  String
   termsOfReferenceDocumentId String? // nullable, unpopulated until Document Management ships (ACC-22 Pending Discussion #1)
   // ACC-135 — "reports to" is another committee, or nothing. The owning unit
   // above is a separate, always-present fact, not an alternative to this.
   reportingToCommitteeId     String?
-  // ACC-135 STEP 2 — `reportingToRoleId` WAS HERE, AND THE COLUMN STILL EXISTS IN
-  // THE DATABASE. It is removed from this schema and from every line of code, but
-  // NOT dropped: the DROP is step 3, a release of its own.
-  //
-  // READ THIS BEFORE RUNNING `prisma migrate dev`. Your schema no longer declares
-  // a column the database still has, so Prisma will offer to generate the DROP.
-  // Accepting it ships step 3 early and unreviewed, in the middle of whatever you
-  // were doing. Decline it, or work on a branch where you have checked that step 3
-  // has not already landed.
-  //
-  // Why the drop is a separate release, and not caution for its own sake:
-  // migrations run as a pre-deploy step, so they complete BEFORE the new container
-  // is promoted (ACC-127). Dropping the column in the same release that removes
-  // the code leaves a window in which the OLD container — whose Prisma client
-  // still SELECTs `reportingToRoleId` — is serving against a table that no longer
-  // has it. Every committee read 500s for the length of that window. That is the
-  // ACC-48 outage exactly, and Railway's current slowness widens the window rather
-  // than narrowing it: the last deploy sat ~20 minutes queued and took 107 seconds
-  // between stopping and starting.
-  //
-  // Measured on the live database 2026-09-29, after the step 1 deploy: ZERO
-  // committees hold a non-null value, across both tenants. The eventual DROP
-  // discards no data.
   formedAt                   DateTime?
   dissolvedAt                DateTime?
   isActive                   Boolean                   @default(true) // soft-deactivate flag, independent of workflow lifecycle stage
@@ -1493,12 +1467,13 @@ model Committee {
   updatedAt                  DateTime                  @updatedAt
 
   organization         Organization               @relation(fields: [organizationId], references: [id])
-  // ACC-135 — onDelete defaults to Restrict for a required relation and is set
-  // explicitly here because this one is nullable for now: SetNull (Prisma's
-  // default for an optional relation) would blank a committee's owner silently.
-  // Nothing hard-deletes an org unit — there is no delete endpoint at all, only
-  // deactivate — so this constrains no current behaviour.
-  orgUnit              OrgUnit?                   @relation(fields: [orgUnitId], references: [id], onDelete: Restrict)
+  // ACC-135 — Restrict is now also Prisma's default for a required relation, and
+  // it stays explicit because the intent should not depend on knowing that
+  // default. Nothing hard-deletes an org unit — there is no delete endpoint at
+  // all, only deactivate, and `deactivate()` blocks on the committees a unit owns
+  // — so this constrains no current behaviour and closes the door before someone
+  // adds a real delete.
+  orgUnit              OrgUnit                    @relation(fields: [orgUnitId], references: [id], onDelete: Restrict)
   parentCommittee      Committee?                 @relation("SubCommittees", fields: [parentCommitteeId], references: [id])
   subCommittees        Committee[]                @relation("SubCommittees")
   reportingToCommittee Committee?                 @relation("CommitteeReportingTo", fields: [reportingToCommitteeId], references: [id])
