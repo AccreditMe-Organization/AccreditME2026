@@ -672,7 +672,17 @@
     "noUsersBody": "Invite colleagues to give them access to this organization.",
     "createdAt": "Date added",
     "allOrgUnits": "All org units",
-    "allPositions": "All positions"
+    "allPositions": "All positions",
+    "inviteSubtitle": "They'll get an email with a link to set their password.",
+    "sendInvitation": "Send invitation",
+    "selectPosition": "Select a position",
+    "selectOrgUnit": "Select an org unit",
+    "selectManager": "Select a manager",
+    "inviteNoUnitsYet": "Your organisation has no units yet, so this person won't be placed in one.",
+    "inviteSetUpUnits": "Set up units",
+    "inviteManagerNotNeeded": "Not needed. As head of {{unit}}, they report to no one.",
+    "inviteUnitHasNoHead": "This org unit has no Head or Acting Head. Assign one before inviting someone into it, or invite this person as its Head.",
+    "inviteDenied": "You do not have permission to invite users."
   },
   "platform": {
     "tenants": "Tenants",
@@ -951,7 +961,8 @@
     "min": "Too small.",
     "max": "Too large.",
     "pattern": "Enter a valid value.",
-    "invalid": "Check this value."
+    "invalid": "Check this value.",
+    "maxLength255": "Use 255 characters or fewer."
   },
   "dialog": {
     "discardHeader": "Discard changes?",

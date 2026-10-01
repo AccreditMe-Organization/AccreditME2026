@@ -251,12 +251,54 @@ export type RowAction = 'transfer' | 'deactivate';
     </div>
 
     <ng-template #inviteTpl>
-      <app-invite-user (saved)="onInviteSaved()" (cancelled)="inviteVisible.set(false)" />
+      <app-invite-user
+        (saved)="onInviteSaved()"
+        (cancelled)="inviteDialog.requestClose()"
+        (dirtyChange)="inviteDirty.set($event)"
+        (ready)="inviteFormRef.set($event)"
+      />
     </ng-template>
+    <!-- Declared HERE, not inside the form: p-dialog collects its pTemplate
+         children at content init, so a footer arriving later never lands.
+         Keeping the actions out of the body is also what keeps the body under
+         the 420 cap — with them inside, Arabic measured 434 and scrolled.
+
+         CANCEL GOES THROUGH requestClose(), never straight to visible=false.
+         That is the single place the unsaved-work question is asked; Escape and
+         the header's ✕ already arrive there, and a Cancel that bypasses it
+         discards a part-typed invitation without a word. -->
+    <ng-template #inviteFooterTpl>
+      <div class="flex justify-end gap-2">
+        <p-button
+          [label]="'common.cancel' | translate"
+          severity="secondary"
+          [text]="true"
+          (onClick)="inviteDialog.requestClose()"
+          [disabled]="!!inviteFormRef()?.saving()"
+        />
+        <p-button
+          [label]="'user.sendInvitation' | translate"
+          (onClick)="inviteFormRef()?.onSubmit()"
+          [loading]="!!inviteFormRef()?.saving()"
+          [disabled]="!inviteFormRef() || !!inviteFormRef()?.saving() || !!inviteFormRef()?.denied()"
+        />
+      </div>
+    </ng-template>
+    <!-- ACC-120 slice 5 — [dirty] is an opt-in input on the DIALOG, and
+         invite-user sits inside it, so the state travels outward through
+         (dirtyChange). Without it, Escape discards a half-typed invitation
+         silently. density="compact" is declared ONCE for the whole dialog,
+         never per field: the drawing measures five compact blocks at 411/420
+         in English and 436 in Arabic, which is why Name and Email share a
+         row. -->
     <app-edit-dialog
+      #inviteDialog
       [(visible)]="inviteVisible"
       [header]="'user.invite' | translate"
       [content]="inviteTpl"
+      [footer]="inviteFooterTpl"
+      density="compact"
+      [dirty]="inviteDirty()"
     />
 
     <!-- ACC-79 — the same wizard the user profile hosts (ACC-46), opened from
@@ -306,6 +348,8 @@ export class UserListComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly infoMessage = signal<string | null>(null);
   readonly inviteVisible = signal(false);
+  readonly inviteDirty = signal(false);
+  readonly inviteFormRef = signal<InviteUserComponent | null>(null);
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly statusCounts = signal<Record<string, number>>({});
@@ -485,10 +529,15 @@ export class UserListComponent implements OnInit {
   }
 
   onInvite(): void {
+    this.inviteDirty.set(false);
     this.inviteVisible.set(true);
   }
 
   onInviteSaved(): void {
+    // Cleared before closing: the dialog is reopened with a fresh component
+    // (TemplateRef), but this signal lives on the host and would otherwise
+    // still read dirty on the next open, making Escape ask about nothing.
+    this.inviteDirty.set(false);
     this.inviteVisible.set(false);
     this.list().reload();
     this.loadCounts();
