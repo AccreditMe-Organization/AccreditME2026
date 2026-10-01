@@ -189,4 +189,52 @@ export const SYSTEM_ROLE_SEED: SeedRole[] = [
       REPORTS_PERMISSIONS,
     ),
   },
+  {
+    key: 'READ_ONLY_ADMIN',
+    nameEn: 'Read-Only Administrator',
+    nameAr: 'مسؤول للاطلاع فقط',
+    description:
+      'Sees every administrative screen and changes nothing. For surveyors, internal ' +
+      'auditors and executives who must inspect how the tenant is configured without ' +
+      'being able to alter it.',
+    // ACC-123 — the role admin:access left the seed needing.
+    //
+    // WHY IT EXISTS, since at a glance it is VIEWER plus one string. ACC-123 split
+    // "may open this page" from "is an administrator", and an Administration route
+    // now requires BOTH. That left the entire section reachable by exactly one
+    // seeded role — TENANT_ADMIN, which holds all 72 permissions. So the per-slice
+    // verification gate every ACC-120 slice carries ("verify with someone who can
+    // reach the page but lacks the write permission") became unsatisfiable by
+    // construction: nobody could stand on an admin screen without also being able
+    // to change everything on it. Measured before building — zero of the other
+    // seven seeded roles can reach /users at all.
+    //
+    // NOT AN EXTENSION OF VIEWER, and that was measured too rather than assumed.
+    // VIEWER holds 13 of these 22. readOnly() takes each group's plain VIEW key
+    // only, so VIEWER lacks setup:view, billing:view, tenant:view, positions:view,
+    // notifications:view and all three kpi:view_*; widening it would change what
+    // VIEWER means for every tenant already using it. More decisively,
+    // ADMIN_PERMISSIONS' own comment says admin:access exists so that holding view
+    // permissions FOR PICKERS stops reading as "may administer" — VIEWER is the
+    // clearest instance of that shape, so granting it admin:access would undo this
+    // ticket rather than build on it. AUDITOR is further away still (15 missing)
+    // and holds five write permissions; it is a doer, not a reader.
+    //
+    // DERIVED, NOT HAND-LISTED, and the derivation is the guarantee: every
+    // view-shaped permission in the catalogue and nothing else. A hand-written list
+    // is where a write permission eventually arrives by a paste, and this role's
+    // whole value is that it cannot change anything.
+    //
+    // role.seed.spec.ts pins the resulting 22 EXACTLY, so a view-shaped permission
+    // added later fails a test instead of silently joining the role a surveyor
+    // holds — same reason BASE_USER's set is pinned (ACC-101). Note what the
+    // derivation does NOT decide: whether a new read SHOULD be visible to an
+    // inspector. kpi:view_all is a genuinely wide read and is in here; a future
+    // documents:view_confidential would be too. Read the failing test as the
+    // question it is.
+    permissions: [
+      ADMIN_PERMISSIONS.ACCESS,
+      ...ALL.filter((p) => /:(view|view_[a-z_]+)$/.test(p)),
+    ],
+  },
 ];

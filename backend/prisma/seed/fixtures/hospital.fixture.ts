@@ -330,6 +330,16 @@ export const HOSPITAL_FIXTURE: TenantFixture = {
       holder: 'mohammed-car',
       why: 'Cardiology Specialist — the most ordinary staff member, and the baseline everyone gets.',
     },
+    // ACC-123 — the persona the Administration gate had nobody for. Deliberately a
+    // DIRECTOR outside Quality: reviewing how the hospital is configured before a
+    // survey is a real part of that job, and owning the configuration is not. She
+    // is the only credentialed way to stand on an admin screen without also being
+    // able to change it, which every ACC-120 slice's gate asks for.
+    {
+      roleKey: 'READ_ONLY_ADMIN',
+      holder: 'noura',
+      why: 'Director of Nursing Affairs — the largest directorate, outside Quality, who reviews the configuration before a survey without owning it.',
+    },
   ],
 
   customRoles: [
