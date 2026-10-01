@@ -132,9 +132,12 @@ interface DerivedRow {
 
             <!-- SCROLLS WITHIN ITS OWN FRAME, which is what keeps the dialog
                  body off the 420px cap however many roles a tenant defines.
-                 Safe to do here and not in general: this frame holds checkboxes
-                 only, so nothing inside it can open an overlay that the scroll
-                 would detach (ACC-111 dialog rule 4). -->
+                 Safe HERE and not in general, and the condition is written in
+                 full beside the cap rule in edit-dialog.component.ts: nothing
+                 in this frame may open a floating panel, because a new
+                 scrollable frame is a new scrollable ancestor and PrimeNG's
+                 overlays close on any ancestor scroll. Checkboxes only — add
+                 no picker to this list. -->
             <ul
               class="am-roles-frame m-0 list-none overflow-y-auto rounded border border-[var(--am-border)] p-0"
             >

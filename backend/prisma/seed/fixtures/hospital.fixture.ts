@@ -19,12 +19,60 @@ import { CommitteeFixture, PersonFixture, PositionFixture, TenantFixture, UnitFi
 // isSingleAssignee is set on every one of these, never independently: the
 // schema requires the pairing and direct-create seeding bypasses
 // validateHeadFlagPairing().
+// ACC-120 — ONE head position confers a role, and which one is a decision.
+//
+// Unit Head -> VIEWER. Lowest head position, grade 6, and the one the
+// derived-grant mechanism is demonstrated on. Without it a fresh seed has ZERO
+// head-position grants, which is how the discarded UserRole shape went unnoticed
+// until a dialog needed it: nothing on dev could tell the two kinds apart
+// because nothing on dev HAD the second kind.
+//
+// NO OTHER HEAD POSITION CARRIES ONE, and each exclusion has its own reason
+// rather than being left to inference:
+//
+//   Director           is in DEFAULT_POSITIONS, so it ships to EVERY tenant and
+//                      is what resolveDefaultTenantAdminAssignment() gives the
+//                      first admin (ACC-46 §2.5). A role on it would reach every
+//                      future customer's first user. Never map a default.
+//   Chief Executive    held by the tenant admin, who already holds everything.
+//   Chief Medical      held by Faisal, whose custom persona is "exactly one
+//                      permission, on purpose" (ACC-101). A second role destroys
+//                      the only persona sitting between an admin and a nobody.
+//   Head of Section    held by Haya (QUALITY_OFFICER persona) and Salem (AUDITOR
+//                      persona). Both personas are about holding exactly what
+//                      they hold.
+//   Head of Ward       clean, and deliberately left clean: one demonstrated
+//                      mechanism is the point, not maximum coverage.
+//
+// WHY VIEWER AND NOT A WRITE-CAPABLE ROLE. This was first written as
+// QUALITY_OFFICER — a unit head doing quality work in their own unit is the
+// realistic case — and Ahmad overruled it on FIXTURE INTEGRITY, which is the
+// stronger argument:
+//
+//   A conferred role lands on EVERY holder of the position as a side-effect of
+//   the org chart. QUALITY_OFFICER would hand five unit heads 51 permissions
+//   nobody chose for them individually, and a future gate run as one of those
+//   personas could then PASS FOR A REASON NOBODY INTENDED. That is the same
+//   false-green shape as a suppression test that never rendered the control.
+//
+//   VIEWER demonstrates the mechanism identically — it is a real grant, it is
+//   revoked with the headship, and the dialog shows it locked exactly the same.
+//   It carries no writes and no admin:access, so it cannot widen anyone by
+//   accident. A derived role should be the one whose blast radius is
+//   understood, not the one that reads best.
+//
+// It still dilutes: Nasser is no longer VIEWER's only holder. verify-seed() asks
+// for one CREDENTIALED holder per role, not an exclusive one, so nothing breaks,
+// and a read-only dilution cannot make a permission test pass by accident.
+//
+// A BONUS WORTH KNOWING: Ziad holds Unit Head and departs during seeding, so the
+// seed now exercises the REVOKE path too — deactivate() ends his derived grant.
 const POSITIONS: PositionFixture[] = [
   { nameEn: 'Chief Executive Officer', nameAr: 'الرئيس التنفيذي', grade: 12, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Chief Medical Officer', nameAr: 'المدير الطبي', grade: 11, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Ward', nameAr: 'رئيس جناح', grade: 8, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Section', nameAr: 'رئيس شعبة', grade: 7, isUnitHeadPosition: true, isSingleAssignee: true },
-  { nameEn: 'Unit Head', nameAr: 'رئيس وحدة', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true },
+  { nameEn: 'Unit Head', nameAr: 'رئيس وحدة', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true, roleKey: 'VIEWER' },
 ];
 
 // ── Org tree ─────────────────────────────────────────────────────────────────

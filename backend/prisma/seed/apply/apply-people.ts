@@ -79,7 +79,34 @@ export async function applyPeople(
   // Direct create, mirroring seedDefaultPositions()' own approach. That
   // bypasses validateHeadFlagPairing(), which is exactly why validateFixture()
   // enforces the isUnitHeadPosition/isSingleAssignee pairing itself.
+  // ACC-120 — a conferred role is resolved from its KEY here, and the position
+  // must carry it BEFORE anyone is invited into it: invite() grants the mapped
+  // role at the moment the position is assigned (user.service.ts, ACC-40
+  // §2.6.4/2.6.5), and setting roleId afterwards does not reach existing
+  // holders (ACC-84). Positions are created before people in this same file,
+  // so the order already holds — stated because it is load-bearing and silent.
+  const roleIdByKey = new Map(
+    (
+      await prisma.role.findMany({
+        where: { organizationId: ctx.organizationId },
+        select: { id: true, key: true },
+      })
+    )
+      .filter((r): r is { id: string; key: string } => r.key !== null)
+      .map((r) => [r.key, r.id]),
+  );
+
   for (const position of fixture.positions) {
+    let roleId: string | null = null;
+    if (position.roleKey) {
+      roleId = roleIdByKey.get(position.roleKey) ?? null;
+      if (!roleId) {
+        throw new Error(
+          `Position '${position.nameEn}' confers role '${position.roleKey}', which bootstrap() ` +
+            'did not seed into this tenant. The fixture and SYSTEM_ROLE_SEED disagree.',
+        );
+      }
+    }
     const created = await prisma.orgPosition.create({
       data: {
         organizationId: ctx.organizationId,
@@ -88,6 +115,7 @@ export async function applyPeople(
         grade: position.grade,
         isUnitHeadPosition: position.isUnitHeadPosition ?? false,
         isSingleAssignee: position.isSingleAssignee ?? false,
+        roleId,
       },
     });
     ctx.positionIdByName.set(position.nameEn, created.id);

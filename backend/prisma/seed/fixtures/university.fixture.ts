@@ -19,12 +19,26 @@ import { CommitteeFixture, PersonFixture, PositionFixture, TenantFixture, UnitFi
 // Section': the Deanship's offices are real units that need real heads, and
 // no shipped position fits at that level — 'Director' (grade 10) is far too
 // senior for an office reporting into a deanship.
+// ACC-120 — the university's mirror of the hospital's single conferred role,
+// held by the SAME grade so the two fixtures say the same thing about the
+// mechanism rather than two different things.
+//
+// Programme Director -> VIEWER. Grade 6, the lowest head position, and the only
+// one whose holders carry no persona: Rector is the tenant admin, Dean is held
+// by Salma (READ_ONLY_ADMIN) and Badr (VIEWER), and Head of Office by Maitha
+// (QUALITY_OFFICER) and Rana, whom the vacancy edge case deactivates. Head of
+// School is clean and deliberately left clean, as Head of Ward is in the
+// hospital.
+//
+// VIEWER rather than a write-capable role for the reason set out in full in the
+// hospital fixture: a conferred role lands on every holder as a side-effect of
+// the org chart, so it must be the one whose blast radius is understood.
 const POSITIONS: PositionFixture[] = [
   { nameEn: 'Rector', nameAr: 'مدير الجامعة', grade: 12, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Dean', nameAr: 'عميد', grade: 11, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of School', nameAr: 'رئيس مدرسة', grade: 8, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Office', nameAr: 'رئيس مكتب', grade: 7, isUnitHeadPosition: true, isSingleAssignee: true },
-  { nameEn: 'Programme Director', nameAr: 'مدير برنامج', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true },
+  { nameEn: 'Programme Director', nameAr: 'مدير برنامج', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true, roleKey: 'VIEWER' },
 ];
 
 // ── Org tree ─────────────────────────────────────────────────────────────────
