@@ -1,4 +1,13 @@
-import { Component, OnInit, effect, inject, input, output, signal } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
@@ -13,6 +22,7 @@ import { RoleService, RoleDto } from '../../../roles/services/role.service';
 // scroll-chaining bug is reachable. See CLAUDE.md's PrimeNG-components-only
 // exception note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
+import { FieldComponent } from '../../../../shared/components/field/field.component';
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 @Component({
@@ -28,58 +38,97 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
     ButtonModule,
     MessageModule,
     OverlaySelectComponent,
+    FieldComponent,
   ],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
-      <div class="flex flex-col gap-1">
-        <label for="nameEn" class="text-sm font-medium">
-          {{ 'orgPosition.nameEn' | translate }}
-          <span class="text-red-500">*</span>
-        </label>
-        <input pInputText id="nameEn" formControlName="nameEn" />
-      </div>
+      @if (step() === 1) {
+      <!-- ACC-120 slice 6 — am-field. The required marker is DERIVED from each
+           control's own validators, so the hand-written asterisks are gone:
+           one that is written by hand drifts from the validator the day the
+           validator changes. The hints move into the wrapper's own hint slot,
+           where an error message replaces them rather than stacking under
+           them. -->
+      <am-field
+        [label]="'orgPosition.nameEn' | translate"
+        [control]="form.controls.nameEn"
+        inputId="nameEn"
+      >
+        <input pInputText id="nameEn" class="w-full" formControlName="nameEn" />
+      </am-field>
 
-      <div class="flex flex-col gap-1">
-        <label for="nameAr" class="text-sm font-medium">{{ 'orgPosition.nameAr' | translate }}</label>
-        <input pInputText id="nameAr" formControlName="nameAr" dir="rtl" />
-      </div>
+      <am-field
+        [label]="'orgPosition.nameAr' | translate"
+        [control]="form.controls.nameAr"
+        inputId="nameAr"
+      >
+        <input pInputText id="nameAr" class="w-full" formControlName="nameAr" dir="rtl" />
+      </am-field>
 
-      <div class="flex flex-col gap-1">
-        <label for="grade" class="text-sm font-medium">
-          {{ 'orgPosition.grade' | translate }}
-          <span class="text-red-500">*</span>
-        </label>
-        <p-inputNumber inputId="grade" formControlName="grade" [min]="1" [max]="10" [showButtons]="true" />
-        <small class="text-[var(--am-text-secondary)]">{{ 'orgPosition.gradeHint' | translate }}</small>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <p-checkbox inputId="isSingleAssignee" formControlName="isSingleAssignee" [binary]="true" />
-        <label for="isSingleAssignee" class="text-sm font-medium">
-          {{ 'orgPosition.isSingleAssignee' | translate }}
-        </label>
-      </div>
-      <small class="text-[var(--am-text-secondary)] -mt-3">
-        {{ 'orgPosition.isSingleAssigneeHint' | translate }}
-      </small>
-
-      <div class="flex items-center gap-2">
-        <p-checkbox
-          inputId="isUnitHeadPosition"
-          formControlName="isUnitHeadPosition"
-          [binary]="true"
-          [disabled]="!form.value.isSingleAssignee"
+      <am-field
+        [label]="'orgPosition.grade' | translate"
+        [control]="form.controls.grade"
+        inputId="grade"
+        [hint]="'orgPosition.gradeHint' | translate"
+      >
+        <p-inputNumber
+          inputId="grade"
+          formControlName="grade"
+          [min]="1"
+          [max]="10"
+          [showButtons]="true"
         />
-        <label for="isUnitHeadPosition" class="text-sm font-medium">
-          {{ 'orgPosition.isUnitHeadPosition' | translate }}
-        </label>
+      </am-field>
+
+      }
+
+      @if (step() === 2) {
+      <!-- CHECKBOXES STAY AS CHECKBOX + LABEL ROWS, deliberately. am-field draws
+           a label ABOVE a control, which for a checkbox would put the question
+           above the box and then repeat it beside it. No am-field consumer in
+           the app wraps one, and this is not the place to invent a second
+           convention. What did change: each hint sat in a -mt-3 cancelling the
+           form's own gap, which is a layout fighting itself — the pair is now
+           one block with its own spacing. -->
+      <div class="flex flex-col gap-1">
+        <div class="flex items-center gap-2">
+          <p-checkbox
+            inputId="isSingleAssignee"
+            formControlName="isSingleAssignee"
+            [binary]="true"
+          />
+          <label for="isSingleAssignee" class="text-sm font-medium">
+            {{ 'orgPosition.isSingleAssignee' | translate }}
+          </label>
+        </div>
+        <small class="text-[var(--am-text-secondary)]">
+          {{ 'orgPosition.isSingleAssigneeHint' | translate }}
+        </small>
       </div>
-      <small class="text-[var(--am-text-secondary)] -mt-3">
-        {{ 'orgPosition.isUnitHeadPositionHint' | translate }}
-      </small>
 
       <div class="flex flex-col gap-1">
-        <label for="roleId" class="text-sm font-medium">{{ 'orgPosition.mappedRole' | translate }}</label>
+        <div class="flex items-center gap-2">
+          <p-checkbox
+            inputId="isUnitHeadPosition"
+            formControlName="isUnitHeadPosition"
+            [binary]="true"
+            [disabled]="!form.value.isSingleAssignee"
+          />
+          <label for="isUnitHeadPosition" class="text-sm font-medium">
+            {{ 'orgPosition.isUnitHeadPosition' | translate }}
+          </label>
+        </div>
+        <small class="text-[var(--am-text-secondary)]">
+          {{ 'orgPosition.isUnitHeadPositionHint' | translate }}
+        </small>
+      </div>
+
+      <am-field
+        [label]="'orgPosition.mappedRole' | translate"
+        [control]="form.controls.roleId"
+        inputId="roleId"
+        [hint]="'orgPosition.mappedRoleHint' | translate"
+      >
         <app-overlay-select
           formControlName="roleId"
           [options]="assignableRoles()"
@@ -88,23 +137,13 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
           [showClear]="true"
           [placeholder]="'orgPosition.mappedRolePlaceholder' | translate"
         />
-        <small class="text-[var(--am-text-secondary)]">{{ 'orgPosition.mappedRoleHint' | translate }}</small>
-      </div>
+      </am-field>
 
       @if (showVacantRoleWarning()) {
         <p-message severity="warn" [text]="'orgPosition.vacantRoleWarning' | translate" />
       }
+      }
 
-      <div class="flex justify-end gap-2 pt-2">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          (onClick)="cancelled.emit()"
-          [disabled]="saving()"
-        />
-        <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
-      </div>
     </form>
   `,
 })
@@ -125,6 +164,58 @@ export class PositionFormComponent implements OnInit {
   // duplicate-position bug, not a hypothetical one.
   readonly saved = output<{ position: IOrgPositionDto; hadVacantRoleWarning: boolean }>();
   readonly cancelled = output<void>();
+
+  /**
+   * ACC-120 slice 6 — the actions moved to the HOST'S FOOTER, which renders
+   * outside `.am-dialog__body` and so off the 420px cap. Measured: with the
+   * field wrapper and the row still inside the body, this dialog sat at exactly
+   * 420 and scrolled, in BOTH languages.
+   *
+   * dirtyChange is an output rather than the host reading form.dirty, because
+   * form.dirty is a plain property and a computed() over it never
+   * re-evaluates — the unsaved-work prompt then silently never fires.
+   */
+  readonly ready = output<PositionFormComponent>();
+  readonly dirtyChange = output<boolean>();
+
+  /**
+   * ACC-120 slice 6 — STEPPED, because it does not fit and compacting it does
+   * not make it fit.
+   *
+   * Measured: 486px of content against the 420px cap, in both languages, with
+   * the actions already moved to the footer and compact density applied. 66px
+   * over is a content problem, not a spacing one, and ACC-111's resolution
+   * order asks for a stepped dialog when the form has a genuine editorial seam.
+   *
+   * This one does, and it is the seam the form already had: step 1 is WHAT THE
+   * POSITION IS — what it is called in each language and where it sits in
+   * seniority. Step 2 is WHAT HOLDING IT DOES — whether one person holds it per
+   * unit, whether it makes that person the unit's Head, and which role it
+   * confers. The vacant-role warning belongs with the role that raises it, so it
+   * stays on step 2.
+   */
+  readonly step = signal(1);
+  readonly steps = [
+    { n: 1, key: 'orgPosition.stepDetails' },
+    { n: 2, key: 'orgPosition.stepBehaviour' },
+  ];
+
+  readonly canAdvance = computed(() => this.step() === 1);
+  readonly canGoBack = computed(() => this.step() === 2);
+
+  next(): void {
+    // Everything required lives on step 1, so a reader is never sent to step 2
+    // with an error behind them.
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    this.step.set(2);
+  }
+
+  back(): void {
+    this.step.set(1);
+  }
 
   readonly saving = signal(false);
   readonly allRoles = signal<RoleDto[]>([]);
@@ -191,11 +282,16 @@ export class PositionFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.ready.emit(this);
+    this.form.valueChanges.subscribe(() => this.dirtyChange.emit(this.form.dirty));
     this.roleService.listAllRoles().subscribe({ next: (roles) => this.allRoles.set(roles) });
   }
 
   onSubmit(): void {
     if (this.form.invalid) {
+      // Every required control is on step 1, so go back to it rather than
+      // refusing on a step that shows nothing wrong.
+      this.step.set(1);
       this.form.markAllAsTouched();
       return;
     }
