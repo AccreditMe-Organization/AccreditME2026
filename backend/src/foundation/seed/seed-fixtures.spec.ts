@@ -405,3 +405,78 @@ describe('validateFixture rejects', () => {
     expect(() => validateFixture(fixture)).toThrow(/unknown permission/);
   });
 });
+
+// ACC-120 — a head position that confers a role.
+//
+// Without one, a fresh seed has ZERO head-position grants, and that absence is
+// what let the discarded UserRole shape go unnoticed: nothing on dev could tell
+// a derived grant from a direct one because nothing on dev had the second kind.
+//
+// Every assertion below maps to a LABELLED array rather than looping with a
+// bare expect, so a failure names the fixture and the position. Jest has no
+// withContext, and "expected false to be true" over two fixtures and fifteen
+// positions is a message that sends the reader back to the source to guess.
+describe('Fixtures — conferred head-position roles (ACC-120)', () => {
+  const fixtures = [HOSPITAL_FIXTURE, UNIVERSITY_FIXTURE];
+  const seededRoleKeys = new Set(SYSTEM_ROLE_SEED.map((r) => r.key));
+  const conferring = fixtures.flatMap((f) =>
+    f.positions.filter((p) => p.roleKey).map((p) => ({ fixture: f, position: p })),
+  );
+
+  it('every fixture confers at least one role, so a reseed never returns to zero', () => {
+    expect(
+      fixtures
+        .filter((f) => f.positions.every((p) => !p.roleKey))
+        .map((f) => `${f.slug} confers no role from any position`),
+    ).toEqual([]);
+  });
+
+  it('confers only roles that SYSTEM_ROLE_SEED actually seeds', () => {
+    expect(
+      conferring
+        .filter(({ position }) => !seededRoleKeys.has(position.roleKey!))
+        .map(({ fixture, position }) =>
+          `${fixture.slug}: ${position.nameEn} -> unknown role ${position.roleKey}`,
+        ),
+    ).toEqual([]);
+  });
+
+  // OrgPosition.roleId is only read for head-position holding (ACC-82 deferred
+  // POSITION_WITHOUT_ROLE for exactly this reason), so setting it anywhere else
+  // would describe behaviour the product does not have.
+  it('confers a role only from a HEAD position', () => {
+    expect(
+      conferring
+        .filter(({ position }) => !position.isUnitHeadPosition)
+        .map(({ fixture, position }) =>
+          `${fixture.slug}: ${position.nameEn} confers ${position.roleKey} but is not a head position`,
+        ),
+    ).toEqual([]);
+  });
+
+  // Director lives in DEFAULT_POSITIONS, ships to every tenant, and is what the
+  // first admin is given. A role on it would reach every future customer's
+  // first user — so no fixture may confer from a default position either.
+  it('never confers from Director, which every tenant receives by default', () => {
+    expect(
+      fixtures
+        .filter((f) => f.positions.some((p) => p.nameEn === 'Director' && p.roleKey))
+        .map((f) => `${f.slug} confers a role from Director`),
+    ).toEqual([]);
+  });
+
+  // The conferred role still needs its own credentialed persona: a role held
+  // only by derivation has nobody who can be signed in as a plain holder of it.
+  it('still declares a persona for every conferred role', () => {
+    expect(
+      conferring
+        .filter(
+          ({ fixture, position }) =>
+            !fixture.systemRolePersonas.some((persona) => persona.roleKey === position.roleKey),
+        )
+        .map(({ fixture, position }) =>
+          `${fixture.slug}: ${position.roleKey} is conferred but has no persona`,
+        ),
+    ).toEqual([]);
+  });
+});

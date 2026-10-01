@@ -355,6 +355,43 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
    */
   readonly density = input<DialogDensity>('form');
 
+  /*
+   * ── THE INNER-SCROLL ESCAPE, AND ITS ONE CONDITION (ACC-120) ──────────────
+   *
+   * A long list inside a dialog may be given its own `max-height` and
+   * `overflow-y: auto` so that IT scrolls and the body stays under the 420px
+   * cap. Manage roles does this: seven roles today, any number tomorrow, and
+   * the body measures 382 in English and 371 in Arabic either way.
+   *
+   * THE CONDITION, which is the whole difference between this and the defect
+   * ACC-29/ACC-36 spent two tickets on: NOTHING INSIDE THAT FRAME MAY OPEN A
+   * FLOATING PANEL. Not a p-select, not an overlay-select, not a date picker,
+   * not an autocomplete.
+   *
+   * WHY, because "it might look odd" is not the reason and would not stop
+   * anyone. PrimeNG's overlays close themselves on ANY scroll of ANY scrollable
+   * ancestor of their trigger (ConnectedOverlayScrollHandler — see the note on
+   * the scroll-chaining CSS above). A new scrollable frame is a NEW scrollable
+   * ancestor for everything inside it. So the moment a picker lives in that
+   * frame, scrolling the frame closes the picker — and worse, with a connected
+   * overlay the panel is positioned against a trigger that is now moving under
+   * it. CDK's RepositionScrollStrategy, which OverlaySelectComponent uses, does
+   * not close but repositions, so it detaches visually instead of vanishing.
+   * Both are bad; neither is a bug you can fix inside the frame.
+   *
+   * SO THE CHOICE IS MADE WHEN THE FRAME IS INTRODUCED, not when a field is
+   * added to it later. A frame holding checkboxes, plain text or radio buttons
+   * is safe forever, because none of them float. A frame that might one day
+   * hold a picker is not an inner-scroll frame at all — that form belongs in a
+   * stepped dialog or its own layer (the three-way resolution recorded under
+   * ACC-111 in CLAUDE.md), which is where a form with real controls was always
+   * meant to go.
+   *
+   * If you are reaching for this because a body is over the cap: check what is
+   * in the frame first. If anything in it can float, you want a different
+   * answer, not this one.
+   */
+
   protected readonly resolvedWidth = computed(() => this.width() || DIALOG_WIDTH[this.size()]);
 
   private readonly layers = inject(LayerStackService);

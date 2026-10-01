@@ -19,12 +19,47 @@ import { CommitteeFixture, PersonFixture, PositionFixture, TenantFixture, UnitFi
 // isSingleAssignee is set on every one of these, never independently: the
 // schema requires the pairing and direct-create seeding bypasses
 // validateHeadFlagPairing().
+// ACC-120 — ONE head position confers a role, and which one is a decision.
+//
+// Unit Head -> QUALITY_OFFICER. Lowest head position, grade 6, and the one the
+// derived-grant mechanism is demonstrated on. Without it a fresh seed has ZERO
+// head-position grants, which is how the discarded UserRole shape went unnoticed
+// until a dialog needed it: nothing on dev could tell the two kinds apart
+// because nothing on dev HAD the second kind.
+//
+// NO OTHER HEAD POSITION CARRIES ONE, and each exclusion has its own reason
+// rather than being left to inference:
+//
+//   Director           is in DEFAULT_POSITIONS, so it ships to EVERY tenant and
+//                      is what resolveDefaultTenantAdminAssignment() gives the
+//                      first admin (ACC-46 §2.5). A role on it would reach every
+//                      future customer's first user. Never map a default.
+//   Chief Executive    held by the tenant admin, who already holds everything.
+//   Chief Medical      held by Faisal, whose custom persona is "exactly one
+//                      permission, on purpose" (ACC-101). A second role destroys
+//                      the only persona sitting between an admin and a nobody.
+//   Head of Section    held by Haya (QUALITY_OFFICER persona) and Salem (AUDITOR
+//                      persona). Both personas are about holding exactly what
+//                      they hold.
+//   Head of Ward       clean, and deliberately left clean: one demonstrated
+//                      mechanism is the point, not maximum coverage.
+//
+// THE TRADE-OFF, stated because it is real: five unit heads now also hold
+// QUALITY_OFFICER, so Haya is no longer its only holder. verify-seed() asks for
+// ONE CREDENTIALED holder per role, not an exclusive one, so nothing breaks —
+// but "Haya is the Quality Officer" is now "Haya and the unit heads". Viewer was
+// considered instead, as a read-only role dilutes less; Quality Officer was kept
+// because a unit head doing quality work in their own unit is the realistic case
+// in a hospital pursuing accreditation, and it is what dev already carries.
+//
+// A BONUS WORTH KNOWING: Ziad holds Unit Head and departs during seeding, so the
+// seed now exercises the REVOKE path too — deactivate() ends his derived grant.
 const POSITIONS: PositionFixture[] = [
   { nameEn: 'Chief Executive Officer', nameAr: 'الرئيس التنفيذي', grade: 12, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Chief Medical Officer', nameAr: 'المدير الطبي', grade: 11, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Ward', nameAr: 'رئيس جناح', grade: 8, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Section', nameAr: 'رئيس شعبة', grade: 7, isUnitHeadPosition: true, isSingleAssignee: true },
-  { nameEn: 'Unit Head', nameAr: 'رئيس وحدة', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true },
+  { nameEn: 'Unit Head', nameAr: 'رئيس وحدة', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true, roleKey: 'QUALITY_OFFICER' },
 ];
 
 // ── Org tree ─────────────────────────────────────────────────────────────────

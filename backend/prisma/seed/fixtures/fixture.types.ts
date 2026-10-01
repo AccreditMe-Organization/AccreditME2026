@@ -75,6 +75,20 @@ export interface PositionFixture {
   // here rather than trusting each fixture author to remember.
   isUnitHeadPosition?: boolean;
   isSingleAssignee?: boolean;
+  /**
+   * ACC-120 — a SYSTEM_ROLE_SEED key this position CONFERS. Whoever holds it,
+   * in whichever unit, is granted that role for as long as they hold it
+   * (OrgPosition.roleId -> syncHeadAuthorityRoleGrant, which invite() calls).
+   *
+   * A KEY, not an id: role ids do not exist when a fixture is written, and the
+   * applier resolves it.
+   *
+   * ONLY MEANINGFUL ON A HEAD POSITION. OrgPosition.roleId grants nothing on an
+   * ordinary one (ACC-82 deferred POSITION_WITHOUT_ROLE for exactly that
+   * reason), so setting it there would be a statement the product does not
+   * carry out. validateFixture() refuses it.
+   */
+  roleKey?: string;
 }
 
 // ── People ───────────────────────────────────────────────────────────────────
@@ -687,6 +701,33 @@ export function validateFixture(fixture: TenantFixture): void {
   // the old Yasser comment did.
   const seededRoleKeys = new Set(SYSTEM_ROLE_SEED.map((r) => r.key));
   const personaByRole = new Map<string, string>();
+
+  // ACC-120 — a position's conferred role.
+  for (const position of fixture.positions) {
+    if (position.roleKey === undefined) continue;
+    if (!seededRoleKeys.has(position.roleKey)) {
+      errors.push(
+        `Position '${position.nameEn}' confers unknown role '${position.roleKey}'. ` +
+          `It must be a key in SYSTEM_ROLE_SEED (${[...seededRoleKeys].join(', ')}).`,
+      );
+    }
+    if (position.roleKey === PLATFORM_ROLE_KEY) {
+      errors.push(
+        `Position '${position.nameEn}' confers '${PLATFORM_ROLE_KEY}', which is inert in a ` +
+          'tenant and deliberately unassignable — PlatformGuard requires isPlatformOrg too.',
+      );
+    }
+    // The grant is only ever made for head-position holding. On an ordinary
+    // position the column is read by nothing, so a fixture setting it would be
+    // describing behaviour that does not exist.
+    if (!position.isUnitHeadPosition) {
+      errors.push(
+        `Position '${position.nameEn}' confers '${position.roleKey}' but is not a head ` +
+          'position. OrgPosition.roleId is only read for head-position holding, so this ' +
+          'would grant nothing.',
+      );
+    }
+  }
 
   for (const persona of fixture.systemRolePersonas) {
     if (!seededRoleKeys.has(persona.roleKey)) {
