@@ -11,9 +11,19 @@ import { clientSideSource } from './data-list.source';
  * ## Why this measures instead of comparing strings
  *
  * The obvious assertion is "the header's grid-template-columns equals the
- * rows'". IT WOULD HAVE PASSED THROUGHOUT THE DEFECT. Both grids read one
- * `--am-list-cols`, so the strings were byte-identical while the columns
- * visibly drifted — measured on Org Positions at 0, 47, 83, 83, 83, 83px, far
+ * rows'", and — CORRECTING WHAT AN EARLIER VERSION OF THIS COMMENT CLAIMED — it
+ * is NOT blind. Karma runs a real headless Chrome, so getComputedStyle returns
+ * RESOLVED track sizes rather than the var() as authored. That is exactly the
+ * reading that found the bug in the browser: 0.015625px against 68px for the
+ * trailing track. The test below proves it, by asserting the strings differ in
+ * the broken configuration.
+ *
+ * Both are kept, and the order is the point. The offsets state the REQUIREMENT
+ * — a heading sits over its own data — and the track list states one MECHANISM
+ * for meeting it. A future layout that meets the requirement another way should
+ * not be failed for it, which is why the geometry leads.
+ *
+ * The defect itself measured 0, 47, 83, 83, 83, 83px on Org Positions, far
  * enough that the GRADE heading sat over the SINGLE ASSIGNEE data.
  *
  * Two causes, neither visible in the string:
@@ -170,7 +180,38 @@ describe('DataListComponent — header/row column alignment (ACC-120)', () => {
     );
   }));
 
-  // THE ASSERTION THAT BITES. The one above passed throughout the defect.
+  /**
+   * THE GUARD AGAINST A VACUOUS PASS, and it comes first on purpose.
+   *
+   * "drift === 0" passes perfectly when every number is zero, which is what a
+   * layout-less environment reports for every getBoundingClientRect. Karma runs
+   * a real headless Chrome so layout does run — but that is a property of how
+   * the suite happens to be configured today, not something the assertion below
+   * states. Without this, moving to a DOM emulator would turn the whole file
+   * green and silent.
+   *
+   * So: the offsets must be real, distinct and increasing before "they match"
+   * means anything.
+   */
+  it('measures real geometry, so a match is not a match of zeroes', fakeAsync(() => {
+    render();
+    const [header, row] = grids();
+    const columnCount = fixture.componentInstance.columns.length;
+    const h = dataLefts(header!, columnCount);
+    const r = dataLefts(row!, columnCount);
+
+    expect(h.length).toBe(columnCount);
+    expect(h.every((v) => v > 0)).toBe(true);
+    expect(r.every((v) => v > 0)).toBe(true);
+    // Strictly increasing: columns laid out left to right, not all stacked at 0.
+    expect(h).toEqual([...h].sort((a, b) => a - b));
+    expect(new Set(h).size).toBe(columnCount);
+  }));
+
+  // THE ASSERTION THAT BITES. The string comparison above passed throughout the
+  // defect — in a BROWSER the computed value is resolved track sizes, which is
+  // how the bug was found (0.015625px against 68px), but in a spec both sides
+  // read back the same unresolved var() and it matches by construction.
   it('puts every heading at the same offset as its own data column', fakeAsync(() => {
     render();
     const [header, row] = grids();
@@ -185,9 +226,23 @@ describe('DataListComponent — header/row column alignment (ACC-120)', () => {
     const columnCount = fixture.componentInstance.columns.length;
     // Not an endorsement — a guard. If this ever stops drifting, `auto` became
     // safe and the comment on gridSuffix should be revisited rather than
-    // trusted. If it starts passing silently, the fixed default is doing the
-    // work and this test is the only thing saying why.
+    // trusted.
     expect(dataLefts(header!, columnCount)).not.toEqual(dataLefts(row!, columnCount));
+
+    // AND THE COMPUTED TRACK LISTS DIFFER TOO, which settles a thing both of us
+    // got wrong about this file. Karma runs a real headless Chrome, so
+    // getComputedStyle().gridTemplateColumns is RESOLVED pixel sizes, not the
+    // var() as authored — the same reading that found the bug in the browser
+    // (0.015625px against 68px for the trailing track). So a string comparison
+    // is not blind here, and the original suggestion to use one was sound.
+    //
+    // It is kept as the SECOND assertion rather than the only one because it
+    // states a mechanism, where the offsets state the requirement: a heading
+    // sits over its own data. A future layout that satisfies the requirement by
+    // some other means should not be failed for it.
+    expect(getComputedStyle(header!).gridTemplateColumns).not.toBe(
+      getComputedStyle(row!).gridTemplateColumns,
+    );
   }));
 
   // Cause 2: the header must share the rows' content box, which is what makes
