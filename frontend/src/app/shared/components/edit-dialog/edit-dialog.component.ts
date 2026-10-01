@@ -49,6 +49,16 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
   imports: [DialogModule, NgTemplateOutlet, PrimeTemplate, TranslatePipe],
   // ACC-120 slice 2 — ONLY this component provides the density token, which is
   // what stops compact density reaching a page. See dialog-density.ts.
+  // ACC-120 slice 5 — THIS PROVIDER IS ONLY HALF THE MECHANISM, and for a long
+  // time it was the only half. Providing the token here puts it on THIS
+  // component's injector; what makes it reach a field is passing this same
+  // injector to each ngTemplateOutlet below. Without that, the embedded view
+  // resolves against the TEMPLATE'S DECLARATION SITE — the host component —
+  // where nothing provides DIALOG_DENSITY, so am-field's optional inject()
+  // returned null and silently fell back to form density.
+  //
+  // ONLY THIS COMPONENT PROVIDES THE TOKEN, which is what stops compact density
+  // reaching a page. See dialog-density.ts.
   providers: [{ provide: DIALOG_DENSITY, useFactory: () => inject(EditDialogComponent).density }],
   template: `
     <p-dialog
@@ -94,7 +104,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
             <span class="am-dialog__context">{{ context() }}</span>
           }
           @if (headerExtra(); as extra) {
-            <ng-container *ngTemplateOutlet="extra" />
+            <ng-container *ngTemplateOutlet="extra; injector: injector" />
           }
         </div>
         @if (!saving()) {
@@ -118,7 +128,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
             (wheel)="onWheel($event)"
           >
             <div #contentWrapper>
-              <ng-container *ngTemplateOutlet="content()" />
+              <ng-container *ngTemplateOutlet="content(); injector: injector" />
             </div>
           </div>
           @if (canScrollMore()) {
@@ -139,7 +149,7 @@ const DIALOG_WIDTH: Record<DialogSize, string> = {
            in ACC-111, the ring was cropped along the bottom. -->
       @if (footer(); as footerTemplate) {
         <ng-template pTemplate="footer">
-          <ng-container *ngTemplateOutlet="footerTemplate" />
+          <ng-container *ngTemplateOutlet="footerTemplate; injector: injector" />
         </ng-template>
       }
     </p-dialog>
@@ -480,7 +490,41 @@ export class EditDialogComponent implements AfterViewChecked, OnDestroy {
     });
   }
 
-  private readonly injector = inject(Injector);
+  /**
+   * ACC-120 slice 5 — passed to every `ngTemplateOutlet` in this template, and
+   * that is what makes `density` reach the fields inside a projected form.
+   *
+   * ## Why the default was wrong, and why it was invisible
+   *
+   * ACC-29 makes `TemplateRef` + `ngTemplateOutlet` the required way to pass
+   * dialog content, because content projection does not recreate a projected
+   * child on reopen. But an embedded view resolves injected values against the
+   * template's DECLARATION site, not the site that renders it — so a field
+   * inside `#formTpl`, declared in the host's template, looked up
+   * `DIALOG_DENSITY` in the HOST's injector. Nothing provides it there, so
+   * `inject(DIALOG_DENSITY, { optional: true })` returned null and every field
+   * fell back to form density, whatever the dialog declared.
+   *
+   * It stayed invisible because nothing ever declared `density="compact"` until
+   * ACC-120 slice 5's Invite user, and `field-density.spec.ts` provided the
+   * token straight to TestBed — proving the field OBEYS the setting, never that
+   * the setting ARRIVES.
+   *
+   * ## Why widening the injector is safe here, measured rather than argued
+   *
+   * This injector is a DESCENDANT of the host's: `<app-edit-dialog>` sits in the
+   * host's template, so the chain runs dialog -> host -> ... -> root. Resolving
+   * from it therefore reaches everything the declaration site could reach, plus
+   * this component's own providers. It is a superset, not a substitution.
+   *
+   * And the superset is empty but for one token: a survey of the app found
+   * exactly one `InjectionToken` (`DIALOG_DENSITY`) and two component-level
+   * provider arrays — this one, and `OverlaySelectComponent`'s `NG_VALUE_ACCESSOR`,
+   * which is scoped to its own element and never resolved upward. Not one of the
+   * eighteen dialog hosts provides anything at all. So nothing but density can
+   * change behaviour.
+   */
+  protected readonly injector = inject(Injector);
   private layerId: number | null = null;
   private teardownKeydown: (() => void) | null = null;
 
