@@ -19,6 +19,7 @@ import {
 import { InviteUserComponent } from '../invite-user/invite-user.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { ManageRolesComponent } from '../../../roles/components/manage-roles/manage-roles.component';
 import {
   DataListColumn,
   DataListComponent,
@@ -34,7 +35,7 @@ import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { ListRowDirective } from '../../../../shared/components/data-list/list-row.directive';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 
-export type RowAction = 'transfer' | 'deactivate';
+export type RowAction = 'manageRoles' | 'transfer' | 'deactivate';
 
 // ACC-78 — the full-page table, rebuilt against
 // frontend/design-reference/AccreditMe Users List.dc.html.
@@ -59,6 +60,7 @@ export type RowAction = 'transfer' | 'deactivate';
     FormsModule,
     InviteUserComponent,
     EditDialogComponent,
+    ManageRolesComponent,
     DataListComponent,
     StatusChipComponent,
     OverlaySelectComponent,
@@ -329,6 +331,55 @@ export type RowAction = 'transfer' | 'deactivate';
       [content]="transferTpl"
       width="640px"
     />
+
+    <!-- ACC-120 slice 5 — Manage roles. A TemplateRef so each opening rebuilds
+         it: reopening on a different person must not inherit the last one's
+         ticks (ACC-29). -->
+    <ng-template #manageRolesTpl>
+      @if (rolesUser(); as u) {
+        <app-manage-roles
+          [userId]="u.id"
+          [userName]="u.name"
+          (saved)="onRolesSaved()"
+          (cancelled)="rolesDialog.requestClose()"
+          (dirtyChange)="rolesDirty.set($event)"
+          (ready)="rolesRef.set($event)"
+        />
+      }
+    </ng-template>
+    <ng-template #manageRolesFooterTpl>
+      <div class="flex items-center justify-between gap-3">
+        <!-- The footer names every change in words. A count alone makes the
+             reader scroll back up the list to find out what they did. -->
+        <span class="min-w-0 truncate text-[11.5px] text-[var(--am-text-secondary)]">
+          {{ rolesRef()?.changeSummary() }}
+        </span>
+        <div class="flex shrink-0 gap-2">
+          <p-button
+            [label]="'common.cancel' | translate"
+            severity="secondary"
+            [text]="true"
+            (onClick)="rolesDialog.requestClose()"
+            [disabled]="!!rolesRef()?.saving()"
+          />
+          <p-button
+            [label]="rolesSaveLabel()"
+            (onClick)="onRolesSave()"
+            [loading]="!!rolesRef()?.saving()"
+            [disabled]="!rolesRef() || !rolesRef()!.changeCount() || !!rolesRef()?.saving()"
+          />
+        </div>
+      </div>
+    </ng-template>
+    <app-edit-dialog
+      #rolesDialog
+      [(visible)]="rolesVisible"
+      [header]="'manageRoles.title' | translate"
+      [context]="rolesUser()?.name ?? ''"
+      [content]="manageRolesTpl"
+      [footer]="manageRolesFooterTpl"
+      [dirty]="rolesDirty()"
+    />
   `,
 })
 export class UserListComponent implements OnInit {
@@ -360,6 +411,29 @@ export class UserListComponent implements OnInit {
   readonly inviteVisible = signal(false);
   readonly inviteDirty = signal(false);
   readonly inviteFormRef = signal<InviteUserComponent | null>(null);
+
+  // ACC-120 slice 5 — Manage roles.
+  readonly rolesVisible = signal(false);
+  readonly rolesUser = signal<IUserDto | null>(null);
+  readonly rolesDirty = signal(false);
+  readonly rolesRef = signal<ManageRolesComponent | null>(null);
+
+  /**
+   * "Save 2 changes" / "Save 1 change" / "Save" — the button says what it will
+   * do.
+   *
+   * THROUGH THE PLURAL CATALOGUE, not a flat key with {{count}} in it. The first
+   * attempt read "Save 1 changes" in English, which is the exact defect the
+   * plural rule exists for (ACC-94): a counted string is a plural object with
+   * every category the language has, six for Arabic, never one fixed form.
+   */
+  readonly rolesSaveLabel = computed(() => {
+    this.translate.currentLang();
+    const n = this.rolesRef()?.changeCount() ?? 0;
+    return n > 0
+      ? this.format.count('manageRoles.saveChanges', n)
+      : this.translate.instant('manageRoles.saveNoChanges');
+  });
   readonly positions = signal<IOrgPositionDto[]>([]);
   readonly orgUnits = signal<OrgUnitDto[]>([]);
   readonly statusCounts = signal<Record<string, number>>({});
@@ -472,6 +546,12 @@ export class UserListComponent implements OnInit {
    */
   rowActionsFor(user: IUserDto): RowAction[] {
     const actions: RowAction[] = [];
+    // ACC-120 — roles:manage, which is what POST and DELETE
+    // /users/:id/roles both carry. Offered for an INACTIVE user too: their
+    // roles are still real and still decide what they can do if reactivated.
+    if (this.access.hasPermission('roles:manage')) {
+      actions.push('manageRoles');
+    }
     if (
       this.access.hasPermission('users:transfer') &&
       user.status === 'ACTIVE' &&
@@ -491,7 +571,13 @@ export class UserListComponent implements OnInit {
     if (!user) return [];
 
     return this.rowActionsFor(user).map((action): MenuItem =>
-      action === 'transfer'
+      action === 'manageRoles'
+        ? {
+            label: this.translate.instant('manageRoles.menuAction'),
+            icon: 'pi pi-id-card',
+            command: () => this.openManageRoles(user),
+          }
+        : action === 'transfer'
         ? {
             label: this.translate.instant('user.transfer.menuAction'),
             icon: 'pi pi-arrow-right-arrow-left',
@@ -551,6 +637,43 @@ export class UserListComponent implements OnInit {
     this.inviteVisible.set(false);
     this.list().reload();
     this.loadCounts();
+  }
+
+  openManageRoles(user: IUserDto): void {
+    this.rolesRef.set(null);
+    this.rolesDirty.set(false);
+    this.rolesUser.set(user);
+    this.rolesVisible.set(true);
+  }
+
+  /**
+   * The last-role confirm (the drawing's 420 dialog). Asked only when saving
+   * would leave the person holding NOTHING — no direct grant and no
+   * head-position grant either, because someone who still holds a derived role
+   * is not left with none.
+   */
+  onRolesSave(): void {
+    const form = this.rolesRef();
+    if (!form) return;
+    if (!form.wouldLeaveWithNoRoles()) {
+      form.onSubmit();
+      return;
+    }
+    this.confirmationService.confirm({
+      header: this.translate.instant('manageRoles.confirmNoRolesTitle', {
+        name: this.rolesUser()?.name ?? '',
+      }),
+      message: this.translate.instant('manageRoles.confirmNoRolesBody'),
+      acceptLabel: this.translate.instant('manageRoles.confirmNoRolesAccept'),
+      rejectLabel: this.translate.instant('common.cancel'),
+      acceptButtonStyleClass: 'p-button-danger',
+      accept: () => form.onSubmit(),
+    });
+  }
+
+  onRolesSaved(): void {
+    this.rolesVisible.set(false);
+    this.rolesDirty.set(false);
   }
 
   onView(user: IUserDto): void {

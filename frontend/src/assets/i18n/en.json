@@ -940,6 +940,20 @@
         "one": "Signing out in {{count}} second",
         "other": "Signing out in {{count}} seconds"
       }
+    },
+    "manageRoles": {
+      "roleCount": {
+        "one": "{{count}} role",
+        "other": "{{count}} roles"
+      },
+      "saveChanges": {
+        "one": "Save {{count}} change",
+        "other": "Save {{count}} changes"
+      },
+      "partialSave": {
+        "one": "{{saved}} of {{count}} change saved. Save again to retry the rest.",
+        "other": "{{saved}} of {{count}} changes saved. Save again to retry the rest."
+      }
     }
   },
   "datePicker": {
@@ -989,5 +1003,30 @@
       "signOutNow": "Sign out now"
     },
     "signedOutIdle": "You were signed out because there was no activity for a while."
+  },
+  "manageRoles": {
+    "comesWithPosition": "Comes with their head position, {{position}}. It ends when that headship ends, so change it in Headship, not here.",
+    "comesWithPositionUnnamed": "Comes with their head position. It ends when that headship ends, so change it in Headship, not here. You do not have permission to see which position.",
+    "confirmNoRolesAccept": "Remove anyway",
+    "confirmNoRolesBody": "They will still be able to sign in, but will not be able to do anything in AccreditMe until a role is given back. Their user record, position, org unit and history are kept.",
+    "confirmNoRolesTitle": "Leave {{name}} with no roles?",
+    "errorLoad": "Roles could not be loaded.",
+    "errorSaveRow": "This change could not be saved.",
+    "failed": "Failed",
+    "fromHeadPosition": "From their head position",
+    "grantedDirectly": "Granted directly",
+    "grantedOn": "Granted {{date}}",
+    "holdsNothing": "{{name}} has no roles. They can sign in but cannot do anything yet.",
+    "menuAction": "Manage roles",
+    "noRolesExist": "No roles exist yet.",
+    "saveNoChanges": "Save",
+    "savedMark": "Saved",
+    "scopeOrgWide": "organisation-wide",
+    "scopeUnitOnly": "{{unit}} only",
+    "scopeUnitUnnamed": "scoped to one org unit",
+    "tickedIsHeld": "ticked = held",
+    "title": "Manage roles",
+    "willBeGranted": "+ will be granted",
+    "willBeRemoved": "− will be removed"
   }
 }
