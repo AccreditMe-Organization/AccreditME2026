@@ -29,6 +29,23 @@ export interface PermissionDto {
   description: string | null;
 }
 
+/** Mirrors the backend's UserRoleGrantSource. */
+export type UserRoleGrantSource = 'DIRECT' | 'HEAD_POSITION_UNIT' | 'HEAD_POSITION_ORG_WIDE';
+
+/**
+ * One UserRole row. `source` is stated by the server so no client has to infer
+ * it from which of the two ids is null.
+ */
+export interface UserRoleGrantDto {
+  id: string;
+  role: RoleDto;
+  /** When this PERSON was given this role — never when the role was created. */
+  grantedAt: string;
+  source: UserRoleGrantSource;
+  grantedViaHeadPositionId: string | null;
+  grantedViaHeadPositionOrgUnitId: string | null;
+}
+
 export interface CreateRoleDto {
   nameEn: string;
   nameAr: string;
@@ -99,8 +116,15 @@ export class RoleService {
   // ── User ↔ Role assignment ───────────────────────────────────────────────────
   // Temporary home — see plan Business Rules: revisit once Step 9 (Users) ships.
 
-  getUserRoles(userId: string): Observable<RoleDto[]> {
-    return this.http.get<RoleDto[]>(`${this.usersBase}/${userId}/roles`);
+  // ACC-120 — returns the GRANT, not the role. The old RoleDto[] shape dropped
+  // the UserRole row, so a head-position-derived grant looked identical to a
+  // direct one, and the `createdAt` it did return was the ROLE's — the same date
+  // for every holder.
+  //
+  // Hand-maintained against the backend's IUserRoleGrant, like every DTO here;
+  // there is no generated client (CLAUDE.md, API Versioning — ACC-150).
+  getUserRoles(userId: string): Observable<UserRoleGrantDto[]> {
+    return this.http.get<UserRoleGrantDto[]>(`${this.usersBase}/${userId}/roles`);
   }
 
   assignRoleToUser(userId: string, roleId: string): Observable<void> {

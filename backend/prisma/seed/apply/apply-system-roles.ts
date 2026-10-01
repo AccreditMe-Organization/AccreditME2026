@@ -51,7 +51,8 @@ export async function applySystemRolePersonas(
     const userId = resolve(ctx.personIdByKey, persona.holder, 'person');
     const held = await deps.roleService.getUserRoles(userId, ctx.organizationId);
 
-    if (held.some((r) => r.id === role.id)) {
+    // ACC-120 — getUserRoles() now returns the GRANT, so the role id is nested.
+    if (held.some((g) => g.role.id === role.id)) {
       console.log(`    ${persona.roleKey} -> ${persona.holder} (already held, from bootstrap)`);
       continue;
     }

@@ -12,6 +12,10 @@ import { SortWhitelist, toSkipTake } from '../../common/utils/sort-whitelist';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { Role as PrismaRole } from '../../../generated/prisma/client';
 import { IRole } from './interfaces/role.interface';
+import {
+  IUserRoleGrant,
+  resolveGrantSource,
+} from './interfaces/user-role-grant.interface';
 import { IPermission } from './interfaces/permission.interface';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -427,12 +431,32 @@ export class RoleService {
 
   // ── User ↔ Role assignment ───────────────────────────────────────────────────
 
-  async getUserRoles(userId: string, organizationId: string): Promise<IRole[]> {
+  // Returns the GRANT, not just the role (ACC-120). See IUserRoleGrant for what
+  // the old IRole[] shape cost — in short, a derived grant was indistinguishable
+  // from a direct one, and the createdAt it did return was the role's.
+  //
+  // Tenant-scoped on BOTH sides: `user: { organizationId }` as well as
+  // `role: { organizationId }`. The role side alone already made a cross-tenant
+  // read impossible in practice — a foreign user cannot hold a row pointing at
+  // this tenant's role — but relying on that is reasoning about data rather than
+  // scoping the query, which is what CLAUDE.md's rule asks for.
+  async getUserRoles(userId: string, organizationId: string): Promise<IUserRoleGrant[]> {
     const userRoles = await this.prisma.userRole.findMany({
-      where: { userId, role: { organizationId } },
+      where: { userId, user: { organizationId }, role: { organizationId } },
       include: { role: true },
+      orderBy: { createdAt: 'asc' },
     });
-    return userRoles.map((ur) => this.mapRole(ur.role));
+    return userRoles.map((ur) => ({
+      id: ur.id,
+      role: this.mapRole(ur.role),
+      grantedAt: ur.createdAt,
+      source: resolveGrantSource(
+        ur.grantedViaHeadPositionId,
+        ur.grantedViaHeadPositionOrgUnitId,
+      ),
+      grantedViaHeadPositionId: ur.grantedViaHeadPositionId,
+      grantedViaHeadPositionOrgUnitId: ur.grantedViaHeadPositionOrgUnitId,
+    }));
   }
 
   async assignRoleToUser(
@@ -482,9 +506,30 @@ export class RoleService {
     if (!role) throw new NotFoundException('Role not found');
 
     const assignment = await this.prisma.userRole.findFirst({
-      where: { userId, roleId },
+      where: { userId, roleId, user: { organizationId } },
     });
     if (!assignment) throw new NotFoundException('Role assignment not found');
+
+    // ACC-120 — a HEAD-POSITION-DERIVED grant is not removable by hand.
+    //
+    // This endpoint deleted any matching row, including a derived one, and the
+    // only thing standing in front of it was that no screen offered the button.
+    // That is not a guard. revokeRoleViaHeadAuthority() keys on exactly these
+    // two columns, so a hand-deleted row leaves the headship in place with the
+    // role it confers gone, and the revoke that should later remove it finds
+    // nothing — the headship and its roles silently disagree, with no error at
+    // either end.
+    //
+    // Refused with the reason named, and with WHERE TO ACTUALLY END IT, because
+    // "cannot be removed" without that leaves an admin to conclude the product
+    // is broken. Same sentence the dialog shows; the dialog is the courtesy and
+    // this is the rule.
+    if (assignment.grantedViaHeadPositionId || assignment.grantedViaHeadPositionOrgUnitId) {
+      throw new ConflictException(
+        "This role comes with the user's head position and cannot be removed here. " +
+          'End it by changing the head position itself.',
+      );
+    }
 
     if (role.key === TENANT_ADMIN_KEY) {
       const assignmentCount = await this.prisma.userRole.count({ where: { roleId } });

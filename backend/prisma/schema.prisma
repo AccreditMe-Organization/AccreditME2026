@@ -558,11 +558,26 @@ model UserRole {
   // in a unit, and Acting Head, which is always unit-scoped by
   // construction). Null for org-wide (primaryOrgUnitId: null) real
   // position-holding grants, where grantedViaHeadPositionId below is the
-  // revoke key instead — never both null, never both set, on a marked row.
+  // revoke key instead.
+  //
+  // CORRECTED (ACC-120) — this used to end "never both null, never both set, on
+  // a marked row", which is false of the COLUMNS and was only ever true of the
+  // revoke key. Verified against grantRoleViaHeadAuthority(), which is the only
+  // writer: a unit-scoped marked row has BOTH set. The real rule is below.
   grantedViaHeadPositionOrgUnitId String?
 
   // ACC-40 Section 2.6.5 (revised) — the OrgPosition id this grant derives
-  // from. Always populated on a marked row for audit value, but only ever
+  // from.
+  //
+  // THE RULE, as the writer actually behaves (ACC-120): this column is ALWAYS
+  // written on a marked row — grantRoleViaHeadAuthority() takes positionId as a
+  // non-nullable argument — and the OrgUnit id above is null ONLY for an
+  // org-wide head position. So the three cases are: both null (an ordinary
+  // direct grant), both set (unit-scoped), position only (org-wide). The API
+  // states which of the three a row is rather than making a client infer it —
+  // see IUserRoleGrant.source.
+  //
+  // Always populated on a marked row for audit value, but only ever
   // used as the REVOKE key when grantedViaHeadPositionOrgUnitId above is
   // null (the org-wide case) — a positionId is never null for a real
   // grant, so it's unambiguous where the OrgUnit id can't safely be used
