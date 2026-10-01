@@ -146,3 +146,97 @@ describe('UserRoleAssignmentComponent (ACC-26)', () => {
     }),
   );
 });
+
+// ACC-120 — the panel now reads GRANTS, and a head-position-derived grant is not
+// removable here.
+//
+// Added because every case above flushes `[]` for the roles call, so none of
+// them ever exercised the response shape. They would have passed unchanged if
+// the nesting had been got wrong — which is the kind of green that hides a
+// break rather than catching one.
+describe('UserRoleAssignmentComponent — grant shape and derived grants (ACC-120)', () => {
+  let fixture: ComponentFixture<UserRoleAssignmentComponent>;
+  let httpMock: HttpTestingController;
+
+  const grant = (over: Record<string, unknown>) => ({
+    id: 'ur-1',
+    role: ROLE_A,
+    grantedAt: '2025-03-03T09:30:00.000Z',
+    source: 'DIRECT',
+    grantedViaHeadPositionId: null,
+    grantedViaHeadPositionOrgUnitId: null,
+    ...over,
+  });
+
+  function render(grants: unknown[]): void {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [UserRoleAssignmentComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        ConfirmationService,
+        {
+          provide: NavigationAccessService,
+          useValue: { hasPermission: (p: string) => p === 'roles:manage' },
+        },
+      ],
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(UserRoleAssignmentComponent);
+    fixture.componentRef.setInput('userId', 'user-1');
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiUrl}/users/user-1/roles`).flush(grants);
+    httpMock
+      .expectOne(`${environment.apiUrl}/roles?pageSize=200`)
+      .flush({ data: [ROLE_A], total: 1, page: 1, pageSize: 200 });
+    fixture.detectChanges();
+  }
+
+  const removeButtons = (): unknown[] =>
+    fixture.debugElement.queryAll(By.css('button.p-button-danger'));
+
+  it('reads the role name through the nested grant', () => {
+    render([grant({})]);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Quality Officer');
+  });
+
+  it('offers removal for a direct grant', () => {
+    render([grant({})]);
+    expect(removeButtons().length).toBe(1);
+  });
+
+  it('offers no removal for a unit-scoped head-position grant', () => {
+    render([
+      grant({
+        source: 'HEAD_POSITION_UNIT',
+        grantedViaHeadPositionId: 'pos-1',
+        grantedViaHeadPositionOrgUnitId: 'unit-1',
+      }),
+    ]);
+    expect(removeButtons().length).toBe(0);
+  });
+
+  it('offers no removal for an org-wide head-position grant either', () => {
+    render([grant({ source: 'HEAD_POSITION_ORG_WIDE', grantedViaHeadPositionId: 'pos-1' })]);
+    expect(removeButtons().length).toBe(0);
+  });
+
+  // The mixed case is the one a per-row condition gets wrong: a single flag for
+  // the whole list would hide both buttons or neither.
+  it('offers removal for the direct grant only, when a user holds both kinds', () => {
+    render([
+      grant({ id: 'ur-1' }),
+      grant({
+        id: 'ur-2',
+        role: { ...ROLE_A, id: 'role-b', nameEn: 'Unit Head' },
+        source: 'HEAD_POSITION_UNIT',
+        grantedViaHeadPositionId: 'pos-1',
+        grantedViaHeadPositionOrgUnitId: 'unit-1',
+      }),
+    ]);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Unit Head');
+    expect(removeButtons().length).toBe(1);
+  });
+});

@@ -18,6 +18,7 @@ import { IUser, IUserReferenceNames } from './interfaces/user.interface';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { IPaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { IRole } from '../roles/interfaces/role.interface';
+import { IUserRoleGrant } from '../roles/interfaces/user-role-grant.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 
@@ -228,7 +229,7 @@ export class UserController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
     @CurrentUserPermissions() actorPermissions: string[],
-  ): Promise<IRole[]> {
+  ): Promise<IUserRoleGrant[]> {
     return this.userService.getUserRolesForViewer(userId, tenantId, actorId, actorPermissions);
   }
 

@@ -48,6 +48,7 @@ import { UpdateOutOfOfficeDto } from './dto/update-out-of-office.dto';
 import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IBilingualName, IUser, IUserReferenceNames } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
+import { IUserRoleGrant } from '../roles/interfaces/user-role-grant.interface';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 
@@ -1464,7 +1465,7 @@ export class UserService {
   // ── Migrated from RoleController (Step 9) — same URL paths, same behavior,
   // delegating straight to RoleService, which still owns this logic. ──
 
-  async getUserRoles(userId: string, organizationId: string): Promise<IRole[]> {
+  async getUserRoles(userId: string, organizationId: string): Promise<IUserRoleGrant[]> {
     return this.roleService.getUserRoles(userId, organizationId);
   }
 
@@ -1487,7 +1488,7 @@ export class UserService {
     organizationId: string,
     actorId: string,
     actorPermissions: readonly string[],
-  ): Promise<IRole[]> {
+  ): Promise<IUserRoleGrant[]> {
     const isSelf = actorId === userId;
     if (!isSelf && !actorPermissions.includes(USERS_PERMISSIONS.VIEW)) {
       throw new ForbiddenException(`Required permission: ${USERS_PERMISSIONS.VIEW}`);

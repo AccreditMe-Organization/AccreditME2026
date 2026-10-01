@@ -4,7 +4,7 @@ import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
 import { FormsModule } from '@angular/forms';
-import { RoleService, RoleDto } from '../../services/role.service';
+import { RoleService, RoleDto, UserRoleGrantDto } from '../../services/role.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 // ACC-42 Phase 5 — OverlaySelectComponent replaces p-select on this field:
 // routed-page-under-<main> context, and the first real consumer binding via
@@ -26,20 +26,27 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
       }
 
       <ul class="flex flex-col gap-2">
-        @for (role of assignedRoles(); track role.id) {
+        @for (grant of assignedRoles(); track grant.id) {
           <li class="flex items-center justify-between gap-3">
-            <span>{{ role.nameEn }}</span>
+            <span>{{ grant.role.nameEn }}</span>
             <!-- ACC-123 — roles:manage, what DELETE /users/:id/roles/:roleId
                  carries. The list of a user's roles is readable with
                  users:view; removing one is not. -->
-            @if (canManage()) {
+            <!-- ACC-120 — a head-position-derived grant is not removable here,
+                 and the server now refuses it rather than relying on no screen
+                 offering the button. Suppressed rather than disabled, matching
+                 every other write control; the full treatment the drawing asks
+                 for — the locked section, the scope sentence and where the grant
+                 IS ended — belongs to the Manage roles dialog, not to this
+                 panel. -->
+            @if (canManage() && grant.source === 'DIRECT') {
             <p-button
               icon="pi pi-times"
               [text]="true"
               size="small"
               severity="danger"
               [pTooltip]="'roles.removeRole' | translate"
-              (onClick)="onRemove(role)"
+              (onClick)="onRemove(grant.role)"
             />
             }
           </li>
@@ -86,13 +93,13 @@ export class UserRoleAssignmentComponent implements OnChanges {
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
-  readonly assignedRoles = signal<RoleDto[]>([]);
+  readonly assignedRoles = signal<UserRoleGrantDto[]>([]);
   readonly allRoles = signal<RoleDto[]>([]);
   selectedRoleId: string | null = null;
 
   get assignableRoles(): () => RoleDto[] {
     return () => {
-      const assignedIds = new Set(this.assignedRoles().map((r) => r.id));
+      const assignedIds = new Set(this.assignedRoles().map((g) => g.role.id));
       return this.allRoles().filter(
         (r) => r.isActive && r.key !== 'PLATFORM_ADMIN' && !assignedIds.has(r.id),
       );
