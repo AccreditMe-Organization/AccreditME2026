@@ -1,18 +1,21 @@
 import { ROLES_ROUTES } from './roles.routes';
 import { permissionGuard } from '../../core/guards/permission.guard';
 
-// ACC-123 — the permission MATRIX is the screen that grants permissions, and it
-// was reachable by URL to anyone signed in.
+// CORRECTED — this file previously said the matrix "was reachable by URL to
+// anyone signed in" before the child's canActivate was added. It was not.
 //
-// Why a test rather than a note: the hole is INVISIBLE in both places a reader
-// would look. ROUTE_PERMISSIONS correctly maps 'roles' to [admin:access,
-// roles:view], and the parent route is guarded — so a mapping test passes and
-// the list screen behaves. The child simply never ran the guard, because a
-// route with no canActivate does not run one, and permissionGuard allows an
-// unmapped path by design (an absent entry means "not gated", not "denied").
+// Angular runs every ancestor's canActivate before a child activates, and the
+// `roles` route in app.routes.ts carries permissionGuard. Verified by removing
+// the child's guard and signing in as a BASE_USER: the matrix URL redirected to
+// /home. The claim came from reading this routes file in isolation and
+// generalising ACC-79's note, whose case genuinely differed — there the PARENT
+// had no guard either.
 //
-// Same shape as ADMIN_SETTINGS_ROUTES (ACC-79) and tasks/all. Three places have
-// now had it; this pins the third.
+// What these tests are worth keeping for: the guard stays declared where a
+// reader of this file looks for it, and the real invariant — that SOMETHING in
+// a mapped route's chain enforces it — is asserted across the whole route table
+// in core/navigation/route-guard-invariant.spec.ts, which is where a fourth
+// instance would actually be caught.
 describe('ROLES_ROUTES (ACC-123)', () => {
   const matrix = ROLES_ROUTES.find((r) => r.path === ':id/permissions');
 
@@ -20,7 +23,8 @@ describe('ROLES_ROUTES (ACC-123)', () => {
     expect(matrix).toBeDefined();
   });
 
-  it('runs permissionGuard on the matrix, which the parent route cannot do for it', () => {
+  // Defence in depth, not the protection itself — see the header.
+  it('declares permissionGuard on the matrix', () => {
     expect(matrix!.canActivate).toContain(permissionGuard);
   });
 
