@@ -1006,15 +1006,56 @@ section in module-designs.md
 
 ## Security Configuration
 
-### Rate Limiting (@nestjs/throttler)
+### Rate Limiting — CONFIGURED BUT NOT ENFORCED (ACC-129)
+
+**There is no rate limiting in effect today.** `app.module.ts` imports
+`ThrottlerModule.forRoot([{ name: 'global', ttl: 60000, limit: 100 }])`, and
+**no `ThrottlerGuard` is registered anywhere** — not as an `APP_GUARD`
+provider, not with `@UseGuards` on any controller, not in `main.ts`. The module
+is configured and inert.
+
+The three other tiers this section used to list — auth endpoints at 5 attempts
+per 15 minutes per IP, file upload at 10 per 60 seconds per tenant, AI at 20 per
+60 seconds per tenant — **do not exist in any form**. No code has ever
+implemented them.
+
+Enforcement is **ACC-129**. Do not restate the intended tiers here as though
+they were live; that is what made this section wrong.
+
+### Account Lockout — REAL, AND NOT THE SAME CONTROL
+
+Distinct from rate limiting, and the distinction matters: an auditor asking
+about brute-force protection is asking about this one.
+
 ```
-Global:           100 requests / 60 seconds per IP
-Auth endpoints:   5 attempts / 15 minutes per IP
-File upload:      10 uploads / 60 seconds per tenant
-AI endpoints:     20 requests / 60 seconds per tenant
+5 failed attempts within 15 minutes  ->  the ACCOUNT is locked
+Scope:   per (organization, email), not per IP
+Source:  LoginAttemptService.isLocked(), checked BEFORE authentication
+State:   computed on read from recent LoginAttempt rows — no stored counter
+Record:  every attempt is written, including attempts made while locked
+         (failureReason: 'locked')
 ```
 
-### File Upload Security
+**Per-tenant thresholds are read but never written.** `getLockoutConfig()` reads
+`lockoutThreshold` and `lockoutWindowMinutes` from the tenant's encrypted
+`authConfig`, so the values are configurable in principle — but **no endpoint,
+DTO or screen sets `authConfig`**, so the defaults above are the only values any
+tenant has.
+
+**Conflating this with an IP throttle produced a false statement from both
+Claude and Ahmad on 2026-10-01.** The numbers coincide; the controls do not.
+
+### File Upload Security — NONE OF THIS IS BUILT
+
+**Measured 2026-10-01: zero of the controls below exist.** No ClamAV, no
+`mime-types` validation, no `multer`, no `FileInterceptor`, no size limit, no
+signed-URL issuance on any route — searched across all of `backend/src`. There
+is also no upload endpoint to apply them to, and S3 itself is not provisioned
+(see Infrastructure).
+
+Kept as the REQUIREMENTS for whoever builds file upload, which is what this list
+has always actually been — not as a description of the product:
+
 - Validate actual MIME type via mime-types — not just file extension
 - ClamAV virus scan every upload before storing to S3
 - Max file size: 50MB default, configurable per tenant plan
@@ -1032,8 +1073,15 @@ AI endpoints:     20 requests / 60 seconds per tenant
 - JWT expiry: 15 minutes
 - Refresh token expiry: 7 days with rotation
 - tokenVersion integer per user — incremented on role change, validated every request
-- Max concurrent sessions: 5 per user (configurable per tenant)
 - Forced logout on role change or account suspension
+- Idle timeout: 30 minutes, with a 2-minute warning (ACC-122). It calls
+  `POST /auth/logout`, so it ends the server session rather than only clearing
+  the browser's.
+- **Max concurrent sessions — NOT BUILT.** This line previously claimed "5 per
+  user (configurable per tenant)". There is no field, no counter and no
+  configuration anywhere; a user may hold unlimited concurrent sessions.
+- **Absolute session length — NOT BUILT.** A continuously active user is never
+  forced to re-authenticate. That is ACC-126, open.
 
 ### Audit Trail
 - AuditLog table: actor, timestamp, action, objectType, objectId, before, after, tenantId, ip
@@ -1044,6 +1092,12 @@ AI endpoints:     20 requests / 60 seconds per tenant
 ---
 
 ## Data Retention Policy
+
+> **NOT BUILT — this is a specification, not a description.** Measured
+> 2026-10-01: there is no `data-retention` processor, no archival state, no
+> expiry sweep and no deletion certificate anywhere in `backend/src`. The four
+> real BullMQ processors are `email-delivery`, `setup-health`, `sla-monitor` and
+> `workflow-actions`. Nothing below is enforced by code today.
 
 Configured per tenant with system minimums that cannot be reduced.
 
@@ -1065,6 +1119,11 @@ Deletion certificate (signed PDF) issued after confirmed deletion.
 ---
 
 ## GDPR and Data Privacy
+
+> **NOT BUILT — this is a specification, not a description.** Measured
+> 2026-10-01: no data-export endpoint or job, no PII-anonymisation routine, and
+> no consent tracking (no `tosAccepted`, policy-version or acceptance-timestamp
+> field exists on any model). Nothing below is enforced by code today.
 
 ```
 1. Data export
@@ -2448,22 +2507,38 @@ Full mechanism detail: SYSTEM-REFERENCE.md Section 15.
 
 ## Open / Deferred Items
 
-- **No tenant-user password exists anywhere in the repo, so browser
-  verification of any tenant-scoped feature requires impersonation.**
-  Found during ACC-78's rebuild, when the acceptance standard was
-  explicitly "a browser, not a test count" and there turned out to be
-  no ordinary way in.
-  `demo-seed.ts` is genesis-only since ACC-23 — it creates the platform
-  org and `PLATFORM_ADMIN` (password `Platform@123456`) and nothing
-  else. The two realistic tenants (`al-nakheel`, `al-manara`, ACC-62)
-  were provisioned through the real flows, and no credential for any of
-  their 47 users is recorded in the repo or in ACC-62's own plan file.
-  So the only routes to a tenant-scoped screen are: log in as the
-  platform admin and **impersonate** a tenant admin; reset a seeded
-  user's password directly, mutating shared dev data; or invite a new
-  user, permanently adding a row to a carefully built seed.
-  **Impersonation is the designed path and it works — but it is not
-  free.** It is audit-logged by design (ACC-13), so every verification
+- **CORRECTED 2026-10-01 — browser verification does NOT require
+  impersonation, and has not for some time.** This entry used to open
+  "No tenant-user password exists anywhere in the repo, so browser
+  verification of any tenant-scoped feature requires impersonation."
+  That is false.
+  **Every seeded account in both realistic tenants shares one password,
+  defined as a constant in the seed and printed when the seed runs.**
+  The constant is `SEED_PASSWORD` in
+  `backend/prisma/seed/apply/apply-people.ts` — read it there rather
+  than from this file, which deliberately does not carry the value.
+  `seed-realistic.ts` prints it alongside each fixture's logins at the
+  end of a run.
+  So **signing in as a real seeded persona is the ordinary path**, and
+  it is what makes a genuine non-admin permission test possible at all:
+  the ACC-120 per-slice gate ("verify with someone who can reach the
+  page but lacks the write permission") was run this way against real
+  personas on 2026-09-30 and 2026-10-01.
+  The original note was written during ACC-78, before the realistic
+  seed existed; it was true then and nobody revisited it when
+  `apply-people.ts` landed. It cost real time — work was planned around
+  impersonation that did not need to be.
+  **One consequence worth stating rather than leaving implicit:** that
+  password is a plaintext credential committed to the repository, and
+  it is the credential for the shared dev database that the deployed
+  dev instance also uses. Harmless while the repo is private and the
+  data is synthetic; a finding the moment either changes. Making it an
+  env var with a documented local default is the obvious fix and is not
+  scoped here.
+  `demo-seed.ts` remains genesis-only since ACC-23 — it creates the
+  platform org and its `PLATFORM_ADMIN` and nothing else.
+  **Impersonation still works and is still the right path for reaching
+  a tenant as a platform admin — but it is not free.** It is audit-logged by design (ACC-13), so every verification
   session writes `AuditLog` rows attributing the actions to whoever's
   platform-admin account was used. That is correct behaviour recording
   something slightly untrue: the platform admin did not do that work,
