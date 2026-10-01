@@ -199,21 +199,6 @@ import { FieldComponent } from '../../../../shared/components/field/field.compon
         <p-message severity="warn" [text]="'user.inviteUnitHasNoHead' | translate" />
       }
 
-      <div class="flex justify-end gap-2 pt-1">
-        <p-button
-          [label]="'common.cancel' | translate"
-          severity="secondary"
-          [text]="true"
-          (onClick)="cancelled.emit()"
-          [disabled]="saving()"
-        />
-        <p-button
-          [label]="'user.sendInvitation' | translate"
-          type="submit"
-          [loading]="saving()"
-          [disabled]="saving() || denied()"
-        />
-      </div>
     </form>
   `,
   styles: [
@@ -251,6 +236,17 @@ export class InviteUserComponent implements OnInit {
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
+  /**
+   * ACC-120 slice 5 — hands this instance to the host so its FOOTER template can
+   * drive it, the same shape task-list uses for task-form.
+   *
+   * The actions are not in the body for a measured reason: the 420px cap applies
+   * to `.am-dialog__body`, and the footer renders outside it. With the row inside,
+   * Arabic measured 434 and scrolled; moving it out takes 51px (43 + an 8 gap)
+   * off the body and is also what the drawing's own 332/352 arithmetic assumes —
+   * it counts four field rows and no buttons.
+   */
+  readonly ready = output<InviteUserComponent>();
   /**
    * ACC-96 — lets the host pass `[dirty]` to EditDialogComponent, so Escape or
    * Cancel on unsaved work asks before discarding. The dialog is the host's, so
@@ -330,6 +326,7 @@ export class InviteUserComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.ready.emit(this);
     this.form.valueChanges.subscribe(() => this.dirtyChange.emit(this.form.dirty));
 
     this.orgPositionService.listPositions().subscribe({
