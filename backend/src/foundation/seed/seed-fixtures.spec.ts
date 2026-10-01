@@ -465,6 +465,35 @@ describe('Fixtures — conferred head-position roles (ACC-120)', () => {
     ).toEqual([]);
   });
 
+  // ACC-120 — A CONFERRED ROLE MUST CARRY NO WRITES AND NO admin:access.
+  //
+  // Ahmad's rule, and the reason is fixture integrity rather than least
+  // privilege: a conferred role lands on EVERY holder of the position as a side
+  // effect of the org chart, so a write-capable one hands several personas
+  // permissions nobody chose for them individually — and a future gate run as
+  // one of those personas could then pass for a reason nobody intended. That is
+  // the same false-green shape as a suppression test that never rendered the
+  // control.
+  //
+  // Asserted on the permission SET, not on the role's name: naming VIEWER would
+  // still pass the day someone adds a write to VIEWER.
+  it('confers only a role that carries no write and no admin:access', () => {
+    const permissionsOf = (key: string): string[] =>
+      SYSTEM_ROLE_SEED.find((r) => r.key === key)?.permissions ?? [];
+    const isRead = (p: string): boolean => /:(view|view_[a-z_]+)$/.test(p);
+
+    expect(
+      conferring.flatMap(({ fixture, position }) =>
+        permissionsOf(position.roleKey!)
+          .filter((permission) => !isRead(permission))
+          .map(
+            (permission) =>
+              `${fixture.slug}: ${position.nameEn} confers ${position.roleKey}, which carries ${permission}`,
+          ),
+      ),
+    ).toEqual([]);
+  });
+
   // The conferred role still needs its own credentialed persona: a role held
   // only by derivation has nobody who can be signed in as a plain holder of it.
   it('still declares a persona for every conferred role', () => {

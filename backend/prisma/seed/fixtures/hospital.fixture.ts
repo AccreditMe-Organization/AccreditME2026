@@ -21,7 +21,7 @@ import { CommitteeFixture, PersonFixture, PositionFixture, TenantFixture, UnitFi
 // validateHeadFlagPairing().
 // ACC-120 — ONE head position confers a role, and which one is a decision.
 //
-// Unit Head -> QUALITY_OFFICER. Lowest head position, grade 6, and the one the
+// Unit Head -> VIEWER. Lowest head position, grade 6, and the one the
 // derived-grant mechanism is demonstrated on. Without it a fresh seed has ZERO
 // head-position grants, which is how the discarded UserRole shape went unnoticed
 // until a dialog needed it: nothing on dev could tell the two kinds apart
@@ -44,13 +44,26 @@ import { CommitteeFixture, PersonFixture, PositionFixture, TenantFixture, UnitFi
 //   Head of Ward       clean, and deliberately left clean: one demonstrated
 //                      mechanism is the point, not maximum coverage.
 //
-// THE TRADE-OFF, stated because it is real: five unit heads now also hold
-// QUALITY_OFFICER, so Haya is no longer its only holder. verify-seed() asks for
-// ONE CREDENTIALED holder per role, not an exclusive one, so nothing breaks —
-// but "Haya is the Quality Officer" is now "Haya and the unit heads". Viewer was
-// considered instead, as a read-only role dilutes less; Quality Officer was kept
-// because a unit head doing quality work in their own unit is the realistic case
-// in a hospital pursuing accreditation, and it is what dev already carries.
+// WHY VIEWER AND NOT A WRITE-CAPABLE ROLE. This was first written as
+// QUALITY_OFFICER — a unit head doing quality work in their own unit is the
+// realistic case — and Ahmad overruled it on FIXTURE INTEGRITY, which is the
+// stronger argument:
+//
+//   A conferred role lands on EVERY holder of the position as a side-effect of
+//   the org chart. QUALITY_OFFICER would hand five unit heads 51 permissions
+//   nobody chose for them individually, and a future gate run as one of those
+//   personas could then PASS FOR A REASON NOBODY INTENDED. That is the same
+//   false-green shape as a suppression test that never rendered the control.
+//
+//   VIEWER demonstrates the mechanism identically — it is a real grant, it is
+//   revoked with the headship, and the dialog shows it locked exactly the same.
+//   It carries no writes and no admin:access, so it cannot widen anyone by
+//   accident. A derived role should be the one whose blast radius is
+//   understood, not the one that reads best.
+//
+// It still dilutes: Nasser is no longer VIEWER's only holder. verify-seed() asks
+// for one CREDENTIALED holder per role, not an exclusive one, so nothing breaks,
+// and a read-only dilution cannot make a permission test pass by accident.
 //
 // A BONUS WORTH KNOWING: Ziad holds Unit Head and departs during seeding, so the
 // seed now exercises the REVOKE path too — deactivate() ends his derived grant.
@@ -59,7 +72,7 @@ const POSITIONS: PositionFixture[] = [
   { nameEn: 'Chief Medical Officer', nameAr: 'المدير الطبي', grade: 11, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Ward', nameAr: 'رئيس جناح', grade: 8, isUnitHeadPosition: true, isSingleAssignee: true },
   { nameEn: 'Head of Section', nameAr: 'رئيس شعبة', grade: 7, isUnitHeadPosition: true, isSingleAssignee: true },
-  { nameEn: 'Unit Head', nameAr: 'رئيس وحدة', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true, roleKey: 'QUALITY_OFFICER' },
+  { nameEn: 'Unit Head', nameAr: 'رئيس وحدة', grade: 6, isUnitHeadPosition: true, isSingleAssignee: true, roleKey: 'VIEWER' },
 ];
 
 // ── Org tree ─────────────────────────────────────────────────────────────────
