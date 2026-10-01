@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
@@ -6,6 +6,7 @@ import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { TenantService } from '../../../tenant/services/tenant.service';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 @Component({
   selector: 'app-organization-profile',
@@ -20,6 +21,20 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
       }
       @if (savedMessage()) {
         <p-message severity="success" [text]="savedMessage()! | translate" />
+      }
+
+      <!-- ACC-123 — the route is gated on tenant:view (ADMIN_SETTINGS_ROUTES),
+           but SAVING is PATCH /tenant, which enforces TENANT_PERMISSIONS.UPDATE
+           (tenant.controller.ts). Those are not the same permission, and before
+           this the whole form rendered editable with a live Save to anyone who
+           could open the page — found by standing on it as READ_ONLY_ADMIN.
+
+           Disabled inputs plus a sentence, the same shape working-calendar
+           already uses for its own org:manage split. -->
+      @if (!canEdit()) {
+        <p class="text-sm text-[var(--am-text-secondary)]">
+          {{ 'adminSettings.profileReadOnly' | translate }}
+        </p>
       }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -38,9 +53,11 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
             {{ 'adminSettings.logoUploadNotBuiltYet' | translate }}
           </p>
         </div>
-        <div class="flex justify-end">
-          <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
-        </div>
+        @if (canEdit()) {
+          <div class="flex justify-end">
+            <p-button [label]="'common.save' | translate" type="submit" [loading]="saving()" [disabled]="form.invalid" />
+          </div>
+        }
       </form>
     </div>
   `,
@@ -48,6 +65,9 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 export class OrganizationProfileComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly tenantService = inject(TenantService);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  readonly canEdit = computed(() => this.navigationAccess.hasPermission('tenant:update'));
 
   readonly saving = signal(false);
   readonly error = signal<string | null>(null);
@@ -60,6 +80,10 @@ export class OrganizationProfileComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    // Disabling the CONTROLS rather than only hiding Save: a form that accepts
+    // typing and then has nowhere to send it is the defect in a quieter form.
+    if (!this.canEdit()) this.form.disable();
+
     this.tenantService.getCurrent().subscribe({
       next: (tenant) => this.form.patchValue({ name: tenant.name, country: tenant.country, logo: tenant.logo ?? '' }),
       error: () => this.error.set('adminSettings.errorLoad'),
@@ -67,6 +91,10 @@ export class OrganizationProfileComponent implements OnInit {
   }
 
   onSubmit(): void {
+    // FIRST, before any state is set: a disabled control is excluded from
+    // validation, so form.invalid is false on a read-only form and would not
+    // stop anything. Setting saving() before this check left the spinner on.
+    if (!this.canEdit()) return;
     if (this.form.invalid) return;
     this.saving.set(true);
     this.error.set(null);

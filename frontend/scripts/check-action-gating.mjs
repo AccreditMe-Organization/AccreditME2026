@@ -59,6 +59,18 @@
 // user-list.component.ts and position-list.component.ts both do this, and both
 // gate correctly in TypeScript. Those are covered by specs, not by this.
 //
+// ACC-123 — THE BLIND SPOT WAS RIGHT AND THE INVENTORY ABOVE WAS WRONG, which
+// is the more useful lesson. role-list.component.ts does the same thing and did
+// NOT gate: a holder of roles:view alone was offered Manage Permissions and
+// Deactivate Role, both roles:manage on the server. It went unseen because
+// nothing could reach /roles without roles:manage until READ_ONLY_ADMIN existed
+// — unreachable, not safe.
+//
+// So a named list of "the files that do this" is a liability: it reads as
+// coverage and is only a snapshot. Treat the paragraph above as a description
+// of the SHAPE this scan cannot see, never as a list of where it occurs. Every
+// such control needs its own spec; role-list.component.spec.ts is the third.
+//
 // A GATE, not a ratchet: the allowed count is zero, and anything that is not a
 // real write control is named in ALLOWLIST below with its reason.
 //

@@ -153,22 +153,35 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                 </span>
               }
 
-              <div class="flex items-center gap-1 shrink-0">
-                <p-button
-                  [label]="'common.edit' | translate"
-                  size="small"
-                  [text]="true"
-                  (onClick)="openEdit(role)"
-                />
-                <p-button
-                  icon="pi pi-ellipsis-h"
-                  size="small"
-                  [text]="true"
-                  [ariaLabel]="'list.more' | translate"
-                  [pTooltip]="'list.more' | translate"
-                  (onClick)="openRowMenu(role, $event)"
-                />
-              </div>
+              <!-- ACC-123 — BOTH gated on roles:manage, which is what every
+                   action behind them enforces (role.controller.ts: PATCH
+                   /roles/:id, PATCH /roles/:id/permissions, POST
+                   .../deactivate and .../activate all carry
+                   ROLES_PERMISSIONS.MANAGE).
+
+                   Before this, a holder of roles:view alone opened a fully
+                   editable "Edit Role" dialog with a live Save, and a row menu
+                   offering Manage Permissions and Deactivate Role. Hidden
+                   rather than disabled, matching every other write control in
+                   the app. -->
+              @if (canManage()) {
+                <div class="flex items-center gap-1 shrink-0">
+                  <p-button
+                    [label]="'common.edit' | translate"
+                    size="small"
+                    [text]="true"
+                    (onClick)="openEdit(role)"
+                  />
+                  <p-button
+                    icon="pi pi-ellipsis-h"
+                    size="small"
+                    [text]="true"
+                    [ariaLabel]="'list.more' | translate"
+                    [pTooltip]="'list.more' | translate"
+                    (onClick)="openRowMenu(role, $event)"
+                  />
+                </div>
+              }
             </div>
           </ng-template>
         </app-data-list>
@@ -212,6 +225,12 @@ export class RoleListComponent {
   // canAddMember, deliberately rather than a second one.
   // POST /roles enforces roles:manage, not a roles:create (role.controller.ts).
   readonly canCreate = computed(() => this.navigationAccess.hasPermission('roles:manage'));
+
+  // ACC-123 — the same permission as canCreate, named separately because they
+  // answer different questions and a future endpoint split (as users:invite vs
+  // users:manage already is) must not have to disentangle one computed doing
+  // two jobs.
+  readonly canManage = computed(() => this.navigationAccess.hasPermission('roles:manage'));
 
   readonly error = signal<string | null>(null);
   readonly list = viewChild.required<DataListComponent<RoleDto>>('list');
