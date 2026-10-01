@@ -85,3 +85,68 @@ describe('UserListComponent row actions (ACC-79)', () => {
     ]);
   });
 });
+
+// ACC-120 slice 5 — the Manage roles entry point.
+//
+// Its permission is roles:manage, what POST and DELETE /users/:id/roles both
+// carry, and NOT users:manage: a user administrator who cannot grant roles must
+// not be offered a dialog whose every action the server would refuse. Proved in
+// a browser against READ_ONLY_ADMIN, who holds roles:view and gets no row menu
+// at all; this pins the rule so the next change to rowActionsFor cannot drop it
+// silently.
+describe('UserListComponent — Manage roles row action (ACC-120)', () => {
+  function create(permissions: string[]): UserListComponent {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [UserListComponent],
+      providers: [
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        ConfirmationService,
+        { provide: UserService, useValue: {} },
+        { provide: OrgPositionService, useValue: {} },
+        { provide: OrgUnitService, useValue: {} },
+        {
+          provide: NavigationAccessService,
+          useValue: { hasPermission: (p: string) => permissions.includes(p) },
+        },
+      ],
+    });
+    return TestBed.createComponent(UserListComponent).componentInstance;
+  }
+
+  const anyUser = {
+    id: 'u1',
+    name: 'Fatima Al-Anazi',
+    email: 'f@x.test',
+    status: 'ACTIVE',
+    primaryOrgUnitId: 'unit-1',
+  } as IUserDto;
+
+  it('offers Manage roles to a holder of roles:manage', () => {
+    expect(create(['users:view', 'roles:manage']).rowActionsFor(anyUser)).toContain('manageRoles');
+  });
+
+  it('does not offer it to someone with only roles:view — the server would refuse every action', () => {
+    expect(create(['users:view', 'roles:view']).rowActionsFor(anyUser)).not.toContain('manageRoles');
+  });
+
+  // users:manage is a different permission and does not imply it.
+  it('does not offer it for users:manage alone', () => {
+    expect(create(['users:view', 'users:manage']).rowActionsFor(anyUser)).not.toContain(
+      'manageRoles',
+    );
+  });
+
+  // Roles are still real for someone who cannot sign in, and decide what they
+  // can do if reactivated — so unlike Transfer and Deactivate this one does not
+  // depend on status.
+  it('offers it for an inactive user too', () => {
+    expect(
+      create(['users:view', 'roles:manage']).rowActionsFor({
+        ...anyUser,
+        status: 'INACTIVE',
+      } as IUserDto),
+    ).toContain('manageRoles');
+  });
+});
