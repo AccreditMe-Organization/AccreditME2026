@@ -16,6 +16,24 @@
 // <app-edit-dialog>, the fields live in the component it projects. Counting
 // per file would find five fields nowhere and report nothing.
 //
+// ## WHAT THIS SCAN CANNOT SEE, AND THE ONE PART OF IT NOW FIXED
+//
+// It checks that a crowded dialog DECLARES compact. It cannot check that the
+// declaration has an EFFECT — those are different facts, and for a long time
+// only the first was true. ACC-120 slice 5 found every declaration inert:
+// EditDialogComponent provides DIALOG_DENSITY on its own injector, but content
+// arrives as a TemplateRef declared in the HOST, and an embedded view resolves
+// against its declaration site, so am-field never saw the token.
+//
+// Rendered height still cannot be checked here, and neither can "did the token
+// reach this particular field" — that is what
+// edit-dialog/dialog-density-reaches-content.spec.ts exists for, rendering a
+// real template through a real dialog.
+//
+// But the WIRING is one structural fact in one file, so it is checked below:
+// every ngTemplateOutlet in EditDialogComponent must pass an injector. That is
+// the assertion that would have caught this the day it shipped.
+//
 // ## Known imprecision, stated rather than hidden
 //
 // Resolution is per FILE, not per template region. A component that hosts a
@@ -96,8 +114,31 @@ for (const [file, source] of cleaned) {
   }
 }
 
+// ACC-120 slice 5 — the shell must pass its own injector to every outlet, or
+// compact density is declared everywhere and applied nowhere.
+const shellPath = join(appDir, 'shared', 'components', 'edit-dialog', 'edit-dialog.component.ts');
+const shell = readFileSync(shellPath, 'utf8');
+const outlets = [...shell.matchAll(/\*ngTemplateOutlet="([^"]*)"/g)];
+const unwired = outlets.filter((m) => !/\binjector\s*:/.test(m[1])).map((m) => m[1]);
+
+if (outlets.length === 0) {
+  findings.push(
+    'edit-dialog.component.ts: no ngTemplateOutlet found — this check has gone stale ' +
+      'and can no longer tell whether density reaches projected content',
+  );
+} else if (unwired.length > 0) {
+  for (const o of unwired) {
+    findings.push(
+      `edit-dialog.component.ts: *ngTemplateOutlet="${o}" does not pass an injector, ` +
+        'so DIALOG_DENSITY resolves against the template\'s declaration site (the host) ' +
+        'and every field inside falls back to form density',
+    );
+  }
+}
+
 console.log(
   `Dialog density (ACC-120): ${dialogsSeen} dialog host(s) scanned; ` +
+    `${outlets.length} shell outlet(s), ${unwired.length} without an injector; ` +
     `${findings.length} at or past ${COMPACT_AT_FIELDS} fields without a compact declaration.`,
 );
 if (findings.length > 0) console.log(findings.map((f) => `  ${f}`).join('\n'));
