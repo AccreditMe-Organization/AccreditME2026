@@ -15,66 +15,25 @@
 // reason: p-dialog collects pTemplate children at content init, so the host's
 // header template must exist from the start and the form instance travels
 // outward to fill it.
+//
+// ACC-120 slice 6 — THE MARKUP AND CSS MOVED to shared StepStripComponent when
+// a second stepped dialog needed them. This component stays because its job is
+// the instance-passing above, which is specific to this form; what it no longer
+// owns is the drawing of a step strip, so the two cannot drift into looking
+// like different things.
 import { Component, input } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
 import { TaskFormComponent } from './task-form.component';
+import { StepStripComponent } from '../../../../shared/components/step-strip/step-strip.component';
 
 @Component({
   selector: 'app-task-form-steps',
   standalone: true,
-  imports: [TranslatePipe],
+  imports: [StepStripComponent],
   template: `
     @if (form(); as f) {
-      <ol class="am-steps" [attr.aria-label]="'task.steps' | translate">
-        @for (s of f.steps; track s.n) {
-          <li
-            class="am-steps__item"
-            [class.am-steps__item--on]="f.step() === s.n"
-            [attr.aria-current]="f.step() === s.n ? 'step' : null"
-          >
-            <span class="am-steps__n">{{ s.n }}</span>
-            <span>{{ s.key | translate }}</span>
-          </li>
-        }
-      </ol>
+      <am-step-strip [steps]="f.steps" [current]="f.step()" ariaLabel="Steps" />
     }
   `,
-  styles: [
-    `
-      .am-steps {
-        display: flex;
-        gap: 1.25rem;
-        margin: 9px 0 0;
-        padding: 0;
-        list-style: none;
-      }
-
-      .am-steps__item {
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-        font-size: 12px;
-        font-weight: 400;
-        color: var(--am-ink-500);
-      }
-
-      .am-steps__item--on {
-        color: var(--am-primary-700);
-        font-weight: 600;
-      }
-
-      .am-steps__n {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        inline-size: 18px;
-        block-size: 18px;
-        border-radius: 999px;
-        border: 1px solid currentColor;
-        font-size: 11px;
-      }
-    `,
-  ],
 })
 export class TaskFormStepsComponent {
   readonly form = input<TaskFormComponent | null>(null);
