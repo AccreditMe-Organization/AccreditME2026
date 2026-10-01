@@ -1,5 +1,6 @@
 import {
   Component,
+  ElementRef,
   EventEmitter,
   Input,
   OnInit,
@@ -48,6 +49,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         [label]="'lookup.fieldKey' | translate"
         [control]="form.controls.key"
         inputId="key"
+        [forceShowErrors]="showErrors()"
+        [errorMessages]="fieldErrors()"
         [hint]="value ? '' : ('lookup.fieldKeyHint' | translate)"
       >
         <input id="key" pInputText class="w-full" formControlName="key" />
@@ -57,6 +60,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         [label]="'lookup.fieldLabelEn' | translate"
         [control]="form.controls.labelEn"
         inputId="labelEn"
+        [forceShowErrors]="showErrors()"
+        [errorMessages]="fieldErrors()"
       >
         <input id="labelEn" pInputText class="w-full" formControlName="labelEn" />
       </am-field>
@@ -65,6 +70,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         [label]="'lookup.fieldLabelAr' | translate"
         [control]="form.controls.labelAr"
         inputId="labelAr"
+        [forceShowErrors]="showErrors()"
+        [errorMessages]="fieldErrors()"
       >
         <input id="labelAr" pInputText dir="rtl" class="w-full" formControlName="labelAr" />
       </am-field>
@@ -73,6 +80,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         [label]="'lookup.fieldSortOrder' | translate"
         [control]="form.controls.sortOrder"
         inputId="sortOrder"
+        [forceShowErrors]="showErrors()"
+        [errorMessages]="fieldErrors()"
       >
         <input id="sortOrder" pInputText type="number" class="w-full" formControlName="sortOrder" />
       </am-field>
@@ -149,6 +158,7 @@ export class LookupValueFormComponent implements OnInit {
   private readonly lookupService = inject(LookupService);
   private readonly fb = inject(FormBuilder);
   private readonly translate = inject(TranslateService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   /**
    * ACC-120 slice 6 — STEPPED, and only when the category gives it something to
@@ -164,6 +174,22 @@ export class LookupValueFormComponent implements OnInit {
    * this category happens to record ABOUT a value. A category with no attribute
    * schema has no step 2 at all: no strip, no Next, exactly the form it was.
    */
+  /**
+   * ACC-120 slice 6 — the same reveal-on-submit as position-form, for the same
+   * reason: markAllAsTouched() alone leaves aria-invalid="false" and no error
+   * element, so Next reads as a dead button.
+   */
+  readonly showErrors = signal(false);
+
+  readonly fieldErrors = computed(() => {
+    this.translate.currentLang();
+    return {
+      required: this.translate.instant('validation.required'),
+      maxlength: this.translate.instant('validation.maxLength255'),
+      pattern: this.translate.instant('lookup.fieldKeyHint'),
+    };
+  });
+
   readonly step = signal(1);
   readonly ready = output<LookupValueFormComponent>();
 
@@ -202,10 +228,23 @@ export class LookupValueFormComponent implements OnInit {
 
   next(): void {
     if (this.form.invalid) {
-      this.form.markAllAsTouched();
+      this.revealErrors();
       return;
     }
     this.step.set(2);
+  }
+
+  /** ACC-111 — focus the first invalid field, by control order. */
+  revealErrors(): void {
+    this.showErrors.set(true);
+    this.form.markAllAsTouched();
+    const firstInvalid = Object.keys(this.form.controls).find(
+      (name) => this.form.get(name)?.invalid,
+    );
+    if (!firstInvalid) return;
+    this.host.nativeElement
+      .querySelector<HTMLElement>(`#${firstInvalid}, [formcontrolname="${firstInvalid}"]`)
+      ?.focus();
   }
 
   back(): void {
@@ -246,7 +285,7 @@ export class LookupValueFormComponent implements OnInit {
       // A validation failure lives on step 1, so go back to it rather than
       // disabling Save on a step that shows nothing wrong.
       this.step.set(1);
-      this.form.markAllAsTouched();
+      this.revealErrors();
       return;
     }
     this.saving.set(true);

@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { of, switchMap, tap } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -376,7 +377,8 @@ export class LookupValueListComponent implements OnInit {
   categoryKey = '';
 
   readonly category = signal<LookupCategoryDto | null>(null);
-  readonly values = signal<readonly LookupValueDto[]>([]);
+  /** null means NOT LOADED — distinct from loaded-and-empty. */
+  readonly values = signal<readonly LookupValueDto[] | null>(null);
   readonly error = signal<string | null>(null);
 
   readonly showFormDialog = signal(false);
@@ -425,7 +427,7 @@ export class LookupValueListComponent implements OnInit {
 
   readonly trackById = (value: LookupValueDto): string => value.id;
 
-  readonly source: DataListSource<LookupValueDto> = clientSideSource(() => this.values(), {
+  private readonly slice: DataListSource<LookupValueDto> = clientSideSource(() => this.values() ?? [], {
     // Overrides are searched as well as the originals: the override is what is
     // ON SCREEN, and the original is what an admin may remember the value by.
     searchFields: (v) => [v.labelEn, v.labelAr, v.labelOverrideEn, v.labelOverrideAr, v.key],
@@ -437,10 +439,38 @@ export class LookupValueListComponent implements OnInit {
     },
   });
 
+  /**
+   * ACC-120 slice 6 — THE SOURCE FETCHES, and that is a fix rather than a
+   * preference. `clientSideSource()` resolves SYNCHRONOUSLY, so on first render
+   * it returned 0 rows from a cache that had not loaded. The list went straight
+   * to `status: 'rows'` with nothing in it and drew the genuinely-empty state
+   * for the ~2 seconds before the request came back. Its skeleton never got a
+   * chance, because nothing was ever pending.
+   *
+   * That is loading rendered as nothing-exists, which ACC-111 forbids, and it is
+   * not cosmetic: an admin who believes there are none creates a duplicate.
+   *
+   * Fetch once, then slice the cache. A query change (search, sort, page) does
+   * NOT refetch — the cache answers it — and a mutation invalidates by setting
+   * the cache to null before reload(). The list owns loading, empty, no-results
+   * and error from here; this component's own `error` signal is for MUTATIONS
+   * only, which the list never sees.
+   */
+  readonly source: DataListSource<LookupValueDto> = (query) => {
+    const cached = this.values();
+    const items$ = cached
+      ? of(cached)
+      : this.lookupService.getValues(this.categoryKey).pipe(tap((rows) => this.values.set(rows)));
+    return items$.pipe(switchMap(() => this.slice(query)));
+  };
+
+  // NO LOAD HERE. The list fetches through `source` on its own first query —
+  // calling a loader as well would fire two requests and, worse, would put rows
+  // in the cache before the list ever asked, so its skeleton would again never
+  // show. The loaders exist for AFTER a mutation.
   ngOnInit(): void {
     this.categoryKey = this.route.snapshot.paramMap.get('key') ?? '';
     this.loadCategory();
-    this.loadValues();
   }
 
   displayLabel(cat: LookupCategoryDto): string {
@@ -561,13 +591,10 @@ export class LookupValueListComponent implements OnInit {
   }
 
   private loadValues(): void {
-    this.error.set(null);
-    this.lookupService.getValues(this.categoryKey).subscribe({
-      next: (vals) => {
-        this.values.set(vals);
-        this.list().reload();
-      },
-      error: () => this.error.set(this.translate.instant('lookup.errorLoad')),
-    });
+    // Invalidate, then let the LIST refetch through `source`. Doing the request
+    // here instead would put the rows in the cache without the list ever
+    // entering a pending state — which is the defect this replaced.
+    this.values.set(null);
+    this.list().reload();
   }
 }

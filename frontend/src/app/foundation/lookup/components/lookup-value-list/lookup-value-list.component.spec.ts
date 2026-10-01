@@ -163,7 +163,9 @@ describe('LookupValueListComponent (ACC-120)', () => {
 
     it('still lists the values, which is what the screen is for', () => {
       render(['lookups:view']);
-      expect(component.values().length).toBe(1);
+      // The cache is populated by the list's own source, so assert on what the
+      // list rendered rather than on the cache, which is null until it asks.
+      expect(text()).toContain('Policy');
     });
   });
 

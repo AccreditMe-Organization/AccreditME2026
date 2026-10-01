@@ -1,5 +1,6 @@
 import { Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
+import { of, switchMap, tap } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TagModule } from 'primeng/tag';
 import { TooltipModule } from 'primeng/tooltip';
@@ -155,7 +156,7 @@ import { ListRowDirective } from '../../../../shared/components/data-list/list-r
     </div>
   `,
 })
-export class LookupCategoryListComponent implements OnInit {
+export class LookupCategoryListComponent {
   private readonly lookupService = inject(LookupService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -164,7 +165,8 @@ export class LookupCategoryListComponent implements OnInit {
 
   readonly list = viewChild.required<DataListComponent<LookupCategoryDto>>('list');
 
-  readonly categories = signal<readonly LookupCategoryDto[]>([]);
+  /** null means NOT LOADED — distinct from loaded-and-empty. */
+  readonly categories = signal<readonly LookupCategoryDto[] | null>(null);
   readonly error = signal<string | null>(null);
 
   readonly columns = computed<DataListColumn[]>(() => {
@@ -204,8 +206,8 @@ export class LookupCategoryListComponent implements OnInit {
 
   readonly trackByKey = (category: LookupCategoryDto): string => category.key;
 
-  readonly source: DataListSource<LookupCategoryDto> = clientSideSource(
-    () => this.categories(),
+  private readonly slice: DataListSource<LookupCategoryDto> = clientSideSource(
+    () => this.categories() ?? [],
     {
       // The KEY is searched as well as both labels: it is on screen in its own
       // column, and an admin who knows a category by its key
@@ -221,9 +223,35 @@ export class LookupCategoryListComponent implements OnInit {
     },
   );
 
-  ngOnInit(): void {
-    this.loadCategories();
-  }
+  /**
+   * ACC-120 slice 6 — THE SOURCE FETCHES, and that is a fix rather than a
+   * preference. `clientSideSource()` resolves SYNCHRONOUSLY, so on first render
+   * it returned 0 rows from a cache that had not loaded. The list went straight
+   * to `status: 'rows'` with nothing in it and drew the genuinely-empty state
+   * for the ~2 seconds before the request came back. Its skeleton never got a
+   * chance, because nothing was ever pending.
+   *
+   * That is loading rendered as nothing-exists, which ACC-111 forbids, and it is
+   * not cosmetic: an admin who believes there are none creates a duplicate.
+   *
+   * Fetch once, then slice the cache. A query change (search, sort, page) does
+   * NOT refetch — the cache answers it — and a mutation invalidates by setting
+   * the cache to null before reload(). The list owns loading, empty, no-results
+   * and error from here; this component's own `error` signal is for MUTATIONS
+   * only, which the list never sees.
+   */
+  readonly source: DataListSource<LookupCategoryDto> = (query) => {
+    const cached = this.categories();
+    const items$ = cached
+      ? of(cached)
+      : this.lookupService.getCategories().pipe(tap((rows) => this.categories.set(rows)));
+    return items$.pipe(switchMap(() => this.slice(query)));
+  };
+
+  // NO LOAD HERE. The list fetches through `source` on its own first query —
+  // calling a loader as well would fire two requests and, worse, would put rows
+  // in the cache before the list ever asked, so its skeleton would again never
+  // show. The loaders exist for AFTER a mutation.
 
   displayLabel(category: LookupCategoryDto): string {
     return this.languageService.isArabic() ? category.labelAr || category.labelEn : category.labelEn;
@@ -234,13 +262,10 @@ export class LookupCategoryListComponent implements OnInit {
   }
 
   private loadCategories(): void {
-    this.error.set(null);
-    this.lookupService.getCategories().subscribe({
-      next: (categories) => {
-        this.categories.set(categories);
-        this.list().reload();
-      },
-      error: () => this.error.set(this.translate.instant('lookup.errorLoad')),
-    });
+    // Invalidate, then let the LIST refetch through `source`. Doing the request
+    // here instead would put the rows in the cache without the list ever
+    // entering a pending state — which is the defect this replaced.
+    this.categories.set(null);
+    this.list().reload();
   }
 }

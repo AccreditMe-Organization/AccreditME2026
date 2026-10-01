@@ -1,5 +1,6 @@
 import {
   Component,
+  ElementRef,
   OnInit,
   computed,
   effect,
@@ -9,7 +10,7 @@ import {
   signal,
 } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import { InputNumberModule } from 'primeng/inputnumber';
 import { CheckboxModule } from 'primeng/checkbox';
@@ -53,6 +54,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         [label]="'orgPosition.nameEn' | translate"
         [control]="form.controls.nameEn"
         inputId="nameEn"
+        [forceShowErrors]="showErrors()"
+        [errorMessages]="fieldErrors()"
       >
         <input pInputText id="nameEn" class="w-full" formControlName="nameEn" />
       </am-field>
@@ -61,6 +64,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         [label]="'orgPosition.nameAr' | translate"
         [control]="form.controls.nameAr"
         inputId="nameAr"
+        [forceShowErrors]="showErrors()"
+        [errorMessages]="fieldErrors()"
       >
         <input pInputText id="nameAr" class="w-full" formControlName="nameAr" dir="rtl" />
       </am-field>
@@ -70,6 +75,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         [control]="form.controls.grade"
         inputId="grade"
         [hint]="'orgPosition.gradeHint' | translate"
+        [forceShowErrors]="showErrors()"
+        [errorMessages]="fieldErrors()"
       >
         <p-inputNumber
           inputId="grade"
@@ -151,6 +158,8 @@ export class PositionFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly orgPositionService = inject(OrgPositionService);
   private readonly roleService = inject(RoleService);
+  private readonly translate = inject(TranslateService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   readonly position = input<IOrgPositionDto | null>(null);
   // ACC-43 — carries the saved position and whether the vacant-role
@@ -194,6 +203,27 @@ export class PositionFormComponent implements OnInit {
    * confers. The vacant-role warning belongs with the role that raises it, so it
    * stays on step 2.
    */
+  /**
+   * ACC-120 slice 6 — REVEAL EVERY ERROR ON SUBMIT, and move focus to the first.
+   *
+   * markAllAsTouched() alone was not enough, and the result was a DEAD BUTTON:
+   * Next was enabled, clicking it did nothing, the field reported
+   * aria-invalid="false", and no error element existed anywhere in the dialog.
+   * A disabled button would at least have signalled; this said nothing at all.
+   *
+   * am-field shows an error on blur only once the control is ALSO dirty — a
+   * deliberate rule, because a dialog focuses its first field on open and
+   * opening a picker blurs it again. `forceShowErrors` is the wrapper's own
+   * answer for the submit moment, and invite-user already used it; this form
+   * simply did not pass it.
+   */
+  readonly showErrors = signal(false);
+
+  readonly fieldErrors = computed(() => {
+    this.translate.currentLang();
+    return { required: this.translate.instant('validation.required') };
+  });
+
   readonly step = signal(1);
   readonly steps = [
     { n: 1, key: 'orgPosition.stepDetails' },
@@ -207,10 +237,27 @@ export class PositionFormComponent implements OnInit {
     // Everything required lives on step 1, so a reader is never sent to step 2
     // with an error behind them.
     if (this.form.invalid) {
-      this.form.markAllAsTouched();
+      this.revealErrors();
       return;
     }
     this.step.set(2);
+  }
+
+  /**
+   * ACC-111 asks for focus to move to the first invalid field. Resolved by
+   * CONTROL ORDER rather than DOM order, so the answer does not change when the
+   * template is rearranged.
+   */
+  revealErrors(): void {
+    this.showErrors.set(true);
+    this.form.markAllAsTouched();
+    const firstInvalid = Object.keys(this.form.controls).find(
+      (name) => this.form.get(name)?.invalid,
+    );
+    if (!firstInvalid) return;
+    this.host.nativeElement
+      .querySelector<HTMLElement>(`#${firstInvalid}, [formcontrolname="${firstInvalid}"]`)
+      ?.focus();
   }
 
   back(): void {
@@ -292,7 +339,7 @@ export class PositionFormComponent implements OnInit {
       // Every required control is on step 1, so go back to it rather than
       // refusing on a step that shows nothing wrong.
       this.step.set(1);
-      this.form.markAllAsTouched();
+      this.revealErrors();
       return;
     }
     this.saving.set(true);
