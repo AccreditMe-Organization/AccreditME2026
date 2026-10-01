@@ -1,7 +1,7 @@
 import { Component, Input, Output, EventEmitter, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -221,6 +221,7 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
 
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
+  private readonly translate = inject(TranslateService);
   private readonly fb = inject(FormBuilder);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly navigationAccess = inject(NavigationAccessService);
@@ -288,8 +289,8 @@ export class WorkflowActionConfiguratorComponent implements OnInit {
 
   onRemove(action: WorkflowTransitionActionDto): void {
     this.confirmationService.confirm({
-      message: `Remove this ${action.actionType} action?`,
-      header: 'Confirm',
+      message: this.translate.instant('workflow.confirmRemoveAction', { type: action.actionType }),
+      header: this.translate.instant('common.confirm'),
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {

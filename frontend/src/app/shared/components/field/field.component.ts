@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   afterNextRender,
   computed,
@@ -10,7 +11,8 @@ import {
   isDevMode,
   signal,
 } from '@angular/core';
-import { AbstractControl } from '@angular/forms';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AbstractControl, FormGroupDirective } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { DIALOG_DENSITY } from '../edit-dialog/dialog-density';
 
@@ -287,6 +289,14 @@ export class FieldComponent {
    * real question, where before the submit it was just a field nobody had
    * reached yet.
    */
+  /**
+   * Reveal every error now, whatever the user has touched.
+   *
+   * NO LONGER NEEDED FOR A SUBMIT (ACC-120) — the wrapper reads the enclosing
+   * form's own submitted state below. It remains for the one case that state
+   * cannot describe: an advance that is not a submit, such as a stepped
+   * dialog's Next.
+   */
   readonly forceShowErrors = input(false);
 
   /**
@@ -312,6 +322,7 @@ export class FieldComponent {
   readonly message = input<'reserved' | 'none'>('reserved');
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly translate = inject(TranslateService);
 
   private readonly generatedId = `am-field-${FieldComponent.nextId++}`;
@@ -349,6 +360,37 @@ export class FieldComponent {
   /** The field has been left at least once. Not sufficient on its own — see showError. */
   private readonly blurred = signal(false);
 
+  /**
+   * ACC-120 — THE ENCLOSING FORM'S OWN SUBMITTED STATE, so a submit reveals
+   * errors with nothing passed by the caller.
+   *
+   * `forceShowErrors` was opt-in and nothing enforced it, which is why two
+   * forms missed it and a third would have. Angular already tracks exactly this
+   * on FormGroupDirective — its own ShowOnDirtyErrorStateMatcher reads the same
+   * flag — so this is reusing the framework's answer rather than inventing a
+   * second one.
+   *
+   * ## Why it is still OPTIONAL, and what that does not mean
+   *
+   * A field is legitimately used outside a form: invite-user substitutes an
+   * explanation for a control when there are no org units, and
+   * set-acting-head-dialog wraps a signal-driven input that has no
+   * AbstractControl at all. Neither has a form directive to inject, and neither
+   * has errors to reveal.
+   *
+   * It is NOT an escape hatch for a form that simply did not bind [formGroup]:
+   * `submitted` is read through a POLLED signal rather than a property read,
+   * because FormGroupDirective.submitted is a plain boolean — a computed over
+   * it would never re-evaluate, which is the same class of defect as a
+   * computed over form.dirty (ACC-120, manage-roles).
+   */
+  private readonly parentForm = inject(FormGroupDirective, { optional: true, self: false });
+  private readonly submitTick = signal(0);
+  private readonly formSubmitted = computed(() => {
+    this.submitTick();
+    return this.parentForm?.submitted ?? false;
+  });
+
   protected readonly required = computed(() => {
     this.controlTick();
     const c = this.control();
@@ -365,7 +407,12 @@ export class FieldComponent {
     // focus away again, so a pure blur rule told the user "This field is
     // required" about a form they had not typed into yet. Found in ACC-111's
     // browser pass, on the Add holiday proof screen.
-    return this.erroredOnce() || (this.blurred() && c.dirty) || this.forceShowErrors();
+    return (
+      this.erroredOnce() ||
+      (this.blurred() && c.dirty) ||
+      this.forceShowErrors() ||
+      this.formSubmitted()
+    );
   });
 
   protected readonly errorText = computed(() => {
@@ -410,6 +457,16 @@ export class FieldComponent {
       const c = this.control();
       if (c?.invalid && c.dirty) this.erroredOnce.set(true);
     });
+
+    // ACC-120 — the enclosing form's ngSubmit, which is what flips its
+    // `submitted` flag. Subscribed rather than polled: the flag is a plain
+    // boolean, so nothing would otherwise tell a computed to re-read it.
+    const parent = this.parentForm;
+    if (parent) {
+      parent.ngSubmit
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.submitTick.update((n) => n + 1));
+    }
 
     // Every keystroke re-reads validity. It only becomes VISIBLE once
     // erroredOnce is set, which is what stops the nagging.

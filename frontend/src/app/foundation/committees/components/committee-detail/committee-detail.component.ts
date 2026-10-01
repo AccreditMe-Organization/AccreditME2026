@@ -886,8 +886,8 @@ export class CommitteeDetailComponent implements OnInit {
 
   onRemoveMember(member: CommitteeMemberDto): void {
     this.confirmationService.confirm({
-      message: `${this.languageService.isArabic() ? 'إزالة' : 'Remove'} ${this.userName(member.userId)}?`,
-      header: 'Confirm',
+      message: this.translate.instant('committee.confirmRemoveMember', { name: this.userName(member.userId) }),
+      header: this.translate.instant('common.confirm'),
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {

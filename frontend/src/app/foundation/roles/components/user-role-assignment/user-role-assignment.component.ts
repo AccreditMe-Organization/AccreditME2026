@@ -1,5 +1,5 @@
 import { Component, Input, OnChanges, computed, inject, signal } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
 import { ConfirmationService } from 'primeng/api';
@@ -82,6 +82,7 @@ export class UserRoleAssignmentComponent implements OnChanges {
   @Input({ required: true }) userId!: string;
 
   private readonly roleService = inject(RoleService);
+  private readonly translate = inject(TranslateService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
@@ -123,8 +124,8 @@ export class UserRoleAssignmentComponent implements OnChanges {
 
   onRemove(role: RoleDto): void {
     this.confirmationService.confirm({
-      message: 'Remove this role assignment?',
-      header: 'Confirm',
+      message: this.translate.instant('roles.confirmRemoveAssignment'),
+      header: this.translate.instant('common.confirm'),
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {

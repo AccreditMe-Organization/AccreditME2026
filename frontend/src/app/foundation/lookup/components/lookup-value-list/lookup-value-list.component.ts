@@ -9,7 +9,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { FormsModule } from '@angular/forms';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { of, switchMap, tap } from 'rxjs';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -68,7 +68,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
   standalone: true,
   imports: [
     PageHeaderComponent,
-    FormsModule,
+    ReactiveFormsModule,
     TranslatePipe,
     ButtonModule,
     TagModule,
@@ -300,29 +300,50 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
       <!-- Override label. Two fields, through am-field like every other dialog
            form — it was a hand-rolled label + input pair with its own spacing. -->
+      <!-- ACC-120 — A REACTIVE FORM, converted from [(ngModel)] on a plain
+           object. It was the ONE dialog form in the application that was not
+           reactive, and the consequence was not stylistic: am-field's showError
+           bails on a missing control BEFORE forceShowErrors is consulted, so
+           these two fields were structurally incapable of showing a validation
+           error. They passed through the slice-6 migration looking migrated.
+           Their only feedback was a disabled Save.
+
+           It is also what lets am-field read FormGroupDirective.submitted,
+           which is how every other form now reveals its errors without the
+           caller passing anything. -->
       <ng-template #overrideFormTpl>
-        <div class="flex flex-col">
-          <am-field [label]="'lookup.labelEn' | translate" inputId="override-label-en">
+        <form [formGroup]="overrideForm" (ngSubmit)="onSaveOverride()" class="flex flex-col">
+          <am-field
+            [label]="'lookup.labelEn' | translate"
+            [control]="overrideForm.controls.labelEn"
+            inputId="override-label-en"
+            [errorMessages]="overrideErrors()"
+          >
             <input
               pInputText
               id="override-label-en"
               class="w-full"
-              [(ngModel)]="overrideForm.labelEn"
+              formControlName="labelEn"
             />
           </am-field>
-          <am-field [label]="'lookup.labelAr' | translate" inputId="override-label-ar">
+          <am-field
+            [label]="'lookup.labelAr' | translate"
+            [control]="overrideForm.controls.labelAr"
+            inputId="override-label-ar"
+            [errorMessages]="overrideErrors()"
+          >
             <input
               pInputText
               id="override-label-ar"
               dir="rtl"
               class="w-full"
-              [(ngModel)]="overrideForm.labelAr"
+              formControlName="labelAr"
             />
           </am-field>
           @if (overrideError()) {
             <p class="text-sm text-red-500">{{ overrideError() }}</p>
           }
-        </div>
+        </form>
       </ng-template>
       <ng-template #overrideFooterTpl>
         <div class="flex justify-end gap-2">
@@ -337,7 +358,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
           <p-button
             [label]="'common.save' | translate"
             [loading]="overrideSaving()"
-            [disabled]="!overrideForm.labelEn || !overrideForm.labelAr || overrideSaving()"
+            [disabled]="overrideSaving()"
             (onClick)="onSaveOverride()"
           />
         </div>
@@ -364,6 +385,7 @@ export class LookupValueListComponent implements OnInit {
   private readonly navigationAccess = inject(NavigationAccessService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly translate = inject(TranslateService);
+  private readonly fb = inject(FormBuilder);
 
   readonly list = viewChild.required<DataListComponent<LookupValueDto>>('list');
 
@@ -393,7 +415,23 @@ export class LookupValueListComponent implements OnInit {
   readonly overridingValue = signal<LookupValueDto | null>(null);
   readonly overrideSaving = signal(false);
   readonly overrideError = signal<string | null>(null);
-  readonly overrideForm = { labelEn: '', labelAr: '' };
+  /**
+   * Reactive, and Save is NO LONGER DISABLED on an empty field. A disabled
+   * button was this dialog's only feedback and it could not say why; now an
+   * empty field says so itself, which is the whole point of the conversion.
+   */
+  readonly overrideForm = this.fb.group({
+    labelEn: ['', [Validators.required, Validators.maxLength(255)]],
+    labelAr: ['', [Validators.required, Validators.maxLength(255)]],
+  });
+
+  readonly overrideErrors = computed(() => {
+    this.translate.currentLang();
+    return {
+      required: this.translate.instant('validation.required'),
+      maxlength: this.translate.instant('validation.maxLength255'),
+    };
+  });
 
   readonly columns = computed<DataListColumn[]>(() => {
     this.translate.currentLang();
@@ -509,8 +547,10 @@ export class LookupValueListComponent implements OnInit {
 
   openOverride(val: LookupValueDto): void {
     this.overridingValue.set(val);
-    this.overrideForm.labelEn = val.labelOverrideEn ?? val.labelEn;
-    this.overrideForm.labelAr = val.labelOverrideAr ?? val.labelAr;
+    this.overrideForm.reset({
+      labelEn: val.labelOverrideEn ?? val.labelEn,
+      labelAr: val.labelOverrideAr ?? val.labelAr,
+    });
     this.overrideError.set(null);
     this.showOverrideDialog.set(true);
   }
@@ -561,12 +601,15 @@ export class LookupValueListComponent implements OnInit {
   onSaveOverride(): void {
     const val = this.overridingValue();
     if (!val) return;
+    // No reveal call here: the field wrapper reads the form's own submitted
+    // state, and this form submits.
+    if (this.overrideForm.invalid) return;
     this.overrideSaving.set(true);
     this.overrideError.set(null);
     this.lookupService
       .overrideLabel(val.id, {
-        labelOverrideEn: this.overrideForm.labelEn,
-        labelOverrideAr: this.overrideForm.labelAr,
+        labelOverrideEn: this.overrideForm.controls.labelEn.value ?? '',
+        labelOverrideAr: this.overrideForm.controls.labelAr.value ?? '',
       })
       .subscribe({
         next: () => {

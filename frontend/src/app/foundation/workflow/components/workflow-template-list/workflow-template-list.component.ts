@@ -1,6 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -109,6 +109,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 })
 export class WorkflowTemplateListComponent implements OnInit {
   private readonly workflowTemplateService = inject(WorkflowTemplateService);
+  private readonly translate = inject(TranslateService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly confirmationService = inject(ConfirmationService);
@@ -145,8 +146,8 @@ export class WorkflowTemplateListComponent implements OnInit {
   onDeactivate(template: WorkflowTemplateDto, event: Event): void {
     event.stopPropagation();
     this.confirmationService.confirm({
-      message: `Deactivate template "${template.nameEn}"?`,
-      header: 'Confirm',
+      message: this.translate.instant('workflow.confirmDeactivateTemplate', { name: template.nameEn }),
+      header: this.translate.instant('common.confirm'),
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {
