@@ -256,28 +256,6 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
         </div>
       }
 
-      <!-- ── header row ──────────────────────────────────────────────────── -->
-      <!-- Page mode only, and only once there is something to head. Rendering
-           headers above an empty state labels columns that hold nothing. -->
-      @if (isPage() && headerTemplate() && rows().length > 0) {
-        <div
-          class="grid items-center gap-3 px-3 py-2 border-b-2 border-[var(--am-border)] bg-[var(--am-surface)] text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)]"
-          style="grid-template-columns: var(--am-list-cols)"
-        >
-          <ng-container
-            [ngTemplateOutlet]="headerTemplate()!"
-            [ngTemplateOutletContext]="{
-              $implicit: {
-                sortBy: appliedQuery().sortBy,
-                sortDir: appliedQuery().sortDir,
-                sort: sortByColumnKey,
-                visible: isColumnVisible,
-              },
-            }"
-          />
-        </div>
-      }
-
       <!-- ── body ────────────────────────────────────────────────────────── -->
       <!-- THE SCROLL REGION, and it is deliberately only this. The toolbar,
            scope chips, header row and pager sit outside it, so they stay put
@@ -306,7 +284,49 @@ export const PANEL_TOOLBAR_ROW_THRESHOLD = 12;
         </div>
       }
 
-      <div class="flex-1 min-h-0 overflow-y-auto">
+      <div class="flex-1 min-h-0 overflow-y-auto" style="scrollbar-gutter: stable">
+      <!-- ── header row ──────────────────────────────────────────────────── -->
+      <!-- INSIDE the scroll container, and STICKY. Page mode only, and only
+           once there is something to head: headers above an empty state label
+           columns that hold nothing.
+
+           ## Why it moved in here (ACC-120)
+
+           The header and the rows are two SEPARATE grids reading one string,
+           and a grid resolves an fr track against its OWN content box. Outside the
+           scroller the header was a different width from the rows — by the
+           scrollbar when the list scrolled, and by the reserved gutter when it
+           did not — so every fr column resolved slightly narrower in one grid
+           than the other, and the headings walked away from their data.
+           Measured on Roles: 0, 7, 11, 15px of drift with the two track lists
+           byte-identical, which is why "assert the templates match" would have
+           passed throughout.
+
+           Inside, both grids share one content box by construction. There is no
+           width to keep in step, so there is nothing to get wrong later.
+
+           Position sticky is what keeps it a header rather than a first row: it stays
+           put while the rows move under it, which is the behaviour it had
+           outside. -->
+      @if (isPage() && headerTemplate() && rows().length > 0) {
+        <div
+          class="sticky top-0 z-[1] grid items-center gap-3 px-3 py-2 border-b-2 border-[var(--am-border)] bg-[var(--am-surface)] text-[11px] font-semibold uppercase tracking-wide text-[var(--am-text-secondary)]"
+          style="grid-template-columns: var(--am-list-cols)"
+        >
+          <ng-container
+            [ngTemplateOutlet]="headerTemplate()!"
+            [ngTemplateOutletContext]="{
+              $implicit: {
+                sortBy: appliedQuery().sortBy,
+                sortDir: appliedQuery().sortDir,
+                sort: sortByColumnKey,
+                visible: isColumnVisible,
+              },
+            }"
+          />
+        </div>
+      }
+
       @if (outcome().status === 'error') {
         <!-- Nothing to show: the request failed on a FIRST load. -->
         <div class="p-4 flex flex-col items-center gap-2">
@@ -469,9 +489,31 @@ export class DataListComponent<T> implements OnInit {
   readonly pageSize = input<number>(25);
   readonly rowsPerPageOptions = input<number[]>([10, 25, 50, 100]);
 
-  // Appended after the column tracks — the row-actions cell. Set to '' for a
-  // list whose rows have no trailing action.
-  readonly gridSuffix = input<string>('auto');
+  /**
+   * The trailing row-actions track, appended after the column tracks. Set to ''
+   * for a list whose rows have no trailing action.
+   *
+   * ## IT MUST NOT BE CONTENT-SIZED, and `auto` was the alignment bug
+   *
+   * The header and the rows are two SEPARATE grids reading one string. That
+   * string was already identical — which is why "assert the two templates
+   * match" would have passed while the columns visibly drifted. `auto` resolves
+   * against each grid's OWN content, and the two have different content in this
+   * last cell: a row holds its action buttons, the header holds an empty span.
+   * So the header's last track collapsed to ~0 and handed its ~68px back to the
+   * `1fr` columns, which widened and pushed every later heading right.
+   *
+   * Measured on Org Positions before the fix: header-minus-row left offset ran
+   * 0, 47, 83, 83, 83, 83 px, far enough that the GRADE heading sat over the
+   * SINGLE ASSIGNEE data. A heading labelling the wrong column.
+   *
+   * So the default is a FIXED track. A list whose row actions are wider passes
+   * its own value; `--am-list-actions` lets a screen tune it without hunting
+   * this input. Never pass `auto`, `max-content` or `min-content` here: any of
+   * them reintroduces the defect, because the header can never have the row's
+   * content.
+   */
+  readonly gridSuffix = input<string>('var(--am-list-actions, 88px)');
 
   // Names of the filters this list offers. Declared so a crafted URL cannot
   // introduce filter keys the list never had — see readUrlFilters.
