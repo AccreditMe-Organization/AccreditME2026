@@ -284,6 +284,18 @@ export const UNIVERSITY_FIXTURE: TenantFixture = {
       holder: 'aliya',
       why: 'Computer Science specialist — the most ordinary staff member.',
     },
+    // ACC-123 — the same persona in the second tenant, held by a different KIND of
+    // person on purpose, so the role is not read as belonging to one job title.
+    //
+    // NOT Rana, whose Institutional Effectiveness office is the obvious fit: the
+    // vacant-head edge case deactivates her during seeding, and a deactivated
+    // holder cannot sign in, so the persona would prove nothing. validateFixture()
+    // refuses that, and this note is here so the next reader does not try it.
+    {
+      roleKey: 'READ_ONLY_ADMIN',
+      holder: 'salma',
+      why: 'Dean of Health Sciences — outside the Quality Assurance Directorate, and the dean whose programmes are accredited, so she inspects the setup without administering it.',
+    },
   ],
 
   // ACC-107 — a second custom role, in a second tenant, with a DIFFERENT

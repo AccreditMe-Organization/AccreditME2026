@@ -221,11 +221,21 @@ export type RowAction = 'transfer' | 'deactivate';
               }
 
               <div class="flex items-center gap-1 shrink-0" (click)="$event.stopPropagation()">
-                <!-- Edit is LABELLED, per the reference: the common action
-                     should be readable rather than an icon whose meaning
-                     appears only on hover. -->
+                <!-- LABELLED, per the reference: the common action should be
+                     readable rather than an icon whose meaning appears only on
+                     hover.
+
+                     ACC-123 — it reads OPEN, not Edit. It calls onView(), which
+                     navigates to the profile; it opens no form and saves
+                     nothing. Found while walking this page as READ_ONLY_ADMIN:
+                     the row menu beside it is correctly suppressed for someone
+                     with no write permission, so this button was the only thing
+                     on the page promising a write to a person who has none. Not
+                     a gating hole — a label describing the wrong action, which
+                     was equally wrong for every other role and simply easier to
+                     see from there. -->
                 <p-button
-                  [label]="'common.edit' | translate"
+                  [label]="'common.open' | translate"
                   size="small"
                   [text]="true"
                   (onClick)="onView(user)"

@@ -31,7 +31,8 @@
     "verify:acc134-roots": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/verify-acc134-roots.ts",
     "backfill:acc137-org-unit-type": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc137-org-unit-type.ts",
     "seed:system-lookups": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js src/foundation/lookup/seed-system-lookups.cli.ts",
-    "backfill:acc141-root-unit-type": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc141-root-unit-type.ts"
+    "backfill:acc141-root-unit-type": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc141-root-unit-type.ts",
+    "backfill:acc123-read-only-admin-role": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc123-read-only-admin-role.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",

@@ -9,6 +9,7 @@ import { MessageModule } from 'primeng/message';
 import { RoleService, RoleDto, PermissionDto } from '../../services/role.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { LanguageService } from '../../../../core/services/language.service';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
 interface ModuleGroup {
@@ -69,10 +70,16 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
                     <p-checkbox
                       [binary]="true"
                       [inputId]="perm.id"
+                      [disabled]="!canManage()"
                       [ngModel]="isChecked(perm)"
                       (ngModelChange)="toggle(perm)"
                     />
-                    <label [for]="perm.id" class="text-sm cursor-pointer">{{ perm.action }}</label>
+                    <label
+                      [for]="perm.id"
+                      class="text-sm"
+                      [class.cursor-pointer]="canManage()"
+                      >{{ perm.action }}</label
+                    >
                   </div>
                 }
               </div>
@@ -85,18 +92,37 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
         <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
       }
 
+      <!-- ACC-123 — DISABLED rather than hidden here, unlike every other write
+           control in the app, and the difference is deliberate. Elsewhere a
+           suppressed control leaves a page that still makes sense. A permission
+           matrix with its checkboxes removed is not a matrix: the checkbox IS
+           the reading. So the boxes stay, showing what the role holds, and
+           cannot be changed.
+
+           The Save goes, because a disabled Save says "you could do this" and
+           the sentence below says what is actually true. Same shape as Setup
+           health's own suppressed Fix, which names the permission rather than
+           leaving a dead affordance. -->
+      @if (!canManage()) {
+        <p class="text-sm text-[var(--am-text-secondary)]">
+          {{ 'roles.matrixReadOnly' | translate }}
+        </p>
+      }
+
       <div class="flex gap-3 justify-end">
         <p-button
-          [label]="'common.cancel' | translate"
+          [label]="(canManage() ? 'common.cancel' : 'common.back') | translate"
           severity="secondary"
           [text]="true"
           (onClick)="goBack()"
         />
-        <p-button
-          [label]="'common.save' | translate"
-          [loading]="saving()"
-          (onClick)="onSave()"
-        />
+        @if (canManage()) {
+          <p-button
+            [label]="'common.save' | translate"
+            [loading]="saving()"
+            (onClick)="onSave()"
+          />
+        }
       </div>
 
     </div>
@@ -106,6 +132,12 @@ export class RolePermissionMatrixComponent implements OnInit {
   private readonly roleService = inject(RoleService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly navigationAccess = inject(NavigationAccessService);
+
+  // PATCH /roles/:id/permissions enforces ROLES_PERMISSIONS.MANAGE
+  // (role.controller.ts). The ROUTE is gated on roles:view, so an inspector
+  // reaches this page and reads it; only saving needs the stronger permission.
+  readonly canManage = computed(() => this.navigationAccess.hasPermission('roles:manage'));
 
   private roleId = '';
 

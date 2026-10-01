@@ -6,6 +6,7 @@
     "delete": "Delete",
     "done": "Done",
     "edit": "Edit",
+    "open": "Open",
     "view": "View",
     "create": "Create",
     "submit": "Submit",
@@ -259,6 +260,7 @@
     "nowValue": "now"
   },
   "roles": {
+    "matrixReadOnly": "You can see what this role is allowed to do, but not change it. Changing it needs permission to manage roles.",
     "title": "Roles & Permissions",
     "addRole": "New Role",
     "editRole": "Edit Role",
@@ -754,6 +756,7 @@
     "offboarding": "Offboarding"
   },
   "adminSettings": {
+    "profileReadOnly": "You can see these details, but not change them. Changing them needs permission to update the organization.",
     "organizationProfile": "Organization Profile",
     "emailProvider": "Email Provider",
     "aiSettings": "AI Credits",
