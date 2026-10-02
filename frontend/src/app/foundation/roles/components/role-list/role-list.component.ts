@@ -346,8 +346,8 @@ export class RoleListComponent {
   onDeactivate(role: RoleDto): void {
     const label = this.displayLabel(role);
     this.confirmationService.confirm({
-      message: `Deactivate role "${label}"? This will immediately revoke permissions for all users assigned to this role.`,
-      header: 'Confirm',
+      message: this.translate.instant('roles.confirmDeactivateRole', { name: label }),
+      header: this.translate.instant('common.confirm'),
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {

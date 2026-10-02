@@ -24,6 +24,7 @@ import { RoleService, RoleDto } from '../../../roles/services/role.service';
 // exception note and overlay-select.component.ts for the full mechanism.
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { revealAndFocusFirstInvalid } from '../../../../shared/components/field/reveal-errors';
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 @Component({
@@ -244,20 +245,12 @@ export class PositionFormComponent implements OnInit {
   }
 
   /**
-   * ACC-111 asks for focus to move to the first invalid field. Resolved by
-   * CONTROL ORDER rather than DOM order, so the answer does not change when the
-   * template is rearranged.
+   * ACC-120 — ONLY for a non-submit advance. A submit needs nothing: the field
+   * wrapper reads the form's own submitted state.
    */
   revealErrors(): void {
     this.showErrors.set(true);
-    this.form.markAllAsTouched();
-    const firstInvalid = Object.keys(this.form.controls).find(
-      (name) => this.form.get(name)?.invalid,
-    );
-    if (!firstInvalid) return;
-    this.host.nativeElement
-      .querySelector<HTMLElement>(`#${firstInvalid}, [formcontrolname="${firstInvalid}"]`)
-      ?.focus();
+    revealAndFocusFirstInvalid(this.form, this.host);
   }
 
   back(): void {

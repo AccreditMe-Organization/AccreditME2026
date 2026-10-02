@@ -392,8 +392,8 @@ export class WorkflowStageListComponent implements OnInit {
 
   onRemove(stage: WorkflowStageDto): void {
     this.confirmationService.confirm({
-      message: `Remove stage "${stage.nameEn}"?`,
-      header: 'Confirm',
+      message: this.translate.instant('workflow.confirmRemoveStage', { name: stage.nameEn }),
+      header: this.translate.instant('common.confirm'),
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {

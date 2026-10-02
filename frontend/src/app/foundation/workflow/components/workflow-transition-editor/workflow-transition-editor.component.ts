@@ -442,6 +442,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   private readonly fb = inject(FormBuilder);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly navigationAccess = inject(NavigationAccessService);
+  private readonly translate = inject(TranslateService);
 
   // ACC-123 — workflows:manage, what every transition endpoint carries.
   readonly canManage = computed(() =>
@@ -839,8 +840,8 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
 
   onRemove(transition: WorkflowTransitionDto): void {
     this.confirmationService.confirm({
-      message: `Remove transition "${transition.labelEn}"?`,
-      header: 'Confirm',
+      message: this.translate.instant('workflow.confirmRemoveTransition', { name: transition.labelEn }),
+      header: this.translate.instant('common.confirm'),
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {

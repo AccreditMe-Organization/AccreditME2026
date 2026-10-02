@@ -16,6 +16,7 @@ import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { CheckboxModule } from 'primeng/checkbox';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { revealAndFocusFirstInvalid } from '../../../../shared/components/field/reveal-errors';
 import {
   LookupService,
   LookupValueDto,
@@ -119,7 +120,15 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                 <!-- The attribute schema's own label, which is tenant data and
                      so is NOT translated — same rule as a workflow transition's
                      label (CLAUDE.md, ACC-22). -->
-                <am-field [label]="field.label" [inputId]="'attr_' + field.key">
+                <!-- ACC-120 — [control] IS PASSED. It was not, and the
+                     consequence was silent: am-field's showError bails on a
+                     missing control, so these fields could not report an
+                     error even though the control exists and is validated. -->
+                <am-field
+                  [label]="field.label"
+                  [inputId]="'attr_' + field.key"
+                  [control]="attributeGroup.get(field.key)"
+                >
                   <input
                     [id]="'attr_' + field.key"
                     pInputText
@@ -129,7 +138,11 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
                   />
                 </am-field>
               } @else {
-                <am-field [label]="field.label" [inputId]="'attr_' + field.key">
+                <am-field
+                  [label]="field.label"
+                  [inputId]="'attr_' + field.key"
+                  [control]="attributeGroup.get(field.key)"
+                >
                   <input
                     [id]="'attr_' + field.key"
                     pInputText
@@ -234,17 +247,13 @@ export class LookupValueFormComponent implements OnInit {
     this.step.set(2);
   }
 
-  /** ACC-111 — focus the first invalid field, by control order. */
+  /**
+   * ACC-120 — ONLY for a non-submit advance. A submit needs nothing: the field
+   * wrapper reads the form's own submitted state.
+   */
   revealErrors(): void {
     this.showErrors.set(true);
-    this.form.markAllAsTouched();
-    const firstInvalid = Object.keys(this.form.controls).find(
-      (name) => this.form.get(name)?.invalid,
-    );
-    if (!firstInvalid) return;
-    this.host.nativeElement
-      .querySelector<HTMLElement>(`#${firstInvalid}, [formcontrolname="${firstInvalid}"]`)
-      ?.focus();
+    revealAndFocusFirstInvalid(this.form, this.host);
   }
 
   back(): void {
