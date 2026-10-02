@@ -109,14 +109,27 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
         working-directory: backend
-      # ACC-92 — every @Processor must be registered behind the RUN_WORKERS
-      # gate. The specs prove the gate for the processors they NAME, so a
-      # fifth one added later would rejoin the shared queues with every test
-      # still green. This derives the inventory from the source instead.
-      # A gate, not a ratchet: the allowed count of ungated processors is 0.
-      - name: Worker gate
-        run: npm run check:worker-gate
+      # ACC-120 — DISCOVERED from package.json, like the frontend's. One script
+      # today (check:worker-gate, ACC-92) and naming it here is what would make
+      # the second one invisible, which is exactly how the frontend lost two.
+      - name: Static checks (discovered)
         working-directory: backend
+        run: |
+          scripts=$(node -e "const s=require('./package.json').scripts||{};console.log(Object.keys(s).filter(k=>k.startsWith('check:')).join(' '))")
+          if [ -z "$scripts" ]; then
+            echo "::error::No check:* scripts discovered — discovery is broken, not the app."
+            exit 1
+          fi
+          failed=0
+          for script in $scripts; do
+            if npm run "$script" --silent; then
+              echo "::notice::$script passed"
+            else
+              echo "::error::$script FAILED"
+              failed=1
+            fi
+          done
+          exit $failed
       - name: Run unit tests
         run: npx jest --passWithNoTests
         working-directory: backend
@@ -184,79 +197,46 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
         working-directory: frontend
-      # ACC-94 — dates, numbers and counted strings go through
-      # src/app/core/formatting only. A Karma spec cannot scan source (no
-      # filesystem in the browser), so this rule is a build step. Cheap, so it
-      # runs before the tests.
-      - name: Formatting rule
-        run: npm run check:formatting
+      # ACC-120 — EVERY check:* SCRIPT, DISCOVERED FROM package.json RATHER THAN
+      # LISTED HERE.
+      #
+      # This replaced eight hand-written steps, and the reason is a defect the
+      # list had the moment a ninth scan was written: check:field-control and
+      # check:confirm-translated were added, passed locally, and were NOT IN CI.
+      # A scan that exists but is not wired to the gate is a vacuous pass in a
+      # new costume, and nothing would have said so, because a green build looks
+      # identical either way.
+      #
+      # /ready-to-pr already discovers them this way, for this exact reason, and
+      # CI not doing the same was the drift. It is also the principle the scans
+      # themselves now follow: key off the thing, never off a list of where the
+      # thing occurs.
+      #
+      # The commentary that used to live here went with the steps, into each
+      # script's own header, where a reader of the scan finds it.
+      #
+      # FAILS THE BUILD, reporting every script by name so the list can be
+      # compared against the repo. Discovery finding NOTHING is itself a
+      # failure: an empty list is how this step would silently stop checking.
+      - name: Static checks (discovered)
         working-directory: frontend
-      # ACC-111 — the design system's artboard-9 contrast pairs, computed from
-      # src/styles/design-tokens.scss. A token change that breaks a pair fails
-      # here, so the published table cannot drift from the code.
-      - name: Contrast pairs
-        run: npm run check:contrast
-        working-directory: frontend
-      # ACC-111 — icon-only controls must carry a name. A ratchet, not a gate:
-      # it prints the count of controls not yet migrated onto
-      # IconButtonComponent and fails only when that count GROWS.
-      - name: Icon labels
-        run: npm run check:icon-labels
-        working-directory: frontend
-      # ACC-111 — a PrimeNG overlay inside a dialog is dismissed by the dialog
-      # body's own scroll. The runtime guard cannot see those (PrimeNG builds
-      # them itself), so they are caught statically. Also a ratchet.
-      - name: Dialog overlays
-        run: npm run check:dialog-overlays
-        working-directory: frontend
-      # ACC-120 slice 2 — artboard 13 applies compact density to a WHOLE dialog
-      # at 5+ field blocks. This enforces the half a machine can count; the
-      # "body would exceed 420px" half stays a design-time measurement recorded
-      # in each dialog's own comment, because a static scan cannot measure
-      # rendered height honestly.
-      - name: Dialog density
-        run: npm run check:dialog-density
-        working-directory: frontend
-      # ACC-47 — the actual gap this ticket exists to close: this frontend
-      # job never ran any test-runner step before, at any point in this
-      # repo's history (confirmed via full commit-history audit, not a
-      # regression). ChromeHeadlessCI (karma.conf.js) adds --no-sandbox
-      # etc. for the containerized runner. Placed before the build step,
-      # matching the backend job's own tsc -> test -> (expensive step)
-      # ordering — fail fast on a test failure before spending time on a
-      # full production build.
-      # ACC-109 — CHROME_BIN is what keeps ACC-47's pinned Chrome actually in
-      # use, and it became necessary at the setup-chrome v1 -> v2 bump. v2
-      # installs a channel name (`stable`) from Chrome for Testing rather than
-      # the official installer, so on Linux the binary is named `chrome`;
-      # karma-chrome-launcher resolves ChromeHeadless with
-      # getBin(['google-chrome', 'google-chrome-stable']) and would not match
-      # it. Without this it would silently fall back to the runner image's own
-      # preinstalled Chrome — green, but the exact drift ACC-47 pinned against.
-      # CHROME_BIN takes precedence over that lookup (ENV_CMD in the launcher),
-      # so the tests run on the binary this job installed.
-      # ACC-118 — a page-header create action must sit behind a permission gate.
-      # The specs pin the thirteen pages that have one; this catches the
-      # fourteenth, which no spec would. It proves a gate is PRESENT, never that
-      # it is the RIGHT one — that needs the endpoint's decorator, which only a
-      # spec can assert.
-      - name: Create-action gating
-        run: npm run check:create-gating
-        working-directory: frontend
-      # ACC-123 — the same argument, widened from create to every write action:
-      # edit, delete, deactivate, reorder, set default, remove. A separate scan
-      # rather than a wider one, because the two look for different shapes —
-      # see the header of check-action-gating.mjs.
-      - name: Write-action gating
-        run: npm run check:action-gating
-        working-directory: frontend
-      # A scan that has quietly stopped matching anything reports a clean app,
-      # and a green build looks identical either way. The scan's own floor
-      # catches total failure; this writes a real ungated control into src/app
-      # and asserts the scan fails for it, then that the tree is clean again.
-      - name: Write-action gating — self-test
-        run: npm run check:action-gating:selftest
-        working-directory: frontend
+        run: |
+          scripts=$(node -e "const s=require('./package.json').scripts||{};console.log(Object.keys(s).filter(k=>k.startsWith('check:')).join(' '))")
+          if [ -z "$scripts" ]; then
+            echo "::error::No check:* scripts discovered — discovery is broken, not the app."
+            exit 1
+          fi
+          failed=0
+          for script in $scripts; do
+            if npm run "$script" --silent; then
+              echo "::notice::$script passed"
+            else
+              echo "::error::$script FAILED"
+              failed=1
+            fi
+          done
+          exit $failed
+
       - name: Run unit tests
         run: npx ng test --watch=false --browsers=ChromeHeadlessCI
         working-directory: frontend
