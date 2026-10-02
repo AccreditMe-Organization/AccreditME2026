@@ -2562,13 +2562,41 @@ reason they were missed is that they lived nowhere a reader would look.
   need, **selection belongs in the shared list component** and is designed
   then, not anticipated now by a half-mechanism nothing uses.
 
-- **SELF-LOCKOUT IS REFUSED, NOT WARNED ABOUT.** A save that would leave nobody
-  able to administer the tenant is REFUSED, the same way deactivating the last
-  root org unit already is. Not a confirm, not a warning the user can accept —
-  the same shape as the last-`TENANT_ADMIN` guards in `RoleService` and
-  `UserService.deactivate()` (ACC-16). **A real behaviour to build when role
-  editing is next touched**, and it is not built today: Manage roles confirms
-  on leaving a user with no roles, which is a different and much weaker thing.
+- **SELF-LOCKOUT IS REFUSED, NOT WARNED ABOUT — DECIDED, PARTIALLY BUILT. THIS
+  ENTRY DESCRIBES A GAP, NOT A FEATURE; DO NOT CITE IT AS A CONTROL THAT
+  EXISTS.** A save that would leave nobody able to administer the tenant is
+  REFUSED, the same way deactivating the last root org unit already is — not a
+  confirm, not a warning a user can accept.
+
+  **What IS built, exactly** (verified in `role.service.ts`, not remembered): a
+  check on the role's KEY. `removeRoleFromUser()` refuses removing
+  `TENANT_ADMIN` when it is that role's last assignment, and `deactivateRole()`
+  refuses deactivating `TENANT_ADMIN` while any assignment exists (ACC-16).
+  An earlier draft of this entry said the rule "is not built today", which was
+  itself wrong — corrected here rather than left to be inherited.
+
+  **What is NOT built, which is the whole decision:** the guard never reads a
+  role's PERMISSIONS, so **a custom role carrying `users:manage` /
+  `roles:manage` is invisible to it.** In a tenant administered only by such a
+  role, removing its last holder locks everyone out and currently SUCCEEDS.
+  "Nobody able to administer the tenant" and "the last holder of the role whose
+  key is TENANT_ADMIN" are different conditions, and only the second is
+  enforced. The frontend adds nothing: Manage roles confirms on leaving ONE
+  USER with no roles, a different question again.
+
+  **THE PR THAT BUILDS THIS IS FORCED TO COME BACK HERE.** The gap is pinned by
+  a test that is written to FAIL once the refusal widens —
+  `role.service.spec.ts`, *"does NOT yet refuse removing the last holder of a
+  CUSTOM administrator role — ACC-120 gap, pinned deliberately"*. Its own
+  comment says to delete it and rewrite this entry in the same change, and
+  never to narrow the new guard to keep it green. Mutation-proved: making the
+  existing guard key-agnostic turns that test red by name.
+
+  **Why it is pinned rather than trusted to a reader.** CLAUDE.md had four
+  false claims corrected on 2026-09-29 and 2026-10-01, every one of them a
+  specification that had been read as a description. An entry describing
+  something unbuilt becomes the fifth the day it ships, and a status line alone
+  does not stop that — nothing makes anyone reread it. A failing test does.
 
 ---
 
