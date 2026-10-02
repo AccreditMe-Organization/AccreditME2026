@@ -2537,6 +2537,13 @@ each scan's reasoning in its own header under `frontend/scripts/`.
   applies beyond shells: a presence check is not a behaviour check — see the
   field wrapper, where "is this field wrapped?" was answered yes by every field
   that could not show an error.
+  **The worked example is `git add -A`**, and it is here because this rule was
+  broken within the hour by the commit that wrote it: `-A` stages whatever
+  happens to be in the tree, which that day included two design exports someone
+  else had just extracted, and they went into a docs commit unnoticed because
+  the proxy was "everything" rather than a `git status` anyone had read. Stage
+  the paths the change is about, or read the status first — never both at
+  once.
 
 - **A SCAN WHOSE FIRST ACT IS TO ALLOWLIST EVERY EXISTING INSTANCE IS A
   DISABLED SCAN WITH EXTRA STEPS.** If a new scan finds 14 real defects, the
