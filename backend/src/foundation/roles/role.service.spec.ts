@@ -707,6 +707,36 @@ describe('RoleService', () => {
       expect(mockPrisma.userRole.delete).not.toHaveBeenCalled();
     });
 
+    // ACC-120 — THE SELF-LOCKOUT GAP IS PINNED HERE, AND THIS TEST IS MEANT TO
+    // GO RED THE DAY THE REFUSAL IS WIDENED.
+    //
+    // CLAUDE.md's ACC-120 section records "a save that would leave nobody able
+    // to administer the tenant is REFUSED" as Ahmad's decision, and states that
+    // only part of it is built. This test is what makes that status honest
+    // rather than a sentence nobody rereads.
+    //
+    // What exists is the test above: a check on role.key === 'TENANT_ADMIN'.
+    // The DECIDED rule is about nobody being able to ADMINISTER the tenant,
+    // which is a different condition — the guard never looks at a role's
+    // permissions, so a custom role carrying users:manage / roles:manage is
+    // invisible to it. In a tenant administered only by such a role, removing
+    // its last holder locks everyone out, and today it succeeds.
+    it('does NOT yet refuse removing the last holder of a CUSTOM administrator role — ACC-120 gap, pinned deliberately', async () => {
+      const customAdmin = makeRole({ key: 'QUALITY_DIRECTOR', isSystem: false });
+      mockPrisma.role.findFirst.mockResolvedValue(customAdmin);
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
+      mockPrisma.userRole.count.mockResolvedValue(1);
+
+      await service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR);
+
+      // IF THIS FAILS, THAT IS THE SUCCESS CASE. Self-lockout refusal has been
+      // widened past the TENANT_ADMIN key, which is what was decided. Delete
+      // this test and update CLAUDE.md's ACC-120 self-lockout entry in the same
+      // change — its status line is written to be false the moment this passes
+      // no longer. Do NOT narrow the new guard to keep this green.
+      expect(mockPrisma.userRole.delete).toHaveBeenCalledWith({ where: { id: 'ur-1' } });
+    });
+
     it('throws NotFoundException when the assignment does not exist', async () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
       mockPrisma.userRole.findFirst.mockResolvedValue(null);

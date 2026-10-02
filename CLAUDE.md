@@ -2457,6 +2457,156 @@ tokens, type and states.
 
 ---
 
+## Key Architecture Decisions (ACC-120)
+
+Four rules the migration produced, and two decisions recorded so they are not
+lost a second time. Mechanism detail stays where a reader of the code finds it:
+the inner-scroll caveat beside the cap rule in `edit-dialog.component.ts`, and
+each scan's reasoning in its own header under `frontend/scripts/`.
+
+- **STEPPING IS A RESPONSE TO A MEASURED OVERFLOW, NEVER AN AVAILABLE
+  AFFORDANCE.** A form is stepped because it was measured over the 420px cap
+  and could not be compacted into fitting — in that order. Measure first, in
+  BOTH languages, with the field wrapper in and the actions already in the
+  footer. A form that fits is not stepped, however many fields it has, because
+  a second step a reader did not need is a click and a place to lose their
+  bearings for nothing.
+  **Compaction is tried first and it is a short list:** compact density, the
+  actions moved out of the body, and pairing two short related fields onto one
+  row. If that reaches the cap, it fits; if it does not, step it on a seam the
+  form ALREADY HAS. `EditDialogComponent`'s three-way order (ACC-111) still
+  governs what to do about an overflow — this rule governs the step before it,
+  which is proving there is one.
+  **Below two steps, nothing renders** — no strip, no Next. How many steps
+  there are is data: a lookup category with no attribute schema gets exactly
+  the form it was.
+
+  **The worked close call — Add Position, which was stepped, and Add Value,
+  which also was:**
+  - **Add Position measured 486 against the 420 cap**, in both languages, with
+    compact density applied and the actions already in the footer. 66px over is
+    content, not spacing.
+  - **Pairing the two name fields on one row was costed and would have reached
+    roughly 415** — five pixels under. **That headroom is why we did not.** One
+    translated label wrapping to a second line consumes more than five pixels,
+    so "fits" would have meant "fits in English, today". A measurement that
+    close to the cap is not a pass, and recording it as one is how the cap
+    quietly becomes advice.
+  - **Add Value sat at exactly 420 and scrolled**, and its field count is not
+    even fixed — it is the category's own attribute schema, and `document_type`
+    adds five more. Nine field blocks cannot be made to fit at any density.
+  - Both were stepped on seams they already had: a position is what it IS
+    (names, grade) then what holding it DOES; a value is the value then what
+    this category records about one. An arithmetic split down the middle is the
+    thing to refuse.
+
+- **AN ASSERTION THAT WOULD ALSO PASS IF THE THING IT MEASURES WERE ABSENT
+  PROVES NOTHING, AND LOOKS IDENTICAL TO ONE THAT DOES.** The general form of a
+  defect this ticket hit three times, in three different costumes. A measuring
+  assertion therefore carries a NON-VACUITY GUARD, and the guard runs FIRST so
+  a reader meets it before the claim it licenses.
+  - `expect(drift).toBe(0)` passes perfectly when every number is zero, which
+    is what a layout-less environment reports for every
+    `getBoundingClientRect`. The guard asserts the offsets are real, distinct
+    and strictly increasing before "they match" is allowed to mean anything
+    (`data-list.alignment.spec.ts`).
+  - A spec host binding `[gridSuffix]="undefined"` gave the component an
+    explicit `undefined` rather than its default, so no trailing track existed
+    and the geometry assertions never exercised the column they were written
+    for. Caught only by mutating the default and watching the file stay green.
+    **A default a test relies on is pinned by reading it**, separately from any
+    test that copies it.
+  - Two scans passed locally and were not in CI at all. **A scan that exists
+    but is not wired to the gate is a vacuous pass in a new costume** — a green
+    build looks the same either way, so nothing says so. Both CI jobs now
+    DISCOVER `check:*` from `package.json` rather than naming them, and
+    discovery finding NOTHING fails the step, because an empty list is how a
+    discovering step silently stops checking.
+
+  **The test of whether a guard is real is a mutation**: break the thing and
+  watch the assertion go red, naming it. An assertion nobody has watched fail
+  is a hypothesis.
+
+- **CHECK THE THING, NOT A PROXY FOR IT. Gate on the runner's own exit
+  status.** `cmd | grep pattern` reports GREP's status, so a build that failed
+  outright and printed nothing reads as a pass; `cmd | head` is the same defect
+  with a different tail. This cost real time twice in one week, and the second
+  time the hidden error had already killed a dev server that had been running
+  since 22 September. Run the command as its own gated step and read `$?`, or
+  `set -o pipefail` where a pipe is genuinely needed. The same reasoning
+  applies beyond shells: a presence check is not a behaviour check — see the
+  field wrapper, where "is this field wrapped?" was answered yes by every field
+  that could not show an error.
+  **The worked example is `git add -A`**, and it is here because this rule was
+  broken within the hour by the commit that wrote it: `-A` stages whatever
+  happens to be in the tree, which that day included two design exports someone
+  else had just extracted, and they went into a docs commit unnoticed because
+  the proxy was "everything" rather than a `git status` anyone had read. Stage
+  the paths the change is about, or read the status first — never both at
+  once.
+
+- **A SCAN WHOSE FIRST ACT IS TO ALLOWLIST EVERY EXISTING INSTANCE IS A
+  DISABLED SCAN WITH EXTRA STEPS.** If a new scan finds 14 real defects, the
+  work is to fix 14 defects — not to baseline them and guard the number.
+  `check:confirm-translated` found exactly that, across 7 components, and every
+  one was fixed. A ratchet is acceptable only where the existing instances are
+  genuinely out of scope, and then each entry carries its file, its subject and
+  its one-line reason, so the exception list cannot become a hiding place
+  (ACC-117's rule, same shape). **Better still, write a predicate that keys off
+  the subject's own content rather than a list of where it occurs** — then a
+  thing written tomorrow is covered the moment it is written, because what puts
+  it in scope is what makes it a defect, and nobody maintains anything.
+
+### Two decisions recorded late (Ahmad, 2026-10-01)
+
+Both reached the work after the code they govern. They are here because the
+reason they were missed is that they lived nowhere a reader would look.
+
+- **BULK ROLE ASSIGNMENT IS DECIDED AGAINST — not deferred.** Do not build it,
+  and do not leave a hook for it. Individual assignment only. In practice:
+  Manage roles is panel A of the drawing and nothing more; no multi-select, no
+  checkboxes, no bulk bar on `/users`. If a future screen has a genuine bulk
+  need, **selection belongs in the shared list component** and is designed
+  then, not anticipated now by a half-mechanism nothing uses.
+
+- **SELF-LOCKOUT IS REFUSED, NOT WARNED ABOUT — DECIDED, PARTIALLY BUILT. THIS
+  ENTRY DESCRIBES A GAP, NOT A FEATURE; DO NOT CITE IT AS A CONTROL THAT
+  EXISTS.** A save that would leave nobody able to administer the tenant is
+  REFUSED, the same way deactivating the last root org unit already is — not a
+  confirm, not a warning a user can accept.
+
+  **What IS built, exactly** (verified in `role.service.ts`, not remembered): a
+  check on the role's KEY. `removeRoleFromUser()` refuses removing
+  `TENANT_ADMIN` when it is that role's last assignment, and `deactivateRole()`
+  refuses deactivating `TENANT_ADMIN` while any assignment exists (ACC-16).
+  An earlier draft of this entry said the rule "is not built today", which was
+  itself wrong — corrected here rather than left to be inherited.
+
+  **What is NOT built, which is the whole decision:** the guard never reads a
+  role's PERMISSIONS, so **a custom role carrying `users:manage` /
+  `roles:manage` is invisible to it.** In a tenant administered only by such a
+  role, removing its last holder locks everyone out and currently SUCCEEDS.
+  "Nobody able to administer the tenant" and "the last holder of the role whose
+  key is TENANT_ADMIN" are different conditions, and only the second is
+  enforced. The frontend adds nothing: Manage roles confirms on leaving ONE
+  USER with no roles, a different question again.
+
+  **THE PR THAT BUILDS THIS IS FORCED TO COME BACK HERE.** The gap is pinned by
+  a test that is written to FAIL once the refusal widens —
+  `role.service.spec.ts`, *"does NOT yet refuse removing the last holder of a
+  CUSTOM administrator role — ACC-120 gap, pinned deliberately"*. Its own
+  comment says to delete it and rewrite this entry in the same change, and
+  never to narrow the new guard to keep it green. Mutation-proved: making the
+  existing guard key-agnostic turns that test red by name.
+
+  **Why it is pinned rather than trusted to a reader.** CLAUDE.md had four
+  false claims corrected on 2026-09-29 and 2026-10-01, every one of them a
+  specification that had been read as a description. An entry describing
+  something unbuilt becomes the fifth the day it ships, and a status line alone
+  does not stop that — nothing makes anyone reread it. A failing test does.
+
+---
+
 ## Key Architecture Decisions (ACC-127)
 
 Full mechanism detail: SYSTEM-REFERENCE.md Section 15.
@@ -3124,10 +3274,12 @@ complete, not just the currently-in-review ones.
     is "التقويم الرسمي" (rail, breadcrumb) and `workingCalendar.title` is
     "التقويم الوظيفي" (page H1, and therefore the tab title). English uses
     "Working Calendar" for both.
-  - **The Lookup values page's extensible tag reads just "Yes"**
-    (`lookup.extensibleYes`). The same key is fine in the category table,
-    under an "Extensible" column; beside the page title it has no column to
-    explain it. The tag needs its own label ("Extensible"), not a bare Yes.
+  - **DONE (ACC-120 slice 6, `703eaee`)** — the Lookup values page's
+    extensible tag read just "Yes" (`lookup.extensibleYes`), beside a page
+    title with no column to explain it. It now reads `lookup.extensibleTag` /
+    `lookup.notExtensibleTag`, and a spec asserts the bare-Yes key is gone
+    from that page. The category table still uses `extensibleYes` under its
+    own "Extensible" column, which is correct and was never the complaint.
 - **Local development points at SHARED infrastructure that a live
   Railway deployment also depends on — both the dev database and the
   dev Redis queue.** Confirmed twice, in two structurally different
@@ -3257,14 +3409,26 @@ complete, not just the currently-in-review ones.
   it is understood as a known consequence of this open question rather than
   rediscovered as a performance bug, which is exactly what ACC-60 was before
   it was measured. Measurements are in ACC-60's closing comment.
-- **No form in this app has a per-field inline error-message pattern**
-  (confirmed via full grep, zero matches) — every form relies solely
-  on a disabled submit button as its only invalid-state feedback.
-  Worth a deliberate future decision on whether specific, per-field
-  error text should become a real, established pattern (matching the
-  same rigor `EditDialogComponent`/`OverlaySelectComponent` got
-  before being made required) — found while fixing `invite-user`'s
-  missing feedback during ACC-46 review, not scoped or decided here.
+- **RESOLVED (ACC-111, completed ACC-120)** — was: *no form in this app
+  has a per-field inline error-message pattern (confirmed via full grep,
+  zero matches); every form relies solely on a disabled submit button as
+  its only invalid-state feedback.* Found during ACC-46's review of
+  `invite-user`. Now: `am-field`
+  (`frontend/src/app/shared/components/field/`) is the required wrapper,
+  it owns per-field error text and `aria-invalid`, and the decision this
+  entry asked for was made with the rigor it asked for —
+  SYSTEM-REFERENCE.md Section 10.12.
+  **Two things worth carrying forward rather than rediscovering:**
+  - A field wrapped WITHOUT `[control]` cannot show an error at all —
+    `showError` bails on a missing control before `forceShowErrors` is
+    consulted — so "is this field wrapped?" is not the question to ask
+    of a migrated form. `npm run check:field-control` asks the real one.
+  - A SUBMIT reveals its own errors with nothing passed by the caller,
+    because the wrapper reads the enclosing form's own `submitted`.
+    `forceShowErrors` survives only for an advance that is not a submit
+    (a stepped dialog's Next), which has no form event to read.
+  **The disabled-submit half is NOT fully closed**: a Save disabled with
+  no statement of why is a separate app-wide gap, owned by ACC-114.
 - **Bulk user import (CSV/Excel)** — flagged by Ahmad as a real,
   separate feature: for organizations with 100+ users, inviting one
   by one is impractical. Imported users should be created ACTIVE
