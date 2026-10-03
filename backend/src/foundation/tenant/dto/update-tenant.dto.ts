@@ -32,8 +32,20 @@ export class UpdateTenantDto {
   @IsOptional()
   aiProvider?: 'ANTHROPIC' | 'AZURE_OPENAI' | 'OPENAI' | 'OLLAMA';
 
-  // S3 key — uploaded separately via the existing signed-upload flow, this
-  // field only ever receives the resulting key, never a raw file (ACC-13).
+  // S3 key, typed BY HAND into a text box on the tenant's own Settings screen.
+  //
+  // CORRECTED 2026-10-03, same sweep as login.dto.ts. This read: "uploaded
+  // separately via the existing signed-upload flow, this field only ever
+  // receives the resulting key, never a raw file (ACC-13)." THERE IS NO
+  // SIGNED-UPLOAD FLOW. No upload endpoint, no FileInterceptor, no signed-URL
+  // issuance, and no S3 bucket provisioned at all (CLAUDE.md, File Upload
+  // Security — measured 2026-10-01). The second half is accurate by accident:
+  // the field never receives a raw file because nothing can send one.
+  //
+  // What actually reaches it: organization-profile.component.ts renders
+  // <input placeholder="S3 key"> to a tenant administrator, who types a
+  // storage path. The design removes that field; until then this is what the
+  // column holds.
   @IsString()
   @IsOptional()
   @MaxLength(500)
