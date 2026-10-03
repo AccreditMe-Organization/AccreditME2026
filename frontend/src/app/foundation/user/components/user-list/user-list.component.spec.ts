@@ -44,15 +44,71 @@ describe('UserListComponent row actions (ACC-79)', () => {
       ...overrides,
     }) as IUserDto;
 
-  const ADMIN = ['users:view', 'users:transfer', 'users:deactivate'];
+  // ACC-83 — a tenant administrator holds all four. The status slot is tested
+  // against this set so each case is distinguished by the row's STATUS rather
+  // than by what the viewer happens to be missing.
+  const ADMIN = [
+    'users:view',
+    'users:transfer',
+    'users:deactivate',
+    'users:reactivate',
+    'users:invite',
+  ];
 
   it('offers Transfer and Deactivate for an active user with a unit', () => {
     expect(create(ADMIN).rowActionsFor(user({}))).toEqual(['transfer', 'deactivate']);
   });
 
-  // The defect: this row opened a 200×10px empty menu.
-  it('offers nothing for an inactive user, so the "…" button does not render', () => {
-    expect(create(ADMIN).rowActionsFor(user({ status: 'INACTIVE' }))).toEqual([]);
+  // ── ACC-83: ONE status slot, filled by the row's own status ────────────────
+  //
+  // This replaces two tests that pinned the old behaviour, and both were right
+  // about the code at the time:
+  //   - an INACTIVE row offered NOTHING, so the "…" button did not render and a
+  //     deactivated person could never be brought back from the list at all;
+  //   - an INVITED row offered DEACTIVATE, which ran the whole departure flow
+  //     on someone who never arrived.
+
+  it('offers Reactivate for an inactive user — deactivation is no longer a one-way door', () => {
+    expect(create(ADMIN).rowActionsFor(user({ status: 'INACTIVE' }))).toEqual(['reactivate']);
+  });
+
+  it('offers Revoke invitation for an invited user, NOT Deactivate', () => {
+    const actions = create(ADMIN).rowActionsFor(user({ status: 'INVITED' }));
+    expect(actions).toEqual(['revokeInvitation']);
+    // Named explicitly: offering Deactivate here is the defect, not a near miss.
+    expect(actions).not.toContain('deactivate');
+  });
+
+  it('never offers two status actions at once, whatever the status', () => {
+    const list = create(ADMIN);
+    const statusActions = ['deactivate', 'reactivate', 'revokeInvitation'];
+    for (const status of ['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED'] as const) {
+      const offered = list
+        .rowActionsFor(user({ status }))
+        .filter((a) => statusActions.includes(a));
+      expect(offered.length)
+        .withContext(`status ${status} offered ${offered.join(', ')}`)
+        .toBeLessThanOrEqual(1);
+    }
+  });
+
+  // SUSPENDED is set by nothing in the product (SYSTEM-REFERENCE 12.2), and the
+  // slot stays empty rather than guessing which action applies to it.
+  it('offers no status action for SUSPENDED, which no feature produces', () => {
+    const actions = create(ADMIN).rowActionsFor(user({ status: 'SUSPENDED' }));
+    expect(actions).not.toContain('deactivate');
+    expect(actions).not.toContain('reactivate');
+    expect(actions).not.toContain('revokeInvitation');
+  });
+
+  it('does not offer Reactivate without users:reactivate — the backend would 403', () => {
+    const list = create(['users:view', 'users:deactivate', 'users:invite']);
+    expect(list.rowActionsFor(user({ status: 'INACTIVE' }))).toEqual([]);
+  });
+
+  it('does not offer Revoke invitation without users:invite', () => {
+    const list = create(['users:view', 'users:deactivate', 'users:reactivate']);
+    expect(list.rowActionsFor(user({ status: 'INVITED' }))).toEqual([]);
   });
 
   it('does not offer Deactivate without users:deactivate — the backend would 403', () => {
@@ -68,7 +124,10 @@ describe('UserListComponent row actions (ACC-79)', () => {
   // transferUser() requires ACTIVE and a current org unit to move from.
   it('does not offer Transfer to a user the backend would refuse to transfer', () => {
     const list = create(ADMIN);
-    expect(list.rowActionsFor(user({ status: 'INVITED' }))).toEqual(['deactivate']);
+    // Not ACTIVE: the status slot is Revoke invitation here, and Transfer is
+    // absent — which is the assertion.
+    expect(list.rowActionsFor(user({ status: 'INVITED' }))).toEqual(['revokeInvitation']);
+    // ACTIVE but no unit to move from.
     expect(list.rowActionsFor(user({ primaryOrgUnitId: null }))).toEqual(['deactivate']);
   });
 

@@ -28,6 +28,35 @@
 // is REFUSED even when it interpolates a translated piece, because
 // `${t('x')} "${name}"` is a sentence whose structure is English — word order
 // and punctuation are part of a translation, not decoration around it.
+//
+// ## ACC-83 — IT ALSO CHECKS FOR AN ABSENCE NOW, AND THAT IS THE HARDER HALF
+//
+// This scan looked for a WRONG VALUE and could not see a MISSING ONE. An
+// omitted `acceptLabel` is not a raw literal, so it passed — and PrimeNG then
+// rendered its own English defaults (`accept: 'Yes'`, `reject: 'No'` in
+// primeng-config.mjs) inside a fully Arabic RTL dialog. Measured when this was
+// found: 19 of 22 confirm() calls passed no labels, so nineteen dialogs did it.
+//
+// Same shape as am-field's optional [control] and as an assertion that passes
+// when the thing it measures is absent: the check asked whether a value was
+// right, never whether it was there.
+//
+// THE FIX IS NOT "REQUIRE A LABEL AT EVERY CALL SITE." That would mean 22
+// identical labels, and the twenty-third dialog would still forget. PrimeNG
+// resolves each button as
+//
+//     option('acceptLabel') || getAcceptButtonProps()?.label
+//       || config.getTranslation(ACCEPT)
+//
+// so the LAST term governs every call that passes nothing. LanguageService sets
+// it from the translation files, in the same effect that sets the document
+// direction.
+//
+// So this scan now asserts THE MECHANISM: that the global default is wired and
+// translated. It keys off the one thing that makes an omitted label safe, which
+// is what lets a new confirmation be written with no labels and still be right.
+// A per-call-site rule could not do that for the dialogs that already exist,
+// and would not have covered the next one either.
 import { globSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -89,6 +118,62 @@ function propertyValue(body, prop) {
 const problems = [];
 let checked = 0;
 
+/**
+ * ACC-83 — the global default for the labels PrimeNG renders itself.
+ *
+ * Asserted here rather than left to a unit test alone, because this is the
+ * clause that makes every label-less confirm() call safe: if it goes, 22
+ * dialogs silently revert to English "Yes" / "No" and nothing else in the
+ * repository would say so.
+ *
+ * It checks that LanguageService calls setTranslation with BOTH keys and that
+ * each is fed from the translation files rather than a literal — the same
+ * standard the per-call properties below are held to.
+ */
+function checkGlobalButtonDefaults() {
+  const file = 'src/app/core/services/language.service.ts';
+  let source;
+  try {
+    source = readFileSync(file, 'utf8');
+  } catch {
+    problems.push(
+      `${file} — not found. This scan asserts the global PrimeNG confirm-button ` +
+        `defaults live here; if the file moved, update the scan with it.`,
+    );
+    return;
+  }
+
+  const call = /setTranslation\s*\(\s*\{([\s\S]*?)\}\s*\)/.exec(source);
+  if (!call) {
+    problems.push(
+      `${file} — no PrimeNG setTranslation({ … }) call. Without it every ` +
+        `confirm() that passes no acceptLabel/rejectLabel renders PrimeNG's own ` +
+        `English "Yes"/"No", in any language.`,
+    );
+    return;
+  }
+
+  for (const key of ['accept', 'reject']) {
+    const value = propertyValue(call[1], key);
+    if (value === null) {
+      problems.push(
+        `${file} — setTranslation() does not set '${key}'. PrimeNG falls back to ` +
+          `its own English string for it.`,
+      );
+      continue;
+    }
+    checked++;
+    if (/^['"`]/.test(value)) {
+      problems.push(
+        `${file} — setTranslation({ ${key} }) is a raw string: ${value.slice(0, 40)}. ` +
+          `It must come from the translation files.`,
+      );
+    }
+  }
+}
+
+checkGlobalButtonDefaults();
+
 for (const file of sourceFiles()) {
   const source = readFileSync(file, 'utf8');
   if (!source.includes('.confirm(')) continue;
@@ -124,4 +209,8 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log(`check:confirm-translated — ${checked} confirmation string(s), all translated.`);
+console.log(
+  `check:confirm-translated — ${checked} string(s) checked, all translated: ` +
+    `every confirm() property that is set, plus the global accept/reject ` +
+    `defaults that cover every call which sets none.`,
+);

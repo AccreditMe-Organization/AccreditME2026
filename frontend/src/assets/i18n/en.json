@@ -645,7 +645,7 @@
     "outOfOfficeTo": "To",
     "actingUser": "Acting User",
     "deactivate": "Deactivate",
-    "deactivateConfirm": "Deactivate {{name}}? Their sessions will be revoked immediately and their open tasks will be reassigned to their acting user or flagged for manual reassignment.",
+    "deactivateConfirm": "Deactivate {{name}}? Their sessions will be revoked immediately and their open tasks will be reassigned to their acting user or flagged for manual reassignment.\n\nThis can be undone: an administrator can reactivate them later, and they come back holding the roles they have now.",
     "deactivateSummary": "{{reassigned}}, {{flagged}}.",
     "profileSaved": "Changes saved.",
     "noUsers": "No users found.",
@@ -723,7 +723,16 @@
     "inviteSetUpUnits": "Set up units",
     "inviteManagerNotNeeded": "Not needed. As head of {{unit}}, they report to no one.",
     "inviteUnitHasNoHead": "This org unit has no Head or Acting Head. Assign one before inviting someone into it, or invite this person as its Head.",
-    "inviteDenied": "You do not have permission to invite users."
+    "inviteDenied": "You do not have permission to invite users.",
+    "reactivate": "Reactivate",
+    "reactivateConfirm": "Reactivate {{name}}? They will be able to sign in again.\n\n{{roles}}\n\nTasks that were handed to someone else do not come back, but tasks that nobody picked up are returned to them.",
+    "reactivateRoles": "They come back holding: {{roles}}.",
+    "reactivateNoRoles": "They come back holding no roles.",
+    "reactivateRolesUnavailable": "Their roles cannot be listed here, because that needs permission to view users. They come back holding whatever roles they had.",
+    "reactivateSummary": "{{name}} is active again — {{tasks}}.",
+    "revokeInvitation": "Revoke invitation",
+    "revokeInvitationConfirm": "Revoke the invitation for {{name}} ({{email}})? The invitation stops working, the seat is freed, and the record is removed. You can invite this email again afterwards.",
+    "revokeInvitationSummary": "{{name}}'s invitation was revoked."
   },
   "platform": {
     "tenants": "Tenants",
@@ -960,6 +969,10 @@
       "tasksFlaggedUnassigned": {
         "one": "{{count}} task flagged as unassigned",
         "other": "{{count}} tasks flagged as unassigned"
+      },
+      "tasksReturned": {
+        "one": "{{count}} task returned to them",
+        "other": "{{count}} tasks returned to them"
       }
     },
     "shell": {

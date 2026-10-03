@@ -50,3 +50,22 @@ body {
     overflow: auto;
   }
 }
+
+// ACC-83 — a confirmation's paragraph breaks have to survive.
+//
+// ConfirmationService takes `message` as a STRING, so a message with real
+// structure can only carry it as newlines — and the element's computed
+// white-space was `normal`, which collapses them. The reactivation dialog is
+// written as three paragraphs (what will happen, which roles come back, what
+// does not come back) and rendered as one unbroken run in both languages.
+//
+// `pre-line` and not `pre-wrap`: it honours newlines while still collapsing
+// the ordinary indentation whitespace that comes from a translation file's own
+// formatting, and still wraps long lines to the dialog's width.
+//
+// Global rather than per-dialog because `<p-confirmDialog />` is declared ONCE,
+// in the app shell, and serves all 22 confirmations in the app. A component
+// cannot reach it.
+.p-confirmdialog-message {
+  white-space: pre-line;
+}
