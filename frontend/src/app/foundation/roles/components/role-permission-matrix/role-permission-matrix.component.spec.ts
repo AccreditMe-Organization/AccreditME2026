@@ -25,7 +25,7 @@ describe('RolePermissionMatrixComponent read-only gating (ACC-123)', () => {
     { id: 'p3', module: 'users', action: 'view', description: null },
   ];
 
-  function render(held: string[]) {
+  function render(held: string[], roleKey = 'AUDITOR') {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [RolePermissionMatrixComponent],
@@ -38,7 +38,7 @@ describe('RolePermissionMatrixComponent read-only gating (ACC-123)', () => {
             getRole: () =>
               of({
                 id: 'r1',
-                key: 'AUDITOR',
+                key: roleKey,
                 nameEn: 'Auditor',
                 nameAr: 'مراجع',
                 isSystem: true,
@@ -118,6 +118,39 @@ describe('RolePermissionMatrixComponent read-only gating (ACC-123)', () => {
 
     it('shows no read-only notice', () => {
       expect(text(render(HELD))).not.toContain('roles.matrixReadOnly');
+    });
+  });
+
+  // ACC-120 — THE ROOT ROLE IS FROZEN FOR EVERYONE, including a holder of
+  // roles:manage. A different reason from the read-only case above, so a
+  // different sentence, and the tests are written against the pair rather than
+  // against either alone: the two must not collapse into one condition.
+  describe('the root role, held by someone with roles:manage', () => {
+    const HELD = ['roles:view', 'roles:manage'];
+
+    it('disables every checkbox even though the viewer may manage roles', () => {
+      const boxes = checkboxes(render(HELD, 'TENANT_ADMIN'));
+      expect(boxes.length).toBeGreaterThan(0);
+      expect(boxes.filter((b) => !b.disabled)).toEqual([]);
+    });
+
+    // The refusal is visible BEFORE the click. A grid that 409s on Save is the
+    // dead Next button rebuilt somewhere more expensive.
+    it('does not render Save', () => {
+      expect(buttons(render(HELD, 'TENANT_ADMIN'))).toEqual(['common.back']);
+    });
+
+    it('explains that the set is fixed, NOT that permission is missing', () => {
+      const rendered = text(render(HELD, 'TENANT_ADMIN'));
+      expect(rendered).toContain('roles.matrixFrozenRootRole');
+      // The wrong sentence here would tell an administrator to go and get a
+      // permission they already hold.
+      expect(rendered).not.toContain('roles.matrixReadOnly');
+    });
+
+    it('leaves any other role editable for the same viewer', () => {
+      expect(checkboxes(render(HELD, 'AUDITOR')).filter((b) => b.disabled)).toEqual([]);
+      expect(buttons(render(HELD, 'AUDITOR'))).toEqual(['common.cancel', 'common.save']);
     });
   });
 });

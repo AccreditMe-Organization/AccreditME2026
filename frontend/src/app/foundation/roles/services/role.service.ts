@@ -20,6 +20,11 @@ export interface RoleDto {
   // ACC-74 — present on listRoles() responses. The list renders a number, so
   // the backend sends a count rather than the full permission set.
   permissionCount?: number;
+  // ACC-120 — list-only. How many people hold this role AND can sign in
+  // (User.status ACTIVE, joined on the backend). Manage roles reads it to lock
+  // the root role's row for its last active holder, so the dialog does not
+  // offer a removal the server will refuse.
+  activeHolderCount?: number;
 }
 
 export interface PermissionDto {
