@@ -192,6 +192,19 @@ export class UserService {
     );
   }
 
+  // ACC-83 — the mirror of deactivate, on its own permission server-side
+  // (users:reactivate). Returns how many tasks came back with the person, so
+  // the list can say what happened rather than just that it worked.
+  reactivate(id: string): Observable<{ returnedTaskCount: number }> {
+    return this.http.post<{ returnedTaskCount: number }>(`${this.base}/${id}/reactivate`, {});
+  }
+
+  // ACC-83 — withdraws an invitation nobody accepted. Deletes the row, so the
+  // seat frees and the same email can be invited again.
+  revokeInvitation(id: string): Observable<void> {
+    return this.http.post<void>(`${this.base}/${id}/revoke-invitation`, {});
+  }
+
   // ACC-46 Section 2.6.b Step 2 — automatic context load, not a user
   // action.
   getTransferContext(userId: string, destinationOrgUnitId: string): Observable<ITransferContextDto> {
