@@ -28,7 +28,7 @@
 
   <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
     <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 8px;">§4 · Does template 5 cover these? Partly. It's missing four things, and the first two matter most. Two notes follow.</div>
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 10px;">
       <sc-for list="{{ findings }}" as="f" hint-placeholder-count="6">
         <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px; background: #fff;">
           <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ f.t }}</div>
@@ -45,7 +45,7 @@
       <span style="font-size: 12.5px; color: #5A6779;">Settings › Email. The provider is a variant form (artboard 10): the choice decides which fields exist.</span>
     </div>
 
-    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; align-items: start;">
       <div>
         <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">A · unconfigured · the true default</div>
         <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
@@ -87,7 +87,7 @@
           <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Provider</label>
           <div style="display: flex; align-items: center; justify-content: space-between; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; font-size: 13px;"><span>SMTP / on-premises Exchange</span><span style="font-size: 10px; color: #5A6779;">▼</span></div>
           <div style="font-size: 11.5px; color: #5A6779; min-height: 17px; margin-block: 4px 10px;">Changing provider keeps these values until you save (artboard 10)</div>
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px;">
             <sc-for list="{{ exchange }}" as="f" hint-placeholder-count="7">
               <div style="{{ f.wrap }}">
                 <label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">{{ f.label }}</label>
@@ -108,7 +108,7 @@
       </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-block-start: 14px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; align-items: start; margin-block-start: 14px;">
       <div>
         <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Send test email · inline, in flow (no floating panel)</div>
         <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
@@ -132,7 +132,7 @@
           <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">مزوّد البريد</label>
           <div style="display: flex; align-items: center; justify-content: space-between; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid #8A94A6; border-radius: 4px; font-size: 14px;"><span>SMTP / خادم Exchange داخلي</span><span style="font-size: 10px; color: #5A6779;">▼</span></div>
           <div style="min-height: 20px; margin-block-end: 8px;"></div>
-          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px;">
             <sc-for list="{{ exchangeAr }}" as="f" hint-placeholder-count="7">
               <div style="{{ f.wrap }}">
                 <label style="display: block; font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">{{ f.label }}</label>
@@ -158,7 +158,7 @@
       <span style="font-size: 12.5px; color: #5A6779;">Settings › AI. Showing: {{ aiStateLabel }}. Switch in Tweaks between normal, spent, and no allowance.</span>
     </div>
 
-    <div style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; align-items: start;">
       <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
         <sc-if value="{{ notActive }}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px; margin-block-end: 12px;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">Not active yet</span><span style="font-size: 12.5px; color: #2D3748; text-wrap: pretty;">Usage shown here is illustrative. Credits aren't metered or billed yet.</span></div>
@@ -242,14 +242,14 @@
       <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Organization profile · name pair and logo</h2>
       <span style="font-size: 12.5px; color: #5A6779;">Settings › Organization. Replaces the “S3 key” text box, and closes ACC-89 on this screen.</span>
     </div>
-    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; align-items: start;">
       <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px;">
         <sc-if value="{{ notActive }}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px; margin-block-end: 12px;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">Not active yet</span><span style="font-size: 12.5px; color: #2D3748; text-wrap: pretty;">Logo upload isn't live yet. The monogram is shown everywhere a logo would appear.</span></div>
         </sc-if>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px;">
           <div><label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Name · English <span style="color: #5A6779; font-weight: 400;">· required</span></label><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-size: 13px;">King Fahad Medical City</div><div style="min-height: 17px; margin-block-start: 4px;"></div></div>
-          <div><label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Name · Arabic <span style="color: #5A6779; font-weight: 400;">· required</span></label><div dir="rtl" style="height: 36px; box-sizing: border-box; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12); border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px; color: #8A94A6;">مدينة الملك فهد الطبية</div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px; color: #B42318; font-weight: 500;">Required. Arabic screens show it on sign-in and invitations.</div></div>
+          <div><label style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Name · Arabic <span style="color: #5A6779; font-weight: 400;">· required</span></label><div dir="rtl" style="height: 36px; box-sizing: border-box; border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12); border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px; color: #8A94A6;">الاسم بالعربية</div><div style="font-size: 11.5px; line-height: 17px; min-height: 17px; margin-block-start: 4px; color: #B42318; font-weight: 500;">Required. Arabic screens show it on sign-in and invitations.</div></div>
         </div>
         <div style="font-size: 11.5px; color: #5A6779; margin-block: 2px 12px; text-wrap: pretty;">Both are required as a pair. Until an existing tenant fills in the Arabic, this field opens in its error state with the sentence above: the one place the missing name gets fixed. Once saved, the declared-fallback line on Login and Accept invitation disappears.</div>
 
@@ -289,10 +289,10 @@
         <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
           <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;">العربية</div>
           <div style="font-size: 13px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">الشعار</div>
-          <div style="min-height: 96px; border: 1.5px dashed #5A6779; border-radius: 8px; background: #F2F7FB; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px; text-align: center;">
+          <sc-if value="{{ active }}" hint-placeholder-val="{{ true }}"><div style="min-height: 96px; border: 1.5px dashed #5A6779; border-radius: 8px; background: #F2F7FB; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px; text-align: center;">
             <span style="font-size: 14px; font-weight: 600; color: #1F5480;">اسحب ملفًا هنا، أو <span style="text-decoration: underline;">اختر ملفًا</span></span>
             <span style="font-size: 12.5px; color: #4A5568;"><span dir="ltr" style="unicode-bidi: isolate;">PNG</span> أو <span dir="ltr" style="unicode-bidi: isolate;">SVG</span> · حتى <span dir="ltr" style="unicode-bidi: isolate;">1 MB</span> · مربع، <span dir="ltr" style="unicode-bidi: isolate;">256 × 256</span> على الأقل</span>
-          </div>
+          </div></sc-if>
           <div style="font-size: 13px; color: #4A5568; margin-block-start: 8px; text-wrap: pretty;"><strong>أين يظهر:</strong> صفحة الدخول لعنوان منشأتك، وأعلى الشريط الجانبي، وتذييل كل تقرير مطبوع أو مُصدَّر.</div>
         </div>
       </div>
@@ -305,7 +305,7 @@
       <h2 style="margin: 0; font-size: 20px; font-weight: 600;">“Not active yet” · one definition, off by default</h2>
       <span style="font-size: 12.5px; color: #5A6779;">For Design System Rev 9, beside the absent-not-disabled rule. Drawn here once. Turn on “Show not-active treatment” in Tweaks to see it in all three sections.</span>
     </div>
-    <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; align-items: start;">
       <div>
         <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">Not active yet</span><span style="font-size: 12.5px; color: #2D3748; text-wrap: pretty;">You can set this up now, but AccreditMe won't use it yet. &lt;One sentence: what happens instead, today.&gt;</span></div>
         <div dir="rtl" style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 11px; border: 1px dashed #5A6779; background: repeating-linear-gradient(-135deg,#FCFDFE 0 6px,#F4F7FA 6px 12px); border-radius: 6px; margin-block-start: 8px; font-family: 'IBM Plex Sans Arabic', sans-serif;"><span style="flex: none; font-size: 12px; font-weight: 700; color: #2D3748; border: 1px solid #5A6779; border-radius: 4px; padding: 0 6px; background: #fff;">غير مُفعَّل بعد</span><span style="font-size: 13.5px; color: #2D3748; text-wrap: pretty;">يمكنك الإعداد الآن، لكن النظام لن يستخدمه بعد. &lt;جملة واحدة: ما يحدث بدلًا منه اليوم.&gt;</span></div>
