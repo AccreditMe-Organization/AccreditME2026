@@ -28,4 +28,15 @@ export interface IRole {
   // Resolved with one grouped query, never a per-role fetch. See
   // RoleService.getRoles().
   permissionCount?: number;
+
+  // ACC-120 — list-only, same reasoning as permissionCount: how many people
+  // hold this role AND can sign in (User.status ACTIVE, joined). Absent from
+  // detail responses.
+  //
+  // It exists so the Manage roles dialog can render the ROOT ROLE's row as
+  // locked for its last active holder, instead of offering a checkbox whose
+  // save the server refuses. Counting raw assignments here would be worse than
+  // not having it: the dialog would believe a deactivated user still covers the
+  // tenant and would offer exactly the removal that locks everyone out.
+  activeHolderCount?: number;
 }

@@ -28,6 +28,10 @@ describe('RoleService — user role grants (ACC-120)', () => {
       count: jest.Mock;
     };
     role: { findFirst: jest.Mock };
+    // ACC-120 — the root-role invariant reads isPlatformOrg, and the mutations
+    // it protects now commit inside a transaction with it.
+    organization: { findFirst: jest.Mock };
+    $transaction: jest.Mock;
   };
 
   const role = (over: Record<string, unknown> = {}) => ({
@@ -68,7 +72,14 @@ describe('RoleService — user role grants (ACC-120)', () => {
         count: jest.fn().mockResolvedValue(5),
       },
       role: { findFirst: jest.fn() },
+      organization: { findFirst: jest.fn().mockResolvedValue({ isPlatformOrg: false }) },
+      $transaction: jest.fn(),
     };
+    // The callback gets this same mock, so tx behaviour is configured exactly
+    // as prisma behaviour always was, and a throw propagates like a rollback.
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma),
+    );
     const moduleRef = await Test.createTestingModule({
       providers: [
         RoleService,
