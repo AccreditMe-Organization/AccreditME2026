@@ -18,6 +18,19 @@ export const USERS_PERMISSIONS = {
   // account suspension" is a distinct, higher-stakes action than editing a
   // profile field (Step 9, Commit 7).
   DEACTIVATE: 'users:deactivate',
+  // ACC-83 — the mirror of DEACTIVATE, and a new string rather than reusing it,
+  // because switching an account OFF and switching it back ON are different
+  // decisions with different consequences: reactivation consumes a seat, can
+  // restore administrative roles, and returns work to someone.
+  //
+  // "Only the tenant administrator may reactivate a user" (Ahmad, 3 Oct) is
+  // expressed as THIS PERMISSION and nothing else. TENANT_ADMIN's seeded set is
+  // ALL.filter(p => !p.startsWith('platform:')), so adding the constant here
+  // gives it to Organization Administrator by default and to no other seeded
+  // role — QUALITY_MANAGER names only USERS_PERMISSIONS.VIEW. No seed edit, no
+  // backfill, and nothing keyed to a role NAME, which is the shape ACC-120
+  // spent a day removing.
+  REACTIVATE: 'users:reactivate',
   // ACC-46 Section 2.6.g — a new, action-specific string rather than
   // overloading MANAGE, matching ACC-44's now-required richer-permission
   // pattern for module CRUD (see CLAUDE.md's Committee CRUD note). The

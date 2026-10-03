@@ -754,20 +754,47 @@ export class UserService {
     return { user: finalUser, promotionCompleted, promotionError };
   }
 
-  // Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —
-  // uploads blocked, no data corruption" pattern, applied here to seats.
+  /**
+   * ACC-83 — ONE definition of "is there a seat for one more person".
+   *
+   * Enforces Organization.maxUsers per CLAUDE.md's "Hard limits at 100% —
+   * uploads blocked, no data corruption" pattern, applied to seats.
+   *
+   * EXTRACTED, not copied. This check lived inline inside invite(), and
+   * reactivation needs exactly the same rule — so the second caller got the
+   * function rather than a second copy. One rule in several hand-maintained
+   * places is the shape that drifted on the frozen column, on the header-vs-row
+   * grids, and on the last-admin guard, where four copies disagreed about
+   * whether to count assignment rows or people.
+   *
+   * IT COUNTS ACTIVE **AND** INVITED, and that is load-bearing rather than
+   * incidental: a pending invitation holds a seat, so a tenant at its limit
+   * cannot invite someone, and equally cannot bring a departed person back
+   * until a seat is actually free. Had reactivation been written with its own
+   * count of ACTIVE users only, the two paths would disagree about what "full"
+   * means — the tenant could reactivate past a limit that blocks inviting.
+   */
+  private async assertSeatAvailable(organizationId: string): Promise<void> {
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+    });
+    if (!organization) throw new NotFoundException('Organization not found');
+
+    const occupied = await this.prisma.user.count({
+      where: { organizationId, status: { in: ['ACTIVE', 'INVITED'] } },
+    });
+    if (occupied >= organization.maxUsers) {
+      throw new ConflictException('This plan has reached its full-user seat limit');
+    }
+  }
+
   async invite(dto: InviteUserDto, organizationId: string, actorId: string): Promise<IUser> {
     const organization = await this.prisma.organization.findUnique({
       where: { id: organizationId },
     });
     if (!organization) throw new NotFoundException('Organization not found');
 
-    const activeCount = await this.prisma.user.count({
-      where: { organizationId, status: { in: ['ACTIVE', 'INVITED'] } },
-    });
-    if (activeCount >= organization.maxUsers) {
-      throw new ConflictException('This plan has reached its full-user seat limit');
-    }
+    await this.assertSeatAvailable(organizationId);
 
     const existing = await this.prisma.user.findFirst({
       where: { organizationId, email: dto.email },
@@ -1435,6 +1462,267 @@ export class UserService {
     });
 
     return { reassignedCount, unassignedCount };
+  }
+
+  /**
+   * ACC-83 — bring a deactivated person back.
+   *
+   * Deactivation was a one-way door: POST /:id/deactivate existed and nothing
+   * reversed it, in a product where roles, org positions and committee
+   * memberships can all be reactivated. A person was the only thing that
+   * switched off permanently, behind one confirmation.
+   *
+   * ## This is NOT the inverse of deactivate(), and the difference is the design
+   *
+   * Some of what deactivation did is undone here and some deliberately is not,
+   * and each is a decision rather than an omission:
+   *
+   *   status -> INACTIVE ................. UNDONE
+   *   sessions revoked ................... not undone; they sign in fresh
+   *   UserRole rows removed .............. it never did. They return holding
+   *                                        every direct role they had
+   *   head-authority grant revoked ....... UNDONE, see the mirror call below
+   *   their unit flagged head-vacant ..... UNDONE, recomputed not assumed
+   *   tasks reassigned to someone else ... not undone
+   *   tasks nobody took .................. UNDONE, see returnUnassignedTasks()
+   */
+  async reactivate(
+    id: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<{ returnedTaskCount: number }> {
+    const existing = await this.getById(id, organizationId);
+
+    if (existing.status === 'ACTIVE') {
+      throw new ConflictException('This user is already active');
+    }
+    if (existing.status !== 'INACTIVE') {
+      // INVITED has its own action (revokeInvitation), and SUSPENDED is set by
+      // nothing in the product today (SYSTEM-REFERENCE 12.2) — reactivating it
+      // would invent a transition no feature produces.
+      throw new ConflictException(
+        `Only a deactivated user can be reactivated. This user is ${existing.status}.`,
+      );
+    }
+
+    // THE SEAT IS RE-CHECKED (Ahmad, 3 Oct). The case he named is the one
+    // nobody hits by accident: a tenant deactivates someone, onboards a
+    // replacement into the freed seat, then reactivates the original. This is
+    // the same extracted rule invite() uses, so the two cannot disagree about
+    // what "full" means.
+    await this.assertSeatAvailable(organizationId);
+
+    // Their position may no longer be theirs to take — a single-assignee or
+    // unit-head position can have been filled while they were away, and
+    // validatePositionAssignment() is the existing authority on that.
+    // excludeUserId is this user, so their own dormant row does not count
+    // against them.
+    if (existing.positionId) {
+      await this.validatePositionAssignment(
+        existing.positionId,
+        existing.primaryOrgUnitId,
+        organizationId,
+        id,
+      );
+    }
+
+    // Their manager may have departed in the meantime. NOT fatal: a person with
+    // no manager is a state the product already tolerates (managerId is
+    // nullable), so this clears the stale pointer rather than refusing the whole
+    // reactivation over an escalation target. Refusing would make recovery
+    // depend on repairing someone else's record first.
+    let managerCleared = false;
+    if (existing.managerId) {
+      const manager = await this.prisma.user.findFirst({
+        where: { id: existing.managerId, organizationId, status: 'ACTIVE' },
+        select: { id: true },
+      });
+      if (!manager) managerCleared = true;
+    }
+
+    await this.prisma.user.update({
+      where: { id },
+      data: { status: 'ACTIVE', ...(managerCleared ? { managerId: null } : {}) },
+    });
+
+    // THE MIRROR CALL, and the subtlest thing in this change.
+    //
+    // deactivate() calls this as (positionId, unitId) -> (null, null), which
+    // REVOKES the role a head-conferring position grants. The naive
+    // reactivation is a status flip and nothing else — and that leaves a
+    // returning head holding their position with the role it confers silently
+    // gone, because syncHeadAuthorityRoleGrant() only acts when the
+    // position/unit PAIR CHANGES, and a status flip changes neither. Nothing
+    // else would ever restore it either: ACC-84 established that editing a
+    // position's mapping does not reach existing holders.
+    //
+    // So the arguments here are the exact reverse of deactivate()'s.
+    await this.syncHeadAuthorityRoleGrant(
+      id,
+      null,
+      null,
+      existing.positionId,
+      existing.primaryOrgUnitId,
+      organizationId,
+      actorId,
+    );
+
+    // Their unit was flagged head-vacant on the way out if they were its head.
+    // RECOMPUTED, not assumed cleared: refreshOrgUnitHeadVacancy() derives it
+    // from ACTIVE holders of an active head position, which this user now is
+    // again.
+    if (existing.primaryOrgUnitId) {
+      await this.organizationService.refreshOrgUnitHeadVacancy(
+        existing.primaryOrgUnitId,
+        organizationId,
+      );
+    }
+
+    const returnedTaskCount = await this.returnUnassignedTasks(id, organizationId, actorId);
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'UPDATE',
+      objectType: 'User',
+      objectId: id,
+      before: { status: existing.status },
+      after: { status: 'ACTIVE' },
+      metadata: { event: 'reactivated', returnedTaskCount, managerCleared },
+    });
+
+    return { returnedTaskCount };
+  }
+
+  /**
+   * ACC-83 — AN UNASSIGNED TASK COMES BACK. A REASSIGNED ONE DOES NOT.
+   *
+   * Ahmad's rule, 3 October, and the two cases are genuinely different rather
+   * than one rule with an exception:
+   *
+   *   - REASSIGNED: someone else holds it now and may already be working on it.
+   *     Pulling it back silently is worse than making an administrator hand it
+   *     over deliberately.
+   *   - UNASSIGNED: nobody took it. It has been sitting on the Unassigned Tasks
+   *     screen precisely because the person who owned it left, so "someone may
+   *     be working on it" is not true of this case at all.
+   *
+   * ## The discriminator is data already on the row, not a new flag
+   *
+   * reassignAllForUser() stamps removedAt on the departing person's
+   * TaskAssignee row, then either creates a row for the replacement and sets
+   * the task PENDING, or — when nobody is left — sets the task UNASSIGNED. So a
+   * row with removedAt set whose task is STILL UNASSIGNED is exactly the second
+   * case, and a row whose task is anything else was either reassigned or has
+   * moved on (completed, cancelled) and must not be touched.
+   *
+   * Setting the task back to PENDING mirrors that method's own line for the
+   * opposite direction rather than guessing at a prior status.
+   */
+  private async returnUnassignedTasks(
+    userId: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<number> {
+    const orphaned = await this.prisma.taskAssignee.findMany({
+      where: {
+        userId,
+        removedAt: { not: null },
+        task: { organizationId, status: 'UNASSIGNED' },
+      },
+      select: { id: true, taskId: true },
+    });
+
+    for (const row of orphaned) {
+      await this.prisma.taskAssignee.update({ where: { id: row.id }, data: { removedAt: null } });
+      await this.prisma.task.update({ where: { id: row.taskId }, data: { status: 'PENDING' } });
+      await this.auditLog.log({
+        tenantId: organizationId,
+        actorId,
+        action: 'DELEGATE',
+        objectType: 'Task',
+        objectId: row.taskId,
+        metadata: { event: 'returned_on_reactivation', toUserId: userId },
+      });
+    }
+
+    return orphaned.length;
+  }
+
+  /**
+   * ACC-83 — withdraw an invitation that was never accepted.
+   *
+   * ## Why this is not Deactivate
+   *
+   * Deactivate was being offered for an INVITED user, and it ran the whole
+   * DEPARTURE flow on someone who never arrived: session invalidation, a
+   * head-vacancy refresh, a head-authority role sync, task reassignment, and a
+   * "user departed" notification to every tenant admin about a person who had
+   * never joined. It also left them unable to be invited again, because email
+   * is unique per tenant and invite() rejects any existing row whatever its
+   * status.
+   *
+   * ## THE MECHANISM: the row is DELETED, and that is a decision
+   *
+   * ACC-83 left this open ("delete the row, or reuse it on the next invite").
+   * Deleting is chosen because it is what actually happened: nobody joined, so
+   * there is no person to keep a record of. It frees the seat and makes
+   * re-inviting work with NO change to invite(), where the alternative needs a
+   * dormant state every other screen then has to understand — and an INACTIVE
+   * row would be offered Reactivate, which would make someone ACTIVE who has
+   * never set a password.
+   *
+   * THE AUDIT TRAIL SURVIVES. AuditLog.objectId is a plain string with no
+   * foreign key, so the CREATE row from the invitation and the DELETE row
+   * written here both outlive the User row. actorId is a nullable FK, and an
+   * invited user can never be an actor — they cannot sign in — so nothing is
+   * orphaned by this.
+   *
+   * ## Notifications are deleted; anything else REFUSES
+   *
+   * invite() creates exactly one Notification (the invitation itself), and
+   * Notification.userId is a non-null FK, so that row has to go first or the
+   * database refuses the delete. Not theoretical: it is exactly what blocked
+   * deleting an invited user by hand on 1 October.
+   *
+   * Everything else refuses rather than cascades. An INVITED user should hold
+   * no roles, tasks or committee seats; if the database says otherwise then
+   * something unexpected created real history, and deleting it to tidy up an
+   * invitation would destroy data. The foreign key is allowed to BE the check —
+   * there are 24 of them referencing User, and a hand-maintained list of the
+   * ones that matter would be one more thing to keep in step — and the refusal
+   * says what it means rather than surfacing a constraint name.
+   */
+  async revokeInvitation(id: string, organizationId: string, actorId: string): Promise<void> {
+    const existing = await this.getById(id, organizationId);
+
+    if (existing.status !== 'INVITED') {
+      throw new ConflictException(
+        `Only a pending invitation can be revoked. This user is ${existing.status}.`,
+      );
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.notification.deleteMany({ where: { userId: id, organizationId } });
+        await tx.user.delete({ where: { id } });
+      });
+    } catch {
+      throw new ConflictException(
+        'This invitation cannot be revoked because the account already has activity ' +
+          'recorded against it. Deactivate the user instead.',
+      );
+    }
+
+    await this.auditLog.log({
+      tenantId: organizationId,
+      actorId,
+      action: 'DELETE',
+      objectType: 'User',
+      objectId: id,
+      before: existing as unknown as Record<string, unknown>,
+      metadata: { event: 'invitation_revoked', email: existing.email },
+    });
   }
 
   private async notifyTenantAdminsOfDeparture(
