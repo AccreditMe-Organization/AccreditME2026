@@ -148,6 +148,48 @@ describe('RolePermissionMatrixComponent read-only gating (ACC-123)', () => {
       expect(rendered).not.toContain('roles.matrixReadOnly');
     });
 
+    // ACC-120 — THE CONTRADICTION THIS CLOSES. The amber banner read "Removing
+    // permissions from this role affects every user currently assigned to it"
+    // on a screen where no permission can be removed, at the top and coloured,
+    // while the truth sat 700px below at the foot of the page.
+    it('does not show the amber editing warning on the frozen role', () => {
+      const rendered = text(render(HELD, 'TENANT_ADMIN'));
+      expect(rendered).not.toContain('roles.adminRoleWarning');
+      expect(rendered).toContain('roles.matrixFrozenRootRole');
+    });
+
+    // The amber branch is KEPT rather than deleted, because it is correct for
+    // an editable high-impact role. But it is currently UNREACHABLE, and that
+    // is pinned here rather than left to be rediscovered:
+    // HIGH_IMPACT_ROLE_KEYS has exactly two members, and this screen can show
+    // neither warning — TENANT_ADMIN is now frozen (the notice replaces the
+    // warning) and PLATFORM_ADMIN never renders at all, because load()
+    // redirects it to /roles. So nothing in the product reaches
+    // 'roles.adminRoleWarning' today.
+    it('never renders PLATFORM_ADMIN at all, so the amber branch has no reachable case', () => {
+      const rendered = text(render(HELD, 'PLATFORM_ADMIN'));
+      expect(rendered).not.toContain('roles.adminRoleWarning');
+      expect(rendered).not.toContain('roles.matrixFrozenRootRole');
+      // Redirected before anything is shown — not merely warned about.
+      expect(rendered).not.toContain('roles.permissionMatrix');
+    });
+
+    it('shows no notice at all on an ordinary editable role', () => {
+      const rendered = text(render(HELD, 'AUDITOR'));
+      expect(rendered).not.toContain('roles.matrixFrozenRootRole');
+      expect(rendered).not.toContain('roles.matrixReadOnly');
+      expect(rendered).not.toContain('roles.adminRoleWarning');
+    });
+
+    // Both reasons can be true at once, and the frozen sentence ends "You can
+    // rename it" — false for someone who cannot manage roles. They are told the
+    // constraint that actually binds them.
+    it('tells a reader without roles:manage about the permission, not the freeze', () => {
+      const rendered = text(render(['roles:view'], 'TENANT_ADMIN'));
+      expect(rendered).toContain('roles.matrixReadOnly');
+      expect(rendered).not.toContain('roles.matrixFrozenRootRole');
+    });
+
     it('leaves any other role editable for the same viewer', () => {
       expect(checkboxes(render(HELD, 'AUDITOR')).filter((b) => b.disabled)).toEqual([]);
       expect(buttons(render(HELD, 'AUDITOR'))).toEqual(['common.cancel', 'common.save']);

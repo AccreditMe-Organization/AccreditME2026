@@ -51,7 +51,21 @@ const ROOT_ROLE_KEY = 'TENANT_ADMIN';
         </app-page-header>
       }
 
-      @if (isHighImpact()) {
+      <!-- ACC-120 — ONE notice, at the top, and the amber warning is not it for
+           the root role.
+           "Removing permissions from this role affects every user currently
+           assigned to it" is leftover text from when this screen was editable.
+           On the root role you cannot remove a permission at all, so it was
+           false — and it contradicted the correct explanation that used to sit
+           at the FOOT of the page, 700px below. A reader met the contradiction
+           first, because it was at the top and it was coloured, and the truth
+           last. Same shape as the two contradictory empty states on Org
+           Positions.
+           The explanation now stands where the banner was, and the amber
+           warning is kept for every other role, where it is true. -->
+      @if (noticeKey()) {
+        <p-message severity="info" [text]="noticeKey()! | translate" />
+      } @else if (isHighImpact()) {
         <p-message severity="warn" [text]="'roles.adminRoleWarning' | translate" />
       }
 
@@ -109,12 +123,6 @@ const ROOT_ROLE_KEY = 'TENANT_ADMIN';
            the sentence below says what is actually true. Same shape as Setup
            health's own suppressed Fix, which names the permission rather than
            leaving a dead affordance. -->
-      @if (readOnly()) {
-        <p class="text-sm text-[var(--am-text-secondary)]">
-          {{ readOnlyReason() | translate }}
-        </p>
-      }
-
       <div class="flex gap-3 justify-end">
         <p-button
           [label]="(readOnly() ? 'common.back' : 'common.cancel') | translate"
@@ -176,12 +184,24 @@ export class RolePermissionMatrixComponent implements OnInit {
   // that is how a disabled grid keeps a live Save.
   readonly readOnly = computed(() => !this.canManage() || this.isRootRole());
 
-  // The reason, not just the state. A read-only page that does not say why
-  // reads as broken; which of the two reasons applies changes what the reader
-  // should do about it.
-  readonly readOnlyReason = computed(() =>
-    this.isRootRole() ? 'roles.matrixFrozenRootRole' : 'roles.matrixReadOnly',
-  );
+  /**
+   * The reason, not just the state — a read-only page that does not say why
+   * reads as broken, and which reason applies changes what the reader should do.
+   *
+   * ORDER MATTERS, and it is permission first. Both reasons can be true at once
+   * (a reader without roles:manage, looking at the root role), and the frozen
+   * sentence ends "You can rename it" — which is false for someone who cannot
+   * manage roles at all. So they are told the thing that actually binds them,
+   * and an administrator looking at the root role gets the frozen explanation.
+   *
+   * null when the page is editable, which is also what hands the amber warning
+   * back to every other role.
+   */
+  readonly noticeKey = computed<string | null>(() => {
+    if (!this.canManage()) return 'roles.matrixReadOnly';
+    if (this.isRootRole()) return 'roles.matrixFrozenRootRole';
+    return null;
+  });
 
   readonly isHighImpact = computed(() => {
     const key = this.role()?.key;
