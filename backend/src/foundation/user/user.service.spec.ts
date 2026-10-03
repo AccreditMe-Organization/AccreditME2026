@@ -56,9 +56,14 @@ describe('UserService', () => {
       // tx.user.update()/tx.userTransferEvent.create() inside it route to
       // the same mocks tests already assert against.
       userTransferEvent: { create: jest.fn() },
-      organization: { findUnique: jest.fn() },
+      // ACC-120 — the root-role invariant reads isPlatformOrg to exclude the
+      // platform organisation, and counts ACTIVE holders of TENANT_ADMIN.
+      organization: { findUnique: jest.fn(), findFirst: jest.fn() },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
-      userRole: { findMany: jest.fn().mockResolvedValue([]) },
+      // ACC-120 — count() is the root-role invariant's own read: holders of
+      // TENANT_ADMIN joined to User and filtered to ACTIVE. Defaults to 1 so
+      // an ordinary mutation is not refused.
+      userRole: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(1) },
       // ACC-46 Section 2.3/2.4 — default: no matching unit found (a
       // conservative default — targetOrgUnit undefined means
       // isRootUnitHeadInvite is always false unless a test explicitly
@@ -83,6 +88,9 @@ describe('UserService', () => {
       },
     };
     mockPrisma.$transaction = jest.fn((callback: (tx: unknown) => unknown) => callback(mockPrisma));
+    // ACC-120 defaults: a real tenant (not the platform org) that has an
+    // administrator. Tests about the invariant override these themselves.
+    mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false });
     mockAuditLog = { log: jest.fn() };
     mockNotification = { create: jest.fn().mockResolvedValue({}) };
     mockRoleService = {
@@ -2620,6 +2628,24 @@ describe('UserService', () => {
       expect(result).toEqual({ reassignedCount: 3, unassignedCount: 1 });
     });
 
+    /**
+     * ACC-120 — stages the root-role invariant for a deactivation.
+     *
+     * The assertion runs INSIDE the transaction after the status flip and
+     * compares against a baseline taken before it, so a static count makes
+     * before and after identical; the invariant then concludes the tenant was
+     * already in breach and ALLOWS EVERYTHING. A test written that way passes
+     * while asserting nothing, which is why the flip has to move the number.
+     */
+    function stageAdministratorsForDeparture(activeAdminsBefore: number): void {
+      let active = activeAdminsBefore;
+      mockPrisma.userRole.count.mockImplementation(() => Promise.resolve(active));
+      mockPrisma.user.update.mockImplementation((args: { data: { status?: string } }) => {
+        if (args.data.status === 'INACTIVE') active -= 1;
+        return Promise.resolve({});
+      });
+    }
+
     it('notifies active Tenant Admins with a summary when the TENANT_ADMIN role exists', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
@@ -2632,6 +2658,9 @@ describe('UserService', () => {
       mockTaskService.reassignAllForUser.mockResolvedValue({ reassignedCount: 0, unassignedCount: 2 });
       mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'admin-user-1' }]);
+      // The departing user is not an admin here, so the count does not fall to
+      // zero; the invariant must let an ordinary departure through.
+      stageAdministratorsForDeparture(2);
 
       await service.deactivate('user-1', ORG_A, 'admin-1');
 
@@ -2652,9 +2681,12 @@ describe('UserService', () => {
       mockPrisma.role.findFirst.mockResolvedValue({ id: 'role-admin' });
       // Departing user ('user-1') is the only ACTIVE holder of the admin role.
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'user-1' }]);
+      stageAdministratorsForDeparture(1);
 
       await expect(service.deactivate('user-1', ORG_A, 'admin-1')).rejects.toThrow(ConflictException);
-      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      // The side effects stay outside the transaction, so a refused
+      // deactivation must not have invalidated their sessions or moved their
+      // work on the way to being refused.
       expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
       expect(mockNotification.create).not.toHaveBeenCalled();
     });
@@ -2849,7 +2881,10 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       userTransferEvent: { create: jest.fn().mockResolvedValue({}) },
       orgUnitHeadEvent: { create: jest.fn().mockResolvedValue({}) },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
-      userRole: { findMany: jest.fn().mockResolvedValue([]) },
+      // ACC-120 — count() is the root-role invariant's own read: holders of
+      // TENANT_ADMIN joined to User and filtered to ACTIVE. Defaults to 1 so
+      // an ordinary mutation is not refused.
+      userRole: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(1) },
     };
     realMockPrisma['$transaction'] = jest.fn((callback: (tx: unknown) => unknown) => callback(realMockPrisma));
 

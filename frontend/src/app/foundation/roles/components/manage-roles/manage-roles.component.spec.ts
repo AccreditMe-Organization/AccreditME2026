@@ -342,4 +342,75 @@ describe('ManageRolesComponent (ACC-120)', () => {
     render({ grants: [] });
     expect(text()).toContain('manageRoles.holdsNothing');
   });
+
+  // ACC-120 — THE ROOT ROLE'S LAST ACTIVE HOLDER. The refusal has to be visible
+  // BEFORE the click, because the server rolls the transaction back either way:
+  // a checkbox that 409s on Save is the dead Next button rebuilt somewhere more
+  // expensive, and that one cost two days.
+  describe('the root role, held by the last active administrator', () => {
+    const rootRole = (activeHolderCount: number): RoleDto =>
+      ({
+        ...role('r-admin', 'Organization Administrator', 'مدير المنشأة'),
+        key: 'TENANT_ADMIN',
+        isSystem: true,
+        activeHolderCount,
+      }) as RoleDto;
+
+    function renderRoot(activeHolderCount: number): void {
+      const r = rootRole(activeHolderCount);
+      render({ roles: [...ROLES, r], grants: [grant({ role: r })] });
+    }
+
+    it('renders a LOCK instead of a checkbox for that row', () => {
+      renderRoot(1);
+      const host = fixture.nativeElement as HTMLElement;
+      const rows = Array.from(host.querySelectorAll('li'));
+      const adminRow = rows.find((li) => (li.textContent ?? '').includes('Organization Administrator'));
+
+      expect(adminRow).withContext('the root role row is rendered').toBeTruthy();
+      expect(adminRow!.querySelector('input[type=checkbox]')).toBeNull();
+      expect(adminRow!.querySelector('.pi-lock')).toBeTruthy();
+    });
+
+    it('says WHY on the row, so the lock does not read as a bug', () => {
+      renderRoot(1);
+      expect((fixture.nativeElement as HTMLElement).textContent ?? '').toContain(
+        'manageRoles.lastAdministratorLocked',
+      );
+    });
+
+    // The guard is not only the template. (ngModelChange) stays reachable from
+    // code, so the handler refuses too.
+    it('ignores a programmatic toggle of that row', () => {
+      renderRoot(1);
+      const row = component.rows().find((r) => r.role.key === 'TENANT_ADMIN')!;
+
+      component.toggle(row);
+
+      expect(component.rows().find((r) => r.role.key === 'TENANT_ADMIN')!.pending).toBe('none');
+      expect(component.changeCount()).toBe(0);
+    });
+
+    // THE OTHER HALF, and the reason this is not just "lock TENANT_ADMIN": with
+    // a second active holder the role is removable, so the lock must lift.
+    it('is a normal, removable checkbox when another active holder exists', () => {
+      renderRoot(2);
+      const host = fixture.nativeElement as HTMLElement;
+      const rows = Array.from(host.querySelectorAll('li'));
+      const adminRow = rows.find((li) => (li.textContent ?? '').includes('Organization Administrator'));
+
+      expect(adminRow!.querySelector('input[type=checkbox]')).toBeTruthy();
+      expect(adminRow!.querySelector('.pi-lock')).toBeNull();
+      expect(host.textContent ?? '').not.toContain('manageRoles.lastAdministratorLocked');
+    });
+
+    it('leaves ordinary roles untouched by the rule', () => {
+      renderRoot(1);
+      const auditor = component.rows().find((r) => r.role.id === 'r1')!;
+
+      component.toggle(auditor);
+
+      expect(component.changeCount()).toBe(1);
+    });
+  });
 });

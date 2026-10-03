@@ -23,10 +23,11 @@ import { AssignPermissionsDto } from './dto/assign-permissions.dto';
 import { AssignRoleDto } from './dto/assign-role.dto';
 import { ALL_PERMISSIONS } from './permission.seed';
 import { SYSTEM_ROLE_SEED } from './role.seed';
-
-// Stable key identifying the tenant-admin system role — see Business Rules,
-// "Admin lockout protection" in the Step 4 plan.
-const TENANT_ADMIN_KEY = 'TENANT_ADMIN';
+import {
+  TENANT_ADMIN_KEY,
+  assertTenantRetainsAnActiveAdministrator,
+  captureAdministratorBaseline,
+} from './tenant-administrator.invariant';
 
 export interface ListRolesFilters {
   search?: string;
@@ -232,11 +233,37 @@ export class RoleService {
         : [];
     const countByRoleId = new Map(counts.map((c) => [c.roleId, c._count.roleId]));
 
+    // ACC-120 — how many people hold each role AND can actually sign in.
+    //
+    // Same grouped shape as the permission count above, and added for the same
+    // reason: a screen needs a number, so the number is what the list sends.
+    // What needs it is the Manage roles dialog, which must render the root
+    // role's row as locked for its LAST ACTIVE HOLDER rather than offering a
+    // checkbox whose save the server will refuse — the dead-Next-button shape.
+    //
+    // ACTIVE, with the join, matching countActiveAdministrators() exactly. A
+    // raw assignment count here would tell the dialog a deactivated user still
+    // covers the tenant, and the dialog would then offer the one removal that
+    // locks everyone out.
+    const holderCounts =
+      visibleRoles.length > 0
+        ? await this.prisma.userRole.groupBy({
+            by: ['roleId'],
+            where: {
+              roleId: { in: visibleRoles.map((r) => r.id) },
+              user: { organizationId, status: 'ACTIVE' },
+            },
+            _count: { roleId: true },
+          })
+        : [];
+    const holdersByRoleId = new Map(holderCounts.map((c) => [c.roleId, c._count.roleId]));
+
     const data = visibleRoles.map((r) => ({
       ...this.mapRole(r),
       // 0 rather than undefined: a role with no permissions is a real answer,
       // and the frontend must be able to tell it from "not loaded".
       permissionCount: countByRoleId.get(r.id) ?? 0,
+      activeHolderCount: holdersByRoleId.get(r.id) ?? 0,
     }));
 
     return paginated(data, total, page, pageSize);
@@ -343,16 +370,16 @@ export class RoleService {
     if (!role) throw new NotFoundException('Role not found');
     if (!role.isActive) return;
 
-    if (role.key === TENANT_ADMIN_KEY) {
-      const assignmentCount = await this.prisma.userRole.count({ where: { roleId: role.id } });
-      if (assignmentCount > 0) {
-        throw new ConflictException(
-          "This is the organization's only administrator role with active assignments and cannot be deactivated",
-        );
-      }
-    }
-
-    await this.prisma.role.update({ where: { id }, data: { isActive: false } });
+    // ACC-120 — the local assignment count that stood here is gone. It asked
+    // `userRole.count({ roleId })` with no join to User, so a tenant whose only
+    // administrator had been deactivated passed it, and a tenant with a real
+    // administrator was refused for the same reason — the two cases were
+    // indistinguishable to it.
+    await this.prisma.$transaction(async (tx) => {
+      const baseline = await captureAdministratorBaseline(organizationId, tx);
+      await tx.role.update({ where: { id }, data: { isActive: false } });
+      await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
+    });
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -394,14 +421,46 @@ export class RoleService {
     });
     if (!role) throw new NotFoundException('Role not found');
 
+    // ACC-120 — THE TENANT'S ROOT ROLE HAS A FROZEN PERMISSION SET.
+    //
+    // This method had no guard of any kind, and it is the shortest path to a
+    // locked-out tenant in the product: the two lines below delete every
+    // permission on the role and write back whatever was sent, so ONE call
+    // with an empty `permissionKeys` emptied Organization Administrator. Role
+    // intact, assignments intact, both of the old last-admin checks satisfied,
+    // and nobody able to administer anything. No custom role required.
+    //
+    // The holder invariant cannot catch it — the holders are all still there,
+    // holding a role that now grants nothing — which is why this is a separate
+    // refusal rather than another call to the assertion.
+    //
+    // CAPABILITY IS FROZEN, THE LABEL IS NOT. `updateRole()` is deliberately
+    // left alone: renaming this role to "System Owner" removes no capability,
+    // and blocking a rename would reverse the 30 September decision that system
+    // roles are tenant-editable for zero safety gain. See CLAUDE.md's
+    // Permission System section, where this is written as the single stated
+    // exception to that rule rather than a role that mysteriously will not save.
+    if (role.key === TENANT_ADMIN_KEY) {
+      throw new ConflictException(
+        'The Organization Administrator role has a fixed permission set and cannot be ' +
+          'changed. Its name and description are editable, and other roles can be given ' +
+          'any permissions you choose.',
+      );
+    }
+
     const permissionIds = await this.resolvePermissionIds(dto.permissionKeys);
 
-    await this.prisma.rolePermission.deleteMany({ where: { roleId } });
-    if (permissionIds.length > 0) {
-      await this.prisma.rolePermission.createMany({
-        data: permissionIds.map((permissionId) => ({ roleId, permissionId })),
-      });
-    }
+    // ACC-120 — one transaction, which these two writes never had. A failure
+    // between them left the role with NO permissions at all: the delete had
+    // committed and the write had not.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rolePermission.deleteMany({ where: { roleId } });
+      if (permissionIds.length > 0) {
+        await tx.rolePermission.createMany({
+          data: permissionIds.map((permissionId) => ({ roleId, permissionId })),
+        });
+      }
+    });
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -531,16 +590,16 @@ export class RoleService {
       );
     }
 
-    if (role.key === TENANT_ADMIN_KEY) {
-      const assignmentCount = await this.prisma.userRole.count({ where: { roleId } });
-      if (assignmentCount <= 1) {
-        throw new ConflictException(
-          "This is the user's only administrator role and cannot be removed while they are the organization's last administrator",
-        );
-      }
-    }
-
-    await this.prisma.userRole.delete({ where: { id: assignment.id } });
+    // ACC-120 — was `userRole.count({ roleId }) <= 1`, counting rows rather
+    // than people who can sign in. The invariant below replaces it and is
+    // checked AFTER the delete, inside the transaction: "would this leave
+    // nobody?" is a question about the state the commit would produce, and
+    // asking it beforehand is how an off-by-one creeps in.
+    await this.prisma.$transaction(async (tx) => {
+      const baseline = await captureAdministratorBaseline(organizationId, tx);
+      await tx.userRole.delete({ where: { id: assignment.id } });
+      await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
+    });
 
     await this.auditLog.log({
       tenantId: organizationId,

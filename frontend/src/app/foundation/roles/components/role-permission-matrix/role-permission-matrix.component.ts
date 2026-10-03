@@ -21,6 +21,12 @@ interface ModuleGroup {
 // editing these deserves an extra warning in the UI. See plan Business Rules.
 const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
 
+// ACC-120 — the tenant's ROOT ROLE. Its permission set is frozen server-side
+// (RoleService.assignPermissions refuses it), so this page must not offer an
+// edit it knows will be refused: a grid that 409s on Save is the dead Next
+// button rebuilt somewhere more expensive.
+const ROOT_ROLE_KEY = 'TENANT_ADMIN';
+
 @Component({
   selector: 'app-role-permission-matrix',
   standalone: true,
@@ -45,7 +51,21 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
         </app-page-header>
       }
 
-      @if (isHighImpact()) {
+      <!-- ACC-120 — ONE notice, at the top, and the amber warning is not it for
+           the root role.
+           "Removing permissions from this role affects every user currently
+           assigned to it" is leftover text from when this screen was editable.
+           On the root role you cannot remove a permission at all, so it was
+           false — and it contradicted the correct explanation that used to sit
+           at the FOOT of the page, 700px below. A reader met the contradiction
+           first, because it was at the top and it was coloured, and the truth
+           last. Same shape as the two contradictory empty states on Org
+           Positions.
+           The explanation now stands where the banner was, and the amber
+           warning is kept for every other role, where it is true. -->
+      @if (noticeKey()) {
+        <p-message severity="info" [text]="noticeKey()! | translate" />
+      } @else if (isHighImpact()) {
         <p-message severity="warn" [text]="'roles.adminRoleWarning' | translate" />
       }
 
@@ -70,14 +90,14 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
                     <p-checkbox
                       [binary]="true"
                       [inputId]="perm.id"
-                      [disabled]="!canManage()"
+                      [disabled]="readOnly()"
                       [ngModel]="isChecked(perm)"
                       (ngModelChange)="toggle(perm)"
                     />
                     <label
                       [for]="perm.id"
                       class="text-sm"
-                      [class.cursor-pointer]="canManage()"
+                      [class.cursor-pointer]="!readOnly()"
                       >{{ perm.action }}</label
                     >
                   </div>
@@ -103,20 +123,14 @@ const HIGH_IMPACT_ROLE_KEYS = new Set(['TENANT_ADMIN', 'PLATFORM_ADMIN']);
            the sentence below says what is actually true. Same shape as Setup
            health's own suppressed Fix, which names the permission rather than
            leaving a dead affordance. -->
-      @if (!canManage()) {
-        <p class="text-sm text-[var(--am-text-secondary)]">
-          {{ 'roles.matrixReadOnly' | translate }}
-        </p>
-      }
-
       <div class="flex gap-3 justify-end">
         <p-button
-          [label]="(canManage() ? 'common.cancel' : 'common.back') | translate"
+          [label]="(readOnly() ? 'common.back' : 'common.cancel') | translate"
           severity="secondary"
           [text]="true"
           (onClick)="goBack()"
         />
-        @if (canManage()) {
+        @if (!readOnly()) {
           <p-button
             [label]="'common.save' | translate"
             [loading]="saving()"
@@ -160,6 +174,35 @@ export class RolePermissionMatrixComponent implements OnInit {
   readonly allPermissions = signal<PermissionDto[]>([]);
   readonly selectedKeys = signal<Set<string>>(new Set());
 
+  // ACC-120 — frozen by decision, not by permission. Even a holder of
+  // roles:manage cannot change this set, which is why it is a separate concept
+  // from canManage() rather than folded into it.
+  readonly isRootRole = computed(() => this.role()?.key === ROOT_ROLE_KEY);
+
+  // One flag the template reads, so the checkboxes and the Save cannot disagree
+  // about whether this page is editable — the two were separate conditions and
+  // that is how a disabled grid keeps a live Save.
+  readonly readOnly = computed(() => !this.canManage() || this.isRootRole());
+
+  /**
+   * The reason, not just the state — a read-only page that does not say why
+   * reads as broken, and which reason applies changes what the reader should do.
+   *
+   * ORDER MATTERS, and it is permission first. Both reasons can be true at once
+   * (a reader without roles:manage, looking at the root role), and the frozen
+   * sentence ends "You can rename it" — which is false for someone who cannot
+   * manage roles at all. So they are told the thing that actually binds them,
+   * and an administrator looking at the root role gets the frozen explanation.
+   *
+   * null when the page is editable, which is also what hands the amber warning
+   * back to every other role.
+   */
+  readonly noticeKey = computed<string | null>(() => {
+    if (!this.canManage()) return 'roles.matrixReadOnly';
+    if (this.isRootRole()) return 'roles.matrixFrozenRootRole';
+    return null;
+  });
+
   readonly isHighImpact = computed(() => {
     const key = this.role()?.key;
     return !!key && HIGH_IMPACT_ROLE_KEYS.has(key);
@@ -187,6 +230,11 @@ export class RolePermissionMatrixComponent implements OnInit {
   }
 
   toggle(perm: PermissionDto): void {
+    // The checkbox is already disabled, so this is not the gate — it is here
+    // because a disabled control is a rendering, and (ngModelChange) is still
+    // reachable from code. The server refuses the root role regardless; this
+    // keeps the page from showing a change it will not be able to save.
+    if (this.readOnly()) return;
     const key = this.keyOf(perm);
     const next = new Set(this.selectedKeys());
     if (next.has(key)) next.delete(key);
@@ -195,6 +243,7 @@ export class RolePermissionMatrixComponent implements OnInit {
   }
 
   onSave(): void {
+    if (this.readOnly()) return;
     this.saving.set(true);
     this.saveError.set(null);
     this.roleService.assignPermissions(this.roleId, Array.from(this.selectedKeys())).subscribe({

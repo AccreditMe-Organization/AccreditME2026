@@ -309,7 +309,8 @@
     "searchPlaceholder": "Search roles…",
     "systemBadge": "System",
     "systemRoleKeyLocked": "This role's identifier cannot be changed. All other fields, including its permissions, may be edited for your organization.",
-    "title": "Roles & Permissions"
+    "title": "Roles & Permissions",
+    "matrixFrozenRootRole": "This is your organization’s root role. Its permissions are fixed so that someone can always administer the organization. You can rename it, and you can give any permissions you like to other roles."
   },
   "workflow": {
     "actionCreateTask": "Create Task",
@@ -1066,6 +1067,7 @@
     "tickedIsHeld": "ticked = held",
     "title": "Manage roles",
     "willBeGranted": "+ will be granted",
-    "willBeRemoved": "− will be removed"
+    "willBeRemoved": "− will be removed",
+    "lastAdministratorLocked": "The organization’s only active administrator. Give this role to someone else first, then you can remove it here."
   }
 }

@@ -1002,6 +1002,45 @@ PermissionGuard checks JWT permissions on every request after TenantGuard.
 Task delegation via out-of-office acting assignment — see Absence Management
 section in module-designs.md
 
+### System roles are tenant-editable — with exactly ONE stated exception
+
+The rule (Ahmad, 30 September) is that **system roles are starting
+suggestions, not fixtures**: a tenant may rename them, re-describe them,
+change what they are allowed to do, deactivate them, and build their own
+instead. That still holds for every role but one.
+
+**THE EXCEPTION (Ahmad, 3 October): `TENANT_ADMIN` — "Organization
+Administrator" — is the tenant's ROOT ROLE. Its PERMISSION SET IS FROZEN, and
+at least one ACTIVE user always holds it.**
+
+What is frozen and what is not, because the line matters more than the rule:
+
+| | editable? |
+|---|---|
+| Name, Arabic name, description | **YES** — rename it "System Owner" if you like |
+| Its permission set | **NO** — `assignPermissions()` refuses it |
+| Deactivating the role | only while nobody active holds it |
+| Removing it from a user | only while someone else active holds it |
+
+**Capability is frozen; the label is not.** Renaming the role removes no
+capability, so blocking a rename would reverse the 30 September decision for
+zero safety gain.
+
+**Why it is an exception rather than a carve-out nobody wrote down:** without
+it, one API call locked a tenant out of its own account —
+`assignPermissions()` deletes every permission on a role and writes back what
+it was sent, so an empty list emptied Organization Administrator while the
+role, its assignments and both last-admin checks stayed perfectly intact.
+
+**One assertion enforces the holder half, in one file**:
+`assertTenantRetainsAnActiveAdministrator()` in
+`backend/src/foundation/roles/tenant-administrator.invariant.ts`, called inside
+the transaction after the mutation. Four hand-maintained copies of "is this the
+last admin?" are deleted. Do not add a fifth: a path that reduces the count
+should fail because it ran the assertion, never because someone remembered to
+ask. Full detail, including the platform-organisation exclusion and what
+happens to a tenant already in breach: Key Architecture Decisions (ACC-120).
+
 ---
 
 ## Security Configuration
@@ -2569,41 +2608,85 @@ reason they were missed is that they lived nowhere a reader would look.
   need, **selection belongs in the shared list component** and is designed
   then, not anticipated now by a half-mechanism nothing uses.
 
-- **SELF-LOCKOUT IS REFUSED, NOT WARNED ABOUT — DECIDED, PARTIALLY BUILT. THIS
-  ENTRY DESCRIBES A GAP, NOT A FEATURE; DO NOT CITE IT AS A CONTROL THAT
-  EXISTS.** A save that would leave nobody able to administer the tenant is
-  REFUSED, the same way deactivating the last root org unit already is — not a
-  confirm, not a warning a user can accept.
+- **SELF-LOCKOUT IS REFUSED, NOT WARNED ABOUT — BUILT, 3 October.** This entry
+  described a gap for one day and is now a description of behaviour. Rewritten
+  rather than edited, because the pinned test that guarded its honesty
+  instructed exactly that, and it has been deleted in the same change.
 
-  **What IS built, exactly** (verified in `role.service.ts`, not remembered): a
-  check on the role's KEY. `removeRoleFromUser()` refuses removing
-  `TENANT_ADMIN` when it is that role's last assignment, and `deactivateRole()`
-  refuses deactivating `TENANT_ADMIN` while any assignment exists (ACC-16).
-  An earlier draft of this entry said the rule "is not built today", which was
-  itself wrong — corrected here rather than left to be inherited.
+  **The decision that closed it (Ahmad, 3 Oct): `TENANT_ADMIN` is the tenant's
+  ROOT ROLE. It exists, its permission set is frozen, and at least one ACTIVE
+  user holds it.** The rule as written beside the Permission System section is
+  the authority on what is and is not editable; this entry records the
+  mechanism and the judgement calls inside it.
 
-  **What is NOT built, which is the whole decision:** the guard never reads a
-  role's PERMISSIONS, so **a custom role carrying `users:manage` /
-  `roles:manage` is invisible to it.** In a tenant administered only by such a
-  role, removing its last holder locks everyone out and currently SUCCEEDS.
-  "Nobody able to administer the tenant" and "the last holder of the role whose
-  key is TENANT_ADMIN" are different conditions, and only the second is
-  enforced. The frontend adds nothing: Manage roles confirms on leaving ONE
-  USER with no roles, a different question again.
+  **The live defect it closed was `assignPermissions()`, which had no guard of
+  any kind.** It deletes every permission on a role and writes back what it was
+  sent, so ONE call with an empty list emptied Organization Administrator —
+  role intact, assignments intact, both last-admin checks satisfied, nobody
+  able to administer anything, no custom role required. The freeze is a
+  separate refusal from the holder invariant, deliberately: emptying the set
+  leaves every holder in place, so no count can see it. **Capability and
+  holders are two properties and conflating them would weaken both.**
 
-  **THE PR THAT BUILDS THIS IS FORCED TO COME BACK HERE.** The gap is pinned by
-  a test that is written to FAIL once the refusal widens —
-  `role.service.spec.ts`, *"does NOT yet refuse removing the last holder of a
-  CUSTOM administrator role — ACC-120 gap, pinned deliberately"*. Its own
-  comment says to delete it and rewrite this entry in the same change, and
-  never to narrow the new guard to keep it green. Mutation-proved: making the
-  existing guard key-agnostic turns that test red by name.
+  **The old checks counted ASSIGNMENT ROWS, not people who can sign in.**
+  `userRole.count({ where: { roleId } })` with no join to User, in two places:
+  a deactivated user's row kept them happy while nobody could log in. The count
+  now joins User and requires `status: 'ACTIVE'` — INVITED excluded for
+  ACC-43's reason, that holding a role is not being able to act.
 
-  **Why it is pinned rather than trusted to a reader.** CLAUDE.md had four
-  false claims corrected on 2026-09-29 and 2026-10-01, every one of them a
-  specification that had been read as a description. An entry describing
-  something unbuilt becomes the fifth the day it ships, and a status line alone
-  does not stop that — nothing makes anyone reread it. A failing test does.
+  **FOUR hand-maintained copies became one assertion**
+  (`tenant-administrator.invariant.ts`), called INSIDE the transaction after
+  the mutation. The rule is breakable from four places — emptying the set,
+  deactivating the role, removing it from its last holder, deactivating the
+  HOLDER — and **the copies had already drifted**: `user.service.ts`'s counted
+  active holders correctly while `role.service.ts`'s two counted rows, and the
+  comment on the one that got it right still said it "mirrors" them. That is
+  the frozen-column and header-grid shape, a third time. Do not add a fifth
+  copy.
+
+  **`isActive: true` on the role lookup is load-bearing**, and is what lets one
+  assertion cover role deactivation: deactivating the role changes no holder
+  row, so a holder count alone sees nothing wrong, while `getUserPermissions()`
+  resolves through `role: { isActive: true }` and an inactive role grants
+  nothing. Verified in the code, not assumed.
+
+  **The platform organisation is EXCLUDED, structurally, not tolerated.**
+  Measured across all three organisations before shipping: `al-manara` 1 active
+  holder, `al-nakheel` 1, `platform` **0**. The platform org has the role
+  seeded with nobody holding it and that is correct — its people hold
+  `PLATFORM_ADMIN`, and `PlatformGuard` needs `isPlatformOrg` AND
+  `platform:admin`. Without the exclusion the assertion would have thrown on
+  every platform-org mutation on day one. **Neither real tenant needed
+  repairing**, which is why this shipped strict.
+
+  **A tenant ALREADY at zero is not refused an unrelated mutation.** The
+  assertion compares a baseline captured before the mutation against the count
+  after it, and refuses only when the mutation crossed the line. Refusing a
+  tenant already locked out would block the mutations needed to recover it.
+  Such a tenant gets a logged line at `error` instead — and where that lands is
+  ACC-101's honest answer: process stdout, with nothing watching it. **Making
+  it a Setup health condition is the natural follow-up and is NOT built**: a
+  condition is derived state with a reconciler (ACC-82), a different change
+  from an invariant.
+
+  **The refusal is visible BEFORE the click, in two places.** The permission
+  matrix renders read-only for the root role with its own sentence — fixed set,
+  not missing permission, because the wrong sentence sends an administrator to
+  ask for a permission they already hold. And Manage roles renders a LOCK where
+  the last active holder's checkbox would be, matching the head-position rows,
+  with the reason on the row. Neither is an editable control that 409s on Save;
+  that is the dead Next button rebuilt somewhere more expensive, and it cost two
+  days once already. `Role.activeHolderCount` (list-only, joined to User, one
+  grouped query like ACC-74's `permissionCount`) is what the dialog reads.
+
+  **What the deleted pinned test asserted, and why deleting it is not a
+  narrowing.** It pinned that removing the last holder of a CUSTOM
+  administrator role succeeded, and said to delete it when the refusal widened.
+  The refusal was NOT widened to read permissions. The gap was closed by making
+  its premise untrue: a tenant can no longer be administered only by a custom
+  role, because the root role always exists and is always held. **The scenario
+  is unreachable rather than unguarded** — and that distinction is the thing to
+  check if anyone ever proposes letting the root role lapse.
 
 ---
 
