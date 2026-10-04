@@ -36,7 +36,7 @@ export interface IWorkflowStageVisit {
   // Tenant-editable data: rendered by isArabic() selection, never
   // `| translate` (SYSTEM-REFERENCE §9.3).
   stageNameEn: string;
-  stageNameAr: string;
+  stageNameAr: string | null;
   enteredAt: Date;
   // Null marks the OPEN visit — the current stage. Derived from the data
   // rather than compared against WorkflowInstance.currentStageId, because
@@ -102,7 +102,7 @@ export interface IWorkflowStageVisit {
 export interface IWorkflowStageSequenceEntry {
   id: string;
   nameEn: string;
-  nameAr: string;
+  nameAr: string | null;
   order: number;
   // 0 = not yet reached. >1 = the record has been here more than once, which
   // the sequence must SHOW rather than flatten — it is the one honest way a

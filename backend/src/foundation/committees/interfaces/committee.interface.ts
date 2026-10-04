@@ -2,7 +2,7 @@ export interface ICommittee {
   id: string;
   organizationId: string;
   nameEn: string;
-  nameAr: string;
+  nameAr: string | null;
   typeValueId: string;
   purpose: string | null;
   quorumCount: number;

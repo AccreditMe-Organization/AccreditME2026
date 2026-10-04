@@ -27,7 +27,7 @@ export interface IOrgUnitType {
   /** `labelOverrideEn ?? labelEn` — the tenant's word if it set one. */
   labelEn: string;
   /** `labelOverrideAr ?? labelAr`. */
-  labelAr: string;
+  labelAr: string | null;
   /**
    * The value is deactivated or hidden, but a unit still holds it.
    *

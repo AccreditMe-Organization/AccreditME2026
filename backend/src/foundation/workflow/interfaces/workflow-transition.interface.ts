@@ -3,7 +3,7 @@ export interface IWorkflowTransition {
   fromStageId: string;
   toStageId: string;
   labelEn: string;
-  labelAr: string;
+  labelAr: string | null;
   requiredPermission: string | null;
   triggerCondition: string; // WorkflowTriggerCondition
   triggerUserId: string | null;

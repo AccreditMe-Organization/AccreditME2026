@@ -592,7 +592,7 @@ export class LookupService {
     categoryId: string;
     key: string;
     labelEn: string;
-    labelAr: string;
+    labelAr: string | null;
     layer: string;
     attributes: unknown;
     isActive: boolean;
