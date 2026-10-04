@@ -497,14 +497,33 @@ describe('RoleService', () => {
 
     // Both bilingual names are sortable rather than one synthetic "name", so
     // the sort matches whichever name the reader is actually looking at.
-    it('sorts by either bilingual name on request', async () => {
+    //
+    // ACC-160 — nameAr can be NULL now, and a role with no Arabic name sorts
+    // LAST in BOTH directions (Postgres's own default puts NULLs first on DESC).
+    // nameEn is required and keeps a bare direction: that half is the boundary,
+    // proving the option is opt-in per column rather than applied to every sort.
+    it.each(['asc', 'desc'] as const)(
+      'sorts by the Arabic name %s with unnamed roles last',
+      async (sortDir) => {
+        mockPrisma.role.findMany.mockResolvedValue([]);
+        mockPrisma.role.count.mockResolvedValue(0);
+
+        await service.getRoles(ORG_A, { sortBy: 'nameAr', sortDir });
+
+        expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ orderBy: { nameAr: { sort: sortDir, nulls: 'last' } } }),
+        );
+      },
+    );
+
+    it('sorts by the English name with a bare direction, since it cannot be null', async () => {
       mockPrisma.role.findMany.mockResolvedValue([]);
       mockPrisma.role.count.mockResolvedValue(0);
 
-      await service.getRoles(ORG_A, { sortBy: 'nameAr', sortDir: 'asc' });
+      await service.getRoles(ORG_A, { sortBy: 'nameEn', sortDir: 'desc' });
 
       expect(mockPrisma.role.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ orderBy: { nameAr: 'asc' } }),
+        expect.objectContaining({ orderBy: { nameEn: 'desc' } }),
       );
     });
 
