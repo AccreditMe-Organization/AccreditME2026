@@ -14,7 +14,10 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 // Save is not in WRITE_ICONS and is not a create action, so neither
 // check:action-gating nor check:create-gating looks at it.
 describe('OrganizationProfileComponent read-only gating (ACC-123)', () => {
-  function render(held: string[]) {
+  let update: jasmine.Spy;
+
+  function render(held: string[], tenant: Record<string, unknown> = {}) {
+    update = jasmine.createSpy('update').and.returnValue(of({}));
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [OrganizationProfileComponent],
@@ -23,9 +26,17 @@ describe('OrganizationProfileComponent read-only gating (ACC-123)', () => {
         {
           provide: TenantService,
           useValue: {
+            // ACC-120 — `country` is no longer part of this screen's shape, so
+            // the stub no longer supplies it. nameAr is null, which is what
+            // every tenant actually has.
             getCurrent: () =>
-              of({ name: 'Al Nakheel Specialist Hospital', country: 'SA', logo: null }),
-            update: jasmine.createSpy('update').and.returnValue(of({})),
+              of({
+                name: 'Al Nakheel Specialist Hospital',
+                nameAr: null,
+                logo: null,
+                ...tenant,
+              }),
+            update,
           },
         },
         {
@@ -104,5 +115,155 @@ describe('OrganizationProfileComponent read-only gating (ACC-123)', () => {
       fixture.componentInstance.onSubmit();
       expect(tenant.update).toHaveBeenCalled();
     });
+  });
+});
+
+// ── ACC-120: the name pair, and the save that used to 400 ────────────────────
+describe('OrganizationProfileComponent — the organisation name pair (ACC-120)', () => {
+  let update: jasmine.Spy;
+
+  function render(tenant: Record<string, unknown> = {}) {
+    update = jasmine.createSpy('update').and.returnValue(of({}));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [OrganizationProfileComponent],
+      providers: [
+        provideTranslateService({ lang: 'en' }),
+        {
+          provide: TenantService,
+          useValue: {
+            getCurrent: () =>
+              of({
+                name: 'Al Nakheel Specialist Hospital',
+                nameAr: null,
+                logo: null,
+                ...tenant,
+              }),
+            update,
+          },
+        },
+        {
+          provide: NavigationAccessService,
+          useValue: { hasPermission: () => true },
+        },
+      ],
+    });
+    const fixture = TestBed.createComponent(OrganizationProfileComponent);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  const control = (f: ReturnType<typeof render>, id: string): HTMLInputElement =>
+    (f.nativeElement as HTMLElement).querySelector<HTMLInputElement>(`#${id}`)!;
+
+  it('renders both halves of the pair', () => {
+    const fixture = render();
+    expect(control(fixture, 'name')).toBeTruthy();
+    expect(control(fixture, 'nameAr')).toBeTruthy();
+  });
+
+  // THE PRODUCT RULE. Arabic fields are never mandatory, because the product is
+  // sold to customers who do not operate in Arabic — which is why every other
+  // nameAr column in the schema is nullable too. A sibling of the English name,
+  // not a condition on it.
+  it('does NOT require the Arabic name, while the English one IS required', () => {
+    const fixture = render();
+    const form = fixture.componentInstance.form;
+
+    form.controls.name.setValue('');
+    form.controls.nameAr.setValue('');
+    expect(form.controls.nameAr.valid).withContext('Arabic name is optional').toBe(true);
+    expect(form.controls.name.valid).withContext('English name is required').toBe(false);
+  });
+
+  // Each half declares the direction its OWN content is written in. Asserted
+  // together, because the English half's dir is only meaningful as the mirror
+  // of the Arabic half's: without it the field inherits the document direction
+  // and an English name is typed right-to-left in an Arabic session.
+  it('writes each name in the direction its own script runs', () => {
+    const fixture = render();
+    expect(control(fixture, 'nameAr').getAttribute('dir')).toBe('rtl');
+    expect(control(fixture, 'name').getAttribute('dir')).toBe('ltr');
+  });
+
+  it('refuses an Arabic name longer than the column allows', () => {
+    const fixture = render();
+    fixture.componentInstance.form.controls.nameAr.setValue('ا'.repeat(256));
+    expect(fixture.componentInstance.form.controls.nameAr.valid).toBe(false);
+  });
+
+  it('loads an existing Arabic name into the field', () => {
+    const fixture = render({ nameAr: 'مستشفى النخيل التخصصي' });
+    expect(control(fixture, 'nameAr').value).toBe('مستشفى النخيل التخصصي');
+  });
+
+  // THE LIVE BUG THIS SLICE FIXES. The component sent `country`,
+  // UpdateTenantDto never declared it, and main.ts runs ValidationPipe with
+  // forbidNonWhitelisted — so the backend refused the whole request and EVERY
+  // save failed. Asserted on the payload rather than on a status code, because
+  // the status code is not reachable from a unit test and the payload is the
+  // thing that was wrong.
+  it('does not send country, which is what made every save fail', () => {
+    const fixture = render();
+    fixture.componentInstance.form.controls.name.setValue('Renamed');
+
+    fixture.componentInstance.onSubmit();
+
+    expect(update).toHaveBeenCalled();
+    const payload = update.calls.mostRecent().args[0] as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(['nameAr', 'name'].sort());
+    expect('country' in payload).toBe(false);
+  });
+
+  it('sends the Arabic name when one is typed', () => {
+    const fixture = render();
+    fixture.componentInstance.form.controls.name.setValue('Al Nakheel');
+    fixture.componentInstance.form.controls.nameAr.setValue('النخيل');
+
+    fixture.componentInstance.onSubmit();
+
+    expect(update.calls.mostRecent().args[0]).toEqual(
+      jasmine.objectContaining({ nameAr: 'النخيل' }),
+    );
+  });
+
+  // The S3-key text box asked an administrator to type a storage path. It is
+  // replaced by what is true today: a monogram, and a note that upload is not
+  // live. No dropzone, because there is no upload endpoint, bucket or signed
+  // URL anywhere in the product.
+  it('has no S3-key box, and no logo field at all', () => {
+    const fixture = render();
+    const inputs = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('input'),
+    );
+    expect(inputs.map((i) => i.id).sort()).toEqual(['name', 'nameAr']);
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('S3 key');
+  });
+
+  it('shows the monogram at the three sizes a logo would appear at', () => {
+    const fixture = render();
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    // "Al Nakheel Specialist Hospital" -> AN: the first letter of each of the
+    // first TWO WORDS, not the first two letters of the first word. My first
+    // version of this expectation said 'AL' and the code was right.
+    expect(fixture.componentInstance.monogram()).toBe('AN');
+    expect(text).toContain('adminSettings.logoWhereSignIn');
+    expect(text).toContain('adminSettings.logoWhereSidebar');
+    expect(text).toContain('adminSettings.logoWhereReport');
+  });
+
+  // The drawing's own example, so the rule is pinned against the artboard
+  // rather than against one fixture.
+  it('matches the drawing: King Fahad Medical City gives KF', () => {
+    expect(render({ name: 'King Fahad Medical City' }).componentInstance.monogram()).toBe('KF');
+  });
+
+  it('falls back to a dash rather than an empty square', () => {
+    expect(render({ name: '   ' }).componentInstance.monogram()).toBe('—');
+  });
+
+  it('says upload is not live rather than offering an upload that is not', () => {
+    const text = (render().nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('adminSettings.logoNotActiveYet');
   });
 });

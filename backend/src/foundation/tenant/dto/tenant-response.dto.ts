@@ -3,6 +3,7 @@ import { ITenant } from '../interfaces/tenant.interface';
 export class TenantResponseDto implements ITenant {
   id!: string;
   name!: string;
+  nameAr!: string | null;
   slug!: string;
   country!: string;
   timezone!: string;

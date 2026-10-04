@@ -33,7 +33,8 @@
     "submit": "Submit",
     "unsaved": "Unsaved",
     "view": "View",
-    "yes": "Yes"
+    "yes": "Yes",
+    "notActiveYet": "Not active yet"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -810,7 +811,6 @@
     "emailProvider": "Email Provider",
     "aiSettings": "AI Credits",
     "orgName": "Organization Name",
-    "country": "Country",
     "logo": "Logo",
     "logoUploadNotBuiltYet": "File upload isn't wired up yet — paste an S3 key directly for now.",
     "savedSuccess": "Changes saved.",
@@ -824,7 +824,16 @@
     "taskSlaNote": "Configure how long a task stays open before it's due, and how long it stays overdue before escalating — first to the assignee's manager, then to their unit head.",
     "dueAfterHours": "Due After (hours)",
     "managerEscalationAfterHours": "Manager Escalation (hours after due)",
-    "headEscalationAfterHours": "Head Escalation (hours after manager)"
+    "headEscalationAfterHours": "Head Escalation (hours after manager)",
+    "orgNameEn": "Name (English)",
+    "orgNameEnRequired": "An English name is required.",
+    "orgNameAr": "Name (Arabic)",
+    "orgNameArHint": "Optional.",
+    "orgNameArTooLong": "Keep the Arabic name to 255 characters or fewer.",
+    "logoNotActiveYet": "Logo upload is not live yet. The monogram below is shown everywhere a logo would appear.",
+    "logoWhereSignIn": "Sign-in",
+    "logoWhereSidebar": "Sidebar",
+    "logoWhereReport": "Reports"
   },
   "home": {
     "greeting": "Welcome back, {{name}}",

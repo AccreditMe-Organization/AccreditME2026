@@ -1,6 +1,12 @@
 export interface ITenant {
   id: string;
   name: string;
+  // ACC-120 — nullable, and every reader has to cope with that: a tenant that
+  // has never opened Organization Profile has no Arabic name, and there is
+  // nothing to derive one from. NOT on ITenantEntitlements, deliberately —
+  // that is the ungated payload every signed-in user receives, and putting a
+  // name there is its own decision in its own ticket.
+  nameAr: string | null;
   slug: string;
   country: string;
   timezone: string;

@@ -169,6 +169,57 @@ describe('TenantService', () => {
 
   // ── update ────────────────────────────────────────────────────────────────
 
+  // ── ACC-120: the organisation's Arabic name ──────────────────────────────────
+  //
+  // Scope, confirmed: this ticket STORES and EDITS the Arabic name. It does not
+  // display it by language anywhere, so there is nothing here about fallbacks or
+  // Arabic sessions — an assertion about behaviour the code does not produce is
+  // worse than no assertion.
+  describe('update — the Arabic name (ACC-120)', () => {
+    it('saves an Arabic name and returns it unchanged', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.organization.update.mockResolvedValue({
+        ...ORG_A,
+        nameAr: 'مستشفى النخيل التخصصي',
+      });
+
+      const result = await service.update(
+        'org-a',
+        { nameAr: 'مستشفى النخيل التخصصي' },
+        'user-1',
+      );
+
+      expect(result.nameAr).toBe('مستشفى النخيل التخصصي');
+      expect(prisma.organization.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { nameAr: 'مستشفى النخيل التخصصي' } }),
+      );
+    });
+
+    // A tenant that has never opened the screen has no Arabic name, and the
+    // mapper passes that through rather than substituting the English one:
+    // choosing which name to SHOW is a display decision, and it belongs to
+    // whoever renders it.
+    it('returns null for a tenant that has none, rather than the English name', async () => {
+      prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, nameAr: null });
+
+      const result = await service.findById('org-a');
+
+      expect(result.nameAr).toBeNull();
+      expect(result.name).toBe(ORG_A.name);
+    });
+
+    it('leaves the Arabic name alone when an update does not mention it', async () => {
+      prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, nameAr: 'اسم' });
+      prisma.organization.update.mockResolvedValue({ ...ORG_A, nameAr: 'اسم' });
+
+      await service.update('org-a', { timezone: 'Asia/Dubai' }, 'user-1');
+
+      expect(prisma.organization.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { timezone: 'Asia/Dubai' } }),
+      );
+    });
+  });
+
   describe('update', () => {
     it('updates the tenant and calls auditLog.log', async () => {
       const updated = { ...ORG_A, name: 'Org Alpha Renamed' };
