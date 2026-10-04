@@ -66,6 +66,9 @@ const mockPrisma = {
     create: jest.fn(),
     delete: jest.fn(),
     deleteMany: jest.fn(),
+    // ACC-120 — getRoles() resolves every role's ACTIVE-holder count in one
+    // grouped query, the same shape as the permission count.
+    groupBy: jest.fn(),
   },
   rolePermission: {
     findMany: jest.fn(),
@@ -80,10 +83,59 @@ const mockPrisma = {
   },
   organization: {
     findUnique: jest.fn(),
+    // ACC-120 — the invariant reads isPlatformOrg to exclude the platform org.
+    findFirst: jest.fn(),
   },
+  // ACC-120 — the mutations that can break the root-role invariant now commit
+  // inside a transaction with the assertion. The callback is handed this same
+  // mock, so a test configures tx behaviour exactly as it always configured
+  // prisma behaviour, and a throw from the assertion propagates the way a real
+  // rollback does.
+  $transaction: jest.fn(),
 };
 
 const mockAuditLog = { log: jest.fn() };
+// ─── ACC-120: a STATEFUL fake for the root-role invariant ─────────────────────
+//
+// A flat mock cannot express this change, and the way it fails is silent. The
+// assertion runs AFTER the mutation and compares against a baseline captured
+// BEFORE it, so both reads go through the same mock; a static value makes
+// before and after identical, the invariant concludes "this tenant was already
+// in breach", and it ALLOWS EVERYTHING. A test written that way passes while
+// asserting nothing.
+//
+// So the fake lets the mutation move the number, which is the only way a test
+// can tell a refusal from a permission.
+function stageAdministrators(opts: {
+  actedOnRole: ReturnType<typeof makeRole>;
+  rootRoleActive?: boolean;
+  activeHolders: number;
+}): { holders: () => number } {
+  let rootActive = opts.rootRoleActive ?? true;
+  let holders = opts.activeHolders;
+
+  mockPrisma.role.findFirst.mockImplementation((args: { where: { key?: string } }) =>
+    // No key in the where clause => the service looking up the role it was
+    // asked to act on. A key => the invariant's own read, which also requires
+    // isActive and therefore must see the deactivation.
+    Promise.resolve(
+      args.where.key === undefined ? opts.actedOnRole : rootActive ? opts.actedOnRole : null,
+    ),
+  );
+  mockPrisma.userRole.count.mockImplementation(() => Promise.resolve(holders));
+
+  mockPrisma.role.update.mockImplementation((args: { data: { isActive?: boolean } }) => {
+    if (args.data.isActive === false) rootActive = false;
+    return Promise.resolve({ ...opts.actedOnRole, isActive: args.data.isActive ?? true });
+  });
+  mockPrisma.userRole.delete.mockImplementation(() => {
+    holders -= 1;
+    return Promise.resolve({ id: 'ur-1' });
+  });
+
+  return { holders: () => holders };
+}
+
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +146,15 @@ describe('RoleService', () => {
     jest.clearAllMocks();
     mockPrisma.rolePermission.findMany.mockResolvedValue([]);
     mockPrisma.rolePermission.groupBy.mockResolvedValue([]);
+    mockPrisma.userRole.groupBy.mockResolvedValue([]);
     mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: false });
+    mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: false });
+    // ACC-120 defaults: the tenant has an administrator before and after. A
+    // test about the invariant overrides role.findFirst / userRole.count itself.
+    mockPrisma.userRole.count.mockResolvedValue(1);
+    mockPrisma.$transaction.mockImplementation(
+      async (fn: (tx: typeof mockPrisma) => Promise<unknown>) => fn(mockPrisma),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -312,6 +372,40 @@ describe('RoleService', () => {
     });
 
     // The shape decision, asserted so it cannot quietly regress into an N+1.
+    // ACC-120 — the number the Manage roles dialog needs in order to lock the
+    // root role's row for its last active holder rather than offering a save
+    // the server refuses.
+    it('reports each role ACTIVE holder count, joined to User', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([makeRole({ id: 'role-1' })]);
+      mockPrisma.role.count.mockResolvedValue(1);
+      mockPrisma.userRole.groupBy.mockResolvedValue([
+        { roleId: 'role-1', _count: { roleId: 3 } },
+      ]);
+
+      const result = await service.getRoles(ORG_A, {});
+
+      expect(result.data[0]!.activeHolderCount).toBe(3);
+      // The join is the point: a raw assignment count would tell the dialog a
+      // deactivated user still covers the tenant.
+      expect(mockPrisma.userRole.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user: { organizationId: ORG_A, status: 'ACTIVE' },
+          }),
+        }),
+      );
+    });
+
+    it('reports 0 active holders for a role nobody holds, not undefined', async () => {
+      mockPrisma.role.findMany.mockResolvedValue([makeRole({ id: 'role-1' })]);
+      mockPrisma.role.count.mockResolvedValue(1);
+      mockPrisma.userRole.groupBy.mockResolvedValue([]);
+
+      const result = await service.getRoles(ORG_A, {});
+
+      expect(result.data[0]!.activeHolderCount).toBe(0);
+    });
+
     it('resolves every count in ONE grouped query, never one per role', async () => {
       mockPrisma.role.findMany.mockResolvedValue([
         makeRole({ id: 'r1' }),
@@ -610,22 +704,69 @@ describe('RoleService', () => {
       );
     });
 
-    it('throws ConflictException deactivating the tenant\'s only assigned TENANT_ADMIN role', async () => {
+    // ACC-120 — these used to assert the ASSIGNMENT count. They now assert the
+    // invariant, and the difference is the point of the change: the old pair
+    // could not tell "a real administrator exists" from "a row exists for
+    // someone who was deactivated last year".
+    it('refuses to deactivate the root role while an active holder remains', async () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
-      mockPrisma.role.findFirst.mockResolvedValue(adminRole);
-      mockPrisma.userRole.count.mockResolvedValue(1);
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 1 });
 
       await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toThrow(
         ConflictException,
       );
-      expect(mockPrisma.role.update).not.toHaveBeenCalled();
     });
 
-    it('allows deactivating TENANT_ADMIN when no users are assigned to it', async () => {
+    // The MECHANISM, not just the outcome. countActiveAdministrators() requires
+    // isActive: true on the role, and that clause is what lets ONE assertion
+    // placed after the update catch a deactivation at all: the holder rows are
+    // untouched by it, so a holder count alone would see nothing wrong.
+    it('catches the deactivation by re-reading the role as INACTIVE, not by inspecting the request', async () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
-      mockPrisma.role.findFirst.mockResolvedValue(adminRole);
-      mockPrisma.userRole.count.mockResolvedValue(0);
-      mockPrisma.role.update.mockResolvedValue({ ...adminRole, isActive: false });
+      // FIVE active holders, none of them touched by this mutation. A holder
+      // count alone sees nothing wrong; the isActive clause is what bites.
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 5 });
+
+      await expect(service.deactivateRole('role-1', ORG_A, ACTOR)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ key: 'TENANT_ADMIN', isActive: true }),
+        }),
+      );
+    });
+
+    it('allows deactivating the root role when nobody active holds it', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 0 });
+
+      await service.deactivateRole('role-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.role.update).toHaveBeenCalled();
+    });
+
+    // A tenant already in breach is not punished for an unrelated mutation —
+    // refusing would block the mutations needed to recover from it.
+    it('allows a mutation in a tenant that already had no active administrator', async () => {
+      const other = makeRole({ key: 'QUALITY_DIRECTOR', isSystem: false });
+      stageAdministrators({ actedOnRole: other, rootRoleActive: false, activeHolders: 0 });
+
+      await service.deactivateRole('role-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.role.update).toHaveBeenCalled();
+    });
+
+    // The platform organisation has the role seeded with NOBODY holding it, by
+    // design — its people hold PLATFORM_ADMIN. Measured on dev before this
+    // shipped: platform activeHolders=0, both real tenants 1. Without the
+    // exemption the assertion would throw on every platform-org mutation.
+    it('exempts the platform organization entirely', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      // Exactly the configuration refused above — one active holder, and the
+      // mutation takes the role away. Only isPlatformOrg differs.
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 1 });
+      mockPrisma.organization.findFirst.mockResolvedValue({ isPlatformOrg: true });
 
       await service.deactivateRole('role-1', ORG_A, ACTOR);
 
@@ -683,6 +824,93 @@ describe('RoleService', () => {
     });
   });
 
+  // ── ACC-120: the root role's permission set is frozen ────────────────────────
+
+  describe('assignPermissions — the root role is frozen', () => {
+    // THE LIVE DEFECT THIS CLOSES. assignPermissions had no guard of any kind:
+    // it deleted every permission on the role and wrote back whatever arrived.
+    // One call with an empty list emptied Organization Administrator, leaving
+    // the role intact, every assignment intact, both old last-admin checks
+    // satisfied, and nobody able to administer anything.
+    it('refuses an EMPTY permission list against the root role', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      mockPrisma.role.findFirst.mockResolvedValue(adminRole);
+
+      await expect(
+        service.assignPermissions('role-1', { permissionKeys: [] }, ORG_A, ACTOR),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+    });
+
+    // Not only the empty list: the set is frozen, so a well-meaning narrower
+    // set is refused too. A caller cannot talk their way past this by sending
+    // "most" of the permissions.
+    it('refuses a NON-empty permission list against the root role as well', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      mockPrisma.role.findFirst.mockResolvedValue(adminRole);
+
+      await expect(
+        service.assignPermissions(
+          'role-1',
+          { permissionKeys: ['users:view', 'roles:view'] },
+          ORG_A,
+          ACTOR,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
+    });
+
+    // FREEZE CAPABILITY, NOT THE LABEL. Renaming the role removes nothing, and
+    // blocking a rename would reverse the 30 September decision that system
+    // roles are tenant-editable for no safety gain.
+    it('still lets the root role be RENAMED — the freeze is capability, not the label', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      // updateRole also runs a duplicate-name check through role.findFirst; a
+      // flat mock answers that with the role itself and reports a clash.
+      mockPrisma.role.findFirst.mockImplementation((args: { where: { nameEn?: string } }) =>
+        Promise.resolve(args.where.nameEn === undefined ? adminRole : null),
+      );
+      mockPrisma.role.update.mockResolvedValue({ ...adminRole, nameEn: 'System Owner' });
+
+      const updated = await service.updateRole(
+        'role-1',
+        { nameEn: 'System Owner' },
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(updated.nameEn).toBe('System Owner');
+    });
+
+    it('leaves every other role editable', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.permission.findMany.mockResolvedValue([
+        makePermission({ id: 'perm-1', module: 'users', action: 'view' }),
+      ]);
+
+      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+
+      expect(mockPrisma.rolePermission.deleteMany).toHaveBeenCalledWith({
+        where: { roleId: 'role-1' },
+      });
+      expect(mockPrisma.rolePermission.createMany).toHaveBeenCalled();
+    });
+
+    // The two writes had never been in a transaction. A failure between them
+    // left the role with NO permissions: the delete had committed, the write
+    // had not.
+    it('writes the replacement set inside one transaction', async () => {
+      mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
+      mockPrisma.permission.findMany.mockResolvedValue([
+        makePermission({ id: 'perm-1', module: 'users', action: 'view' }),
+      ]);
+
+      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+    });
+  });
+
   // ── removeRoleFromUser — admin lockout protection ────────────────────────────
 
   describe('removeRoleFromUser', () => {
@@ -695,48 +923,61 @@ describe('RoleService', () => {
       expect(mockPrisma.userRole.delete).toHaveBeenCalledWith({ where: { id: 'ur-1' } });
     });
 
-    it('throws ConflictException when removing the last TENANT_ADMIN assignment', async () => {
+    it('refuses to remove the root role from its last ACTIVE holder', async () => {
       const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
-      mockPrisma.role.findFirst.mockResolvedValue(adminRole);
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 1 });
       mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
-      mockPrisma.userRole.count.mockResolvedValue(1);
 
       await expect(
         service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR),
       ).rejects.toThrow(ConflictException);
-      expect(mockPrisma.userRole.delete).not.toHaveBeenCalled();
     });
 
-    // ACC-120 — THE SELF-LOCKOUT GAP IS PINNED HERE, AND THIS TEST IS MEANT TO
-    // GO RED THE DAY THE REFUSAL IS WIDENED.
-    //
-    // CLAUDE.md's ACC-120 section records "a save that would leave nobody able
-    // to administer the tenant is REFUSED" as Ahmad's decision, and states that
-    // only part of it is built. This test is what makes that status honest
-    // rather than a sentence nobody rereads.
-    //
-    // What exists is the test above: a check on role.key === 'TENANT_ADMIN'.
-    // The DECIDED rule is about nobody being able to ADMINISTER the tenant,
-    // which is a different condition — the guard never looks at a role's
-    // permissions, so a custom role carrying users:manage / roles:manage is
-    // invisible to it. In a tenant administered only by such a role, removing
-    // its last holder locks everyone out, and today it succeeds.
-    it('does NOT yet refuse removing the last holder of a CUSTOM administrator role — ACC-120 gap, pinned deliberately', async () => {
-      const customAdmin = makeRole({ key: 'QUALITY_DIRECTOR', isSystem: false });
-      mockPrisma.role.findFirst.mockResolvedValue(customAdmin);
+    // The whole reason for counting holders rather than rows. Under the old
+    // `userRole.count({ roleId }) <= 1` this passed with TWO assignment rows,
+    // one of them belonging to a deactivated user — so the real last
+    // administrator could be removed and the tenant locked out.
+    it('refuses when a second ASSIGNMENT exists but only one holder is active', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      // activeHolders is what the invariant counts; the inactive user's row is
+      // invisible to it by construction, which is the fix.
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 1 });
       mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
-      mockPrisma.userRole.count.mockResolvedValue(1);
+
+      await expect(
+        service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR),
+      ).rejects.toThrow(ConflictException);
+      // Asserted so the test cannot pass for the old reason: the count the
+      // invariant makes joins User and requires ACTIVE.
+      expect(mockPrisma.userRole.count).toHaveBeenCalledWith({
+        where: { roleId: adminRole.id, user: { organizationId: ORG_A, status: 'ACTIVE' } },
+      });
+    });
+
+    it('allows removing the root role when another active holder remains', async () => {
+      const adminRole = makeRole({ key: 'TENANT_ADMIN', isSystem: true });
+      stageAdministrators({ actedOnRole: adminRole, activeHolders: 2 });
+      mockPrisma.userRole.findFirst.mockResolvedValue({ id: 'ur-1', userId: 'user-1', roleId: 'role-1' });
 
       await service.removeRoleFromUser('user-1', 'role-1', ORG_A, ACTOR);
 
-      // IF THIS FAILS, THAT IS THE SUCCESS CASE. Self-lockout refusal has been
-      // widened past the TENANT_ADMIN key, which is what was decided. Delete
-      // this test and update CLAUDE.md's ACC-120 self-lockout entry in the same
-      // change — its status line is written to be false the moment this passes
-      // no longer. Do NOT narrow the new guard to keep this green.
       expect(mockPrisma.userRole.delete).toHaveBeenCalledWith({ where: { id: 'ur-1' } });
     });
 
+    // ACC-120 — THE PINNED GAP TEST THAT STOOD HERE IS DELETED, as its own
+    // comment instructed, because the gap it pinned is closed.
+    //
+    // It asserted that removing the last holder of a CUSTOM administrator role
+    // succeeded, and said to delete it "the day the refusal is widened". The
+    // refusal was not widened to read permissions — Ahmad's 3 Oct decision
+    // closed the gap by making its PREMISE untrue instead: Organization
+    // Administrator is the tenant's root role, it exists, and someone active
+    // holds it. A tenant can therefore no longer be administered ONLY by a
+    // custom role, which is the state that made removing that role's last
+    // holder a lockout.
+    //
+    // So nothing was narrowed to keep a test green, and nothing is left
+    // unprotected: the scenario is unreachable rather than unguarded.
     it('throws NotFoundException when the assignment does not exist', async () => {
       mockPrisma.role.findFirst.mockResolvedValue(BASE_ROLE);
       mockPrisma.userRole.findFirst.mockResolvedValue(null);

@@ -49,16 +49,22 @@ import { AssignRoleDto } from '../roles/dto/assign-role.dto';
 import { IBilingualName, IUser, IUserReferenceNames } from './interfaces/user.interface';
 import { IRole } from '../roles/interfaces/role.interface';
 import { IUserRoleGrant } from '../roles/interfaces/user-role-grant.interface';
+import {
+  TENANT_ADMIN_KEY,
+  assertTenantRetainsAnActiveAdministrator,
+  captureAdministratorBaseline,
+} from '../roles/tenant-administrator.invariant';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-// Mirrors RoleService's own TENANT_ADMIN_KEY guard (role.service.ts) — see
-// ACC-16, "last-admin lockout protection". RoleService already blocks
-// removing/deactivating a tenant's last TENANT_ADMIN via the role-management
-// UI; this closes the same gap on the user-departure flow.
-const TENANT_ADMIN_KEY = 'TENANT_ADMIN';
+// ACC-120 — the local copy that stood here is gone, and so is its comment
+// saying it "mirrors RoleService's own TENANT_ADMIN_KEY guard". It did not
+// mirror them: this copy correctly counted holders whose User is ACTIVE while
+// RoleService's two counted raw assignment rows, so the rule had already
+// drifted — in the safe direction here, which is why nobody noticed the
+// originals were weaker. One assertion now, imported below.
 
 export interface ListUsersFilters {
   status?: string;
@@ -1404,14 +1410,17 @@ export class UserService {
         })
       : [];
 
-    const departingUserIsActiveAdmin = activeAdmins.some((a) => a.userId === id);
-    if (departingUserIsActiveAdmin && activeAdmins.length <= 1) {
-      throw new ConflictException(
-        "This user is the organization's last active administrator and cannot be deactivated",
-      );
-    }
 
-    await this.prisma.user.update({ where: { id }, data: { status: 'INACTIVE' } });
+    // ACC-120 — the flip and the invariant commit or roll back together. The
+    // side effects below stay OUTSIDE the transaction, matching this file's own
+    // convention (2.6.h): a refused deactivation must not have invalidated the
+    // person's sessions or moved their tasks on the way to being refused.
+    await this.prisma.$transaction(async (tx) => {
+      const baseline = await captureAdministratorBaseline(organizationId, tx);
+      await tx.user.update({ where: { id }, data: { status: 'INACTIVE' } });
+      await assertTenantRetainsAnActiveAdministrator(organizationId, tx, baseline);
+    });
+
     await this.authProvider.invalidateUserSessions(id);
 
     // ACC-40 Section 2.5.1 — a departing user may have been a unit's direct

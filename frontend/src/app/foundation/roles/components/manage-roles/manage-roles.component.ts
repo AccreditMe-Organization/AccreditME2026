@@ -146,24 +146,42 @@ interface DerivedRow {
                   class="flex min-h-[44px] items-center gap-[10px] border-b border-[var(--am-border)] px-[10px] last:border-b-0"
                   [class.am-roles-row--changed]="row.pending !== 'none'"
                 >
-                  <p-checkbox
-                    [binary]="true"
-                    [inputId]="'role-' + row.role.id"
-                    [ngModel]="row.pending === 'add' || (row.held && row.pending !== 'remove')"
-                    (ngModelChange)="toggle(row)"
-                    [disabled]="saving()"
-                  />
-                  <label
-                    [for]="'role-' + row.role.id"
-                    class="flex min-w-0 grow cursor-pointer flex-col"
-                  >
-                    <span class="truncate text-[13px] font-medium">{{ roleName(row.role) }}</span>
-                    @if (row.role.description) {
-                      <span class="truncate text-[11.5px] text-[var(--am-text-secondary)]">
-                        {{ row.role.description }}
+                  <!-- ACC-120 — the root role's last active holder gets a LOCK
+                       where the checkbox would be, matching the head-position
+                       rows above: a row that cannot be changed looks the same
+                       whatever makes it so. The reason is on the row, because a
+                       lock with no sentence reads as a bug. -->
+                  @if (isLastRootRoleHolder(row)) {
+                    <i
+                      class="pi pi-lock shrink-0 text-[var(--am-text-secondary)]"
+                      aria-hidden="true"
+                    ></i>
+                    <span class="flex min-w-0 grow flex-col">
+                      <span class="truncate text-[13px] font-medium">{{ roleName(row.role) }}</span>
+                      <span class="text-[11.5px] text-[var(--am-text-secondary)]">
+                        {{ 'manageRoles.lastAdministratorLocked' | translate }}
                       </span>
-                    }
-                  </label>
+                    </span>
+                  } @else {
+                    <p-checkbox
+                      [binary]="true"
+                      [inputId]="'role-' + row.role.id"
+                      [ngModel]="row.pending === 'add' || (row.held && row.pending !== 'remove')"
+                      (ngModelChange)="toggle(row)"
+                      [disabled]="saving()"
+                    />
+                    <label
+                      [for]="'role-' + row.role.id"
+                      class="flex min-w-0 grow cursor-pointer flex-col"
+                    >
+                      <span class="truncate text-[13px] font-medium">{{ roleName(row.role) }}</span>
+                      @if (row.role.description) {
+                        <span class="truncate text-[11.5px] text-[var(--am-text-secondary)]">
+                          {{ row.role.description }}
+                        </span>
+                      }
+                    </label>
+                  }
                   <span class="shrink-0 whitespace-nowrap text-[11.5px]" [class]="metaClass(row)">
                     {{ metaText(row) }}
                   </span>
@@ -241,6 +259,26 @@ export class ManageRolesComponent implements OnInit {
   readonly heldCount = computed(
     () => this.rows().filter((r) => r.held).length + this.derivedRows().length,
   );
+
+  /**
+   * ACC-120 — the root role cannot be taken from its LAST ACTIVE HOLDER, so
+   * this row is rendered locked rather than as a checkbox.
+   *
+   * The server refuses it either way (the invariant rolls the transaction
+   * back), and that is exactly why this exists: a checkbox that 409s on Save is
+   * the dead Next button rebuilt somewhere more expensive. The refusal has to
+   * be visible BEFORE the click.
+   *
+   * `activeHolderCount` is the role's ACTIVE holders, joined to User on the
+   * backend. `<= 1` rather than `=== 1` because a 0 would mean the number is
+   * stale or the role is held by nobody, and locking is the safe reading of
+   * either.
+   */
+  isLastRootRoleHolder(row: RoleRow): boolean {
+    return (
+      row.role.key === 'TENANT_ADMIN' && row.held && (row.role.activeHolderCount ?? 0) <= 1
+    );
+  }
 
   readonly added = computed(() => this.rows().filter((r) => r.pending === 'add'));
   readonly removed = computed(() => this.rows().filter((r) => r.pending === 'remove'));
@@ -358,6 +396,10 @@ export class ManageRolesComponent implements OnInit {
 
   toggle(row: RoleRow): void {
     if (this.saving()) return;
+    // The row renders a lock rather than a checkbox, so this is not the gate —
+    // it is here because a template condition is a rendering, and this handler
+    // stays reachable from code.
+    if (this.isLastRootRoleHolder(row)) return;
     const next = this.rows().map((r) => {
       if (r.role.id !== row.role.id) return r;
       const currentlyOn = r.pending === 'add' || (r.held && r.pending !== 'remove');
