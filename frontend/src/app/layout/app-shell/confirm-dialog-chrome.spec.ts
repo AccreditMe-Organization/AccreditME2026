@@ -93,6 +93,20 @@ describe('the global confirmation dialog — chrome PrimeNG renders itself (ACC-
 
   afterEach(() => {
     document.querySelectorAll('.p-confirmdialog, .p-dialog-mask').forEach((n) => n.remove());
+    // AND THE DIRECTION, which is the part that bit.
+    //
+    // This spec constructs the REAL LanguageService — that is the point of it,
+    // since the service is what sets PrimeNG's button translations — and the
+    // same effect writes document.documentElement.dir. No TestBed resets that:
+    // it is global state outside Angular entirely.
+    //
+    // Rendering the Arabic case therefore left the whole document RTL for every
+    // spec that ran afterwards, and DataListComponent's alignment spec measures
+    // column offsets left-to-right. It failed with the offsets REVERSED, in a
+    // file this one does not touch, as soon as an unrelated new spec changed
+    // the execution order. Restored here rather than in the file that noticed.
+    document.documentElement.dir = 'ltr';
+    document.documentElement.lang = 'en';
   });
 
   // NON-VACUITY FIRST: if no dialog rendered, every assertion below passes for
