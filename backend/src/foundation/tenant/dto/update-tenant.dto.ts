@@ -1,5 +1,6 @@
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
 export class UpdateTenantDto {
   @IsString()
@@ -49,11 +50,9 @@ export class UpdateTenantDto {
   @IsString()
   @IsOptional()
   @MaxLength(255)
-  @Transform(({ value }: { value: unknown }) => {
-    if (typeof value !== 'string') return value;
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  })
+  // ACC-160 — the rule now lives in one place, shared with every other
+  // optional bilingual name. This spec's own tests still pin it here.
+  @Transform(trimToNull)
   nameAr?: string | null;
 
   @IsString()

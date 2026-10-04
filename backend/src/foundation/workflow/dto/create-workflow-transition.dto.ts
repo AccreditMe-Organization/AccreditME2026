@@ -6,6 +6,8 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
 const WORKFLOW_TRIGGER_CONDITIONS = [
   'SPECIFIC_USER',
@@ -28,10 +30,14 @@ export class CreateWorkflowTransitionDto {
   @MaxLength(100)
   labelEn!: string;
 
+  // ACC-160 — optional, because Arabic fields are never mandatory. An empty
+  // value stores NULL rather than '' (see trimToNull). Update DTOs built with
+  // PartialType inherit both halves.
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(100)
-  labelAr!: string;
+  @Transform(trimToNull)
+  labelAr?: string | null;
 
   // ACC-55 — `| null` is a genuine, distinct value here, not just "absent":
   // null explicitly CLEARS a previously-set permission, which the service
