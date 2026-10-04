@@ -6,6 +6,10 @@ import { environment } from '../../../../environments/environment';
 export interface ITenant {
   id: string;
   name: string;
+  // ACC-120 — null for a tenant that has never filled it in, which every tenant
+  // is today. Never substituted with `name` by the API: choosing which name to
+  // SHOW is a display decision, and nothing in this ticket displays it.
+  nameAr: string | null;
   slug: string;
   country: string;
   timezone: string;
@@ -52,7 +56,21 @@ export class TenantService {
     return this.http.get<ITenant>(this.baseUrl);
   }
 
-  update(dto: { name?: string; country?: string; logo?: string }): Observable<ITenant> {
+  // ACC-120 — `country` is GONE from this shape, and that is the fix for the 400.
+  //
+  // The component sent it, UpdateTenantDto never declared it, and main.ts runs
+  // ValidationPipe with forbidNonWhitelisted — so the backend refused the whole
+  // request and EVERY save on Organization Profile failed. The field is also
+  // absent from the reviewed drawing, which settles which side gives way.
+  //
+  // UI REMOVAL ONLY. Organization.country is non-null, the Super Admin create
+  // flow still sets it, and mapToITenant still returns it — the response
+  // contract is unchanged. The tenant-facing screen simply stops editing it.
+  update(dto: {
+    name?: string;
+    nameAr?: string | null;
+    logo?: string;
+  }): Observable<ITenant> {
     return this.http.patch<ITenant>(this.baseUrl, dto);
   }
 
