@@ -23,14 +23,14 @@
   <div style="margin-block-end: 14px;">
     <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 29 Sep 2026 · on Design System Rev 8, Templates Rev 7</div>
     <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Users and roles — Manage roles, Invite user, the matrix in Arabic</h1>
-    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 96ch; text-wrap: pretty;">Three items, drawn on the code facts measured 29 Sep. <strong>Naming: “Manage roles”</strong> everywhere (the dialog, the row-menu item, the bulk action and template 1's button), because the dialog both adds and removes. “Assign role” doesn't appear in the interface.</p>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 96ch; text-wrap: pretty;">Three items, drawn on the code facts measured 29 Sep. <strong>Naming: “Manage roles”</strong> everywhere (the dialog, the row-menu item and template 1's button), because the dialog both adds and removes. There's no bulk action: individual assignment only (2 Oct). “Assign role” doesn't appear in the interface.</p>
   </div>
 
   <section id="m1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
     <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
       <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
       <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Manage roles · form dialog 560</h2>
-      <span style="font-size: 12.5px; color: #5A6779;">One dialog for a single row and for a bulk selection. The difference is the checkbox's third state, so it's drawn twice here only to show that state.</span>
+      <span style="font-size: 12.5px; color: #5A6779;">One user at a time, opened from that user's row. Bulk role assignment was decided against on 2 Oct; panel B records why.</span>
     </div>
 
     <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;">
@@ -82,36 +82,14 @@
       </div>
 
       <div style="flex: 1 1 520px; max-width: 560px; min-width: 0;">
-        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">B · 12 users, from the bulk bar · tri-state</div>
-        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
-          <div style="display: flex; justify-content: space-between; gap: 10px; padding: 11px 14px; border-block-end: 1px solid #E2E8F0;">
-            <div style="min-width: 0;"><div style="font-size: 16px; font-weight: 600;">Manage roles · 12 users</div><div style="font-size: 12px; color: #5A6779;">Only roles you change are applied. Everything else is left as each person has it.</div></div>
-            <button aria-label="Close dialog" style="flex: none; width: 28px; height: 28px; border: none; background: none; color: #5A6779; font-size: 13px;">✕</button>
-          </div>
-          <div style="padding: 10px 14px 4px;">
-            <div style="display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid #C5DAEA; background: #F2F7FB; border-radius: 6px; font-size: 12px; color: #1F5480; margin-block-end: 10px;"><span style="flex: none;">ⓘ</span><span style="text-wrap: pretty;">3 of these users also hold roles through a head position. Those aren't listed here and aren't changed.</span></div>
-            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 4px;">
-              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Granted directly</span>
-              <span style="font-size: 11.5px; color: #5A6779;">click cycles: all → none → leave as is</span>
-            </div>
-            <div style="border: 1px solid #E2E8F0; border-radius: 6px; max-height: 240px; overflow: hidden;">
-              <sc-for list="{{ bulkRows }}" as="r" hint-placeholder-count="5">
-                <div style="{{ r.rowStyle }}">
-                  <span style="{{ r.boxStyle }}">{{ r.mark }}</span>
-                  <span style="flex: 1 1 auto; min-width: 0; font-size: 13px; font-weight: 500;">{{ r.name }}</span>
-                  <span style="{{ r.metaStyle }}">{{ r.meta }}</span>
-                </div>
-              </sc-for>
-            </div>
-            <div style="font-size: 11.5px; color: #5A6779; margin-block: 5px 8px; text-wrap: pretty;">Each row states what Save will do, not just what's held. That's the only way a tri-state stays safe at twelve people.</div>
-          </div>
-          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;">
-            <span style="font-size: 12.5px; color: #4A5568;"><strong>2 changes</strong> for up to 12 people</span>
-            <span style="display: flex; gap: 8px;">
-              <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Cancel</button>
-              <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Apply to 12 users</button>
-            </span>
-          </div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #B42318; margin-block-end: 6px;">B · bulk role assignment · decided against, not built</div>
+        <div style="border: 1px dashed #B42318; border-radius: 8px; background: #FEF3F2; padding: 14px 16px;">
+          <div style="font-size: 15px; font-weight: 600; color: #7A271A;">Not a feature: there is no bulk Manage roles</div>
+          <div style="font-size: 12.5px; color: #4A5568; margin-block-start: 6px; text-wrap: pretty;">Decided 2 Oct 2026. This is not deferred and not a later phase. Roles are managed one user at a time, in panel A only. The Users list has no “Manage roles” bulk action, and this dialog never takes more than one user.</div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7A271A; margin-block: 12px 4px;">Why</div>
+          <div style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;"><strong>A wrong grant is silent.</strong> Nobody finds out until an audit, so one mis-click in a selection of twelve leaves one person quietly holding access they shouldn't have.</div>
+          <div style="font-size: 12.5px; color: #4A5568; margin-block-start: 6px; text-wrap: pretty;"><strong>The case bulk was meant to solve is already solved.</strong> When many people need the same roles, the roles come from their position, so the role follows the job rather than a batch edit.</div>
+          <div style="font-size: 11.5px; color: #7A271A; margin-block-start: 12px; text-wrap: pretty;">The earlier tri-state drawing that stood here has been removed on purpose, so it can't be rebuilt from this artboard. If bulk is ever proposed again, start from the reasons above, not from a drawing.</div>
         </div>
       </div>
 
@@ -170,7 +148,7 @@
             <button style="background: #B42318; color: #fff; border: 1px solid #912018; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Remove anyway</button>
           </div>
         </div>
-        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;"><strong>Bulk:</strong> the same dialog, titled “Leave 3 of 12 users with no roles?”, listing the three by name (up to 5, then “+ n more”). Cancel returns to the dialog with nothing saved. Remove anyway applies everything, the three included. It only appears when a user has no head-position roles either: a person who still holds a derived role isn't left with none.</div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">It only appears when the user has no head-position roles either: a person who still holds a derived role isn't left with none. Cancel returns to the dialog with nothing saved.</div>
       </div>
 
       <div dir="rtl" style="flex: 1 1 380px; max-width: 420px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
@@ -552,13 +530,6 @@ class Component extends DCLogic {
       { name: "مُطَّلِع", st: "off", changed: true, meta: "− سيُزال", tone: "rem" },
       { name: "عضو لجنة", st: "on", meta: "14 Jan 2025" }
     ];
-    const bulk = [
-      { name: "Quality Editor", st: "on", meta: "all 12 · no change" },
-      { name: "Committee Member", st: "some", meta: "4 of 12 · left as is" },
-      { name: "Committee Secretary", st: "on", changed: true, meta: "+ 8 will gain it", tone: "add" },
-      { name: "Viewer", st: "off", changed: true, meta: "− 5 will lose it", tone: "rem" },
-      { name: "Auditor", st: "off", meta: "none · no change" }
-    ];
     const mapRows = (rs) => rs.map(r => ({ name: r.name, desc: r.desc || "", mark: mk(r.st), meta: r.meta, boxStyle: box(r.st, r.changed), rowStyle: rowS(r.changed), metaStyle: meta(r.tone) }));
 
     const fieldBox = (err, act) => "display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: #fff; border: 1px solid " + (err ? "#B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12)" : "#8A94A6") + ";";
@@ -599,23 +570,22 @@ class Component extends DCLogic {
       ],
       singleRows: mapRows(single),
       singleRowsAr: mapRows(singleAr),
-      bulkRows: mapRows(bulk),
 
       rolesDecisions: [
         { t: "Add and remove, in one list", b: "Every tenant role is a row, ticked when held. Ticking adds, unticking removes. Nothing is sent until Save, and the footer names every change in words. Save sends one POST or DELETE per changed role, because the API is per role (the partial outcome below covers a failed call)." },
         { t: "Head-position roles: locked, and true for both kinds", b: "Shown above the list with no checkbox. The sentence doesn't depend on the marker: it names the head position, then the scope (“Pharmacy only” for grantedViaHeadPositionOrgUnitId, “organisation-wide” for grantedViaHeadPositionId). It also says where the grant is actually ended, so the admin isn't left wondering why the row can't be changed." },
         { t: "Granted date, and no author", b: "UserRole.createdAt gives “Granted 3 Mar 2025”. There's no granted-by, so nothing is invented. Rows being added or removed show what Save will do in place of the date." },
-        { t: "Bulk: tri-state, applying only touched rows", b: "“–” means some of them hold it, with the count. That state is also “leave as is”, and it's the only one that sends nothing. Clicking a row cycles it: all, none, back to as-is. Each row's meta always says what Save will do, and to how many people." },
-        { t: "Permission", b: "roles:manage. Without it, the row-menu item and the bulk action are absent (shell rule). With only roles:view, the user record's Roles panel still lists them read-only. The dialog doesn't exist for that reader." }
+        { t: "No bulk path (decided 2 Oct)", b: "Individual assignment only. A wrong grant is silent until an audit, and many-people-one-role is handled by position-derived roles. See panel B." },
+        { t: "Permission", b: "roles:manage. Without it, the row-menu item is absent (shell rule). With only roles:view, the user record's Roles panel still lists them read-only. The dialog doesn't exist for that reader." }
       ],
 
       rolesOutcomes: out([
-        { k: "loading", en: "Opens at once with the header filled from the row. The list shows 5 skeleton rows at 44px, and Save is disabled. Bulk shows its skeleton until every selected user's roles have loaded, since counts can't be partial.", ar: "يُفتح فورًا بعنوان من الصف، وخمسة صفوف هيكلية، والحفظ معطَّل." },
-        { k: "rows", en: "Drawn: A (single), B (bulk), C (Arabic).", ar: "مرسوم أعلاه." },
+        { k: "loading", en: "Opens at once with the header filled from the row. The list shows 5 skeleton rows at 44px, and Save is disabled.", ar: "يُفتح فورًا بعنوان من الصف، وخمسة صفوف هيكلية، والحفظ معطَّل." },
+        { k: "rows", en: "Drawn: A (single), C (Arabic). B is the decided-against record, not a state.", ar: "مرسوم أعلاه." },
         { k: "empty", en: "The user holds no roles: the list is unchanged, every box is unticked, and one line sits above it: “Layla has no roles. She can sign in but can't do anything yet.” The tenant has no roles at all: the list is replaced by “No roles exist yet” and a link to Roles.", ar: "لا أدوار لديها: القائمة كما هي مع سطر «ليلى بلا أدوار؛ يمكنها الدخول لكنها لا تستطيع فعل شيء بعد»." },
         { k: "denied", en: "Doesn't apply inside the dialog: without roles:manage it can't be opened, because the entry points are absent. A 403 on save (permission revoked mid-session) is treated as an error: “You no longer have permission to change roles. Nothing was saved.”", ar: "لا ينطبق داخل النافذة؛ نقاط الدخول غائبة بلا صلاحية. ورفض 403 عند الحفظ يُعامل كخطأ: «لم يُحفظ شيء»." },
         { k: "error", en: "Roles couldn't load: an inline error in place of the list, with Retry, and Save stays disabled. Save failed entirely (network): “Nothing was saved”, the ticks are kept, and Try again.", ar: "تعذّر التحميل: رسالة مع «إعادة المحاولة». فشل الحفظ كليًا: «لم يُحفظ شيء» مع إبقاء الاختيارات." },
-        { k: "partial", en: "Some of the per-role calls fail. The dialog stays open, succeeded rows lose their change mark and show “Saved”, failed rows keep theirs with the reason, the footer reads “1 of 2 changes saved”, and Retry sends only the failures. Bulk does the same per user and per role: “Committee Secretary: 7 of 8 gained it · Omar Haddad failed”. The last-role confirm is re-checked against what actually succeeded.", ar: "بعض الطلبات تفشل: الناجح يُعلَّم «حُفظ»، والفاشل يبقى مع سببه، و«إعادة المحاولة» لما فشل فقط." }
+        { k: "partial", en: "Some of the per-role calls fail. The dialog stays open, succeeded rows lose their change mark and show “Saved”, failed rows keep theirs with the reason, the footer reads “1 of 2 changes saved”, and Retry sends only the failures. The last-role confirm is re-checked against what actually succeeded.", ar: "بعض الطلبات تفشل: الناجح يُعلَّم «حُفظ»، والفاشل يبقى مع سببه، و«إعادة المحاولة» لما فشل فقط." }
       ]),
 
       inviteFields: [
@@ -732,7 +702,7 @@ class Component extends DCLogic {
       })(),
       ledger: [
         { t: "Naming:", b: "“Manage roles” everywhere. Templates Rev 7 already uses it, so no change is needed there." },
-        { t: "Drawn:", b: "Manage roles (single, bulk, Arabic, last-role confirm in both languages, six outcomes). Invite user (fields, both conditional replacements, Arabic, the after-send list with invited and expired rows, the corrected empty state, six outcomes). Matrix: a 6a coverage table, the Arabic frozen column populated at 1130 (6a's own marks and columns), the one-column Save confirm (short and long in English, and Arabic), and the three states 6a lacked: read-only, saving, save failed." },
+        { t: "Drawn:", b: "Manage roles (single user only; bulk struck 2 Oct with the reason recorded in panel B; Arabic, last-role confirm in both languages, six outcomes). Invite user (fields, both conditional replacements, Arabic, the after-send list with invited and expired rows, the corrected empty state, six outcomes). Matrix: a 6a coverage table, the Arabic frozen column populated at 1130 (6a's own marks and columns), the one-column Save confirm (short and long in English, and Arabic), and the three states 6a lacked: read-only, saving, save failed." },
         { t: "Not redrawn:", b: "6a's populated English state. Replaced: this file's earlier module-grouped “Review n changes” dialog and its amber ring marks, which didn't match 6a. The confirm is now Ahmad's one-column form, and the marks are 6a's own." },
         { t: "Supersedes:", b: "the Users list's empty-state sentence and “Import from HR file” item. Both are absent until the import screen exists. Also Resend/Revoke on invited rows, absent until ACC-83." },        { t: "Confirmed 1 · roles before acceptance:", b: "The roles service has no status gate, and invite() already grants position-derived roles to invited users on purpose. The after-send “Manage her roles” prompt stays." },
         { t: "Confirmed 2 · no partial on Invite:", b: "invite() queues a notification and sends nothing, so the dialog has one success and one failure." },
