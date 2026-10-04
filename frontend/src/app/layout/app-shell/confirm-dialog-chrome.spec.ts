@@ -93,6 +93,17 @@ describe('the global confirmation dialog — chrome PrimeNG renders itself (ACC-
 
   afterEach(() => {
     document.querySelectorAll('.p-confirmdialog, .p-dialog-mask').forEach((n) => n.remove());
+
+    // TEAR THE INJECTOR DOWN BEFORE RESTORING THE DIRECTION, and the order is
+    // the whole fix.
+    //
+    // Resetting dir alone was not enough and the suite went red again:
+    // translate.use() resolves asynchronously, so LanguageService's effect can
+    // fire AFTER this hook has run — during a later spec — and write rtl back.
+    // Destroying the TestBed injector destroys the effect with it, so there is
+    // nothing left to fire.
+    TestBed.resetTestingModule();
+
     // AND THE DIRECTION, which is the part that bit.
     //
     // This spec constructs the REAL LanguageService — that is the point of it,

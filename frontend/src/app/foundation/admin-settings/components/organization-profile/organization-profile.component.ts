@@ -97,7 +97,7 @@ import { FieldComponent } from '../../../../shared/components/field/field.compon
             class="flex items-start gap-2 rounded border border-dashed border-[var(--am-text-secondary)] p-3"
           >
             <span
-              class="shrink-0 rounded border border-[var(--am-text-secondary)] bg-white px-[6px] text-[11px] font-bold"
+              class="shrink-0 rounded border border-[var(--am-text-secondary)] bg-[var(--am-surface)] px-[6px] text-[11px] font-bold"
               >{{ 'common.notActiveYet' | translate }}</span
             >
             <span class="text-sm">{{ 'adminSettings.logoNotActiveYet' | translate }}</span>

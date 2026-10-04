@@ -828,7 +828,7 @@
     "orgNameEn": "Name (English)",
     "orgNameEnRequired": "An English name is required.",
     "orgNameAr": "Name (Arabic)",
-    "orgNameArHint": "Optional. Shown on Arabic screens where it has been set.",
+    "orgNameArHint": "Optional.",
     "orgNameArTooLong": "Keep the Arabic name to 255 characters or fewer.",
     "logoNotActiveYet": "Logo upload is not live yet. The monogram below is shown everywhere a logo would appear.",
     "logoWhereSignIn": "Sign-in",

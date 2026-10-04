@@ -44,8 +44,7 @@ export class UpdateTenantDto {
    *     Arabic name" — which is exactly how a `nameAr || name` fallback comes
    *     to be written in nine places with two different behaviours.
    *
-   * So the column holds a real name or null, never an empty string, and the
-   * screen is what stops a tenant clearing it by accident.
+   * So the column holds a real name or null, never an empty string.
    */
   @IsString()
   @IsOptional()
