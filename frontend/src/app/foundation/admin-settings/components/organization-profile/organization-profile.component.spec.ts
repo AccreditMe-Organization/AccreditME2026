@@ -176,8 +176,14 @@ describe('OrganizationProfileComponent — the organisation name pair (ACC-120)'
     expect(form.controls.name.valid).withContext('English name is required').toBe(false);
   });
 
-  it('writes the Arabic name right-to-left', () => {
-    expect(control(render(), 'nameAr').getAttribute('dir')).toBe('rtl');
+  // Each half declares the direction its OWN content is written in. Asserted
+  // together, because the English half's dir is only meaningful as the mirror
+  // of the Arabic half's: without it the field inherits the document direction
+  // and an English name is typed right-to-left in an Arabic session.
+  it('writes each name in the direction its own script runs', () => {
+    const fixture = render();
+    expect(control(fixture, 'nameAr').getAttribute('dir')).toBe('rtl');
+    expect(control(fixture, 'name').getAttribute('dir')).toBe('ltr');
   });
 
   it('refuses an Arabic name longer than the column allows', () => {

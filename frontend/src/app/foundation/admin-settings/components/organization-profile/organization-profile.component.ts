@@ -62,7 +62,15 @@ import { FieldComponent } from '../../../../shared/components/field/field.compon
             [control]="form.controls.name"
             [errorMessages]="{ required: 'adminSettings.orgNameEnRequired' | translate }"
           >
-            <input pInputText id="name" formControlName="name" class="w-full" />
+            <!-- dir="ltr" is the MIRROR of the Arabic control's dir="rtl", not an
+                 extra. Without it this input inherits the document's direction,
+                 so in an Arabic session an English name is typed into an RTL
+                 field: the caret starts on the right and trailing punctuation
+                 jumps to the wrong end. Each half of the pair now declares the
+                 direction its own content is written in, rather than one half
+                 declaring it and the other inheriting whatever the reader
+                 happens to have chosen. -->
+            <input pInputText id="name" formControlName="name" dir="ltr" class="w-full" />
           </am-field>
 
           <am-field
