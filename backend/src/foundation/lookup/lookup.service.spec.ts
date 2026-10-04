@@ -266,6 +266,33 @@ describe('LookupService', () => {
       expect(result[0]!.labelAr).toBe('سياسة المؤسسة');
     });
 
+    // ACC-160 — labelOverrideAr may now be NULL: a tenant may rename a system
+    // value in English only. The Arabic label must then be the SYSTEM's Arabic
+    // label, not blank — NULL means "no override", and an override with no
+    // Arabic half overrides nothing in Arabic.
+    it('keeps the system Arabic label when the override has no Arabic half', async () => {
+      const sysVal = makeValue({ key: 'policy', labelAr: 'سياسة' });
+      const tenantOverride = makeValue({
+        id:              'val-override',
+        organizationId:  ORG_A,
+        key:             'policy',
+        layer:           'TENANT',
+        labelOverrideEn: 'Institutional Policy',
+        labelOverrideAr: null,
+      });
+
+      mockPrisma.lookupCategory.findFirst.mockResolvedValue(BASE_CATEGORY);
+      mockPrisma.lookupValue.findMany
+        .mockResolvedValueOnce([sysVal])
+        .mockResolvedValueOnce([tenantOverride]);
+
+      const result = await service.getValues('document_type', ORG_A);
+
+      expect(result[0]!.labelEn).toBe('Institutional Policy');
+      expect(result[0]!.labelAr).toBe('سياسة');
+      expect(result[0]!.labelOverrideAr).toBeNull();
+    });
+
     it('excludes system values hidden by tenant', async () => {
       const sysVal = makeValue({ key: 'policy' });
       const hiddenOverride = makeValue({
