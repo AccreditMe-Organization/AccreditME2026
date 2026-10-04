@@ -146,6 +146,7 @@ export class TenantService {
   private mapToITenant(org: {
     id: string;
     name: string;
+    nameAr: string | null;
     slug: string;
     country: string;
     timezone: string;
@@ -181,6 +182,11 @@ export class TenantService {
     return {
       id: org.id,
       name: org.name,
+      // ACC-120 — null for any tenant that has never filled it in, which is all
+      // three today. Passed through as-is: this layer does not substitute the
+      // English name, because choosing which name to SHOW is a display decision
+      // and belongs to whoever renders it, not to the mapper.
+      nameAr: org.nameAr,
       slug: org.slug,
       country: org.country,
       timezone: org.timezone,
