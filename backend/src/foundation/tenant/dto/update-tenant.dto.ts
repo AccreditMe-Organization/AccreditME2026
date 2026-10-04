@@ -13,12 +13,24 @@ export class UpdateTenantDto {
   /**
    * ACC-120 — the Arabic half of the organisation's name pair.
    *
-   * OPTIONAL, because this DTO is PATCH-shaped and serves screens that have
-   * nothing to do with the name: making it required would break every
-   * unrelated tenant update. The REQUIREMENT lives on Organization Profile,
-   * which refuses to save without it. Those are different promises and the
-   * column is nullable precisely because only the weaker one is enforced
-   * everywhere.
+   * OPTIONAL AT EVERY LAYER, DELIBERATELY. The column is nullable, this DTO is
+   * optional, and Organization Profile does NOT require it either.
+   *
+   * CORRECTED: an earlier version of this comment said "the REQUIREMENT lives
+   * on Organization Profile, which refuses to save without it". That was wrong
+   * and it contradicted a standing product decision — ARABIC FIELDS ARE NEVER
+   * MANDATORY, because the product is sold to customers who do not operate in
+   * Arabic. It is why Organization.nameAr, OrgUnit.nameAr, OrgPosition.nameAr,
+   * PublicHoliday.nameAr and AiCreditPack.nameAr are all nullable: a rule, not
+   * an accident of those slices.
+   *
+   * It also contradicted this ticket's own acceptance criteria, which say an
+   * empty field stores null — only reachable if the screen lets the field be
+   * empty. Shipping it as written would have added a seventh mandatory Arabic
+   * field in the ticket that recorded six existing ones as defects.
+   *
+   * There is no stronger promise anywhere. An optional field whose empty value
+   * stores null is the whole rule.
    *
    * AN EMPTY VALUE BECOMES NULL RATHER THAN BEING REFUSED, and this supersedes
    * what I said when the migration was approved ("an explicitly empty value is
