@@ -281,6 +281,27 @@ enum PlanModuleAccess {
 model Organization {
   id               String           @id @default(cuid())
   name             String
+  // ACC-120 — the Arabic half of the organisation's name pair.
+  //
+  // NULLABLE, and it stays nullable: this is the EXPAND step (ACC-127), the
+  // three existing rows have no Arabic name, and there is nothing to derive one
+  // from — transliterating "Al Nakheel Specialist Hospital" would be inventing
+  // data, not migrating it. So no backfill script, and a CONTRACT step to NOT
+  // NULL is only possible once every tenant has filled it in, which is a
+  // product state rather than a migration.
+  //
+  // The REQUIREMENT lives on the screen, not on the column, and the two are
+  // deliberately different: Organization Profile refuses to save without it
+  // (the design opens the field in its error state for a tenant that has
+  // none), while a row nobody has edited keeps its null. "You cannot save this
+  // form without it" is not "every row has one".
+  //
+  // `name` is left alone rather than renamed to `nameEn`. A rename is a
+  // contract step on a column read in 30+ places, it would break the deployed
+  // container the moment the migration ran (ACC-127 — migrations run
+  // pre-deploy, against the OLD code), and it buys nothing: the pairing is
+  // legible from the comment.
+  nameAr           String?
   slug             String           @unique
   country          String
   timezone         String           @default("Asia/Riyadh")
