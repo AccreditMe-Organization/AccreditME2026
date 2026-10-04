@@ -1,6 +1,7 @@
 import { Component, Injector, OnInit, inject, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { ConfirmDialogCloseLabel } from '../../shared/directives/confirm-dialog-close-label.directive';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { ImpersonationBannerComponent } from '../impersonation-banner/impersonation-banner.component';
@@ -26,6 +27,7 @@ import { IdleService } from '../../core/services/idle.service';
   imports: [
     RouterOutlet,
     ConfirmDialogModule,
+    ConfirmDialogCloseLabel,
     TopbarComponent,
     SidebarComponent,
     ImpersonationBannerComponent,
@@ -60,7 +62,17 @@ import { IdleService } from '../../core/services/idle.service';
       </div>
     </div>
 
-    <p-confirmDialog />
+    <!-- ACC-83 — the confirmation dialog's own chrome, fixed in the one place
+         it is declared.
+         amCloseLabel names the × button. PrimeNG's closeAriaLabel input does
+         NOT work here: ConfirmDialog accepts it and never forwards it to the
+         p-dialog it renders (verified against its inline template), and
+         closable: false would remove the button but also disable Escape. The
+         directive's header has the full reasoning.
+         The accept and reject labels need nothing here — LanguageService sets
+         PrimeNG's own accept/reject translations, so all 22 confirmations in
+         the app get them without passing anything. -->
+    <p-confirmDialog amCloseLabel />
   `,
   // ACC-38 — the same scroll-chaining bug ACC-36 fixed for
   // EditDialogComponent's own scroll area is not dialog-specific: this

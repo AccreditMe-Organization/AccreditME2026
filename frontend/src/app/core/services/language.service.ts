@@ -13,13 +13,33 @@
 // place this logic lives, not one per component (which is how the three
 // orphaned TODOs this ticket closes came to exist in the first place).
 //
-// PrimeNG needs no equivalent config: confirmed directly against the
-// installed v21.1.9's own PrimeNGConfigType (no rtl/direction option
-// exists) — it activates automatically via CSS logical properties the
-// moment <html dir="rtl"> is set, which is exactly what this effect does.
+// PrimeNG needs no equivalent DIRECTION config: confirmed directly against
+// the installed PrimeNGConfigType (no rtl/direction option exists) — it
+// activates automatically via CSS logical properties the moment
+// <html dir="rtl"> is set, which is exactly what this effect does.
+//
+// ACC-83 — BUT IT DOES NEED TRANSLATION CONFIG, and that sentence used to read
+// "PrimeNG needs no equivalent config", which over-read the direction finding
+// into a general one. PrimeNG ships its own English strings for text IT
+// renders, and the confirm dialog's buttons are the live case: verified in
+// primeng-confirmdialog.mjs, each button resolves as
+//
+//     this.option('acceptLabel')
+//       || this.getAcceptButtonProps()?.label
+//       || this.config.getTranslation(TranslationKeys.ACCEPT)
+//
+// and primeng-config.mjs defaults ACCEPT to 'Yes' and REJECT to 'No'. So a
+// confirmation that passes no labels renders Latin "Yes"/"No" inside a fully
+// Arabic RTL dialog. Measured: 19 of the app's 22 confirm() calls pass none.
+//
+// Fixed HERE rather than at 22 call sites, because this is the one place the
+// language is already applied and because a per-call fix cannot cover the
+// twenty-third dialog. ConfirmDialog subscribes to config.translationObserver,
+// which setTranslation() notifies, so an open dialog follows a live switch.
 import { Injectable, effect, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { TranslateService } from '@ngx-translate/core';
+import { PrimeNG } from 'primeng/config';
 
 const RTL_LANGUAGES = new Set(['ar']);
 const DEFAULT_LANGUAGE = 'en';
@@ -27,6 +47,7 @@ const DEFAULT_LANGUAGE = 'en';
 @Injectable({ providedIn: 'root' })
 export class LanguageService {
   private readonly translate = inject(TranslateService);
+  private readonly primeng = inject(PrimeNG);
 
   constructor() {
     // TranslateService.currentLang is a real Signal<Language | null>
@@ -39,6 +60,14 @@ export class LanguageService {
       const lang = this.translate.currentLang() ?? DEFAULT_LANGUAGE;
       document.documentElement.dir = RTL_LANGUAGES.has(lang) ? 'rtl' : 'ltr';
       document.documentElement.lang = lang;
+
+      // ACC-83 — the strings PrimeNG renders ITSELF, in the same effect as the
+      // direction, because they change for the same reason and must not be able
+      // to disagree about which language is current.
+      this.primeng.setTranslation({
+        accept: this.translate.instant('common.yes'),
+        reject: this.translate.instant('common.no'),
+      });
     });
   }
 

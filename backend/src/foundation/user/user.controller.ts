@@ -216,6 +216,34 @@ export class UserController {
     return this.userService.deactivate(id, tenantId, actorId);
   }
 
+  // ACC-83 — the mirror of deactivate, on its own permission.
+  //
+  // users:reactivate, not users:deactivate: switching an account back ON is a
+  // different decision, and it is the string that expresses "only the tenant
+  // administrator may reactivate a user" without naming a role.
+  @Post(':id/reactivate')
+  @Permissions(USERS_PERMISSIONS.REACTIVATE)
+  reactivate(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<{ returnedTaskCount: number }> {
+    return this.userService.reactivate(id, tenantId, actorId);
+  }
+
+  // ACC-83 — under users:invite, because revoking an invitation is part of
+  // managing invitations rather than of ending someone's employment. Whoever
+  // may send one may withdraw it.
+  @Post(':id/revoke-invitation')
+  @Permissions(USERS_PERMISSIONS.INVITE)
+  revokeInvitation(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<void> {
+    return this.userService.revokeInvitation(id, tenantId, actorId);
+  }
+
   // ── Migrated from RoleController (Step 9) — same paths, same behavior ──
 
   // ACC-101 — roles:view is necessary and no longer sufficient: the caller must

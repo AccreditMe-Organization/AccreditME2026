@@ -14,6 +14,8 @@ import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
+// ACC-83 — this spec passed actor ids as literals; the new blocks name one.
+const ACTOR = 'admin-1';
 
 describe('UserService', () => {
   let service: UserService;
@@ -50,14 +52,23 @@ describe('UserService', () => {
         updateMany: jest.fn(),
         count: jest.fn(),
         groupBy: jest.fn(),
+        // ACC-83 — revokeInvitation() deletes the row: nobody joined, so there
+        // is no person to keep a record of.
+        delete: jest.fn().mockResolvedValue({}),
       },
       // ACC-46 Section 2.6.c — a real prisma.$transaction(async (tx) => ...)
       // call, mocked by invoking the callback with mockPrisma itself, so
       // tx.user.update()/tx.userTransferEvent.create() inside it route to
       // the same mocks tests already assert against.
       userTransferEvent: { create: jest.fn() },
-      // ACC-120 — the root-role invariant reads isPlatformOrg to exclude the
-      // platform organisation, and counts ACTIVE holders of TENANT_ADMIN.
+      // ACC-83 — reactivate() returns tasks nobody took, and revokeInvitation()
+      // deletes the invitation notification before the row it points at.
+      taskAssignee: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
+      task: { update: jest.fn() },
+      notification: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      // ACC-120 — findFirst is the root-role invariant's own read: it excludes
+      // the platform organisation by isPlatformOrg. findUnique is the seat
+      // check's (ACC-83). Both, because both callers are now in this file.
       organization: { findUnique: jest.fn(), findFirst: jest.fn() },
       role: { findFirst: jest.fn().mockResolvedValue(null) },
       // ACC-120 — count() is the root-role invariant's own read: holders of
@@ -2741,6 +2752,381 @@ describe('UserService', () => {
     });
   });
 
+  // ── ACC-83: reactivate ───────────────────────────────────────────────────────
+
+  describe('reactivate', () => {
+    const INACTIVE = {
+      id: 'user-1',
+      organizationId: ORG_A,
+      email: 'back@example.test',
+      name: 'Returning Person',
+      status: 'INACTIVE',
+      positionId: null,
+      primaryOrgUnitId: null,
+      managerId: null,
+    };
+
+    function stage(over: Record<string, unknown> = {}): void {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...INACTIVE, ...over });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(10);
+      mockPrisma.user.update.mockResolvedValue({});
+    }
+
+    it('flips the status to ACTIVE and audits it', async () => {
+      stage();
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'user-1' }, data: { status: 'ACTIVE' } }),
+      );
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ event: 'reactivated' }) }),
+      );
+    });
+
+    it('refuses a user who is already active', async () => {
+      stage({ status: 'ACTIVE' });
+
+      await expect(service.reactivate('user-1', ORG_A, ACTOR)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // INVITED has its own action, and reactivating it would make someone ACTIVE
+    // who has never set a password.
+    it('refuses an INVITED user, who has revokeInvitation instead', async () => {
+      stage({ status: 'INVITED' });
+
+      await expect(service.reactivate('user-1', ORG_A, ACTOR)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // AHMAD'S CASE, 3 Oct: deactivate someone, onboard a replacement into the
+    // freed seat, then reactivate the original.
+    it('refuses when the tenant has no free seat', async () => {
+      stage();
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(25);
+
+      await expect(service.reactivate('user-1', ORG_A, ACTOR)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // The seat rule must be the SAME rule invite() uses, or the two paths
+    // disagree about "full": a pending invitation holds a seat.
+    it('counts INVITED against the seat limit, exactly as invite() does', async () => {
+      stage();
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.count).toHaveBeenCalledWith({
+        where: { organizationId: ORG_A, status: { in: ['ACTIVE', 'INVITED'] } },
+      });
+    });
+
+    // THE MIRROR CALL. deactivate() revokes the head-authority grant via
+    // (position, unit) -> (null, null); without the reverse, a returning head
+    // holds their position with the role it confers silently gone, and nothing
+    // else would ever restore it (ACC-84).
+    it('restores the head-authority grant as the mirror of the revoke', async () => {
+      stage({ positionId: 'pos-head', primaryOrgUnitId: 'unit-1' });
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-head',
+        isSingleAssignee: false,
+        isUnitHeadPosition: true,
+        isActive: true,
+        roleId: 'role-qo',
+      });
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      // Old pair null, new pair the record's own — the exact reverse of
+      // deactivate()'s arguments.
+      expect(mockRoleService.grantRoleViaHeadAuthority).toHaveBeenCalledWith(
+        'user-1',
+        'role-qo',
+        'pos-head',
+        'unit-1',
+        ORG_A,
+        ACTOR,
+      );
+      expect(mockRoleService.revokeRoleViaHeadAuthority).not.toHaveBeenCalled();
+    });
+
+    it('recomputes the unit head vacancy their departure set', async () => {
+      stage({ primaryOrgUnitId: 'unit-1' });
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).toHaveBeenCalledWith(
+        'unit-1',
+        ORG_A,
+      );
+    });
+
+    // A single-assignee or unit-head position can have been filled while they
+    // were away, so the position is re-validated rather than assumed still
+    // theirs. Asserted on validatePositionAssignment()'s own first read.
+    it('re-validates the position before letting them back in', async () => {
+      stage({ positionId: 'pos-1', primaryOrgUnitId: 'unit-1' });
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
+        where: { id: 'pos-1', organizationId: ORG_A },
+      });
+    });
+
+    // THE CASE THAT MATTERS: their single-assignee position was filled while
+    // they were away, so bringing them back would put two people in a seat
+    // that holds one.
+    it('refuses when their single-assignee position is now held by someone else', async () => {
+      stage({ positionId: 'pos-1', primaryOrgUnitId: 'unit-1' });
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-1',
+        isSingleAssignee: true,
+        isUnitHeadPosition: false,
+        isActive: true,
+      });
+      mockPrisma.user.count.mockImplementation((args: { where: { positionId?: string } }) =>
+        // The seat check counts users by status; the cap check counts by
+        // position. Only the second one finds an occupant here.
+        Promise.resolve(args.where.positionId ? 1 : 10),
+      );
+
+      await expect(service.reactivate('user-1', ORG_A, ACTOR)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // And the mirror of it, so the refusal is not simply "any position refuses".
+    it('allows them back when the position is still free', async () => {
+      stage({ positionId: 'pos-1', primaryOrgUnitId: 'unit-1' });
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({
+        id: 'pos-1',
+        isSingleAssignee: true,
+        isUnitHeadPosition: false,
+        isActive: true,
+      });
+      mockPrisma.user.count.mockImplementation((args: { where: { positionId?: string } }) =>
+        Promise.resolve(args.where.positionId ? 0 : 10),
+      );
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.update).toHaveBeenCalled();
+    });
+
+    // Not fatal: a person with no manager is a state the product tolerates, and
+    // refusing would make recovery depend on repairing someone else's record.
+    it('clears a stale manager pointer rather than refusing', async () => {
+      mockPrisma.user.findFirst
+        .mockResolvedValueOnce({ ...INACTIVE, managerId: 'mgr-gone' })
+        .mockResolvedValueOnce(null);
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(10);
+      mockPrisma.user.update.mockResolvedValue({});
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'ACTIVE', managerId: null } }),
+      );
+    });
+
+    itEnforcesTenantIsolation('reactivate', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.reactivate('user-1', ORG_B, ACTOR)).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'user-1', organizationId: ORG_B },
+      });
+    });
+  });
+
+  // ── ACC-83: an UNASSIGNED task comes back, a REASSIGNED one does not ─────────
+
+  describe('reactivate — returning work', () => {
+    function stageWithTasks(rows: { id: string; taskId: string }[]): void {
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'back@example.test',
+        name: 'Returning Person',
+        status: 'INACTIVE',
+        positionId: null,
+        primaryOrgUnitId: null,
+        managerId: null,
+      });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, maxUsers: 25 });
+      mockPrisma.user.count.mockResolvedValue(10);
+      mockPrisma.user.update.mockResolvedValue({});
+      mockPrisma.taskAssignee.findMany.mockResolvedValue(rows);
+    }
+
+    it('returns a task nobody took, and sets it PENDING again', async () => {
+      stageWithTasks([{ id: 'ta-1', taskId: 'task-1' }]);
+
+      const result = await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(result.returnedTaskCount).toBe(1);
+      expect(mockPrisma.taskAssignee.update).toHaveBeenCalledWith({
+        where: { id: 'ta-1' },
+        data: { removedAt: null },
+      });
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { status: 'PENDING' },
+      });
+    });
+
+    // THE DISCRIMINATOR, asserted on the query rather than on the outcome —
+    // the outcome is the same whichever way the filter is written, so only this
+    // distinguishes "nobody took it" from "someone else has it now".
+    it('only ever looks at tasks still UNASSIGNED, which is what excludes reassigned work', async () => {
+      stageWithTasks([]);
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockPrisma.taskAssignee.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            userId: 'user-1',
+            removedAt: { not: null },
+            task: { organizationId: ORG_A, status: 'UNASSIGNED' },
+          }),
+        }),
+      );
+    });
+
+    it('returns nothing, and claims nothing, when there is no orphaned work', async () => {
+      stageWithTasks([]);
+
+      const result = await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(result.returnedTaskCount).toBe(0);
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    it('audits each returned task', async () => {
+      stageWithTasks([{ id: 'ta-1', taskId: 'task-1' }]);
+
+      await service.reactivate('user-1', ORG_A, ACTOR);
+
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          objectType: 'Task',
+          objectId: 'task-1',
+          metadata: expect.objectContaining({ event: 'returned_on_reactivation' }),
+        }),
+      );
+    });
+  });
+
+  // ── ACC-83: revoke invitation ────────────────────────────────────────────────
+
+  describe('revokeInvitation', () => {
+    const INVITED = {
+      id: 'user-9',
+      organizationId: ORG_A,
+      email: 'never.joined@example.test',
+      name: 'Never Joined',
+      status: 'INVITED',
+      positionId: null,
+      primaryOrgUnitId: null,
+      managerId: null,
+    };
+
+    it('deletes the row, so the seat frees and the email can be invited again', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+
+      await service.revokeInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: 'user-9' } });
+    });
+
+    // Notification.userId is a non-null FK, so the row has to go first or the
+    // database refuses. Not theoretical — it is what blocked deleting an
+    // invited user by hand on 1 October.
+    it('deletes the invitation notification first, inside the same transaction', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+
+      await service.revokeInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockPrisma.$transaction).toHaveBeenCalled();
+      expect(mockPrisma.notification.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user-9', organizationId: ORG_A },
+      });
+    });
+
+    // THE WHOLE REASON THIS IS NOT DEACTIVATE: the departure flow ran on
+    // someone who never arrived, including telling every admin they had left.
+    it('runs none of the departure flow', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+
+      await service.revokeInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockAuthProvider.invalidateUserSessions).not.toHaveBeenCalled();
+      expect(mockTaskService.reassignAllForUser).not.toHaveBeenCalled();
+      expect(mockOrganizationService.refreshOrgUnitHeadVacancy).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
+    });
+
+    it('records the deletion in the audit trail, which outlives the row', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+
+      await service.revokeInvitation('user-9', ORG_A, ACTOR);
+
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'DELETE',
+          objectType: 'User',
+          objectId: 'user-9',
+          metadata: expect.objectContaining({ event: 'invitation_revoked' }),
+        }),
+      );
+    });
+
+    it('refuses an ACTIVE user — this is not a way to delete people', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...INVITED, status: 'ACTIVE' });
+
+      await expect(service.revokeInvitation('user-9', ORG_A, ACTOR)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockPrisma.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('refuses an INACTIVE user, who has reactivate instead', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...INVITED, status: 'INACTIVE' });
+
+      await expect(service.revokeInvitation('user-9', ORG_A, ACTOR)).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    // The foreign key IS the check, and the refusal has to say what it means
+    // rather than surface a constraint name.
+    it('turns a foreign-key refusal into a sentence about activity, not a database error', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(INVITED);
+      mockPrisma.$transaction.mockRejectedValueOnce(new Error('FK violation on TaskAssignee'));
+
+      await expect(service.revokeInvitation('user-9', ORG_A, ACTOR)).rejects.toThrow(
+        /already has activity recorded/,
+      );
+    });
+
+    itEnforcesTenantIsolation('revokeInvitation', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.revokeInvitation('user-9', ORG_B, ACTOR)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'user-9', organizationId: ORG_B },
+      });
+    });
+  });
+
   describe('role delegation', () => {
     it('getUserRoles delegates to RoleService', async () => {
       mockRoleService.getUserRoles.mockResolvedValue([]);
@@ -2971,4 +3357,5 @@ describe('transferUser() -> assignHead() role-grant fix (ACC-46 Section 2.6.c)',
       'admin-1',
     );
   });
+
 });
