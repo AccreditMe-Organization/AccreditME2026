@@ -537,7 +537,7 @@ model Role {
   organizationId String
   key            String?
   nameEn         String
-  nameAr         String
+  nameAr         String?
   description    String?
   isSystem       Boolean  @default(false)
   isActive       Boolean  @default(true)
@@ -657,7 +657,7 @@ model LookupValue {
   categoryId      String
   key             String
   labelEn         String
-  labelAr         String
+  labelAr         String?
   layer           LookupLayer @default(SYSTEM)
   attributes      Json?
   isActive        Boolean     @default(true)
@@ -1062,7 +1062,7 @@ model WorkflowTemplate {
   id             String             @id @default(cuid())
   organizationId String
   nameEn         String
-  nameAr         String
+  nameAr         String?
   objectType     WorkflowObjectType
   isDefault      Boolean            @default(false)
   isActive       Boolean            @default(true)
@@ -1081,7 +1081,7 @@ model WorkflowStage {
   id                 String  @id @default(cuid())
   workflowTemplateId String
   nameEn             String
-  nameAr             String
+  nameAr             String?
   description        String?
   order              Int
   slaWorkingHours    Int?
@@ -1140,7 +1140,7 @@ model WorkflowTransition {
   fromStageId        String
   toStageId          String
   labelEn            String
-  labelAr            String
+  labelAr            String?
   requiredPermission String?
   triggerCondition   WorkflowTriggerCondition @default(ROLE_BASED)
   triggerUserId      String?
@@ -1477,7 +1477,7 @@ model Committee {
   id                         String                    @id @default(cuid())
   organizationId             String
   nameEn                     String
-  nameAr                     String
+  nameAr                     String?
   typeValueId                String
   purpose                    String?
   quorumCount                Int                       @default(0)
