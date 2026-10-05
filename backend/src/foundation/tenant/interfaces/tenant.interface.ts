@@ -48,6 +48,16 @@ export interface ITenant {
 // dates and AI credit balances stay on GET /tenant behind tenant:view.
 export interface ITenantEntitlements {
   name: string;
+  // ACC-161 — the organisation's Arabic name, so the shell can name the tenant
+  // in an Arabic session. NULL when the tenant has not set one; choosing which
+  // name to SHOW is the frontend's job (LanguageService.bilingual), so it is
+  // passed through as stored, never substituted with the English name here.
+  //
+  // Adding it here was a decision, not a convenience: this type exists so that
+  // nothing leaks onto the ungated payload by accident. An organisation's name
+  // is not sensitive (Ahmad, ACC-161) — every signed-in user already sees the
+  // English one in the breadcrumb. SYSTEM-REFERENCE §1.8.
+  nameAr: string | null;
   slug: string;
   // Mirrors PlatformGuard's organization half. The frontend still requires
   // platform:admin as well before treating anyone as a platform admin.

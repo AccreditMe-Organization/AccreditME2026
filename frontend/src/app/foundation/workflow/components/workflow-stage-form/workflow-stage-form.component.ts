@@ -377,7 +377,7 @@ export class WorkflowStageFormComponent implements OnInit {
   // field NAME ('nameAr' / 'labelAr'), which drew a BLANK option for a record
   // with no Arabic name. A computed over the options AND the language —
   // bilingual() reads the language signal — so a switch relabels the list. Never
-  // a label written once at load: that is the navigation-access.service.ts trap.
+  // a label written once at load: the one-time-set trap (SYSTEM-REFERENCE §9.3).
   readonly committeeRoleOptions = computed(() =>
     this.committeeRoles().map((v) => ({
       ...v,

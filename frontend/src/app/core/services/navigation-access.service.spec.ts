@@ -5,6 +5,8 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { environment } from '../../../environments/environment';
+import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
+import { LanguageService } from './language.service';
 import {
   ModuleAccessLevel,
   NavigationAccessService,
@@ -30,6 +32,8 @@ describe('NavigationAccessService', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        // ACC-161 — the tenant name is resolved through LanguageService.
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
         NavigationAccessService,
       ],
     });
@@ -265,3 +269,90 @@ describe('NavigationAccessService', () => {
     expect(service.hasTrustworthyPermissions()).toBe(false);
   });
 });
+
+// ACC-161 — THE TENANT NAME FOLLOWS THE LANGUAGE.
+//
+// tenantName used to be a value stored once at load, in English. It is now a
+// computed over the stored pair and the language. These tests switch the
+// language on a service that loaded ONCE, and require the name to follow.
+describe('NavigationAccessService tenant name (ACC-161)', () => {
+  let service: NavigationAccessService;
+  let httpMock: HttpTestingController;
+  const PERMISSIONS_URL = `${environment.apiUrl}/roles/my-permissions`;
+  const TENANT_URL = `${environment.apiUrl}/tenant/entitlements`;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        NavigationAccessService,
+      ],
+    });
+    service = TestBed.inject(NavigationAccessService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  // The CC-8 order: tear down BEFORE resetting <html>, or LanguageService's
+  // pending effect rewrites dir="rtl" afterwards and leaks into later specs.
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+    document.documentElement.removeAttribute('dir');
+    document.documentElement.removeAttribute('lang');
+  });
+
+  const load = (nameAr: string | null): void => {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush([]);
+    httpMock.expectOne(TENANT_URL).flush({
+      name: 'Al Nakheel Specialist Hospital',
+      nameAr,
+      slug: 'al-nakheel',
+      isPlatformOrg: false,
+      modules: {},
+    });
+  };
+  const switchTo = (lang: 'en' | 'ar'): void => {
+    TestBed.inject(LanguageService).use(lang).subscribe();
+  };
+
+  it('is empty while the entitlements are still loading', () => {
+    service.loadAccess().subscribe();
+    expect(service.tenantName()).toBe('');
+    httpMock.expectOne(PERMISSIONS_URL).flush([]);
+    httpMock.expectOne(TENANT_URL).flush({ name: 'X', nameAr: null, slug: 'x', isPlatformOrg: false, modules: {} });
+  });
+
+  // THE RULE, on a service that loaded once: English, then Arabic, then
+  // English again, with no second request.
+  it('follows a language switch without reloading the entitlements', () => {
+    load('مستشفى النخيل التخصصي');
+    expect(service.tenantName()).toBe('Al Nakheel Specialist Hospital');
+
+    switchTo('ar');
+    expect(service.tenantName()).toBe('مستشفى النخيل التخصصي');
+
+    switchTo('en');
+    expect(service.tenantName()).toBe('Al Nakheel Specialist Hospital');
+  });
+
+  it('shows the English name in an Arabic session when the tenant has no Arabic name', () => {
+    load(null);
+    switchTo('ar');
+    expect(service.tenantName()).toBe('Al Nakheel Specialist Hospital');
+    switchTo('en');
+  });
+
+  it('is empty after a failed tenant load, in either language', () => {
+    service.loadAccess().subscribe();
+    httpMock.expectOne(PERMISSIONS_URL).flush([]);
+    httpMock.expectOne(TENANT_URL).flush('boom', { status: 500, statusText: 'Server Error' });
+    expect(service.tenantName()).toBe('');
+    switchTo('ar');
+    expect(service.tenantName()).toBe('');
+    switchTo('en');
+  });
+});
+

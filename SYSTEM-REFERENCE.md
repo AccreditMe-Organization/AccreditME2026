@@ -550,11 +550,41 @@ test. It carries provider configuration (`authProvider`,
 tenant's credit balance and storage provider. A non-admin needs
 entitlements, not configuration.
 
-So the entitlements endpoint returns **exactly four fields** —
-`name`, `slug`, `isPlatformOrg`, `modules` — through its own
+So the entitlements endpoint returns **exactly five fields** —
+`name`, `nameAr`, `slug`, `isPlatformOrg`, `modules` — through its own
 `ITenantEntitlements` type rather than a projection of `ITenant`, so a
 field added to `ITenant` cannot leak onto it. `GET /tenant` stays on
-`tenant:view`. `tenant.controller.spec.ts` reads the `@Permissions`
+`tenant:view`.
+
+**The fifth, `nameAr`, was added deliberately (ACC-161), and the decision
+is recorded here because this payload exists to carry nothing by
+accident.** Ahmad accepted that **an organisation's name is not
+sensitive**: every signed-in user already sees the English one in the
+breadcrumb, so the Arabic one discloses nothing new. It is passed through
+as stored — NULL when the tenant has not set one — and the backend never
+substitutes the English name; choosing which to show is the frontend's
+job. `tenant.service.spec.ts` pins the payload's keys and the Prisma
+`select`'s keys by EXACT equality, so a sixth field fails there rather
+than passing quietly.
+
+**Where the tenant's name appears, in the reader's language** — recorded
+here rather than in the Organization Profile hint, because user-facing
+copy that names screen locations goes stale when the shell moves, with
+nobody noticing. `NavigationAccessService` stores the raw pair and
+derives `tenantName` as a `computed()` over it and the language, through
+`LanguageService.bilingual()`, so all of these follow a language switch
+with no reload:
+
+* the **breadcrumb root** (`breadcrumb.component.ts`);
+* the **browser tab title** (`document-title.service.ts`, an `effect`
+  writing Angular's `Title`);
+* the **rail's user card** (`sidebar.component.ts`).
+
+`tenantName` is `''` while loading and after a failed or 403 load.
+`layout/tenant-name.integration.spec.ts` checks all three over the real
+chain. Not covered, deliberately: Organization Profile's **monogram**,
+which takes its initials from the English name to match the design, and
+reads `GET /tenant` rather than this signal. `tenant.controller.spec.ts` reads the `@Permissions`
 metadata of **both** handlers directly, because ungating the wrong one
 — or re-gating the new one for consistency — would pass every other
 test in the suite.
@@ -3570,8 +3600,10 @@ are platform data and stay required. An emptied Arabic field is stored as
 * reads the language at CALL time, so it is safe in a template and in a
   `computed()`, and cannot freeze. **Not a pipe**: a pure pipe caches on its
   inputs and the language is not one of them. **Never compute a display name
-  once at load and store it** — the one-time-set trap
-  (`navigation-access.service.ts`'s tenant name).
+  once at load and store it** — the one-time-set trap. Its worked example
+  was `navigation-access.service.ts`'s tenant name, stored in English at
+  load and stuck there after a switch, until ACC-161 replaced it with a
+  computed over the stored pair.
 
 **Where it does NOT apply — two other shapes, each decided in ACC-160:**
 

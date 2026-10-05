@@ -24,10 +24,11 @@
 // ngOnInit() again moments later) — an accepted, harmless tradeoff (both
 // calls just idempotently re-set the same signals), not an oversight.
 
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, forkJoin, map, of, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { LanguageService } from './language.service';
 
 // ACC-79 — mirrors the backend's ITenantEntitlements. A module that is not
 // usable by this tenant, for any reason (not built, not licensed, switched
@@ -36,6 +37,10 @@ export type ModuleAccessLevel = 'FULL' | 'READ_ONLY';
 
 interface TenantEntitlementsResponse {
   name: string;
+  // ACC-161 — NULL when the tenant has not set one. A hand-kept copy of the
+  // backend's ITenantEntitlements (no OpenAPI yet, ACC-150), so it changes in
+  // the same PR as the backend, or the two drift the way ACC-149 did.
+  nameAr: string | null;
   slug: string;
   isPlatformOrg: boolean;
   modules: Record<string, ModuleAccessLevel>;
@@ -44,13 +49,21 @@ interface TenantEntitlementsResponse {
 @Injectable({ providedIn: 'root' })
 export class NavigationAccessService {
   private readonly http = inject(HttpClient);
+  private readonly language = inject(LanguageService);
 
   private readonly _permissions = signal<string[]>([]);
   private readonly _modules = signal<Record<string, ModuleAccessLevel>>({});
   private readonly _isPlatformOrg = signal(false);
   // ACC-79 — for the browser tab title ("Page · Tenant — AccreditMe") and the
-  // tenant label in the shell. Empty until entitlements load.
-  private readonly _tenantName = signal('');
+  // tenant label in the shell. Null until entitlements load, and after a
+  // failed or 403 load.
+  //
+  // ACC-161 — the RAW PAIR, never the chosen name. This used to store
+  // `tenant.name` once, inside the load's tap(): a display value captured at
+  // load, which kept its language for the rest of the session — the
+  // one-time-set trap SYSTEM-REFERENCE §9.3 describes. Which name to show is
+  // now derived, below, every time it is read.
+  private readonly _tenantNames = signal<{ name: string; nameAr: string | null } | null>(null);
 
   // ACC-70 — before this, a caller could not tell "loaded, and this user
   // genuinely has no permissions" from "the request failed", because
@@ -80,7 +93,17 @@ export class NavigationAccessService {
 
   readonly permissions = this._permissions.asReadonly();
   readonly modules = this._modules.asReadonly();
-  readonly tenantName = this._tenantName.asReadonly();
+  // The tenant's name in the reader's language: Arabic in an Arabic session
+  // when the tenant has set one, otherwise English. A COMPUTED over the stored
+  // pair and the language, so the breadcrumb root, the tab title and the rail's
+  // user card — every reader — follow a language switch with no reload.
+  //
+  // '' while loading and after a failed or 403 load, exactly as before, so a
+  // failed load still shows no breadcrumb root.
+  readonly tenantName = computed(() => {
+    const names = this._tenantNames();
+    return names ? this.language.bilingual(names.name, names.nameAr) : '';
+  });
   readonly loadState = this._loadState.asReadonly();
 
   // Whether the permission signals reflect a real answer from the server.
@@ -224,13 +247,14 @@ export class NavigationAccessService {
         tap((tenant) => {
           this._modules.set(tenant.modules);
           this._isPlatformOrg.set(tenant.isPlatformOrg);
-          this._tenantName.set(tenant.name);
+          // `?? null`: a backend that predates ACC-161 omits the field.
+          this._tenantNames.set({ name: tenant.name, nameAr: tenant.nameAr ?? null });
           this._tenantLoadState.set('LOADED');
         }),
         catchError((err: unknown) => {
           this._modules.set({});
           this._isPlatformOrg.set(false);
-          this._tenantName.set('');
+          this._tenantNames.set(null);
           const status = (err as { status?: number })?.status;
           this._tenantLoadState.set(status === 403 ? 'FORBIDDEN' : 'FAILED');
           return of(null);

@@ -85,7 +85,7 @@ export class TenantService {
   async getEntitlements(organizationId: string): Promise<ITenantEntitlements> {
     const org = await this.prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { name: true, slug: true, isPlatformOrg: true, settings: true, planId: true },
+      select: { name: true, nameAr: true, slug: true, isPlatformOrg: true, settings: true, planId: true },
     });
     if (!org) throw new NotFoundException('Tenant not found');
 
@@ -104,6 +104,7 @@ export class TenantService {
 
     return {
       name: org.name,
+      nameAr: org.nameAr,
       slug: org.slug,
       isPlatformOrg: org.isPlatformOrg,
       modules: resolveModuleEntitlements(

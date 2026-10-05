@@ -664,6 +664,7 @@ describe('TenantService', () => {
   describe('getEntitlements', () => {
     const orgRow = (overrides: Record<string, unknown> = {}) => ({
       name: 'Org Alpha',
+      nameAr: 'منظمة ألفا',
       slug: 'alpha',
       isPlatformOrg: false,
       planId: null,
@@ -679,7 +680,31 @@ describe('TenantService', () => {
       // Exact key set, not objectContaining. The whole reason this endpoint
       // exists separately from GET /tenant is what it must NOT carry, so an
       // added field has to fail here rather than pass quietly.
-      expect(Object.keys(result).sort()).toEqual(['isPlatformOrg', 'modules', 'name', 'slug']);
+      //
+      // ACC-161 — FIVE, deliberately: nameAr was added because an
+      // organisation's name is not sensitive (SYSTEM-REFERENCE §1.8). This set
+      // grew by exactly that one key and must not grow by accident.
+      expect(Object.keys(result).sort()).toEqual([
+        'isPlatformOrg',
+        'modules',
+        'name',
+        'nameAr',
+        'slug',
+      ]);
+    });
+
+    // The backend passes the Arabic name through as stored. Choosing which
+    // name to SHOW is the frontend's job, so a tenant with none gets NULL —
+    // never its English name substituted here, which would make "no Arabic
+    // name" indistinguishable from "an Arabic name equal to the English one".
+    it('passes the Arabic name through, and NULL when the tenant has none', async () => {
+      prisma.organization.findUnique.mockResolvedValue(orgRow());
+      expect((await service.getEntitlements('org-a')).nameAr).toBe('منظمة ألفا');
+
+      prisma.organization.findUnique.mockResolvedValue(orgRow({ nameAr: null }));
+      const none = await service.getEntitlements('org-a');
+      expect(none.nameAr).toBeNull();
+      expect(none.name).toBe('Org Alpha');
     });
 
     it('asks the database for only the columns it returns, never the whole row', async () => {
@@ -691,6 +716,7 @@ describe('TenantService', () => {
       expect(Object.keys(select).sort()).toEqual([
         'isPlatformOrg',
         'name',
+        'nameAr',
         'planId',
         'settings',
         'slug',
