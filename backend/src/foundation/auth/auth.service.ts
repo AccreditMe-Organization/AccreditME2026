@@ -49,6 +49,8 @@ import {
   BETTER_AUTH_TWO_FACTOR_CODES,
 } from './better-auth.contract';
 import { AuthRefusalException } from './auth-refusal';
+import { InvitationRefusalException } from './invitation-refusal';
+import { INVITATION_TOKEN_SHAPE, isOpenInvitation } from './open-invitation';
 import {
   attemptsRemaining,
   challengeIdentifierFromRequest,
@@ -718,8 +720,48 @@ export class AuthService {
   private findInvitation(token: string) {
     return this.prisma.user.findFirst({
       where: { invitationToken: token },
-      include: { organization: { select: { name: true, nameAr: true, status: true } } },
+      include: {
+        organization: { select: { name: true, nameAr: true, status: true } },
+      },
     });
+  }
+
+  // ACC-120 slice 9c — which organisation is inviting this person, for the
+  // Accept invitation page. Read-only: it never consumes, extends or changes the
+  // invitation.
+  //
+  // Returns EXACTLY { name, nameAr } — no email, inviter, role, slug or logo.
+  // Every other case gets the one InvitationRefusalException body, byte for
+  // byte: unknown, expired, used, revoked, deactivated invitee, closed tenant,
+  // and any body that is not exactly `{ token: <48 hex> }`.
+  //
+  // The body arrives `unknown`, on purpose. With a DTO class the global
+  // ValidationPipe (whitelist + forbidNonWhitelisted) would answer a malformed
+  // body itself, with its own message — a second refusal shape. A plain object
+  // type is not validated by the pipe at all, so the shape check is here, and a
+  // bad shape is refused exactly like a bad token.
+  async lookupInvitation(
+    body: unknown,
+  ): Promise<{ name: string; nameAr: string | null }> {
+    const token =
+      typeof body === 'object' &&
+      body !== null &&
+      !Array.isArray(body) &&
+      Object.keys(body).length === 1
+        ? (body as Record<string, unknown>)['token']
+        : undefined;
+    if (typeof token !== 'string' || !INVITATION_TOKEN_SHAPE.test(token)) {
+      throw new InvitationRefusalException();
+    }
+
+    const invitation = await this.findInvitation(token);
+    if (!isOpenInvitation(invitation, new Date())) {
+      throw new InvitationRefusalException();
+    }
+    return {
+      name: invitation.organization.name,
+      nameAr: invitation.organization.nameAr,
+    };
   }
 
   async acceptInvitation(dto: AcceptInvitationDto): Promise<void> {
