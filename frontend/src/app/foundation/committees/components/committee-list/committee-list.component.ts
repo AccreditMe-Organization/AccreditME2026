@@ -94,13 +94,13 @@ export class CommitteeListComponent implements OnInit {
   }
 
   displayName(committee: CommitteeDto): string {
-    return this.languageService.isArabic() ? committee.nameAr : committee.nameEn;
+    return this.languageService.bilingual(committee.nameEn, committee.nameAr);
   }
 
   typeLabel(typeValueId: string): string {
     const value = this.committeeTypes().find((v) => v.id === typeValueId);
     if (!value) return typeValueId;
-    return this.languageService.isArabic() ? value.labelAr : value.labelEn;
+    return this.languageService.bilingual(value.labelEn, value.labelAr);
   }
 
   onAdd(): void {

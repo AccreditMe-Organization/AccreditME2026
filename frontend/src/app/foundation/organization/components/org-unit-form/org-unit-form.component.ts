@@ -239,7 +239,7 @@ export class OrgUnitFormComponent implements OnInit {
   readonly rootTypeLabel = computed(() => {
     const held = this.unit()?.typeValue ?? null;
     if (!held) return '';
-    return this.languageService.isArabic() ? held.labelAr : held.labelEn;
+    return this.languageService.bilingual(held.labelEn, held.labelAr);
   });
 
   readonly typesLoading = signal(true);
@@ -285,7 +285,9 @@ export class OrgUnitFormComponent implements OnInit {
     // retired nor selectable. Caught by its own test, not by reading.
     if (held && held.key !== 'organization' && !options.some((o) => o.value === held.id)) {
       options.push({
-        label: `${this.languageService.isArabic() ? held.labelAr : held.labelEn} (${this.translate.instant('organization.typeRetired')})`,
+        // ACC-160 — through bilingual(), never a bare ternary: inside a template
+        // literal a null Arabic label renders as the TEXT "null".
+        label: `${this.languageService.bilingual(held.labelEn, held.labelAr)} (${this.translate.instant('organization.typeRetired')})`,
         value: held.id,
       });
     }
@@ -408,9 +410,7 @@ export class OrgUnitFormComponent implements OnInit {
    * seeded word after they renamed it.
    */
   private labelFor(value: LookupValueDto): string {
-    return this.languageService.isArabic()
-      ? (value.labelOverrideAr ?? value.labelAr)
-      : (value.labelOverrideEn ?? value.labelEn);
+    return this.languageService.bilingual(value.labelOverrideEn ?? value.labelEn, value.labelOverrideAr ?? value.labelAr);
   }
 
   onSubmit(): void {

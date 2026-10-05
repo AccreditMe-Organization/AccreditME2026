@@ -466,7 +466,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     if (transition.triggerCondition !== 'ROLE_BASED' || !transition.triggerRoleId) return null;
     const role = this.roles().find((r) => r.id === transition.triggerRoleId);
     if (!role) return this.translateService.instant('workflow.triggerRoleUnknown');
-    return (this.languageService.isArabic() && role.nameAr) || role.nameEn;
+    return this.languageService.bilingual(role.nameEn, role.nameAr);
   }
 
   // ── ACC-55: requiredPermission picker ──────────────────────────────────────

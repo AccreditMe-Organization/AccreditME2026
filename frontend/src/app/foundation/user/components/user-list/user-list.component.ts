@@ -822,7 +822,7 @@ export class UserListComponent implements OnInit {
         ? this.translate.instant('user.reactivateNoRoles')
         : this.translate.instant('user.reactivateRoles', {
             roles: roles
-              .map((r) => (this.languageService.isArabic() ? r.nameAr || r.nameEn : r.nameEn))
+              .map((r) => this.languageService.bilingual(r.nameEn, r.nameAr))
               .join(', '),
           });
 

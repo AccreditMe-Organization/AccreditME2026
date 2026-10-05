@@ -33,6 +33,7 @@ import { ConfirmationService } from 'primeng/api';
 import { of } from 'rxjs';
 import { NavigationAccessService } from '../../core/services/navigation-access.service';
 import { LanguageService } from '../../core/services/language.service';
+import { pickBilingualName } from '../utils/bilingual-name.util';
 
 import { CommitteeListComponent } from '../../foundation/committees/components/committee-list/committee-list.component';
 import { CommitteeService } from '../../foundation/committees/services/committee.service';
@@ -244,7 +245,15 @@ function render(testCase: Case, permissions: string[]): ComponentFixture<unknown
       provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
       ConfirmationService,
       { provide: NavigationAccessService, useValue: access },
-      { provide: LanguageService, useValue: { isArabic: () => false, isRtl: () => false } },
+      {
+        provide: LanguageService,
+        useValue: {
+          isArabic: () => false,
+          isRtl: () => false,
+          // ACC-160 — the real rule, under this mock's own language flag.
+          bilingual: (en: string, ar: string | null | undefined) => pickBilingualName(en, ar, false),
+        },
+      },
       { provide: Router, useValue: { navigate: () => Promise.resolve(true), url: '/' } },
       {
         provide: ActivatedRoute,

@@ -12,6 +12,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { environment } from '../../../../../environments/environment';
 import { InviteUserComponent } from './invite-user.component';
+import { LanguageService } from '../../../../core/services/language.service';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 
 const ACTIVE_POSITION: IOrgPositionDto = {
@@ -167,5 +168,87 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
 
     expect(component.isRootUnitHeadInvite()).toBe(false);
     expect(component.form.controls.managerId.hasValidator(Validators.required)).toBe(true);
+  });
+});
+
+// ACC-160 — A RESOLVED DROPDOWN LABEL MUST NOT FREEZE.
+//
+// The position picker used to hand OverlaySelect a field NAME ('nameAr'), which
+// drew a blank option for a position with no Arabic name. It now hands it a
+// resolved `label`, computed over the options AND the language. The trap that
+// replaces is a label written once at load — navigation-access.service.ts's
+// tenant name, which keeps the previous language after a switch. So this reads
+// the label the picker actually RENDERS, switches language with the same
+// position selected, and requires the rendered label to change.
+describe('InviteUserComponent position picker label (ACC-160)', () => {
+  let fixture: ComponentFixture<InviteUserComponent>;
+  let httpMock: HttpTestingController;
+
+  const NAMED: IOrgPositionDto = { ...ACTIVE_POSITION, id: 'pos-named', nameEn: 'Head Nurse', nameAr: 'رئيسة التمريض' };
+  const UNNAMED: IOrgPositionDto = { ...ACTIVE_POSITION, id: 'pos-unnamed', nameEn: 'Charge Nurse', nameAr: null };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [InviteUserComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        provideRouter([]),
+      ],
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(InviteUserComponent);
+    fixture.detectChanges();
+    httpMock.expectOne(`${environment.apiUrl}/org-positions`).flush([NAMED, UNNAMED]);
+    httpMock.expectOne(`${environment.apiUrl}/organization/units/flat`).flush([]);
+    httpMock
+      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
+      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
+    fixture.detectChanges();
+  });
+
+  // The CC-8 order: tear down BEFORE resetting <html>, or LanguageService's
+  // pending effect rewrites dir="rtl" afterwards and leaks into later specs.
+  afterEach(() => {
+    httpMock.verify();
+    TestBed.resetTestingModule();
+    document.documentElement.removeAttribute('dir');
+    document.documentElement.removeAttribute('lang');
+  });
+
+  const select = (id: string): void => {
+    fixture.componentInstance.form.controls.positionId.setValue(id);
+    fixture.detectChanges();
+  };
+  const switchTo = (lang: 'en' | 'ar'): void => {
+    TestBed.inject(LanguageService).use(lang).subscribe();
+    fixture.detectChanges();
+  };
+  const renderedLabel = (): string => {
+    const el = (fixture.nativeElement as HTMLElement).querySelector(
+      '[formcontrolname="positionId"] .am-overlay-select-label',
+    );
+    // Guard: a missing element would make every comparison below vacuous.
+    expect(el).withContext('the position picker renders its selected label').not.toBeNull();
+    return (el?.textContent ?? '').trim();
+  };
+
+  it('relabels the selected position when the language switches, rather than freezing', () => {
+    select('pos-named');
+    expect(renderedLabel()).toBe('Head Nurse');
+
+    switchTo('ar');
+    expect(renderedLabel()).toBe('رئيسة التمريض');
+
+    switchTo('en');
+    expect(renderedLabel()).toBe('Head Nurse');
+  });
+
+  it('shows the English name in Arabic for a position with no Arabic name — never a blank', () => {
+    switchTo('ar');
+    select('pos-unnamed');
+    expect(renderedLabel()).toBe('Charge Nurse');
+    switchTo('en');
   });
 });

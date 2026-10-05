@@ -4,6 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TranslateService, provideTranslateService } from '@ngx-translate/core';
 import { environment } from '../../../../../environments/environment';
 import { LanguageService } from '../../../../core/services/language.service';
+import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
 import { LookupValueDto } from '../../../lookup/services/lookup.service';
 import { OrgUnitDto } from '../../services/org-unit.service';
 import { OrgUnitFormComponent } from './org-unit-form.component';
@@ -49,7 +50,15 @@ function setup(options: { arabic?: boolean; unit?: OrgUnitDto | null } = {}) {
       provideHttpClient(),
       provideHttpClientTesting(),
       provideTranslateService({ lang: 'en' }),
-      { provide: LanguageService, useValue: { isArabic: () => options.arabic ?? false } },
+      {
+        provide: LanguageService,
+        useValue: {
+          isArabic: () => options.arabic ?? false,
+          // ACC-160 — the real rule, under this mock's own language flag.
+          bilingual: (en: string, ar: string | null | undefined) =>
+            pickBilingualName(en, ar, options.arabic ?? false),
+        },
+      },
     ],
   });
   TestBed.inject(TranslateService).setTranslation('en', {

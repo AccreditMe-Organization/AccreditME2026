@@ -85,7 +85,7 @@ export class WorkflowTransitionActionsComponent {
   }
 
   transitionLabel(transition: WorkflowTransitionDto): string {
-    return this.languageService.isArabic() ? transition.labelAr : transition.labelEn;
+    return this.languageService.bilingual(transition.labelEn, transition.labelAr);
   }
 
   onTrigger(transition: WorkflowTransitionDto): void {

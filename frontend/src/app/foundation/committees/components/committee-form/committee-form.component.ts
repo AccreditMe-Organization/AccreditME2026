@@ -64,8 +64,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         </label>
         <app-overlay-select
           formControlName="typeValueId"
-          [options]="committeeTypes()"
-          [optionLabel]="typeLabelField()"
+          [options]="committeeTypeOptions()"
+          optionLabel="label"
           optionValue="id"
           [placeholder]="'committee.selectType' | translate"
         />
@@ -114,8 +114,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         <label for="parentCommitteeId" class="text-sm font-medium">{{ 'committee.parentCommittee' | translate }}</label>
         <app-overlay-select
           formControlName="parentCommitteeId"
-          [options]="parentOptions()"
-          [optionLabel]="nameLabelField()"
+          [options]="parentCommitteeOptions()"
+          optionLabel="label"
           optionValue="id"
           [showClear]="true"
           [placeholder]="'committee.noneOption' | translate"
@@ -128,8 +128,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         </label>
         <app-overlay-select
           formControlName="reportingToCommitteeId"
-          [options]="parentOptions()"
-          [optionLabel]="nameLabelField()"
+          [options]="parentCommitteeOptions()"
+          optionLabel="label"
           optionValue="id"
           [showClear]="true"
           [placeholder]="'committee.noneOption' | translate"
@@ -192,13 +192,24 @@ export class CommitteeFormComponent implements OnInit {
     reportingToCommitteeId: [null as string | null],
   });
 
-  typeLabelField(): 'labelAr' | 'labelEn' {
-    return this.languageService.isArabic() ? 'labelAr' : 'labelEn';
-  }
+  // ACC-160 — options carry a RESOLVED label instead of handing the dropdown a
+  // field NAME ('nameAr' / 'labelAr'), which drew a BLANK option for a record
+  // with no Arabic name. A computed over the options AND the language —
+  // bilingual() reads the language signal — so a switch relabels the list. Never
+  // a label written once at load: that is the navigation-access.service.ts trap.
+  readonly committeeTypeOptions = computed(() =>
+    this.committeeTypes().map((v) => ({
+      ...v,
+      label: this.languageService.bilingual(v.labelEn, v.labelAr),
+    })),
+  );
 
-  nameLabelField(): 'nameAr' | 'nameEn' {
-    return this.languageService.isArabic() ? 'nameAr' : 'nameEn';
-  }
+  readonly parentCommitteeOptions = computed(() =>
+    this.parentOptions().map((c) => ({
+      ...c,
+      label: this.languageService.bilingual(c.nameEn, c.nameAr),
+    })),
+  );
 
   constructor() {
     effect(() => {

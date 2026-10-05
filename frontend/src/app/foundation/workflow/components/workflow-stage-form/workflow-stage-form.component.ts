@@ -217,8 +217,8 @@ const ASSIGNEE_STRATEGIES = [
           </label>
           <app-overlay-select
             formControlName="assigneeCommitteeRoleValueId"
-            [options]="committeeRoles()"
-            [optionLabel]="committeeRoleLabelField()"
+            [options]="committeeRoleOptions()"
+            optionLabel="label"
             optionValue="id"
             [showClear]="true"
           />
@@ -373,9 +373,17 @@ export class WorkflowStageFormComponent implements OnInit {
 
   readonly activePositions = computed(() => this.positions().filter((p) => p.isActive));
 
-  committeeRoleLabelField(): 'labelAr' | 'labelEn' {
-    return this.languageService.isArabic() ? 'labelAr' : 'labelEn';
-  }
+  // ACC-160 — options carry a RESOLVED label instead of handing the dropdown a
+  // field NAME ('nameAr' / 'labelAr'), which drew a BLANK option for a record
+  // with no Arabic name. A computed over the options AND the language —
+  // bilingual() reads the language signal — so a switch relabels the list. Never
+  // a label written once at load: that is the navigation-access.service.ts trap.
+  readonly committeeRoleOptions = computed(() =>
+    this.committeeRoles().map((v) => ({
+      ...v,
+      label: this.languageService.bilingual(v.labelEn, v.labelAr),
+    })),
+  );
 
   readonly approvalModes = APPROVAL_MODES;
   readonly parallelThresholds = PARALLEL_THRESHOLDS;

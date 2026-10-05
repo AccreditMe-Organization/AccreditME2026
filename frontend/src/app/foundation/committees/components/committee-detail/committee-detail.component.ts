@@ -703,19 +703,19 @@ export class CommitteeDetailComponent implements OnInit {
   }
 
   displayName(committee: CommitteeDto): string {
-    return this.languageService.isArabic() ? committee.nameAr : committee.nameEn;
+    return this.languageService.bilingual(committee.nameEn, committee.nameAr);
   }
 
   typeLabel(typeValueId: string): string {
     const value = this.committeeTypes().find((v) => v.id === typeValueId);
     if (!value) return typeValueId;
-    return this.languageService.isArabic() ? value.labelAr : value.labelEn;
+    return this.languageService.bilingual(value.labelEn, value.labelAr);
   }
 
   memberRoleLabel(roleValueId: string): string {
     const value = this.memberRoles().find((v) => v.id === roleValueId);
     if (!value) return roleValueId;
-    return this.languageService.isArabic() ? value.labelAr : value.labelEn;
+    return this.languageService.bilingual(value.labelEn, value.labelAr);
   }
 
   userName(userId: string): string {
@@ -741,20 +741,22 @@ export class CommitteeDetailComponent implements OnInit {
     return `${members} · ${frequency}`;
   }
 
-  // Tenant-editable stage name: isArabic() selection, never `| translate`.
+  // Tenant-editable stage name, by language, never `| translate`.
+  //
+  // ACC-160 — the `?? ''` this replaced hid a blank: in an Arabic session a
+  // stage with no Arabic name yielded '', and the compiler could not see it.
+  // currentStageNameEn is null only when there is no workflow instance at all.
   subCommitteeStage(sub: CommitteeListItemDto): string {
-    return (
-      (this.languageService.isArabic() ? sub.currentStageNameAr : sub.currentStageNameEn) ?? ''
-    );
+    const en = sub.currentStageNameEn;
+    return en ? this.languageService.bilingual(en, sub.currentStageNameAr) : '';
   }
 
   // This committee's own live stage, from the same list the page already has.
   readonly currentStageName = computed(() => {
     const self = this.allCommittees().find((c) => c.id === this.committeeId);
     if (!self) return '';
-    return (
-      (this.languageService.isArabic() ? self.currentStageNameAr : self.currentStageNameEn) ?? ''
-    );
+    const en = self.currentStageNameEn;
+    return en ? this.languageService.bilingual(en, self.currentStageNameAr) : '';
   });
 
   // JOINED reads as gain, LEFT as loss, ROLE_CHANGED as neither — semantic

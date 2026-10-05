@@ -264,7 +264,7 @@ export class WorkflowStageListComponent implements OnInit {
   readonly templateName = computed(() => {
     const template = this.template();
     if (!template) return '';
-    return this.languageService.isArabic() ? template.nameAr || template.nameEn : template.nameEn;
+    return this.languageService.bilingual(template.nameEn, template.nameAr);
   });
   readonly error = signal<string | null>(null);
   readonly showFormDialog = signal(false);

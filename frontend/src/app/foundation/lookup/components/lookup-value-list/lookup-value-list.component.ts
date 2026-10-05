@@ -516,9 +516,7 @@ export class LookupValueListComponent implements OnInit {
   }
 
   effectiveLabel(val: LookupValueDto): string {
-    return this.languageService.isArabic()
-      ? val.labelOverrideAr || val.labelAr || val.labelOverrideEn || val.labelEn
-      : val.labelOverrideEn || val.labelEn;
+    return this.languageService.bilingual(val.labelOverrideEn || val.labelEn, val.labelOverrideAr || val.labelAr);
   }
 
   statusLabel(val: LookupValueDto): string {

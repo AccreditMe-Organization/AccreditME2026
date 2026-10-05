@@ -125,8 +125,8 @@ import { FieldComponent } from '../../../../shared/components/field/field.compon
       >
         <app-overlay-select
           formControlName="positionId"
-          [options]="assignablePositions()"
-          [optionLabel]="nameLabelField()"
+          [options]="positionOptions()"
+          optionLabel="label"
           optionValue="id"
           [placeholder]="'user.selectPosition' | translate"
         />
@@ -293,9 +293,17 @@ export class InviteUserComponent implements OnInit {
     return root ? orgUnitDisplayName(root) : '';
   });
 
-  nameLabelField(): 'nameAr' | 'nameEn' {
-    return this.languageService.isArabic() ? 'nameAr' : 'nameEn';
-  }
+  // ACC-160 — options carry a RESOLVED label instead of handing the dropdown a
+  // field NAME ('nameAr' / 'labelAr'), which drew a BLANK option for a record
+  // with no Arabic name. A computed over the options AND the language —
+  // bilingual() reads the language signal — so a switch relabels the list. Never
+  // a label written once at load: that is the navigation-access.service.ts trap.
+  readonly positionOptions = computed(() =>
+    this.assignablePositions().map((p) => ({
+      ...p,
+      label: this.languageService.bilingual(p.nameEn, p.nameAr),
+    })),
+  );
 
   readonly requiredError = computed(() => {
     // Read so the computed re-evaluates on a language switch. On

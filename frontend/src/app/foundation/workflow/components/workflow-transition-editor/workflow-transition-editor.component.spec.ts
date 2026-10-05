@@ -21,6 +21,7 @@ import { environment } from '../../../../../environments/environment';
 import { WorkflowTransitionEditorComponent } from './workflow-transition-editor.component';
 import { WorkflowTransitionDto } from '../../services/workflow-template.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
 
 const EXISTING: WorkflowTransitionDto = {
   id: 'transition-1',
@@ -338,7 +339,14 @@ describe('WorkflowTransitionEditorComponent — trigger role in the table (ACC-8
         provideHttpClientTesting(),
         provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
         ConfirmationService,
-        { provide: LanguageService, useValue: { isArabic: () => arabic } },
+        {
+          provide: LanguageService,
+          useValue: {
+            isArabic: () => arabic,
+            // ACC-160 — the real rule, under this mock's own language flag.
+            bilingual: (en: string, ar: string | null | undefined) => pickBilingualName(en, ar, arabic),
+          },
+        },
       ],
     });
     const fixture = TestBed.createComponent(WorkflowTransitionEditorComponent);
