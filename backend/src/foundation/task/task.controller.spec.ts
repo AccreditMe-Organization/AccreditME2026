@@ -118,6 +118,19 @@ describe('TaskController', () => {
     expect(required).toBeUndefined();
   });
 
+  // ACC-162 — evidence is self-scoped exactly as complete() is: the service
+  // refuses anyone but a currently-active assignee. Gating it locked out the
+  // assignees the engine actually hands work to.
+  it('addEvidence requires NO permission — it is self-scoped to an active assignee', () => {
+    const reflector = new Reflector();
+    const required = reflector.get<string[] | undefined>(
+      PERMISSIONS_KEY,
+      TaskController.prototype.addEvidence,
+    );
+
+    expect(required).toBeUndefined();
+  });
+
   it('the non-self-scoped task endpoints remain permission-gated', () => {
     const reflector = new Reflector();
 
