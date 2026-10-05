@@ -706,10 +706,24 @@ export class AuthService {
     return { success: true };
   }
 
-  async acceptInvitation(dto: AcceptInvitationDto): Promise<void> {
-    const user = await this.prisma.user.findFirst({
-      where: { invitationToken: dto.token },
+  // ACC-120 slice 9c — the ONE way an invitation is found by its token, shared
+  // by the lookup and accept-invitation. One query, with the organisation
+  // joined, so every outcome — no row, expired, deactivated, closed tenant,
+  // open — costs the same round trip and is decided in memory afterwards: the
+  // response time cannot tell "no such token" from "found but refused".
+  //
+  // Not scoped by organizationId, deliberately: this runs before anyone is
+  // signed in, and the token — 192 random bits, unique across all tenants — IS
+  // the key. The organisation comes from the row, never from the caller.
+  private findInvitation(token: string) {
+    return this.prisma.user.findFirst({
+      where: { invitationToken: token },
+      include: { organization: { select: { name: true, nameAr: true, status: true } } },
     });
+  }
+
+  async acceptInvitation(dto: AcceptInvitationDto): Promise<void> {
+    const user = await this.findInvitation(dto.token);
 
     if (!user || !user.invitationExpiresAt || user.invitationExpiresAt < new Date()) {
       // Deliberately generic — never reveal whether the token was ever valid.
