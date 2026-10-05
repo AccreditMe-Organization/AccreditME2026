@@ -11,6 +11,8 @@ import { AuthProvider } from '../../providers/auth/auth.provider';
 import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { resolveAppLinkConfig } from '../../common/config/app-url.config';
+import { renderEmailHtml } from '../notification/email-html';
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
@@ -1206,6 +1208,112 @@ describe('UserService', () => {
         ORG_A,
       );
       expect(mockAuditLog.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'CREATE' }));
+    });
+
+    // ACC-158 — the link must be ABSOLUTE, on the tenant's own host. It was a
+    // bare `/accept-invitation?token=…` path, which no email recipient could
+    // open.
+    describe('the invitation link (ACC-158)', () => {
+      const stubInvite = (): void => {
+        mockPrisma.organization.findUnique.mockResolvedValue({
+          id: ORG_A,
+          name: 'Al Nakheel Specialist Hospital',
+          slug: 'al-nakheel',
+          maxUsers: 25,
+        });
+        mockPrisma.user.count.mockResolvedValue(2);
+        mockPrisma.user.findFirst.mockResolvedValue(null);
+        mockPrisma.orgUnit.count.mockResolvedValue(0);
+        mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+          id: 'pos-1',
+          isSingleAssignee: false,
+          isUnitHeadPosition: false,
+          isActive: true,
+        });
+        mockPrisma.user.create.mockResolvedValue({
+          id: 'new-user',
+          organizationId: ORG_A,
+          email: 'new@example.com',
+          name: 'New User',
+          status: 'INVITED',
+        });
+      };
+      const inviteAndCapture = async (): Promise<{
+        token: string;
+        bodyEn: string;
+        bodyAr: string;
+      }> => {
+        stubInvite();
+        await service.invite(
+          {
+            email: 'new@example.com',
+            name: 'New User',
+            positionId: 'pos-1',
+            managerId: 'manager-1',
+          },
+          ORG_A,
+          'actor-1',
+        );
+        const token = mockPrisma.user.create.mock.calls[0][0].data
+          .invitationToken as string;
+        const dto = mockNotification.create.mock.calls[0][0] as {
+          bodyEn: string;
+          bodyAr: string;
+        };
+        return { token, bodyEn: dto.bodyEn, bodyAr: dto.bodyAr };
+      };
+
+      it("writes an absolute URL with the tenant's host into both bodies", async () => {
+        const { token, bodyEn, bodyAr } = await inviteAndCapture();
+        // Guard first: the token is a real one. Without it, an empty token
+        // would make the URL assertion below pass on a link that opens nothing.
+        expect(token).toMatch(/^[0-9a-f]{48}$/);
+        const url = `https://al-nakheel.accreditme.app/accept-invitation?token=${token}`;
+        expect(bodyEn).toContain(url);
+        expect(bodyAr).toContain(url);
+        // And nothing relative survives anywhere in either body.
+        expect(bodyEn).not.toMatch(/(^|\s)\/accept-invitation/);
+        expect(bodyAr).not.toMatch(/(^|\s)\/accept-invitation/);
+      });
+
+      // The chain the email actually takes: the body invite() stores, through
+      // the renderer the email-delivery worker uses. Both are the real code.
+      it("renders as an email whose anchor points at the tenant's host", async () => {
+        const { token, bodyEn, bodyAr } = await inviteAndCapture();
+        expect(token).toMatch(/^[0-9a-f]{48}$/);
+        const url = `https://al-nakheel.accreditme.app/accept-invitation?token=${token}`;
+        const links = resolveAppLinkConfig();
+        expect(renderEmailHtml(bodyEn, 'ltr', links)).toContain(
+          `<a href="${url}" dir="ltr">${url}</a>`,
+        );
+        expect(renderEmailHtml(bodyAr, 'rtl', links)).toContain(
+          `<a href="${url}" dir="ltr">${url}</a>`,
+        );
+      });
+
+      it('refuses the invite, writing no user, when the link cannot be built', async () => {
+        stubInvite();
+        const saved = process.env['APP_BASE_DOMAIN'];
+        delete process.env['APP_BASE_DOMAIN'];
+        try {
+          await expect(
+            service.invite(
+              {
+                email: 'new@example.com',
+                name: 'New User',
+                positionId: 'pos-1',
+                managerId: 'manager-1',
+              },
+              ORG_A,
+              'actor-1',
+            ),
+          ).rejects.toThrow(/APP_BASE_DOMAIN/);
+        } finally {
+          process.env['APP_BASE_DOMAIN'] = saved;
+        }
+        expect(mockPrisma.user.create).not.toHaveBeenCalled();
+        expect(mockNotification.create).not.toHaveBeenCalled();
+      });
     });
 
     it('throws ConflictException when the seat limit has been reached', async () => {
