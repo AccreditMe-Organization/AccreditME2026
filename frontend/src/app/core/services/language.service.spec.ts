@@ -44,4 +44,30 @@ describe('LanguageService', () => {
     expect(document.documentElement.getAttribute('dir')).toBe('ltr');
     expect(service.isRtl()).toBeFalse();
   });
+
+  // ACC-160 — bilingual() reads the language at CALL time. The same call,
+  // unchanged, must give a different answer after a switch; a value computed
+  // once and stored would not. Ends back in English so <html dir> does not leak
+  // RTL into other specs (the CC-8 DataList alignment leak).
+  it('bilingual() follows a language switch rather than freezing', () => {
+    const name = (): string => service.bilingual('Quality Committee', 'لجنة الجودة');
+    expect(name()).toBe('Quality Committee');
+
+    service.use('ar').subscribe();
+    TestBed.tick();
+    expect(name()).toBe('لجنة الجودة');
+
+    service.use('en').subscribe();
+    TestBed.tick();
+    expect(name()).toBe('Quality Committee');
+  });
+
+  it('bilingual() shows the English name in Arabic when there is no Arabic one', () => {
+    service.use('ar').subscribe();
+    TestBed.tick();
+    expect(service.bilingual('Quality Committee', null)).toBe('Quality Committee');
+
+    service.use('en').subscribe();
+    TestBed.tick();
+  });
 });

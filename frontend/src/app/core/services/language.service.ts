@@ -40,6 +40,7 @@ import { Injectable, effect, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { TranslateService } from '@ngx-translate/core';
 import { PrimeNG } from 'primeng/config';
+import { pickBilingualName } from '../../shared/utils/bilingual-name.util';
 
 const RTL_LANGUAGES = new Set(['ar']);
 const DEFAULT_LANGUAGE = 'en';
@@ -84,5 +85,19 @@ export class LanguageService {
 
   isArabic(): boolean {
     return (this.translate.currentLang() ?? DEFAULT_LANGUAGE) === 'ar';
+  }
+
+  /**
+   * ACC-160 — which of a tenant record's two names to show: the Arabic one in
+   * an Arabic session when it exists, otherwise the English one. The rule and
+   * its reasoning live in `pickBilingualName()`; this is what call sites use,
+   * because it reads the language at CALL time and so cannot freeze.
+   *
+   * Safe in a template and in a `computed()`: `isArabic()` reads
+   * `translate.currentLang()`, a real signal, so both re-evaluate on a switch.
+   * Not a pipe — a pure pipe caches on its inputs, and the language is not one.
+   */
+  bilingual(en: string, ar: string | null | undefined): string {
+    return pickBilingualName(en, ar, this.isArabic());
   }
 }
