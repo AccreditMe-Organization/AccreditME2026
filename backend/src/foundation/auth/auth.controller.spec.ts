@@ -24,6 +24,7 @@ describe('AuthController', () => {
   let service: {
     login: jest.Mock;
     verifyMfa: jest.Mock;
+    cancelMfa: jest.Mock;
     refresh: jest.Mock;
     logout: jest.Mock;
     acceptInvitation: jest.Mock;
@@ -46,6 +47,7 @@ describe('AuthController', () => {
     service = {
       login: jest.fn().mockResolvedValue({ success: true, user: {} }),
       verifyMfa: jest.fn().mockResolvedValue({ success: true, user: {} }),
+      cancelMfa: jest.fn().mockResolvedValue({ success: true }),
       refresh: jest.fn().mockResolvedValue({ success: true }),
       logout: jest.fn().mockResolvedValue({ success: true }),
       acceptInvitation: jest.fn().mockResolvedValue(undefined),
@@ -79,6 +81,23 @@ describe('AuthController', () => {
       .compile();
 
     controller = module.get<AuthController>(AuthController);
+  });
+
+  // ACC-120 slice 9b — routing only; the behaviour is in sign-in-outcomes.spec.ts.
+  it('cancelMfa delegates to AuthService.cancelMfa with the request and response', async () => {
+    await expect(controller.cancelMfa(req, res)).resolves.toEqual({
+      success: true,
+    });
+    expect(service.cancelMfa).toHaveBeenCalledWith(req, res);
+  });
+
+  // The route is unauthenticated, like login: the caller has no session yet.
+  it('cancelMfa carries no guard', () => {
+    const handler = Object.getOwnPropertyDescriptor(
+      AuthController.prototype,
+      'cancelMfa',
+    )?.value as object;
+    expect(Reflect.getMetadata('__guards__', handler)).toBeUndefined();
   });
 
   it('getMe returns the current user via UserService.getById, with impersonatedBy: null on a normal session', async () => {

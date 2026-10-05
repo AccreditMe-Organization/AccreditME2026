@@ -371,7 +371,14 @@ describe('AuthService', () => {
     it('throws UnauthorizedException on an invalid or expired code', async () => {
       // Better Auth's real shape: a 401 Response, not a rejection (ACC-120 9b).
       mockAuthApi.verifyTOTP.mockResolvedValue(
-        fakeResponse({ message: 'Invalid two factor cookie', code: 'INVALID_TWO_FACTOR_COOKIE' }, [], 401),
+        fakeResponse(
+          {
+            message: 'Invalid two factor cookie',
+            code: 'INVALID_TWO_FACTOR_COOKIE',
+          },
+          [],
+          401,
+        ),
       );
 
       await expect(

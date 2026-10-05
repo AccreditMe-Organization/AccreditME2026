@@ -94,6 +94,128 @@ describe('LoginAttemptService', () => {
     });
   });
 
+  // ACC-120 slice 9b — when the lock lifts, and the neutral rows.
+  describe('lockedUntil', () => {
+    // A typed view of this file's untyped mock, so the new tests read it safely.
+    const db = () =>
+      mockPrisma as {
+        loginAttempt: { findMany: jest.Mock };
+        organization: { findUnique: jest.Mock };
+      };
+    const row = (
+      minutes: number,
+      over: Partial<{ success: boolean; failureReason: string | null }> = {},
+    ) => ({
+      success: false,
+      failureReason: 'invalid_password',
+      createdAt: minutesAgo(minutes),
+      ...over,
+    });
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-10-05T09:00:00.000Z') });
+      db().organization.findUnique.mockResolvedValue({
+        id: ORG_A,
+        authConfig: null,
+      });
+    });
+    afterEach(() => jest.useRealTimers());
+
+    it('is null with fewer than five failures in the streak', async () => {
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1),
+        row(2),
+        row(3),
+        row(4),
+      ]);
+      expect(await service.lockedUntil(ORG_A, 'a@example.com')).toBeNull();
+    });
+
+    it('is the fifth newest failure plus the window', async () => {
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1),
+        row(2),
+        row(3),
+        row(4),
+        row(5),
+        row(6),
+      ]);
+      expect(await service.lockedUntil(ORG_A, 'a@example.com')).toEqual(
+        new Date(minutesAgo(5).getTime() + 15 * 60 * 1000),
+      );
+    });
+
+    it('stops at a success', async () => {
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1),
+        row(2),
+        row(3),
+        row(4),
+        row(5, { success: true, failureReason: null }),
+        row(6),
+        row(7),
+      ]);
+      expect(await service.lockedUntil(ORG_A, 'a@example.com')).toBeNull();
+    });
+
+    it('skips an account_inactive row — neither a failure nor a reset', async () => {
+      const inactive = row(3, { failureReason: 'account_inactive' });
+      // Four failures and an inactive refusal: not five failures, so no lock.
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1),
+        row(2),
+        inactive,
+        row(4),
+        row(5),
+      ]);
+      expect(await service.lockedUntil(ORG_A, 'a@example.com')).toBeNull();
+      // Five failures around it: locked, so it did not reset the streak.
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1),
+        row(2),
+        inactive,
+        row(4),
+        row(5),
+        row(6),
+      ]);
+      expect(await service.lockedUntil(ORG_A, 'a@example.com')).toEqual(
+        new Date(minutesAgo(6).getTime() + 15 * 60 * 1000),
+      );
+    });
+
+    it('counts a locked attempt as a failure, so trying while locked moves the lock later', async () => {
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1, { failureReason: 'locked' }),
+        row(2),
+        row(3),
+        row(4),
+        row(5),
+        row(6),
+      ]);
+      expect(await service.lockedUntil(ORG_A, 'a@example.com')).toEqual(
+        new Date(minutesAgo(5).getTime() + 15 * 60 * 1000),
+      );
+    });
+
+    it('agrees with isLocked', async () => {
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1),
+        row(2),
+        row(3),
+        row(4),
+        row(5),
+      ]);
+      expect(await service.isLocked(ORG_A, 'a@example.com')).toBe(true);
+      db().loginAttempt.findMany.mockResolvedValue([
+        row(1),
+        row(2),
+        row(3),
+        row(4),
+      ]);
+      expect(await service.isLocked(ORG_A, 'a@example.com')).toBe(false);
+    });
+  });
+
   describe('isNewIp', () => {
     it('returns true when the current IP differs from the previous lastLoginIp', () => {
       expect(service.isNewIp('1.1.1.1', '2.2.2.2')).toBe(true);
