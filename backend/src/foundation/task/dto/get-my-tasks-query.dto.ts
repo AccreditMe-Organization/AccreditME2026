@@ -8,7 +8,12 @@ import { IsBoolean, IsIn, IsOptional } from 'class-validator';
 // OVERDUE is absent because it is no longer a status (Q8). Overdue is the
 // separate `overdue` flag below, computed from dueAt, so a task can be both
 // In progress and overdue — which a status could never say.
-export const MY_TASK_STATUS_FILTERS = ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] as const;
+export const MY_TASK_STATUS_FILTERS = [
+  'PENDING',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'CANCELLED',
+] as const;
 
 export class GetMyTasksQueryDto {
   // Validated, where the old @Query('status') union was a type only: an
@@ -20,7 +25,9 @@ export class GetMyTasksQueryDto {
   // A query string is text, and implicit conversion is off app-wide, so the
   // two literal spellings are mapped here and anything else fails @IsBoolean.
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (value === 'true' ? true : value === 'false' ? false : value))
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
   @IsBoolean()
   overdue?: boolean;
 }

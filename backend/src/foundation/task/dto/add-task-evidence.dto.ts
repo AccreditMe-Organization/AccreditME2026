@@ -1,4 +1,12 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength, ValidateIf } from 'class-validator';
+import {
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  MaxLength,
+  ValidateIf,
+} from 'class-validator';
 
 // ACC-163 (Q11) — new evidence is a LINK or an INTERNAL_REFERENCE, nothing
 // else. TEXT is gone because a note is a comment, not proof. ATTACHMENT waits
@@ -10,7 +18,10 @@ import { IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength, ValidateIf } 
 //
 // With forbidNonWhitelisted on app-wide, sending a removed field (content,
 // s3Key, fileName, …) is a 400 rather than silently ignored.
-export const TASK_EVIDENCE_INPUT_TYPES = ['LINK', 'INTERNAL_REFERENCE'] as const;
+export const TASK_EVIDENCE_INPUT_TYPES = [
+  'LINK',
+  'INTERNAL_REFERENCE',
+] as const;
 
 const TASK_EVIDENCE_REF_TYPES = [
   'DOCUMENT',
@@ -31,7 +42,11 @@ export class AddTaskEvidenceDto {
   // `javascript:` or `data:` URL would run in whoever clicks it. A TLD is not
   // required: hospital intranets are commonly reached by a bare host name.
   @ValidateIf((o: AddTaskEvidenceDto) => o.type === 'LINK')
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
+  @IsUrl({
+    protocols: ['http', 'https'],
+    require_protocol: true,
+    require_tld: false,
+  })
   @MaxLength(2000)
   url?: string;
 
