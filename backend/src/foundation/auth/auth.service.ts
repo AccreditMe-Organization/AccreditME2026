@@ -44,7 +44,10 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
-import { BETTER_AUTH_INVALID_CREDENTIALS, BETTER_AUTH_TWO_FACTOR_CODES } from './better-auth.contract';
+import {
+  BETTER_AUTH_INVALID_CREDENTIALS,
+  BETTER_AUTH_TWO_FACTOR_CODES,
+} from './better-auth.contract';
 import { AuthRefusalException } from './auth-refusal';
 import {
   attemptsRemaining,
@@ -132,7 +135,6 @@ export function signAccessToken(
 }
 
 const MFA_SETUP_SESSION_TTL_MS = 5 * 60 * 1000;
-
 
 @Injectable()
 export class AuthService {
@@ -360,7 +362,10 @@ export class AuthService {
       // moves the lock later (LoginAttemptService.lockedUntil()). Checked BEFORE
       // the password and computed from (organization, email) rows alone, so it
       // reads the same for an email that has no account.
-      const lockedUntil = await this.loginAttemptService.lockedUntil(organizationId, dto.email);
+      const lockedUntil = await this.loginAttemptService.lockedUntil(
+        organizationId,
+        dto.email,
+      );
       throw new AuthRefusalException('ACCOUNT_LOCKED', {
         lockedUntil: lockedUntil ?? new Date(),
       });
@@ -382,10 +387,10 @@ export class AuthService {
     // else — another refusal code, or a thrown error (a database outage, say) —
     // is not a credential problem: it propagates as a 500 and records NO
     // failure, so an outage cannot lock real people out.
-    const result = (await this.auth.api.signInEmail({
+    const result = await this.auth.api.signInEmail({
       body: { email: namespacedEmail, password: dto.password },
       asResponse: true,
-    })) as unknown as Response;
+    });
 
     const body = (await result.json()) as {
       twoFactorRedirect?: boolean;
@@ -394,7 +399,10 @@ export class AuthService {
     };
 
     if (!result.ok) {
-      if (result.status === 401 && body.code === BETTER_AUTH_INVALID_CREDENTIALS) {
+      if (
+        result.status === 401 &&
+        body.code === BETTER_AUTH_INVALID_CREDENTIALS
+      ) {
         await this.loginAttemptService.record({
           organizationId,
           email: dto.email,
@@ -426,7 +434,10 @@ export class AuthService {
     // they can never use. Recorded as NEUTRAL: it neither counts towards the
     // lock nor resets it (LoginAttemptService.NEUTRAL_FAILURE_REASONS).
     if (appUser.status !== 'ACTIVE') {
-      await this.recordInactiveRefusal({ organizationId, email: dto.email }, req);
+      await this.recordInactiveRefusal(
+        { organizationId, email: dto.email },
+        req,
+      );
       throw new AuthRefusalException('ACCOUNT_INACTIVE');
     }
 
@@ -444,22 +455,35 @@ export class AuthService {
       // warning, if the challenge cannot be read: a missing display hint must
       // not refuse a sign-in whose password was right.
       const identifier = challengeIdentifierFromSetCookies(setCookies);
-      const challenge = identifier ? await loadChallenge(this.prisma, identifier) : null;
+      const challenge = identifier
+        ? await loadChallenge(this.prisma, identifier)
+        : null;
       if (!challenge) {
-        this.logger.warn('MFA challenge issued but not readable; mfaExpiresAt omitted');
+        this.logger.warn(
+          'MFA challenge issued but not readable; mfaExpiresAt omitted',
+        );
         return { mfaRequired: true };
       }
-      return { mfaRequired: true, mfaExpiresAt: challenge.expiresAt.toISOString() };
+      return {
+        mfaRequired: true,
+        mfaExpiresAt: challenge.expiresAt.toISOString(),
+      };
     }
 
     // A 200 with neither a challenge nor a user is not a shape Better Auth
     // documents — a fault, not a refusal.
-    if (!body.user?.id) throw new Error('Better Auth sign-in returned 200 without a user');
+    if (!body.user?.id)
+      throw new Error('Better Auth sign-in returned 200 without a user');
 
-    const { language, ...user } = await this.completeLogin(appUser.id, req, res, {
-      organizationId,
-      email: dto.email,
-    });
+    const { language, ...user } = await this.completeLogin(
+      appUser.id,
+      req,
+      res,
+      {
+        organizationId,
+        email: dto.email,
+      },
+    );
     return { success: true, user, language };
   }
 
@@ -487,17 +511,21 @@ export class AuthService {
     // ACC-120 slice 9b — like signInEmail, verifyTOTP RETURNS a refusal as a
     // Response rather than throwing it, so the outcome is read off the
     // Response. A thrown error is a fault and propagates as a 500.
-    const result = (await this.auth.api.verifyTOTP({
+    const result = await this.auth.api.verifyTOTP({
       body: { code: dto.code },
       // Only the Cookie header matters here — Better Auth reads its own
       // two-factor-pending cookie from it (set during login() above).
       headers: new Headers({ cookie: req.headers.cookie ?? '' }),
       asResponse: true,
-    })) as unknown as Response;
+    });
 
-    const body = (await result.json()) as { user?: { id: string }; code?: string };
+    const body = (await result.json()) as {
+      user?: { id: string };
+      code?: string;
+    };
     if (!result.ok) throw await this.mfaRefusal(result.status, body.code, req);
-    if (!body.user?.id) throw new Error('Better Auth verifyTOTP returned 200 without a user');
+    if (!body.user?.id)
+      throw new Error('Better Auth verifyTOTP returned 200 without a user');
 
     const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
     if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
@@ -505,10 +533,15 @@ export class AuthService {
     // The lockout's key for this person: their organization, and their email
     // as login() normalised it (LoginDto lower-cases it; the stored email is
     // lower-cased the same way here so the two always agree).
-    const { language, ...user } = await this.completeLogin(appUser.id, req, res, {
-      organizationId: appUser.organizationId,
-      email: appUser.email.toLowerCase(),
-    });
+    const { language, ...user } = await this.completeLogin(
+      appUser.id,
+      req,
+      res,
+      {
+        organizationId: appUser.organizationId,
+        email: appUser.email.toLowerCase(),
+      },
+    );
     return { success: true, user, language };
   }
 
@@ -522,7 +555,10 @@ export class AuthService {
   // verifies (two-factor-challenge.ts). Always succeeds — there being nothing
   // to cancel is not an error, and saying so would tell a caller whether a
   // challenge existed.
-  async cancelMfa(req: ExpressRequest, res: ExpressResponse): Promise<{ success: true }> {
+  async cancelMfa(
+    req: ExpressRequest,
+    res: ExpressResponse,
+  ): Promise<{ success: true }> {
     const identifier = challengeIdentifierFromRequest(req.headers.cookie);
     if (identifier) await clearChallenge(this.prisma, identifier);
     for (const name of TWO_FACTOR_COOKIE_NAMES) {
@@ -544,7 +580,9 @@ export class AuthService {
     req: ExpressRequest,
   ): Promise<Error> {
     const identifier = challengeIdentifierFromRequest(req.headers.cookie);
-    const challenge = identifier ? await loadChallenge(this.prisma, identifier) : null;
+    const challenge = identifier
+      ? await loadChallenge(this.prisma, identifier)
+      : null;
 
     switch (code) {
       case BETTER_AUTH_TWO_FACTOR_CODES.INVALID_CODE:
@@ -564,10 +602,14 @@ export class AuthService {
         const lockedUntil = challenge
           ? await twoFactorLockedUntil(this.prisma, challenge.authUserId)
           : null;
-        return new AuthRefusalException('ACCOUNT_LOCKED', { lockedUntil: lockedUntil ?? new Date() });
+        return new AuthRefusalException('ACCOUNT_LOCKED', {
+          lockedUntil: lockedUntil ?? new Date(),
+        });
       }
       default:
-        return new Error(`Better Auth verifyTOTP returned ${status}${code ? ` ${code}` : ''}`);
+        return new Error(
+          `Better Auth verifyTOTP returned ${status}${code ? ` ${code}` : ''}`,
+        );
     }
   }
 

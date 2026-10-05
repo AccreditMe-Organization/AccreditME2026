@@ -9,7 +9,12 @@ export interface RecordLoginAttemptInput {
   organizationId: string;
   email: string;
   success: boolean;
-  failureReason?: 'invalid_password' | 'locked' | 'no_such_user' | 'mfa_failed' | 'account_inactive';
+  failureReason?:
+    | 'invalid_password'
+    | 'locked'
+    | 'no_such_user'
+    | 'mfa_failed'
+    | 'account_inactive';
   ipAddress?: string;
   userAgent?: string;
 }
@@ -21,7 +26,9 @@ export interface RecordLoginAttemptInput {
 // password, and counting it as a success would wipe a real failure streak. So
 // the streak skips it in both directions, and the attempt is still written down
 // (every attempt is — CLAUDE.md, Account Lockout).
-export const NEUTRAL_FAILURE_REASONS: ReadonlySet<string> = new Set(['account_inactive']);
+export const NEUTRAL_FAILURE_REASONS: ReadonlySet<string> = new Set([
+  'account_inactive',
+]);
 
 interface LockoutConfig {
   threshold: number;
@@ -94,8 +101,12 @@ export class LoginAttemptService {
   // Computed purely from (organization, email) rows, so a non-existent email
   // gets exactly the same answer as a real one: the lock never discloses
   // whether an account exists.
-  async lockedUntil(organizationId: string, email: string): Promise<Date | null> {
-    const { threshold, windowMinutes } = await this.getLockoutConfig(organizationId);
+  async lockedUntil(
+    organizationId: string,
+    email: string,
+  ): Promise<Date | null> {
+    const { threshold, windowMinutes } =
+      await this.getLockoutConfig(organizationId);
     const windowMs = windowMinutes * 60 * 1000;
     const since = new Date(Date.now() - windowMs);
 
@@ -107,7 +118,11 @@ export class LoginAttemptService {
     const streak: Date[] = [];
     for (const attempt of attempts) {
       if (attempt.success) break;
-      if (attempt.failureReason && NEUTRAL_FAILURE_REASONS.has(attempt.failureReason)) continue;
+      if (
+        attempt.failureReason &&
+        NEUTRAL_FAILURE_REASONS.has(attempt.failureReason)
+      )
+        continue;
       streak.push(attempt.createdAt);
     }
 

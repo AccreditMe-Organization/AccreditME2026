@@ -41,7 +41,9 @@ const CHALLENGE_COOKIE_NAMES = new Set([
 ]);
 
 /** The challenge cookie's value in a `Cookie` header (or one `name=value` pair). */
-function cookieValueFromHeader(cookieHeader: string | undefined): string | null {
+function cookieValueFromHeader(
+  cookieHeader: string | undefined,
+): string | null {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(';')) {
     const eq = part.indexOf('=');
@@ -75,21 +77,30 @@ export function verifiedChallengeIdentifier(
   if (!identifier.startsWith(TWO_FACTOR_CHALLENGE_PREFIX)) return null;
   if (identifier.startsWith(TWO_FACTOR_ATTEMPTS_PREFIX)) return null;
 
-  const expected = Buffer.from(createHmac('sha256', secret).update(identifier).digest('base64'));
+  const expected = Buffer.from(
+    createHmac('sha256', secret).update(identifier).digest('base64'),
+  );
   const given = Buffer.from(signature);
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
+  if (given.length !== expected.length || !timingSafeEqual(given, expected))
+    return null;
   return identifier;
 }
 
 /** The challenge identifier from a request's `Cookie` header. */
-export function challengeIdentifierFromRequest(cookieHeader: string | undefined): string | null {
+export function challengeIdentifierFromRequest(
+  cookieHeader: string | undefined,
+): string | null {
   return verifiedChallengeIdentifier(cookieValueFromHeader(cookieHeader));
 }
 
 /** The challenge identifier from the `Set-Cookie` headers Better Auth produced. */
-export function challengeIdentifierFromSetCookies(setCookies: readonly string[]): string | null {
+export function challengeIdentifierFromSetCookies(
+  setCookies: readonly string[],
+): string | null {
   for (const header of setCookies) {
-    const identifier = verifiedChallengeIdentifier(cookieValueFromHeader(header.split(';')[0]));
+    const identifier = verifiedChallengeIdentifier(
+      cookieValueFromHeader(header.split(';')[0]),
+    );
     if (identifier) return identifier;
   }
   return null;
@@ -132,8 +143,11 @@ export async function attemptsRemaining(
     where: { userId: challenge.authUserId },
     select: { failedVerificationCount: true },
   });
-  const onChallenge = TWO_FACTOR_ATTEMPTS_PER_CHALLENGE - challenge.attemptsUsed;
-  const beforeLock = TWO_FACTOR_MAX_FAILURES_PER_USER - (twoFactor?.failedVerificationCount ?? 0);
+  const onChallenge =
+    TWO_FACTOR_ATTEMPTS_PER_CHALLENGE - challenge.attemptsUsed;
+  const beforeLock =
+    TWO_FACTOR_MAX_FAILURES_PER_USER -
+    (twoFactor?.failedVerificationCount ?? 0);
   return Math.max(0, Math.min(onChallenge, beforeLock));
 }
 
@@ -150,11 +164,20 @@ export async function twoFactorLockedUntil(
 }
 
 /** Delete the challenge and its attempt counter. Touches nothing else. */
-export async function clearChallenge(prisma: PrismaService, identifier: string): Promise<void> {
+export async function clearChallenge(
+  prisma: PrismaService,
+  identifier: string,
+): Promise<void> {
   await prisma.authVerification.deleteMany({
-    where: { identifier: { in: [identifier, `${TWO_FACTOR_ATTEMPTS_PREFIX}${identifier}`] } },
+    where: {
+      identifier: {
+        in: [identifier, `${TWO_FACTOR_ATTEMPTS_PREFIX}${identifier}`],
+      },
+    },
   });
 }
 
 /** Both names the challenge cookie can have, for expiring it. */
-export const TWO_FACTOR_COOKIE_NAMES: readonly string[] = [...CHALLENGE_COOKIE_NAMES];
+export const TWO_FACTOR_COOKIE_NAMES: readonly string[] = [
+  ...CHALLENGE_COOKIE_NAMES,
+];
