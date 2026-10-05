@@ -1,5 +1,5 @@
 import { Component, effect, inject, input, output, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
@@ -14,6 +14,15 @@ import { ITaskDto, TaskService } from '../../services/task.service';
 // `javascript:`, which the server refuses because the link is rendered
 // clickable for whoever reviews the task.
 const HTTP_URL = /^https?:\/\/\S+$/i;
+
+// Judged on the TRIMMED value, which is what is sent: a link pasted with a
+// trailing space is a valid link, and refusing it with "must start with
+// https://" would describe a fault it does not have. Reported as `pattern`,
+// so the field's message is the one written for this rule.
+function httpUrl(control: AbstractControl): ValidationErrors | null {
+  const value = typeof control.value === 'string' ? control.value.trim() : '';
+  return !value || HTTP_URL.test(value) ? null : { pattern: true };
+}
 
 /**
  * Add link evidence — ACC-163 (Q11).
@@ -104,7 +113,7 @@ export class TaskLinkEvidenceDialogComponent {
   readonly showErrors = signal(false);
 
   readonly form = this.fb.group({
-    url: ['', [Validators.required, Validators.pattern(HTTP_URL), Validators.maxLength(2000)]],
+    url: ['', [Validators.required, httpUrl, Validators.maxLength(2000)]],
     linkTitle: ['', [Validators.maxLength(255)]],
   });
 
