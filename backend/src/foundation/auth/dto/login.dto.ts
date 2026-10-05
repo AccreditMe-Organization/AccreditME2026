@@ -1,4 +1,6 @@
+import { Transform } from 'class-transformer';
 import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { normaliseEmail } from '../../../common/utils/normalise-email.transform';
 
 // organizationSlug resolves the tenant BEFORE authentication succeeds — there
 // is no JWT yet at login time for TenantGuard to read organizationId from.
@@ -9,6 +11,9 @@ export class LoginDto {
   @IsNotEmpty()
   organizationSlug!: string;
 
+  // Trimmed and lower-cased, so the lockout and Better Auth key on one
+  // spelling — see normalise-email.transform.ts.
+  @Transform(normaliseEmail)
   @IsEmail()
   email!: string;
 
