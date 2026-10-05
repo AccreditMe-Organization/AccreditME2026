@@ -21,6 +21,12 @@ export interface ITaskDto {
   slaBreachedAt: string | null;
   completedAt: string | null;
   completedById: string | null;
+  // ACC-163 — Complete is refused while this is true and no evidence exists.
+  requiresEvidence: boolean;
+  // ACC-163 — set when the last active assignee rejects; cleared by reassign.
+  rejectedReason: string | null;
+  rejectedAt: string | null;
+  rejectedById: string | null;
   // ACC-46 Section 2.7.b — managerEscalatedAt/headEscalatedAt replace the
   // old escalationUserId/escalationAfterHours; written only by
   // SlaMonitorProcessor, never by any caller.
@@ -53,12 +59,31 @@ export interface TaskAssigneeDto {
   delegation: ResolvedDelegationDto | null;
 }
 
+// ACC-163 — the row BOTH task lists return (my-tasks, and getForSource through
+// ITaskWithAssigneesDto below): the task plus how much evidence it holds, so a
+// list can disable Complete before the server refuses it. One type for both
+// lists, for the ACC-74 reason given below.
+export interface ITaskListItemDto extends ITaskDto {
+  evidenceCount: number;
+}
+
 // ACC-76 — returned by getForSource() ONLY. Deliberately a separate type
 // rather than an optional field on ITaskDto: an optional field populated by
 // exactly one endpoint is the trap ACC-74 hit, where role-list bound to
 // `permissions?.length` and rendered 0 for every role, silently, forever.
-export interface ITaskWithAssigneesDto extends ITaskDto {
+export interface ITaskWithAssigneesDto extends ITaskListItemDto {
   assignees: TaskAssigneeDto[];
+  // ACC-163 — who rejected a REJECTED task; null on every other task.
+  rejectedBy: { id: string; name: string } | null;
+}
+
+// ACC-163 — the statuses my-tasks can be filtered by. OVERDUE is not one of
+// them: overdue is a separate flag (Q8), combinable with any status.
+export type MyTaskStatusFilter = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+export interface MyTasksQuery {
+  status?: MyTaskStatusFilter;
+  overdue?: boolean;
 }
 
 export interface CreateTaskDto {
@@ -72,6 +97,8 @@ export interface CreateTaskDto {
   assigneeUserIds: string[];
   priority?: string;
   dueDate?: string;
+  // ACC-163 — Complete is refused until at least one piece of evidence exists.
+  requiresEvidence?: boolean;
 }
 
 export interface ReassignTaskDto {
@@ -79,27 +106,26 @@ export interface ReassignTaskDto {
   reason: string;
 }
 
-export interface AddTaskEvidenceDto {
-  type: string;
-  content?: string;
-  s3Key?: string;
-  fileName?: string;
-  fileSize?: number;
-  mimeType?: string;
-  url?: string;
-  linkTitle?: string;
-  refType?: string;
-  refId?: string;
+export interface RejectTaskDto {
+  reason: string;
 }
+
+// ACC-163 (Q11) — new evidence is a link (http or https) or a reference to a
+// record. A note is a comment, not proof, and attachments wait for storage.
+export type AddTaskEvidenceDto =
+  | { type: 'LINK'; url: string; linkTitle?: string }
+  | { type: 'INTERNAL_REFERENCE'; refType: string; refId: string };
 
 @Injectable({ providedIn: 'root' })
 export class TaskService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiUrl}/tasks`;
 
-  getMyTasks(status?: string): Observable<ITaskDto[]> {
-    const params = status ? new HttpParams().set('status', status) : undefined;
-    return this.http.get<ITaskDto[]>(`${this.base}/my-tasks`, { params });
+  getMyTasks(query: MyTasksQuery = {}): Observable<ITaskListItemDto[]> {
+    let params = new HttpParams();
+    if (query.status) params = params.set('status', query.status);
+    if (query.overdue) params = params.set('overdue', 'true');
+    return this.http.get<ITaskListItemDto[]>(`${this.base}/my-tasks`, { params });
   }
 
   // ACC-76 — the only list endpoint carrying assignees. Requires tasks:view.
@@ -124,6 +150,17 @@ export class TaskService {
     return this.http.post<ITaskDto>(`${this.base}/${id}/complete`, {});
   }
 
+  // ACC-163 — self-scoped to an active assignee, like complete().
+  start(id: string): Observable<ITaskDto> {
+    return this.http.post<ITaskDto>(`${this.base}/${id}/start`, {});
+  }
+
+  reject(id: string, dto: RejectTaskDto): Observable<ITaskDto> {
+    return this.http.post<ITaskDto>(`${this.base}/${id}/reject`, dto);
+  }
+
+  // ACC-163 — open to a tasks:reassign holder OR the task's creator; the
+  // server decides, and refuses anyone else as not found.
   reassign(id: string, dto: ReassignTaskDto): Observable<ITaskDto> {
     return this.http.post<ITaskDto>(`${this.base}/${id}/reassign`, dto);
   }
