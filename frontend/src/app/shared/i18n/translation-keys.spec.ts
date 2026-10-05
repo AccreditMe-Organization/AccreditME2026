@@ -93,10 +93,13 @@ const CONCATENATED_KEYS: { site: string; prefix: string; values: string[] }[] = 
     prefix: 'account',
     values: ['TRIAL', 'ACTIVE', 'SUSPENDED', 'CANCELLED', 'OFFBOARDING'],
   },
+  // ACC-163 — built by taskStatusLabelKey() (tasks/task-status.ts), which maps
+  // a legacy OVERDUE row to PENDING first: overdue is a badge now, not a
+  // status, so there is no task.status.overdue key to resolve. REJECTED is new.
   {
-    site: 'task-list / task-card',
+    site: 'task-status helper (task-list, my-tasks, home, committee record)',
     prefix: 'task.status',
-    values: ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'OVERDUE', 'UNASSIGNED'],
+    values: ['PENDING', 'IN_PROGRESS', 'REJECTED', 'COMPLETED', 'CANCELLED', 'UNASSIGNED'],
   },
   {
     site: 'task-list / task-card',

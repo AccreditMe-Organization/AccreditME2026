@@ -1,18 +1,24 @@
 // ACC-34 item 4 — proves the two real behaviors this view exists for:
 // (1) it fetches and renders GET /tasks/unassigned (a list no other task
 // view can ever show, since unassigned tasks have no assignees), and
-// (2) the inline reassign form calls POST /tasks/:id/reassign with the
-// exact ReassignTaskDto shape and refreshes the list on success.
+// (2) reassigning refreshes the list.
+//
+// ACC-163 — the reassign FORM moved into the shared TaskReassignDialogComponent
+// (the committee record hosts it too), so the request shape, validation and
+// header are proven in task-reassign-dialog.component.spec.ts. This file
+// proves the hosting: the right task reaches the dialog, and a reassignment
+// reloads the list.
 import { TestBed, ComponentFixture } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ConfirmationService } from 'primeng/api';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader, TranslateService } from '@ngx-translate/core';
+import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { environment } from '../../../../../environments/environment';
 import { UnassignedTasksComponent } from './unassigned-tasks.component';
 import { ITaskDto } from '../../services/task.service';
-import { IUserDto } from '../../../user/services/user.service';
+import { TaskReassignDialogComponent } from '../task-reassign-dialog/task-reassign-dialog.component';
 
 const UNASSIGNED_TASK: ITaskDto = {
   id: 'task-1',
@@ -32,29 +38,12 @@ const UNASSIGNED_TASK: ITaskDto = {
   slaBreachedAt: null,
   completedAt: null,
   completedById: null,
+  requiresEvidence: false,
+  rejectedReason: null,
+  rejectedAt: null,
+  rejectedById: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
-};
-
-const USER_A: IUserDto = {
-  id: 'user-a',
-  organizationId: 'org-a',
-  email: 'a@example.com',
-  name: 'User A',
-  avatarUrl: null,
-  status: 'ACTIVE',
-  language: null,
-  positionId: null,
-  primaryOrgUnitId: null,
-  managerId: null,
-  outOfOfficeFrom: null,
-  outOfOfficeTo: null,
-  actingUserId: null,
-  actingOrgUnitId: null,
-  actingOrgUnitUntil: null,
-  lastLoginAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -82,60 +71,38 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
     fixture.detectChanges();
 
     httpMock.expectOne(`${environment.apiUrl}/tasks/unassigned`).flush([UNASSIGNED_TASK]);
-    // ACC-78 — listAllUsers() asks for the backend's page-size cap, and the
-    // endpoint returns the shared envelope rather than a bare array.
-    httpMock
-      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
-      .flush({ data: [USER_A], total: 1, page: 1, pageSize: 200 });
-    httpMock.expectOne(`${environment.apiUrl}/organization/units/flat`).flush([]);
     fixture.detectChanges();
   });
 
   afterEach(() => httpMock.verify());
 
+  const dialog = (): TaskReassignDialogComponent =>
+    fixture.debugElement.query(By.directive(TaskReassignDialogComponent)).componentInstance;
+
   it('renders the fetched unassigned tasks', () => {
     expect(component.tasks()).toEqual([UNASSIGNED_TASK]);
   });
 
-  it('reassign sends the exact ReassignTaskDto shape and refreshes the list on success', () => {
+  // The people list is the dialog's own, and it is fetched on first opening —
+  // not on page load, when most viewers reassign nothing.
+  it('opens the shared reassign dialog for the chosen task, which then loads its people list', () => {
+    httpMock.expectNone(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`);
+
     component.onOpenReassign(UNASSIGNED_TASK);
-    component.reassignForm.setValue({ newAssigneeUserIds: [USER_A.id], reason: 'Covering for absence' });
+    fixture.detectChanges();
 
-    component.onSubmitReassign();
+    expect(dialog().visible()).toBe(true);
+    expect(dialog().task()).toEqual(UNASSIGNED_TASK);
+    httpMock
+      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
+      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
+  });
 
-    const req = httpMock.expectOne(`${environment.apiUrl}/tasks/task-1/reassign`);
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({
-      newAssigneeUserIds: [USER_A.id],
-      reason: 'Covering for absence',
-    });
-    req.flush({ ...UNASSIGNED_TASK, status: 'PENDING' });
+  it('refreshes the unassigned list once the dialog reports a reassignment', () => {
+    dialog().reassigned.emit();
 
-    // Reassign success triggers a refresh of the unassigned list.
     httpMock.expectOne(`${environment.apiUrl}/tasks/unassigned`).flush([]);
-
-    expect(component.reassignVisible()).toBe(false);
     expect(component.tasks()).toEqual([]);
-  });
-
-  // ACC-82 — a Setup health Fix opens this dialog from a list of many rows; the
-  // header has to say which task it is for.
-  it('names the task in the reassign dialog header', () => {
-    const translate = TestBed.inject(TranslateService);
-    translate.setTranslation('en', { task: { reassignNamed: 'Reassign “{{title}}”' } }, true);
-
-    component.onOpenReassign(UNASSIGNED_TASK);
-
-    expect(component.reassignHeader()).toBe('Reassign “Review incident report”');
-  });
-
-  it('does not submit when the reassign form is invalid (no assignees, no reason)', () => {
-    component.onOpenReassign(UNASSIGNED_TASK);
-
-    component.onSubmitReassign();
-
-    expect(component.reassignForm.invalid).toBe(true);
-    httpMock.expectNone(`${environment.apiUrl}/tasks/task-1/reassign`);
   });
 });
 

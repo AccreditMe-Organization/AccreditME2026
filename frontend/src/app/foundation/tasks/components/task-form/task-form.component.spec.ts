@@ -402,9 +402,11 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     // how this test failed with "found none" rather than a wrong body.
     const picked = new Date(NEXT_WORKING_DAY);
     picked.setHours(9, 0, 0, 0);
+    // ACC-163 appended requiresEvidence, false unless the box is ticked — the
+    // one deliberate change to this body since it was captured.
     const wire =
       '{"title":"ACC-96 payload probe","sourceType":"DOCUMENT","sourceId":"acc96-probe",' +
-      `"priority":"MEDIUM","dueDate":"${picked.toISOString()}","assigneeUserIds":[]}`;
+      `"priority":"MEDIUM","dueDate":"${picked.toISOString()}","assigneeUserIds":[],"requiresEvidence":false}`;
 
     component.form.patchValue({
       title: 'ACC-96 payload probe',
@@ -421,6 +423,25 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     const req = httpMock.expectOne(`${environment.apiUrl}/tasks`);
     expect(req.request.method).toBe('POST');
     expect(JSON.stringify(req.request.body)).toBe(wire);
+    req.flush({});
+  });
+
+  // ACC-163 — Complete is refused until the assignee adds evidence.
+  it('sends requiresEvidence: true when "Evidence required" is ticked', () => {
+    const picked = new Date(NEXT_WORKING_DAY);
+    component.form.patchValue({
+      title: 'Collect the audit sample',
+      sourceType: 'DOCUMENT',
+      sourceId: 'doc-1',
+      requiresEvidence: true,
+    });
+    component.onDayPicked(new Date(picked.getFullYear(), picked.getMonth(), picked.getDate()));
+    component.onTimeTyped('09:00');
+
+    component.onSubmit();
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/tasks`);
+    expect(req.request.body.requiresEvidence).toBe(true);
     req.flush({});
   });
 });
