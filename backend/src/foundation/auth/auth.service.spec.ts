@@ -477,6 +477,8 @@ describe('AuthService', () => {
         email: 'a@example.com',
         name: 'A User',
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
@@ -504,6 +506,8 @@ describe('AuthService', () => {
         name: 'A User',
         primaryOrgUnitId: 'unit-1',
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       };
       mockPrisma.user.findFirst.mockResolvedValue(invited);
@@ -525,6 +529,8 @@ describe('AuthService', () => {
         name: 'A User',
         primaryOrgUnitId: 'unit-1',
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
@@ -552,6 +558,8 @@ describe('AuthService', () => {
         positionId: 'pos-1',
         primaryOrgUnitId: 'unit-1',
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
@@ -572,6 +580,8 @@ describe('AuthService', () => {
         name: 'A User',
         positionId: null,
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       mockAuthApi.signUpEmail.mockResolvedValue({ user: { id: 'authuser-1' } });
@@ -597,6 +607,8 @@ describe('AuthService', () => {
         positionId: 'pos-1',
         primaryOrgUnitId: 'unit-1',
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       mockUserService.validatePositionAssignment.mockRejectedValue(
@@ -649,6 +661,8 @@ describe('AuthService', () => {
         email: 'a@example.com',
         name: 'A User',
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       const apiError = new MockAPIError({
@@ -670,6 +684,8 @@ describe('AuthService', () => {
         email: 'a@example.com',
         name: 'A User',
         invitationToken: 'valid-token',
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
       const internalFailure = new Error('connection reset');

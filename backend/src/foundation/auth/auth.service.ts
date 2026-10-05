@@ -767,9 +767,14 @@ export class AuthService {
   async acceptInvitation(dto: AcceptInvitationDto): Promise<void> {
     const user = await this.findInvitation(dto.token);
 
-    if (!user || !user.invitationExpiresAt || user.invitationExpiresAt < new Date()) {
-      // Deliberately generic — never reveal whether the token was ever valid.
-      throw new BadRequestException('Invalid or expired invitation');
+    // ACC-120 slice 9c — the same open-invitation rule the lookup applies, so
+    // the page and the accept can never disagree. Two holes this closes: a
+    // deactivated invitee kept a live token (deactivate() does not clear it),
+    // and accepting made them ACTIVE again; and a SUSPENDED, CANCELLED or
+    // OFFBOARDING tenant's invitations still accepted. Deliberately generic, as
+    // before — the status and message are unchanged, plus the code.
+    if (!isOpenInvitation(user, new Date())) {
+      throw new InvitationRefusalException();
     }
 
     const namespacedEmail = AuthService.namespacedEmail(user.organizationId, user.email);
