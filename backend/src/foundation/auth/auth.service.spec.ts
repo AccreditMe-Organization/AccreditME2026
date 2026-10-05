@@ -4,6 +4,10 @@ import {
   HttpException,
   UnauthorizedException,
 } from '@nestjs/common';
+import {
+  INVITATION_REFUSAL_BODY,
+  InvitationRefusalException,
+} from './invitation-refusal';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -470,6 +474,96 @@ describe('AuthService', () => {
   });
 
   describe('acceptInvitation', () => {
+    // ACC-120 slice 9c — accept applies the open-invitation rule.
+    describe('the open-invitation rule (ACC-120 slice 9c)', () => {
+      const invitee = (over: Record<string, unknown> = {}) => ({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        invitationToken: 'valid-token',
+        invitationExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        status: 'INVITED',
+        organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
+        ...over,
+      });
+
+      async function refusalOf(
+        attempt: Promise<unknown>,
+      ): Promise<HttpException> {
+        try {
+          await attempt;
+        } catch (e) {
+          return e as HttpException;
+        }
+        throw new Error('expected the invitation to be refused');
+      }
+
+      it('refuses a deactivated invitee, who stays INACTIVE', async () => {
+        mockPrisma.user.findFirst.mockResolvedValue(
+          invitee({ status: 'INACTIVE' }),
+        );
+        const e = await refusalOf(
+          service.acceptInvitation({
+            token: 'valid-token',
+            password: 'newpassword123',
+          }),
+        );
+        expect(e).toBeInstanceOf(InvitationRefusalException);
+        expect(e.getStatus()).toBe(400);
+        expect(e.getResponse()).toStrictEqual({ ...INVITATION_REFUSAL_BODY });
+        // Nothing was created and nothing was flipped back to ACTIVE.
+        expect(mockAuthApi.signUpEmail).not.toHaveBeenCalled();
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      });
+
+      it("refuses a SUSPENDED tenant's invitation", async () => {
+        mockPrisma.user.findFirst.mockResolvedValue(
+          invitee({
+            organization: { status: 'SUSPENDED', name: 'Acme', nameAr: null },
+          }),
+        );
+        const e = await refusalOf(
+          service.acceptInvitation({
+            token: 'valid-token',
+            password: 'newpassword123',
+          }),
+        );
+        expect(e.getResponse()).toStrictEqual({ ...INVITATION_REFUSAL_BODY });
+        expect(mockAuthApi.signUpEmail).not.toHaveBeenCalled();
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      });
+
+      it('still accepts an ordinary invitation, and keeps the same message for a bad token', async () => {
+        mockPrisma.user.findFirst.mockResolvedValue(invitee());
+        mockAuthApi.signUpEmail.mockResolvedValue({
+          user: { id: 'authuser-1' },
+        });
+        await service.acceptInvitation({
+          token: 'valid-token',
+          password: 'newpassword123',
+        });
+        expect(mockPrisma.user.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ status: 'ACTIVE' }) as object,
+          }),
+        );
+
+        mockPrisma.user.findFirst.mockResolvedValue(null);
+        const e = await refusalOf(
+          service.acceptInvitation({
+            token: 'nope',
+            password: 'newpassword123',
+          }),
+        );
+        // The current screen keys off status and message; both are unchanged.
+        expect(e.getStatus()).toBe(400);
+        expect((e.getResponse() as { message: string }).message).toBe(
+          'Invalid or expired invitation',
+        );
+      });
+    });
+
     it('creates the AuthUser/AuthAccount and activates the user for a valid token', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
