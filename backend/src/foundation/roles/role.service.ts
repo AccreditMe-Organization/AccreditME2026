@@ -53,7 +53,7 @@ export interface ListRolesFilters {
 const ROLE_SORT = new SortWhitelist(
   ['nameEn', 'nameAr', 'key', 'isSystem', 'createdAt'] as const,
   { compound: [{ isSystem: 'desc' }, { nameEn: 'asc' }] },
-  { nullsLast: ['nameAr'] },
+  { model: 'Role', nullsLast: ['nameAr'] },
 );
 
 @Injectable()

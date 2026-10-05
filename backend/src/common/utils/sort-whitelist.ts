@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { Prisma } from '../../../generated/prisma/client';
 
 // ACC-78 — resolves a caller-supplied sort into a Prisma `orderBy`, but ONLY
 // from a fixed set the endpoint declares.
@@ -18,6 +19,20 @@ type SortDir = 'asc' | 'desc';
 // A column that can hold NULL may be sorted with Prisma's `{ sort, nulls }`
 // form instead of a bare direction. See `nullsLast` below.
 type OrderBy = Record<string, SortDir | { sort: SortDir; nulls: 'last' }>;
+
+// ACC-160 — every (model, column) any whitelist sorts NULLS LAST, recorded as
+// each is constructed. Read by sort-whitelist.schema.spec.ts, which checks each
+// pair against schema.prisma: a REQUIRED column listed here type-checks and
+// then fails only when a request sorts by it, so the check has to be a test.
+// Module-level and append-only; nothing in the application reads it.
+const nullsLastRegistry: { model: Prisma.ModelName; column: string }[] = [];
+
+export function registeredNullsLastColumns(): readonly {
+  model: Prisma.ModelName;
+  column: string;
+}[] {
+  return [...nullsLastRegistry];
+}
 
 export class SortWhitelist<TColumn extends string> {
   // The fallback may be COMPOUND — an array, applied in order. Roles is why:
@@ -45,7 +60,10 @@ export class SortWhitelist<TColumn extends string> {
   // ("Expected SortOrder, provided Object" — measured against the dev database,
   // ACC-160). The compiler does not catch it here, because `resolve()` returns
   // a loose Record rather than the model's own orderBy type; so a required
-  // column listed by mistake fails on the first request that sorts by it.
+  // column listed by mistake would fail on the first request that sorts by it.
+  // That is why `model` is required alongside `nullsLast`: it lets
+  // sort-whitelist.schema.spec.ts check every listed column against
+  // schema.prisma, so the mistake fails CI instead.
   //
   // Opt-in rather than a default so every other whitelist (users,
   // notifications) emits exactly what it did before.
@@ -54,8 +72,12 @@ export class SortWhitelist<TColumn extends string> {
     private readonly fallback:
       | { column: TColumn; dir: SortDir }
       | { compound: OrderBy[] },
-    private readonly options: { nullsLast?: readonly TColumn[] } = {},
-  ) {}
+    private readonly options?: { model: Prisma.ModelName; nullsLast: readonly TColumn[] },
+  ) {
+    for (const column of options?.nullsLast ?? []) {
+      nullsLastRegistry.push({ model: options!.model, column });
+    }
+  }
 
   // Returns a Prisma orderBy — an object for an explicit sort, or whatever the
   // fallback declares. An UNKNOWN column is rejected with a 400 rather than
@@ -80,7 +102,7 @@ export class SortWhitelist<TColumn extends string> {
     }
     const defaultDir = 'compound' in this.fallback ? 'asc' : this.fallback.dir;
     const dir = sortDir ?? defaultDir;
-    if (this.options.nullsLast?.includes(sortBy as TColumn)) {
+    if (this.options?.nullsLast.includes(sortBy as TColumn)) {
       return { [sortBy]: { sort: dir, nulls: 'last' } };
     }
     return { [sortBy]: dir };

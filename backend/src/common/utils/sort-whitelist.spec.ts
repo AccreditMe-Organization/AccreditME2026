@@ -97,6 +97,7 @@ describe('SortWhitelist (ACC-78)', () => {
 // directions, where Postgres's own default puts NULLs first on DESC.
 describe('SortWhitelist nullsLast (ACC-160)', () => {
   const sort = new SortWhitelist(['nameEn', 'nameAr'] as const, { column: 'nameEn', dir: 'asc' }, {
+    model: 'Role',
     nullsLast: ['nameAr'],
   });
 
