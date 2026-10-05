@@ -34,7 +34,8 @@
     "unsaved": "غير محفوظ",
     "view": "عرض",
     "yes": "نعم",
-    "notActiveYet": "غير مُفعَّل بعد"
+    "notActiveYet": "غير مُفعَّل بعد",
+    "actions": "الإجراءات"
   },
   "nav": {
     "dashboard": "لوحة التحكم",
@@ -555,12 +556,12 @@
     },
     "status": {
       "title": "الحالة",
-      "pending": "قيد الانتظار",
+      "pending": "مُسندة",
       "in_progress": "قيد التنفيذ",
-      "overdue": "متأخرة",
       "completed": "مكتملة",
       "cancelled": "ملغاة",
-      "unassigned": "غير معينة"
+      "unassigned": "غير معينة",
+      "rejected": "مرفوضة"
     },
     "evidenceType": {
       "text": "نص",
@@ -611,7 +612,30 @@
       "closeCalendarFirst": "أغلق التقويم للمتابعة"
     },
     "removeAssignee": "إزالة",
-    "raisedFrom": "على {{record}}"
+    "raisedFrom": "على {{record}}",
+    "overdueBadge": "متأخرة",
+    "start": "بدء",
+    "startNamed": "بدء «{{title}}»",
+    "reject": "رفض",
+    "rejectNamed": "رفض «{{title}}»",
+    "rejectReason": "السبب",
+    "rejectReasonHint": "يقرؤه من أسند إليك هذه المهمة ليعيد إسنادها.",
+    "rejectReasonTooLong": "استخدم 1000 حرف أو أقل.",
+    "rejectedByNamed": "رفضها {{name}}: {{reason}}",
+    "rejectedReasonOnly": "مرفوضة: {{reason}}",
+    "addLink": "إضافة رابط",
+    "addLinkNamed": "إضافة رابط دليل إلى «{{title}}»",
+    "linkUrl": "الرابط",
+    "linkUrlHint": "يبدأ بـ https:// أو http://",
+    "linkUrlInvalid": "أدخل رابطًا يبدأ بـ https:// أو http://.",
+    "linkTitle": "العنوان",
+    "linkTitleHint": "اختياري — كيف يظهر الرابط للمراجِع.",
+    "completeNamed": "إكمال «{{title}}»",
+    "completeNamedNeedsEvidence": "إكمال «{{title}}» — أضف دليلًا أولًا",
+    "completeNeedsEvidence": "أضف دليلًا قبل الإكمال",
+    "evidenceRequired": "الدليل مطلوب",
+    "evidenceRequiredHint": "يجب أن يضيف المُسند إليه دليلًا قبل أن يتمكن من إكمال المهمة.",
+    "evidenceNone": "لم يُضف أي دليل بعد"
   },
   "auth": {
     "login": "تسجيل الدخول",
@@ -990,6 +1014,14 @@
         "few": "مُسندة إلى {{count}} أشخاص",
         "many": "مُسندة إلى {{count}} شخصًا",
         "other": "مُسندة إلى {{count}} شخص"
+      },
+      "evidenceAdded": {
+        "zero": "لم يُضف أي دليل بعد",
+        "one": "أُضيف دليل واحد",
+        "two": "أُضيف دليلان",
+        "few": "أُضيفت {{count}} أدلة",
+        "many": "أُضيف {{count}} دليلًا",
+        "other": "أُضيف {{count}} دليل"
       }
     },
     "user": {
