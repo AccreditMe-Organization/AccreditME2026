@@ -18,6 +18,25 @@ const ORG_B = 'org-b';
 const ACTOR = 'admin-1';
 
 describe('UserService', () => {
+  // ACC-158 — invite() builds an absolute link, which needs the base domain.
+  // Set for every test and restored after, so no spec depends on the
+  // developer's own environment, and APP_LINK_ORIGIN is cleared so a local
+  // override cannot change what the link assertions see.
+  const savedLinkEnv = {
+    APP_BASE_DOMAIN: process.env['APP_BASE_DOMAIN'],
+    APP_LINK_ORIGIN: process.env['APP_LINK_ORIGIN'],
+  };
+  beforeAll(() => {
+    process.env['APP_BASE_DOMAIN'] = 'accreditme.app';
+    delete process.env['APP_LINK_ORIGIN'];
+  });
+  afterAll(() => {
+    for (const [key, value] of Object.entries(savedLinkEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
   let service: UserService;
   let mockPrisma: any;
   let mockAuditLog: { log: jest.Mock };
@@ -1143,6 +1162,7 @@ describe('UserService', () => {
       mockPrisma.organization.findUnique.mockResolvedValue({
         id: ORG_A,
         name: 'Acme',
+        slug: 'acme',
         maxUsers: 25,
       });
       mockPrisma.user.count.mockResolvedValue(2);
@@ -1189,7 +1209,7 @@ describe('UserService', () => {
     });
 
     it('throws ConflictException when the seat limit has been reached', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 2 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 2 });
       mockPrisma.user.count.mockResolvedValue(2);
 
       await expect(
@@ -1198,7 +1218,7 @@ describe('UserService', () => {
     });
 
     it('throws ConflictException when a user with this email already exists in the tenant', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       mockPrisma.user.count.mockResolvedValue(1);
       mockPrisma.user.findFirst.mockResolvedValue({ id: 'existing' });
 
@@ -1212,7 +1232,7 @@ describe('UserService', () => {
     // previously still assignable to a brand-new invite, indistinguishable
     // from an active one.
     it('throws ConflictException when the assigned position is deactivated (isActive: false)', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       mockPrisma.user.count.mockResolvedValue(0);
       mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.orgPosition.findFirst.mockResolvedValue({
@@ -1235,7 +1255,7 @@ describe('UserService', () => {
     // ACC-40 Section 2.4 — conditional primaryOrgUnitId requirement.
     describe('primaryOrgUnitId conditional requirement', () => {
       beforeEach(() => {
-        mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+        mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
         mockPrisma.user.count.mockResolvedValue(1);
         mockPrisma.user.findFirst.mockResolvedValue(null);
       });
@@ -1292,7 +1312,7 @@ describe('UserService', () => {
       const NON_ROOT_UNIT = { id: 'unit-1', parentId: 'unit-parent' };
 
       beforeEach(() => {
-        mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+        mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
         mockPrisma.user.count.mockResolvedValue(0);
         mockPrisma.user.findFirst.mockResolvedValue(null);
         mockPrisma.orgUnit.count.mockResolvedValue(1);
@@ -1375,7 +1395,7 @@ describe('UserService', () => {
       const HEAD_POSITION = { id: 'pos-director', isSingleAssignee: true, isUnitHeadPosition: true, isActive: true };
 
       beforeEach(() => {
-        mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+        mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
         mockPrisma.user.count.mockResolvedValue(0);
         mockPrisma.user.findFirst.mockResolvedValue(null);
         mockPrisma.orgUnit.count.mockResolvedValue(1);
@@ -1443,7 +1463,7 @@ describe('UserService', () => {
 
     // ACC-40 Section 2.6.4/2.6.5
     it('grants the mapped role when the assigned position is head-conferring with a roleId — fires regardless of INVITED status', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       // Discriminates the seat-limit count (no positionId/position in its
       // where clause) from validatePositionAssignment()'s own internal
       // single-assignee/unit-head-uniqueness holder counts (always one or
@@ -1482,7 +1502,7 @@ describe('UserService', () => {
     });
 
     it('does not attempt a grant when the assigned position confers no role (roleId null)', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       // ACC-46 — status is now object-shaped ({in: [...]}) on every one of
       // these count() calls, not just the seat-limit query, so that alone
       // no longer distinguishes them. positionId/position does: only the
@@ -1515,7 +1535,7 @@ describe('UserService', () => {
     // some unrelated later profile update happened to touch that unit.
 
     it('refreshes org-unit-head vacancy for the assigned unit when invite() sets primaryOrgUnitId', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       mockPrisma.user.count.mockImplementation(({ where }: any) =>
         Promise.resolve(typeof where.status === 'object' ? 1 : 0),
       );
@@ -1539,7 +1559,7 @@ describe('UserService', () => {
     });
 
     it('does not refresh org-unit-head vacancy when invite() sets no primaryOrgUnitId', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       mockPrisma.user.count.mockResolvedValue(0);
       mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.orgUnit.count.mockResolvedValue(0); // brand-new tenant, no active OrgUnit yet
@@ -1694,7 +1714,7 @@ describe('UserService', () => {
     const ORDINARY_POSITION = { id: 'pos-ordinary', isSingleAssignee: false, isUnitHeadPosition: false, isActive: true };
 
     beforeEach(() => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       mockPrisma.user.count.mockResolvedValue(1);
       mockPrisma.user.findFirst.mockResolvedValue(null); // no email conflict
     });
@@ -1967,7 +1987,7 @@ describe('UserService', () => {
     const HEAD_POSITION_B = { id: 'pos-head-b', isSingleAssignee: true, isUnitHeadPosition: true, isActive: true };
 
     beforeEach(() => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       mockPrisma.user.count.mockResolvedValue(1);
       mockPrisma.user.findFirst.mockResolvedValue(null);
     });
@@ -2087,7 +2107,7 @@ describe('UserService', () => {
     const HEAD_POSITION = { id: 'pos-head', isSingleAssignee: true, isUnitHeadPosition: true, isActive: true };
 
     beforeEach(() => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', maxUsers: 25 });
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, name: 'Acme', slug: 'acme', maxUsers: 25 });
       mockPrisma.user.count.mockResolvedValue(1); // an existing holder is present — would block without a bypass
     });
 
