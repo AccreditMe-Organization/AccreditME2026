@@ -2,6 +2,8 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Resend } from 'resend';
 import { PrismaService } from '../../prisma/prisma.service';
+import { resolveAppLinkConfig } from '../../common/config/app-url.config';
+import { renderEmailHtml } from './email-html';
 
 interface EmailDeliveryJobData {
   notificationId: string;
@@ -36,7 +38,9 @@ export class NotificationEmailProcessor extends WorkerHost {
       from: process.env['RESEND_FROM_EMAIL'] || 'noreply@accreditme.com',
       to: notification.user.email,
       subject,
-      html: `<p>${body}</p>`,
+      // ACC-158 — escaped, with the product's own links as anchors, and an
+      // Arabic body marked right-to-left. See email-html.ts.
+      html: renderEmailHtml(body, useArabic ? 'rtl' : 'ltr', resolveAppLinkConfig()),
     });
 
     if (result.error) {
