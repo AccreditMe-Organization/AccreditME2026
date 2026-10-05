@@ -164,8 +164,10 @@ export class TaskController {
     return this.taskService.reassign(id, dto, tenantId, userId);
   }
 
+  // ACC-162 — deliberately NOT permission-gated, for the reason complete()
+  // above states: evidence is self-scoped. TaskService.addEvidence() 404s
+  // anyone who is not a currently-active assignee and refuses a closed task.
   @Post(':id/evidence')
-  @Permissions(TASKS_PERMISSIONS.COMPLETE)
   addEvidence(
     @Param('id') id: string,
     @Body() dto: AddTaskEvidenceDto,
