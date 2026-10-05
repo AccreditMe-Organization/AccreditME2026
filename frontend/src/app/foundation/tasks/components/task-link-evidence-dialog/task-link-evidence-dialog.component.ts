@@ -31,9 +31,10 @@ function httpUrl(control: AbstractControl): ValidationErrors | null {
  * proof, and file attachments wait for the storage tickets — so this is the
  * one evidence form there is.
  *
- * ## Body height — two fields, 79 + 79 + 12 = 170 against the 420 cap
+ * ## Body height — two fields, FORM density
  *
- * FORM density: two blocks, far from five.
+ * Measured in the browser (5 Oct 2026, 1440x900): 186px in Arabic against the
+ * 420 cap, no scroll. Two blocks, far from five.
  */
 @Component({
   selector: 'app-task-link-evidence-dialog',

@@ -35,8 +35,9 @@ export interface TaskRejection {
  *
  * ## Body height — FORM density
  *
- *     rejection strip ≈ 52 (only for a rejected task) + 12 + people 79 + 12
- *     + reason 79 = 234 against the 420 cap
+ * Measured in the browser (5 Oct 2026, 1440x900): 243px in English for a
+ * rejected task, with the rejection strip and a two-line reason; 186px in
+ * Arabic without the strip. Both against the 420 cap, neither scrolling.
  *
  * The people picker is a trigger (OverlaySelectComponent), not the ~200px
  * inline listbox the Unassigned tasks screen used to render, so the dialog

@@ -30,9 +30,10 @@
 // it is set and nothing has been added. It sits on step 2 because it is part of
 // the substance — what proves the work — not the ten-second urgent path.
 //
-// Step 2 measures description 79 + textarea growth 52 + 16 + source row 79 +
-// 16 + checkbox 22 + hint 17 = 281 against the 420 cap with the source
-// unlocked, less with it locked; well clear in both languages.
+// Step 2 with the checkbox, MEASURED in the browser (5 Oct 2026, 1440x900):
+// 263px English and 274px Arabic with the source unlocked (/tasks/all), 264px
+// English with it locked (a committee record) — all against the 420 cap, none
+// scrolling. FORM density holds: three blocks, not five.
 //
 // Template 3's delegation label is still not built: it waits for stage task
 // definitions (CF-07), and a disabled placeholder would be worse than nothing.

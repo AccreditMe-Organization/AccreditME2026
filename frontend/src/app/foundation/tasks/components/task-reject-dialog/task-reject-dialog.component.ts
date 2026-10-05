@@ -24,9 +24,9 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
  *
  * ## Body height — one field, well under the 420 cap, so FORM density
  *
- *     reason 79 + textarea growth (4 rows ≈ 96 − 36 = 60) + error line 20
- *
- * One block, and nowhere near five, so not compact.
+ * Measured in the browser (5 Oct 2026, 1440x900): 145px in English WITH the
+ * required-field error showing, which is its tallest state. One block, and
+ * nowhere near five, so not compact.
  *
  * The 1000-character limit is a validator, not a `maxlength` attribute: an
  * attribute silently stops typing at the limit, where a validator says so.
