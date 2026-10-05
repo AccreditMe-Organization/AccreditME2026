@@ -1,12 +1,31 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import { buildCorsOptions, resolveFrontendOrigin } from './common/config/cors.config';
+import { buildCorsOptions } from './common/config/cors.config';
+import { validateBootConfig } from './common/config/boot.config';
 
 async function bootstrap(): Promise<void> {
+  // Every required value is checked BEFORE the app is created — before the
+  // database connects and before the in-process workers register — so a
+  // missing one stops the process before it can serve a request or consume a
+  // job. validateBootConfig() is the whole list, and its spec is the proof
+  // (ACC-158).
+  const config = validateBootConfig();
+  const logger = new Logger('Bootstrap');
+  if (config.appLinks.devOrigin) {
+    logger.warn(
+      `APP_LINK_ORIGIN is set: emailed links point at ${config.appLinks.devOrigin}, ` +
+        'not at tenant subdomains. Development only — never set it on a deployed service.',
+    );
+  } else {
+    logger.log(
+      `Emailed links point at https://{slug}.${config.appLinks.baseDomain}`,
+    );
+  }
+
   const app = await NestFactory.create(AppModule);
 
   app.use(
@@ -33,7 +52,7 @@ async function bootstrap(): Promise<void> {
   // `process.env['FRONTEND_URL']` with no check, and that variable is unset on
   // Railway. See cors.config.ts for what the middleware measurably does with
   // `undefined` — it is not what the defect report assumed.
-  app.enableCors(buildCorsOptions(resolveFrontendOrigin()));
+  app.enableCors(buildCorsOptions(config.frontendOrigin));
 
   app.setGlobalPrefix('api/v1');
 
