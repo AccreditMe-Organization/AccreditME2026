@@ -1013,6 +1013,73 @@ check — on both the direct and the MFA path; the MFA path recorded none before
 `ForgotPasswordDto`): Better Auth authenticated every capitalisation as one
 account while the lockout counted each spelling separately.
 
+### 1.13 Invitations — the lookup, and the one open-invitation rule (ACC-120 slice 9c)
+
+**`POST /auth/invitations/lookup`** tells the Accept invitation page which
+organisation is inviting the holder of a token (decided 4 Oct: Login and Forgot
+password never name an organisation; Accept invitation does, through a lookup
+that validates the token). Public, like `accept-invitation`; POST so the token
+travels in the body and never sits in a URL or an access log. Read-only: it never
+consumes, extends or changes the invitation.
+
+- **An open invitation returns exactly `{ name, nameAr }`** — no email, inviter,
+  role, slug or logo. `nameAr` is NULL when the tenant has none.
+- **Every other case is ONE refusal, byte for byte**: 400
+  `{ statusCode: 400, message: 'Invalid or expired invitation', error: 'Bad
+  Request', code: 'INVITATION_INVALID' }` — `InvitationRefusalException`
+  (`foundation/auth/invitation-refusal.ts`), a frozen body copied per throw. That
+  covers unknown, expired, used, revoked, a deactivated invitee, a closed tenant,
+  and any body that is not exactly `{ token: <48 lower-case hex> }`.
+- **The body is taken `unknown`, on purpose.** With a DTO class the global
+  `ValidationPipe` (whitelist + forbidNonWhitelisted) would answer a malformed
+  body itself with its own message — a second refusal shape. A plain object type
+  is not validated by the pipe, so the shape check is in the service and a bad
+  shape is refused like a bad token.
+- **Unparseable JSON is NOT one of the identical cases** (Ahmad, 2026-10-05). The
+  body parser rejects it before any route runs, the same on every endpoint:
+  measured, 400 `{"message":"Unexpected end of JSON input","error":"Bad
+  Request","statusCode":400}` — the parser's own message, varying with the input,
+  and saying nothing about any invitation.
+
+**The open-invitation rule, `isOpenInvitation(row, now)`**
+(`foundation/auth/open-invitation.ts`), is read by BOTH the lookup and
+`acceptInvitation()`, so the page and the accept can never disagree:
+
+| state | how it is recognised |
+|---|---|
+| used | acceptance clears the token, so it matches no row — identical to unknown by construction |
+| revoked | `revokeInvitation()` deletes the row — identical to unknown by construction |
+| expired | `invitationExpiresAt` missing, or strictly earlier than now (the expiry instant itself is still open) |
+| deactivated invitee | `status !== 'INVITED'`. `deactivate()` flips an invitee to INACTIVE but leaves the token |
+| closed tenant | `Organization.status` not TRIAL or ACTIVE — SUSPENDED, CANCELLED and OFFBOARDING are refused |
+
+**`findInvitation(token)` is the one query by token**, with the organisation
+joined, so every outcome costs one round trip and is decided in memory: response
+time cannot tell "no such token" from "found but refused". Not scoped by
+`organizationId`, deliberately — it runs before anyone is signed in, the token
+(192 random bits, unique across tenants) is the key, and the organisation comes
+from the row.
+
+**`acceptInvitation()` adopted the rule in the same slice.** Two holes it closed:
+a deactivated invitee's surviving token used to accept and make them ACTIVE
+again, and a closed tenant's invitations still accepted. Its status and message
+are unchanged, plus the code. Left as it was, for 9e and ACC-129: validation
+order (a malformed body still gets the pipe's own message), the 409 position
+conflict and the tenant-admin notifications it sends on every attempt, and
+Better Auth's sign-up errors passed through.
+
+**OPEN — a closed tenant's users are refused NOWHERE else** (investigated
+2026-10-05, not fixed). `suspendTenant()` (`platform/tenant/platform-tenant.service.ts`)
+only sets the status; it ends no session. `resolveOrganizationId()` checks that
+the slug exists, not its status; `completeLogin()` and `refresh()` check only the
+user's status; `TenantGuard` checks only the user's `tokenVersion`; there is no
+middleware. So the people of a SUSPENDED, CANCELLED or OFFBOARDING tenant can
+still sign in and use every endpoint. To become its own ticket.
+
+**Not done, recorded:** clearing the token from the page's address bar after
+reading it (9e); hashing invitation tokens at rest (they are plaintext in
+`User.invitationToken` and in the stored invitation email body).
+
 ---
 
 ## 2. Workflow Engine
