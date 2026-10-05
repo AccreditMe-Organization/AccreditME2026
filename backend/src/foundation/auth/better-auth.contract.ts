@@ -17,3 +17,42 @@
  * attempt.
  */
 export const BETTER_AUTH_INVALID_CREDENTIALS = 'INVALID_EMAIL_OR_PASSWORD';
+
+// ---------------------------------------------------------------------------
+// The sign-in MFA challenge (plugins/two-factor).
+//
+// After a correct password for an account with MFA on, Better Auth writes TWO
+// AuthVerification rows and a signed cookie, all expiring together:
+//   `2fa-<random>`           value: the AuthUser id     (the challenge)
+//   `2fa-attempts-<random>`  value: codes tried so far   (its attempt counter)
+//   cookie `better-auth.two_factor` = encodeURIComponent(`2fa-<random>.<sig>`)
+// where <sig> is base64(HMAC-SHA256(BETTER_AUTH_SECRET, `2fa-<random>`)).
+// ---------------------------------------------------------------------------
+
+/** The challenge cookie's name; `__Secure-` is prepended over https. */
+export const TWO_FACTOR_COOKIE_NAME = 'better-auth.two_factor';
+export const SECURE_COOKIE_PREFIX = '__Secure-';
+
+/** Prefix of the challenge row's identifier. */
+export const TWO_FACTOR_CHALLENGE_PREFIX = '2fa-';
+/** Prefix of the attempt-counter row, followed by the challenge identifier. */
+export const TWO_FACTOR_ATTEMPTS_PREFIX = '2fa-attempts-';
+
+/** Codes one challenge accepts before it is spent (`beginAttempt(5)`). */
+export const TWO_FACTOR_ATTEMPTS_PER_CHALLENGE = 5;
+/** Failed codes, across challenges, before the user's MFA locks. */
+export const TWO_FACTOR_MAX_FAILURES_PER_USER = 10;
+/** How long a challenge lives, in seconds (`twoFactorCookieMaxAge ?? 600`). */
+export const TWO_FACTOR_CHALLENGE_SECONDS = 600;
+
+/** Better Auth's verifyTOTP refusal codes. */
+export const BETTER_AUTH_TWO_FACTOR_CODES = {
+  /** A wrong code — the challenge is still live. */
+  INVALID_CODE: 'INVALID_CODE',
+  /** No challenge: the cookie is missing, tampered with, or expired. */
+  INVALID_TWO_FACTOR_COOKIE: 'INVALID_TWO_FACTOR_COOKIE',
+  /** The challenge's five attempts are spent; it is gone. */
+  TOO_MANY_ATTEMPTS: 'TOO_MANY_ATTEMPTS_REQUEST_NEW_CODE',
+  /** The user's MFA is locked after ten failures. */
+  ACCOUNT_LOCKED: 'ACCOUNT_TEMPORARILY_LOCKED',
+} as const;

@@ -44,8 +44,15 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
-import { BETTER_AUTH_INVALID_CREDENTIALS } from './better-auth.contract';
+import { BETTER_AUTH_INVALID_CREDENTIALS, BETTER_AUTH_TWO_FACTOR_CODES } from './better-auth.contract';
 import { AuthRefusalException } from './auth-refusal';
+import {
+  attemptsRemaining,
+  challengeIdentifierFromRequest,
+  challengeIdentifierFromSetCookies,
+  loadChallenge,
+  twoFactorLockedUntil,
+} from './two-factor-challenge';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -331,7 +338,10 @@ export class AuthService {
     dto: LoginDto,
     req: ExpressRequest,
     res: ExpressResponse,
-  ): Promise<{ success: true; user: PublicUser; language: string } | { mfaRequired: true }> {
+  ): Promise<
+    | { success: true; user: PublicUser; language: string }
+    | { mfaRequired: true; mfaExpiresAt?: string }
+  > {
     const organizationId = await this.resolveOrganizationId(dto.organizationSlug);
     const namespacedEmail = AuthService.namespacedEmail(organizationId, dto.email);
 
@@ -423,10 +433,21 @@ export class AuthService {
       // it comes back automatically as a normal Cookie header on
       // /auth/mfa/verify, which is all verifyTOTP needs to find it. Nothing is
       // recorded yet: the sign-in is not complete until verifyMfa() succeeds.
-      for (const cookie of result.headers.getSetCookie()) {
+      const setCookies = result.headers.getSetCookie();
+      for (const cookie of setCookies) {
         res.append('Set-Cookie', cookie);
       }
-      return { mfaRequired: true };
+      // ACC-120 slice 9b — when the challenge ends, read from the challenge
+      // row itself rather than assumed from a constant. Omitted, with a
+      // warning, if the challenge cannot be read: a missing display hint must
+      // not refuse a sign-in whose password was right.
+      const identifier = challengeIdentifierFromSetCookies(setCookies);
+      const challenge = identifier ? await loadChallenge(this.prisma, identifier) : null;
+      if (!challenge) {
+        this.logger.warn('MFA challenge issued but not readable; mfaExpiresAt omitted');
+        return { mfaRequired: true };
+      }
+      return { mfaRequired: true, mfaExpiresAt: challenge.expiresAt.toISOString() };
     }
 
     // A 200 with neither a challenge nor a user is not a shape Better Auth
@@ -461,24 +482,23 @@ export class AuthService {
     req: ExpressRequest,
     res: ExpressResponse,
   ): Promise<{ success: true; user: PublicUser; language: string }> {
-    let result: Response;
-    try {
-      result = (await this.auth.api.verifyTOTP({
-        body: { code: dto.code },
-        // Only the Cookie header matters here — Better Auth reads its own
-        // two-factor-pending cookie from it (set during login() above).
-        headers: new Headers({ cookie: req.headers.cookie ?? '' }),
-        asResponse: true,
-      })) as unknown as Response;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired code');
-    }
+    // ACC-120 slice 9b — like signInEmail, verifyTOTP RETURNS a refusal as a
+    // Response rather than throwing it, so the outcome is read off the
+    // Response. A thrown error is a fault and propagates as a 500.
+    const result = (await this.auth.api.verifyTOTP({
+      body: { code: dto.code },
+      // Only the Cookie header matters here — Better Auth reads its own
+      // two-factor-pending cookie from it (set during login() above).
+      headers: new Headers({ cookie: req.headers.cookie ?? '' }),
+      asResponse: true,
+    })) as unknown as Response;
 
-    const body = (await result.json()) as { user?: { id: string } };
-    if (!body.user?.id) throw new UnauthorizedException('Invalid or expired code');
+    const body = (await result.json()) as { user?: { id: string }; code?: string };
+    if (!result.ok) throw await this.mfaRefusal(result.status, body.code, req);
+    if (!body.user?.id) throw new Error('Better Auth verifyTOTP returned 200 without a user');
 
     const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
-    if (!appUser) throw new UnauthorizedException('Invalid or expired code');
+    if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
 
     // The lockout's key for this person: their organization, and their email
     // as login() normalised it (LoginDto lower-cases it; the stored email is
@@ -488,6 +508,41 @@ export class AuthService {
       email: appUser.email.toLowerCase(),
     });
     return { success: true, user, language };
+  }
+
+  // ACC-120 slice 9b — Better Auth's MFA refusal, as one of ours. Every one is a
+  // 401, as `verifyMfa()` returned before. Anything not listed is a fault.
+  private async mfaRefusal(
+    status: number,
+    code: string | undefined,
+    req: ExpressRequest,
+  ): Promise<Error> {
+    const identifier = challengeIdentifierFromRequest(req.headers.cookie);
+    const challenge = identifier ? await loadChallenge(this.prisma, identifier) : null;
+
+    switch (code) {
+      case BETTER_AUTH_TWO_FACTOR_CODES.INVALID_CODE:
+        // The challenge is live, and its counter has just moved.
+        if (!challenge) return new AuthRefusalException('MFA_EXPIRED');
+        return new AuthRefusalException('MFA_INVALID', {
+          attemptsRemaining: await attemptsRemaining(this.prisma, challenge),
+        });
+      case BETTER_AUTH_TWO_FACTOR_CODES.INVALID_TWO_FACTOR_COOKIE:
+      case BETTER_AUTH_TWO_FACTOR_CODES.TOO_MANY_ATTEMPTS:
+        // Missing, tampered with, expired, or spent: either way there is no
+        // challenge left to answer, and the way on is to sign in again.
+        return new AuthRefusalException('MFA_EXPIRED');
+      case BETTER_AUTH_TWO_FACTOR_CODES.ACCOUNT_LOCKED: {
+        // Reached only after a correct password, so it discloses nothing about
+        // whether the account exists.
+        const lockedUntil = challenge
+          ? await twoFactorLockedUntil(this.prisma, challenge.authUserId)
+          : null;
+        return new AuthRefusalException('ACCOUNT_LOCKED', { lockedUntil: lockedUntil ?? new Date() });
+      }
+      default:
+        return new Error(`Better Auth verifyTOTP returned ${status}${code ? ` ${code}` : ''}`);
+    }
   }
 
   async refresh(req: ExpressRequest, res: ExpressResponse): Promise<{ success: true }> {
