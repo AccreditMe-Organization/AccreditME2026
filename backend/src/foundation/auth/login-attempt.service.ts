@@ -9,10 +9,19 @@ export interface RecordLoginAttemptInput {
   organizationId: string;
   email: string;
   success: boolean;
-  failureReason?: 'invalid_password' | 'locked' | 'no_such_user' | 'mfa_failed';
+  failureReason?: 'invalid_password' | 'locked' | 'no_such_user' | 'mfa_failed' | 'account_inactive';
   ipAddress?: string;
   userAgent?: string;
 }
+
+// ACC-120 slice 9b — reasons that are RECORDED but are neither a failure nor a
+// success as far as the lock is concerned. `account_inactive` is a sign-in with
+// the CORRECT password, refused because the account is deactivated or
+// suspended: counting it as a failure would lock someone for knowing their own
+// password, and counting it as a success would wipe a real failure streak. So
+// the streak skips it in both directions, and the attempt is still written down
+// (every attempt is — CLAUDE.md, Account Lockout).
+export const NEUTRAL_FAILURE_REASONS: ReadonlySet<string> = new Set(['account_inactive']);
 
 interface LockoutConfig {
   threshold: number;
@@ -98,6 +107,7 @@ export class LoginAttemptService {
     const streak: Date[] = [];
     for (const attempt of attempts) {
       if (attempt.success) break;
+      if (attempt.failureReason && NEUTRAL_FAILURE_REASONS.has(attempt.failureReason)) continue;
       streak.push(attempt.createdAt);
     }
 

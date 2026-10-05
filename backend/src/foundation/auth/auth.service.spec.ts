@@ -177,6 +177,14 @@ describe('AuthService', () => {
       mockAuthApi.signInEmail.mockResolvedValue(
         fakeResponse({ twoFactorRedirect: true }, ['ba_2fa=abc; Path=/']),
       );
+      // ACC-120 slice 9b — the person is resolved, and found ACTIVE, before
+      // the challenge is handed over.
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        status: 'ACTIVE',
+      });
 
       const req = fakeExpressReq();
       const res = fakeExpressRes();
@@ -190,7 +198,8 @@ describe('AuthService', () => {
       expect(result).toEqual({ mfaRequired: true });
       expect(res.append).toHaveBeenCalledWith('Set-Cookie', 'ba_2fa=abc; Path=/');
       expect(res.cookie).not.toHaveBeenCalled();
-      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      // Not complete yet, so nothing is recorded — success waits for verifyMfa().
+      expect(mockLoginAttemptService.record).not.toHaveBeenCalled();
     });
 
     it('throws UnauthorizedException when Better Auth rejects the credentials', async () => {

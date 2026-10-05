@@ -249,16 +249,37 @@ export class AuthService {
   // lastLoginIp BEFORE overwriting it so isNewIp() has something to compare
   // against — see LoginAttemptService.isNewIp()'s own comment for why this
   // doesn't need a separate LoginAttempt query.
+  //
+  // ACC-120 slice 9b — THE ONE PLACE a successful sign-in is recorded, and only
+  // once every check has passed. It used to be recorded in login() BEFORE this
+  // method refused an inactive account, so a deactivated user with the right
+  // password wrote a success — wiping the failure streak — and was then turned
+  // away; and the MFA path recorded nothing at all, so a completed MFA sign-in
+  // never reset the streak either. `attempt` is the (organization, email) key
+  // the lockout counts by.
   private async completeLogin(
     appUserId: string,
     req: ExpressRequest,
     res: ExpressResponse,
+    attempt: { organizationId: string; email: string },
   ): Promise<PublicUser & { language: string }> {
     const user = await this.prisma.user.findFirst({ where: { id: appUserId } });
     if (!user) throw new AuthRefusalException('INVALID_CREDENTIALS');
     if (user.status !== 'ACTIVE') {
+      // Reached here only on the MFA path, by an account deactivated while its
+      // challenge was open — login() refuses an inactive account before it
+      // issues one. Recorded as NEUTRAL, like login()'s refusal.
+      await this.recordInactiveRefusal(attempt, req);
       throw new AuthRefusalException('ACCOUNT_INACTIVE');
     }
+
+    await this.loginAttemptService.record({
+      organizationId: attempt.organizationId,
+      email: attempt.email,
+      success: true,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     const wasNewIp = this.loginAttemptService.isNewIp(user.lastLoginIp, req.ip);
 
@@ -378,10 +399,30 @@ export class AuthService {
       );
     }
 
+    // The password is correct. Resolve the person BEFORE deciding anything
+    // else, on both paths: Better Auth's MFA response carries no user, so the
+    // namespaced email is the one key both paths have. Scoped by organization;
+    // AuthUser.email is unique, so this is one row or none.
+    const appUser = await this.prisma.user.findFirst({
+      where: { organizationId, authUser: { email: namespacedEmail } },
+    });
+    if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
+
+    // An inactive account is refused here — after the password, so the refusal
+    // discloses nothing to someone who does not know it, and BEFORE any MFA
+    // challenge is handed over, so a deactivated person is not asked for a code
+    // they can never use. Recorded as NEUTRAL: it neither counts towards the
+    // lock nor resets it (LoginAttemptService.NEUTRAL_FAILURE_REASONS).
+    if (appUser.status !== 'ACTIVE') {
+      await this.recordInactiveRefusal({ organizationId, email: dto.email }, req);
+      throw new AuthRefusalException('ACCOUNT_INACTIVE');
+    }
+
     if (body.twoFactorRedirect) {
       // Forward Better Auth's own two-factor-pending cookie to the browser —
       // it comes back automatically as a normal Cookie header on
-      // /auth/mfa/verify, which is all verifyTOTP needs to find it.
+      // /auth/mfa/verify, which is all verifyTOTP needs to find it. Nothing is
+      // recorded yet: the sign-in is not complete until verifyMfa() succeeds.
       for (const cookie of result.headers.getSetCookie()) {
         res.append('Set-Cookie', cookie);
       }
@@ -392,21 +433,27 @@ export class AuthService {
     // documents — a fault, not a refusal.
     if (!body.user?.id) throw new Error('Better Auth sign-in returned 200 without a user');
 
-    // AuthUser has no appUserId scalar of its own — User.authUserId is the
-    // FK side of this 1:1 link (see Commit 1's schema).
-    const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
-    if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
-
-    await this.loginAttemptService.record({
+    const { language, ...user } = await this.completeLogin(appUser.id, req, res, {
       organizationId,
       email: dto.email,
-      success: true,
+    });
+    return { success: true, user, language };
+  }
+
+  // ACC-120 slice 9b — an inactive account's refused sign-in, written down but
+  // NEUTRAL for the lock. See NEUTRAL_FAILURE_REASONS.
+  private async recordInactiveRefusal(
+    attempt: { organizationId: string; email: string },
+    req: ExpressRequest,
+  ): Promise<void> {
+    await this.loginAttemptService.record({
+      organizationId: attempt.organizationId,
+      email: attempt.email,
+      success: false,
+      failureReason: 'account_inactive',
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
-
-    const { language, ...user } = await this.completeLogin(appUser.id, req, res);
-    return { success: true, user, language };
   }
 
   async verifyMfa(
@@ -433,7 +480,13 @@ export class AuthService {
     const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
     if (!appUser) throw new UnauthorizedException('Invalid or expired code');
 
-    const { language, ...user } = await this.completeLogin(appUser.id, req, res);
+    // The lockout's key for this person: their organization, and their email
+    // as login() normalised it (LoginDto lower-cases it; the stored email is
+    // lower-cased the same way here so the two always agree).
+    const { language, ...user } = await this.completeLogin(appUser.id, req, res, {
+      organizationId: appUser.organizationId,
+      email: appUser.email.toLowerCase(),
+    });
     return { success: true, user, language };
   }
 
