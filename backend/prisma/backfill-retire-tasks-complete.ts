@@ -96,24 +96,36 @@ async function main(): Promise<void> {
 
   try {
     const [module, action] = RETIRED_PERMISSION.split(':') as [string, string];
-    console.log(`\n${execute ? 'EXECUTE' : 'DRY RUN'} — retiring ${RETIRED_PERMISSION} (${TICKET})\n`);
+    console.log(
+      `\n${execute ? 'EXECUTE' : 'DRY RUN'} — retiring ${RETIRED_PERMISSION} (${TICKET})\n`,
+    );
 
     // ── Condition 1: every organization is the platform org or a fixture ──────
     const organizations = await prisma.organization.findMany({
       select: { id: true, slug: true, isPlatformOrg: true },
       orderBy: { slug: 'asc' },
     });
-    const customers = organizations.filter((o) => !o.isPlatformOrg && !FIXTURE_SLUGS.has(o.slug));
+    const customers = organizations.filter(
+      (o) => !o.isPlatformOrg && !FIXTURE_SLUGS.has(o.slug),
+    );
 
     console.log(`Organizations in this database (${organizations.length}):`);
     for (const o of organizations) {
-      const kind = o.isPlatformOrg ? 'platform org' : FIXTURE_SLUGS.has(o.slug) ? 'seeded fixture' : 'NOT A FIXTURE';
+      const kind = o.isPlatformOrg
+        ? 'platform org'
+        : FIXTURE_SLUGS.has(o.slug)
+          ? 'seeded fixture'
+          : 'NOT A FIXTURE';
       console.log(`  ${o.slug.padEnd(22)} ${kind}`);
     }
 
-    const permission = await prisma.permission.findFirst({ where: { module, action } });
+    const permission = await prisma.permission.findFirst({
+      where: { module, action },
+    });
     if (!permission) {
-      console.log(`\n${RETIRED_PERMISSION} is not in the Permission catalog — already retired, nothing to do.\n`);
+      console.log(
+        `\n${RETIRED_PERMISSION} is not in the Permission catalog — already retired, nothing to do.\n`,
+      );
       return;
     }
 
@@ -127,8 +139,14 @@ async function main(): Promise<void> {
             key: true,
             nameEn: true,
             organizationId: true,
-            rolePermissions: { select: { permission: { select: { module: true, action: true } } } },
-            _count: { select: { userRoles: { where: { user: { status: 'ACTIVE' } } } } },
+            rolePermissions: {
+              select: {
+                permission: { select: { module: true, action: true } },
+              },
+            },
+            _count: {
+              select: { userRoles: { where: { user: { status: 'ACTIVE' } } } },
+            },
           },
         },
       },
@@ -147,11 +165,15 @@ async function main(): Promise<void> {
         roleKey: role.key,
         roleName: role.nameEn,
         holders: role._count.userRoles,
-        permissionsBefore: role.rolePermissions.map((rp) => `${rp.permission.module}:${rp.permission.action}`).sort(),
+        permissionsBefore: role.rolePermissions
+          .map((rp) => `${rp.permission.module}:${rp.permission.action}`)
+          .sort(),
       });
       byOrg.set(role.organizationId, entry);
     }
-    const affected = [...byOrg.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+    const affected = [...byOrg.values()].sort((a, b) =>
+      a.slug.localeCompare(b.slug),
+    );
 
     console.log(
       `\n${execute ? 'Removing' : 'Would remove'} ${grants.length} RolePermission row(s) ` +
@@ -168,8 +190,12 @@ async function main(): Promise<void> {
     }
     if (grants.length === 0) console.log('  (no role grants it)');
 
-    console.log(`\n${execute ? 'Deleting' : 'Would delete'} the Permission catalog row ${RETIRED_PERMISSION} (id ${permission.id}).`);
-    console.log(`${execute ? 'Writing' : 'Would write'} ${affected.length} AuditLog row(s), one per organization above.`);
+    console.log(
+      `\n${execute ? 'Deleting' : 'Would delete'} the Permission catalog row ${RETIRED_PERMISSION} (id ${permission.id}).`,
+    );
+    console.log(
+      `${execute ? 'Writing' : 'Would write'} ${affected.length} AuditLog row(s), one per organization above.`,
+    );
 
     // ── Condition 2: no workflow transition requires it ───────────────────────
     const transitions = await prisma.workflowTransition.findMany({
@@ -180,13 +206,17 @@ async function main(): Promise<void> {
         fromStage: {
           select: {
             nameEn: true,
-            workflowTemplate: { select: { nameEn: true, organizationId: true } },
+            workflowTemplate: {
+              select: { nameEn: true, organizationId: true },
+            },
           },
         },
       },
     });
 
-    console.log(`\nWorkflow transitions requiring ${RETIRED_PERMISSION}: ${transitions.length}`);
+    console.log(
+      `\nWorkflow transitions requiring ${RETIRED_PERMISSION}: ${transitions.length}`,
+    );
     for (const t of transitions) {
       const tpl = t.fromStage.workflowTemplate;
       console.log(
@@ -220,13 +250,17 @@ async function main(): Promise<void> {
     }
 
     if (!execute) {
-      console.log('\nAll conditions hold. Dry run only — re-run with --execute to apply.\n');
+      console.log(
+        '\nAll conditions hold. Dry run only — re-run with --execute to apply.\n',
+      );
       return;
     }
 
     // ── Execute: grants, audit rows and catalog row in one transaction ────────
     const removedCount = await prisma.$transaction(async (tx) => {
-      const result = await tx.rolePermission.deleteMany({ where: { permissionId: permission.id } });
+      const result = await tx.rolePermission.deleteMany({
+        where: { permissionId: permission.id },
+      });
       if (result.count !== grants.length) {
         throw new Error(
           `Expected to remove ${grants.length} row(s) but matched ${result.count}. ` +
@@ -243,20 +277,27 @@ async function main(): Promise<void> {
             objectType: 'RolePermission',
             objectId: null,
             before: {
-              roles: org.roles.map((r) => ({ roleId: r.roleId, roleKey: r.roleKey, permissions: r.permissionsBefore })),
+              roles: org.roles.map((r) => ({
+                roleId: r.roleId,
+                roleKey: r.roleKey,
+                permissions: r.permissionsBefore,
+              })),
             },
             after: {
               roles: org.roles.map((r) => ({
                 roleId: r.roleId,
                 roleKey: r.roleKey,
-                permissions: r.permissionsBefore.filter((p) => p !== RETIRED_PERMISSION),
+                permissions: r.permissionsBefore.filter(
+                  (p) => p !== RETIRED_PERMISSION,
+                ),
               })),
             },
             metadata: {
               source: SCRIPT_NAME,
               ticket: TICKET,
               removedPermission: RETIRED_PERMISSION,
-              reason: 'Permission retired: it gated no endpoint once completion and evidence became self-scoped.',
+              reason:
+                'Permission retired: it gated no endpoint once completion and evidence became self-scoped.',
             },
           },
         });
@@ -277,6 +318,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error('\nBackfill failed:', error instanceof Error ? error.message : error);
+  console.error(
+    '\nBackfill failed:',
+    error instanceof Error ? error.message : error,
+  );
   process.exit(1);
 });
