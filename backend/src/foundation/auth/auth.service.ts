@@ -44,6 +44,20 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
+import {
+  BETTER_AUTH_INVALID_CREDENTIALS,
+  BETTER_AUTH_TWO_FACTOR_CODES,
+} from './better-auth.contract';
+import { AuthRefusalException } from './auth-refusal';
+import {
+  attemptsRemaining,
+  challengeIdentifierFromRequest,
+  challengeIdentifierFromSetCookies,
+  clearChallenge,
+  loadChallenge,
+  TWO_FACTOR_COOKIE_NAMES,
+  twoFactorLockedUntil,
+} from './two-factor-challenge';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -166,7 +180,9 @@ export class AuthService {
 
   private async resolveOrganizationId(slug: string): Promise<string> {
     const org = await this.prisma.organization.findUnique({ where: { slug } });
-    if (!org) throw new UnauthorizedException('Invalid organization or credentials');
+    // The same refusal as no-such-user and wrong-password, byte for byte — see
+    // AUTH_REFUSAL_MESSAGES. It cannot say which part was wrong.
+    if (!org) throw new AuthRefusalException('INVALID_CREDENTIALS');
     return org.id;
   }
 
@@ -244,16 +260,37 @@ export class AuthService {
   // lastLoginIp BEFORE overwriting it so isNewIp() has something to compare
   // against — see LoginAttemptService.isNewIp()'s own comment for why this
   // doesn't need a separate LoginAttempt query.
+  //
+  // ACC-120 slice 9b — THE ONE PLACE a successful sign-in is recorded, and only
+  // once every check has passed. It used to be recorded in login() BEFORE this
+  // method refused an inactive account, so a deactivated user with the right
+  // password wrote a success — wiping the failure streak — and was then turned
+  // away; and the MFA path recorded nothing at all, so a completed MFA sign-in
+  // never reset the streak either. `attempt` is the (organization, email) key
+  // the lockout counts by.
   private async completeLogin(
     appUserId: string,
     req: ExpressRequest,
     res: ExpressResponse,
+    attempt: { organizationId: string; email: string },
   ): Promise<PublicUser & { language: string }> {
     const user = await this.prisma.user.findFirst({ where: { id: appUserId } });
-    if (!user) throw new UnauthorizedException('Invalid organization or credentials');
+    if (!user) throw new AuthRefusalException('INVALID_CREDENTIALS');
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('This account is not active');
+      // Reached here only on the MFA path, by an account deactivated while its
+      // challenge was open — login() refuses an inactive account before it
+      // issues one. Recorded as NEUTRAL, like login()'s refusal.
+      await this.recordInactiveRefusal(attempt, req);
+      throw new AuthRefusalException('ACCOUNT_INACTIVE');
     }
+
+    await this.loginAttemptService.record({
+      organizationId: attempt.organizationId,
+      email: attempt.email,
+      success: true,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     const wasNewIp = this.loginAttemptService.isNewIp(user.lastLoginIp, req.ip);
 
@@ -305,7 +342,10 @@ export class AuthService {
     dto: LoginDto,
     req: ExpressRequest,
     res: ExpressResponse,
-  ): Promise<{ success: true; user: PublicUser; language: string } | { mfaRequired: true }> {
+  ): Promise<
+    | { success: true; user: PublicUser; language: string }
+    | { mfaRequired: true; mfaExpiresAt?: string }
+  > {
     const organizationId = await this.resolveOrganizationId(dto.organizationSlug);
     const namespacedEmail = AuthService.namespacedEmail(organizationId, dto.email);
 
@@ -318,56 +358,149 @@ export class AuthService {
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
-      throw new UnauthorizedException('Account temporarily locked due to repeated failed attempts');
-    }
-
-    let result: Response;
-    try {
-      result = (await this.auth.api.signInEmail({
-        body: { email: namespacedEmail, password: dto.password },
-        asResponse: true,
-      })) as unknown as Response;
-    } catch {
-      await this.loginAttemptService.record({
+      // Read AFTER recording: the attempt just written is itself a failure and
+      // moves the lock later (LoginAttemptService.lockedUntil()). Checked BEFORE
+      // the password and computed from (organization, email) rows alone, so it
+      // reads the same for an email that has no account.
+      const lockedUntil = await this.loginAttemptService.lockedUntil(
         organizationId,
-        email: dto.email,
-        success: false,
-        failureReason: 'invalid_password',
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
+        dto.email,
+      );
+      throw new AuthRefusalException('ACCOUNT_LOCKED', {
+        lockedUntil: lockedUntil ?? new Date(),
       });
-      throw new UnauthorizedException('Invalid credentials');
     }
 
-    const body = (await result.json()) as { twoFactorRedirect?: boolean; user?: { id: string } };
+    // ACC-120 slice 9b — Better Auth does NOT throw a refused sign-in. With
+    // `asResponse: true` its dispatcher RETURNS an APIError as a Response
+    // (better-auth/dist/api/dispatch.mjs: `isAPIError(result.response) &&
+    // !shouldReturnResponse` is the only branch that throws), so a wrong
+    // password arrives here as a 401 Response with
+    // `code: 'INVALID_EMAIL_OR_PASSWORD'`. This used to be a try/catch around
+    // the call, recording the failure in the catch — which therefore never ran:
+    // no failed sign-in had ever been recorded, so the lockout never locked.
+    // Measured on dev before the fix: 115 LoginAttempt rows, every one a
+    // success. The contract spec pins the dispatcher's behaviour.
+    //
+    // So the outcome is read off the Response. ONLY Better Auth's own
+    // invalid-email-or-password refusal counts as a failed sign-in. Anything
+    // else — another refusal code, or a thrown error (a database outage, say) —
+    // is not a credential problem: it propagates as a 500 and records NO
+    // failure, so an outage cannot lock real people out.
+    const result = await this.auth.api.signInEmail({
+      body: { email: namespacedEmail, password: dto.password },
+      asResponse: true,
+    });
+
+    const body = (await result.json()) as {
+      twoFactorRedirect?: boolean;
+      user?: { id: string };
+      code?: string;
+    };
+
+    if (!result.ok) {
+      if (
+        result.status === 401 &&
+        body.code === BETTER_AUTH_INVALID_CREDENTIALS
+      ) {
+        await this.loginAttemptService.record({
+          organizationId,
+          email: dto.email,
+          success: false,
+          failureReason: 'invalid_password',
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+        throw new AuthRefusalException('INVALID_CREDENTIALS');
+      }
+      // Status and code only — never the body, which could echo the request.
+      throw new Error(
+        `Better Auth sign-in returned ${result.status}${body.code ? ` ${body.code}` : ''}`,
+      );
+    }
+
+    // The password is correct. Resolve the person BEFORE deciding anything
+    // else, on both paths: Better Auth's MFA response carries no user, so the
+    // namespaced email is the one key both paths have. Scoped by organization;
+    // AuthUser.email is unique, so this is one row or none.
+    const appUser = await this.prisma.user.findFirst({
+      where: { organizationId, authUser: { email: namespacedEmail } },
+    });
+    if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
+
+    // An inactive account is refused here — after the password, so the refusal
+    // discloses nothing to someone who does not know it, and BEFORE any MFA
+    // challenge is handed over, so a deactivated person is not asked for a code
+    // they can never use. Recorded as NEUTRAL: it neither counts towards the
+    // lock nor resets it (LoginAttemptService.NEUTRAL_FAILURE_REASONS).
+    if (appUser.status !== 'ACTIVE') {
+      await this.recordInactiveRefusal(
+        { organizationId, email: dto.email },
+        req,
+      );
+      throw new AuthRefusalException('ACCOUNT_INACTIVE');
+    }
 
     if (body.twoFactorRedirect) {
       // Forward Better Auth's own two-factor-pending cookie to the browser —
       // it comes back automatically as a normal Cookie header on
-      // /auth/mfa/verify, which is all verifyTOTP needs to find it.
-      for (const cookie of result.headers.getSetCookie()) {
+      // /auth/mfa/verify, which is all verifyTOTP needs to find it. Nothing is
+      // recorded yet: the sign-in is not complete until verifyMfa() succeeds.
+      const setCookies = result.headers.getSetCookie();
+      for (const cookie of setCookies) {
         res.append('Set-Cookie', cookie);
       }
-      return { mfaRequired: true };
+      // ACC-120 slice 9b — when the challenge ends, read from the challenge
+      // row itself rather than assumed from a constant. Omitted, with a
+      // warning, if the challenge cannot be read: a missing display hint must
+      // not refuse a sign-in whose password was right.
+      const identifier = challengeIdentifierFromSetCookies(setCookies);
+      const challenge = identifier
+        ? await loadChallenge(this.prisma, identifier)
+        : null;
+      if (!challenge) {
+        this.logger.warn(
+          'MFA challenge issued but not readable; mfaExpiresAt omitted',
+        );
+        return { mfaRequired: true };
+      }
+      return {
+        mfaRequired: true,
+        mfaExpiresAt: challenge.expiresAt.toISOString(),
+      };
     }
 
-    if (!body.user?.id) throw new UnauthorizedException('Invalid credentials');
+    // A 200 with neither a challenge nor a user is not a shape Better Auth
+    // documents — a fault, not a refusal.
+    if (!body.user?.id)
+      throw new Error('Better Auth sign-in returned 200 without a user');
 
-    // AuthUser has no appUserId scalar of its own — User.authUserId is the
-    // FK side of this 1:1 link (see Commit 1's schema).
-    const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
-    if (!appUser) throw new UnauthorizedException('Invalid credentials');
+    const { language, ...user } = await this.completeLogin(
+      appUser.id,
+      req,
+      res,
+      {
+        organizationId,
+        email: dto.email,
+      },
+    );
+    return { success: true, user, language };
+  }
 
+  // ACC-120 slice 9b — an inactive account's refused sign-in, written down but
+  // NEUTRAL for the lock. See NEUTRAL_FAILURE_REASONS.
+  private async recordInactiveRefusal(
+    attempt: { organizationId: string; email: string },
+    req: ExpressRequest,
+  ): Promise<void> {
     await this.loginAttemptService.record({
-      organizationId,
-      email: dto.email,
-      success: true,
+      organizationId: attempt.organizationId,
+      email: attempt.email,
+      success: false,
+      failureReason: 'account_inactive',
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
-
-    const { language, ...user } = await this.completeLogin(appUser.id, req, res);
-    return { success: true, user, language };
   }
 
   async verifyMfa(
@@ -375,27 +508,109 @@ export class AuthService {
     req: ExpressRequest,
     res: ExpressResponse,
   ): Promise<{ success: true; user: PublicUser; language: string }> {
-    let result: Response;
-    try {
-      result = (await this.auth.api.verifyTOTP({
-        body: { code: dto.code },
-        // Only the Cookie header matters here — Better Auth reads its own
-        // two-factor-pending cookie from it (set during login() above).
-        headers: new Headers({ cookie: req.headers.cookie ?? '' }),
-        asResponse: true,
-      })) as unknown as Response;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired code');
-    }
+    // ACC-120 slice 9b — like signInEmail, verifyTOTP RETURNS a refusal as a
+    // Response rather than throwing it, so the outcome is read off the
+    // Response. A thrown error is a fault and propagates as a 500.
+    const result = await this.auth.api.verifyTOTP({
+      body: { code: dto.code },
+      // Only the Cookie header matters here — Better Auth reads its own
+      // two-factor-pending cookie from it (set during login() above).
+      headers: new Headers({ cookie: req.headers.cookie ?? '' }),
+      asResponse: true,
+    });
 
-    const body = (await result.json()) as { user?: { id: string } };
-    if (!body.user?.id) throw new UnauthorizedException('Invalid or expired code');
+    const body = (await result.json()) as {
+      user?: { id: string };
+      code?: string;
+    };
+    if (!result.ok) throw await this.mfaRefusal(result.status, body.code, req);
+    if (!body.user?.id)
+      throw new Error('Better Auth verifyTOTP returned 200 without a user');
 
     const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
-    if (!appUser) throw new UnauthorizedException('Invalid or expired code');
+    if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
 
-    const { language, ...user } = await this.completeLogin(appUser.id, req, res);
+    // The lockout's key for this person: their organization, and their email
+    // as login() normalised it (LoginDto lower-cases it; the stored email is
+    // lower-cased the same way here so the two always agree).
+    const { language, ...user } = await this.completeLogin(
+      appUser.id,
+      req,
+      res,
+      {
+        organizationId: appUser.organizationId,
+        email: appUser.email.toLowerCase(),
+      },
+    );
     return { success: true, user, language };
+  }
+
+  // ACC-120 slice 9b — abandon a pending MFA challenge. The challenge is real
+  // server-side state (two AuthVerification rows, live for ten minutes) that
+  // anyone at the same browser could still complete with a code, and Better
+  // Auth's own routes are not mounted, so nothing else can clear it.
+  //
+  // Only the caller's OWN challenge can be cleared: the identifier comes from
+  // the cookie this browser holds, and only once its Better Auth signature
+  // verifies (two-factor-challenge.ts). Always succeeds — there being nothing
+  // to cancel is not an error, and saying so would tell a caller whether a
+  // challenge existed.
+  async cancelMfa(
+    req: ExpressRequest,
+    res: ExpressResponse,
+  ): Promise<{ success: true }> {
+    const identifier = challengeIdentifierFromRequest(req.headers.cookie);
+    if (identifier) await clearChallenge(this.prisma, identifier);
+    for (const name of TWO_FACTOR_COOKIE_NAMES) {
+      res.clearCookie(name, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: name.startsWith('__Secure-'),
+      });
+    }
+    return { success: true };
+  }
+
+  // ACC-120 slice 9b — Better Auth's MFA refusal, as one of ours. Every one is a
+  // 401, as `verifyMfa()` returned before. Anything not listed is a fault.
+  private async mfaRefusal(
+    status: number,
+    code: string | undefined,
+    req: ExpressRequest,
+  ): Promise<Error> {
+    const identifier = challengeIdentifierFromRequest(req.headers.cookie);
+    const challenge = identifier
+      ? await loadChallenge(this.prisma, identifier)
+      : null;
+
+    switch (code) {
+      case BETTER_AUTH_TWO_FACTOR_CODES.INVALID_CODE:
+        // The challenge is live, and its counter has just moved.
+        if (!challenge) return new AuthRefusalException('MFA_EXPIRED');
+        return new AuthRefusalException('MFA_INVALID', {
+          attemptsRemaining: await attemptsRemaining(this.prisma, challenge),
+        });
+      case BETTER_AUTH_TWO_FACTOR_CODES.INVALID_TWO_FACTOR_COOKIE:
+      case BETTER_AUTH_TWO_FACTOR_CODES.TOO_MANY_ATTEMPTS:
+        // Missing, tampered with, expired, or spent: either way there is no
+        // challenge left to answer, and the way on is to sign in again.
+        return new AuthRefusalException('MFA_EXPIRED');
+      case BETTER_AUTH_TWO_FACTOR_CODES.ACCOUNT_LOCKED: {
+        // Reached only after a correct password, so it discloses nothing about
+        // whether the account exists.
+        const lockedUntil = challenge
+          ? await twoFactorLockedUntil(this.prisma, challenge.authUserId)
+          : null;
+        return new AuthRefusalException('ACCOUNT_LOCKED', {
+          lockedUntil: lockedUntil ?? new Date(),
+        });
+      }
+      default:
+        return new Error(
+          `Better Auth verifyTOTP returned ${status}${code ? ` ${code}` : ''}`,
+        );
+    }
   }
 
   async refresh(req: ExpressRequest, res: ExpressResponse): Promise<{ success: true }> {
@@ -623,18 +838,40 @@ export class AuthService {
 
     const namespacedEmail = AuthService.namespacedEmail(organizationId, appUser.email);
 
-    let signInResult: Response;
-    try {
-      signInResult = (await this.auth.api.signInEmail({
-        body: { email: namespacedEmail, password: dto.password },
-        asResponse: true,
-      })) as unknown as Response;
-    } catch {
-      throw new UnauthorizedException('Invalid password');
-    }
+    // ACC-120 slice 9b — the password is re-checked with a sign-in, and Better
+    // Auth RETURNS that sign-in's refusal as a Response rather than throwing
+    // it (see login()). So the outcome is read off the Response, one case at a
+    // time; nothing here relies on a missing user meaning "wrong password".
+    const signInResult = await this.auth.api.signInEmail({
+      body: { email: namespacedEmail, password: dto.password },
+      asResponse: true,
+    });
+    const signInBody = (await signInResult.json()) as {
+      user?: { id: string };
+      twoFactorRedirect?: boolean;
+      code?: string;
+    };
 
-    const signInBody = (await signInResult.json()) as { user?: { id: string } };
-    if (!signInBody.user?.id) throw new UnauthorizedException('Invalid password');
+    if (!signInResult.ok) {
+      if (
+        signInResult.status === 401 &&
+        signInBody.code === BETTER_AUTH_INVALID_CREDENTIALS
+      ) {
+        throw new UnauthorizedException('Invalid password');
+      }
+      // Not a password problem — a fault. Nothing has been enabled.
+      throw new Error(
+        `Better Auth sign-in returned ${signInResult.status}${signInBody.code ? ` ${signInBody.code}` : ''}`,
+      );
+    }
+    // Better Auth answers a correct password for an account with MFA already
+    // on with a challenge instead of a session: there is nothing to set up.
+    if (signInBody.twoFactorRedirect) {
+      throw new ConflictException('MFA is already enabled');
+    }
+    if (!signInBody.user?.id) {
+      throw new Error('Better Auth sign-in returned 200 without a user');
+    }
 
     const sessionCookie = buildCookieHeader(signInResult.headers.getSetCookie());
 

@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -42,12 +47,26 @@ class MockAPIError extends Error {
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
 
-function fakeResponse(body: unknown, setCookies: string[] = []) {
+// ACC-120 slice 9b — the shape Better Auth REALLY gives back with
+// `asResponse: true`: a refusal is a Response with an error status, never a
+// rejected promise. These tests used to model a wrong password as
+// `mockRejectedValue(...)`, which the real library never does — and that is
+// how a lockout that could not lock passed every test here.
+function fakeResponse(body: unknown, setCookies: string[] = [], status = 200) {
   return {
+    ok: status >= 200 && status < 300,
+    status,
     json: async () => body,
     headers: { getSetCookie: () => setCookies },
   };
 }
+
+// Better Auth's actual refusal for an unknown user or a wrong password.
+const INVALID_EMAIL_OR_PASSWORD = fakeResponse(
+  { message: 'Invalid email or password', code: 'INVALID_EMAIL_OR_PASSWORD' },
+  [],
+  401,
+);
 
 function fakeExpressReq(overrides: Partial<{ cookies: Record<string, string>; headers: Record<string, string>; ip: string }> = {}) {
   return {
@@ -71,7 +90,12 @@ describe('AuthService', () => {
   let mockPrisma: any;
   let mockAuditLog: { log: jest.Mock };
   let mockNotification: { create: jest.Mock };
-  let mockLoginAttemptService: { record: jest.Mock; isLocked: jest.Mock; isNewIp: jest.Mock };
+  let mockLoginAttemptService: {
+    record: jest.Mock;
+    isLocked: jest.Mock;
+    lockedUntil: jest.Mock;
+    isNewIp: jest.Mock;
+  };
   let mockUserService: {
     validatePositionAssignment: jest.Mock;
     notifyTenantAdminsOfInviteAcceptanceConflict: jest.Mock;
@@ -98,6 +122,7 @@ describe('AuthService', () => {
     mockLoginAttemptService = {
       record: jest.fn().mockResolvedValue(undefined),
       isLocked: jest.fn().mockResolvedValue(false),
+      lockedUntil: jest.fn().mockResolvedValue(null),
       isNewIp: jest.fn().mockReturnValue(false),
     };
     // ACC-46 Section 2.1, Layer 2 — validatePositionAssignment() resolves
@@ -157,6 +182,14 @@ describe('AuthService', () => {
       mockAuthApi.signInEmail.mockResolvedValue(
         fakeResponse({ twoFactorRedirect: true }, ['ba_2fa=abc; Path=/']),
       );
+      // ACC-120 slice 9b — the person is resolved, and found ACTIVE, before
+      // the challenge is handed over.
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        status: 'ACTIVE',
+      });
 
       const req = fakeExpressReq();
       const res = fakeExpressRes();
@@ -170,12 +203,13 @@ describe('AuthService', () => {
       expect(result).toEqual({ mfaRequired: true });
       expect(res.append).toHaveBeenCalledWith('Set-Cookie', 'ba_2fa=abc; Path=/');
       expect(res.cookie).not.toHaveBeenCalled();
-      expect(mockPrisma.user.findFirst).not.toHaveBeenCalled();
+      // Not complete yet, so nothing is recorded — success waits for verifyMfa().
+      expect(mockLoginAttemptService.record).not.toHaveBeenCalled();
     });
 
     it('throws UnauthorizedException when Better Auth rejects the credentials', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+      mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
       await expect(
         service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'wrong' }, fakeExpressReq(), fakeExpressRes()),
@@ -250,7 +284,7 @@ describe('AuthService', () => {
 
     it('records a failed attempt when Better Auth rejects the credentials', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+      mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
       await expect(
         service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'wrong' }, fakeExpressReq(), fakeExpressRes()),
@@ -340,7 +374,17 @@ describe('AuthService', () => {
     });
 
     it('throws UnauthorizedException on an invalid or expired code', async () => {
-      mockAuthApi.verifyTOTP.mockRejectedValue(new Error('invalid'));
+      // Better Auth's real shape: a 401 Response, not a rejection (ACC-120 9b).
+      mockAuthApi.verifyTOTP.mockResolvedValue(
+        fakeResponse(
+          {
+            message: 'Invalid two factor cookie',
+            code: 'INVALID_TWO_FACTOR_COOKIE',
+          },
+          [],
+          401,
+        ),
+      );
 
       await expect(
         service.verifyMfa({ code: '000000' }, fakeExpressReq(), fakeExpressRes()),
@@ -699,13 +743,51 @@ describe('AuthService', () => {
       });
     });
 
-    it('throws UnauthorizedException when the password is wrong', async () => {
+    // ACC-120 slice 9b — Better Auth's REAL refusal shape: a returned 401
+    // Response, never a rejected promise. The message is unchanged.
+    it('throws UnauthorizedException("Invalid password") for a wrong password', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+      mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
-      await expect(service.setupMfa('user-1', ORG_A, { password: 'wrong' })).rejects.toThrow(
-        UnauthorizedException,
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'wrong' });
+      await expect(refusal).rejects.toThrow(UnauthorizedException);
+      await expect(refusal).rejects.toThrow('Invalid password');
+      expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException("MFA is already enabled") when Better Auth answers with a challenge', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      // What Better Auth returns for the RIGHT password on an account with MFA
+      // on: 200, a challenge, and no user or session.
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ twoFactorRedirect: true, twoFactorMethods: ['totp'] }, [
+          'better-auth.two_factor=x; Path=/',
+        ]),
       );
+
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'right' });
+      await expect(refusal).rejects.toThrow(ConflictException);
+      await expect(refusal).rejects.toThrow('MFA is already enabled');
+      expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('treats any other Better Auth refusal as a fault: a 500, and nothing is enabled', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse(
+          { message: 'Email not verified', code: 'EMAIL_NOT_VERIFIED' },
+          [],
+          403,
+        ),
+      );
+
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'right' });
+      // A plain Error — the global filter turns it into a 500 — and not a
+      // refusal that names the password.
+      await expect(refusal).rejects.toThrow(
+        'Better Auth sign-in returned 403 EMAIL_NOT_VERIFIED',
+      );
+      await expect(refusal).rejects.not.toBeInstanceOf(HttpException);
       expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
     });
 

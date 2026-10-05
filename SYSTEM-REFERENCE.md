@@ -921,6 +921,98 @@ and is clamped to the 15-minute default — a stray variable on a deployed
 environment must not be able to hand out day-long access tokens. A test-only
 affordance that can make production less safe is not test-only.
 
+### 1.12 Sign-in outcomes — the codes, and what each must not reveal (ACC-120 slice 9b)
+
+**Every sign-in refusal carries a stable `code`** in the body, inside the error
+shape `HttpExceptionFilter` already sends — `{ statusCode, message, error, code,
+...details }`. The filter passes an `HttpException`'s response through untouched,
+so it is unchanged. `AuthRefusalException` (`foundation/auth/auth-refusal.ts`)
+is the type; `AUTH_REFUSAL_MESSAGES` is the ONE place each code is worded. **Every
+refusal is a 401**, as each was before, so a client that ignores the body keeps
+working. A client maps the code to its own words; the message is English for
+logs.
+
+| code | status | when | details | must not reveal |
+|---|---|---|---|---|
+| `INVALID_CREDENTIALS` | 401 | unknown organisation; no such user; wrong password | — | WHICH of the three it was. The bodies are byte-identical by construction (one code, one message, no details), and a spec compares them through the real filter. |
+| `ACCOUNT_LOCKED` | 401 | five failures for this (organisation, email) inside 15 minutes; or Better Auth's MFA lock after ten failed codes | `lockedUntil` | whether the account EXISTS. The password-stage lock is checked before the password and counted from (organisation, email) rows alone, so an email with no account locks exactly like a real one — same body, same `lockedUntil`. The MFA lock is reached only after a correct password. |
+| `ACCOUNT_INACTIVE` | 401 | the password is RIGHT and the account is INACTIVE or SUSPENDED | — | anything to someone who does not know the password: a wrong password on an inactive account is `INVALID_CREDENTIALS`. Checked after the password and before any MFA challenge, so a deactivated person is not asked for a code. An INVITED person has no credential yet (Better Auth's user is created at acceptance), so "still invited" is always `INVALID_CREDENTIALS`. |
+| `MFA_INVALID` | 401 | a wrong code on a live challenge | `attemptsRemaining` | — (reached only after a correct password). The smaller of the challenge's five attempts and the user's ten before their MFA locks. |
+| `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
+
+**KNOWN AND ACCEPTED LIMITATION — sign-in reveals whether an ORGANISATION
+exists.** Accepted for now; **revisited with ACC-129** (per-IP rate limiting),
+which is what makes guessing organisations expensive. The reason it is accepted
+is that the timing gap below already reveals it in a single request, so closing
+the second route alone would buy nothing. Two routes:
+
+- **Timing, in one request.** An unknown slug is refused after one query; a real
+  one runs the lockout lookups and Better Auth's password hash. Measured
+  in-process against the dev database, 20 interleaved samples each
+  (2026-10-05): unknown organisation **148 ms** median, no such user **884 ms**,
+  wrong password **1032 ms**. Locally each round trip to Frankfurt costs about
+  120 ms, which inflates the gap; what does not shrink in production is the
+  hash, measured at **76 ms** with Better Auth's scrypt parameters (N 16384,
+  r 16, p 1). So the gap survives deployment at very roughly 80–130 ms. The
+  dummy-hash equaliser was considered and deliberately NOT built.
+- **The lock.** An unknown organisation writes no `LoginAttempt` (the row needs
+  an organisation), so it never locks, while a real slug eventually answers
+  `ACCOUNT_LOCKED`. This reveals the organisation, never the account.
+
+No such user and wrong password differ by about one round trip (~150 ms locally,
+a few milliseconds in production). Better Auth already hashes a dummy password
+for an unknown user, so the hash is equal; the remainder is its account lookup.
+Recorded, not addressed.
+
+**`mfaExpiresAt`** is returned with `{ mfaRequired: true }`: the challenge row's
+own expiry. **`POST /auth/mfa/cancel`** deletes the challenge and its attempt
+counter and expires the cookie; always `{ success: true }`.
+
+**Better Auth's internals are read in ONE module.** The challenge's shape, its
+limits, its cookie and its signing are not in Better Auth's public API; they are
+copied into `better-auth.contract.ts` and read only through
+`two-factor-challenge.ts`, which verifies the cookie's HMAC signature before it
+trusts an identifier — so a caller can only ever read or cancel a challenge
+Better Auth issued to them. `better-auth.contract.spec.ts` asserts every one of
+those facts against the installed library's source, and fails by name on an
+upgrade that changes one.
+
+**The defect this found, recorded because it stood for months.** With
+`asResponse: true`, Better Auth RETURNS a refused sign-in as a 401 Response; it
+throws only without that flag (`dist/api/dispatch.mjs`). `login()` recorded the
+failure in a `catch` around the call, so **no failed sign-in was ever recorded,
+and the lockout never locked** — on dev, 115 `LoginAttempt` rows, every one a
+success, before the fix. The specs passed because they modelled a wrong password
+as a rejected promise, which the real library never produces. The outcome is now
+read off the Response, and only `INVALID_EMAIL_OR_PASSWORD` counts as a failed
+attempt: another refusal, or a thrown error such as a database outage, is a 500
+and records nothing, so an outage cannot lock people out. **`setupMfa()`**
+re-checks the password the same way and now reads the Response too: a wrong
+password is "Invalid password" as before, a `twoFactorRedirect` is **409 "MFA is
+already enabled"**, and any other refusal is a 500 with nothing enabled.
+
+**`disableMfa()` CANNOT SUCCEED FOR ANY USER — known, unchanged, tracked
+separately.** It re-checks the password with a sign-in and needs the session
+that sign-in creates. But for an account with MFA on — the only accounts that
+can disable it — Better Auth's sign-in hook deletes that session and returns
+`{ twoFactorRedirect: true }` with no user (`plugins/two-factor/index.mjs`,
+`if (!data?.user.twoFactorEnabled) return;`), and the fallback reports that as
+"Invalid password". **Once MFA is enabled it cannot be turned off without a
+database edit.** No user has MFA on today (measured 2026-10-05: no AuthUser with
+`twoFactorEnabled`, no `AuthTwoFactor` row, no `mfa_enabled`/`mfa_disabled`
+audit event). The fix re-authenticates with the password AND a current TOTP code
+through the existing challenge — not by writing Better Auth's tables directly.
+
+**`LoginAttempt.failureReason` gained `account_inactive`**, a NEUTRAL reason: the
+row is written, and the streak neither counts it nor treats it as a reset. (The
+comment beside the column in `schema.prisma` still lists the older four; it is
+a comment, and changing the schema file goes through the migration gate.) A
+success is recorded in exactly one place, `completeLogin()`, after its status
+check — on both the direct and the MFA path; the MFA path recorded none before.
+**The sign-in email is normalised** (`normaliseEmail`, on `LoginDto` and
+`ForgotPasswordDto`): Better Auth authenticated every capitalisation as one
+account while the lockout counted each spelling separately.
+
 ---
 
 ## 2. Workflow Engine
@@ -5908,16 +6000,23 @@ the log.
   `LoginAttempt` row, `failureReason: 'locked'`), then calls Better
   Auth's `signInEmail()`. A `twoFactorRedirect` response forwards
   Better Auth's own pending-2FA cookie to the browser and returns
-  `{ mfaRequired: true }` rather than completing login. Every attempt
-  — locked, invalid password, or success — is recorded in
-  `LoginAttempt`, an append-only-by-convention table (not
-  schema-enforced append-only like `AuditLog`, Section 1) that
-  "powers account lockout (computed on read, no stored counter)" per
-  its own schema comment — lockout state is derived by querying recent
-  rows, not tracked as a running counter anywhere.
+  `{ mfaRequired: true, mfaExpiresAt }` rather than completing login.
+  Attempts are recorded in `LoginAttempt`, an append-only-by-convention
+  table (not schema-enforced append-only like `AuditLog`, Section 1)
+  that "powers account lockout (computed on read, no stored counter)"
+  per its own schema comment.
+  **CORRECTED (ACC-120 slice 9b).** This entry used to say every
+  attempt — locked, invalid password or success — was recorded. A
+  wrong password never was: Better Auth returns the refusal as a
+  Response, and the failure was recorded in a `catch` that never ran,
+  so the lockout never locked. What is recorded now, the refusal codes,
+  the neutral `account_inactive` reason and the one place a success is
+  written are in **Section 1.12**.
 - **`verifyMfa()`** completes the login Better Auth's `signInEmail()`
   paused for 2FA, gating on the same `status !== 'ACTIVE'` check as
-  `login()` itself (12.2).
+  `login()` itself (12.2). An inactive account is now refused by
+  `login()` before a challenge is issued; this check catches one
+  deactivated while its challenge was open.
 - **MFA setup** (`setupMfa()`/`verifySetupMfa()`/`disableMfa()`) is a
   three-step flow, not a single call: `setupMfa()` re-verifies the
   caller's password (via a fresh `signInEmail()` — Better Auth's
