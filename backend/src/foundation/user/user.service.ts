@@ -56,6 +56,7 @@ import {
 } from '../roles/tenant-administrator.invariant';
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
+import { buildTenantUrl } from '../../common/config/app-url.config';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -879,6 +880,14 @@ export class UserService {
 
     const invitationToken = randomBytes(24).toString('hex');
     const invitationExpiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+    // ACC-158 — an ABSOLUTE link on the tenant's own host. This was a bare
+    // `/accept-invitation?token=…` path, which no email recipient could open.
+    // Built BEFORE the user row is written, so a configuration error refuses
+    // the invite whole instead of leaving an INVITED user with no email.
+    const invitationUrl = buildTenantUrl(
+      organization.slug,
+      `/accept-invitation?token=${invitationToken}`,
+    );
 
     const user = await this.prisma.user.create({
       data: {
@@ -899,8 +908,8 @@ export class UserService {
         userId: user.id,
         titleEn: `You've been invited to join ${organization.name} on AccreditMe`,
         titleAr: `تمت دعوتك للانضمام إلى ${organization.name} على AccreditMe`,
-        bodyEn: `Accept your invitation to set your password and get started: /accept-invitation?token=${invitationToken}`,
-        bodyAr: `اقبل الدعوة لتعيين كلمة المرور والبدء: /accept-invitation?token=${invitationToken}`,
+        bodyEn: `Accept your invitation to set your password and get started: ${invitationUrl}`,
+        bodyAr: `اقبل الدعوة لتعيين كلمة المرور والبدء: ${invitationUrl}`,
         channel: 'EMAIL',
       },
       organizationId,

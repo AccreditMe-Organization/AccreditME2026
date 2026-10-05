@@ -2373,6 +2373,15 @@ exists to create one via the API at all.
   null `sentAt` on an `EMAIL`/`BOTH` row whose job should have finished
   is the failure indicator (there is no separate execution-log table
   for email, unlike `WorkflowActionLog` for workflow actions).
+  **The HTML is built by `renderEmailHtml()`** (`email-html.ts`, ACC-158),
+  never by interpolation: the body is escaped whole — it carries tenant
+  data such as organisation names — and then only URLs on a product host
+  (`*.{APP_BASE_DOMAIN}` over https, or the development `APP_LINK_ORIGIN`)
+  become anchors, so a URL typed into tenant data stays text. An Arabic
+  body is `<p dir="rtl">` and every anchor `dir="ltr"`, so a Latin URL and
+  its punctuation do not reorder inside Arabic text. The processor reads
+  the notification by `id` AND `organizationId` (it read by id alone
+  before ACC-158). Links themselves come from `buildTenantUrl()` — §15.11.
 - **`SMS`** — accepted as a valid DTO value
   (`create-notification.dto.ts`'s `NOTIFICATION_CHANNELS`), but
   **`create()`'s delivery branch only checks for `EMAIL`/`BOTH`** — a
@@ -6820,3 +6829,60 @@ serving while nothing can reach it (§15.3).
 > deploy goes red. That is the safe failure rather than an outage, but it blocks
 > every release until the variable exists. Expand then contract: set the variable
 > first, merge second.
+
+### 15.11 Links in email: absolute, on the tenant's host (ACC-158)
+
+**Every link the backend writes into text that leaves the product is built by
+`buildTenantUrl(slug, path)`** in `common/config/app-url.config.ts`. Its shape
+is `https://{slug}.{APP_BASE_DOMAIN}{path}`. The invitation email is the first
+consumer; the password-reset email is meant to be the second, and the builder
+takes no Nest dependency so `better-auth.config.ts` can import it as is.
+
+**Why it exists.** The invitation body carried `/accept-invitation?token=…` — a
+path with no host. A relative link in an email has nothing to be relative to,
+so no recipient could open it, and every invitation ever stored has that shape
+(re-sending them is ACC-159). Links on `*.accreditme.app` do not resolve until
+the frontend is deployed (ACC-130); that is expected, and the link is still the
+correct one to write.
+
+**Two variables:**
+
+| variable | required | rule |
+| -- | -- | -- |
+| `APP_BASE_DOMAIN` | **yes, everywhere** | a bare host — no scheme, path or port; the boot refuses anything else |
+| `APP_LINK_ORIGIN` | no — development only | a **loopback** origin (`http://localhost:4200`); when set, links are `{origin}{path}` with no slug |
+
+**The override is loopback-only, and that is keyed off the VALUE, not the
+environment**, because the environment cannot answer the question: Railway runs
+`NODE_ENV=development` (measured 2026-10-05). A stray `APP_LINK_ORIGIN` on a
+deployed service therefore can only ever point at localhost — visibly broken —
+never send every tenant's invitation to an arbitrary host. The boot logs a
+warning whenever it is set.
+
+**It drops the slug, deliberately, until ACC-139.** `http://{slug}.localhost:4200`
+opens in Chrome, but CORS allows exactly `FRONTEND_URL`, so the page would load
+and every API call from it would fail — an invitation that opens and cannot be
+accepted.
+
+**The boot check is `validateBootConfig()`** (`common/config/boot.config.ts`),
+called first in `main.ts`, before `NestFactory.create()` — so a missing value
+stops the process before the database connects or an in-process worker
+registers. It resolves `FRONTEND_URL` (§15.10) and the link configuration
+together, and its spec is the proof; a required value belongs there, never as a
+lazy read at first use, which would fail inside a BullMQ job hours after a
+clean boot.
+
+**`invite()` builds the link before writing the user**, so a configuration
+error refuses the invite whole rather than leaving an INVITED user who was never
+emailed.
+
+**Rendering is escape-then-link** (`foundation/notification/email-html.ts`,
+§4.4): the whole body is HTML-escaped, then only URLs on a product host become
+`<a href>`. An Arabic body is `<p dir="rtl">` and every anchor `dir="ltr"`.
+
+**Railway.** `APP_BASE_DOMAIN` was already declared with `preserve()` in
+`.railway/railway.ts` and already set, so this needed no authoring-file change
+and no set-before-merge step: the boot check passes on the existing value. Its
+value moves from `accreditme.com` to `accreditme.app` as a dashboard change.
+`APP_LINK_ORIGIN` must never be set there.
+

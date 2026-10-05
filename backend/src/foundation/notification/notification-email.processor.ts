@@ -2,6 +2,8 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Resend } from 'resend';
 import { PrismaService } from '../../prisma/prisma.service';
+import { resolveAppLinkConfig } from '../../common/config/app-url.config';
+import { renderEmailHtml } from './email-html';
 
 interface EmailDeliveryJobData {
   notificationId: string;
@@ -20,23 +22,37 @@ export class NotificationEmailProcessor extends WorkerHost {
   }
 
   async process(job: Job<EmailDeliveryJobData>): Promise<void> {
-    const { notificationId } = job.data;
+    const { notificationId, organizationId } = job.data;
 
-    const notification = await this.prisma.notification.findUnique({
-      where: { id: notificationId },
+    // Scoped by id AND organizationId together, like every tenant read. The job
+    // carries both because NotificationService.create() enqueues both; reading
+    // by id alone trusted the queue to name a row of the right tenant.
+    const notification = await this.prisma.notification.findFirst({
+      where: { id: notificationId, organizationId },
       include: { user: true },
     });
     if (!notification) return; // notification was removed since the job was enqueued
 
-    const useArabic = notification.user.language === 'ar' && !!notification.bodyAr;
-    const subject = useArabic ? (notification.titleAr ?? notification.titleEn) : notification.titleEn;
-    const body = useArabic ? (notification.bodyAr ?? notification.bodyEn) : notification.bodyEn;
+    const useArabic =
+      notification.user.language === 'ar' && !!notification.bodyAr;
+    const subject = useArabic
+      ? (notification.titleAr ?? notification.titleEn)
+      : notification.titleEn;
+    const body = useArabic
+      ? (notification.bodyAr ?? notification.bodyEn)
+      : notification.bodyEn;
 
     const result = await this.resend.emails.send({
       from: process.env['RESEND_FROM_EMAIL'] || 'noreply@accreditme.com',
       to: notification.user.email,
       subject,
-      html: `<p>${body}</p>`,
+      // ACC-158 — escaped, with the product's own links as anchors, and an
+      // Arabic body marked right-to-left. See email-html.ts.
+      html: renderEmailHtml(
+        body,
+        useArabic ? 'rtl' : 'ltr',
+        resolveAppLinkConfig(),
+      ),
     });
 
     if (result.error) {
@@ -52,8 +68,8 @@ export class NotificationEmailProcessor extends WorkerHost {
     // Only stamped on confirmed success — a null sentAt on an EMAIL/BOTH row
     // after its job should have completed is the failure indicator (see plan
     // Business Rules — "Why Email Delivery Has No Execution-Log Table").
-    await this.prisma.notification.update({
-      where: { id: notificationId },
+    await this.prisma.notification.updateMany({
+      where: { id: notificationId, organizationId },
       data: { sentAt: new Date() },
     });
   }
