@@ -32,7 +32,7 @@ export interface WorkflowStageVisitDto {
   stageId: string;
   // Tenant-editable: rendered by isArabic() selection, never `| translate`.
   stageNameEn: string;
-  stageNameAr: string;
+  stageNameAr: string | null;
   enteredAt: string;
   // Null marks the open visit — the current stage. Derived from the data
   // rather than from currentStageId, which cannot say WHICH of two visits to
@@ -61,7 +61,7 @@ export interface WorkflowStageVisitDto {
 export interface WorkflowStageSequenceEntryDto {
   id: string;
   nameEn: string;
-  nameAr: string;
+  nameAr: string | null;
   order: number;
   // 0 = not yet reached. >1 = the record has been here more than once, which
   // the sequence shows rather than flattening — the one honest way a linear

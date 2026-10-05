@@ -120,7 +120,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
       <p-table [value]="transitions" styleClass="w-full">
         <ng-template pTemplate="header">
           <tr>
-            <th>{{ 'workflow.labelEn' | translate }}</th>
+            <th>{{ 'workflow.label' | translate }}</th>
             <th>{{ 'workflow.toStage' | translate }}</th>
             <th>{{ 'workflow.triggerCondition' | translate }}</th>
             <th></th>
@@ -130,7 +130,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
         <ng-template pTemplate="body" let-transition>
           <tr>
-            <td>{{ transition.labelEn }}</td>
+            <td>{{ transitionLabel(transition) }}</td>
             <td>{{ stageName(transition.toStageId) }}</td>
             <td>
               <p-tag [value]="transition.triggerCondition" severity="info" />
@@ -204,7 +204,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
           </div>
 
           <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }} <span class="text-red-500">*</span></label>
+            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
             <input pInputText dir="rtl" formControlName="labelAr" />
           </div>
 
@@ -316,7 +316,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
           </div>
 
           <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }} <span class="text-red-500">*</span></label>
+            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
             <input pInputText dir="rtl" formControlName="labelAr" />
           </div>
 
@@ -466,7 +466,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     if (transition.triggerCondition !== 'ROLE_BASED' || !transition.triggerRoleId) return null;
     const role = this.roles().find((r) => r.id === transition.triggerRoleId);
     if (!role) return this.translateService.instant('workflow.triggerRoleUnknown');
-    return (this.languageService.isArabic() && role.nameAr) || role.nameEn;
+    return this.languageService.bilingual(role.nameEn, role.nameAr);
   }
 
   // ── ACC-55: requiredPermission picker ──────────────────────────────────────
@@ -632,7 +632,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   readonly addForm = this.fb.group({
     toStageId: [null as string | null, [Validators.required]],
     labelEn: ['', [Validators.required, Validators.maxLength(100)]],
-    labelAr: ['', [Validators.required, Validators.maxLength(100)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    labelAr: ['', [Validators.maxLength(100)]],
     triggerCondition: ['ROLE_BASED', [Validators.required]],
     triggerRoleId: [null as string | null],
     requiredPermission: [''],
@@ -642,7 +646,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
 
   readonly editForm = this.fb.group({
     labelEn: ['', [Validators.required, Validators.maxLength(100)]],
-    labelAr: ['', [Validators.required, Validators.maxLength(100)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    labelAr: ['', [Validators.maxLength(100)]],
     triggerCondition: ['ROLE_BASED', [Validators.required]],
     requiredPermission: [''],
     isApprovalPath: [false],
@@ -685,8 +693,15 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     // availableStages/transitions are parent-owned — nothing to refetch here.
   }
 
+  // ACC-160 (ACC-89 items 1 and 2) — both of these read the English name only,
+  // whatever the session's language, even when an Arabic one was stored.
+  transitionLabel(transition: WorkflowTransitionDto): string {
+    return this.languageService.bilingual(transition.labelEn, transition.labelAr);
+  }
+
   stageName(stageId: string): string {
-    return this.availableStages.find((s) => s.id === stageId)?.nameEn ?? stageId;
+    const stage = this.availableStages.find((s) => s.id === stageId);
+    return stage ? this.languageService.bilingual(stage.nameEn, stage.nameAr) : stageId;
   }
 
   openAdd(): void {

@@ -9,6 +9,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
 export class CreateLookupValueDto {
   @IsString()
@@ -22,10 +24,14 @@ export class CreateLookupValueDto {
   @MaxLength(255)
   labelEn!: string;
 
+  // ACC-160 — optional, because Arabic fields are never mandatory. An empty
+  // value stores NULL rather than '' (see trimToNull). Update DTOs built with
+  // PartialType inherit both halves.
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(255)
-  labelAr!: string;
+  @Transform(trimToNull)
+  labelAr?: string | null;
 
   @IsObject()
   @IsOptional()

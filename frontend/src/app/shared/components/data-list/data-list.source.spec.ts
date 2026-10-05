@@ -121,3 +121,61 @@ describe('clientSideSource (ACC-78)', () => {
     expect((await firstValueFrom(dynamic({}))).total).toBe(3);
   });
 });
+
+// ACC-160 — NULLS LAST, opt-in per column, in BOTH directions.
+describe('clientSideSource nullsLast (ACC-160)', () => {
+  interface Named {
+    id: string;
+    nameEn: string;
+    nameAr: string | null;
+  }
+  // Deliberately interleaved, so "last" cannot be an accident of input order.
+  const NAMED: Named[] = [
+    { id: 'a', nameEn: 'Auditor', nameAr: 'مدقق' },
+    { id: 'b', nameEn: 'Buyer', nameAr: null },
+    { id: 'c', nameEn: 'Clerk', nameAr: 'كاتب' },
+    { id: 'd', nameEn: 'Driver', nameAr: '  ' },
+    { id: 'e', nameEn: 'Editor', nameAr: 'محرر' },
+  ];
+  const nameAr = (a: Named, b: Named): number => (a.nameAr ?? '').localeCompare(b.nameAr ?? '');
+  const ids = async (src: ReturnType<typeof clientSideSource<Named>>, sortDir: 'asc' | 'desc'): Promise<string[]> =>
+    (await firstValueFrom(src({ sortBy: 'nameAr', sortDir }))).data.map((r) => r.id);
+
+  const withOption = clientSideSource<Named>(() => NAMED, {
+    searchFields: (r) => [r.nameEn, r.nameAr],
+    comparators: { nameAr, nameEn: (a, b) => a.nameEn.localeCompare(b.nameEn) },
+    nullsLast: { nameAr: (r) => r.nameAr },
+  });
+
+  // THE RULE. The two unnamed rows (null, and whitespace-only) come last in
+  // both directions, while the named ones really are reversed — the second
+  // half is what proves direction is still applied, not ignored.
+  it('puts unnamed rows last when sorted ascending AND descending', async () => {
+    const asc = await ids(withOption, 'asc');
+    const desc = await ids(withOption, 'desc');
+
+    expect(asc.slice(3).sort()).toEqual(['b', 'd']);
+    expect(desc.slice(3).sort()).toEqual(['b', 'd']);
+    expect(desc.slice(0, 3)).toEqual([...asc.slice(0, 3)].reverse());
+  });
+
+  // The boundary: the option is per column. Sorting by another column orders
+  // every row by that column, unnamed ones included.
+  it('leaves a column that did not opt in exactly as before', async () => {
+    const page = await firstValueFrom(withOption({ sortBy: 'nameEn', sortDir: 'desc' }));
+    expect(page.data.map((r) => r.id)).toEqual(['e', 'd', 'c', 'b', 'a']);
+  });
+
+  // Every existing list is constructed without the option and must sort
+  // exactly as it did: here '' sorts FIRST ascending, which is the behaviour
+  // the option exists to change.
+  it('is off entirely when the option is not given', async () => {
+    const plain = clientSideSource<Named>(() => NAMED, {
+      searchFields: (r) => [r.nameEn],
+      comparators: { nameAr },
+    });
+    const asc = await ids(plain, 'asc');
+    expect(asc.slice(0, 2).sort()).toEqual(['b', 'd']);
+  });
+});
+

@@ -7,7 +7,7 @@ export interface WorkflowTemplateDto {
   id: string;
   organizationId: string;
   nameEn: string;
-  nameAr: string;
+  nameAr: string | null;
   objectType: string;
   isDefault: boolean;
   isActive: boolean;
@@ -20,7 +20,7 @@ export interface WorkflowStageDto {
   id: string;
   workflowTemplateId: string;
   nameEn: string;
-  nameAr: string;
+  nameAr: string | null;
   description: string | null;
   order: number;
   slaWorkingHours: number | null;
@@ -51,7 +51,7 @@ export interface WorkflowTransitionDto {
   fromStageId: string;
   toStageId: string;
   labelEn: string;
-  labelAr: string;
+  labelAr: string | null;
   requiredPermission: string | null;
   triggerCondition: string;
   triggerUserId: string | null;

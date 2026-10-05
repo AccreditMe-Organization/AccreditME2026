@@ -112,7 +112,7 @@ const ASSIGNEE_STRATEGIES = [
 
       <div class="flex flex-col gap-1">
         <label for="nameAr" class="font-medium text-sm">
-          {{ 'workflow.nameAr' | translate }} <span class="text-red-500">*</span>
+          {{ 'workflow.nameAr' | translate }}
         </label>
         <input id="nameAr" pInputText dir="rtl" formControlName="nameAr" />
       </div>
@@ -217,8 +217,8 @@ const ASSIGNEE_STRATEGIES = [
           </label>
           <app-overlay-select
             formControlName="assigneeCommitteeRoleValueId"
-            [options]="committeeRoles()"
-            [optionLabel]="committeeRoleLabelField()"
+            [options]="committeeRoleOptions()"
+            optionLabel="label"
             optionValue="id"
             [showClear]="true"
           />
@@ -373,9 +373,17 @@ export class WorkflowStageFormComponent implements OnInit {
 
   readonly activePositions = computed(() => this.positions().filter((p) => p.isActive));
 
-  committeeRoleLabelField(): 'labelAr' | 'labelEn' {
-    return this.languageService.isArabic() ? 'labelAr' : 'labelEn';
-  }
+  // ACC-160 — options carry a RESOLVED label instead of handing the dropdown a
+  // field NAME ('nameAr' / 'labelAr'), which drew a BLANK option for a record
+  // with no Arabic name. A computed over the options AND the language —
+  // bilingual() reads the language signal — so a switch relabels the list. Never
+  // a label written once at load: that is the navigation-access.service.ts trap.
+  readonly committeeRoleOptions = computed(() =>
+    this.committeeRoles().map((v) => ({
+      ...v,
+      label: this.languageService.bilingual(v.labelEn, v.labelAr),
+    })),
+  );
 
   readonly approvalModes = APPROVAL_MODES;
   readonly parallelThresholds = PARALLEL_THRESHOLDS;
@@ -383,7 +391,11 @@ export class WorkflowStageFormComponent implements OnInit {
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(100)]],
-    nameAr: ['', [Validators.required, Validators.maxLength(100)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    nameAr: ['', [Validators.maxLength(100)]],
     description: [''],
     slaWorkingHours: [null as number | null, [Validators.min(0)]],
     isInitial: [false],

@@ -1195,6 +1195,11 @@ Deletion certificate (signed PDF) issued after confirmed deletion.
 - PrimeNG RTL mode enabled when Arabic active
 - AI prompts include language instruction: respond in user's preferred language
 - All system notification templates maintained in both languages
+- **Arabic is never mandatory** where a tenant types it — the product is sold to
+  customers who do not operate in Arabic. An empty Arabic field is stored as
+  NULL, and a record with no Arabic name is SHOWN by its English one. Display
+  goes through `LanguageService.bilingual()`, never a bare ternary. Rule and
+  mechanism: Key Architecture Decisions (ACC-160) and SYSTEM-REFERENCE §9.3.
 
 ### Timezone and Calendar
 - All DB timestamps: UTC only — no exceptions
@@ -2735,6 +2740,42 @@ Full mechanism detail: SYSTEM-REFERENCE.md Section 15.
 - **`restartPolicyType` round-trips, so `config plan` is never empty** on
   this service. Do not use an empty plan as a drift check; it will never
   come.
+
+---
+
+## Key Architecture Decisions (ACC-160)
+
+Full mechanism and the call-site inventory command: SYSTEM-REFERENCE.md
+Section 9.3. The decisions, briefly:
+
+- **ARABIC FIELDS ARE NEVER MANDATORY, and this is a product rule, not a
+  per-screen choice.** It was applied for months and written down nowhere
+  except code comments, which is how six fields came to break it. Every
+  tenant-facing `nameAr`/`labelAr` is nullable. `Plan.nameAr` and
+  `LookupCategory.labelAr` are platform data and stay required.
+- **"No Arabic name" has exactly ONE stored form: NULL, never `''`.** Two falsy
+  values meaning the same thing is how fallbacks that disagree get written.
+  `common/utils/trim-to-null.transform.ts` is the rule, written once; use it as
+  `@Transform(trimToNull)` beside `@IsOptional()`. A `PartialType` update DTO
+  inherits it AND the validators — measured, so do not hand-edit update DTOs to
+  "make sure".
+- **A missing Arabic name never renders blank.** Three shapes, decided:
+  a name shown as the record's identity falls back to ENGLISH; a slot whose job
+  is the Arabic name shows **"—"**; a single record's Arabic subtitle is
+  OMITTED. Use `LanguageService.bilingual(en, ar)` for the first — it reads the
+  language at call time, so it cannot freeze — and never `isArabic() ? ar : en`:
+  that is a blank the moment `ar` is null, and inside a template literal it
+  renders the text "null".
+- **A dropdown gets a resolved `label`, never a field name.** `optionLabel=
+  "nameAr"` draws a blank option. Build the label in a `computed()` over the
+  options and the language, never once at load.
+- **An unnamed record sorts LAST, in both directions,** server side
+  (`SortWhitelist`'s `{ model, nullsLast }`) and client side
+  (`clientSideSource`'s `nullsLast`). Listing a REQUIRED column in `nullsLast`
+  type-checks and fails at runtime; `sort-whitelist.schema.spec.ts` reads
+  `schema.prisma` and fails CI instead. It reads the schema, not
+  `Prisma.dmmf`, because Prisma 7.8's TypeScript-output client does not export
+  the DMMF.
 
 ---
 

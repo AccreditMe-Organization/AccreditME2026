@@ -169,7 +169,7 @@ export class RolePermissionMatrixComponent implements OnInit {
   readonly roleName = computed(() => {
     const role = this.role();
     if (!role) return '';
-    return this.languageService.isArabic() ? role.nameAr || role.nameEn : role.nameEn;
+    return this.languageService.bilingual(role.nameEn, role.nameAr);
   });
   readonly allPermissions = signal<PermissionDto[]>([]);
   readonly selectedKeys = signal<Set<string>>(new Set());

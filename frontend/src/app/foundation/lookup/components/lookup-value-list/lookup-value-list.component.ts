@@ -422,7 +422,11 @@ export class LookupValueListComponent implements OnInit {
    */
   readonly overrideForm = this.fb.group({
     labelEn: ['', [Validators.required, Validators.maxLength(255)]],
-    labelAr: ['', [Validators.required, Validators.maxLength(255)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    labelAr: ['', [Validators.maxLength(255)]],
   });
 
   readonly overrideErrors = computed(() => {
@@ -516,9 +520,7 @@ export class LookupValueListComponent implements OnInit {
   }
 
   effectiveLabel(val: LookupValueDto): string {
-    return this.languageService.isArabic()
-      ? val.labelOverrideAr || val.labelAr || val.labelOverrideEn || val.labelEn
-      : val.labelOverrideEn || val.labelEn;
+    return this.languageService.bilingual(val.labelOverrideEn || val.labelEn, val.labelOverrideAr || val.labelAr);
   }
 
   statusLabel(val: LookupValueDto): string {

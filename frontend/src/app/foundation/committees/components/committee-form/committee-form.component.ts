@@ -52,7 +52,6 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
       <div class="flex flex-col gap-1">
         <label for="nameAr" class="text-sm font-medium">
           {{ 'committee.nameAr' | translate }}
-          <span class="text-red-500">*</span>
         </label>
         <input pInputText id="nameAr" formControlName="nameAr" dir="rtl" />
       </div>
@@ -64,8 +63,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         </label>
         <app-overlay-select
           formControlName="typeValueId"
-          [options]="committeeTypes()"
-          [optionLabel]="typeLabelField()"
+          [options]="committeeTypeOptions()"
+          optionLabel="label"
           optionValue="id"
           [placeholder]="'committee.selectType' | translate"
         />
@@ -114,8 +113,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         <label for="parentCommitteeId" class="text-sm font-medium">{{ 'committee.parentCommittee' | translate }}</label>
         <app-overlay-select
           formControlName="parentCommitteeId"
-          [options]="parentOptions()"
-          [optionLabel]="nameLabelField()"
+          [options]="parentCommitteeOptions()"
+          optionLabel="label"
           optionValue="id"
           [showClear]="true"
           [placeholder]="'committee.noneOption' | translate"
@@ -128,8 +127,8 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
         </label>
         <app-overlay-select
           formControlName="reportingToCommitteeId"
-          [options]="parentOptions()"
-          [optionLabel]="nameLabelField()"
+          [options]="parentCommitteeOptions()"
+          optionLabel="label"
           optionValue="id"
           [showClear]="true"
           [placeholder]="'committee.noneOption' | translate"
@@ -176,7 +175,11 @@ export class CommitteeFormComponent implements OnInit {
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(150)]],
-    nameAr: ['', [Validators.required, Validators.maxLength(150)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    nameAr: ['', [Validators.maxLength(150)]],
     typeValueId: [null as string | null, [Validators.required]],
     purpose: [''],
     quorumCount: [0, [Validators.min(0)]],
@@ -192,13 +195,24 @@ export class CommitteeFormComponent implements OnInit {
     reportingToCommitteeId: [null as string | null],
   });
 
-  typeLabelField(): 'labelAr' | 'labelEn' {
-    return this.languageService.isArabic() ? 'labelAr' : 'labelEn';
-  }
+  // ACC-160 — options carry a RESOLVED label instead of handing the dropdown a
+  // field NAME ('nameAr' / 'labelAr'), which drew a BLANK option for a record
+  // with no Arabic name. A computed over the options AND the language —
+  // bilingual() reads the language signal — so a switch relabels the list. Never
+  // a label written once at load: that is the navigation-access.service.ts trap.
+  readonly committeeTypeOptions = computed(() =>
+    this.committeeTypes().map((v) => ({
+      ...v,
+      label: this.languageService.bilingual(v.labelEn, v.labelAr),
+    })),
+  );
 
-  nameLabelField(): 'nameAr' | 'nameEn' {
-    return this.languageService.isArabic() ? 'nameAr' : 'nameEn';
-  }
+  readonly parentCommitteeOptions = computed(() =>
+    this.parentOptions().map((c) => ({
+      ...c,
+      label: this.languageService.bilingual(c.nameEn, c.nameAr),
+    })),
+  );
 
   constructor() {
     effect(() => {

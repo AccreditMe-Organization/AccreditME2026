@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { Prisma } from '../../../generated/prisma/client';
 
 // ACC-78 — resolves a caller-supplied sort into a Prisma `orderBy`, but ONLY
 // from a fixed set the endpoint declares.
@@ -14,7 +15,24 @@ import { BadRequestException } from '@nestjs/common';
 // So each endpoint declares its sortable columns and nothing else is reachable.
 // This is the same "explicit allowlist" shape the HttpExceptionFilter uses for
 // safe third-party errors (ACC-27) rather than a deny-list of known-bad names.
-type OrderBy = Record<string, 'asc' | 'desc'>;
+type SortDir = 'asc' | 'desc';
+// A column that can hold NULL may be sorted with Prisma's `{ sort, nulls }`
+// form instead of a bare direction. See `nullsLast` below.
+type OrderBy = Record<string, SortDir | { sort: SortDir; nulls: 'last' }>;
+
+// ACC-160 — every (model, column) any whitelist sorts NULLS LAST, recorded as
+// each is constructed. Read by sort-whitelist.schema.spec.ts, which checks each
+// pair against schema.prisma: a REQUIRED column listed here type-checks and
+// then fails only when a request sorts by it, so the check has to be a test.
+// Module-level and append-only; nothing in the application reads it.
+const nullsLastRegistry: { model: Prisma.ModelName; column: string }[] = [];
+
+export function registeredNullsLastColumns(): readonly {
+  model: Prisma.ModelName;
+  column: string;
+}[] {
+  return [...nullsLastRegistry];
+}
 
 export class SortWhitelist<TColumn extends string> {
   // The fallback may be COMPOUND — an array, applied in order. Roles is why:
@@ -25,12 +43,41 @@ export class SortWhitelist<TColumn extends string> {
   // An EXPLICIT sort is always single-column: once a user picks a column, that
   // is the order they asked for, and quietly appending a secondary key would
   // make the result not match the request.
+  // ACC-160 — NULLS LAST, opt-in per column, in BOTH directions.
+  //
+  // Postgres puts NULLs last on ASC and FIRST on DESC by default, so a column
+  // that became nullable — Role.nameAr, when Arabic names stopped being
+  // mandatory — would cluster every unnamed record at the top of a descending
+  // sort, ahead of the records that do have the name being sorted by. The rule
+  // is that an unnamed record sorts LAST whichever way the column is sorted,
+  // because the reader is looking for named ones.
+  //
+  // Prisma's `nulls` is independent of `sort`, so `{ sort: dir, nulls: 'last' }`
+  // is last in both directions by construction rather than by flipping.
+  //
+  // LIST ONLY NULLABLE COLUMNS. Prisma generates the `{ sort, nulls }` form for
+  // nullable fields alone, and REFUSES it on a required one AT RUNTIME
+  // ("Expected SortOrder, provided Object" — measured against the dev database,
+  // ACC-160). The compiler does not catch it here, because `resolve()` returns
+  // a loose Record rather than the model's own orderBy type; so a required
+  // column listed by mistake would fail on the first request that sorts by it.
+  // That is why `model` is required alongside `nullsLast`: it lets
+  // sort-whitelist.schema.spec.ts check every listed column against
+  // schema.prisma, so the mistake fails CI instead.
+  //
+  // Opt-in rather than a default so every other whitelist (users,
+  // notifications) emits exactly what it did before.
   constructor(
     private readonly columns: readonly TColumn[],
     private readonly fallback:
-      | { column: TColumn; dir: 'asc' | 'desc' }
+      | { column: TColumn; dir: SortDir }
       | { compound: OrderBy[] },
-  ) {}
+    private readonly options?: { model: Prisma.ModelName; nullsLast: readonly TColumn[] },
+  ) {
+    for (const column of options?.nullsLast ?? []) {
+      nullsLastRegistry.push({ model: options!.model, column });
+    }
+  }
 
   // Returns a Prisma orderBy — an object for an explicit sort, or whatever the
   // fallback declares. An UNKNOWN column is rejected with a 400 rather than
@@ -38,7 +85,7 @@ export class SortWhitelist<TColumn extends string> {
   // does not exist has a bug, and quietly returning a differently ordered page
   // hides it. Absent is not the same as unknown — no sortBy at all is the
   // ordinary case and takes the fallback.
-  resolve(sortBy?: string, sortDir?: 'asc' | 'desc'): OrderBy | OrderBy[] {
+  resolve(sortBy?: string, sortDir?: SortDir): OrderBy | OrderBy[] {
     if (sortBy === undefined) {
       if ('compound' in this.fallback) {
         // sortDir is ignored against a compound fallback: there is no single
@@ -54,7 +101,11 @@ export class SortWhitelist<TColumn extends string> {
       );
     }
     const defaultDir = 'compound' in this.fallback ? 'asc' : this.fallback.dir;
-    return { [sortBy]: sortDir ?? defaultDir };
+    const dir = sortDir ?? defaultDir;
+    if (this.options?.nullsLast.includes(sortBy as TColumn)) {
+      return { [sortBy]: { sort: dir, nulls: 'last' } };
+    }
+    return { [sortBy]: dir };
   }
 
   // Exposed so an endpoint can advertise its own sortable set — a frontend

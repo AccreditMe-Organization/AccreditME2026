@@ -140,7 +140,7 @@ import { StepStripComponent } from '../../../../shared/components/step-strip/ste
               <span class="truncate text-[13px] font-medium">{{ position.nameEn }}</span>
             }
             @if (visible('nameAr')) {
-              <span class="truncate text-[13px]" dir="rtl">{{ position.nameAr }}</span>
+              <span class="truncate text-[13px]" dir="rtl">{{ position.nameAr || '—' }}</span>
             }
             @if (visible('grade')) {
               <span
@@ -356,6 +356,10 @@ export class PositionListComponent {
       grade: (a, b) => a.grade - b.grade,
       isActive: (a, b) => Number(a.isActive) - Number(b.isActive),
     },
+    // ACC-160 — a position with no Arabic name sorts LAST in both directions,
+    // the same rule Role.nameAr's server sort follows. Before this, '' sorted
+    // first ascending, ahead of every position that had the name being sorted.
+    nullsLast: { nameAr: (p) => p.nameAr },
   });
 
   /**

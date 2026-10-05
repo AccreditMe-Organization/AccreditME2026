@@ -6,7 +6,7 @@ export interface ILookupValue {
   categoryId: string;
   key: string;
   labelEn: string;
-  labelAr: string;
+  labelAr: string | null;
   layer: LookupLayer;
   attributes: Record<string, unknown> | null;
   isActive: boolean;

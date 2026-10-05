@@ -4,7 +4,7 @@ export interface IWorkflowStage {
   id: string;
   workflowTemplateId: string;
   nameEn: string;
-  nameAr: string;
+  nameAr: string | null;
   description: string | null;
   order: number;
   slaWorkingHours: number | null;

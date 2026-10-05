@@ -3,7 +3,7 @@ export interface IRole {
   organizationId: string;
   key: string | null;
   nameEn: string;
-  nameAr: string;
+  nameAr: string | null;
   description: string | null;
   isSystem: boolean;
   isActive: boolean;

@@ -486,7 +486,7 @@ export class ManageRolesComponent implements OnInit {
   // ── display ────────────────────────────────────────────────────────────────
 
   roleName(role: RoleDto): string {
-    return this.languageService.isArabic() ? role.nameAr || role.nameEn : role.nameEn;
+    return this.languageService.bilingual(role.nameEn, role.nameAr);
   }
 
   /** Resolved AT RENDER, so a language switch reaches it. */

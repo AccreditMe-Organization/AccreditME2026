@@ -99,14 +99,20 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
               <!-- Both names always, not one selected by language: a
                    bilingual governance record is read by people who need the
                    Arabic name even in an English session. isolate keeps it
-                   from reordering the line. -->
-              <div
-                dir="rtl"
-                style="unicode-bidi: isolate"
-                class="text-base text-[var(--am-text-secondary)] mt-1 text-start"
-              >
-                {{ c.nameAr }}
-              </div>
+                   from reordering the line.
+
+                   ACC-160 — OMITTED when there is no Arabic name. This is a
+                   subtitle, not a column: a "—" under a title reads as noise,
+                   and the English fallback would only repeat the H1 above it. -->
+              @if (c.nameAr) {
+                <div
+                  dir="rtl"
+                  style="unicode-bidi: isolate"
+                  class="text-base text-[var(--am-text-secondary)] mt-1 text-start"
+                >
+                  {{ c.nameAr }}
+                </div>
+              }
             </div>
 
             <div class="flex items-center gap-2.5 flex-wrap">
@@ -703,19 +709,19 @@ export class CommitteeDetailComponent implements OnInit {
   }
 
   displayName(committee: CommitteeDto): string {
-    return this.languageService.isArabic() ? committee.nameAr : committee.nameEn;
+    return this.languageService.bilingual(committee.nameEn, committee.nameAr);
   }
 
   typeLabel(typeValueId: string): string {
     const value = this.committeeTypes().find((v) => v.id === typeValueId);
     if (!value) return typeValueId;
-    return this.languageService.isArabic() ? value.labelAr : value.labelEn;
+    return this.languageService.bilingual(value.labelEn, value.labelAr);
   }
 
   memberRoleLabel(roleValueId: string): string {
     const value = this.memberRoles().find((v) => v.id === roleValueId);
     if (!value) return roleValueId;
-    return this.languageService.isArabic() ? value.labelAr : value.labelEn;
+    return this.languageService.bilingual(value.labelEn, value.labelAr);
   }
 
   userName(userId: string): string {
@@ -741,20 +747,22 @@ export class CommitteeDetailComponent implements OnInit {
     return `${members} · ${frequency}`;
   }
 
-  // Tenant-editable stage name: isArabic() selection, never `| translate`.
+  // Tenant-editable stage name, by language, never `| translate`.
+  //
+  // ACC-160 — the `?? ''` this replaced hid a blank: in an Arabic session a
+  // stage with no Arabic name yielded '', and the compiler could not see it.
+  // currentStageNameEn is null only when there is no workflow instance at all.
   subCommitteeStage(sub: CommitteeListItemDto): string {
-    return (
-      (this.languageService.isArabic() ? sub.currentStageNameAr : sub.currentStageNameEn) ?? ''
-    );
+    const en = sub.currentStageNameEn;
+    return en ? this.languageService.bilingual(en, sub.currentStageNameAr) : '';
   }
 
   // This committee's own live stage, from the same list the page already has.
   readonly currentStageName = computed(() => {
     const self = this.allCommittees().find((c) => c.id === this.committeeId);
     if (!self) return '';
-    return (
-      (this.languageService.isArabic() ? self.currentStageNameAr : self.currentStageNameEn) ?? ''
-    );
+    const en = self.currentStageNameEn;
+    return en ? this.languageService.bilingual(en, self.currentStageNameAr) : '';
   });
 
   // JOINED reads as gain, LEFT as loss, ROLE_CHANGED as neither — semantic

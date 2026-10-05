@@ -275,13 +275,14 @@ export class WorkflowStageIndicatorComponent {
 
   // Stage and transition names are tenant-editable data: isArabic() selection,
   // never `| translate` (SYSTEM-REFERENCE §9.3).
-  stageName(nameEn: string, nameAr: string): string {
-    return this.languageService.isArabic() ? nameAr : nameEn;
+  stageName(nameEn: string, nameAr: string | null): string {
+    return this.languageService.bilingual(nameEn, nameAr);
   }
 
+  // ACC-160 — `?? ''` here hid a blank Arabic transition label. labelEn is null
+  // only when the visit had no transition at all, which nulls both halves.
   transitionLabel(labelEn: string | null, labelAr: string | null): string {
-    if (!labelEn && !labelAr) return '';
-    return (this.languageService.isArabic() ? labelAr : labelEn) ?? '';
+    return labelEn ? this.languageService.bilingual(labelEn, labelAr) : '';
   }
 
   // ACC-40 §2.6.3 — " — Acting Head of Cardiology" / " — covering for Ahmad".

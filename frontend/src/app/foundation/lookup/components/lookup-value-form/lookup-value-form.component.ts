@@ -263,7 +263,11 @@ export class LookupValueFormComponent implements OnInit {
   readonly form = this.fb.group({
     key:       ['', [Validators.required, Validators.maxLength(100), Validators.pattern(/^[a-z0-9_]+$/)]],
     labelEn:   ['', [Validators.required, Validators.maxLength(255)]],
-    labelAr:   ['', [Validators.required, Validators.maxLength(255)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    labelAr:   ['', [Validators.maxLength(255)]],
     sortOrder: [0 as number | null],
     isActive:  [true],
   });

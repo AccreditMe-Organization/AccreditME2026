@@ -235,7 +235,7 @@ export class WorkflowService {
     // transitions across 8 templates, all unique), but a tenant can create
     // one, and naming the wrong action in a compliance trail is worse than
     // naming none.
-    const transitionByPair = new Map<string, { labelEn: string; labelAr: string } | null>();
+    const transitionByPair = new Map<string, { labelEn: string; labelAr: string | null } | null>();
     for (const transition of transitions) {
       const key = `${transition.fromStageId}->${transition.toStageId}`;
       transitionByPair.set(

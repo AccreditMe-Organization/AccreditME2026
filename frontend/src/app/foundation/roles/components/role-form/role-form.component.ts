@@ -35,7 +35,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 
       <div class="flex flex-col gap-1">
         <label for="nameAr" class="font-medium text-sm">
-          {{ 'roles.nameAr' | translate }} <span class="text-red-500">*</span>
+          {{ 'roles.nameAr' | translate }}
         </label>
         <input id="nameAr" pInputText dir="rtl" formControlName="nameAr" />
       </div>
@@ -83,7 +83,11 @@ export class RoleFormComponent implements OnInit {
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(100)]],
-    nameAr: ['', [Validators.required, Validators.maxLength(100)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    nameAr: ['', [Validators.maxLength(100)]],
     description: ['', [Validators.maxLength(500)]],
   });
 

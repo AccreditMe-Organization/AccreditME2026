@@ -120,3 +120,49 @@ describe('WorkflowTemplateListComponent — write gating (ACC-123)', () => {
     expect(buttons[1]!.disabled).toBe(true);
   });
 });
+
+// ACC-160 — a dedicated Arabic-name slot in a list shows "—" when there is
+// no Arabic name, rather than a blank cell. Not the English name: that slot's
+// job is to report the Arabic one, and an English name there would lie.
+// GUARD FIRST: a list whose records all have Arabic names shows no "—" at all,
+// so the dash in the null case can only have come from that cell.
+describe('WorkflowTemplateListComponent — the Arabic-name column (ACC-160)', () => {
+  function renderWith(templates: object[]): string[] {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [WorkflowTemplateListComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        ConfirmationService,
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+      ],
+    });
+    const fixture = TestBed.createComponent(WorkflowTemplateListComponent);
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/workflow-templates`).flush(templates);
+    fixture.detectChanges();
+    return arabicSlots(fixture.nativeElement as HTMLElement);
+  }
+
+  it('shows no dash while every template has an Arabic name', () => {
+    const slots = renderWith(TEMPLATES);
+    expect(slots).toContain('اعتماد الوثيقة');
+    expect(slots).not.toContain('—');
+  });
+
+  it('shows "—" for a template with no Arabic name, not a blank', () => {
+    const slots = renderWith([...TEMPLATES, { ...TEMPLATES[0], id: 't3', nameEn: 'Audit cycle', nameAr: null }]);
+    expect(slots).toContain('—');
+    expect(slots).not.toContain('');
+  });
+});
+
+// Reads the Arabic-name SLOTS themselves (dir="rtl"), not the page: a page can
+// show "—" elsewhere — the stage list's empty SLA column does — and a whole-page
+// assertion would then pass or fail for a reason that has nothing to do with
+// the Arabic name. That is exactly how this test's first draft went wrong.
+const arabicSlots = (root: HTMLElement): string[] =>
+  Array.from(root.querySelectorAll('[dir="rtl"]')).map((e) => (e.textContent ?? '').trim());

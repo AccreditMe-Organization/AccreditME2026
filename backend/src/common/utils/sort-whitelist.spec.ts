@@ -92,3 +92,36 @@ describe('SortWhitelist (ACC-78)', () => {
     });
   });
 });
+
+// ACC-160 — NULLS LAST, opt-in per column. An unnamed record sorts LAST in both
+// directions, where Postgres's own default puts NULLs first on DESC.
+describe('SortWhitelist nullsLast (ACC-160)', () => {
+  const sort = new SortWhitelist(['nameEn', 'nameAr'] as const, { column: 'nameEn', dir: 'asc' }, {
+    model: 'Role',
+    nullsLast: ['nameAr'],
+  });
+
+  it.each(['asc', 'desc'] as const)('puts NULLs last on an opted-in column, %s', (dir) => {
+    expect(sort.resolve('nameAr', dir)).toEqual({ nameAr: { sort: dir, nulls: 'last' } });
+  });
+
+  it('uses the default direction when none is given, still nulls last', () => {
+    expect(sort.resolve('nameAr')).toEqual({ nameAr: { sort: 'asc', nulls: 'last' } });
+  });
+
+  // The boundary: the option is per column, not global.
+  it('leaves a column that did not opt in as a bare direction', () => {
+    expect(sort.resolve('nameEn', 'desc')).toEqual({ nameEn: 'desc' });
+  });
+
+  it('does not touch the fallback', () => {
+    expect(sort.resolve(undefined)).toEqual({ nameEn: 'asc' });
+  });
+
+  // Every existing whitelist is constructed without the option and must emit
+  // exactly what it did before ACC-160.
+  it('is off entirely when the option is not given', () => {
+    const plain = new SortWhitelist(['nameAr'] as const, { column: 'nameAr', dir: 'asc' });
+    expect(plain.resolve('nameAr', 'desc')).toEqual({ nameAr: 'desc' });
+  });
+});

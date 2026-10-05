@@ -37,7 +37,7 @@ export interface OrgUnitTypeDto {
   id: string;
   key: string;
   labelEn: string;
-  labelAr: string;
+  labelAr: string | null;
   isRetired: boolean;
 }
 

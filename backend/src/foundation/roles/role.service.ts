@@ -47,9 +47,13 @@ export interface ListRolesFilters {
 // The fallback is COMPOUND — system roles first, then alphabetical — which is
 // the existing behaviour and a real UX property, not an accident. A
 // single-column fallback would have dropped the grouping silently.
+//
+// ACC-160 — nameAr can be NULL now that Arabic names are optional, and a role
+// with no Arabic name sorts LAST in both directions (see SortWhitelist).
 const ROLE_SORT = new SortWhitelist(
   ['nameEn', 'nameAr', 'key', 'isSystem', 'createdAt'] as const,
   { compound: [{ isSystem: 'desc' }, { nameEn: 'asc' }] },
+  { model: 'Role', nullsLast: ['nameAr'] },
 );
 
 @Injectable()

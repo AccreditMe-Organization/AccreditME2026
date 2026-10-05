@@ -9,6 +9,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimToNull } from '../../../common/utils/trim-to-null.transform';
 
 const WORKFLOW_APPROVAL_MODES = ['SINGLE', 'SEQUENTIAL', 'PARALLEL', 'COMMITTEE'] as const;
 const WORKFLOW_PARALLEL_THRESHOLDS = ['ALL', 'MAJORITY', 'ANY'] as const;
@@ -28,10 +30,14 @@ export class CreateWorkflowStageDto {
   @MaxLength(100)
   nameEn!: string;
 
+  // ACC-160 — optional, because Arabic fields are never mandatory. An empty
+  // value stores NULL rather than '' (see trimToNull). Update DTOs built with
+  // PartialType inherit both halves.
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   @MaxLength(100)
-  nameAr!: string;
+  @Transform(trimToNull)
+  nameAr?: string | null;
 
   @IsString()
   @IsOptional()

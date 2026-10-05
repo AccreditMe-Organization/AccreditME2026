@@ -10,6 +10,7 @@ import { OrgUnitService } from '../../../organization/services/org-unit.service'
 import { RoleService } from '../../../roles/services/role.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
+import { pickBilingualName } from '../../../../shared/utils/bilingual-name.util';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
 
 /**
@@ -75,7 +76,15 @@ describe('UserListComponent — reactivation confirmation (ACC-83)', () => {
         // document RTL and made DataListComponent's own alignment spec fail
         // later in the same browser, with column offsets in reverse order —
         // a failure in a file this one does not touch.
-        { provide: LanguageService, useValue: { isArabic: () => false, isRtl: () => false } },
+        {
+          provide: LanguageService,
+          useValue: {
+            isArabic: () => false,
+            isRtl: () => false,
+            // ACC-160 — the real rule, under this mock's own language flag.
+            bilingual: (en: string, ar: string | null | undefined) => pickBilingualName(en, ar, false),
+          },
+        },
       ],
     });
     // The TestBed loads no translations, so instant() returns the KEY and the
@@ -214,7 +223,15 @@ describe('UserListComponent — the message slot does not move the rows (ACC-83)
         // document RTL and made DataListComponent's own alignment spec fail
         // later in the same browser, with column offsets in reverse order —
         // a failure in a file this one does not touch.
-        { provide: LanguageService, useValue: { isArabic: () => false, isRtl: () => false } },
+        {
+          provide: LanguageService,
+          useValue: {
+            isArabic: () => false,
+            isRtl: () => false,
+            // ACC-160 — the real rule, under this mock's own language flag.
+            bilingual: (en: string, ar: string | null | undefined) => pickBilingualName(en, ar, false),
+          },
+        },
       ],
     });
     const fixture = TestBed.createComponent(UserListComponent);

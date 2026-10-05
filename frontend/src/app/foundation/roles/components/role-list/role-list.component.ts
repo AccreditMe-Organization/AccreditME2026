@@ -1,4 +1,5 @@
 import { Component, TemplateRef, ViewChild, computed, inject, signal, viewChild } from '@angular/core';
+import { LanguageService } from '../../../../core/services/language.service';
 import { Router, ActivatedRoute } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -119,7 +120,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                        session (and right-aligned in an Arabic one, which is
                        equally correct). -->
                   <div class="text-[11.5px] text-[var(--am-text-secondary)] truncate">
-                    <span dir="rtl" style="unicode-bidi: isolate">{{ role.nameAr }}</span>
+                    <span dir="rtl" style="unicode-bidi: isolate">{{ role.nameAr || '—' }}</span>
                   </div>
                 </div>
               }
@@ -217,6 +218,7 @@ export class RoleListComponent {
   private readonly confirmationService = inject(ConfirmationService);
 
   private readonly translate = inject(TranslateService);
+  private readonly languageService = inject(LanguageService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
   // ACC-118 — the create action is HIDDEN, not disabled, for a caller who
@@ -339,8 +341,10 @@ export class RoleListComponent {
     }
   }
 
+  // ACC-160 — this read `role.nameAr || role.nameEn` with no language check, so
+  // an English session named the role in Arabic inside an English sentence.
   displayLabel(role: RoleDto): string {
-    return role.nameAr || role.nameEn;
+    return this.languageService.bilingual(role.nameEn, role.nameAr);
   }
 
   onDeactivate(role: RoleDto): void {

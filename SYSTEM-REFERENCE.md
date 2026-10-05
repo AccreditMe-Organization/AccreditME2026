@@ -3535,36 +3535,94 @@ their next page refresh."
 
 ### 9.3 The Translate-Pipe-vs-Tenant-Editable-Data Distinction
 
-Confirmed by grepping every `languageService.isArabic()` call site
-across the frontend: it is used **exclusively for tenant-editable data
-fields** (`labelEn`/`labelAr`, `nameEn`/`nameAr` pairs coming back from
-the API), **never** as a substitute for `| translate` on static UI
-copy. Every call site found:
+**Rewritten in ACC-160.** The distinction below still holds. What changed is
+everything this section used to say about *where* it is applied: it was a
+hand-kept list of four areas, and by ACC-160 twenty-eight files used
+`isArabic()`. A list of call sites drifts the day after it is written, so this
+section now states the rule, the one mechanism, and the command that
+regenerates the inventory — and lists by hand only the deliberate exceptions,
+each with its reason.
 
-- **Committee module** — committee `nameEn`/`nameAr`, lookup value
-  `labelEn`/`labelAr` (type, member role), workflow stage
-  `nameEn`/`nameAr` (`committee-detail.component.ts:389`'s
-  `currentStageLabel` — this is the exact mechanism behind the
-  `WorkflowStage`-has-no-stable-key decision already documented: plain
-  bilingual text via `isArabic()`, not a colored badge keyed to a
-  stage identity).
-- **Lookup module** — category `labelEn`/`labelAr`, value
-  `labelEn`/`labelAr` (both list components).
-- **`WorkflowTransitionActionsComponent`** — transition
-  `labelEn`/`labelAr` (`workflow-transition-actions.component.ts:84`) —
-  the exact code CLAUDE.md's Key Architecture Decision refers to:
-  "renders each transition's own `labelEn`/`labelAr` (never `|
-  translate` — transition labels are tenant-editable data)," confirmed
-  directly against the real call site, not just the decision log.
-- **Notification bell** — one call site
-  (`notification-bell.component.ts:114`) for direction only, not label
-  selection (notifications don't carry bilingual fields — `titleAr`/
-  `bodyAr` are read directly in the email processor server-side,
-  Section 4.4, not selected client-side).
+**The distinction.** Static UI copy goes through `| translate`. Tenant-editable
+data — every `nameEn`/`nameAr`, `labelEn`/`labelAr` pair the API returns — is
+**never** translated: it is chosen by language. A transition label, a stage
+name or a committee name is a value a tenant typed, not a string in the
+translation files.
 
-No call site found anywhere using `isArabic()`/`isRtl()` to conditionally
-render static translated UI copy — that class of text uses
-`| translate` throughout, consistent with the intended separation.
+**Arabic is optional, everywhere a tenant types it (ACC-160).** The product is
+sold to customers who do not operate in Arabic. `Role.nameAr`,
+`Committee.nameAr`, `WorkflowTemplate.nameAr`, `WorkflowStage.nameAr`,
+`WorkflowTransition.labelAr` and `LookupValue.labelAr` became nullable in
+ACC-160, joining `Organization`, `OrgUnit`, `OrgPosition`, `PublicHoliday` and
+`AiCreditPack`, which already were. `Plan.nameAr` and `LookupCategory.labelAr`
+are platform data and stay required. An emptied Arabic field is stored as
+**NULL, never `''`** — one stored form for "no Arabic name" — by
+`common/utils/trim-to-null.transform.ts`, which every create DTO uses and every
+`PartialType` update DTO inherits (measured, not assumed).
+
+#### The one mechanism
+
+`LanguageService.bilingual(en, ar)`, implemented by `pickBilingualName()` in
+`shared/utils/bilingual-name.util.ts`:
+
+* the Arabic name when the session is Arabic **and** it is non-empty after
+  trimming; otherwise the English name; **never blank**;
+* reads the language at CALL time, so it is safe in a template and in a
+  `computed()`, and cannot freeze. **Not a pipe**: a pure pipe caches on its
+  inputs and the language is not one of them. **Never compute a display name
+  once at load and store it** — the one-time-set trap
+  (`navigation-access.service.ts`'s tenant name).
+
+**Where it does NOT apply — two other shapes, each decided in ACC-160:**
+
+| Shape | Missing Arabic name shows | Why |
+| -- | -- | -- |
+| A name shown **as the record's identity** (title, name column, dropdown option) | the **English** name | losing the name is worse than reading it in English — the backend's own precedent, `delegation-label.service.ts` |
+| A slot whose **job is the Arabic name** (an "Arabic name" column, the Arabic second line of a list cell) | **"—"** | the English name there would make the slot lie; matches the formatting layer's missing-value convention |
+| A single record's **Arabic subtitle** under its H1 (`committee-detail`) | **nothing — the line is omitted** | a dash under a title is noise; the English fallback would repeat the H1 |
+
+**Dropdowns get a resolved label, never a field name.** Handing
+`OverlaySelectComponent` `optionLabel="nameAr"` draws a blank option for a
+record with no Arabic name. Options carry a `label` computed over the options
+AND the language (`committee-form`, `committee-member-form`,
+`workflow-stage-form`, `invite-user`); `invite-user`'s spec reads the RENDERED
+label across a language switch and fails if it freezes.
+
+**Sorting: an unnamed record sorts LAST, in both directions.** Server side,
+`SortWhitelist`'s opt-in `{ model, nullsLast }` (Role.nameAr), guarded by
+`sort-whitelist.schema.spec.ts`, which fails CI if a listed column is required
+in `schema.prisma` — Prisma refuses `nulls: 'last'` on a required field only
+at runtime, and the compiler cannot see it. Client side, `clientSideSource`'s
+opt-in `nullsLast` (OrgPosition.nameAr).
+
+#### The inventory — regenerate, do not maintain
+
+```
+grep -rn "\.bilingual(" frontend/src/app --include=*.ts | grep -v spec
+```
+
+At ACC-160: **29 call sites in 18 files**. Every one of the six newly nullable
+fields is displayed through it; `bilingual-name.screens.spec.ts` asserts the
+null case for each swept screen in a real Arabic session.
+
+**Deliberately still on a hand-written `isArabic()` selection**, each already
+correct:
+
+* **OrgUnit and OrgPosition names** — `org-unit-tree`, `manage-roles`'s
+  position/unit map, `user-profile`. Already nullable before ACC-160, already
+  falling back by `||`. Candidates for `bilingual()`, not defects.
+* **LookupCategory labels** — `lookup-category-list`, `lookup-value-list`'s
+  page header. Platform data, required, out of ACC-160's scope.
+* **Setup health** — subjects are org units or stages; already falls back.
+* **Notification and home titles** (`titleAr`) — server-built stored text, not
+  a name pair, and its language is decided server-side (ACC-95).
+* **The delegation qualifier** (`workflow-stage-indicator`) — the backend
+  already resolved its fallback.
+* **Not name selections at all** — `language-toggle`, and `invite-user`'s
+  explicit signal read.
+
+No call site uses `isArabic()` to choose between translated static strings;
+that class of text uses `| translate` throughout.
 
 ### 9.4 Translation File Checks — Real Controls Since ACC-78 and ACC-94
 
