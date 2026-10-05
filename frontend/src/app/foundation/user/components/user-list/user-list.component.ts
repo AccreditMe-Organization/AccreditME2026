@@ -813,7 +813,7 @@ export class UserListComponent implements OnInit {
 
   private openReactivateConfirm(
     user: IUserDto,
-    roles: { nameEn: string; nameAr: string }[],
+    roles: { nameEn: string; nameAr: string | null }[],
     rolesUnavailable: boolean,
   ): void {
     const roleLine = rolesUnavailable

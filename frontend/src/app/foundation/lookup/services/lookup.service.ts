@@ -24,7 +24,7 @@ export interface LookupValueDto {
   categoryId: string;
   key: string;
   labelEn: string;
-  labelAr: string;
+  labelAr: string | null;
   layer: 'SYSTEM' | 'TENANT';
   attributes: Record<string, unknown> | null;
   isActive: boolean;
