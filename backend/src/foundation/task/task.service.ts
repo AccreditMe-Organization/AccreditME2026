@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -7,7 +7,7 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
-import { TaskStatus, TaskSourceType, TaskPriority } from '../../../generated/prisma/client';
+import { TaskStatus, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
@@ -18,6 +18,11 @@ import { ITaskEvidence } from './interfaces/task-evidence.interface';
 interface GetTasksOptions {
   status?: TaskStatus;
 }
+
+// The raw row plus every TaskAssignee row, removed ones included — what the
+// active-assignee check reads. Not ITaskWithAssignees, which is a resolved
+// view of ACTIVE assignees for list surfaces.
+type TaskWithAssigneeRows = ITask & { assignees: TaskAssignee[] };
 
 @Injectable()
 export class TaskService {
@@ -247,21 +252,13 @@ export class TaskService {
   // ANY-completes semantics: the first active assignee to call this finishes
   // it for everyone else — their TaskAssignee rows get removedAt stamped, but
   // are never deleted (permanent record of who was ever assigned).
+  //
+  // ACC-162 — a closed task is refused. Before, an assignee still attached to a
+  // CANCELLED task could complete it, overwriting the cancellation, and an
+  // already-COMPLETED task could be completed again, overwriting who finished
+  // it and when.
   async complete(id: string, userId: string, organizationId: string): Promise<ITask> {
-    const existing = await this.prisma.task.findFirst({
-      where: { id, organizationId },
-      include: { assignees: true },
-    });
-    if (!existing) {
-      throw new NotFoundException('Task not found');
-    }
-
-    const callerIsActiveAssignee = existing.assignees.some(
-      (a) => a.userId === userId && a.removedAt === null,
-    );
-    if (!callerIsActiveAssignee) {
-      throw new NotFoundException('Task not found for this assignee');
-    }
+    const existing = await this.findOpenForActiveAssignee(id, userId, organizationId, 'be completed');
 
     const now = new Date();
     await this.prisma.taskAssignee.updateMany({
@@ -705,13 +702,21 @@ export class TaskService {
     return orphanCount > 0;
   }
 
+  // ACC-162 — evidence follows the assignee, exactly as completion does: only a
+  // currently-active assignee may attach it, so the route carries no
+  // permission. Before this, any holder of tasks:complete could attach evidence
+  // to any task in the tenant, while the assignee themselves — usually
+  // BASE_USER, which never held it — could not.
+  //
+  // A closed task is refused (see findOpenForActiveAssignee): evidence added
+  // after the fact would rewrite the record of what proved the work was done.
   async addEvidence(
     taskId: string,
     dto: AddTaskEvidenceDto,
     organizationId: string,
     actorId: string,
   ): Promise<ITaskEvidence> {
-    await this.getById(taskId, organizationId); // validates tenant ownership
+    await this.findOpenForActiveAssignee(taskId, actorId, organizationId, 'have evidence added');
 
     let refDisplay: string | null = null;
     if (dto.type === 'INTERNAL_REFERENCE' && dto.refId) {
@@ -747,6 +752,45 @@ export class TaskService {
     });
 
     return evidence;
+  }
+
+  // The self-scoped rule complete() and addEvidence() share. One copy, so the
+  // two actions cannot drift apart on who counts as an assignee.
+  //
+  // 1. The task must be in this tenant and the caller one of its CURRENTLY-
+  //    active assignees (removedAt null) — someone completed past or
+  //    reassigned away is not. Every failure here is the SAME 404, body and
+  //    all: a missing task, another tenant's, one the caller was never on and
+  //    one they were removed from are indistinguishable (ACC-101 clause (b)).
+  //    This used to say "Task not found for this assignee" when the task
+  //    existed, which told any caller with an id that it was real.
+  //
+  // 2. Only then is a closed task refused, with 409 — so a non-assignee never
+  //    learns a task's status. COMPLETED and CANCELLED both refuse: ACC-68
+  //    leaves a cancelled task's assignees attached, and the completer's own
+  //    row is never stamped, so the assignee check alone admits both.
+  //    `refusedAction` completes the sentence "A cancelled task cannot …".
+  private async findOpenForActiveAssignee(
+    id: string,
+    userId: string,
+    organizationId: string,
+    refusedAction: string,
+  ): Promise<TaskWithAssigneeRows> {
+    const task = await this.prisma.task.findFirst({
+      where: { id, organizationId },
+      include: { assignees: true },
+    });
+    const callerIsActiveAssignee = task?.assignees.some(
+      (a) => a.userId === userId && a.removedAt === null,
+    );
+    if (!task || !callerIsActiveAssignee) {
+      throw new NotFoundException('Task not found');
+    }
+
+    if (task.status === 'COMPLETED' || task.status === 'CANCELLED') {
+      throw new ConflictException(`A ${task.status.toLowerCase()} task cannot ${refusedAction}`);
+    }
+    return task;
   }
 
   // Priority SLA from Organization.settings.taskSla (ACC-46 Section 2.7.c —

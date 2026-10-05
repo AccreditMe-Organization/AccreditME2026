@@ -697,7 +697,7 @@ message throughout.
 An unguarded `getById()` for the engine and internal callers, and a
 `getByIdForViewer()` taking viewer context for every route. `UserService`
 (ACC-43), `TaskService` and `WorkflowService` all follow it. The split is
-load-bearing rather than stylistic: `TaskService.addEvidence()` calls
+load-bearing rather than stylistic: `UserService`'s own mutations call
 `getById()` to validate tenant ownership, and the workflow engine reads
 tasks it created — **a service acting on its own behalf has no viewer**,
 and those call sites must never acquire someone's permission check.
@@ -1842,6 +1842,10 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   record of who was ever assigned) and sets the task `COMPLETED`.
   Rejects (404, not 403) if the caller isn't a currently-active assignee.
   **That 404 is the whole access control as of ACC-76** — see 3.6.
+  Since ACC-162 it is the same `404 "Task not found"` whether the task is
+  missing, another tenant's, or simply not the caller's, and a `COMPLETED`
+  or `CANCELLED` task is refused with 409 — both checks live in the
+  `findOpenForActiveAssignee()` helper it shares with `addEvidence()`.
 - **`cancelForStage()`** / **`cancelForInstance()`** (ACC-68) — the
   only producers of `TaskStatus.CANCELLED` anywhere in the codebase.
   Before ACC-68 that enum value was **unreachable**: declared in
@@ -1941,7 +1945,9 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   assignees inside `attachAssigneesToUnassignedStageTasks()`'s own
   transaction, so reading twice is correct rather than wasteful (a row
   read here and acted on later would be a stale snapshot).
-- **`addEvidence()`** — `INTERNAL_REFERENCE` evidence sets
+- **`addEvidence()`** — self-scoped exactly as `complete()` is (ACC-162):
+  same helper, same identical 404 for anyone not a currently-active
+  assignee, same 409 for a closed task. `INTERNAL_REFERENCE` evidence sets
   `refDisplay: dto.refId` verbatim (the raw id, not a resolved display
   name) — code comment states plainly: *"no functional module exists
   yet to resolve a real display name from."* A real limitation, not
@@ -2169,8 +2175,10 @@ notification fires either (that notification path,
 tasks:view       — TaskController: getForSource, getById
                    NOT getMyTasks — self-scoped, ungated (ACC-70)
 tasks:create     — TaskController: create
-tasks:complete   — TaskController: addEvidence ONLY
-                   NOT complete() — self-scoped, ungated (ACC-76)
+tasks:complete   — RETIRED (ACC-162). Gated nothing once complete()
+                   (ACC-76) and addEvidence() (ACC-162) became
+                   self-scoped; removed from the constants, the seed
+                   and existing tenants
 tasks:reassign   — TaskController: reassign
 tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
                    `@Permissions()` consumer. Previously seeded into
@@ -2179,9 +2187,9 @@ tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
                    longer inert as of ACC-34.
 ```
 
-**Two endpoints here carry NO permission, and the omission is load-bearing
-in both — do not "restore" either for consistency with its neighbours.**
-Both specs assert the absence explicitly for that reason.
+**Three endpoints here carry NO permission, and the omission is load-bearing
+in each — do not "restore" any of them for consistency with its neighbours.**
+The specs assert the absence explicitly for that reason.
 
 - **`getMyTasks()`** (ACC-70) — every query filters
   `assignees.some(userId = caller)`, so it cannot reach another user's
@@ -2198,10 +2206,17 @@ Both specs assert the absence explicitly for that reason.
   finishing, and `my-tasks`' Complete button 403'd for most users it was
   shown to. Granting the permission to everyone instead would reach the
   same enforcement while keeping a control that controls nothing.
+- **`addEvidence()`** (ACC-162) — the same defect a second time: gated by
+  `tasks:complete`, so an assignee could complete a task but not attach
+  evidence to it, while any holder could attach evidence to any task in
+  the tenant, closed ones included. Now self-scoped through the same
+  helper as `complete()`.
 
-**The `tasks:complete` string itself is still seeded and still gates
-`addEvidence()`** — whether it should survive at all is part of **ACC-77**,
-which also carries the seed defects this only worked around
+**`tasks:complete` is retired (ACC-162)**, which settles ACC-77's question
+of whether it should survive. Existing tenants lose it through
+`backfill-retire-tasks-complete.ts`, which also deletes the catalog row so
+the role matrix stops offering it. **ACC-77** still carries the seed defects
+this only worked around
 (`QUALITY_OFFICER` cannot create; `tasks:manage` implies none of its
 specific strings, against ACC-44's required pattern).
 

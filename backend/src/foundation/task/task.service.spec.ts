@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -99,6 +99,17 @@ const mockPrisma = {
 (mockPrisma as unknown as Record<string, unknown>)['$transaction'] = jest.fn(
   (callback: (tx: unknown) => unknown) => callback(mockPrisma),
 );
+
+// Resolves to whatever the promise rejected with, so two refusals can be
+// compared body to body. Fails the test if the promise resolves instead.
+async function captureError(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error: unknown) {
+    return error;
+  }
+  throw new Error('Expected the call to be refused, but it succeeded');
+}
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
@@ -346,6 +357,152 @@ describe('TaskService', () => {
       mockPrisma.task.findFirst.mockResolvedValue(null);
 
       await expect(service.complete('task-1', USER_A, ORG_B)).rejects.toThrow(NotFoundException);
+    });
+
+    // ACC-162 — the caller is still an active assignee in both cases (the
+    // completer's own row is never stamped; ACC-68 leaves a cancelled task's
+    // assignees attached), so only the status check stands between them and
+    // overwriting the record.
+    it.each(['COMPLETED', 'CANCELLED'])(
+      'throws ConflictException for a %s task, even from an active assignee',
+      async (status) => {
+        mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status });
+
+        await expect(service.complete('task-1', USER_A, ORG_A)).rejects.toThrow(ConflictException);
+        expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+        expect(mockPrisma.task.update).not.toHaveBeenCalled();
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      },
+    );
+
+    // ACC-162 — ACC-101 clause (b): a task the caller is not on must read
+    // exactly like a task that does not exist, or the 404 confirms the id.
+    it('returns an identical 404 body for a missing task and for a non-assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(null);
+      const missing = await captureError(service.complete('task-1', USER_A, ORG_A));
+      mockPrisma.task.findFirst.mockResolvedValueOnce(BASE_TASK);
+      const notAssigned = await captureError(service.complete('task-1', USER_B, ORG_A));
+
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect(notAssigned).toBeInstanceOf(NotFoundException);
+      expect((notAssigned as NotFoundException).getResponse()).toEqual(
+        (missing as NotFoundException).getResponse(),
+      );
+    });
+  });
+
+  // ACC-162 — evidence follows the assignee, not a permission. The route is
+  // ungated, so these refusals are the whole of the access control.
+  describe('addEvidence', () => {
+    const TEXT_EVIDENCE = { type: 'TEXT' as const, content: 'Minutes reviewed, no changes.' };
+
+    beforeEach(() => {
+      mockPrisma.taskEvidence.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'evidence-1', ...data }),
+      );
+    });
+
+    it('creates and audits the evidence when called by an active assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      const result = await service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_A);
+
+      expect(result.id).toBe('evidence-1');
+      expect(mockPrisma.taskEvidence.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_A,
+          taskId: 'task-1',
+          type: 'TEXT',
+          content: TEXT_EVIDENCE.content,
+          uploadedById: USER_A,
+        }),
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'CREATE',
+          objectType: 'TaskEvidence',
+          objectId: 'evidence-1',
+          actorId: USER_A,
+          tenantId: ORG_A,
+        }),
+      );
+    });
+
+    it('throws NotFoundException when the caller is not an assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await expect(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_B)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrisma.taskEvidence.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    // removedAt is stamped when a colleague completes the task or it is
+    // reassigned away — that person no longer holds the work.
+    it('throws NotFoundException when the caller is a removed assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({
+        ...BASE_TASK,
+        assignees: [{ ...BASE_TASK.assignees[0], removedAt: new Date('2026-01-15') }],
+      });
+
+      await expect(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_A)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrisma.taskEvidence.create).not.toHaveBeenCalled();
+    });
+
+    // The caller is still an active assignee in both cases — for COMPLETED
+    // because the completer's own row is never stamped, for CANCELLED because
+    // ACC-68 leaves assignees attached — so the status check is what refuses.
+    it.each(['COMPLETED', 'CANCELLED'])(
+      'throws ConflictException for a %s task, even from an active assignee',
+      async (status) => {
+        mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status });
+
+        await expect(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_A)).rejects.toThrow(
+          ConflictException,
+        );
+        expect(mockPrisma.taskEvidence.create).not.toHaveBeenCalled();
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      },
+    );
+
+    // A non-assignee meets the 404 before the status check, so a closed task
+    // reads exactly like any other task they do not hold.
+    it('throws NotFoundException, not ConflictException, for a non-assignee on a closed task', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status: 'COMPLETED' });
+
+      await expect(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_B)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('returns an identical 404 body for a missing task and for a non-assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(null);
+      const missing = await captureError(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_A));
+      mockPrisma.task.findFirst.mockResolvedValueOnce(BASE_TASK);
+      const notAssigned = await captureError(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_B));
+
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect(notAssigned).toBeInstanceOf(NotFoundException);
+      expect((notAssigned as NotFoundException).getResponse()).toEqual(
+        (missing as NotFoundException).getResponse(),
+      );
+    });
+
+    itEnforcesTenantIsolation('addEvidence', async () => {
+      // The query scopes by the CALLER's tenant, so another tenant's task
+      // comes back as no row at all.
+      mockPrisma.task.findFirst.mockResolvedValue(null);
+
+      await expect(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_B, USER_A)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
+      );
+      expect(mockPrisma.taskEvidence.create).not.toHaveBeenCalled();
     });
   });
 

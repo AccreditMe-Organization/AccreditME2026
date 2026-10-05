@@ -984,7 +984,7 @@ committees:view              committees:manage          committees:approve
 committees:create            committees:edit_details    committees:add_member
 committees:remove_member     committees:change_member_role
 tasks:view                  tasks:create              tasks:reassign
-tasks:complete              tasks:manage
+tasks:manage
 org:view                    org:manage
 users:view                  users:manage              users:invite
 roles:view                  roles:manage
@@ -2369,7 +2369,7 @@ Full detail: SYSTEM-REFERENCE.md Section 1.9. The decisions, briefly:
   superseded that, and this is the record of it (SYSTEM-REFERENCE §1.9).
 - **`getById()` / `getByIdForViewer()` is the convention, in every service.**
   An unguarded `getById()` for the engine and internal callers — a service
-  acting on its own behalf has no viewer, and `addEvidence()` validating tenant
+  acting on its own behalf has no viewer, and a mutation validating tenant
   ownership must not acquire someone's permission check — and a
   `getByIdForViewer()` taking viewer context for every route. User, Task and
   Workflow all follow it. **The permission is checked before the record is read

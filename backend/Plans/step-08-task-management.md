@@ -817,6 +817,10 @@ POST   /tasks/:id/reassign                @Permissions(TASKS_PERMISSIONS.REASSIG
 POST   /tasks/:id/evidence                @Permissions(TASKS_PERMISSIONS.COMPLETE)
 ```
 
+> **Superseded:** `/complete` (ACC-76) and `/evidence` (ACC-162) carry no
+> permission — both are self-scoped to a currently-active assignee — and
+> `tasks:complete` was retired in ACC-162.
+
 `@UseGuards(TenantGuard, PermissionGuard)` at class level. `@CurrentTenant()`/
 `@CurrentUser()` throughout — never `request.body.organizationId`. Zero
 business logic — full delegation to `TaskService`.
@@ -856,6 +860,8 @@ export const TASKS_PERMISSIONS = {
   MANAGE:    'tasks:manage',
 } as const;
 ```
+
+> **Superseded (ACC-162):** `COMPLETE` was removed — see the note above.
 (`DELEGATE` removed, matching this session's CLAUDE.md update.)
 
 **Circular-dependency check:** `TaskModule` imports `TenantModule` via

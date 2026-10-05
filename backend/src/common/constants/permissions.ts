@@ -59,8 +59,10 @@ export const TASKS_PERMISSIONS = {
   VIEW:     'tasks:view',
   CREATE:   'tasks:create',
   REASSIGN: 'tasks:reassign',
-  COMPLETE: 'tasks:complete',
   MANAGE:   'tasks:manage',
+  // No COMPLETE. tasks:complete was retired in ACC-162: completing a task and
+  // attaching evidence are both self-scoped to an active assignee, so it gated
+  // nothing. Do not reintroduce it.
 } as const;
 
 export const COMMITTEES_PERMISSIONS = {

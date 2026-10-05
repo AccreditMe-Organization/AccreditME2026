@@ -379,8 +379,8 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                          is self-scoped, so POST /tasks/:id/complete carries no
                          @Permissions — the service 404s a non-assignee. Gating
                          this on a permission would hide it from exactly the
-                         people entitled to use it (tasks:complete is not
-                         seeded to BASE_USER, whom the engine assigns to). -->
+                         people entitled to use it: whoever the engine assigned
+                         the task to, whatever role they hold. -->
                     @if (canComplete(task)) {
                       <p-button
                         icon="pi pi-check"
@@ -840,9 +840,9 @@ export class CommitteeDetailComponent implements OnInit {
   // Assignee-ness ALONE, no permission check — POST /tasks/:id/complete is
   // ungated as of ACC-76 because it is self-scoped, and TaskService.complete()
   // 404s anyone who is not a currently-active assignee. A permission check
-  // here would hide the button from the people entitled to use it, since
-  // tasks:complete is not seeded to BASE_USER and the engine assigns to
-  // BASE_USER tenant-wide.
+  // here would hide the button from the people entitled to use it — the
+  // engine assigns work by role or position, not by any task permission, so
+  // being an assignee is the whole entitlement.
   //
   // `assignees` carries ACTIVE assignees only (removedAt: null), so someone
   // whose assignment was completed by a colleague or reassigned away is
