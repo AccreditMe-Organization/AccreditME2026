@@ -44,6 +44,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
+import { BETTER_AUTH_INVALID_CREDENTIALS } from './better-auth.contract';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -121,6 +122,7 @@ export function signAccessToken(
 }
 
 const MFA_SETUP_SESSION_TTL_MS = 5 * 60 * 1000;
+
 
 @Injectable()
 export class AuthService {
@@ -321,25 +323,50 @@ export class AuthService {
       throw new UnauthorizedException('Account temporarily locked due to repeated failed attempts');
     }
 
-    let result: Response;
-    try {
-      result = (await this.auth.api.signInEmail({
-        body: { email: namespacedEmail, password: dto.password },
-        asResponse: true,
-      })) as unknown as Response;
-    } catch {
-      await this.loginAttemptService.record({
-        organizationId,
-        email: dto.email,
-        success: false,
-        failureReason: 'invalid_password',
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
-      throw new UnauthorizedException('Invalid credentials');
-    }
+    // ACC-120 slice 9b — Better Auth does NOT throw a refused sign-in. With
+    // `asResponse: true` its dispatcher RETURNS an APIError as a Response
+    // (better-auth/dist/api/dispatch.mjs: `isAPIError(result.response) &&
+    // !shouldReturnResponse` is the only branch that throws), so a wrong
+    // password arrives here as a 401 Response with
+    // `code: 'INVALID_EMAIL_OR_PASSWORD'`. This used to be a try/catch around
+    // the call, recording the failure in the catch — which therefore never ran:
+    // no failed sign-in had ever been recorded, so the lockout never locked.
+    // Measured on dev before the fix: 115 LoginAttempt rows, every one a
+    // success. The contract spec pins the dispatcher's behaviour.
+    //
+    // So the outcome is read off the Response. ONLY Better Auth's own
+    // invalid-email-or-password refusal counts as a failed sign-in. Anything
+    // else — another refusal code, or a thrown error (a database outage, say) —
+    // is not a credential problem: it propagates as a 500 and records NO
+    // failure, so an outage cannot lock real people out.
+    const result = (await this.auth.api.signInEmail({
+      body: { email: namespacedEmail, password: dto.password },
+      asResponse: true,
+    })) as unknown as Response;
 
-    const body = (await result.json()) as { twoFactorRedirect?: boolean; user?: { id: string } };
+    const body = (await result.json()) as {
+      twoFactorRedirect?: boolean;
+      user?: { id: string };
+      code?: string;
+    };
+
+    if (!result.ok) {
+      if (result.status === 401 && body.code === BETTER_AUTH_INVALID_CREDENTIALS) {
+        await this.loginAttemptService.record({
+          organizationId,
+          email: dto.email,
+          success: false,
+          failureReason: 'invalid_password',
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      // Status and code only — never the body, which could echo the request.
+      throw new Error(
+        `Better Auth sign-in returned ${result.status}${body.code ? ` ${body.code}` : ''}`,
+      );
+    }
 
     if (body.twoFactorRedirect) {
       // Forward Better Auth's own two-factor-pending cookie to the browser —

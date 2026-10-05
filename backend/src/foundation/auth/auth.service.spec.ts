@@ -42,12 +42,26 @@ class MockAPIError extends Error {
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
 
-function fakeResponse(body: unknown, setCookies: string[] = []) {
+// ACC-120 slice 9b — the shape Better Auth REALLY gives back with
+// `asResponse: true`: a refusal is a Response with an error status, never a
+// rejected promise. These tests used to model a wrong password as
+// `mockRejectedValue(...)`, which the real library never does — and that is
+// how a lockout that could not lock passed every test here.
+function fakeResponse(body: unknown, setCookies: string[] = [], status = 200) {
   return {
+    ok: status >= 200 && status < 300,
+    status,
     json: async () => body,
     headers: { getSetCookie: () => setCookies },
   };
 }
+
+// Better Auth's actual refusal for an unknown user or a wrong password.
+const INVALID_EMAIL_OR_PASSWORD = fakeResponse(
+  { message: 'Invalid email or password', code: 'INVALID_EMAIL_OR_PASSWORD' },
+  [],
+  401,
+);
 
 function fakeExpressReq(overrides: Partial<{ cookies: Record<string, string>; headers: Record<string, string>; ip: string }> = {}) {
   return {
@@ -175,7 +189,7 @@ describe('AuthService', () => {
 
     it('throws UnauthorizedException when Better Auth rejects the credentials', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+      mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
       await expect(
         service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'wrong' }, fakeExpressReq(), fakeExpressRes()),
@@ -250,7 +264,7 @@ describe('AuthService', () => {
 
     it('records a failed attempt when Better Auth rejects the credentials', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+      mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
       await expect(
         service.login({ organizationSlug: 'acme', email: 'a@example.com', password: 'wrong' }, fakeExpressReq(), fakeExpressRes()),
