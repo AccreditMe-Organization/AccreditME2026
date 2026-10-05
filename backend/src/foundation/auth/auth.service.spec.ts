@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -738,13 +743,51 @@ describe('AuthService', () => {
       });
     });
 
-    it('throws UnauthorizedException when the password is wrong', async () => {
+    // ACC-120 slice 9b — Better Auth's REAL refusal shape: a returned 401
+    // Response, never a rejected promise. The message is unchanged.
+    it('throws UnauthorizedException("Invalid password") for a wrong password', async () => {
       mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
-      mockAuthApi.signInEmail.mockRejectedValue(new Error('INVALID_EMAIL_OR_PASSWORD'));
+      mockAuthApi.signInEmail.mockResolvedValue(INVALID_EMAIL_OR_PASSWORD);
 
-      await expect(service.setupMfa('user-1', ORG_A, { password: 'wrong' })).rejects.toThrow(
-        UnauthorizedException,
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'wrong' });
+      await expect(refusal).rejects.toThrow(UnauthorizedException);
+      await expect(refusal).rejects.toThrow('Invalid password');
+      expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException("MFA is already enabled") when Better Auth answers with a challenge', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      // What Better Auth returns for the RIGHT password on an account with MFA
+      // on: 200, a challenge, and no user or session.
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ twoFactorRedirect: true, twoFactorMethods: ['totp'] }, [
+          'better-auth.two_factor=x; Path=/',
+        ]),
       );
+
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'right' });
+      await expect(refusal).rejects.toThrow(ConflictException);
+      await expect(refusal).rejects.toThrow('MFA is already enabled');
+      expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
+    });
+
+    it('treats any other Better Auth refusal as a fault: a 500, and nothing is enabled', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(appUserFixture);
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse(
+          { message: 'Email not verified', code: 'EMAIL_NOT_VERIFIED' },
+          [],
+          403,
+        ),
+      );
+
+      const refusal = service.setupMfa('user-1', ORG_A, { password: 'right' });
+      // A plain Error — the global filter turns it into a 500 — and not a
+      // refusal that names the password.
+      await expect(refusal).rejects.toThrow(
+        'Better Auth sign-in returned 403 EMAIL_NOT_VERIFIED',
+      );
+      await expect(refusal).rejects.not.toBeInstanceOf(HttpException);
       expect(mockAuthApi.enableTwoFactor).not.toHaveBeenCalled();
     });
 

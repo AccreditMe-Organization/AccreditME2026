@@ -838,18 +838,40 @@ export class AuthService {
 
     const namespacedEmail = AuthService.namespacedEmail(organizationId, appUser.email);
 
-    let signInResult: Response;
-    try {
-      signInResult = (await this.auth.api.signInEmail({
-        body: { email: namespacedEmail, password: dto.password },
-        asResponse: true,
-      })) as unknown as Response;
-    } catch {
-      throw new UnauthorizedException('Invalid password');
-    }
+    // ACC-120 slice 9b — the password is re-checked with a sign-in, and Better
+    // Auth RETURNS that sign-in's refusal as a Response rather than throwing
+    // it (see login()). So the outcome is read off the Response, one case at a
+    // time; nothing here relies on a missing user meaning "wrong password".
+    const signInResult = await this.auth.api.signInEmail({
+      body: { email: namespacedEmail, password: dto.password },
+      asResponse: true,
+    });
+    const signInBody = (await signInResult.json()) as {
+      user?: { id: string };
+      twoFactorRedirect?: boolean;
+      code?: string;
+    };
 
-    const signInBody = (await signInResult.json()) as { user?: { id: string } };
-    if (!signInBody.user?.id) throw new UnauthorizedException('Invalid password');
+    if (!signInResult.ok) {
+      if (
+        signInResult.status === 401 &&
+        signInBody.code === BETTER_AUTH_INVALID_CREDENTIALS
+      ) {
+        throw new UnauthorizedException('Invalid password');
+      }
+      // Not a password problem — a fault. Nothing has been enabled.
+      throw new Error(
+        `Better Auth sign-in returned ${signInResult.status}${signInBody.code ? ` ${signInBody.code}` : ''}`,
+      );
+    }
+    // Better Auth answers a correct password for an account with MFA already
+    // on with a challenge instead of a session: there is nothing to set up.
+    if (signInBody.twoFactorRedirect) {
+      throw new ConflictException('MFA is already enabled');
+    }
+    if (!signInBody.user?.id) {
+      throw new Error('Better Auth sign-in returned 200 without a user');
+    }
 
     const sessionCookie = buildCookieHeader(signInResult.headers.getSetCookie());
 
