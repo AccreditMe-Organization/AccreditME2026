@@ -16,6 +16,12 @@ export interface ITask {
   slaBreachedAt: Date | null;
   completedAt: Date | null;
   completedById: string | null;
+  // ACC-163 — complete() refuses while this is true and no evidence exists.
+  requiresEvidence: boolean;
+  // ACC-163 — set when the last active assignee rejects; cleared by reassign.
+  rejectedReason: string | null;
+  rejectedAt: Date | null;
+  rejectedById: string | null;
   // ACC-46 Section 2.7.b — managerEscalatedAt/headEscalatedAt replace the
   // old escalationUserId/escalationAfterHours/escalatedAt trio; written
   // only by SlaMonitorProcessor, never by any caller.

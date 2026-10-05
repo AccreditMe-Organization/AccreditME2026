@@ -1,4 +1,4 @@
-import { ITask } from './task.interface';
+import { ITaskListItem } from './task-list-item.interface';
 import { IResolvedDelegation } from '../../../common/services/delegation-label.interface';
 
 // ACC-76 — the shape a task-list surface needs, as distinct from ITask.
@@ -28,11 +28,19 @@ export interface ITaskAssigneeView {
   delegation: IResolvedDelegation | null;
 }
 
-export interface ITaskWithAssignees extends ITask {
+// ACC-163 — who rejected a REJECTED task, for the record's task list. Null on
+// every task that is not currently rejected (reassign clears it).
+export interface ITaskRejectedBy {
+  id: string;
+  name: string;
+}
+
+export interface ITaskWithAssignees extends ITaskListItem {
   // ACTIVE assignees only (removedAt: null) — the same definition of
   // "assigned" getMyTasks() already uses. TaskAssignee rows are never
   // deleted: complete() stamps removedAt on everyone who did not complete
   // the task, so returning every row would make a completed task appear
   // assigned to everyone who was ever on it.
   assignees: ITaskAssigneeView[];
+  rejectedBy: ITaskRejectedBy | null;
 }
