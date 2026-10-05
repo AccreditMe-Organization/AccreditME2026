@@ -68,6 +68,9 @@ const TASK_ROW = {
       user: { id: 'user-assignee', name: 'Sara Al-Otaibi' },
     },
   ],
+  // ACC-163 — the list query now also includes these two.
+  rejectedBy: null,
+  _count: { evidence: 0 },
 };
 
 describe('Child list gated by its parent (ACC-101)', () => {

@@ -46,11 +46,18 @@ const BASE_TASK = {
   slaBreachedAt: null,
   completedAt: null,
   completedById: null,
+  requiresEvidence: false,
+  rejectedReason: null,
+  rejectedAt: null,
+  rejectedById: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   assignees: [{ id: 'ta-1', taskId: 'task-1', userId: USER_A, assignedAt: new Date(), assignedById: ACTOR, removedAt: null }],
+  // ACC-163 — what the two LIST queries include (`_count: { evidence }`). The
+  // single-row reads never ask for it and never read it.
+  _count: { evidence: 0 },
 };
 
 const mockPrisma = {
@@ -58,6 +65,8 @@ const mockPrisma = {
     create: jest.fn(),
     findMany: jest.fn(),
     findFirst: jest.fn(),
+    // ACC-163 — reject() re-reads a task that other assignees still hold.
+    findFirstOrThrow: jest.fn(),
     update: jest.fn(),
     // ACC-68 — cancelForStage()/cancelForInstance() flip the whole matched
     // set in one write rather than per-row.
@@ -73,9 +82,17 @@ const mockPrisma = {
   },
   taskEvidence: {
     create: jest.fn(),
+    // ACC-163 — complete()'s evidence-required check.
+    count: jest.fn(),
   },
   user: {
     findMany: jest.fn(),
+    // ACC-163 — the rejecter's name, for the creator's notification.
+    findFirst: jest.fn(),
+  },
+  // ACC-163 — the record a rejected task belongs to, named in that notification.
+  committee: {
+    findFirst: jest.fn(),
   },
   // ACC-76 — DelegationLabelService resolves an ACTING_HEAD stamp's
   // contextId against OrgUnit (and an OUT_OF_OFFICE_COVERAGE one against
@@ -99,6 +116,17 @@ const mockPrisma = {
 (mockPrisma as unknown as Record<string, unknown>)['$transaction'] = jest.fn(
   (callback: (tx: unknown) => unknown) => callback(mockPrisma),
 );
+
+// ACC-163 — the row lock every task action takes before it reads. A tagged
+// template, so a call is ([sqlFragments], ...values).
+const mockQueryRaw = jest.fn();
+(mockPrisma as unknown as Record<string, unknown>)['$queryRaw'] = mockQueryRaw;
+
+// The lock call's SQL and its two bound values, for asserting what it locked.
+function lockCall(index = 0): { sql: string; values: unknown[] } {
+  const [fragments, ...values] = mockQueryRaw.mock.calls[index] as [TemplateStringsArray, ...unknown[]];
+  return { sql: fragments.join('?'), values };
+}
 
 // Resolves to whatever the promise rejected with, so two refusals can be
 // compared body to body. Fails the test if the promise resolves instead.
@@ -135,6 +163,8 @@ describe('TaskService', () => {
     mockTenantService.getTaskSla.mockResolvedValue(DEFAULT_SLA);
     mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }]);
     mockPrisma.orgUnit.findMany.mockResolvedValue([]);
+    mockQueryRaw.mockResolvedValue([]);
+    mockPrisma.taskEvidence.count.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -235,6 +265,37 @@ describe('TaskService', () => {
     });
   });
 
+  // ACC-163 — evidence-required is set at creation and defaults off, so a
+  // workflow task (which never sends it) stays false.
+  describe('create — requiresEvidence (ACC-163)', () => {
+    const DTO = {
+      title: 'Collect the audit sample',
+      sourceType: 'COMMITTEE' as const,
+      sourceId: 'committee-1',
+      assigneeUserIds: [USER_A],
+    };
+
+    beforeEach(() => {
+      mockPrisma.task.create.mockResolvedValue({ ...BASE_TASK, assignees: [] });
+    });
+
+    it('stores requiresEvidence when the form sends it', async () => {
+      await service.create({ ...DTO, requiresEvidence: true }, ORG_A, ACTOR);
+
+      expect(mockPrisma.task.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ requiresEvidence: true }) }),
+      );
+    });
+
+    it('defaults requiresEvidence to false when it is not sent', async () => {
+      await service.create(DTO, ORG_A, ACTOR);
+
+      expect(mockPrisma.task.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ requiresEvidence: false }) }),
+      );
+    });
+  });
+
   describe('create — delegation stamping (ACC-40 Section 2.6.3)', () => {
     it('stamps delegationReason/delegationContextId only on the TaskAssignee row named in assigneeDelegations, null for everyone else', async () => {
       mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }, { id: USER_B }]);
@@ -321,6 +382,58 @@ describe('TaskService', () => {
       expect(resultA).toHaveLength(1);
       expect(resultB).toHaveLength(0);
     });
+
+    // ACC-163 — OVERDUE is no longer written, but rows written before this
+    // shipped keep it until the backfill runs. Every one is an Assigned task.
+    it('matches legacy OVERDUE rows when filtering by PENDING (Assigned)', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      await service.getMyTasks(USER_A, ORG_A, { status: 'PENDING' });
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ AND: [{ status: { in: ['PENDING', 'OVERDUE'] } }] }),
+        }),
+      );
+    });
+
+    it('filters any other status exactly', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      await service.getMyTasks(USER_A, ORG_A, { status: 'IN_PROGRESS' });
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ AND: [{ status: 'IN_PROGRESS' }] }) }),
+      );
+    });
+
+    // Q8 — overdue is a flag: an OPEN task past its due time, whatever its
+    // status. Combined with a status filter, both apply.
+    it('filters overdue as an open task past its due time, combinable with a status', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([]);
+
+      await service.getMyTasks(USER_A, ORG_A, { status: 'IN_PROGRESS', overdue: true });
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: [
+              { status: 'IN_PROGRESS' },
+              { dueAt: { lt: expect.any(Date) }, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('returns each task with its evidence count, and without the raw _count', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([{ ...BASE_TASK, _count: { evidence: 2 } }]);
+
+      const [task] = await service.getMyTasks(USER_A, ORG_A);
+
+      expect(task!.evidenceCount).toBe(2);
+      expect(task).not.toHaveProperty('_count');
+    });
   });
 
   describe('complete', () => {
@@ -375,6 +488,64 @@ describe('TaskService', () => {
       },
     );
 
+    // ACC-163 — the evidence-required refusal. Checked after the assignee and
+    // closed-task checks, so only the person who could complete it learns why.
+    it('refuses with 409 when evidence is required and the task has none, writing nothing', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, requiresEvidence: true });
+      mockPrisma.taskEvidence.count.mockResolvedValue(0);
+
+      const error = await captureError(service.complete('task-1', USER_A, ORG_A));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(
+        'Evidence is required before this task can be completed',
+      );
+      expect(mockPrisma.taskEvidence.count).toHaveBeenCalledWith({
+        where: { taskId: 'task-1', organizationId: ORG_A },
+      });
+      expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('completes a task that requires evidence once it has some', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, requiresEvidence: true });
+      mockPrisma.taskEvidence.count.mockResolvedValue(1);
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'COMPLETED' });
+
+      await service.complete('task-1', USER_A, ORG_A);
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'COMPLETED' }) }),
+      );
+    });
+
+    it('does not count evidence for a task that does not require it', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'COMPLETED' });
+
+      await service.complete('task-1', USER_A, ORG_A);
+
+      expect(mockPrisma.taskEvidence.count).not.toHaveBeenCalled();
+    });
+
+    // ACC-163 — the first row lock: taken BEFORE the read, scoped to the
+    // caller's tenant, so the checks see the locked state.
+    it('locks the task row, scoped by id and tenant, before reading it', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'COMPLETED' });
+
+      await service.complete('task-1', USER_A, ORG_A);
+
+      const { sql, values } = lockCall();
+      expect(sql).toMatch(/FOR UPDATE/);
+      expect(sql).toMatch(/"organizationId"/);
+      expect(values).toEqual(['task-1', ORG_A]);
+      expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        mockPrisma.task.findFirst.mock.invocationCallOrder[0]!,
+      );
+    });
+
     // ACC-162 — ACC-101 clause (b): a task the caller is not on must read
     // exactly like a task that does not exist, or the 404 confirms the id.
     it('returns an identical 404 body for a missing task and for a non-assignee', async () => {
@@ -391,10 +562,293 @@ describe('TaskService', () => {
     });
   });
 
+  // ACC-163 — Assigned → In progress, by an active assignee.
+  describe('start', () => {
+    it('moves an Assigned task to In progress and audits it', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'IN_PROGRESS' });
+
+      const result = await service.start('task-1', USER_A, ORG_A);
+
+      expect(result.status).toBe('IN_PROGRESS');
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { status: 'IN_PROGRESS' },
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'UPDATE',
+          objectType: 'Task',
+          objectId: 'task-1',
+          actorId: USER_A,
+          tenantId: ORG_A,
+          metadata: { event: 'started', startedBy: USER_A },
+        }),
+      );
+    });
+
+    // OVERDUE was only ever written over PENDING, so a legacy row is an
+    // Assigned task and starts like one.
+    it('starts a legacy OVERDUE task exactly like an Assigned one', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status: 'OVERDUE' });
+      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'IN_PROGRESS' });
+
+      await service.start('task-1', USER_A, ORG_A);
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { status: 'IN_PROGRESS' },
+      });
+    });
+
+    it('refuses with 409 when the task is already in progress', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status: 'IN_PROGRESS' });
+
+      const error = await captureError(service.start('task-1', USER_A, ORG_A));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe('This task is already in progress');
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it.each(['COMPLETED', 'CANCELLED'])('refuses with 409 for a %s task', async (status) => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status });
+
+      await expect(service.start('task-1', USER_A, ORG_A)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    it('returns an identical 404 for a missing task, a non-assignee and a removed assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(null);
+      const missing = await captureError(service.start('task-1', USER_A, ORG_A));
+      mockPrisma.task.findFirst.mockResolvedValueOnce(BASE_TASK);
+      const notAssigned = await captureError(service.start('task-1', USER_B, ORG_A));
+      mockPrisma.task.findFirst.mockResolvedValueOnce({
+        ...BASE_TASK,
+        assignees: [{ ...BASE_TASK.assignees[0], removedAt: new Date('2026-01-15') }],
+      });
+      const removed = await captureError(service.start('task-1', USER_A, ORG_A));
+
+      for (const error of [missing, notAssigned, removed]) {
+        expect(error).toBeInstanceOf(NotFoundException);
+        expect((error as NotFoundException).getResponse()).toEqual(
+          (missing as NotFoundException).getResponse(),
+        );
+      }
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    itEnforcesTenantIsolation('start', async () => {
+      // The lock and the read both scope by the CALLER's tenant, so another
+      // tenant's task locks nothing and reads as no row at all.
+      mockPrisma.task.findFirst.mockResolvedValue(null);
+
+      await expect(service.start('task-1', USER_A, ORG_B)).rejects.toThrow(NotFoundException);
+      expect(lockCall().values).toEqual(['task-1', ORG_B]);
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
+      );
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ACC-163 — an active assignee hands the task back with a reason (Q4).
+  describe('reject', () => {
+    const REASON = { reason: 'This belongs to Pharmacy, not my unit' };
+    const COMMITTEE_TASK = { ...BASE_TASK, sourceType: 'COMMITTEE', sourceId: 'committee-1' };
+
+    beforeEach(() => {
+      mockPrisma.user.findFirst.mockResolvedValue({ name: 'Sarah Al-Harbi' });
+      mockPrisma.committee.findFirst.mockResolvedValue({ nameEn: 'Quality Committee', nameAr: 'لجنة الجودة' });
+    });
+
+    it('marks the task REJECTED when the last active assignee rejects, storing the reason and who rejected', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(COMMITTEE_TASK);
+      mockPrisma.task.update.mockResolvedValue({ ...COMMITTEE_TASK, status: 'REJECTED' });
+
+      await service.reject('task-1', REASON, USER_A, ORG_A);
+
+      // Only the caller's own row is stamped.
+      expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({
+        where: { taskId: 'task-1', userId: USER_A, removedAt: null },
+        data: { removedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: {
+          status: 'REJECTED',
+          rejectedReason: REASON.reason,
+          rejectedAt: expect.any(Date),
+          rejectedById: USER_A,
+        },
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'REJECT',
+          objectType: 'Task',
+          objectId: 'task-1',
+          actorId: USER_A,
+          tenantId: ORG_A,
+          metadata: { reason: REASON.reason, rejectedBy: USER_A, lastAssigneeRejected: true },
+        }),
+      );
+    });
+
+    it('notifies the creator, naming the rejecter, the reason and the record, in English and Arabic', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(COMMITTEE_TASK);
+      mockPrisma.task.update.mockResolvedValue({ ...COMMITTEE_TASK, status: 'REJECTED' });
+
+      await service.reject('task-1', REASON, USER_A, ORG_A);
+
+      expect(mockNotificationService.create).toHaveBeenCalledTimes(1);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: ACTOR,
+          titleEn: 'Task rejected',
+          titleAr: 'تم رفض مهمة',
+          bodyEn: `Sarah Al-Harbi rejected "Review document" on the committee "Quality Committee". Reason: ${REASON.reason}`,
+          bodyAr: `رفض Sarah Al-Harbi المهمة "Review document" في اللجنة "لجنة الجودة". السبب: ${REASON.reason}`,
+          objectType: 'Task',
+          objectId: 'task-1',
+        },
+        ORG_A,
+      );
+      // Both lookups are tenant-scoped.
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: USER_A, organizationId: ORG_A } }),
+      );
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'committee-1', organizationId: ORG_A } }),
+      );
+    });
+
+    // ACC-160 — a committee with no Arabic name is named in English.
+    it('names a committee with no Arabic name in English in the Arabic text', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue({ nameEn: 'Quality Committee', nameAr: null });
+      mockPrisma.task.findFirst.mockResolvedValue(COMMITTEE_TASK);
+      mockPrisma.task.update.mockResolvedValue({ ...COMMITTEE_TASK, status: 'REJECTED' });
+
+      await service.reject('task-1', REASON, USER_A, ORG_A);
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ bodyAr: expect.stringContaining('اللجنة "Quality Committee"') }),
+        ORG_A,
+      );
+    });
+
+    it('leaves the task open, unchanged, when other assignees remain — and tells nobody', async () => {
+      const shared = {
+        ...COMMITTEE_TASK,
+        assignees: [
+          ...COMMITTEE_TASK.assignees,
+          { id: 'ta-2', taskId: 'task-1', userId: USER_B, assignedAt: new Date(), assignedById: ACTOR, removedAt: null },
+        ],
+      };
+      mockPrisma.task.findFirst.mockResolvedValue(shared);
+      mockPrisma.task.findFirstOrThrow.mockResolvedValue(COMMITTEE_TASK);
+
+      const result = await service.reject('task-1', REASON, USER_A, ORG_A);
+
+      expect(result.status).toBe('PENDING');
+      expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith({
+        where: { taskId: 'task-1', userId: USER_A, removedAt: null },
+        data: { removedAt: expect.any(Date) },
+      });
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+      // Still audited: a person declined work they were given.
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'REJECT',
+          metadata: { reason: REASON.reason, rejectedBy: USER_A, lastAssigneeRejected: false },
+        }),
+      );
+    });
+
+    it('does not notify a creator who rejected their own task', async () => {
+      const own = { ...COMMITTEE_TASK, createdById: USER_A };
+      mockPrisma.task.findFirst.mockResolvedValue(own);
+      mockPrisma.task.update.mockResolvedValue({ ...own, status: 'REJECTED' });
+
+      await service.reject('task-1', REASON, USER_A, ORG_A);
+
+      expect(mockPrisma.task.update).toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['IN_PROGRESS', 'OVERDUE'])('may reject a %s task', async (status) => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...COMMITTEE_TASK, status });
+      mockPrisma.task.update.mockResolvedValue({ ...COMMITTEE_TASK, status: 'REJECTED' });
+
+      await service.reject('task-1', REASON, USER_A, ORG_A);
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
+      );
+    });
+
+    it.each(['COMPLETED', 'CANCELLED'])('refuses with 409 for a %s task, writing nothing', async (status) => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...COMMITTEE_TASK, status });
+
+      await expect(service.reject('task-1', REASON, USER_A, ORG_A)).rejects.toThrow(ConflictException);
+      expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('returns an identical 404 for a missing task and a non-assignee, writing nothing', async () => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(null);
+      const missing = await captureError(service.reject('task-1', REASON, USER_A, ORG_A));
+      mockPrisma.task.findFirst.mockResolvedValueOnce(COMMITTEE_TASK);
+      const notAssigned = await captureError(service.reject('task-1', REASON, USER_B, ORG_A));
+
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect((notAssigned as NotFoundException).getResponse()).toEqual(
+        (missing as NotFoundException).getResponse(),
+      );
+      expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+    });
+
+    // The race the lock exists for: the two last assignees reject together.
+    // Each runs against the state the other committed, so the second one —
+    // reading after the first stamped its row — must see nobody remaining.
+    it('the second of two last assignees to reject, reading the locked state, makes the task REJECTED', async () => {
+      const afterFirstRejected = {
+        ...COMMITTEE_TASK,
+        assignees: [
+          { ...COMMITTEE_TASK.assignees[0], removedAt: new Date() },
+          { id: 'ta-2', taskId: 'task-1', userId: USER_B, assignedAt: new Date(), assignedById: ACTOR, removedAt: null },
+        ],
+      };
+      mockPrisma.task.findFirst.mockResolvedValue(afterFirstRejected);
+      mockPrisma.task.update.mockResolvedValue({ ...COMMITTEE_TASK, status: 'REJECTED' });
+
+      await service.reject('task-1', REASON, USER_B, ORG_A);
+
+      expect(mockQueryRaw).toHaveBeenCalled();
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED', rejectedById: USER_B }) }),
+      );
+    });
+
+    itEnforcesTenantIsolation('reject', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(null);
+
+      await expect(service.reject('task-1', REASON, USER_A, ORG_B)).rejects.toThrow(NotFoundException);
+      expect(lockCall().values).toEqual(['task-1', ORG_B]);
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
+      );
+      expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+  });
+
   // ACC-162 — evidence follows the assignee, not a permission. The route is
   // ungated, so these refusals are the whole of the access control.
   describe('addEvidence', () => {
-    const TEXT_EVIDENCE = { type: 'TEXT' as const, content: 'Minutes reviewed, no changes.' };
+    const TEXT_EVIDENCE = { type: 'LINK' as const, url: 'https://intranet/minutes/2026-02' };
 
     beforeEach(() => {
       mockPrisma.taskEvidence.create.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
@@ -409,13 +863,14 @@ describe('TaskService', () => {
 
       expect(result.id).toBe('evidence-1');
       expect(mockPrisma.taskEvidence.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
+        data: {
           organizationId: ORG_A,
           taskId: 'task-1',
-          type: 'TEXT',
-          content: TEXT_EVIDENCE.content,
+          type: 'LINK',
+          url: TEXT_EVIDENCE.url,
+          linkTitle: null,
           uploadedById: USER_A,
-        }),
+        },
       });
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -491,6 +946,38 @@ describe('TaskService', () => {
       );
     });
 
+    // ACC-163 — only the fields of the evidence's own type are written.
+    it('writes only the reference fields for an INTERNAL_REFERENCE, never a URL', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await service.addEvidence(
+        'task-1',
+        { type: 'INTERNAL_REFERENCE', refType: 'DOCUMENT', refId: 'doc-9', url: 'https://ignored' },
+        ORG_A,
+        USER_A,
+      );
+
+      expect(mockPrisma.taskEvidence.create).toHaveBeenCalledWith({
+        data: {
+          organizationId: ORG_A,
+          taskId: 'task-1',
+          type: 'INTERNAL_REFERENCE',
+          refType: 'DOCUMENT',
+          refId: 'doc-9',
+          refDisplay: 'doc-9',
+          uploadedById: USER_A,
+        },
+      });
+    });
+
+    it('locks the task row before reading it, so evidence cannot land on a task being completed', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_A);
+
+      expect(lockCall().values).toEqual(['task-1', ORG_A]);
+    });
+
     itEnforcesTenantIsolation('addEvidence', async () => {
       // The query scopes by the CALLER's tenant, so another tenant's task
       // comes back as no row at all.
@@ -507,40 +994,190 @@ describe('TaskService', () => {
   });
 
   describe('reassign', () => {
-    it('requires a reason and creates new TaskAssignee rows', async () => {
-      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+    const DTO = { newAssigneeUserIds: [USER_B], reason: 'Ahmad is on leave' };
+    const HOLDER = ['tasks:reassign'];
+    // Neither the creator nor a holder of tasks:reassign.
+    const OUTSIDER = 'outsider-id';
+
+    beforeEach(() => {
       mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
       mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'PENDING' });
+    });
 
-      await service.reassign('task-1', { newAssigneeUserIds: [USER_B], reason: 'Ahmad is on leave' }, ORG_A, ACTOR);
+    it('lets a tasks:reassign holder reassign, creating the new assignee row', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await service.reassign('task-1', DTO, ORG_A, OUTSIDER, HOLDER);
+
+      expect(mockPrisma.taskAssignee.create).toHaveBeenCalledWith({
+        data: { taskId: 'task-1', userId: USER_B, assignedById: OUTSIDER },
+      });
+    });
+
+    // ACC-163 (Q4) — a rejected task comes back to its creator, who reassigns
+    // it without holding tasks:reassign.
+    it("lets the task's creator reassign without tasks:reassign", async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK); // createdById: ACTOR
+
+      await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.taskAssignee.create).toHaveBeenCalledWith({
+        data: { taskId: 'task-1', userId: USER_B, assignedById: ACTOR },
+      });
+    });
+
+    // ACC-101 clause (b): entitlement is only knowable from the row, so a
+    // refusal must be indistinguishable from not-found.
+    it('refuses anyone else with a 404 identical to a missing task, writing nothing', async () => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(null);
+      const missing = await captureError(service.reassign('task-1', DTO, ORG_A, OUTSIDER, HOLDER));
+      mockPrisma.task.findFirst.mockResolvedValueOnce(BASE_TASK);
+      const notEntitled = await captureError(service.reassign('task-1', DTO, ORG_A, OUTSIDER, []));
+
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect(notEntitled).toBeInstanceOf(NotFoundException);
+      expect((notEntitled as NotFoundException).getResponse()).toEqual(
+        (missing as NotFoundException).getResponse(),
+      );
+      expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    // ACC-163 — reassigning a closed task used to reopen it as PENDING.
+    it.each(['COMPLETED', 'CANCELLED'])('refuses a %s task with 409, writing nothing', async (status) => {
+      mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status });
+
+      const error = await captureError(service.reassign('task-1', DTO, ORG_A, ACTOR, HOLDER));
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(
+        `A ${status.toLowerCase()} task cannot be reassigned`,
+      );
+      expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('clears the rejection and sets the task back to Assigned', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue({
+        ...BASE_TASK,
+        status: 'REJECTED',
+        rejectedReason: 'Not my unit',
+        rejectedAt: new Date(),
+        rejectedById: USER_A,
+        assignees: [{ ...BASE_TASK.assignees[0], removedAt: new Date() }],
+      });
+
+      await service.reassign('task-1', DTO, ORG_A, ACTOR, []);
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            assignees: { create: [{ userId: USER_B, assignedById: ACTOR }] },
-          }),
+          data: { status: 'PENDING', rejectedReason: null, rejectedAt: null, rejectedById: null },
         }),
       );
     });
 
     it('removes the previous assignees', async () => {
       mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
-      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
-      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'PENDING' });
 
-      await service.reassign('task-1', { newAssigneeUserIds: [USER_B], reason: 'reason' }, ORG_A, ACTOR);
+      await service.reassign('task-1', DTO, ORG_A, ACTOR, HOLDER);
 
       expect(mockPrisma.taskAssignee.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: { taskId: 'task-1', removedAt: null } }),
       );
     });
 
-    it('logs a full before/after audit entry with the reason', async () => {
-      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
-      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_B }]);
-      mockPrisma.task.update.mockResolvedValue({ ...BASE_TASK, status: 'PENDING' });
+    // ACC-163 — reassigning back to someone who held the task before reuses
+    // their row. TaskAssignee is unique on (taskId, userId), so creating a
+    // second row is what used to fail.
+    it('reactivates a returning assignee in place, clearing any delegation stamp, instead of creating a duplicate', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([{ id: USER_A }]);
+      mockPrisma.task.findFirst.mockResolvedValue({
+        ...BASE_TASK,
+        assignees: [
+          {
+            ...BASE_TASK.assignees[0],
+            removedAt: new Date('2026-01-15'),
+            delegationReason: 'OUT_OF_OFFICE_COVERAGE',
+            delegationContextId: 'absent-user',
+          },
+        ],
+      });
 
-      await service.reassign('task-1', { newAssigneeUserIds: [USER_B], reason: 'Ahmad is on leave' }, ORG_A, ACTOR);
+      await service.reassign('task-1', { newAssigneeUserIds: [USER_A], reason: 'Back from leave' }, ORG_A, ACTOR, HOLDER);
+
+      expect(mockPrisma.taskAssignee.update).toHaveBeenCalledWith({
+        where: { id: 'ta-1' },
+        data: {
+          removedAt: null,
+          assignedAt: expect.any(Date),
+          assignedById: ACTOR,
+          delegationReason: null,
+          delegationContextId: null,
+        },
+      });
+      expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
+    });
+
+    // The A → B → A sequence end to end, against a small stateful fake that
+    // enforces TaskAssignee's (taskId, userId) uniqueness the way the
+    // database does — so a duplicate row fails here exactly as it did live.
+    it('reassigns A → B → A without ever creating a second row for A', async () => {
+      type Row = { id: string; taskId: string; userId: string; removedAt: Date | null; assignedById: string };
+      const rows: Row[] = [
+        { id: 'ta-1', taskId: 'task-1', userId: USER_A, removedAt: null, assignedById: ACTOR },
+      ];
+      const snapshot = () => ({ ...BASE_TASK, assignees: rows.map((r) => ({ ...r })) });
+
+      mockPrisma.task.findFirst.mockImplementation(() => Promise.resolve(snapshot()));
+      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
+        Promise.resolve(where.id.in.map((id) => ({ id }))),
+      );
+      mockPrisma.taskAssignee.updateMany.mockImplementation(() => {
+        rows.filter((r) => r.removedAt === null).forEach((r) => (r.removedAt = new Date()));
+        return Promise.resolve({ count: 1 });
+      });
+      mockPrisma.taskAssignee.update.mockImplementation(
+        ({ where, data }: { where: { id: string }; data: Partial<Row> }) => {
+          Object.assign(rows.find((r) => r.id === where.id)!, data);
+          return Promise.resolve({});
+        },
+      );
+      mockPrisma.taskAssignee.create.mockImplementation(({ data }: { data: Row }) => {
+        if (rows.some((r) => r.taskId === data.taskId && r.userId === data.userId)) {
+          return Promise.reject(new Error('Unique constraint failed on (taskId, userId)'));
+        }
+        rows.push({ ...data, id: `ta-${rows.length + 1}`, removedAt: null });
+        return Promise.resolve({});
+      });
+
+      try {
+        await service.reassign('task-1', { newAssigneeUserIds: [USER_B], reason: 'Cover' }, ORG_A, ACTOR, HOLDER);
+        await service.reassign('task-1', { newAssigneeUserIds: [USER_A], reason: 'Back' }, ORG_A, ACTOR, HOLDER);
+
+        expect(rows.filter((r) => r.userId === USER_A)).toHaveLength(1);
+        expect(rows.find((r) => r.userId === USER_A)!.removedAt).toBeNull();
+        expect(rows.find((r) => r.userId === USER_B)!.removedAt).not.toBeNull();
+      } finally {
+        // clearAllMocks() keeps implementations, so this fake would otherwise
+        // follow every later test.
+        for (const mock of [
+          mockPrisma.task.findFirst,
+          mockPrisma.user.findMany,
+          mockPrisma.taskAssignee.updateMany,
+          mockPrisma.taskAssignee.update,
+          mockPrisma.taskAssignee.create,
+        ]) {
+          mock.mockReset();
+        }
+      }
+    });
+
+    it('logs a full before/after audit entry with the reason, keeping the earlier state', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await service.reassign('task-1', DTO, ORG_A, ACTOR, HOLDER);
 
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -551,12 +1188,26 @@ describe('TaskService', () => {
       );
     });
 
-    it('throws NotFoundException for a task belonging to a different tenant', async () => {
+    it('locks the task row before reading it', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(BASE_TASK);
+
+      await service.reassign('task-1', DTO, ORG_A, ACTOR, HOLDER);
+
+      expect(lockCall().values).toEqual(['task-1', ORG_A]);
+      expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        mockPrisma.task.findFirst.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    itEnforcesTenantIsolation('reassign', async () => {
       mockPrisma.task.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.reassign('task-1', { newAssigneeUserIds: [USER_B], reason: 'x' }, ORG_B, ACTOR),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.reassign('task-1', DTO, ORG_B, ACTOR, HOLDER)).rejects.toThrow(NotFoundException);
+      expect(lockCall().values).toEqual(['task-1', ORG_B]);
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
+      );
+      expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -688,6 +1339,34 @@ describe('TaskService', () => {
       expect(result[0]!.assignees).toEqual([
         { userId: USER_A, userName: 'Sarah', delegation: null },
       ]);
+    });
+
+    // ACC-163 — the record list names who rejected a task, and both lists
+    // carry the evidence count.
+    it('returns the evidence count and who rejected the task', async () => {
+      mockPrisma.task.findMany.mockResolvedValue([
+        {
+          ...BASE_TASK,
+          status: 'REJECTED',
+          assignees: [],
+          rejectedBy: { id: USER_A, name: 'Sarah' },
+          _count: { evidence: 3 },
+        },
+      ]);
+
+      const [task] = await service.getForSource('COMMITTEE', 'committee-1', ORG_A, VIEWER_PERMISSIONS, VIEWER_ID);
+
+      expect(task!.evidenceCount).toBe(3);
+      expect(task!.rejectedBy).toEqual({ id: USER_A, name: 'Sarah' });
+      expect(task).not.toHaveProperty('_count');
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            rejectedBy: { select: { id: true, name: true } },
+            _count: { select: { evidence: true } },
+          }),
+        }),
+      );
     });
 
     // complete() stamps removedAt rather than deleting, so without this

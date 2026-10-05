@@ -604,6 +604,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       status: 'PENDING' as const,
       priority: 'CRITICAL' as const,
       dueAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+      slaBreachedAt: null as Date | null,
       managerEscalatedAt: null as Date | null,
       headEscalatedAt: null as Date | null,
       assignees: [{ userId: 'assignee-1', removedAt: null }],
@@ -621,13 +622,17 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // (status: { notIn: [..., 'OVERDUE', ...] }), a task became invisible
     // to this sweep forever, the instant it first went overdue — before
     // enough hours could plausibly have elapsed for any tier to fire.
-    it('the sweep query no longer excludes OVERDUE tasks (Finding 2\'s fix)', async () => {
+    //
+    // ACC-163 — REJECTED joins the exclusions, for UNASSIGNED's reason: no
+    // active assignee means no escalation target, and the skip would be
+    // audited again on every pass. A legacy OVERDUE row is still swept.
+    it('the sweep query excludes closed, unassigned and rejected tasks, and still includes legacy OVERDUE ones', async () => {
       await runProcess();
 
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: {
           dueAt: { lt: expect.any(Date) },
-          status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED'] },
+          status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED'] },
         },
         include: { assignees: { where: { removedAt: null } } },
       });
@@ -647,7 +652,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
-        data: { status: 'OVERDUE', slaBreachedAt: expect.any(Date) },
+        data: { slaBreachedAt: expect.any(Date) },
       });
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
@@ -655,7 +660,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       });
 
       // Fresh call-count slate for sweep 2 — the task's own evolved state
-      // below (already OVERDUE, managerEscalatedAt already set, further
+      // below (breach already recorded, managerEscalatedAt already set, further
       // time elapsed) is what proves re-eligibility, not leftover call
       // history from sweep 1.
       jest.clearAllMocks();
@@ -669,7 +674,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       mockOrgPositionService.resolveHeadEscalationTargets.mockResolvedValue(['head-1']);
 
       const sweptAgainTask = makeOverdueTask({
-        status: 'OVERDUE', // already flipped by sweep 1
+        slaBreachedAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // recorded by sweep 1
         managerEscalatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // fired by sweep 1
         dueAt: new Date(Date.now() - 7 * 60 * 60 * 1000), // now past the 6h cumulative Head threshold
       });
@@ -677,10 +682,10 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       await runProcess();
 
-      // Not re-flipped to OVERDUE a second time — the `status !== 'OVERDUE'`
-      // guard correctly recognizes it's already there.
+      // The breach is not re-stamped — slaBreachedAt records the FIRST time
+      // the sweep saw it, so it is written once.
       expect(mockPrisma.task.update).not.toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ status: 'OVERDUE' }) }),
+        expect.objectContaining({ data: expect.objectContaining({ slaBreachedAt: expect.any(Date) }) }),
       );
       // But the Head tier DOES fire — proving the task was genuinely
       // re-evaluated on this second sweep, not silently dropped.
@@ -752,7 +757,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // Manager threshold is not itself sufficient.
     it('does not fire the Head tier before its own additional grace period has elapsed, even after the Manager tier has fired', async () => {
       const task = makeOverdueTask({
-        status: 'OVERDUE',
+        slaBreachedAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // recorded on a prior sweep
         managerEscalatedAt: new Date(Date.now() - 60 * 60 * 1000), // fired on a prior sweep
         dueAt: new Date(Date.now() - 4 * 60 * 60 * 1000), // 4h overdue — past manager(2h), short of cumulative(6h)
       });
@@ -762,14 +767,14 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
       expect(mockOrgPositionService.resolveHeadEscalationTargets).not.toHaveBeenCalled();
       expect(mockNotificationService.create).not.toHaveBeenCalled();
-      // Already OVERDUE, nothing fired — no update call of any kind.
+      // Breach already recorded, nothing fired — no update call of any kind.
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
     });
 
     it('fires the Head tier once the Manager tier has fired AND its own additional grace period has elapsed', async () => {
       mockOrgPositionService.resolveHeadEscalationTargets.mockResolvedValue(['head-1']);
       const task = makeOverdueTask({
-        status: 'OVERDUE',
+        slaBreachedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
         managerEscalatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
         dueAt: new Date(Date.now() - 7 * 60 * 60 * 1000), // 7h overdue — past the 6h cumulative threshold
       });
@@ -811,7 +816,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     it('fires escalation to an Acting Head resolved by the Head-tier resolver — Acting Head coverage (PD#9) proven end-to-end through the real sweep', async () => {
       mockOrgPositionService.resolveHeadEscalationTargets.mockResolvedValue(['acting-head-1']);
       const task = makeOverdueTask({
-        status: 'OVERDUE',
+        slaBreachedAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
         managerEscalatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
         dueAt: new Date(Date.now() - 7 * 60 * 60 * 1000),
       });
@@ -851,7 +856,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       );
     });
 
-    it('does not fire escalation outside working hours, but still flips status to OVERDUE', async () => {
+    it('does not fire escalation outside working hours, but still records the breach', async () => {
       mockWorkingCalendar.getOrCreate.mockResolvedValue({ ...ALWAYS_OPEN_CALENDAR, workingDays: [] });
       const task = makeOverdueTask();
 
@@ -859,11 +864,35 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
-        data: { status: 'OVERDUE', slaBreachedAt: expect.any(Date) },
+        data: { slaBreachedAt: expect.any(Date) },
       });
       expect(mockOrgPositionService.resolveManagerEscalationTargets).not.toHaveBeenCalled();
       expect(mockNotificationService.create).not.toHaveBeenCalled();
     });
+
+    // ACC-163 (Q8) — overdue is a flag, not a status. The sweep used to flip
+    // every overdue task to OVERDUE, which erased whether it had been started.
+    it.each(['PENDING', 'IN_PROGRESS', 'OVERDUE'])(
+      'never writes a status — a %s task keeps its status while the breach is recorded and escalation fires',
+      async (status) => {
+        mockOrgPositionService.resolveManagerEscalationTargets.mockResolvedValue(['manager-1']);
+        const task = makeOverdueTask({ status });
+
+        await runWithOverdueTask(task);
+
+        expect(mockPrisma.task.update).toHaveBeenCalledWith({
+          where: { id: 'task-1' },
+          data: { slaBreachedAt: expect.any(Date) },
+        });
+        expect(mockPrisma.task.update).toHaveBeenCalledWith({
+          where: { id: 'task-1' },
+          data: { managerEscalatedAt: expect.any(Date) },
+        });
+        for (const [call] of mockPrisma.task.update.mock.calls as [{ data: Record<string, unknown> }][]) {
+          expect(call.data).not.toHaveProperty('status');
+        }
+      },
+    );
   });
 
   // ACC-40 Section 2.7 — the simplest sweep step: actingOrgUnitId feeds
