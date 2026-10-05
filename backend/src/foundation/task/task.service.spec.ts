@@ -100,6 +100,17 @@ const mockPrisma = {
   (callback: (tx: unknown) => unknown) => callback(mockPrisma),
 );
 
+// Resolves to whatever the promise rejected with, so two refusals can be
+// compared body to body. Fails the test if the promise resolves instead.
+async function captureError(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error: unknown) {
+    return error;
+  }
+  throw new Error('Expected the call to be refused, but it succeeded');
+}
+
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
@@ -347,6 +358,37 @@ describe('TaskService', () => {
 
       await expect(service.complete('task-1', USER_A, ORG_B)).rejects.toThrow(NotFoundException);
     });
+
+    // ACC-162 — the caller is still an active assignee in both cases (the
+    // completer's own row is never stamped; ACC-68 leaves a cancelled task's
+    // assignees attached), so only the status check stands between them and
+    // overwriting the record.
+    it.each(['COMPLETED', 'CANCELLED'])(
+      'throws ConflictException for a %s task, even from an active assignee',
+      async (status) => {
+        mockPrisma.task.findFirst.mockResolvedValue({ ...BASE_TASK, status });
+
+        await expect(service.complete('task-1', USER_A, ORG_A)).rejects.toThrow(ConflictException);
+        expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
+        expect(mockPrisma.task.update).not.toHaveBeenCalled();
+        expect(mockAuditLog.log).not.toHaveBeenCalled();
+      },
+    );
+
+    // ACC-162 — ACC-101 clause (b): a task the caller is not on must read
+    // exactly like a task that does not exist, or the 404 confirms the id.
+    it('returns an identical 404 body for a missing task and for a non-assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(null);
+      const missing = await captureError(service.complete('task-1', USER_A, ORG_A));
+      mockPrisma.task.findFirst.mockResolvedValueOnce(BASE_TASK);
+      const notAssigned = await captureError(service.complete('task-1', USER_B, ORG_A));
+
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect(notAssigned).toBeInstanceOf(NotFoundException);
+      expect((notAssigned as NotFoundException).getResponse()).toEqual(
+        (missing as NotFoundException).getResponse(),
+      );
+    });
   });
 
   // ACC-162 — evidence follows the assignee, not a permission. The route is
@@ -433,6 +475,19 @@ describe('TaskService', () => {
 
       await expect(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_B)).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('returns an identical 404 body for a missing task and for a non-assignee', async () => {
+      mockPrisma.task.findFirst.mockResolvedValueOnce(null);
+      const missing = await captureError(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_A));
+      mockPrisma.task.findFirst.mockResolvedValueOnce(BASE_TASK);
+      const notAssigned = await captureError(service.addEvidence('task-1', TEXT_EVIDENCE, ORG_A, USER_B));
+
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect(notAssigned).toBeInstanceOf(NotFoundException);
+      expect((notAssigned as NotFoundException).getResponse()).toEqual(
+        (missing as NotFoundException).getResponse(),
       );
     });
 
