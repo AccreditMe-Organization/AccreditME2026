@@ -35,6 +35,21 @@ export function clientSideSource<T>(
     // nothing but this table's own sort menu can reach it.
     comparators?: Record<string, (a: T, b: T) => number>;
     defaultSort?: { column: string; dir: 'asc' | 'desc' };
+    // ACC-160 — NULLS LAST, opt-in per sort column, in BOTH directions. The
+    // client-side mirror of SortWhitelist's `nullsLast` on the backend, so an
+    // unnamed record sorts last whether the list is server- or client-backed.
+    //
+    // Keyed by sort column to the value that column sorts by. A row whose value
+    // is missing — null, undefined, or blank after trimming, the same emptiness
+    // test as pickBilingualName() — sorts after every row that has one, and
+    // missing rows keep their existing order among themselves.
+    //
+    // WHY AN ACCESSOR AND NOT JUST A COLUMN NAME. Direction is applied below by
+    // SWAPPING the comparator's arguments, which reverses where a null lands as
+    // well: no comparator can keep nulls last in both directions on its own. So
+    // the source has to see each row's value, set the missing ones aside, and
+    // sort only the rest.
+    nullsLast?: Record<string, (item: T) => string | null | undefined>;
   },
 ): DataListSource<T> {
   return (query: IListQuery) => {
@@ -53,7 +68,12 @@ export function clientSideSource<T>(
     const comparator = sortColumn ? options.comparators?.[sortColumn] : undefined;
     if (comparator) {
       const dir = query.sortDir ?? options.defaultSort?.dir ?? 'asc';
-      rows.sort((a, b) => (dir === 'asc' ? comparator(a, b) : comparator(b, a)));
+      const valueOf = sortColumn ? options.nullsLast?.[sortColumn] : undefined;
+      const isMissing = (row: T): boolean => (valueOf?.(row) ?? '').trim() === '';
+      const present = valueOf ? rows.filter((row) => !isMissing(row)) : rows;
+      const missing = valueOf ? rows.filter(isMissing) : [];
+      present.sort((a, b) => (dir === 'asc' ? comparator(a, b) : comparator(b, a)));
+      rows = [...present, ...missing];
     }
 
     // `total` is the count AFTER filtering and BEFORE slicing — the same thing
