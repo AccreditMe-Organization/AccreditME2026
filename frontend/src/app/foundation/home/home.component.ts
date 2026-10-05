@@ -5,7 +5,8 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { CardComponent } from '../../shared/components/card/card.component';
-import { TaskService, ITaskDto } from '../tasks/services/task.service';
+import { TaskService, ITaskListItemDto } from '../tasks/services/task.service';
+import { isTaskOpen, isTaskOverdue, taskStatusLabelKey, taskStatusSeverity } from '../tasks/task-status';
 import { NotificationService, NotificationDto } from '../notification/services/notification.service';
 import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
@@ -71,10 +72,14 @@ import { PageHeaderComponent } from '../../shared/components/page-header/page-he
                 <td>{{ task.title }}</td>
                 <td>{{ task.dueAt | amDateTime }}</td>
                 <td>
-                  <p-tag
-                    [value]="'task.status.' + task.status.toLowerCase() | translate"
-                    [severity]="statusSeverity(task.status)"
-                  />
+                  <!-- ACC-163 — the status, and overdue as a flag beside it
+                       (Q8), both from the one helper My tasks uses. -->
+                  <span class="inline-flex flex-wrap items-center gap-1.5">
+                    <p-tag [value]="statusLabel(task) | translate" [severity]="statusSeverity(task)" />
+                    @if (isOverdue(task)) {
+                      <p-tag [value]="'task.overdueBadge' | translate" severity="danger" />
+                    }
+                  </span>
                 </td>
               </tr>
             </ng-template>
@@ -122,7 +127,7 @@ export class HomeComponent implements OnInit {
   private readonly authService = inject(AuthService);
   private readonly languageService = inject(LanguageService);
 
-  readonly openTasks = signal<ITaskDto[]>([]);
+  readonly openTasks = signal<ITaskListItemDto[]>([]);
   readonly notifications = signal<NotificationDto[]>([]);
   readonly tasksLoading = signal(false);
   readonly notificationsLoading = signal(false);
@@ -138,11 +143,16 @@ export class HomeComponent implements OnInit {
     return this.languageService.isArabic() && item.titleAr ? item.titleAr : item.titleEn;
   }
 
-  statusSeverity(status: string): 'success' | 'warn' | 'danger' | 'info' {
-    if (status === 'COMPLETED') return 'success';
-    if (status === 'OVERDUE') return 'danger';
-    if (status === 'UNASSIGNED') return 'warn';
-    return 'info';
+  statusLabel(task: ITaskListItemDto): string {
+    return taskStatusLabelKey(task);
+  }
+
+  statusSeverity(task: ITaskListItemDto): ReturnType<typeof taskStatusSeverity> {
+    return taskStatusSeverity(task);
+  }
+
+  isOverdue(task: ITaskListItemDto): boolean {
+    return isTaskOverdue(task);
   }
 
   ngOnInit(): void {
@@ -156,9 +166,7 @@ export class HomeComponent implements OnInit {
       next: (tasks) => {
         // Open work only — a landing page listing everything the user has
         // ever completed buries what still needs doing.
-        this.openTasks.set(
-          tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED'),
-        );
+        this.openTasks.set(tasks.filter((t) => isTaskOpen(t)));
         this.tasksLoading.set(false);
       },
       // Both panels fail QUIETLY and independently. Neither endpoint is

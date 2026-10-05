@@ -5,6 +5,7 @@ import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 import { TaskService, ITaskWithAssigneesDto } from '../../services/task.service';
+import { taskStatusLabelKey, taskStatusSeverity } from '../../task-status';
 import { TaskFormComponent } from '../task-form/task-form.component';
 import { TaskFormFooterComponent } from '../task-form/task-form-footer.component';
 import { TaskFormStepsComponent } from '../task-form/task-form-steps.component';
@@ -84,7 +85,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
             <td>{{ ('task.priority.' + task.priority.toLowerCase()) | translate }}</td>
             <td>{{ task.dueAt | amDateTime }}</td>
             <td>
-              <p-tag [value]="('task.status.' + task.status.toLowerCase()) | translate" />
+              <p-tag [value]="statusLabel(task) | translate" [severity]="statusSeverity(task)" />
             </td>
           </tr>
         </ng-template>
@@ -161,6 +162,16 @@ export class TaskListComponent implements OnInit {
   readonly tasks = signal<ITaskWithAssigneesDto[]>([]);
   readonly error = signal<string | null>(null);
   readonly formVisible = signal(false);
+
+  // ACC-163 — from the one status helper: Assigned for PENDING (and for a
+  // legacy OVERDUE row), and the new Rejected.
+  statusLabel(task: ITaskWithAssigneesDto): string {
+    return taskStatusLabelKey(task);
+  }
+
+  statusSeverity(task: ITaskWithAssigneesDto): ReturnType<typeof taskStatusSeverity> {
+    return taskStatusSeverity(task);
+  }
 
   ngOnInit(): void {
     this.loadTasks();

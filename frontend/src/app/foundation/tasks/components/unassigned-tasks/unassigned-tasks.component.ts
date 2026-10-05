@@ -1,17 +1,11 @@
-import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { AmDateTimePipe } from '../../../../core/formatting';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
-import { ListboxModule } from 'primeng/listbox';
-import { InputTextModule } from 'primeng/inputtext';
 import { TaskService, ITaskDto } from '../../services/task.service';
-import { UserService, IUserDto } from '../../../user/services/user.service';
-import { OrgUnitService, OrgUnitDto } from '../../../organization/services/org-unit.service';
-import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
-import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { TaskReassignDialogComponent } from '../task-reassign-dialog/task-reassign-dialog.component';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { injectFixLinkParam } from '../../../../shared/utils/fix-link.util';
 
@@ -24,17 +18,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 @Component({
   selector: 'app-unassigned-tasks',
   standalone: true,
-  imports: [PageHeaderComponent, 
-    AmDateTimePipe,
-    TranslatePipe,
-    ReactiveFormsModule,
-    TableModule,
-    TagModule,
-    ButtonModule,
-    ListboxModule,
-    InputTextModule,
-    EditDialogComponent,
-  ],
+  imports: [PageHeaderComponent, AmDateTimePipe, TranslatePipe, TableModule, TagModule, ButtonModule, TaskReassignDialogComponent],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header
@@ -88,76 +72,23 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
       </p-table>
     </div>
 
-    <ng-template #reassignFormTpl>
-      <form [formGroup]="reassignForm" (ngSubmit)="onSubmitReassign()" class="flex flex-col gap-4">
-        <div class="flex flex-col gap-1">
-          <label for="newAssigneeUserIds" class="text-sm font-medium">
-            {{ 'task.newAssignees' | translate }} <span class="text-red-500">*</span>
-          </label>
-          <p-listbox
-            inputId="newAssigneeUserIds"
-            formControlName="newAssigneeUserIds"
-            [options]="users()"
-            optionLabel="name"
-            optionValue="id"
-            [multiple]="true"
-            [checkbox]="true"
-            [filter]="true"
-            filterBy="name,email"
-            [showToggleAll]="false"
-          >
-            <ng-template #item let-user>
-              <div class="flex flex-col">
-                <span>{{ user.name }}</span>
-                <span class="text-xs text-[var(--am-text-secondary)]">{{ orgUnitName(user.primaryOrgUnitId) }}</span>
-              </div>
-            </ng-template>
-          </p-listbox>
-        </div>
-
-        <div class="flex flex-col gap-1">
-          <label for="reason" class="text-sm font-medium">
-            {{ 'task.reassignReason' | translate }} <span class="text-red-500">*</span>
-          </label>
-          <input pInputText id="reason" formControlName="reason" />
-        </div>
-
-        @if (reassignError()) {
-          <p class="text-red-500 text-sm">{{ reassignError() | translate }}</p>
-        }
-
-        <div class="flex justify-end gap-2 pt-2">
-          <p-button
-            [label]="'common.cancel' | translate"
-            severity="secondary"
-            [text]="true"
-            (onClick)="reassignVisible.set(false)"
-            [disabled]="reassigning()"
-          />
-          <p-button [label]="'common.save' | translate" type="submit" [loading]="reassigning()" />
-        </div>
-      </form>
-    </ng-template>
-    <app-edit-dialog
+    <!-- ACC-163 — the shared reassign dialog, which the committee record now
+         also hosts. It loads its own people list and owns its own form. -->
+    <app-task-reassign-dialog
       [visible]="reassignVisible()"
       (visibleChange)="reassignVisible.set($event)"
-      [header]="reassignHeader()"
-      [content]="reassignFormTpl"
-      width="520px"
+      [task]="reassignTarget()"
+      (reassigned)="loadTasks()"
     />
   `,
 })
 export class UnassignedTasksComponent implements OnInit {
-  @ViewChild('reassignFormTpl', { read: TemplateRef, static: true }) reassignFormTpl!: TemplateRef<unknown>;
-
-  private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
-  private readonly userService = inject(UserService);
-  private readonly orgUnitService = inject(OrgUnitService);
-  private readonly translate = inject(TranslateService);
   private readonly navigationAccess = inject(NavigationAccessService);
 
-  // ACC-123 — POST /tasks/:id/reassign carries tasks:reassign.
+  // ACC-123 — POST /tasks/:id/reassign is open to a tasks:reassign holder (and,
+  // since ACC-163, to a task's own creator — but an UNASSIGNED task is an
+  // administrative case, so this screen keeps the permission rule alone).
   readonly canReassign = computed(() =>
     this.navigationAccess.hasPermission('tasks:reassign'),
   );
@@ -165,38 +96,15 @@ export class UnassignedTasksComponent implements OnInit {
   readonly loading = signal(false);
   readonly tasks = signal<ITaskDto[]>([]);
   readonly error = signal<string | null>(null);
-  readonly users = signal<IUserDto[]>([]);
-  readonly orgUnits = signal<OrgUnitDto[]>([]);
 
   readonly reassignVisible = signal(false);
-  readonly reassigning = signal(false);
-  readonly reassignError = signal<string | null>(null);
-  // ACC-82 — a signal so the dialog header can name the task. A Setup health
-  // Fix opens this dialog straight from a list of many rows, and the admin
-  // needs to see which task they are about to reassign.
-  private readonly reassignTarget = signal<ITaskDto | null>(null);
-  readonly reassignHeader = computed(() => {
-    const task = this.reassignTarget();
-    // Task titles are user-entered data, shown as typed.
-    return task
-      ? this.translate.instant('task.reassignNamed', { title: task.title })
-      : this.translate.instant('task.reassign');
-  });
-
-  readonly reassignForm = this.fb.group({
-    newAssigneeUserIds: [[] as string[], [Validators.required, Validators.minLength(1)]],
-    reason: ['', [Validators.required, Validators.maxLength(1000)]],
-  });
+  // ACC-82 — the dialog header names the task. A Setup health Fix opens this
+  // dialog straight from a list of many rows, and the admin needs to see which
+  // task they are about to reassign.
+  readonly reassignTarget = signal<ITaskDto | null>(null);
 
   ngOnInit(): void {
     this.loadTasks();
-    this.userService.listAllUsers({ status: 'ACTIVE' }).subscribe({ next: (users) => this.users.set(users) });
-    this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
-  }
-
-  orgUnitName(orgUnitId: string | null): string {
-    if (!orgUnitId) return '—';
-    return this.orgUnits().find((u) => u.id === orgUnitId)?.nameEn ?? orgUnitId;
   }
 
   // ACC-82 — a Setup health Fix link (?reassign=<taskId>) opens that task's
@@ -224,36 +132,6 @@ export class UnassignedTasksComponent implements OnInit {
 
   onOpenReassign(task: ITaskDto): void {
     this.reassignTarget.set(task);
-    this.reassignError.set(null);
-    this.reassignForm.reset({ newAssigneeUserIds: [], reason: '' });
     this.reassignVisible.set(true);
-  }
-
-  onSubmitReassign(): void {
-    const target = this.reassignTarget();
-    if (this.reassignForm.invalid || !target) {
-      this.reassignForm.markAllAsTouched();
-      return;
-    }
-    this.reassigning.set(true);
-    this.reassignError.set(null);
-
-    const value = this.reassignForm.getRawValue();
-    this.taskService
-      .reassign(target.id, {
-        newAssigneeUserIds: value.newAssigneeUserIds!,
-        reason: value.reason!,
-      })
-      .subscribe({
-        next: () => {
-          this.reassigning.set(false);
-          this.reassignVisible.set(false);
-          this.loadTasks();
-        },
-        error: (err: unknown) => {
-          this.reassignError.set(extractErrorMessage(err, 'task.errorReassign'));
-          this.reassigning.set(false);
-        },
-      });
   }
 }
