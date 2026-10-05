@@ -105,9 +105,10 @@ describe('TaskController', () => {
   // "restoring" the decorator for consistency with its neighbours.
   // TaskService.complete() 404s anyone who is not a currently-active assignee,
   // so tasks:complete gated nothing the service did not already enforce. It
-  // DID break the engine: tasks:complete is not seeded to BASE_USER, and
+  // DID break the engine: tasks:complete was never seeded to BASE_USER, and
   // MEETING.minutes_review assigns to BASE_USER tenant-wide, so the engine
-  // handed out work its own permission model forbade finishing.
+  // handed out work its own permission model forbade finishing. (ACC-162
+  // retired tasks:complete altogether.)
   it('complete requires NO permission — it is self-scoped to an active assignee', () => {
     const reflector = new Reflector();
     const required = reflector.get<string[] | undefined>(
