@@ -39,8 +39,9 @@
  * So it is exhaustively testable with no DI, and so a caller cannot freeze it.
  * Components call `LanguageService.bilingual()`, which reads the live language
  * at CALL time. Never compute a display name once at load and store it: that is
- * the one-time-set trap (`navigation-access.service.ts`'s tenant name), and it
- * keeps the previous language after a switch.
+ * the one-time-set trap, and it keeps the previous language after a switch. Its
+ * worked example was the shell's tenant name, until ACC-161 made it a computed
+ * over the stored pair (SYSTEM-REFERENCE §9.3).
  */
 export function pickBilingualName(
   en: string,

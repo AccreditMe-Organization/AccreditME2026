@@ -176,8 +176,8 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
 // The position picker used to hand OverlaySelect a field NAME ('nameAr'), which
 // drew a blank option for a position with no Arabic name. It now hands it a
 // resolved `label`, computed over the options AND the language. The trap that
-// replaces is a label written once at load — navigation-access.service.ts's
-// tenant name, which keeps the previous language after a switch. So this reads
+// replaces is a label written once at load, which keeps the previous language
+// after a switch (SYSTEM-REFERENCE §9.3's one-time-set trap). So this reads
 // the label the picker actually RENDERS, switches language with the same
 // position selected, and requires the rendered label to change.
 describe('InviteUserComponent position picker label (ACC-160)', () => {
