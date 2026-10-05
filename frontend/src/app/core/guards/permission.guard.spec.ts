@@ -12,6 +12,7 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { environment } from '../../../environments/environment';
+import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { permissionGuard } from './permission.guard';
 import { NavigationAccessService } from '../services/navigation-access.service';
 import { LANDING_ROUTE } from '../navigation/landing-route';
@@ -308,6 +309,9 @@ describe('permissionGuard — with the real NavigationAccessService', () => {
         provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
+        // ACC-161 — the real service resolves the tenant name through
+        // LanguageService, which needs TranslateService.
+        provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
         NavigationAccessService,
       ],
     });

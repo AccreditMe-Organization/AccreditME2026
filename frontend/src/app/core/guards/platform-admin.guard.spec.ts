@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree, provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { environment } from '../../../environments/environment';
 import { platformAdminGuard } from './platform-admin.guard';
 import { NavigationAccessService } from '../services/navigation-access.service';
@@ -23,7 +24,15 @@ describe('platformAdminGuard', () => {
   beforeEach(() => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(), NavigationAccessService],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        // ACC-161 — NavigationAccessService resolves the tenant name through
+        // LanguageService, which needs TranslateService.
+        provideTranslateService({ loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        NavigationAccessService,
+      ],
     });
     router = TestBed.inject(Router);
     httpMock = TestBed.inject(HttpTestingController);
