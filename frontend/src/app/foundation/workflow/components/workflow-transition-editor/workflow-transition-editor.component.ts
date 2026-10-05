@@ -120,7 +120,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
       <p-table [value]="transitions" styleClass="w-full">
         <ng-template pTemplate="header">
           <tr>
-            <th>{{ 'workflow.labelEn' | translate }}</th>
+            <th>{{ 'workflow.label' | translate }}</th>
             <th>{{ 'workflow.toStage' | translate }}</th>
             <th>{{ 'workflow.triggerCondition' | translate }}</th>
             <th></th>
@@ -130,7 +130,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
         <ng-template pTemplate="body" let-transition>
           <tr>
-            <td>{{ transition.labelEn }}</td>
+            <td>{{ transitionLabel(transition) }}</td>
             <td>{{ stageName(transition.toStageId) }}</td>
             <td>
               <p-tag [value]="transition.triggerCondition" severity="info" />
@@ -685,8 +685,15 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     // availableStages/transitions are parent-owned — nothing to refetch here.
   }
 
+  // ACC-160 (ACC-89 items 1 and 2) — both of these read the English name only,
+  // whatever the session's language, even when an Arabic one was stored.
+  transitionLabel(transition: WorkflowTransitionDto): string {
+    return this.languageService.bilingual(transition.labelEn, transition.labelAr);
+  }
+
   stageName(stageId: string): string {
-    return this.availableStages.find((s) => s.id === stageId)?.nameEn ?? stageId;
+    const stage = this.availableStages.find((s) => s.id === stageId);
+    return stage ? this.languageService.bilingual(stage.nameEn, stage.nameAr) : stageId;
   }
 
   openAdd(): void {

@@ -39,6 +39,7 @@ import { RoleListComponent } from '../../foundation/roles/components/role-list/r
 import { UserListComponent } from '../../foundation/user/components/user-list/user-list.component';
 import { InviteUserComponent } from '../../foundation/user/components/invite-user/invite-user.component';
 import { LookupValueListComponent } from '../../foundation/lookup/components/lookup-value-list/lookup-value-list.component';
+import { UserRoleAssignmentComponent } from '../../foundation/roles/components/user-role-assignment/user-role-assignment.component';
 
 // ACC-160 — EVERY SWEPT SCREEN, WITH A RECORD THAT HAS NO ARABIC NAME.
 //
@@ -336,6 +337,32 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
       expect(
         c.effectiveLabel(as({ labelEn: 'Policy', labelAr: null, labelOverrideEn: 'Directive', labelOverrideAr: null })),
       ).toBe('Directive');
+    });
+  });
+
+  // ── ACC-89 items 1–3, shipped with ACC-160 ────────────────────────────────
+  // The OPPOSITE defect to the rest of this file: a stored Arabic name that
+  // display code never read. So the Arabic half is the assertion that matters,
+  // and the null half pins that fixing it did not introduce a blank.
+  describe('ACC-89 — English-only displays now follow the language', () => {
+    it('transition editor: the table shows the transition label and target stage in Arabic', () => {
+      const c = build(WorkflowTransitionEditorComponent);
+      c.availableStages = [
+        as({ id: 's1', nameEn: 'Approved', nameAr: 'معتمد' }),
+        as({ id: 's2', nameEn: 'Closed', nameAr: null }),
+      ];
+      expect(c.transitionLabel(as({ labelEn: 'Approve', labelAr: 'اعتماد' }))).toBe('اعتماد');
+      expect(c.transitionLabel(as({ labelEn: 'Approve', labelAr: null }))).toBe('Approve');
+      expect(c.stageName('s1')).toBe('معتمد');
+      expect(c.stageName('s2')).toBe('Closed');
+      // An unknown id is still said plainly rather than hidden.
+      expect(c.stageName('missing')).toBe('missing');
+    });
+
+    it("user role assignment: a user's roles are named in Arabic", () => {
+      const c = build(UserRoleAssignmentComponent, { userId: 'u1' });
+      expect(c.roleName(as({ nameEn: 'Auditor', nameAr: 'مدقق' }))).toBe('مدقق');
+      expect(c.roleName(as({ nameEn: 'Auditor', nameAr: null }))).toBe('Auditor');
     });
   });
 });

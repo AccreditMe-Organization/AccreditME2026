@@ -1,4 +1,5 @@
 import { Component, Input, OnChanges, computed, inject, signal } from '@angular/core';
+import { LanguageService } from '../../../../core/services/language.service';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TooltipModule } from 'primeng/tooltip';
@@ -28,7 +29,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
       <ul class="flex flex-col gap-2">
         @for (grant of assignedRoles(); track grant.id) {
           <li class="flex items-center justify-between gap-3">
-            <span>{{ grant.role.nameEn }}</span>
+            <span>{{ roleName(grant.role) }}</span>
             <!-- ACC-123 — roles:manage, what DELETE /users/:id/roles/:roleId
                  carries. The list of a user's roles is readable with
                  users:view; removing one is not. -->
@@ -85,6 +86,7 @@ export class UserRoleAssignmentComponent implements OnChanges {
   private readonly translate = inject(TranslateService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly navigationAccess = inject(NavigationAccessService);
+  private readonly languageService = inject(LanguageService);
 
   // ACC-123 — roles:manage, what both the assign and the remove endpoint carry
   // (user.controller.ts). This panel had no gate at all.
@@ -95,6 +97,11 @@ export class UserRoleAssignmentComponent implements OnChanges {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly assignedRoles = signal<UserRoleGrantDto[]>([]);
+
+  // ACC-160 (ACC-89 item 3) — this showed nameEn only, in either language.
+  roleName(role: RoleDto): string {
+    return this.languageService.bilingual(role.nameEn, role.nameAr);
+  }
   readonly allRoles = signal<RoleDto[]>([]);
   selectedRoleId: string | null = null;
 
