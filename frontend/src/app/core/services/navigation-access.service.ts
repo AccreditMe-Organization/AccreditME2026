@@ -36,6 +36,10 @@ export type ModuleAccessLevel = 'FULL' | 'READ_ONLY';
 
 interface TenantEntitlementsResponse {
   name: string;
+  // ACC-161 — NULL when the tenant has not set one. A hand-kept copy of the
+  // backend's ITenantEntitlements (no OpenAPI yet, ACC-150), so it changes in
+  // the same PR as the backend, or the two drift the way ACC-149 did.
+  nameAr: string | null;
   slug: string;
   isPlatformOrg: boolean;
   modules: Record<string, ModuleAccessLevel>;
