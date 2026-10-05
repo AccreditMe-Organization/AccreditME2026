@@ -13,6 +13,8 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 // NEW FILE. The screen had no spec, which is why nothing caught the defect the
 // first two tests below pin: the list rendered its genuinely-empty state while
 // the request was still in flight.
+// ACC-160 — `over` was accepted and never applied, so position({ id: 'p2' })
+// silently returned p1 again. Nothing passed it until now; it does now.
 const position = (over: Partial<IOrgPositionDto> = {}): IOrgPositionDto =>
   ({
     id: 'p1',
@@ -26,6 +28,7 @@ const position = (over: Partial<IOrgPositionDto> = {}): IOrgPositionDto =>
     isActive: true,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
+    ...over,
   }) as IOrgPositionDto;
 
 describe('PositionListComponent (ACC-120)', () => {
@@ -155,4 +158,33 @@ describe('PositionListComponent (ACC-120)', () => {
     confirmed!();
     expect(deactivate).toHaveBeenCalledWith('p1');
   });
+
+  // ACC-160 — a dedicated Arabic-name slot in a list shows "—" when there is
+  // no Arabic name, rather than a blank cell. Not the English name: that slot's
+  // job is to report the Arabic one, and an English name there would lie.
+  // GUARD FIRST: a list whose records all have Arabic names shows no "—" at all,
+  // so the dash in the null case can only have come from that cell.
+  describe('the Arabic-name column (ACC-160)', () => {
+    const slots = (): string[] => arabicSlots(fixture.nativeElement as HTMLElement);
+
+    it('shows the Arabic name, and no dash, while every position has one', () => {
+      render(['org:view']);
+      expect(slots()).toContain('رئيس وحدة');
+      expect(slots()).not.toContain('—');
+    });
+
+    it('shows "—" for a position with no Arabic name, not a blank', () => {
+      render(['org:view'], of([position(), position({ id: 'p2', nameEn: 'Charge Nurse', nameAr: null })]));
+      expect(slots()).toContain('رئيس وحدة');
+      expect(slots()).toContain('—');
+      expect(slots()).not.toContain('');
+    });
+  });
 });
+
+// Reads the Arabic-name SLOTS themselves (dir="rtl"), not the page: a page can
+// show "—" elsewhere — the stage list's empty SLA column does — and a whole-page
+// assertion would then pass or fail for a reason that has nothing to do with
+// the Arabic name. That is exactly how this test's first draft went wrong.
+const arabicSlots = (root: HTMLElement): string[] =>
+  Array.from(root.querySelectorAll('[dir="rtl"]')).map((e) => (e.textContent ?? '').trim());

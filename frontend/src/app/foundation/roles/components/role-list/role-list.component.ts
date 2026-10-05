@@ -120,7 +120,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                        session (and right-aligned in an Arabic one, which is
                        equally correct). -->
                   <div class="text-[11.5px] text-[var(--am-text-secondary)] truncate">
-                    <span dir="rtl" style="unicode-bidi: isolate">{{ role.nameAr }}</span>
+                    <span dir="rtl" style="unicode-bidi: isolate">{{ role.nameAr || '—' }}</span>
                   </div>
                 </div>
               }

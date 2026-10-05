@@ -140,7 +140,7 @@ import { StepStripComponent } from '../../../../shared/components/step-strip/ste
               <span class="truncate text-[13px] font-medium">{{ position.nameEn }}</span>
             }
             @if (visible('nameAr')) {
-              <span class="truncate text-[13px]" dir="rtl">{{ position.nameAr }}</span>
+              <span class="truncate text-[13px]" dir="rtl">{{ position.nameAr || '—' }}</span>
             }
             @if (visible('grade')) {
               <span

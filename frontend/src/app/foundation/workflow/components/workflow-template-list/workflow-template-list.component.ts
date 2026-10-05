@@ -45,7 +45,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
         <ng-template pTemplate="body" let-template>
           <tr class="cursor-pointer hover:bg-surface-50" (click)="onRowClick(template)">
             <td>{{ template.nameEn }}</td>
-            <td dir="rtl">{{ template.nameAr }}</td>
+            <td dir="rtl">{{ template.nameAr || '—' }}</td>
             <td>
               <p-tag [value]="template.objectType" severity="info" />
             </td>

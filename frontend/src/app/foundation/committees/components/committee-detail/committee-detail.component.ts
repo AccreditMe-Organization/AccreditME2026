@@ -99,14 +99,20 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
               <!-- Both names always, not one selected by language: a
                    bilingual governance record is read by people who need the
                    Arabic name even in an English session. isolate keeps it
-                   from reordering the line. -->
-              <div
-                dir="rtl"
-                style="unicode-bidi: isolate"
-                class="text-base text-[var(--am-text-secondary)] mt-1 text-start"
-              >
-                {{ c.nameAr }}
-              </div>
+                   from reordering the line.
+
+                   ACC-160 — OMITTED when there is no Arabic name. This is a
+                   subtitle, not a column: a "—" under a title reads as noise,
+                   and the English fallback would only repeat the H1 above it. -->
+              @if (c.nameAr) {
+                <div
+                  dir="rtl"
+                  style="unicode-bidi: isolate"
+                  class="text-base text-[var(--am-text-secondary)] mt-1 text-start"
+                >
+                  {{ c.nameAr }}
+                </div>
+              }
             </div>
 
             <div class="flex items-center gap-2.5 flex-wrap">

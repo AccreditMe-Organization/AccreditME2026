@@ -102,3 +102,49 @@ describe('RoleListComponent row actions (ACC-123)', () => {
     });
   });
 });
+
+// ACC-160 — a dedicated Arabic-name slot in a list shows "—" when there is
+// no Arabic name, rather than a blank cell. Not the English name: that slot's
+// job is to report the Arabic one, and an English name there would lie.
+// GUARD FIRST: a list whose records all have Arabic names shows no "—" at all,
+// so the dash in the null case can only have come from that cell.
+describe('RoleListComponent — the Arabic name under each role (ACC-160)', () => {
+  const ROLE_AR = { id: 'r1', key: 'AUDITOR', nameEn: 'Auditor', nameAr: 'مراجع', description: null,
+    isSystem: true, isActive: true, permissionCount: 12 } as RoleDto;
+
+  function renderWith(roles: RoleDto[]): string[] {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [RoleListComponent],
+      providers: [
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        ConfirmationService,
+        { provide: RoleService, useValue: { listRoles: () => of({ data: roles, total: roles.length, page: 1, limit: 20 }) } },
+        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+      ],
+    });
+    const fixture = TestBed.createComponent(RoleListComponent);
+    fixture.detectChanges();
+    return arabicSlots(fixture.nativeElement as HTMLElement);
+  }
+
+  it('shows no dash while every role has an Arabic name', () => {
+    const slots = renderWith([ROLE_AR]);
+    expect(slots).toContain('مراجع');
+    expect(slots).not.toContain('—');
+  });
+
+  it('shows "—" for a role with no Arabic name, not a blank', () => {
+    const slots = renderWith([ROLE_AR, { ...ROLE_AR, id: 'r2', key: null, nameEn: 'Records Officer', nameAr: null } as RoleDto]);
+    expect(slots).toContain('—');
+    expect(slots).not.toContain('');
+  });
+});
+
+// Reads the Arabic-name SLOTS themselves (dir="rtl"), not the page: a page can
+// show "—" elsewhere — the stage list's empty SLA column does — and a whole-page
+// assertion would then pass or fail for a reason that has nothing to do with
+// the Arabic name. That is exactly how this test's first draft went wrong.
+const arabicSlots = (root: HTMLElement): string[] =>
+  Array.from(root.querySelectorAll('[dir="rtl"]')).map((e) => (e.textContent ?? '').trim());
