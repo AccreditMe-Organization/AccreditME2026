@@ -204,7 +204,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
           </div>
 
           <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }} <span class="text-red-500">*</span></label>
+            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
             <input pInputText dir="rtl" formControlName="labelAr" />
           </div>
 
@@ -316,7 +316,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
           </div>
 
           <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }} <span class="text-red-500">*</span></label>
+            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
             <input pInputText dir="rtl" formControlName="labelAr" />
           </div>
 
@@ -632,7 +632,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   readonly addForm = this.fb.group({
     toStageId: [null as string | null, [Validators.required]],
     labelEn: ['', [Validators.required, Validators.maxLength(100)]],
-    labelAr: ['', [Validators.required, Validators.maxLength(100)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    labelAr: ['', [Validators.maxLength(100)]],
     triggerCondition: ['ROLE_BASED', [Validators.required]],
     triggerRoleId: [null as string | null],
     requiredPermission: [''],
@@ -642,7 +646,11 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
 
   readonly editForm = this.fb.group({
     labelEn: ['', [Validators.required, Validators.maxLength(100)]],
-    labelAr: ['', [Validators.required, Validators.maxLength(100)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    labelAr: ['', [Validators.maxLength(100)]],
     triggerCondition: ['ROLE_BASED', [Validators.required]],
     requiredPermission: [''],
     isApprovalPath: [false],

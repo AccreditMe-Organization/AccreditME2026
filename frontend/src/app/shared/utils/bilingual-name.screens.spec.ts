@@ -40,6 +40,8 @@ import { UserListComponent } from '../../foundation/user/components/user-list/us
 import { InviteUserComponent } from '../../foundation/user/components/invite-user/invite-user.component';
 import { LookupValueListComponent } from '../../foundation/lookup/components/lookup-value-list/lookup-value-list.component';
 import { UserRoleAssignmentComponent } from '../../foundation/roles/components/user-role-assignment/user-role-assignment.component';
+import { RoleFormComponent } from '../../foundation/roles/components/role-form/role-form.component';
+import { LookupValueFormComponent } from '../../foundation/lookup/components/lookup-value-form/lookup-value-form.component';
 
 // ACC-160 — EVERY SWEPT SCREEN, WITH A RECORD THAT HAS NO ARABIC NAME.
 //
@@ -93,28 +95,31 @@ const as = <T>(value: object): T => value as unknown as T;
 
 const AR = 'لجنة الجودة';
 
-describe('swept screens fall back to the English name (ACC-160)', () => {
-  beforeEach(() => {
-    confirm.calls.reset();
-    TestBed.configureTestingModule({
-      providers: [
-        provideRouter([]),
-        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) } } },
-        { provide: ConfirmationService, useValue: { confirm } },
-        ...STUBBED.map((provide) => ({ provide, useValue: stubService() })),
-      ],
-    });
+function configure(): void {
+  confirm.calls.reset();
+  TestBed.configureTestingModule({
+    providers: [
+      provideRouter([]),
+      provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+      { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'c-1' }) } } },
+      { provide: ConfirmationService, useValue: { confirm } },
+      ...STUBBED.map((provide) => ({ provide, useValue: stubService() })),
+    ],
   });
+}
 
-  // The CC-8 order: tear the module down BEFORE resetting <html>, or a pending
-  // LanguageService effect rewrites dir="rtl" after the reset and leaks into
-  // every later spec.
-  afterEach(() => {
-    TestBed.resetTestingModule();
-    document.documentElement.removeAttribute('dir');
-    document.documentElement.removeAttribute('lang');
-  });
+// The CC-8 order: tear the module down BEFORE resetting <html>, or a pending
+// LanguageService effect rewrites dir="rtl" after the reset and leaks into
+// every later spec.
+function teardown(): void {
+  TestBed.resetTestingModule();
+  document.documentElement.removeAttribute('dir');
+  document.documentElement.removeAttribute('lang');
+}
+
+describe('swept screens fall back to the English name (ACC-160)', () => {
+  beforeEach(configure);
+  afterEach(teardown);
 
   // The guard every case below relies on: the session really is Arabic.
   it('runs in an Arabic session', () => {
@@ -366,3 +371,53 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
     });
   });
 });
+
+// ── THE FORMS: the Arabic name is optional, the English one is not ──────────
+//
+// ACC-160's first acceptance criterion, at the form layer: each of the six can
+// be created and edited with the Arabic field empty. Removing the validator
+// was half of it; the asterisks were the other half, and four of these forms
+// hard-code theirs rather than deriving it (am-field derives its own, so the
+// two lookup forms needed only the validator).
+describe('every form accepts an empty Arabic name (ACC-160)', () => {
+  beforeEach(configure);
+  afterEach(teardown);
+
+  type FormGroupLike = {
+    controls: Record<string, { setValue(v: string): void; valid: boolean; hasError(e: string): boolean }>;
+  };
+  const forms: [string, () => FormGroupLike, string, string, number][] = [
+    ['committee-form', () => build(CommitteeFormComponent).form as never, 'nameEn', 'nameAr', 150],
+    ['role-form', () => build(RoleFormComponent).form as never, 'nameEn', 'nameAr', 100],
+    ['lookup-value-form', () => build(LookupValueFormComponent).form as never, 'labelEn', 'labelAr', 255],
+    ['lookup-value-list override', () => build(LookupValueListComponent).overrideForm as never, 'labelEn', 'labelAr', 255],
+    ['workflow-stage-form', () => build(WorkflowStageFormComponent).form as never, 'nameEn', 'nameAr', 100],
+    ['transition editor (add)', () => build(WorkflowTransitionEditorComponent).addForm as never, 'labelEn', 'labelAr', 100],
+    ['transition editor (edit)', () => build(WorkflowTransitionEditorComponent).editForm as never, 'labelEn', 'labelAr', 100],
+  ];
+
+  for (const [name, formOf, en, ar, max] of forms) {
+    describe(name, () => {
+      // Guard first: if NOTHING on this form were required, "the Arabic name is
+      // accepted empty" would prove nothing about the Arabic name.
+      it('still requires the English name', () => {
+        const form = formOf();
+        form.controls[en]!.setValue('');
+        expect(form.controls[en]!.hasError('required')).toBeTrue();
+      });
+
+      it('accepts an empty Arabic name', () => {
+        const form = formOf();
+        form.controls[ar]!.setValue('');
+        expect(form.controls[ar]!.valid).toBeTrue();
+      });
+
+      it('still caps the Arabic name at its length', () => {
+        const form = formOf();
+        form.controls[ar]!.setValue('ا'.repeat(max + 1));
+        expect(form.controls[ar]!.hasError('maxlength')).toBeTrue();
+      });
+    });
+  }
+});
+

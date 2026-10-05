@@ -52,7 +52,6 @@ import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits
       <div class="flex flex-col gap-1">
         <label for="nameAr" class="text-sm font-medium">
           {{ 'committee.nameAr' | translate }}
-          <span class="text-red-500">*</span>
         </label>
         <input pInputText id="nameAr" formControlName="nameAr" dir="rtl" />
       </div>
@@ -176,7 +175,11 @@ export class CommitteeFormComponent implements OnInit {
 
   readonly form = this.fb.group({
     nameEn: ['', [Validators.required, Validators.maxLength(150)]],
-    nameAr: ['', [Validators.required, Validators.maxLength(150)]],
+    // ACC-160 — the Arabic name is OPTIONAL: Arabic fields are never mandatory,
+    // because the product is sold to customers who do not operate in Arabic.
+    // maxLength stays. An emptied field is sent as '' and stored as NULL by the
+    // DTO's trimToNull, so the empty-to-null decision lives in one place.
+    nameAr: ['', [Validators.maxLength(150)]],
     typeValueId: [null as string | null, [Validators.required]],
     purpose: [''],
     quorumCount: [0, [Validators.min(0)]],
