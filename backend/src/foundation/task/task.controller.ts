@@ -9,8 +9,11 @@ import { CurrentUserPermissions } from '../../common/decorators/current-user-per
 import { TaskService } from './task.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
+import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
+import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
 import { ITask } from './interfaces/task.interface';
+import { ITaskListItem } from './interfaces/task-list-item.interface';
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
 
@@ -47,9 +50,9 @@ export class TaskController {
   getMyTasks(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
-    @Query('status') status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'OVERDUE' | 'CANCELLED' | 'UNASSIGNED',
-  ): Promise<ITask[]> {
-    return this.taskService.getMyTasks(userId, tenantId, { status });
+    @Query() query: GetMyTasksQueryDto,
+  ): Promise<ITaskListItem[]> {
+    return this.taskService.getMyTasks(userId, tenantId, query);
   }
 
   // Must be declared before ':id' — Nest matches routes in declaration order
@@ -154,15 +157,44 @@ export class TaskController {
     return this.taskService.complete(id, userId, tenantId);
   }
 
+  // ACC-163 — start and reject are SELF-SCOPED, exactly as complete() above:
+  // TaskService refuses (404) anyone who is not a currently-active assignee,
+  // and no permission is involved. Do not add @Permissions here for
+  // consistency with the neighbours — the engine assigns work to people who
+  // hold no task permission at all.
+  @Post(':id/start')
+  start(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITask> {
+    return this.taskService.start(id, userId, tenantId);
+  }
+
+  @Post(':id/reject')
+  reject(
+    @Param('id') id: string,
+    @Body() dto: RejectTaskDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITask> {
+    return this.taskService.reject(id, dto, userId, tenantId);
+  }
+
+  // ACC-163 — deliberately NO @Permissions. tasks:reassign is still checked,
+  // but in the service, because it is now one of two ways in: the task's own
+  // creator may reassign it too (a rejected task comes back to its creator,
+  // Q4), and whether the caller IS the creator is only knowable from the row.
+  // A decorator here would refuse the creator before the row was read.
   @Post(':id/reassign')
-  @Permissions(TASKS_PERMISSIONS.REASSIGN)
   reassign(
     @Param('id') id: string,
     @Body() dto: ReassignTaskDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<ITask> {
-    return this.taskService.reassign(id, dto, tenantId, userId);
+    return this.taskService.reassign(id, dto, tenantId, userId, actorPermissions);
   }
 
   // ACC-162 — deliberately NOT permission-gated, for the reason complete()
