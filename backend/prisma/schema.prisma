@@ -160,6 +160,11 @@ enum TaskStatus {
   CANCELLED
   DELEGATED
   UNASSIGNED
+  // ACC-163 — every active assignee rejected the task, with a reason. It goes
+  // back to its creator, who reassigns it. OVERDUE and DELEGATED above are no
+  // longer written (overdue is a flag computed from dueAt); removing them is a
+  // later, contracting migration, after the OVERDUE backfill has run.
+  REJECTED
 }
 
 enum TaskPriority {
@@ -481,6 +486,7 @@ model User {
   userRoles                       UserRole[]
   workflowApprovals               WorkflowApproval[]
   tasksCreated                    Task[]                     @relation("TaskCreator")
+  tasksRejected                   Task[]                     @relation("TaskRejectedBy")
   taskAssignments                 TaskAssignee[]             @relation("TaskAssigneeUser")
   taskAssignmentsMade             TaskAssignee[]             @relation("TaskAssigneeAssignedBy")
   taskEvidenceUploaded            TaskEvidence[]
@@ -1288,6 +1294,14 @@ model Task {
   slaBreachedAt      DateTime?
   completedAt        DateTime?
   completedById      String?
+  // ACC-163 — when true, complete() refuses until at least one TaskEvidence
+  // row exists. Set from the manual task form; workflow tasks stay false
+  // until stage task definitions exist.
+  requiresEvidence   Boolean        @default(false)
+  // ACC-163 — set when the LAST active assignee rejects; cleared by reassign.
+  rejectedReason     String?
+  rejectedAt         DateTime?
+  rejectedById       String?
   // ACC-46 Section 2.7.b — escalationUserId/escalationAfterHours/escalatedAt
   // removed via real migration, not left as dead/repurposed columns
   // (ACC-44's own precedent for a confirmed-dead field): both were
@@ -1307,6 +1321,7 @@ model Task {
 
   organization     Organization      @relation(fields: [organizationId], references: [id])
   createdBy        User              @relation("TaskCreator", fields: [createdById], references: [id])
+  rejectedBy       User?             @relation("TaskRejectedBy", fields: [rejectedById], references: [id])
   workflowInstance WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
   assignees        TaskAssignee[]
   evidence         TaskEvidence[]
@@ -1779,7 +1794,7 @@ model LoginAttempt {
   organizationId String
   email          String // as typed — may not resolve to a real user
   success        Boolean
-  failureReason  String? // "invalid_password" | "locked" | "no_such_user" | "mfa_failed"
+  failureReason  String? // "invalid_password" | "locked" | "no_such_user" | "mfa_failed" | "account_inactive"
   ipAddress      String?
   userAgent      String?
   createdAt      DateTime @default(now())
