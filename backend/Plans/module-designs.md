@@ -376,6 +376,8 @@ reference them — computed on demand via query, no extra schema.
 tasks:create — who can create tasks (tenant admin assigns to roles)
 tasks:reassign — who can reassign tasks
 tasks:complete — who can mark tasks complete
+  [RETIRED, ACC-162: completing a task and attaching evidence are
+   self-scoped to an active assignee, so this permission gated nothing]
 tasks:manage — full task management
 
 ### No Subtasks
