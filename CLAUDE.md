@@ -1061,19 +1061,35 @@ implemented them.
 Enforcement is **ACC-129**. Do not restate the intended tiers here as though
 they were live; that is what made this section wrong.
 
-### Account Lockout — REAL, AND NOT THE SAME CONTROL
+### Account Lockout — REAL SINCE ACC-120 SLICE 9b, AND NOT THE SAME CONTROL
 
 Distinct from rate limiting, and the distinction matters: an auditor asking
 about brute-force protection is asking about this one.
 
+**Before slice 9b this control did not work, although this section called it
+real.** Better Auth returns a refused sign-in as a Response instead of throwing
+it, and the failure was recorded in a `catch` that therefore never ran: no
+failed sign-in had ever been written, so nothing ever locked. Full account:
+SYSTEM-REFERENCE.md §1.12.
+
 ```
 5 failed attempts within 15 minutes  ->  the ACCOUNT is locked
-Scope:   per (organization, email), not per IP
+Scope:   per (organization, email), not per IP; the email is trimmed and
+         lower-cased first, so capitalisation cannot buy extra attempts
 Source:  LoginAttemptService.isLocked(), checked BEFORE authentication
 State:   computed on read from recent LoginAttempt rows — no stored counter
+Counts:  only Better Auth's INVALID_EMAIL_OR_PASSWORD; an outage records nothing
 Record:  every attempt is written, including attempts made while locked
-         (failureReason: 'locked')
+         (failureReason: 'locked') and a right password on an inactive
+         account (failureReason: 'account_inactive' — NEUTRAL: neither a
+         failure nor a reset)
 ```
+
+**Each attempt made while locked EXTENDS the lock — by design, not a bug.** A
+locked attempt is recorded as a failure and counts in the streak, so the lock
+lifts fifteen minutes after the fifth most recent failure, and trying again
+moves that later. The refusal says when: `ACCOUNT_LOCKED` carries
+`lockedUntil`, computed after the locked attempt is recorded.
 
 **Per-tenant thresholds are read but never written.** `getLockoutConfig()` reads
 `lockoutThreshold` and `lockoutWindowMinutes` from the tenant's encrypted
