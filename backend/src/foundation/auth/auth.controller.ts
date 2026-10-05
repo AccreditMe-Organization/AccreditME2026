@@ -79,6 +79,15 @@ export class AuthController {
     return this.authService.verifyMfa(dto, req, res);
   }
 
+  // ACC-120 slice 9b — abandon a pending sign-in MFA challenge. Unauthenticated
+  // like login: the caller is mid-sign-in and has no session yet. Clears only
+  // the challenge named by this browser's own signed cookie.
+  @Post('mfa/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancelMfa(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.authService.cancelMfa(req, res);
+  }
+
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {

@@ -50,7 +50,9 @@ import {
   attemptsRemaining,
   challengeIdentifierFromRequest,
   challengeIdentifierFromSetCookies,
+  clearChallenge,
   loadChallenge,
+  TWO_FACTOR_COOKIE_NAMES,
   twoFactorLockedUntil,
 } from './two-factor-challenge';
 
@@ -508,6 +510,30 @@ export class AuthService {
       email: appUser.email.toLowerCase(),
     });
     return { success: true, user, language };
+  }
+
+  // ACC-120 slice 9b — abandon a pending MFA challenge. The challenge is real
+  // server-side state (two AuthVerification rows, live for ten minutes) that
+  // anyone at the same browser could still complete with a code, and Better
+  // Auth's own routes are not mounted, so nothing else can clear it.
+  //
+  // Only the caller's OWN challenge can be cleared: the identifier comes from
+  // the cookie this browser holds, and only once its Better Auth signature
+  // verifies (two-factor-challenge.ts). Always succeeds — there being nothing
+  // to cancel is not an error, and saying so would tell a caller whether a
+  // challenge existed.
+  async cancelMfa(req: ExpressRequest, res: ExpressResponse): Promise<{ success: true }> {
+    const identifier = challengeIdentifierFromRequest(req.headers.cookie);
+    if (identifier) await clearChallenge(this.prisma, identifier);
+    for (const name of TWO_FACTOR_COOKIE_NAMES) {
+      res.clearCookie(name, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: name.startsWith('__Secure-'),
+      });
+    }
+    return { success: true };
   }
 
   // ACC-120 slice 9b — Better Auth's MFA refusal, as one of ours. Every one is a

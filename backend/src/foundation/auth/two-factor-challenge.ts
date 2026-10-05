@@ -148,3 +148,13 @@ export async function twoFactorLockedUntil(
   });
   return twoFactor?.lockedUntil ?? null;
 }
+
+/** Delete the challenge and its attempt counter. Touches nothing else. */
+export async function clearChallenge(prisma: PrismaService, identifier: string): Promise<void> {
+  await prisma.authVerification.deleteMany({
+    where: { identifier: { in: [identifier, `${TWO_FACTOR_ATTEMPTS_PREFIX}${identifier}`] } },
+  });
+}
+
+/** Both names the challenge cookie can have, for expiring it. */
+export const TWO_FACTOR_COOKIE_NAMES: readonly string[] = [...CHALLENGE_COOKIE_NAMES];
