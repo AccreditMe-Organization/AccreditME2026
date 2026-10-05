@@ -85,7 +85,12 @@ describe('AuthService', () => {
   let mockPrisma: any;
   let mockAuditLog: { log: jest.Mock };
   let mockNotification: { create: jest.Mock };
-  let mockLoginAttemptService: { record: jest.Mock; isLocked: jest.Mock; isNewIp: jest.Mock };
+  let mockLoginAttemptService: {
+    record: jest.Mock;
+    isLocked: jest.Mock;
+    lockedUntil: jest.Mock;
+    isNewIp: jest.Mock;
+  };
   let mockUserService: {
     validatePositionAssignment: jest.Mock;
     notifyTenantAdminsOfInviteAcceptanceConflict: jest.Mock;
@@ -112,6 +117,7 @@ describe('AuthService', () => {
     mockLoginAttemptService = {
       record: jest.fn().mockResolvedValue(undefined),
       isLocked: jest.fn().mockResolvedValue(false),
+      lockedUntil: jest.fn().mockResolvedValue(null),
       isNewIp: jest.fn().mockReturnValue(false),
     };
     // ACC-46 Section 2.1, Layer 2 — validatePositionAssignment() resolves

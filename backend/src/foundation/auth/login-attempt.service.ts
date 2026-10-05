@@ -69,21 +69,40 @@ export class LoginAttemptService {
   // AuditLog's design). Counts the failure streak from the most recent
   // attempt backward, stopping at the first success or the window edge.
   async isLocked(organizationId: string, email: string): Promise<boolean> {
+    return (await this.lockedUntil(organizationId, email)) !== null;
+  }
+
+  // ACC-120 slice 9b — WHEN the lock lifts, or null when there is none.
+  //
+  // The lock holds while at least `threshold` failures of the current streak
+  // are inside the window. The streak is read newest first, so it lifts when
+  // the threshold-th most recent failure ages out: that failure's time plus
+  // the window. A locked attempt is itself recorded as a failure, so every try
+  // made while locked moves this later — by design, see CLAUDE.md's Account
+  // Lockout section. Callers that record a locked attempt should read this
+  // AFTER recording it, or they report a time the attempt has already moved.
+  //
+  // Computed purely from (organization, email) rows, so a non-existent email
+  // gets exactly the same answer as a real one: the lock never discloses
+  // whether an account exists.
+  async lockedUntil(organizationId: string, email: string): Promise<Date | null> {
     const { threshold, windowMinutes } = await this.getLockoutConfig(organizationId);
-    const since = new Date(Date.now() - windowMinutes * 60 * 1000);
+    const windowMs = windowMinutes * 60 * 1000;
+    const since = new Date(Date.now() - windowMs);
 
     const attempts = await this.prisma.loginAttempt.findMany({
       where: { organizationId, email, createdAt: { gte: since } },
       orderBy: { createdAt: 'desc' },
     });
 
-    let consecutiveFailures = 0;
+    const streak: Date[] = [];
     for (const attempt of attempts) {
       if (attempt.success) break;
-      consecutiveFailures += 1;
+      streak.push(attempt.createdAt);
     }
 
-    return consecutiveFailures >= threshold;
+    const pivot = streak[threshold - 1];
+    return pivot ? new Date(pivot.getTime() + windowMs) : null;
   }
 
   // Deliberately NOT a DB query against LoginAttempt (which has no userId

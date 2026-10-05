@@ -45,6 +45,7 @@ import { SetupMfaDto } from './dto/setup-mfa.dto';
 import { VerifySetupMfaDto } from './dto/verify-setup-mfa.dto';
 import { DisableMfaDto } from './dto/disable-mfa.dto';
 import { BETTER_AUTH_INVALID_CREDENTIALS } from './better-auth.contract';
+import { AuthRefusalException } from './auth-refusal';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -168,7 +169,9 @@ export class AuthService {
 
   private async resolveOrganizationId(slug: string): Promise<string> {
     const org = await this.prisma.organization.findUnique({ where: { slug } });
-    if (!org) throw new UnauthorizedException('Invalid organization or credentials');
+    // The same refusal as no-such-user and wrong-password, byte for byte — see
+    // AUTH_REFUSAL_MESSAGES. It cannot say which part was wrong.
+    if (!org) throw new AuthRefusalException('INVALID_CREDENTIALS');
     return org.id;
   }
 
@@ -252,9 +255,9 @@ export class AuthService {
     res: ExpressResponse,
   ): Promise<PublicUser & { language: string }> {
     const user = await this.prisma.user.findFirst({ where: { id: appUserId } });
-    if (!user) throw new UnauthorizedException('Invalid organization or credentials');
+    if (!user) throw new AuthRefusalException('INVALID_CREDENTIALS');
     if (user.status !== 'ACTIVE') {
-      throw new UnauthorizedException('This account is not active');
+      throw new AuthRefusalException('ACCOUNT_INACTIVE');
     }
 
     const wasNewIp = this.loginAttemptService.isNewIp(user.lastLoginIp, req.ip);
@@ -320,7 +323,14 @@ export class AuthService {
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
-      throw new UnauthorizedException('Account temporarily locked due to repeated failed attempts');
+      // Read AFTER recording: the attempt just written is itself a failure and
+      // moves the lock later (LoginAttemptService.lockedUntil()). Checked BEFORE
+      // the password and computed from (organization, email) rows alone, so it
+      // reads the same for an email that has no account.
+      const lockedUntil = await this.loginAttemptService.lockedUntil(organizationId, dto.email);
+      throw new AuthRefusalException('ACCOUNT_LOCKED', {
+        lockedUntil: lockedUntil ?? new Date(),
+      });
     }
 
     // ACC-120 slice 9b — Better Auth does NOT throw a refused sign-in. With
@@ -360,7 +370,7 @@ export class AuthService {
           ipAddress: req.ip,
           userAgent: req.headers['user-agent'],
         });
-        throw new UnauthorizedException('Invalid credentials');
+        throw new AuthRefusalException('INVALID_CREDENTIALS');
       }
       // Status and code only — never the body, which could echo the request.
       throw new Error(
@@ -378,12 +388,14 @@ export class AuthService {
       return { mfaRequired: true };
     }
 
-    if (!body.user?.id) throw new UnauthorizedException('Invalid credentials');
+    // A 200 with neither a challenge nor a user is not a shape Better Auth
+    // documents — a fault, not a refusal.
+    if (!body.user?.id) throw new Error('Better Auth sign-in returned 200 without a user');
 
     // AuthUser has no appUserId scalar of its own — User.authUserId is the
     // FK side of this 1:1 link (see Commit 1's schema).
     const appUser = await this.prisma.user.findFirst({ where: { authUserId: body.user.id } });
-    if (!appUser) throw new UnauthorizedException('Invalid credentials');
+    if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
 
     await this.loginAttemptService.record({
       organizationId,
