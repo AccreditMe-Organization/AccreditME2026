@@ -119,7 +119,7 @@ const isolate = (text: string): string => `\u2068${text}\u2069`;
         }
         @case ('failed') {
           <h1 class="text-heading font-semibold">{{ 'auth.invitation.title' | translate }}</h1>
-          <p-message severity="error" [text]="'auth.invitation.lookupFailed' | translate" />
+          <p-message severity="error" [text]="lookupFailedMessage() | translate" />
           <p-button
             [label]="'common.retry' | translate"
             [outlined]="true"
@@ -170,6 +170,8 @@ export class AcceptInvitationComponent {
   readonly submitting = signal(false);
   /** A translation key for a failure that is not about the password's content. */
   readonly submitError = signal<string | null>(null);
+  /** Why the lookup could not answer: a network failure, or a rate limit (ACC-129). */
+  readonly lookupFailedMessage = signal('auth.invitation.lookupFailed');
 
   readonly form = this.fb.group({
     password: [
@@ -258,7 +260,13 @@ export class AcceptInvitationComponent {
       },
       error: (err: unknown) => {
         this.clearTimers();
-        this.lookup.set({ status: refusalCode(err) === 'INVITATION_INVALID' ? 'invalid' : 'failed' });
+        const code = refusalCode(err);
+        // ACC-129 — over the rate limit, the link may be perfectly good: say
+        // so, and keep Retry, rather than calling it invalid.
+        this.lookupFailedMessage.set(
+          code === 'RATE_LIMITED' ? 'auth.invitation.errorRateLimited' : 'auth.invitation.lookupFailed',
+        );
+        this.lookup.set({ status: code === 'INVITATION_INVALID' ? 'invalid' : 'failed' });
       },
     });
   }
@@ -293,6 +301,9 @@ export class AcceptInvitationComponent {
         return;
       case 'PASSWORD_CHECK_UNAVAILABLE':
         this.submitError.set('auth.invitation.errorCheckUnavailable');
+        return;
+      case 'RATE_LIMITED':
+        this.submitError.set('auth.invitation.errorRateLimited');
         return;
     }
     if (err instanceof HttpErrorResponse && err.status === 409) {

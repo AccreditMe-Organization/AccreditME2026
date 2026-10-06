@@ -190,6 +190,24 @@ describe('AcceptInvitationComponent (ACC-120 slice 9e)', () => {
       discardPeriodicTasks();
     }));
 
+    it('a rate-limited lookup says so and offers Retry, not the invalid state (ACC-129)', () => {
+      setup();
+      httpMock.expectOne(LOOKUP_URL).flush(
+        { statusCode: 429, message: 'Too many requests. Try again later.', error: 'Too Many Requests', code: 'RATE_LIMITED', retryAfterSeconds: 42 },
+        { status: 429, statusText: 'Too Many Requests' },
+      );
+      fixture.detectChanges();
+
+      expect(form()).toBeNull();
+      expect(h1()).not.toBe('auth.invitation.invalidTitle');
+      expect(pageMessage()).toBe('auth.invitation.errorRateLimited');
+
+      (el().querySelector('p-button button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      answerLookup();
+      expect(form()).not.toBeNull();
+    });
+
     it('a lookup that fails for another reason offers Retry, not the invalid state', () => {
       setup();
       httpMock.expectOne(LOOKUP_URL).flush(null, { status: 0, statusText: 'Unknown Error' });
@@ -337,6 +355,18 @@ describe('AcceptInvitationComponent (ACC-120 slice 9e)', () => {
       refuseAccept(passwordRefusal('PASSWORD_CHECK_UNAVAILABLE', 503), 503);
 
       expect(pageMessage()).toBe('auth.invitation.errorCheckUnavailable');
+      expect(form()).not.toBeNull();
+      expect(password().value).toBe('a long enough password');
+      expect(password().errors).toBeNull();
+    });
+
+    it('RATE_LIMITED is a wait-and-retry message, with the form kept (ACC-129)', () => {
+      submit('a long enough password');
+      refuseAccept(
+        { statusCode: 429, message: 'Too many requests. Try again later.', error: 'Too Many Requests', code: 'RATE_LIMITED', retryAfterSeconds: 42 },
+        429,
+      );
+      expect(pageMessage()).toBe('auth.invitation.errorRateLimited');
       expect(form()).not.toBeNull();
       expect(password().value).toBe('a long enough password');
       expect(password().errors).toBeNull();
