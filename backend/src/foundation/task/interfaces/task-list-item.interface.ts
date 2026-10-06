@@ -1,4 +1,5 @@
 import { ITask } from './task.interface';
+import { ITaskOpenRequest } from './task-request.interface';
 import { ITaskPoolView } from '../task-pool';
 
 // ACC-163 — the row a task LIST returns: the task plus how much evidence it
@@ -15,6 +16,9 @@ export interface ITaskListItem extends ITask {
   // it was assigned to named people only. A row with a pool and no active
   // assignee is waiting to be picked up.
   pool: ITaskPoolView | null;
+  // ACC-173 — the task's PENDING extension or hold request, if any (at most
+  // one per task), so a list can say "More time requested" and offer Withdraw.
+  openRequest: ITaskOpenRequest | null;
 }
 
 // ACC-167 — a row of the caller's OWN list. `pickedByMe` says the caller's

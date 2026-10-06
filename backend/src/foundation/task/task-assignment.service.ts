@@ -13,6 +13,7 @@ import {
   IAssignablePosition,
   IAssignableUnit,
 } from './interfaces/task-assignment.interface';
+import { TaskAuthorityService } from './task-authority.service';
 import { PoolClient, PoolPlacement, PoolTarget, isPoolMember, resolvePoolMemberIds } from './task-pool';
 
 const COMMITTEE_MEMBER_ROLE_CATEGORY = 'committee_member_role';
@@ -47,7 +48,10 @@ export interface ResolvedPlacement extends PoolPlacement {
  */
 @Injectable()
 export class TaskAssignmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly authority: TaskAuthorityService,
+  ) {}
 
   async assertMayAssign(viewer: AssignmentViewer, organizationId: string, taskId?: string): Promise<void> {
     if (viewer.permissions.includes(TASKS_PERMISSIONS.CREATE)) return;
@@ -58,9 +62,12 @@ export class TaskAssignmentService {
       where: { id: taskId, organizationId },
       select: { createdById: true },
     });
+    // ACC-173 — "may reassign this task" is canActForCreator(): the creator
+    // or whoever covers them now — the same rule reassign() applies.
     const entitled =
       !!task &&
-      (task.createdById === viewer.id || viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN));
+      (viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
+        (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId)));
     if (!entitled) throw new NotFoundException('Task not found');
   }
 
