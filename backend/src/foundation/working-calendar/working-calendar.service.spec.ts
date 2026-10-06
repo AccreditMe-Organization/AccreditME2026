@@ -446,6 +446,16 @@ describe('WorkingCalendarService', () => {
       const hours = await service.workingHoursBetween(start, start.plus({ hours: 2 }), ORG_B);
       expect(hours).toBeCloseTo(1);
     });
+
+    // One instant, two tenants: Friday 17 Jul 2026, 09:00–11:00 UTC is a working
+    // morning in London (Org B, Mon–Fri) and a weekend in Riyadh (Org A,
+    // Sun–Thu). Each tenant's answer comes from its own calendar only.
+    itEnforcesTenantIsolation('workingHoursBetween', async () => {
+      const start = DateTime.fromISO('2026-07-17T09:00:00Z');
+      const end = start.plus({ hours: 2 });
+      await expect(service.workingHoursBetween(start, end, ORG_A)).resolves.toBe(0);
+      await expect(service.workingHoursBetween(start, end, ORG_B)).resolves.toBeCloseTo(2);
+    });
   });
 
   describe('tenant isolation', () => {

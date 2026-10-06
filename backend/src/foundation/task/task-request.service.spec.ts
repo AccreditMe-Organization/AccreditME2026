@@ -614,6 +614,18 @@ describe('TaskRequestService (ACC-173)', () => {
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
       expect(mockNotifications.create).not.toHaveBeenCalled();
     });
+
+    // The sweep passes each due hold's own organizationId; the lock and the
+    // re-read are scoped by it, so a task of another tenant is never resumed.
+    itEnforcesTenantIsolation('resumeDueHold', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(null);
+      await expect(service.resumeDueHold('task-1', ORG_B)).resolves.toBe(false);
+      expect(mockPrisma.task.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
+      );
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockCalendar.workingHoursBetween).not.toHaveBeenCalled();
+    });
   });
 
   // ── the decider inbox ───────────────────────────────────────────────────
