@@ -22,6 +22,15 @@ export interface ITask {
   rejectedReason: string | null;
   rejectedAt: Date | null;
   rejectedById: string | null;
+  // ACC-167 — the pool a task is assigned to (one pair or neither), and the
+  // pick-up clock. See task-pool.ts.
+  assignedOrgUnitId: string | null;
+  assignedPositionId: string | null;
+  assignedCommitteeId: string | null;
+  assignedCommitteeRoleValueId: string | null;
+  pooledAt: Date | null;
+  poolEscalateAt: Date | null;
+  poolEscalatedAt: Date | null;
   // ACC-46 Section 2.7.b — managerEscalatedAt/headEscalatedAt replace the
   // old escalationUserId/escalationAfterHours/escalatedAt trio; written
   // only by SlaMonitorProcessor, never by any caller.
