@@ -60,6 +60,7 @@ import {
   TWO_FACTOR_COOKIE_NAMES,
   twoFactorLockedUntil,
 } from './two-factor-challenge';
+import { isOrganizationOpen } from '../../common/tenant/organization-status';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -276,13 +277,23 @@ export class AuthService {
     res: ExpressResponse,
     attempt: { organizationId: string; email: string },
   ): Promise<PublicUser & { language: string }> {
-    const user = await this.prisma.user.findFirst({ where: { id: appUserId } });
+    const user = await this.prisma.user.findFirst({
+      where: { id: appUserId },
+      include: { organization: { select: { status: true } } },
+    });
     if (!user) throw new AuthRefusalException('INVALID_CREDENTIALS');
+    // ACC-168 — reached here only on the MFA path, by an organisation closed
+    // while the challenge was open: login() refuses a closed organisation
+    // before it issues one. Recorded as NEUTRAL, like login()'s refusal.
+    if (!isOrganizationOpen(user.organization.status)) {
+      await this.recordNeutralRefusal(attempt, req, 'organization_unavailable');
+      throw new AuthRefusalException('ORGANIZATION_UNAVAILABLE');
+    }
     if (user.status !== 'ACTIVE') {
       // Reached here only on the MFA path, by an account deactivated while its
       // challenge was open — login() refuses an inactive account before it
       // issues one. Recorded as NEUTRAL, like login()'s refusal.
-      await this.recordInactiveRefusal(attempt, req);
+      await this.recordNeutralRefusal(attempt, req, 'account_inactive');
       throw new AuthRefusalException('ACCOUNT_INACTIVE');
     }
 
@@ -427,8 +438,25 @@ export class AuthService {
     // AuthUser.email is unique, so this is one row or none.
     const appUser = await this.prisma.user.findFirst({
       where: { organizationId, authUser: { email: namespacedEmail } },
+      include: { organization: { select: { status: true } } },
     });
     if (!appUser) throw new AuthRefusalException('INVALID_CREDENTIALS');
+
+    // ACC-168 — a closed organisation (SUSPENDED, CANCELLED, OFFBOARDING) is
+    // refused at the same point as an inactive account and for the same
+    // reasons: after the password, so it tells nothing to someone without it,
+    // and before any MFA challenge is handed over. Checked first because it is
+    // the broader condition — it applies to everyone in the organisation.
+    // Recorded as NEUTRAL, so a closure cannot lock anyone out for when the
+    // organisation reopens.
+    if (!isOrganizationOpen(appUser.organization.status)) {
+      await this.recordNeutralRefusal(
+        { organizationId, email: dto.email },
+        req,
+        'organization_unavailable',
+      );
+      throw new AuthRefusalException('ORGANIZATION_UNAVAILABLE');
+    }
 
     // An inactive account is refused here — after the password, so the refusal
     // discloses nothing to someone who does not know it, and BEFORE any MFA
@@ -436,9 +464,10 @@ export class AuthService {
     // they can never use. Recorded as NEUTRAL: it neither counts towards the
     // lock nor resets it (LoginAttemptService.NEUTRAL_FAILURE_REASONS).
     if (appUser.status !== 'ACTIVE') {
-      await this.recordInactiveRefusal(
+      await this.recordNeutralRefusal(
         { organizationId, email: dto.email },
         req,
+        'account_inactive',
       );
       throw new AuthRefusalException('ACCOUNT_INACTIVE');
     }
@@ -489,17 +518,19 @@ export class AuthService {
     return { success: true, user, language };
   }
 
-  // ACC-120 slice 9b — an inactive account's refused sign-in, written down but
-  // NEUTRAL for the lock. See NEUTRAL_FAILURE_REASONS.
-  private async recordInactiveRefusal(
+  // ACC-120 slice 9b, ACC-168 — a sign-in refused although the password was
+  // right (inactive account, closed organisation): written down but NEUTRAL for
+  // the lock. See NEUTRAL_FAILURE_REASONS.
+  private async recordNeutralRefusal(
     attempt: { organizationId: string; email: string },
     req: ExpressRequest,
+    failureReason: 'account_inactive' | 'organization_unavailable',
   ): Promise<void> {
     await this.loginAttemptService.record({
       organizationId: attempt.organizationId,
       email: attempt.email,
       success: false,
-      failureReason: 'account_inactive',
+      failureReason,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -633,9 +664,19 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const user = await this.prisma.user.findFirst({ where: { id: existing.userId } });
+    const user = await this.prisma.user.findFirst({
+      where: { id: existing.userId },
+      include: { organization: { select: { status: true } } },
+    });
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('This account is not active');
+    }
+    // ACC-168 — a closed organisation renews no session. The refresh token
+    // above is already revoked, so a refused refresh cannot be retried; once
+    // the organisation reopens the person signs in again (an access token that
+    // is still within its 15 minutes keeps working again too — TenantGuard).
+    if (!isOrganizationOpen(user.organization.status)) {
+      throw new AuthRefusalException('ORGANIZATION_UNAVAILABLE');
     }
 
     // ACC-122 — THE FORCED LOGOUT, MADE TRUE BY CONSTRUCTION.

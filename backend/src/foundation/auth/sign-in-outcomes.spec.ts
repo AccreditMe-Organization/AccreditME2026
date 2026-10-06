@@ -32,8 +32,18 @@ jest.mock('../../providers/auth/better-auth.config', () => ({
  */
 
 const SECRET = 'test-better-auth-secret';
-const ORG_A = { id: 'org-a', slug: 'al-nakheel', authConfig: null };
-const ORG_B = { id: 'org-b', slug: 'al-manara', authConfig: null };
+const ORG_A = {
+  id: 'org-a',
+  slug: 'al-nakheel',
+  authConfig: null,
+  status: 'ACTIVE',
+};
+const ORG_B = {
+  id: 'org-b',
+  slug: 'al-manara',
+  authConfig: null,
+  status: 'TRIAL',
+};
 const HESSA = 'hessa@al-nakheel.example';
 
 interface Credential {
@@ -147,6 +157,20 @@ describe('sign-in outcomes (ACC-120 slice 9b)', () => {
     ]);
 
     const orgs = [ORG_A, ORG_B];
+    // Honour `include`, as Prisma does: a query that asks for the
+    // organisation's status gets it; one that does not, does not.
+    const withOrganization = (
+      row: AppUserRow | null,
+      include?: { organization?: unknown },
+    ) =>
+      row && include?.organization
+        ? {
+            ...row,
+            organization: {
+              status: orgs.find((o) => o.id === row.organizationId)!.status,
+            },
+          }
+        : row;
     prisma = {
       organization: {
         findUnique: jest.fn(
@@ -161,6 +185,7 @@ describe('sign-in outcomes (ACC-120 slice 9b)', () => {
         findFirst: jest.fn(
           ({
             where,
+            include,
           }: {
             where: {
               id?: string;
@@ -168,9 +193,11 @@ describe('sign-in outcomes (ACC-120 slice 9b)', () => {
               organizationId?: string;
               authUser?: { email: string };
             };
+            include?: { organization?: unknown };
           }) =>
             Promise.resolve(
-              users.find(
+              withOrganization(
+                users.find(
                 (u) =>
                   (where.id === undefined || u.id === where.id) &&
                   (where.authUserId === undefined ||
@@ -181,6 +208,8 @@ describe('sign-in outcomes (ACC-120 slice 9b)', () => {
                     AuthService.namespacedEmail(u.organizationId, u.email) ===
                       where.authUser.email),
               ) ?? null,
+                include,
+              ),
             ),
         ),
         update: jest.fn().mockResolvedValue({}),
@@ -829,6 +858,8 @@ describe('sign-in outcomes (ACC-120 slice 9b)', () => {
           organizationId: ORG_A.id,
           authUser: { email: AuthService.namespacedEmail(ORG_A.id, HESSA) },
         },
+        // ACC-168 — the organisation's status is joined into the same query.
+        include: { organization: { select: { status: true } } },
       });
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
     },

@@ -43,7 +43,12 @@ describe('TenantGuard', () => {
 
     mockPermissionResolver = { getUserPermissions: jest.fn().mockResolvedValue(['documents:view']) };
     mockPrisma = {
-      user: { findFirst: jest.fn().mockResolvedValue({ tokenVersion: 3 }) },
+      user: {
+        findFirst: jest.fn().mockResolvedValue({
+          tokenVersion: 3,
+          organization: { status: 'ACTIVE' },
+        }),
+      },
     };
 
     guard = new TenantGuard(mockPermissionResolver, mockPrisma as unknown as PrismaService);
@@ -54,7 +59,11 @@ describe('TenantGuard', () => {
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
       where: { id: 'user-a', organizationId: 'org-a' },
-      select: { tokenVersion: true },
+      // ACC-168 — the organisation's status rides on the same query.
+      select: {
+        tokenVersion: true,
+        organization: { select: { status: true } },
+      },
     });
   });
 
@@ -95,14 +104,21 @@ describe('TenantGuard', () => {
       tokenVersion: 1,
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
-    mockPrisma.user.findFirst.mockResolvedValue({ tokenVersion: 3 });
+    mockPrisma.user.findFirst.mockResolvedValue({
+      tokenVersion: 3,
+      organization: { status: 'ACTIVE' },
+    });
 
     const ctx = buildContext({ cookies: { access_token: validToken }, authHeader: `Bearer ${headerToken}` });
     await guard.canActivate(ctx);
 
     expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
       where: { id: 'user-a', organizationId: 'org-a' },
-      select: { tokenVersion: true },
+      // ACC-168 — the organisation's status rides on the same query.
+      select: {
+        tokenVersion: true,
+        organization: { select: { status: true } },
+      },
     });
   });
 
@@ -112,7 +128,10 @@ describe('TenantGuard', () => {
   });
 
   it('throws UnauthorizedException when the DB tokenVersion does not match the token claim (revoked session)', async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({ tokenVersion: 4 });
+    mockPrisma.user.findFirst.mockResolvedValue({
+      tokenVersion: 4,
+      organization: { status: 'ACTIVE' },
+    });
     const ctx = buildContext({ cookies: { access_token: validToken } });
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });

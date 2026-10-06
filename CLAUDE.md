@@ -1081,8 +1081,9 @@ State:   computed on read from recent LoginAttempt rows — no stored counter
 Counts:  only Better Auth's INVALID_EMAIL_OR_PASSWORD; an outage records nothing
 Record:  every attempt is written, including attempts made while locked
          (failureReason: 'locked') and a right password on an inactive
-         account (failureReason: 'account_inactive' — NEUTRAL: neither a
-         failure nor a reset)
+         account (failureReason: 'account_inactive') or in a closed
+         organisation (failureReason: 'organization_unavailable', ACC-168) —
+         both NEUTRAL: neither a failure nor a reset
 ```
 
 **Each attempt made while locked EXTENDS the lock — by design, not a bug.** A

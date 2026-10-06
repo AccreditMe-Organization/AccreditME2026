@@ -20,6 +20,7 @@ import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantModulesDto } from './dto/update-tenant-modules.dto';
 import { AllocateAiCreditsDto } from './dto/allocate-ai-credits.dto';
 import { IPlatformTenantDetail, IPlatformTenantSummary } from './interfaces/platform-tenant.interface';
+import { isOrganizationOpen } from '../../common/tenant/organization-status';
 
 interface OrgSettings {
   modules?: Record<string, boolean>;
@@ -157,7 +158,18 @@ export class PlatformTenantService {
   }
 
   async suspendTenant(id: string, actorId: string): Promise<void> {
-    await this.assertTenantExists(id);
+    const org = await this.assertTenantExists(id);
+    // ACC-168 — the platform organisation is never closed. A closed
+    // organisation is refused by TenantGuard on every request, and the guard
+    // deliberately makes no exception for it, so suspending the platform would
+    // lock every platform administrator out of the means to reopen it. This is
+    // the only path that writes a closed status (UpdateTenantDto has no status
+    // field; creation defaults to TRIAL), so it is the only guard needed.
+    if (org.isPlatformOrg) {
+      throw new ConflictException(
+        'The platform organization cannot be suspended',
+      );
+    }
     await this.prisma.organization.update({ where: { id }, data: { status: 'SUSPENDED' } });
     await this.auditLog.log({
       tenantId: id,
@@ -257,6 +269,19 @@ export class PlatformTenantService {
     platformOrgId: string,
     res: ExpressResponse,
   ): Promise<void> {
+    // ACC-168 — a closed organisation is refused HERE, before a token is
+    // issued or IMPERSONATE_START is written. TenantGuard would refuse the
+    // impersonated token on its very first request anyway, but by then this
+    // method has already replaced the platform administrator's own cookie —
+    // signing them out — and written a start that nothing will ever end.
+    const tenant = await this.prisma.organization.findUnique({
+      where: { id: tenantId },
+      select: { status: true },
+    });
+    if (tenant && !isOrganizationOpen(tenant.status)) {
+      throw new ConflictException('This organization is not active');
+    }
+
     const targetUser = await this.prisma.user.findFirst({
       where: { id: targetUserId, organizationId: tenantId, status: 'ACTIVE' },
     });

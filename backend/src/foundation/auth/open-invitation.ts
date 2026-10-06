@@ -2,6 +2,7 @@ import type {
   TenantStatus,
   UserStatus,
 } from '../../../generated/prisma/client';
+import { isOrganizationOpen } from '../../common/tenant/organization-status';
 
 /**
  * When an invitation can still be used — ACC-120 slice 9c. ONE rule, read by
@@ -19,11 +20,9 @@ import type {
  *   - the expiry is set and not past. A missing expiry is refused, as accept
  *     always refused it. "Past" is strictly earlier than now — the same `<`
  *     accept used — so the boundary instant is still open.
- *   - the inviting organisation is open: TRIAL or ACTIVE (Ahmad, 2026-10-05).
- *     SUSPENDED, CANCELLED and OFFBOARDING are refused.
+ *   - the inviting organisation is open, by THE shared rule
+ *     (common/tenant/organization-status.ts — ACC-168): TRIAL or ACTIVE.
  */
-export const OPEN_TENANT_STATUSES: ReadonlySet<TenantStatus> =
-  new Set<TenantStatus>(['TRIAL', 'ACTIVE']);
 
 /** The shape every invitation token has: randomBytes(24) as hex. */
 export const INVITATION_TOKEN_SHAPE = /^[0-9a-f]{48}$/;
@@ -42,5 +41,5 @@ export function isOpenInvitation<T extends InvitationRow>(
   if (!row) return false;
   if (row.status !== 'INVITED') return false;
   if (!row.invitationExpiresAt || row.invitationExpiresAt < now) return false;
-  return OPEN_TENANT_STATUSES.has(row.organization.status);
+  return isOrganizationOpen(row.organization.status);
 }

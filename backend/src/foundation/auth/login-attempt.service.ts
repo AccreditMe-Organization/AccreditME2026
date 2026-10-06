@@ -14,7 +14,8 @@ export interface RecordLoginAttemptInput {
     | 'locked'
     | 'no_such_user'
     | 'mfa_failed'
-    | 'account_inactive';
+    | 'account_inactive'
+    | 'organization_unavailable';
   ipAddress?: string;
   userAgent?: string;
 }
@@ -26,8 +27,13 @@ export interface RecordLoginAttemptInput {
 // password, and counting it as a success would wipe a real failure streak. So
 // the streak skips it in both directions, and the attempt is still written down
 // (every attempt is — CLAUDE.md, Account Lockout).
+//
+// ACC-168 — `organization_unavailable` is the same kind of row: the right
+// password, refused because the person's organisation is closed. It must not
+// lock them out for when the organisation reopens, nor wipe a real streak.
 export const NEUTRAL_FAILURE_REASONS: ReadonlySet<string> = new Set([
   'account_inactive',
+  'organization_unavailable',
 ]);
 
 interface LockoutConfig {

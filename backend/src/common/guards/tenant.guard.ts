@@ -42,6 +42,8 @@ import {
   PERMISSION_RESOLVER,
   PermissionResolver,
 } from '../services/permission-resolver.interface';
+import { isOrganizationOpen } from '../tenant/organization-status';
+import { AuthRefusalException } from '../../foundation/auth/auth-refusal';
 
 interface JwtPayload {
   sub: string;
@@ -143,13 +145,29 @@ export class TenantGuard implements CanActivate {
     // authenticates, it does not authorize. Verified live in one unbroken
     // session: my-permissions went from ["roles:view"] to [], the endpoint
     // from 200 to 403, /auth/me stayed 200. See SYSTEM-REFERENCE §1.2.
+    //
+    // ACC-168 — the organisation's status is joined into this SAME query, so
+    // refusing a closed organisation costs no extra round trip: one primary-key
+    // join on a query that already runs on every request. A closed
+    // organisation's sessions therefore stop at the next request, and start
+    // working again the moment it reopens — no token is revoked, so there is
+    // nothing to reissue. Not exempted for the platform organisation: the rule
+    // stays one rule, and the platform organisation cannot be closed
+    // (PlatformTenantService.suspendTenant()).
     const user = await this.prisma.user.findFirst({
       where: { id: payload.sub, organizationId: payload.organizationId },
-      select: { tokenVersion: true },
+      select: {
+        tokenVersion: true,
+        organization: { select: { status: true } },
+      },
     });
 
     if (!user || user.tokenVersion !== payload.tokenVersion) {
       throw new UnauthorizedException('Session has been revoked');
+    }
+
+    if (!isOrganizationOpen(user.organization.status)) {
+      throw new AuthRefusalException('ORGANIZATION_UNAVAILABLE');
     }
 
     request.tenantId = payload.organizationId;
