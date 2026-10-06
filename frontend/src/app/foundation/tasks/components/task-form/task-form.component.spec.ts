@@ -60,9 +60,9 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
   let httpMock: HttpTestingController;
 
   const flushReferenceData = (): void => {
-    httpMock
-      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
-      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
+    // ACC-167 — the assignment picker's units, in place of the tenant's user
+    // list (which needed users:view).
+    httpMock.expectOne(`${environment.apiUrl}/tasks/assignment/units`).flush([]);
     httpMock.expectOne(`${environment.apiUrl}/working-calendar`).flush({
       id: 'cal-1',
       organizationId: 'org-1',
@@ -402,11 +402,13 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     // how this test failed with "found none" rather than a wrong body.
     const picked = new Date(NEXT_WORKING_DAY);
     picked.setHours(9, 0, 0, 0);
-    // ACC-163 appended requiresEvidence, false unless the box is ticked — the
-    // one deliberate change to this body since it was captured.
+    // ACC-163 appended requiresEvidence, false unless the box is ticked.
+    // ACC-167 removed "assigneeUserIds":[] — with nobody chosen the form now
+    // sends neither assignment field, which the server reads the same way: an
+    // UNASSIGNED task. Those are the two deliberate changes since capture.
     const wire =
       '{"title":"ACC-96 payload probe","sourceType":"DOCUMENT","sourceId":"acc96-probe",' +
-      `"priority":"MEDIUM","dueDate":"${picked.toISOString()}","assigneeUserIds":[],"requiresEvidence":false}`;
+      `"priority":"MEDIUM","dueDate":"${picked.toISOString()}","requiresEvidence":false}`;
 
     component.form.patchValue({
       title: 'ACC-96 payload probe',

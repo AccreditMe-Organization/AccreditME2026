@@ -42,6 +42,13 @@ const UNASSIGNED_TASK: ITaskDto = {
   rejectedReason: null,
   rejectedAt: null,
   rejectedById: null,
+  assignedOrgUnitId: null,
+  assignedPositionId: null,
+  assignedCommitteeId: null,
+  assignedCommitteeRoleValueId: null,
+  pooledAt: null,
+  poolEscalateAt: null,
+  poolEscalatedAt: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -83,19 +90,21 @@ describe('UnassignedTasksComponent (ACC-34)', () => {
     expect(component.tasks()).toEqual([UNASSIGNED_TASK]);
   });
 
-  // The people list is the dialog's own, and it is fetched on first opening —
-  // not on page load, when most viewers reassign nothing.
-  it('opens the shared reassign dialog for the chosen task, which then loads its people list', () => {
-    httpMock.expectNone(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`);
+  // The picker is the dialog's own, and it loads on opening — not on page
+  // load, when most viewers reassign nothing. ACC-167: it asks for the
+  // assignment picker's units, for this task, never the tenant's user list.
+  it('opens the shared reassign dialog for the chosen task, which then loads its picker', () => {
+    httpMock.expectNone((r) => r.url.includes('/assignment/units'));
 
     component.onOpenReassign(UNASSIGNED_TASK);
     fixture.detectChanges();
 
     expect(dialog().visible()).toBe(true);
     expect(dialog().task()).toEqual(UNASSIGNED_TASK);
-    httpMock
-      .expectOne(`${environment.apiUrl}/users?status=ACTIVE&pageSize=200`)
-      .flush({ data: [], total: 0, page: 1, pageSize: 200 });
+    const units = httpMock.expectOne((r) => r.url === `${environment.apiUrl}/tasks/assignment/units`);
+    expect(units.request.params.get('taskId')).toBe(UNASSIGNED_TASK.id);
+    units.flush([]);
+    httpMock.expectNone((r) => r.url.startsWith(`${environment.apiUrl}/users`));
   });
 
   it('refreshes the unassigned list once the dialog reports a reassignment', () => {

@@ -37,6 +37,19 @@
 //
 // Template 3's delegation label is still not built: it waits for stage task
 // definitions (CF-07), and a disabled placeholder would be worse than nothing.
+//
+// ## ACC-167 — who it goes to is a unit and position, not a list of people
+//
+// The assignee list (every active user, needing users:view) is replaced by the
+// shared assignment picker: unit, position, optional person — and, on a
+// committee's own task, the committee and its member roles. It stays on step 1,
+// because "who" is part of the commitment. To keep step 1 inside the cap,
+// priority moved up beside the title, where the people field's half-row was;
+// the picker takes two rows of its own. Measured in the browser pass recorded
+// on the PR, in both languages.
+//
+// Choosing nobody is still allowed and still creates an UNASSIGNED task — the
+// picker's outcome line says so.
 
 import { Component, DestroyRef, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
@@ -46,16 +59,18 @@ import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { InputMaskModule } from 'primeng/inputmask';
 import { ButtonModule } from 'primeng/button';
-import { MessageModule } from 'primeng/message';
 import { CheckboxModule } from 'primeng/checkbox';
 import { TaskService } from '../../services/task.service';
 import { DueDateService, DuePreset } from '../../services/due-date.service';
-import { UserService, IUserDto } from '../../../user/services/user.service';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
 import { FormatService } from '../../../../core/formatting';
 import { LayerStackService } from '../../../../shared/overlay/layer-stack.service';
-import { createRequestOutcome } from '../../../../core/request-outcome/request-outcome';
+import {
+  TaskAssigneePickerComponent,
+  createAssignGroup,
+  toAssignTarget,
+} from '../task-assignee-picker/task-assignee-picker.component';
 
 const SOURCE_TYPES = [
   'MEETING',
@@ -88,10 +103,10 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     TextareaModule,
     InputMaskModule,
     ButtonModule,
-    MessageModule,
     CheckboxModule,
     OverlaySelectComponent,
     InlineCalendarComponent,
+    TaskAssigneePickerComponent,
   ],
   template: `
     <form id="taskForm" [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
@@ -130,52 +145,17 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
           </div>
         } @else {
           <!-- ── Step 1, fields ──────────────────────────────────────────── -->
-          <div class="flex flex-col gap-1">
-            <label for="title" class="text-sm font-medium">
-              {{ 'task.title' | translate }} <span class="text-red-500">*</span>
-            </label>
-            <input pInputText id="title" formControlName="title" />
-          </div>
-
+          <!-- Priority sits beside the title (ACC-167): the people field's
+               half-row became the assignment picker's two rows. -->
           <div class="flex gap-4">
-            <div class="flex flex-col gap-1 flex-1">
-              <label for="assigneeUserIds" class="text-sm font-medium">
-                {{ 'task.assignees' | translate }}
+            <div class="flex flex-col gap-1 flex-[2] min-w-0">
+              <label for="title" class="text-sm font-medium">
+                {{ 'task.title' | translate }} <span class="text-red-500">*</span>
               </label>
-              <!-- NOTHING RENDERS FOR A FAST LOAD (ACC-111's request-outcome
-                   rule). The control is present from the first frame and the
-                   message appears only for a REFUSAL, so a people list that
-                   arrives in 80ms produces no change at all. Previously the
-                   "assignees unavailable" message rendered while users() was
-                   still [], then swapped — a sub-second flash Ahmad caught in
-                   a live test, and exactly the shape artboard 8 calls a
-                   loading state pretending to be an empty one.
-
-                   A trigger, not the inline p-listbox ACC-76 added: same data
-                   source and the same eligible set — every ACTIVE user in the
-                   tenant, because a committee task can legitimately go to a
-                   department head outside it — but the list was ~200px and
-                   step 1 budgets 75px for this field. -->
-              @if (assigneesRefused()) {
-                <!-- Degrades rather than blocks. A caller whose role grants
-                     tasks:create but not users:view gets a 403 they cannot act
-                     on; creating the task unassigned is still a real,
-                     supported outcome. -->
-                <p-message severity="info" [text]="'task.assigneesUnavailable' | translate" />
-              } @else {
-                <app-overlay-select
-                  formControlName="assigneeUserIds"
-                  [options]="users()"
-                  optionLabel="name"
-                  optionValue="id"
-                  [multiple]="true"
-                  [removeLabel]="'task.removeAssignee' | translate"
-                  [placeholder]="'task.assigneesNone' | translate"
-                />
-              }
+              <input pInputText id="title" formControlName="title" />
             </div>
 
-            <div class="flex flex-col gap-1 flex-1">
+            <div class="flex flex-col gap-1 flex-1 min-w-0">
               <label for="priority" class="text-sm font-medium">
                 {{ 'task.priority.title' | translate }}
               </label>
@@ -183,14 +163,25 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
                  showing in both languages. The keys already existed and are
                  shared with the task list and the SLA settings screen, so one
                  value now has one name everywhere. -->
-            <app-overlay-select
-              formControlName="priority"
-              [options]="priorityOptions()"
-              optionLabel="label"
-              optionValue="value"
-            />
+              <app-overlay-select
+                formControlName="priority"
+                [options]="priorityOptions()"
+                optionLabel="label"
+                optionValue="value"
+              />
             </div>
           </div>
+
+          <!-- ACC-167 — unit, position, optional person; the committee route
+               only when the task is raised from a committee record, whose id
+               is the one the route needs. -->
+          <app-task-assignee-picker
+            [group]="form.controls.assignTo"
+            [sourceType]="lockedSourceType()"
+            [sourceId]="lockedSourceId()"
+            [committeeName]="lockedSourceLabel()"
+            [forceShowErrors]="showAssignErrors()"
+          />
 
           <ng-container *ngTemplateOutlet="dueBlock" />
         }
@@ -608,7 +599,6 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 export class TaskFormComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly taskService = inject(TaskService);
-  private readonly userService = inject(UserService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
   readonly dueDates = inject(DueDateService);
@@ -655,32 +645,8 @@ export class TaskFormComponent implements OnInit {
   readonly saving = signal(false);
   readonly sourceTypes = SOURCE_TYPES;
   readonly priorities = PRIORITIES;
-  /**
-   * The people list, as ACC-111's request outcome rather than a bare array.
-   *
-   * The array alone could not tell "not back yet" from "there are none", which
-   * is precisely the confusion that produced the flash: empty was rendered as
-   * refused. The outcome machine also suppresses anything for a load under
-   * 200ms, so a fast answer changes nothing on screen.
-   */
-  private readonly usersOutcome = createRequestOutcome<IUserDto>(
-    () => this.userService.listAllUsers({ status: 'ACTIVE' }),
-    { describeEmpty: () => ({ reason: 'task.assigneesUnavailable', filtered: false }) },
-  );
-
-  readonly users = computed<IUserDto[]>(() => {
-    const outcome = this.usersOutcome.outcome();
-    return outcome.status === 'rows' ? [...outcome.data] : [];
-  });
-
-  /**
-   * Only a REFUSAL swaps the control for the message — never a load in flight,
-   * and never an empty tenant, which is a real state the picker can show.
-   */
-  readonly assigneesRefused = computed(() => {
-    const status = this.usersOutcome.outcome().status;
-    return status === 'denied' || status === 'error';
-  });
+  /** Set by a Create that found the assignment incomplete (a unit, no position). */
+  readonly showAssignErrors = signal(false);
 
   // ── The due value ──────────────────────────────────────────────────────
   //
@@ -795,17 +761,19 @@ export class TaskFormComponent implements OnInit {
     if (this.saving()) return false;
     if (!this.isSourceLocked()) return false;
     if (this.isPast()) return false;
-    return this.titleValid();
+    return this.titleValid() && this.assignValid();
   });
 
   private readonly titleValid = signal(false);
+  // A unit chosen with no position is incomplete; nothing chosen is fine.
+  private readonly assignValid = signal(true);
 
   readonly form = this.fb.group({
     title: ['', [Validators.required, Validators.maxLength(255)]],
     description: ['', [Validators.maxLength(2000)]],
     sourceType: ['DOCUMENT', [Validators.required]],
     sourceId: ['', [Validators.required]],
-    assigneeUserIds: [[] as string[]],
+    assignTo: createAssignGroup(false),
     priority: ['MEDIUM'],
     dueDate: [null as Date | null],
     requiresEvidence: [false],
@@ -845,7 +813,6 @@ export class TaskFormComponent implements OnInit {
     };
     document.addEventListener('keydown', onKeydown);
     this.destroyRef.onDestroy(() => {
-      this.usersOutcome.destroy();
       document.removeEventListener('keydown', onKeydown);
       if (this.dateViewLayerId !== null) this.layers.remove(this.dateViewLayerId);
     });
@@ -868,6 +835,7 @@ export class TaskFormComponent implements OnInit {
     this.titleValid.set(this.form.controls.title.valid);
     this.form.valueChanges.subscribe(() => {
       this.titleValid.set(this.form.controls.title.valid);
+      this.assignValid.set(this.form.controls.assignTo.valid);
       // Opening a calendar, changing month or focusing a field is NOT a change
       // (artboard 12's own rule for what counts as dirty), so this follows the
       // form's own dirty flag rather than any view state.
@@ -1024,7 +992,10 @@ export class TaskFormComponent implements OnInit {
       this.form.markAllAsTouched();
       // Send the user to the step that holds the problem rather than leaving
       // Create apparently dead.
-      if (this.form.controls.sourceId.invalid || this.form.controls.sourceType.invalid) {
+      if (this.form.controls.assignTo.invalid) {
+        this.showAssignErrors.set(true);
+        this.goToStep(1);
+      } else if (this.form.controls.sourceId.invalid || this.form.controls.sourceType.invalid) {
         this.step.set(2);
       }
       return;
@@ -1032,6 +1003,10 @@ export class TaskFormComponent implements OnInit {
     this.saving.set(true);
 
     const value = this.form.getRawValue();
+    // Nothing chosen sends neither field: the server records an UNASSIGNED
+    // task, a real, supported outcome — a task worth recording now is worth
+    // recording before its owner is known.
+    const assignTo = toAssignTarget(this.form.controls.assignTo, this.lockedSourceId());
     this.taskService
       .create({
         title: value.title!,
@@ -1040,10 +1015,7 @@ export class TaskFormComponent implements OnInit {
         sourceId: value.sourceId!,
         priority: value.priority ?? undefined,
         dueDate: value.dueDate ? value.dueDate.toISOString() : undefined,
-        // Empty is a real, supported outcome: TaskService.create() records an
-        // UNASSIGNED task. A task worth recording now is worth recording
-        // before its owner is known.
-        assigneeUserIds: value.assigneeUserIds ?? [],
+        ...(assignTo ? { assignTo } : {}),
         requiresEvidence: value.requiresEvidence ?? false,
       })
       .subscribe({

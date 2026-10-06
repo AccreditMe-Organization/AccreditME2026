@@ -9,7 +9,7 @@ import ar from '../../../../../assets/i18n/ar.json';
 import { environment } from '../../../../../environments/environment';
 import { TestFormatContext } from '../../../../core/formatting/format-context';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
-import { ITaskListItemDto } from '../../services/task.service';
+import { IMyTaskListItemDto, ITaskListItemDto, TaskPoolDto } from '../../services/task.service';
 import { MyTasksComponent } from './my-tasks.component';
 
 // ACC-94 — DEFECT 3. The due date rendered through Angular's DatePipe with no
@@ -22,7 +22,7 @@ import { MyTasksComponent } from './my-tasks.component';
 // (Riyadh) nor CI's (UTC), so the expectation cannot pass by coincidence on
 // either.
 
-const task = (overrides: Partial<ITaskListItemDto>): ITaskListItemDto => ({
+const task = (overrides: Partial<IMyTaskListItemDto>): IMyTaskListItemDto => ({
   id: 'task-1',
   organizationId: 'org-1',
   title: 'Submit terms of reference',
@@ -44,7 +44,16 @@ const task = (overrides: Partial<ITaskListItemDto>): ITaskListItemDto => ({
   rejectedReason: null,
   rejectedAt: null,
   rejectedById: null,
+  assignedOrgUnitId: null,
+  assignedPositionId: null,
+  assignedCommitteeId: null,
+  assignedCommitteeRoleValueId: null,
+  pooledAt: null,
+  poolEscalateAt: null,
+  poolEscalatedAt: null,
   evidenceCount: 0,
+  pool: null,
+  pickedByMe: false,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: '2026-09-10T08:00:00.000Z',
@@ -53,7 +62,7 @@ const task = (overrides: Partial<ITaskListItemDto>): ITaskListItemDto => ({
 });
 
 describe('MyTasksComponent — due dates (ACC-94)', () => {
-  function render(options: { zone: string; language: 'en' | 'ar'; tasks: ITaskListItemDto[] }): HTMLElement {
+  function render(options: { zone: string; language: 'en' | 'ar'; tasks: IMyTaskListItemDto[] }): HTMLElement {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
@@ -74,6 +83,8 @@ describe('MyTasksComponent — due dates (ACC-94)', () => {
     const fixture = TestBed.createComponent(MyTasksComponent);
     fixture.detectChanges();
     TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/tasks/my-tasks`).flush(options.tasks);
+    // ACC-167 — nothing waiting in the viewer's pools.
+    TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/tasks/available`).flush([]);
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
   }
@@ -115,7 +126,7 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
 
   let http: HttpTestingController;
 
-  function render(tasks: ITaskListItemDto[], language: 'en' | 'ar' = 'en') {
+  function render(tasks: IMyTaskListItemDto[], language: 'en' | 'ar' = 'en', available: ITaskListItemDto[] = []) {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
@@ -136,6 +147,7 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
     const fixture = TestBed.createComponent(MyTasksComponent);
     fixture.detectChanges();
     http.expectOne(`${API}/my-tasks`).flush(tasks);
+    http.expectOne(`${API}/available`).flush(available);
     fixture.detectChanges();
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }
@@ -259,5 +271,115 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
     expect(text).toContain('متأخرة');
     expect(text).not.toContain('PENDING');
     expect(text).not.toContain('OVERDUE');
+  });
+});
+
+// ACC-167 — Available to pick up, Pick, and Release.
+describe('MyTasksComponent — pools (ACC-167)', () => {
+  const API = `${environment.apiUrl}/tasks`;
+  const FUTURE = '2099-01-01T09:00:00.000Z';
+  const POOL: TaskPoolDto = {
+    kind: 'POSITION',
+    positionNameEn: 'Quality Officer',
+    positionNameAr: 'مسؤول الجودة',
+    orgUnitNameEn: 'Pharmacy',
+    orgUnitNameAr: 'الصيدلية',
+    roleLabelEn: null,
+    roleLabelAr: null,
+    committeeNameEn: null,
+    committeeNameAr: null,
+  };
+
+  let http: HttpTestingController;
+
+  function render(mine: IMyTaskListItemDto[], available: ITaskListItemDto[], language: 'en' | 'ar' = 'en') {
+    TestBed.configureTestingModule({
+      imports: [MyTasksComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        ConfirmationService,
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(language);
+    http = TestBed.inject(HttpTestingController);
+
+    const fixture = TestBed.createComponent(MyTasksComponent);
+    fixture.detectChanges();
+    http.expectOne(`${API}/my-tasks`).flush(mine);
+    http.expectOne(`${API}/available`).flush(available);
+    fixture.detectChanges();
+    return { fixture, el: fixture.nativeElement as HTMLElement };
+  }
+
+  const button = (el: HTMLElement, label: string) =>
+    el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+
+  afterEach(() => http.verify());
+
+  it('has no Available section for someone with nothing waiting', () => {
+    const { el } = render([], []);
+
+    expect(el.textContent).not.toContain('Available to pick up');
+  });
+
+  it('lists what is waiting in the viewer\'s pools, naming the pool, with Pick up', () => {
+    const { el } = render([], [task({ id: 'pool-1', title: 'Collect the sample', pool: POOL, dueAt: FUTURE })]);
+
+    expect(el.textContent).toContain('Available to pick up');
+    expect(el.textContent).toContain('Assigned to Quality Officer, Pharmacy');
+    expect(button(el, 'Pick up “Collect the sample”')).not.toBeNull();
+  });
+
+  it('names the pool in Arabic, with the Arabic comma', () => {
+    const { el } = render([], [task({ id: 'pool-1', pool: POOL, dueAt: FUTURE })], 'ar');
+
+    expect(el.textContent).toContain('مسؤول الجودة، الصيدلية');
+  });
+
+  it('Pick up posts to /pick and reloads both lists', () => {
+    const { el } = render([], [task({ id: 'pool-1', title: 'Collect the sample', pool: POOL, dueAt: FUTURE })]);
+
+    button(el, 'Pick up “Collect the sample”')!.click();
+    const req = http.expectOne(`${API}/pool-1/pick`);
+    expect(req.request.method).toBe('POST');
+    req.flush({});
+    http.expectOne(`${API}/my-tasks`).flush([]);
+    http.expectOne(`${API}/available`).flush([]);
+  });
+
+  // Someone else was first: the server's own sentence, and the row leaves.
+  it('says so when someone else picked it up first, and reloads', () => {
+    const { fixture, el } = render([], [task({ id: 'pool-1', title: 'Collect the sample', pool: POOL, dueAt: FUTURE })]);
+
+    button(el, 'Pick up “Collect the sample”')!.click();
+    http
+      .expectOne(`${API}/pool-1/pick`)
+      .flush({ message: 'This task has already been picked up' }, { status: 409, statusText: 'Conflict' });
+    http.expectOne(`${API}/my-tasks`).flush([]);
+    http.expectOne(`${API}/available`).flush([]);
+    fixture.detectChanges();
+
+    expect(el.textContent).toContain('This task has already been picked up');
+  });
+
+  it('offers Release on a task the viewer picked up, and says where it came from', () => {
+    const { el } = render([task({ pool: POOL, pickedByMe: true, dueAt: FUTURE })], []);
+
+    expect(button(el, 'Release “Submit terms of reference”')).not.toBeNull();
+    expect(el.textContent).toContain('Picked up · Quality Officer, Pharmacy');
+  });
+
+  // A person the assigner chose directly rejects instead; the server refuses
+  // their release too.
+  it('does not offer Release on a task given to the viewer directly, even one with a pool', () => {
+    const { el } = render([task({ pool: POOL, pickedByMe: false, dueAt: FUTURE })], []);
+
+    expect(button(el, 'Release “Submit terms of reference”')).toBeNull();
+    expect(button(el, 'Reject “Submit terms of reference”')).not.toBeNull();
   });
 });

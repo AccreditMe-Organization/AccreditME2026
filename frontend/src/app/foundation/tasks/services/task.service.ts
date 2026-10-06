@@ -27,6 +27,18 @@ export interface ITaskDto {
   rejectedReason: string | null;
   rejectedAt: string | null;
   rejectedById: string | null;
+  // ACC-167 — the pool the task is assigned to, if any: a position in a unit,
+  // or a member role on a committee. Kept after a pick, so a release or a
+  // departure can hand the task back.
+  assignedOrgUnitId: string | null;
+  assignedPositionId: string | null;
+  assignedCommitteeId: string | null;
+  assignedCommitteeRoleValueId: string | null;
+  // ACC-167 — when the task last entered its pool, when it escalates if nobody
+  // picks it up, and when it did. Written by the server only.
+  pooledAt: string | null;
+  poolEscalateAt: string | null;
+  poolEscalatedAt: string | null;
   // ACC-46 Section 2.7.b — managerEscalatedAt/headEscalatedAt replace the
   // old escalationUserId/escalationAfterHours; written only by
   // SlaMonitorProcessor, never by any caller.
@@ -65,6 +77,30 @@ export interface TaskAssigneeDto {
 // lists, for the ACC-74 reason given below.
 export interface ITaskListItemDto extends ITaskDto {
   evidenceCount: number;
+  // ACC-167 — the pool, named for display; null when the task went to named
+  // people only. Names are tenant data: shown by language, never translated.
+  pool: TaskPoolDto | null;
+}
+
+// ACC-167 — mirrors the backend's ITaskPoolView. A POSITION pool fills the
+// position and unit names; a COMMITTEE_ROLE pool fills the role and committee.
+export interface TaskPoolDto {
+  kind: 'POSITION' | 'COMMITTEE_ROLE';
+  positionNameEn: string | null;
+  positionNameAr: string | null;
+  orgUnitNameEn: string | null;
+  orgUnitNameAr: string | null;
+  roleLabelEn: string | null;
+  roleLabelAr: string | null;
+  committeeNameEn: string | null;
+  committeeNameAr: string | null;
+}
+
+// ACC-167 — a row of the caller's OWN list (my-tasks). `pickedByMe` is what
+// makes Release available: someone the assigner chose directly rejects
+// instead. Its own type for the ACC-74 reason below — only my-tasks knows it.
+export interface IMyTaskListItemDto extends ITaskListItemDto {
+  pickedByMe: boolean;
 }
 
 // ACC-76 — returned by getForSource() ONLY. Deliberately a separate type
@@ -94,16 +130,67 @@ export interface CreateTaskDto {
   sourceStageId?: string;
   workflowInstanceId?: string;
   meetingId?: string;
-  assigneeUserIds: string[];
+  // Named people. The task form sends `assignTo` instead (ACC-167); sending
+  // both is refused by the server.
+  assigneeUserIds?: string[];
+  assignTo?: AssignTargetDto;
   priority?: string;
   dueDate?: string;
   // ACC-163 — Complete is refused until at least one piece of evidence exists.
   requiresEvidence?: boolean;
 }
 
+// ACC-167 — who a task goes to, chosen the way the organisation is shaped:
+// a unit then a position in it, or (on a committee's own task) a member role,
+// each optionally narrowed to one person. The server decides the outcome:
+// that person; a single-holder position's holder; otherwise a pool.
+export type AssignTargetDto =
+  | { kind: 'POSITION'; orgUnitId: string; positionId: string; userId?: string }
+  | { kind: 'COMMITTEE_ROLE'; committeeId: string; roleValueId: string; userId?: string };
+
+// ACC-167 — exactly one of the two: `assignTo` (the picker) or the legacy
+// named list. The server refuses both or neither.
 export interface ReassignTaskDto {
-  newAssigneeUserIds: string[];
+  newAssigneeUserIds?: string[];
+  assignTo?: AssignTargetDto;
   reason: string;
+}
+
+export interface ReleaseTaskDto {
+  reason: string;
+}
+
+// ACC-167 — the assignment picker's rows. Only what the cascade needs: no
+// email, no status, nothing else about a person.
+export interface AssignableUnitDto {
+  id: string;
+  parentId: string | null;
+  nameEn: string;
+  nameAr: string | null;
+}
+
+export interface AssignablePositionDto {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+  isSingleAssignee: boolean;
+  // Active holders of this position IN THE CHOSEN UNIT. Zero is a real
+  // choice for a single-holder position: the task waits for its holder.
+  holderCount: number;
+}
+
+export interface AssignableHolderDto {
+  id: string;
+  name: string;
+  positionNameEn: string | null;
+  positionNameAr: string | null;
+}
+
+export interface AssignableCommitteeRoleDto {
+  id: string;
+  labelEn: string;
+  labelAr: string | null;
+  memberCount: number;
 }
 
 export interface RejectTaskDto {
@@ -121,11 +208,60 @@ export class TaskService {
   private readonly http = inject(HttpClient);
   private readonly base = `${environment.apiUrl}/tasks`;
 
-  getMyTasks(query: MyTasksQuery = {}): Observable<ITaskListItemDto[]> {
+  getMyTasks(query: MyTasksQuery = {}): Observable<IMyTaskListItemDto[]> {
     let params = new HttpParams();
     if (query.status) params = params.set('status', query.status);
     if (query.overdue) params = params.set('overdue', 'true');
-    return this.http.get<ITaskListItemDto[]>(`${this.base}/my-tasks`, { params });
+    return this.http.get<IMyTaskListItemDto[]>(`${this.base}/my-tasks`, { params });
+  }
+
+  // ACC-167 — waiting tasks in the pools the caller is in right now.
+  // Self-scoped, like my-tasks.
+  getAvailable(): Observable<ITaskListItemDto[]> {
+    return this.http.get<ITaskListItemDto[]>(`${this.base}/available`);
+  }
+
+  // ACC-167 — a member of the pool takes the task. 409 when someone was first.
+  pick(id: string): Observable<ITaskDto> {
+    return this.http.post<ITaskDto>(`${this.base}/${id}/pick`, {});
+  }
+
+  // ACC-167 — whoever picked the task up hands it back, with a reason.
+  release(id: string, dto: ReleaseTaskDto): Observable<ITaskDto> {
+    return this.http.post<ITaskDto>(`${this.base}/${id}/release`, dto);
+  }
+
+  // ACC-167 — the assignment picker. `taskId` names the task being
+  // reassigned, which is how its creator or a tasks:reassign holder reaches
+  // the picker without tasks:create.
+  getAssignableUnits(taskId?: string): Observable<AssignableUnitDto[]> {
+    return this.http.get<AssignableUnitDto[]>(`${this.base}/assignment/units`, {
+      params: withTask(new HttpParams(), taskId),
+    });
+  }
+
+  getAssignablePositions(orgUnitId: string, taskId?: string): Observable<AssignablePositionDto[]> {
+    return this.http.get<AssignablePositionDto[]>(`${this.base}/assignment/positions`, {
+      params: withTask(new HttpParams().set('orgUnitId', orgUnitId), taskId),
+    });
+  }
+
+  getAssignees(orgUnitId: string, positionId: string, taskId?: string): Observable<AssignableHolderDto[]> {
+    return this.http.get<AssignableHolderDto[]>(`${this.base}/assignees`, {
+      params: withTask(new HttpParams().set('orgUnitId', orgUnitId).set('positionId', positionId), taskId),
+    });
+  }
+
+  getAssignableCommitteeRoles(committeeId: string, taskId?: string): Observable<AssignableCommitteeRoleDto[]> {
+    return this.http.get<AssignableCommitteeRoleDto[]>(`${this.base}/assignment/committee-roles`, {
+      params: withTask(new HttpParams().set('committeeId', committeeId), taskId),
+    });
+  }
+
+  getCommitteeAssignees(committeeId: string, roleValueId: string, taskId?: string): Observable<AssignableHolderDto[]> {
+    return this.http.get<AssignableHolderDto[]>(`${this.base}/assignees/committee`, {
+      params: withTask(new HttpParams().set('committeeId', committeeId).set('roleValueId', roleValueId), taskId),
+    });
   }
 
   // ACC-76 — the only list endpoint carrying assignees. Requires tasks:view.
@@ -168,4 +304,8 @@ export class TaskService {
   addEvidence(taskId: string, dto: AddTaskEvidenceDto): Observable<{ id: string }> {
     return this.http.post<{ id: string }>(`${this.base}/${taskId}/evidence`, dto);
   }
+}
+
+function withTask(params: HttpParams, taskId?: string): HttpParams {
+  return taskId ? params.set('taskId', taskId) : params;
 }
