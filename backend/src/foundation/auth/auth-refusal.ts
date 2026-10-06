@@ -20,7 +20,8 @@ export type AuthRefusalCode =
   | 'ACCOUNT_LOCKED'
   | 'ACCOUNT_INACTIVE'
   | 'MFA_INVALID'
-  | 'MFA_EXPIRED';
+  | 'MFA_EXPIRED'
+  | 'ORGANIZATION_UNAVAILABLE';
 
 /**
  * ONE message per code, and the only place a refusal's wording is written.
@@ -39,6 +40,12 @@ export const AUTH_REFUSAL_MESSAGES: Readonly<Record<AuthRefusalCode, string>> =
     ACCOUNT_INACTIVE: 'This account is not active',
     MFA_INVALID: 'Invalid verification code',
     MFA_EXPIRED: 'The verification step has expired. Sign in again.',
+    // ACC-168 — the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING
+    // (common/tenant/organization-status.ts). A 401 like every refusal here, so
+    // the frontend's existing 401 handling signs the person out of a session the
+    // organisation's closure has just ended. At sign-in it is given only after a
+    // correct password, so it tells nothing to someone without one.
+    ORGANIZATION_UNAVAILABLE: 'This organization is not available',
   };
 
 export interface AuthRefusalBody {
@@ -55,7 +62,13 @@ export interface AuthRefusalBody {
 export class AuthRefusalException extends UnauthorizedException {
   readonly code: AuthRefusalCode;
 
-  constructor(code: 'INVALID_CREDENTIALS' | 'ACCOUNT_INACTIVE' | 'MFA_EXPIRED');
+  constructor(
+    code:
+      | 'INVALID_CREDENTIALS'
+      | 'ACCOUNT_INACTIVE'
+      | 'MFA_EXPIRED'
+      | 'ORGANIZATION_UNAVAILABLE',
+  );
   constructor(code: 'ACCOUNT_LOCKED', details: { lockedUntil: Date });
   constructor(code: 'MFA_INVALID', details: { attemptsRemaining: number });
   constructor(
