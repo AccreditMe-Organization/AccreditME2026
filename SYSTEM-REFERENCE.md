@@ -939,6 +939,7 @@ logs.
 | `ACCOUNT_INACTIVE` | 401 | the password is RIGHT and the account is INACTIVE or SUSPENDED | — | anything to someone who does not know the password: a wrong password on an inactive account is `INVALID_CREDENTIALS`. Checked after the password and before any MFA challenge, so a deactivated person is not asked for a code. An INVITED person has no credential yet (Better Auth's user is created at acceptance), so "still invited" is always `INVALID_CREDENTIALS`. |
 | `MFA_INVALID` | 401 | a wrong code on a live challenge | `attemptsRemaining` | — (reached only after a correct password). The smaller of the challenge's five attempts and the user's ten before their MFA locks. |
 | `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
+| `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
 
 **KNOWN AND ACCEPTED LIMITATION — sign-in reveals whether an ORGANISATION
 exists.** Accepted for now; **revisited with ACC-129** (per-IP rate limiting),
@@ -1068,13 +1069,42 @@ order (a malformed body still gets the pipe's own message), the 409 position
 conflict and the tenant-admin notifications it sends on every attempt, and
 Better Auth's sign-up errors passed through.
 
-**OPEN — a closed tenant's users are refused NOWHERE else** (investigated
-2026-10-05, not fixed). `suspendTenant()` (`platform/tenant/platform-tenant.service.ts`)
-only sets the status; it ends no session. `resolveOrganizationId()` checks that
-the slug exists, not its status; `completeLogin()` and `refresh()` check only the
-user's status; `TenantGuard` checks only the user's `tokenVersion`; there is no
-middleware. So the people of a SUSPENDED, CANCELLED or OFFBOARDING tenant can
-still sign in and use every endpoint. To become its own ticket.
+**RESOLVED (ACC-168) — a closed organisation is closed everywhere.** Found here
+on 2026-10-05: the invitation rule was the only code that read
+`Organization.status`, so a SUSPENDED, CANCELLED or OFFBOARDING tenant's people
+could still sign in and use every endpoint. Now:
+
+- **One rule**, `isOrganizationOpen(status)` (`common/tenant/organization-status.ts`):
+  TRIAL and ACTIVE are open. The invitation rule, sign-in, refresh, `TenantGuard`
+  and the impersonation start all call it; a spec spies on it to prove no path
+  keeps its own copy of the list.
+- **Sign-in** refuses with `ORGANIZATION_UNAVAILABLE` (§1.12) after the password
+  and before any MFA challenge, ahead of the inactive-account check;
+  `completeLogin()` repeats the check for an organisation closed while its MFA
+  challenge was open. Recorded with the NEUTRAL reason `organization_unavailable`:
+  it neither counts towards the lock nor resets it.
+- **Refresh** refuses (the refresh token is spent on the way).
+- **`TenantGuard`** joins `organization.status` into the user query it already
+  runs on every request, so the check costs no extra round trip. Existing sessions
+  stop at the next request, and work again the moment the organisation reopens —
+  no token is revoked, so there is nothing to reissue. **Not exempted for the
+  platform organisation**: instead `suspendTenant()` refuses to close it (409),
+  and it is the only path that writes a closed status (`UpdateTenantDto` has no
+  status; creation defaults to TRIAL).
+- **Platform administrators** manage a closed tenant from their own context:
+  every `/platform/tenants…` endpoint runs `TenantGuard` + `PlatformGuard` on the
+  administrator's own token, with the tenant as a path parameter.
+- **Impersonating a closed tenant** is refused with 409 at the start, before a
+  token is issued or `IMPERSONATE_START` is written, so the administrator keeps
+  their own session.
+
+**Known, not changed:** a tenant closed WHILE an administrator impersonates it —
+`end-impersonation` runs `TenantGuard` on the impersonation token, so it gets
+401, the administrator is signed out, and `IMPERSONATE_END` is never written
+(ACC-99 records the unmatched-start gap; impersonation is being removed). Nothing
+moves an organisation off TRIAL when `trialEndsAt` passes, so TRIAL is open
+indefinitely. Background work for a closed tenant — SLA sweeps, Setup health,
+email delivery — still runs.
 
 **Not done, recorded:** clearing the token from the page's address bar after
 reading it (9e); hashing invitation tokens at rest (they are plaintext in
