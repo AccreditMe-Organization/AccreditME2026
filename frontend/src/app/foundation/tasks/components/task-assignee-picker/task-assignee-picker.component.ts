@@ -105,9 +105,11 @@ interface TargetOption {
  *
  * ## Layout
  *
- * Unit and position share a row, the person field takes the next, and the
- * outcome is the person field's hint. Three field blocks in two rows, so a
- * host keeps its own density.
+ * `stacked` (Reassign): unit and position share a row, the person takes the
+ * next, and the outcome is the person field's hint. `row` (New task): all
+ * three in one row, the outcome on a line beneath. New task's step 1 measured
+ * 414px against the 420 cap stacked — too close to call a fit, and a pool's
+ * outcome wraps to a second line — so it takes the row.
  */
 @Component({
   selector: 'app-task-assignee-picker',
@@ -117,10 +119,9 @@ interface TargetOption {
     @if (unavailable()) {
       <p-message severity="info" [text]="'task.assign.unavailable' | translate" />
     } @else {
-      <div [formGroup]="group()" class="flex flex-col gap-3">
-        <div class="flex gap-4">
+      <div [formGroup]="group()" class="am-picker" [class.am-picker--row]="layout() === 'row'">
+        <div class="am-picker__pair">
           <am-field
-            class="flex-1 min-w-0"
             [label]="(offersCommittee() ? 'task.assign.unitOrCommittee' : 'task.assign.unit') | translate"
             [control]="group().controls.scope"
             [forceShowErrors]="forceShowErrors()"
@@ -139,7 +140,6 @@ interface TargetOption {
           </am-field>
 
           <am-field
-            class="flex-1 min-w-0"
             [label]="(isCommitteeScope() ? 'task.assign.role' : 'task.assign.position') | translate"
             [control]="group().controls.target"
             [forceShowErrors]="forceShowErrors()"
@@ -160,9 +160,10 @@ interface TargetOption {
         </div>
 
         <am-field
+          class="am-picker__person"
           [label]="'task.assign.person' | translate"
           [control]="group().controls.userId"
-          [hint]="outcome()"
+          [hint]="layout() === 'row' ? '' : outcome()"
           [loading]="peopleLoading()"
         >
           <app-overlay-select
@@ -176,6 +177,11 @@ interface TargetOption {
           />
         </am-field>
       </div>
+      <!-- In a row, a third of the width is no place for a sentence: the
+           outcome spans the row beneath instead of being the person's hint. -->
+      @if (layout() === 'row' && outcome()) {
+        <p class="am-picker__outcome" aria-live="polite">{{ outcome() }}</p>
+      }
     }
 
     <!-- A name with a second, quieter line: a position's holder count, a
@@ -190,6 +196,42 @@ interface TargetOption {
       </span>
     </ng-template>
   `,
+  styles: [
+    `
+      .am-picker {
+        display: flex;
+        flex-direction: column;
+        gap: var(--am-space-12);
+      }
+      .am-picker__pair {
+        display: flex;
+        gap: var(--am-space-16);
+      }
+      .am-picker__pair > * {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      /* One row of three: the pair takes two columns, the person the third. */
+      .am-picker--row {
+        flex-direction: row;
+        gap: var(--am-space-16);
+      }
+      .am-picker--row .am-picker__pair {
+        flex: 2 1 0;
+        min-width: 0;
+      }
+      .am-picker--row .am-picker__person {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .am-picker__outcome {
+        margin: 0;
+        font-size: var(--am-type-meta-size);
+        line-height: var(--am-type-meta-line);
+        color: var(--am-ink-500);
+      }
+    `,
+  ],
 })
 export class TaskAssigneePickerComponent implements OnInit {
   private readonly taskService = inject(TaskService);
@@ -209,6 +251,8 @@ export class TaskAssigneePickerComponent implements OnInit {
   readonly taskId = input<string | undefined>(undefined);
   readonly required = input(false);
   readonly forceShowErrors = input(false);
+  /** 'stacked': unit and position, then person (Reassign). 'row': all three in one row (New task). */
+  readonly layout = input<'stacked' | 'row'>('stacked');
 
   private readonly units = signal<AssignableUnitDto[]>([]);
   private readonly positions = signal<AssignablePositionDto[]>([]);

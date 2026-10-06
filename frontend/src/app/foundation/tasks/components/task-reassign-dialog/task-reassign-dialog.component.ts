@@ -38,9 +38,10 @@ export interface TaskRejection {
  *
  * ## Body height — FORM density
  *
- * Re-measured for ACC-167 in the browser pass recorded on the PR. Before it,
- * with one people field: 243px in English for a rejected task with the strip
- * and a two-line reason; 186px in Arabic without the strip.
+ * Re-measured for ACC-167 in the browser (6 Oct 2026, 1440x900), in its
+ * tallest state — a rejected task, the strip with a two-line reason, a unit
+ * and position chosen, the outcome line, and the reason's required error:
+ * 358px English, 371px Arabic. The picker stays stacked here: there is room.
  */
 @Component({
   selector: 'app-task-reassign-dialog',

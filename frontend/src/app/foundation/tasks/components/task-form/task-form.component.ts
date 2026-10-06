@@ -44,9 +44,14 @@
 // shared assignment picker: unit, position, optional person — and, on a
 // committee's own task, the committee and its member roles. It stays on step 1,
 // because "who" is part of the commitment. To keep step 1 inside the cap,
-// priority moved up beside the title, where the people field's half-row was;
-// the picker takes two rows of its own. Measured in the browser pass recorded
-// on the PR, in both languages.
+// priority moved up beside the title, and the picker takes ONE row (unit,
+// position, person) with its outcome line beneath.
+//
+// MEASURED in the browser (6 Oct 2026, 1440x900, Infection Control Committee):
+// the picker stacked in two rows put step 1 at 414 of the 420 cap — a fit in
+// English only, today, with a pool's outcome line about to wrap — so it was
+// not taken. In one row: 337px English with a pool of 2 chosen, 348px Arabic
+// with a role chosen. Neither scrolls.
 //
 // Choosing nobody is still allowed and still creates an UNASSIGNED task — the
 // picker's outcome line says so.
@@ -181,6 +186,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
             [sourceId]="lockedSourceId()"
             [committeeName]="lockedSourceLabel()"
             [forceShowErrors]="showAssignErrors()"
+            layout="row"
           />
 
           <ng-container *ngTemplateOutlet="dueBlock" />
