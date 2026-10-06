@@ -948,7 +948,6 @@
     "orgNameArHint": "Optional. Arabic screens show it; without it, they show the English name.",
     "orgNameArTooLong": "Keep the Arabic name to 255 characters or fewer.",
     "logoNotActiveYet": "Logo upload is not live yet. The monogram below is shown everywhere a logo would appear.",
-    "logoWhereSignIn": "Sign-in",
     "logoWhereSidebar": "Sidebar",
     "logoWhereReport": "Reports"
   },
