@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { Location } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -111,13 +112,20 @@ export class LoginComponent {
     this.route.snapshot.queryParamMap.get('reason') === 'idle';
 
   /**
-   * ACC-120 slice 9e — set only by the navigation that brought them here from
-   * Accept invitation. Navigation STATE rather than a query parameter, so it is
-   * shown once: a refresh or a typed URL carries no state, and nothing is
-   * left in the address bar to bookmark.
+   * ACC-120 slice 9e — set by the navigation that brought them here from
+   * Accept invitation. Navigation STATE rather than a query parameter, so
+   * nothing is left in the address bar to bookmark.
+   *
+   * SHOWN ONCE, WHICH STATE ALONE DOES NOT GIVE: the browser keeps
+   * history.state across a reload, and Angular hands it back to the reloaded
+   * page's navigation as `extras.state`, so the notice reappeared on every
+   * refresh of /login. Once read, it is removed from the current history entry
+   * (see clearNotice()).
    */
   protected readonly invitationAccepted =
     this.router.currentNavigation()?.extras.state?.['notice'] === INVITATION_ACCEPTED_NOTICE;
+
+  private readonly location = inject(Location);
 
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
@@ -132,6 +140,26 @@ export class LoginComponent {
   readonly mfaForm = this.fb.group({
     code: ['', [Validators.required, Validators.minLength(6), Validators.maxLength(6)]],
   });
+
+  constructor() {
+    if (this.invitationAccepted) this.clearNotice();
+  }
+
+  /**
+   * Drops the notice from the current history entry, keeping everything else
+   * in it — the router's own navigationId and page id live there too.
+   *
+   * Safe in the constructor: the router writes this entry (URL and state) at
+   * BeforeActivateRoutes, before any routed component is created
+   * (HistoryStateManager in @angular/router 21), so this replaces /login's own
+   * entry rather than the one before it.
+   */
+  private clearNotice(): void {
+    const state = this.location.getState();
+    if (!state || typeof state !== 'object' || !('notice' in state)) return;
+    const { notice: _, ...rest } = state as Record<string, unknown>;
+    this.location.replaceState(this.location.path(true), '', rest);
+  }
 
   onSubmitLogin(): void {
     if (this.loginForm.invalid) {
