@@ -7,20 +7,38 @@ import { CurrentTenant } from '../../common/decorators/current-tenant.decorator'
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CurrentUserPermissions } from '../../common/decorators/current-user-permissions.decorator';
 import { TaskService } from './task.service';
+import { AssignmentViewer, TaskAssignmentService } from './task-assignment.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
 import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
+import { ReleaseTaskDto } from './dto/release-task.dto';
+import {
+  AssignmentCommitteeMembersQueryDto,
+  AssignmentCommitteeRolesQueryDto,
+  AssignmentHoldersQueryDto,
+  AssignmentPositionsQueryDto,
+  AssignmentQueryDto,
+} from './dto/assignment-query.dto';
+import {
+  IAssignableCommitteeRole,
+  IAssignableHolder,
+  IAssignablePosition,
+  IAssignableUnit,
+} from './interfaces/task-assignment.interface';
 import { ITask } from './interfaces/task.interface';
-import { ITaskListItem } from './interfaces/task-list-item.interface';
+import { IMyTaskListItem, ITaskListItem } from './interfaces/task-list-item.interface';
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
 
 @Controller('tasks')
 @UseGuards(TenantGuard, PermissionGuard)
 export class TaskController {
-  constructor(private readonly taskService: TaskService) {}
+  constructor(
+    private readonly taskService: TaskService,
+    private readonly assignment: TaskAssignmentService,
+  ) {}
 
   // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
   //
@@ -51,8 +69,90 @@ export class TaskController {
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
     @Query() query: GetMyTasksQueryDto,
-  ): Promise<ITaskListItem[]> {
+  ): Promise<IMyTaskListItem[]> {
     return this.taskService.getMyTasks(userId, tenantId, query);
+  }
+
+  // ── ACC-167 — STATIC GET ROUTES, ALL DECLARED BEFORE ':id' ─────────────────
+  // Nest matches in declaration order, and ':id' would swallow 'available',
+  // 'assignees' and any other single segment declared after it. A spec calls
+  // each route through the real router to pin this.
+
+  // Open pool tasks the caller could pick up (decision 7). Self-scoped like
+  // my-tasks — built from the caller's own position, unit and committee roles
+  // — so it carries no permission.
+  @Get('available')
+  getAvailable(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskListItem[]> {
+    return this.taskService.getAvailableToPick(userId, tenantId);
+  }
+
+  // The assignment picker (decision 8). No @Permissions on any of these, by
+  // design: who may use it is "tasks:create, OR the creator / a tasks:reassign
+  // holder of the task named by ?taskId", and the second half is only knowable
+  // from the row. TaskAssignmentService.assertMayAssign() decides.
+  @Get('assignment/units')
+  getAssignableUnits(
+    @Query() query: AssignmentQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IAssignableUnit[]> {
+    return this.assignment.listUnits(viewer(userId, permissions), tenantId, query.taskId);
+  }
+
+  @Get('assignment/positions')
+  getAssignablePositions(
+    @Query() query: AssignmentPositionsQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IAssignablePosition[]> {
+    return this.assignment.listPositions(viewer(userId, permissions), tenantId, query.orgUnitId, query.taskId);
+  }
+
+  @Get('assignment/committee-roles')
+  getAssignableCommitteeRoles(
+    @Query() query: AssignmentCommitteeRolesQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IAssignableCommitteeRole[]> {
+    return this.assignment.listCommitteeRoles(viewer(userId, permissions), tenantId, query.committeeId, query.taskId);
+  }
+
+  @Get('assignees/committee')
+  getCommitteeAssignees(
+    @Query() query: AssignmentCommitteeMembersQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IAssignableHolder[]> {
+    return this.assignment.listCommitteeMembers(
+      viewer(userId, permissions),
+      tenantId,
+      query.committeeId,
+      query.roleValueId,
+      query.taskId,
+    );
+  }
+
+  @Get('assignees')
+  getAssignees(
+    @Query() query: AssignmentHoldersQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<IAssignableHolder[]> {
+    return this.assignment.listHolders(
+      viewer(userId, permissions),
+      tenantId,
+      query.orgUnitId,
+      query.positionId,
+      query.taskId,
+    );
   }
 
   // Must be declared before ':id' — Nest matches routes in declaration order
@@ -186,6 +286,28 @@ export class TaskController {
   // creator may reassign it too (a rejected task comes back to its creator,
   // Q4), and whether the caller IS the creator is only knowable from the row.
   // A decorator here would refuse the creator before the row was read.
+  // ACC-167 (decisions 4 and 5) — pick a task up from its pool, and hand it
+  // back. No @Permissions: both are scoped to the pool and the picker by the
+  // service, which answers anyone else with the identical 404.
+  @Post(':id/pick')
+  pick(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITask> {
+    return this.taskService.pick(id, userId, tenantId);
+  }
+
+  @Post(':id/release')
+  release(
+    @Param('id') id: string,
+    @Body() dto: ReleaseTaskDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITask> {
+    return this.taskService.release(id, dto, userId, tenantId);
+  }
+
   @Post(':id/reassign')
   reassign(
     @Param('id') id: string,
@@ -209,4 +331,8 @@ export class TaskController {
   ): Promise<ITaskEvidence> {
     return this.taskService.addEvidence(id, dto, tenantId, userId);
   }
+}
+
+function viewer(id: string, permissions: string[]): AssignmentViewer {
+  return { id, permissions };
 }
