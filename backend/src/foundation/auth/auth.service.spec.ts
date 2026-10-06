@@ -160,6 +160,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
       });
 
       const req = fakeExpressReq();
@@ -193,6 +194,7 @@ describe('AuthService', () => {
         organizationId: ORG_A,
         email: 'a@example.com',
         status: 'ACTIVE',
+        organization: { status: 'ACTIVE' },
       });
 
       const req = fakeExpressReq();
@@ -239,6 +241,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'SUSPENDED',
         tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
       });
 
       await expect(
@@ -261,6 +264,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
       });
 
       const req = fakeExpressReq();
@@ -309,6 +313,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
         lastLoginIp: '9.9.9.9',
       });
 
@@ -329,6 +334,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
         lastLoginIp: '9.9.9.9',
       });
       mockLoginAttemptService.isNewIp.mockReturnValue(true);
@@ -351,6 +357,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
         lastLoginIp: '127.0.0.1',
       });
       mockLoginAttemptService.isNewIp.mockReturnValue(false);
@@ -371,6 +378,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
       });
 
       const result = await service.verifyMfa({ code: '123456' }, fakeExpressReq(), fakeExpressRes());
