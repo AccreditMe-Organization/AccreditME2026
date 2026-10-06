@@ -9,6 +9,7 @@ import { MessageModule } from 'primeng/message';
 import { AuthService } from '../../../../core/services/auth.service';
 import { LANDING_ROUTE } from '../../../../core/navigation/landing-route';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
 
 @Component({
   selector: 'app-login',
@@ -32,6 +33,11 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
              which is what the 15-minute bug felt like. -->
         @if (signedOutForIdle) {
           <p-message severity="info" [text]="'session.signedOutIdle' | translate" />
+        }
+
+        <!-- ACC-120 slice 9e — arriving from Accept invitation. -->
+        @if (invitationAccepted) {
+          <p-message severity="success" [text]="'auth.invitation.acceptedNotice' | translate" />
         }
 
         @if (error()) {
@@ -103,6 +109,15 @@ export class LoginComponent {
   /** Set when the idle rule ended the last session (IdleService). */
   protected readonly signedOutForIdle =
     this.route.snapshot.queryParamMap.get('reason') === 'idle';
+
+  /**
+   * ACC-120 slice 9e — set only by the navigation that brought them here from
+   * Accept invitation. Navigation STATE rather than a query parameter, so it is
+   * shown once: a refresh or a typed URL carries no state, and nothing is
+   * left in the address bar to bookmark.
+   */
+  protected readonly invitationAccepted =
+    this.router.currentNavigation()?.extras.state?.['notice'] === INVITATION_ACCEPTED_NOTICE;
 
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
