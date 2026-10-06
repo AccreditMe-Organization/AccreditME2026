@@ -2827,6 +2827,52 @@ ticket is its statuses step. The decisions, briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-173)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 3.10. The decisions, briefly:
+
+- **An assignee ASKS for more time or a hold; the creator DECIDES.** Approve
+  means approve as asked — there is no counter-proposal. A decider who wants a
+  different date declines with a note and the assignee asks again. One open
+  request per task, enforced under the row lock (Prisma has no partial unique
+  index).
+- **"Acting for the creator" is ONE rule, `canActForCreator()`**
+  (`task-authority.service.ts`): the creator, their out-of-office delegate
+  (both dates set, now inside the window), or the acting head appointed for
+  ABSENCE of a unit the creator heads substantively — read from the
+  `OrgUnitHeadAssignment` period table, never the `actingHeadUserId` cache.
+  Deciding, resuming, reassigning and the assignee picker all use it, and
+  ACC-174 (edit and cancel) must reuse it rather than write a second copy.
+  `tasks:reassign` holders may also decide; nobody decides their own request.
+- **A hold pauses the SLA, in WORKING time.** On resume, `dueAt` moves by the
+  working hours the task was held (`workingHoursBetween` → `calculateDeadline`).
+  A held task is never overdue, never escalated, and still blocks its stage.
+  Start, complete, reject and release refuse with *"Resume the task first"*;
+  evidence may still be added. **The stage's own `slaDueAt` is NOT shifted** —
+  a known limitation, not an oversight.
+- **A hold resumes ONCE**, at `onHoldUntil` by `sweepDueHolds()` (runs every
+  pass, not only in working hours) or by hand, through one `endHold()` that
+  re-checks under the lock.
+- **Anything that ends the work ends the request**: complete, reject, release,
+  reassign, the engine's stage and instance cancels, and departure all cancel
+  open requests (each audited with its cause). Reassign, the engine's cancels,
+  and a departure that leaves nobody on the task also end a hold. Someone
+  leaving a task that others keep takes only their own request with them, and
+  the hold stays.
+- **Dates follow New task's convention (ACC-96 Part A)** — picked in the
+  browser's zone and sent as an instant. An extension keeps the time picked; a
+  hold ends at the start of working hours on its day. Tenant zones in the
+  browser (ACC-96 Part B) are still open.
+- **Refusals name a status as a person reads it** — `aTaskThatIs()` /
+  `taskStatusTitle()` ("An on-hold task", "On hold"), never the enum and never
+  `status.toLowerCase()`. The stage gate's message uses the same helper.
+- **`ON_HOLD` must not exist on a shared database before the deploy.** The
+  live app's older Prisma client does not know the value, so a held row can
+  break its task queries. Every hold made while verifying on dev is resumed or
+  closed before finishing, and no request is left PENDING.
+
+---
+
 ## Key Architecture Decisions (ACC-167)
 
 Full mechanism: SYSTEM-REFERENCE.md Section 3.9 (pools), 2.5.2 (the engine and
