@@ -26,9 +26,10 @@ import { TaskAssignmentService } from './task-assignment.service';
     forwardRef(() => TenantModule),
   ],
   controllers: [TaskController],
-  // ACC-167 — TaskAssignmentService is exported for the workflow engine, which
-  // creates pool tasks from POSITION_FIXED and committee-role stages.
+  // ACC-167 — TaskAssignmentService serves this module's picker endpoints
+  // only. The workflow engine decides a stage's pool itself, from the stage,
+  // through the shared rules in task-pool.ts.
   providers: [TaskService, TaskAssignmentService],
-  exports: [TaskService, TaskAssignmentService],
+  exports: [TaskService],
 })
 export class TaskModule {}
