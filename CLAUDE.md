@@ -2846,10 +2846,11 @@ the holder rule), 13.2 (the Setup health extension). The decisions, briefly:
   table: one would need a recomputer (ACC-82's rule) for a fact the user
   record already states.
 - **The target is kept after a pick.** It is what lets a release, or a
-  departure, hand the task back. Departure returns ANY open pool task the
-  leaver holds to its pool, picked or chosen directly
-  (`departure_returned_to_pool`). `reassignAllForUser()` gained that branch;
-  ACC-165 owns the rest of that method.
+  departure, hand the task back. Departure returns an open pool task the
+  leaver holds to its pool, picked or chosen directly, when nobody else is on
+  it (`departure_returned_to_pool`, and the pool is told); if others remain it
+  stays with them (`departure_left_with_others`). `reassignAllForUser()`
+  gained that branch; ACC-165 owns the rest of that method.
 - **Release is not reject.** Only a PICKED row can be released (back to the
   pool, whose members read the reason). Someone chosen directly rejects
   (back to the creator). Rows are stamped, never deleted, so A → B → A

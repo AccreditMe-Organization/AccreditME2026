@@ -995,22 +995,33 @@ export class TaskService {
       // returning one to its pool would reopen it. Creates no row for the
       // acting user, so it never reaches the duplicate-row create below that
       // ACC-165 owns.
+      //
+      // It RETURNS to the pool only when nobody else is still on it; otherwise
+      // it stays with them, is not counted as returned, and is audited as
+      // departure_left_with_others.
       if (poolTargetOf(task) && task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
-        if (remainingActiveOthers.length === 0) {
+        const returned = remainingActiveOthers.length === 0;
+        if (returned) {
           await this.prisma.task.update({
             where: { id: task.id },
             data: { status: 'PENDING', ...(await this.poolClock(task.priority, organizationId, now)) },
           });
+          returnedToPoolCount += 1;
         }
-        returnedToPoolCount += 1;
         await this.auditLog.log({
           action: 'DELEGATE',
           objectType: 'Task',
           objectId: task.id,
           actorId,
           tenantId: organizationId,
-          metadata: { event: 'departure_returned_to_pool', fromUserId },
+          metadata: { event: returned ? 'departure_returned_to_pool' : 'departure_left_with_others', fromUserId },
         });
+        // Once, after this task's writes. The departing user was made INACTIVE
+        // before this runs (UserService.deactivate()), so the pool no longer
+        // holds them; excluding them anyway keeps that true if the order moves.
+        if (returned) {
+          await this.notifyPool(task.id, organizationId, { event: 'departure', excludeUserId: fromUserId });
+        }
         continue;
       }
 
@@ -1415,12 +1426,13 @@ export class TaskService {
   }
 
   // ACC-167 — tells the CURRENT members of a task's pool, once: when the task
-  // enters it and when it is handed back. Never the person who released it
-  // (or who just created it). English and Arabic. Called after commit.
+  // enters it, when it is handed back, and when a departure returns it. Never
+  // the person who released it (or who just created it). English and Arabic.
+  // Called after the writes it reports.
   private async notifyPool(
     taskId: string,
     organizationId: string,
-    options: { event: 'created' | 'released'; excludeUserId: string | null; reason?: string },
+    options: { event: 'created' | 'released' | 'departure'; excludeUserId: string | null; reason?: string },
   ): Promise<void> {
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, organizationId },
@@ -1434,27 +1446,29 @@ export class TaskService {
     const members = (await resolvePoolMemberIds(this.prisma, target, organizationId)).filter(
       (id) => id !== options.excludeUserId,
     );
+    const text = {
+      created: {
+        titleEn: 'New task to pick up',
+        titleAr: 'مهمة جديدة متاحة للاستلام',
+        bodyEn: `"${task.title}" is waiting for someone in ${label.en} to pick it up.`,
+        bodyAr: `المهمة "${task.title}" بانتظار أن يستلمها أحد من ${label.ar}.`,
+      },
+      released: {
+        titleEn: 'Task handed back to pick up',
+        titleAr: 'أُعيدت مهمة لتُستلم',
+        bodyEn: `"${task.title}" was handed back to ${label.en}. Reason: ${options.reason ?? ''}`,
+        bodyAr: `أُعيدت المهمة "${task.title}" إلى ${label.ar}. السبب: ${options.reason ?? ''}`,
+      },
+      departure: {
+        titleEn: 'Task back to pick up',
+        titleAr: 'أُعيدت مهمة لتُستلم',
+        bodyEn: `"${task.title}" is back with ${label.en} because the person working on it has left.`,
+        bodyAr: `عادت المهمة "${task.title}" إلى ${label.ar} لأن الشخص الذي كان يعمل عليها غادر.`,
+      },
+    }[options.event];
     for (const userId of members) {
       await this.notificationService.create(
-        options.event === 'created'
-          ? {
-              userId,
-              titleEn: 'New task to pick up',
-              titleAr: 'مهمة جديدة متاحة للاستلام',
-              bodyEn: `"${task.title}" is waiting for someone in ${label.en} to pick it up.`,
-              bodyAr: `المهمة "${task.title}" بانتظار أن يستلمها أحد من ${label.ar}.`,
-              objectType: 'Task',
-              objectId: task.id,
-            }
-          : {
-              userId,
-              titleEn: 'Task handed back to pick up',
-              titleAr: 'أُعيدت مهمة لتُستلم',
-              bodyEn: `"${task.title}" was handed back to ${label.en}. Reason: ${options.reason ?? ''}`,
-              bodyAr: `أُعيدت المهمة "${task.title}" إلى ${label.ar}. السبب: ${options.reason ?? ''}`,
-              objectType: 'Task',
-              objectId: task.id,
-            },
+        { userId, ...text, objectType: 'Task', objectId: task.id },
         organizationId,
       );
     }

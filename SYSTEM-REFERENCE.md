@@ -2174,14 +2174,19 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   the caller) is given, reassigns to them; otherwise, if no other active
   assignee remains on that task, flags it `UNASSIGNED`. Every change
   audit-logged individually with `metadata: { event: 'departure_reassignment' }`.
-  **ACC-167 — the pool branch, checked first:** an OPEN task with a pool
-  target goes back to its pool instead — whether the departing user picked it
-  up or was chosen directly. Their row is stamped `removedAt`; if nobody else
-  is on it, the status returns to `PENDING` and the pool clock restarts. No
-  row is created for the acting user. Audited `DELEGATE` with
-  `{ event: 'departure_returned_to_pool' }`, and counted in the new
-  `returnedToPoolCount` return field. A CLOSED pool task is left to the old
-  path (returning it would reopen it) — that path is ACC-165's to change.
+  **ACC-167 — the pool branch, checked first:** for an OPEN task with a pool
+  target — whether the departing user picked it up or was chosen directly —
+  their row is stamped `removedAt` and no row is created for the acting user.
+  Then one of two things, each audited `DELEGATE`:
+  - **nobody else is on it** → it goes back to its pool: status `PENDING`,
+    the pool clock restarts, `{ event: 'departure_returned_to_pool' }`,
+    counted in `returnedToPoolCount`, and the pool's current members are told
+    once, after the writes, in English and Arabic ("Task back to pick up").
+  - **others are still on it** → it stays with them:
+    `{ event: 'departure_left_with_others' }`, not counted, nobody told.
+
+  A CLOSED pool task is left to the old path (returning it would reopen it)
+  — that path is ACC-165's to change.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
   idempotent ACC-52) — the recovery half of the unassigned-task
   lifecycle, called from exactly one place:
@@ -2676,8 +2681,9 @@ nobody else is on it, the task returns to `PENDING` and the clock restarts.
 Audited `{ event: 'released', reason, returnedToPool }`.
 
 **Notifications** (after commit, English and Arabic): the pool's current
-members once on creation and once on release — never the person who created
-or released it. A task created with a chosen person sends only the ordinary
+members once on creation, once on release, and once when a departure returns
+the task to its pool — never the person who created or released it, nor the
+person who left. A task created with a chosen person sends only the ordinary
 assignment notice.
 
 **Escalation.** A task waiting in its pool past `poolEscalateAt` (the

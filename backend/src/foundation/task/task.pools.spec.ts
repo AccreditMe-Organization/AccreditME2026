@@ -630,6 +630,7 @@ describe('TaskService — pools (ACC-167)', () => {
     ])('returns an open task the departing person %s to its pool — no row for the acting user', async (_l, pickedAt) => {
       const task = poolTask({ assignees: [row(HOLDER_A, { pickedAt })] });
       mockPrisma.taskAssignee.findMany.mockResolvedValue(departing(task));
+      mockPrisma.task.findFirst.mockResolvedValue(poolTask());
 
       const result = await service.reassignAllForUser(HOLDER_A, OUTSIDER, ORG_A, 'admin');
 
@@ -641,6 +642,54 @@ describe('TaskService — pools (ACC-167)', () => {
       });
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({ metadata: { event: 'departure_returned_to_pool', fromUserId: HOLDER_A } }),
+      );
+    });
+
+    // UserService.deactivate() makes the leaver INACTIVE first, so the pool no
+    // longer holds them. Even if it did, they are excluded: the holder list
+    // below still names HOLDER_A, and only the others are told.
+    it('tells the pool members, and only them, once — in English and Arabic', async () => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue(departing(poolTask({ assignees: [row(HOLDER_A)] })));
+      mockPrisma.task.findFirst.mockResolvedValue(poolTask());
+
+      await service.reassignAllForUser(HOLDER_A, null, ORG_A, 'admin');
+
+      expect(notifiedUsers().sort()).toEqual([CREATOR, HOLDER_B]);
+      expect(mockNotifications.create).toHaveBeenCalledWith(
+        {
+          userId: HOLDER_B,
+          titleEn: 'Task back to pick up',
+          titleAr: 'أُعيدت مهمة لتُستلم',
+          bodyEn: '"Collect the audit sample" is back with Quality Officer, Pharmacy because the person working on it has left.',
+          bodyAr: 'عادت المهمة "Collect the audit sample" إلى مسؤول الجودة، الصيدلية لأن الشخص الذي كان يعمل عليها غادر.',
+          objectType: 'Task',
+          objectId: 'task-1',
+        },
+        ORG_A,
+      );
+      // After the task's writes, not before them.
+      expect(mockNotifications.create.mock.invocationCallOrder[0]).toBeGreaterThan(
+        mockPrisma.task.update.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    // Someone else is still on it: the task stays with them. Not returned, not
+    // counted, nobody told — and audited as what it is.
+    it('leaves a task that others are still on with them — not counted, nobody told', async () => {
+      mockPrisma.taskAssignee.findMany.mockResolvedValue(
+        departing(poolTask({ assignees: [row(HOLDER_A), row(HOLDER_B)] })),
+      );
+
+      const result = await service.reassignAllForUser(HOLDER_A, null, ORG_A, 'admin');
+
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 0 });
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockNotifications.create).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: { event: 'departure_left_with_others', fromUserId: HOLDER_A } }),
+      );
+      expect(mockAuditLog.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ event: 'departure_returned_to_pool' }) }),
       );
     });
 
