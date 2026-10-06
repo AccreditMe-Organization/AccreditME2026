@@ -113,7 +113,7 @@ import { FieldComponent } from '../../../../shared/components/field/field.compon
 
           <div class="flex flex-wrap items-end gap-4 pt-1">
             @for (size of logoSizes; track size.px) {
-              <div class="flex flex-col items-center gap-1">
+              <div class="flex flex-col items-center gap-1" [attr.data-logo-size]="size.px">
                 <span
                   class="flex items-center justify-center rounded-md border border-[var(--am-border)] bg-[var(--am-surface)] font-bold text-[var(--am-blue-primary)]"
                   [style.width.px]="size.px"
@@ -171,11 +171,15 @@ export class OrganizationProfileComponent implements OnInit {
   });
 
   /**
-   * Where the logo appears, at the sizes it appears — the drawing's own three,
-   * each labelled with its place so the preview explains itself.
+   * Where the logo appears, at the sizes it appears, each labelled with its
+   * place so the preview explains itself.
+   *
+   * NO SIGN-IN SIZE (ACC-120 slice 9f). The drawing had a third, 34px for the
+   * sign-in page, but sign-in and forgot password show no organisation name or
+   * logo (decided 4 Oct), so that preview described a place the logo will never
+   * be. Only Accept invitation names the organisation, and by name, not logo.
    */
   readonly logoSizes = [
-    { px: 34, key: 'adminSettings.logoWhereSignIn' },
     { px: 28, key: 'adminSettings.logoWhereSidebar' },
     { px: 20, key: 'adminSettings.logoWhereReport' },
   ] as const;
