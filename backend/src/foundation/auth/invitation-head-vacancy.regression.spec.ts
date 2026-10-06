@@ -52,6 +52,7 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
     positionId: string | null;
     invitationToken: string | null;
     invitationExpiresAt: Date | null;
+    organization?: { status: string; name: string; nameAr: string | null };
   };
 
   const HEAD_POSITION = {
@@ -113,6 +114,8 @@ describe('Invitation → acceptance leaves the unit correctly flagged (ACC-82 re
         positionId: HEAD_POSITION.id,
         invitationToken: 'invite-token',
         invitationExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        // ACC-120 slice 9c — accept reads the inviting tenant's status.
+        organization: { status: 'ACTIVE', name: 'Hospital', nameAr: null },
       },
     ];
 

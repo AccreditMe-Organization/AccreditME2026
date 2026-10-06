@@ -49,6 +49,8 @@ import {
   BETTER_AUTH_TWO_FACTOR_CODES,
 } from './better-auth.contract';
 import { AuthRefusalException } from './auth-refusal';
+import { InvitationRefusalException } from './invitation-refusal';
+import { INVITATION_TOKEN_SHAPE, isOpenInvitation } from './open-invitation';
 import {
   attemptsRemaining,
   challengeIdentifierFromRequest,
@@ -706,14 +708,73 @@ export class AuthService {
     return { success: true };
   }
 
-  async acceptInvitation(dto: AcceptInvitationDto): Promise<void> {
-    const user = await this.prisma.user.findFirst({
-      where: { invitationToken: dto.token },
+  // ACC-120 slice 9c — the ONE way an invitation is found by its token, shared
+  // by the lookup and accept-invitation. One query, with the organisation
+  // joined, so every outcome — no row, expired, deactivated, closed tenant,
+  // open — costs the same round trip and is decided in memory afterwards: the
+  // response time cannot tell "no such token" from "found but refused".
+  //
+  // Not scoped by organizationId, deliberately: this runs before anyone is
+  // signed in, and the token — 192 random bits, unique across all tenants — IS
+  // the key. The organisation comes from the row, never from the caller.
+  private findInvitation(token: string) {
+    return this.prisma.user.findFirst({
+      where: { invitationToken: token },
+      include: {
+        organization: { select: { name: true, nameAr: true, status: true } },
+      },
     });
+  }
 
-    if (!user || !user.invitationExpiresAt || user.invitationExpiresAt < new Date()) {
-      // Deliberately generic — never reveal whether the token was ever valid.
-      throw new BadRequestException('Invalid or expired invitation');
+  // ACC-120 slice 9c — which organisation is inviting this person, for the
+  // Accept invitation page. Read-only: it never consumes, extends or changes the
+  // invitation.
+  //
+  // Returns EXACTLY { name, nameAr } — no email, inviter, role, slug or logo.
+  // Every other case gets the one InvitationRefusalException body, byte for
+  // byte: unknown, expired, used, revoked, deactivated invitee, closed tenant,
+  // and any body that is not exactly `{ token: <48 hex> }`.
+  //
+  // The body arrives `unknown`, on purpose. With a DTO class the global
+  // ValidationPipe (whitelist + forbidNonWhitelisted) would answer a malformed
+  // body itself, with its own message — a second refusal shape. A plain object
+  // type is not validated by the pipe at all, so the shape check is here, and a
+  // bad shape is refused exactly like a bad token.
+  async lookupInvitation(
+    body: unknown,
+  ): Promise<{ name: string; nameAr: string | null }> {
+    const token =
+      typeof body === 'object' &&
+      body !== null &&
+      !Array.isArray(body) &&
+      Object.keys(body).length === 1
+        ? (body as Record<string, unknown>)['token']
+        : undefined;
+    if (typeof token !== 'string' || !INVITATION_TOKEN_SHAPE.test(token)) {
+      throw new InvitationRefusalException();
+    }
+
+    const invitation = await this.findInvitation(token);
+    if (!isOpenInvitation(invitation, new Date())) {
+      throw new InvitationRefusalException();
+    }
+    return {
+      name: invitation.organization.name,
+      nameAr: invitation.organization.nameAr,
+    };
+  }
+
+  async acceptInvitation(dto: AcceptInvitationDto): Promise<void> {
+    const user = await this.findInvitation(dto.token);
+
+    // ACC-120 slice 9c — the same open-invitation rule the lookup applies, so
+    // the page and the accept can never disagree. Two holes this closes: a
+    // deactivated invitee kept a live token (deactivate() does not clear it),
+    // and accepting made them ACTIVE again; and a SUSPENDED, CANCELLED or
+    // OFFBOARDING tenant's invitations still accepted. Deliberately generic, as
+    // before — the status and message are unchanged, plus the code.
+    if (!isOpenInvitation(user, new Date())) {
+      throw new InvitationRefusalException();
     }
 
     const namespacedEmail = AuthService.namespacedEmail(user.organizationId, user.email);

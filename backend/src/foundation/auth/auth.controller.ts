@@ -101,6 +101,16 @@ export class AuthController {
     return this.authService.logout(req, res);
   }
 
+  // ACC-120 slice 9c — which organisation is inviting the holder of a token.
+  // Public, like accept-invitation: the caller has no account yet. POST so the
+  // token travels in the body and never lands in a URL or an access log. The
+  // body is `unknown` on purpose — see AuthService.lookupInvitation().
+  @Post('invitations/lookup')
+  @HttpCode(HttpStatus.OK)
+  lookupInvitation(@Body() body: unknown) {
+    return this.authService.lookupInvitation(body);
+  }
+
   @Post('accept-invitation')
   @HttpCode(HttpStatus.OK)
   acceptInvitation(@Body() dto: AcceptInvitationDto) {
