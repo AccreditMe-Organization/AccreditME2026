@@ -157,7 +157,18 @@ export class PlatformTenantService {
   }
 
   async suspendTenant(id: string, actorId: string): Promise<void> {
-    await this.assertTenantExists(id);
+    const org = await this.assertTenantExists(id);
+    // ACC-168 — the platform organisation is never closed. A closed
+    // organisation is refused by TenantGuard on every request, and the guard
+    // deliberately makes no exception for it, so suspending the platform would
+    // lock every platform administrator out of the means to reopen it. This is
+    // the only path that writes a closed status (UpdateTenantDto has no status
+    // field; creation defaults to TRIAL), so it is the only guard needed.
+    if (org.isPlatformOrg) {
+      throw new ConflictException(
+        'The platform organization cannot be suspended',
+      );
+    }
     await this.prisma.organization.update({ where: { id }, data: { status: 'SUSPENDED' } });
     await this.auditLog.log({
       tenantId: id,
