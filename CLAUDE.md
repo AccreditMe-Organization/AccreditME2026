@@ -2846,6 +2846,8 @@ Full mechanism detail: SYSTEM-REFERENCE.md Section 3.10. The decisions, briefly:
   `tasks:reassign` holders may also decide; nobody decides their own request.
 - **A hold pauses the SLA, in WORKING time.** On resume, `dueAt` moves by the
   working hours the task was held (`workingHoursBetween` → `calculateDeadline`).
+  **SUPERSEDED (ACC-174): the window now moves at APPROVAL, and resume shifts
+  nothing** — see the ACC-174 entry below.
   A held task is never overdue, never escalated, and still blocks its stage.
   Start, complete, reject and release refuse with *"Resume the task first"*;
   evidence may still be added. **The stage's own `slaDueAt` is NOT shifted** —
@@ -2870,6 +2872,55 @@ Full mechanism detail: SYSTEM-REFERENCE.md Section 3.10. The decisions, briefly:
   live app's older Prisma client does not know the value, so a held row can
   break its task queries. Every hold made while verifying on dev is resumed or
   closed before finishing, and no request is left PENDING.
+
+---
+
+## Key Architecture Decisions (ACC-174)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 3.11 (and 3.10 for the hold
+change). The decisions — Ahmad's, 6 October — briefly:
+
+- **EVERY TASK HAS AN SLA LIMIT, and a person's due date may not pass it.** The
+  limit is the priority SLA (`taskSla[priority].dueAfterHours`, working hours)
+  from the task's SLA start; New task, every edit and every reopen are capped,
+  400 naming the limit and the priority. **The only ways past it** are an
+  approved request for more time (the limit rises to the approved date and
+  never falls; `slaExtendedTo` keeps it as a floor) and — TEMPORARILY, until
+  stage task definitions (CF-07) — an engine-created task whose stage sets a
+  longer SLA, which raises the limit instead of being refused inside the
+  transition. With CF-07 every stage task takes its due date from its own
+  priority SLA counted from stage entry, and the stage SLA stays the record's
+  clock only.
+- **One home for the rule: `TaskSlaService`.** No screen does working-hours
+  arithmetic: the pickers read the server's SLA preview (`GET /tasks/sla-preview`
+  for New task, `GET /tasks/:id/sla-preview` for Edit, `?restart=true` for
+  Reopen), every priority at once.
+- **A priority change recomputes from the SLA start, and may land in the past.**
+  "Must be in the future" applies only to a date a person SENDS; a recomputed
+  one is the SLA's truth, and the overdue flag shows it. Escalation stamps are
+  cleared only when the new due date is still ahead.
+- **A HOLD MOVES THE WINDOW AT APPROVAL** (this changed ACC-173): due date, SLA
+  start, limit and extension all move forward by the working hours between the
+  approval and the hold date. Resume — by hand or by the sweep — shifts nothing,
+  so an early resume keeps the later dates.
+- **Only the creator edits, cancels and reopens** — or whoever acts for them
+  (`canActForCreator()`), or a `tasks:reassign` holder while the creator is no
+  longer ACTIVE. **`TaskService.mayManage()` is the ONE place this rule lives**,
+  including every list row's `canManage`, and `tasks:reassign` appears in ONE
+  line of it: Ahmad's new task permission model (relationships always count,
+  plus View all / Create / Manage tasks per record type) replaces it with
+  "Manage tasks", and that must stay a one-line change. Everyone else gets the
+  identical 404 before any 409.
+- **Cancel takes a reason the assignees read; the engine's cancels leave the
+  reason null.** It ends a hold and pending requests and keeps the assignee
+  rows. **A workflow stage task cannot be cancelled by hand** until CF-07 says
+  which stage tasks are optional — a mandatory one holds its step until done.
+- **Reopen sends a completed task back to the people who were on it at
+  completion**, restarts its SLA from now, keeps its evidence, and is refused
+  for a stage task whose record has left that step.
+- **The backfill runs AFTER the deploy, dry run first** (`npm run
+  backfill:acc174-task-sla-limit`). Until it runs, a null limit reads as exactly
+  what the backfill writes, so running it changes nothing a person sees.
 
 ---
 
