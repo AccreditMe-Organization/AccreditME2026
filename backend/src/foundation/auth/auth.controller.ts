@@ -7,6 +7,9 @@ import { ImpersonatedBy } from '../../common/decorators/impersonated-by.decorato
 import { UserService } from '../user/user.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { AuthService } from './auth.service';
+import { RATE_LIMITS } from '../../common/throttle/rate-limits';
+import { perAddress } from '../../common/throttle/throttle.config';
+import { LimitResetsPerEmail } from '../../common/throttle/accreditme-throttler.guard';
 import { LoginDto } from './dto/login.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
@@ -59,7 +62,11 @@ export class AuthController {
     return { id: user.id, email: user.email, name: user.name, language, timeZone, hijriDisplay, impersonatedBy };
   }
 
+  // ACC-129 — the public auth routes each have their own limit, counted per
+  // address (common/throttle/rate-limits.ts). Generous on sign-in: the
+  // per-account lockout is what stops password guessing.
   @Post('login')
+  @perAddress(RATE_LIMITS.login)
   @HttpCode(HttpStatus.OK)
   login(
     @Body() dto: LoginDto,
@@ -70,6 +77,7 @@ export class AuthController {
   }
 
   @Post('mfa/verify')
+  @perAddress(RATE_LIMITS.mfaVerify)
   @HttpCode(HttpStatus.OK)
   verifyMfa(
     @Body() dto: VerifyMfaDto,
@@ -89,6 +97,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @perAddress(RATE_LIMITS.refresh)
   @HttpCode(HttpStatus.OK)
   refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.authService.refresh(req, res);
@@ -106,24 +115,31 @@ export class AuthController {
   // token travels in the body and never lands in a URL or an access log. The
   // body is `unknown` on purpose — see AuthService.lookupInvitation().
   @Post('invitations/lookup')
+  @perAddress(RATE_LIMITS.invitationLookup)
   @HttpCode(HttpStatus.OK)
   lookupInvitation(@Body() body: unknown) {
     return this.authService.lookupInvitation(body);
   }
 
   @Post('accept-invitation')
+  @perAddress(RATE_LIMITS.acceptInvitation)
   @HttpCode(HttpStatus.OK)
   acceptInvitation(@Body() dto: AcceptInvitationDto) {
     return this.authService.acceptInvitation(dto);
   }
 
+  // Two limits: per address, and per organisation + email — so nobody can
+  // flood one inbox, or the Resend quota, from many addresses.
   @Post('forgot-password')
+  @perAddress(RATE_LIMITS.forgotPassword)
+  @LimitResetsPerEmail()
   @HttpCode(HttpStatus.OK)
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
   @Post('reset-password')
+  @perAddress(RATE_LIMITS.resetPassword)
   @HttpCode(HttpStatus.OK)
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
