@@ -14,6 +14,8 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
+import type { ResolvedPlacement } from '../task/task-assignment.service';
+import { PoolPlacement, resolvePoolMemberIds } from '../task/task-pool';
 import { RoleService } from '../roles/role.service';
 import { OrganizationService } from '../organization/organization.service';
 import {
@@ -969,10 +971,25 @@ export class WorkflowService {
       };
     }
 
+    // ACC-167 (decision 10) — a POSITION_FIXED stage, or a COMMITTEE stage
+    // narrowed to a member role, creates a POOL task: assigned to the position
+    // in its unit (or the role on its committee), with nobody on it until a
+    // member picks it up. A single-holder position still goes straight to its
+    // holder. Every other strategy is unchanged — including ROLE, which stays
+    // until stage task definitions replace CREATE_TASK.
+    //
+    // Approvals and transition gating never read task rows (resolveApproverPool,
+    // the ASSIGNEE_POOL trigger), so this changes who does the WORK, never who
+    // may approve or move the record.
+    const stagePool = await this.resolveStagePool(toStage, organizationId);
+
     // Full resolved assigneeIds array passed through — fixes the original
     // bug where only assigneeIds[0] was ever used, silently dropping every
     // other assignee for PARALLEL/COMMITTEE stages.
-    const assigneeIds = await this.resolveAssignee(toStage, instance, organizationId);
+    const assigneeIds = stagePool?.pooled ? [] : await this.resolveAssignee(toStage, instance, organizationId);
+    const placement: ResolvedPlacement | undefined = stagePool
+      ? { ...stagePool, directUserIds: assigneeIds }
+      : undefined;
     const subjectLabel = await this.resolveObjectSubjectLabel(instance, organizationId);
 
     // ACC-40 Section 2.6.3 — computed once, per assignee, at exactly the
@@ -1013,11 +1030,49 @@ export class WorkflowService {
       },
       organizationId,
       actorId,
+      placement,
     );
+
+    // A pool nobody is in right now is still a pool — it resolves at read time —
+    // but the actor is told, the way an unassigned task is.
+    if (stagePool?.pooled) {
+      const members = await resolvePoolMemberIds(this.prisma, stagePool.target, organizationId);
+      return members.length > 0
+        ? { responseSummary: `Task created for a pool of ${members.length} current member(s)`, isUnassigned: false }
+        : { responseSummary: 'Task created for a pool nobody is in yet — no one can pick it up', isUnassigned: true };
+    }
 
     return assigneeIds.length > 0
       ? { responseSummary: `Task created for ${assigneeIds.length} assignee(s)`, isUnassigned: false }
       : { responseSummary: `Task created as ${task.status} — no eligible assignee`, isUnassigned: true };
+  }
+
+  // ACC-167 — the pool a stage's task belongs to, or null for every strategy
+  // that names people. `pooled` is false for a single-holder position: its
+  // task goes straight to the holder but still remembers the pool. A
+  // committee role has no single-holder flag, so it always pools.
+  private async resolveStagePool(
+    stage: PrismaWorkflowStage,
+    organizationId: string,
+  ): Promise<PoolPlacement | null> {
+    if (stage.assigneeStrategy === 'POSITION_FIXED' && stage.assigneePositionId && stage.assigneeOrgUnitId) {
+      const position = await this.prisma.orgPosition.findFirst({
+        where: { id: stage.assigneePositionId, organizationId },
+        select: { isSingleAssignee: true },
+      });
+      if (!position) return null;
+      return {
+        target: { kind: 'POSITION', orgUnitId: stage.assigneeOrgUnitId, positionId: stage.assigneePositionId },
+        pooled: !position.isSingleAssignee,
+      };
+    }
+    if (stage.assigneeStrategy === 'COMMITTEE' && stage.committeeId && stage.assigneeCommitteeRoleValueId) {
+      return {
+        target: { kind: 'COMMITTEE_ROLE', committeeId: stage.committeeId, roleValueId: stage.assigneeCommitteeRoleValueId },
+        pooled: true,
+      };
+    }
+    return null;
   }
 
   // WorkflowObjectType → TaskSourceType. DOCUMENT_REQUEST/CHANGE_REQUEST map
