@@ -177,6 +177,42 @@ describe('TaskRequestDialogComponent (ACC-173)', () => {
     expect(document.body.querySelector('#taskRequestReason')).not.toBeNull();
   });
 
+  // ACC-174 — the opening effect read the calendar signal, so the calendar
+  // ARRIVING re-ran it and reset the form: a reason typed while the calendar
+  // was still loading vanished. Here the calendar arrives after the typing.
+  it('keeps a reason typed before the working calendar arrives', () => {
+    TestBed.configureTestingModule({
+      imports: [HostComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        ConfirmationService,
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.componentInstance.type.set('ON_HOLD');
+    fixture.detectChanges();
+    const dialog = fixture.debugElement.query(By.directive(TaskRequestDialogComponent))
+      .componentInstance as TaskRequestDialogComponent;
+
+    dialog.form.controls.reason.setValue('Supplier closed until Sunday');
+    dialog.form.controls.reason.markAsDirty();
+
+    http.match(`${environment.apiUrl}/working-calendar`).forEach((r) =>
+      r.flush({ timezone: 'Asia/Riyadh', workingDays: [0, 1, 2, 3, 4, 5, 6], workingHoursStart: '08:00', workingHoursEnd: '16:00' }),
+    );
+    http.match((r) => r.url.startsWith(`${environment.apiUrl}/working-calendar/holidays`)).forEach((r) => r.flush([]));
+    fixture.detectChanges();
+
+    expect(dialog.form.controls.reason.value).toBe('Supplier closed until Sunday');
+    expect(dialog.form.dirty).toBe(true);
+  });
+
   it('names the task in its header, in Arabic', () => {
     setup('ON_HOLD', 'ar');
     expect(document.body.textContent).toContain('طلب إيقاف «Collect the audit sample» مؤقتًا');

@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import {
   AbstractControl,
   FormBuilder,
@@ -305,15 +305,23 @@ export class TaskRequestDialogComponent {
   });
 
   constructor() {
+    // Each OPENING starts clean — keyed on the opening and the task only. The
+    // rest runs untracked: dueDates.load() and defaultTime() read the calendar
+    // signal, which changes when the calendar arrives, and re-running on that
+    // reset a reason the person had already started typing (ACC-174, the same
+    // fix as Reopen's).
     effect(() => {
       if (!this.visible()) return;
-      this.dueDates.load();
-      const due = this.task()?.dueAt ? new Date(this.task()!.dueAt!) : null;
-      this.picked.set(null);
-      this.form.reset({ date: null, time: this.defaultTime(due), reason: '' });
-      this.error.set(null);
-      this.showErrors.set(false);
-      this.closeDateView();
+      const task = this.task();
+      untracked(() => {
+        this.dueDates.load();
+        const due = task?.dueAt ? new Date(task.dueAt) : null;
+        this.picked.set(null);
+        this.form.reset({ date: null, time: this.defaultTime(due), reason: '' });
+        this.error.set(null);
+        this.showErrors.set(false);
+        this.closeDateView();
+      });
     });
 
     // The date view is a layer: Escape closes it before EditDialogComponent's
