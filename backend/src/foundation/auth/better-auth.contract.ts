@@ -56,3 +56,31 @@ export const BETTER_AUTH_TWO_FACTOR_CODES = {
   /** The user's MFA is locked after ten failures. */
   ACCOUNT_LOCKED: 'ACCOUNT_TEMPORARILY_LOCKED',
 } as const;
+
+// ---------------------------------------------------------------------------
+// Sign-up password refusals — accept-invitation, ACC-120 slice 9e.
+//
+// accept calls signUpEmail() WITHOUT asResponse, so a refusal is THROWN, as an
+// error whose `name` is 'APIError' and whose `body` carries Better Auth's
+// `{ message, code }`. The breach check runs inside password hashing
+// (plugins/haveibeenpwned), so it throws from the same call.
+// ---------------------------------------------------------------------------
+
+/** The `name` every Better Auth APIError carries (better-call's own class). */
+export const BETTER_AUTH_API_ERROR_NAME = 'APIError';
+
+/** Better Auth's codes for a password sign-up refuses. */
+export const BETTER_AUTH_PASSWORD_CODES = {
+  /** haveIBeenPwned found the password in a breach (400). */
+  COMPROMISED: 'PASSWORD_COMPROMISED',
+  /** Shorter than minPasswordLength, 8 (400). */
+  TOO_SHORT: 'PASSWORD_TOO_SHORT',
+  /** Longer than maxPasswordLength, 128 (400). */
+  TOO_LONG: 'PASSWORD_TOO_LONG',
+} as const;
+
+/**
+ * The breach check could not reach pwnedpasswords.com. It carries NO code — a
+ * 500 whose message starts with this, in both of the plugin's outage throws.
+ */
+export const BETTER_AUTH_PASSWORD_CHECK_FAILED = 'Failed to check password.';

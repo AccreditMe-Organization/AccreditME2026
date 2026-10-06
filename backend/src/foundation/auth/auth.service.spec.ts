@@ -9,6 +9,7 @@ import {
   InvitationRefusalException,
 } from './invitation-refusal';
 import { AuthService } from './auth.service';
+import { PasswordRefusalException } from './password-refusal';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
@@ -33,20 +34,27 @@ jest.mock('../../providers/auth/better-auth.config', () => ({
   createBetterAuthInstance: jest.fn(() => ({ api: mockAuthApi })),
 }));
 
-// ACC-27 consolidation: AuthService no longer imports better-auth/api or
-// branches on error identity at all — signUpEmail() failures of every shape
-// now propagate unconverted, and the global HttpExceptionFilter owns
-// translation (including the isAPIError() class-identity check this file
-// used to mock for AuthService's own benefit — see
-// http-exception.filter.spec.ts for that coverage now). MockAPIError is kept
-// only as a realistic fixture shape below, no jest.mock('better-auth/api')
-// needed anymore since nothing in this module graph imports it.
-class MockAPIError extends Error {
-  constructor(public body: { message?: string; code?: string }) {
-    super(body.message);
-    this.name = 'MockAPIError';
-  }
-}
+// ACC-27 consolidation: AuthService does not import better-auth/api (ESM-only
+// — it breaks Jest). Accept's password-refusal mapping (ACC-120 slice 9e) is
+// tested against the library's own error class rather than a look-alike:
+/**
+ * The REAL class Better Auth throws (its own APIError subclasses it), loaded
+ * from better-call's CommonJS build. Required rather than imported: under this
+ * project's "node" module resolution an import of the `better-call/error`
+ * subpath has no types (it lives only in the package's `exports` map), and
+ * Jest resolves the package ROOT to its ESM build, which it cannot run.
+ */
+type BetterAuthApiError = new (
+  status: string,
+  body?: { message?: string; code?: string },
+) => Error & {
+  statusCode: number;
+  body?: { message?: string; code?: string };
+};
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { APIError } = require('better-call/error') as {
+  APIError: BetterAuthApiError;
+};
 
 const ORG_A = 'org-a';
 const ORG_B = 'org-b';
@@ -757,7 +765,7 @@ describe('AuthService', () => {
     // used to live here). These two tests now prove the same underlying
     // fact from AuthService's side: every signUpEmail() failure, regardless
     // of shape, propagates completely unconverted.
-    it('propagates a real Better Auth APIError unconverted — no local translation remains', async () => {
+    it('propagates a Better Auth APIError that is not a password refusal unconverted', async () => {
       mockPrisma.user.findFirst.mockResolvedValue({
         id: 'user-1',
         organizationId: ORG_A,
@@ -768,9 +776,9 @@ describe('AuthService', () => {
         organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
         invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
       });
-      const apiError = new MockAPIError({
-        message: 'The password you entered has been compromised. Please choose a different password.',
-        code: 'PASSWORD_COMPROMISED',
+      const apiError = new APIError('UNPROCESSABLE_ENTITY', {
+        message: 'User already exists. Use another email.',
+        code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL',
       });
       mockAuthApi.signUpEmail.mockRejectedValue(apiError);
 
@@ -778,6 +786,71 @@ describe('AuthService', () => {
         service.acceptInvitation({ token: 'valid-token', password: 'password123' }),
       ).rejects.toBe(apiError);
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    // ACC-120 slice 9e — a password Better Auth refuses leaves accept as a
+    // stable code, and the invitation stays usable: nothing is written.
+    describe('password refusals carry stable codes (ACC-120 slice 9e)', () => {
+      beforeEach(() => {
+        mockPrisma.user.findFirst.mockResolvedValue({
+          id: 'user-1',
+          organizationId: ORG_A,
+          email: 'a@example.com',
+          name: 'A User',
+          invitationToken: 'valid-token',
+          status: 'INVITED',
+          organization: { status: 'ACTIVE', name: 'Acme', nameAr: null },
+          invitationExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+        });
+      });
+
+      async function refusalOf(thrown: Error): Promise<HttpException> {
+        mockAuthApi.signUpEmail.mockRejectedValue(thrown);
+        try {
+          await service.acceptInvitation({
+            token: 'valid-token',
+            password: 'password123',
+          });
+        } catch (e) {
+          return e as HttpException;
+        }
+        throw new Error('expected accept to refuse the password');
+      }
+
+      it.each([
+        [
+          'PASSWORD_COMPROMISED',
+          'The password you entered has been compromised. Please choose a different password.',
+        ],
+        ['PASSWORD_TOO_SHORT', 'Password too short'],
+        ['PASSWORD_TOO_LONG', 'Password too long'],
+      ])(
+        'answers Better Auth %s with 400 and the code',
+        async (code, message) => {
+          const e = await refusalOf(
+            new APIError('BAD_REQUEST', { message, code }),
+          );
+          expect(e).toBeInstanceOf(PasswordRefusalException);
+          expect(e.getStatus()).toBe(400);
+          expect(e.getResponse()).toMatchObject({ statusCode: 400, code });
+          expect(mockPrisma.user.update).not.toHaveBeenCalled();
+        },
+      );
+
+      it('answers a breach-check outage with 503 PASSWORD_CHECK_UNAVAILABLE', async () => {
+        const e = await refusalOf(
+          new APIError('INTERNAL_SERVER_ERROR', {
+            message: 'Failed to check password. Please try again later.',
+          }),
+        );
+        expect(e).toBeInstanceOf(PasswordRefusalException);
+        expect(e.getStatus()).toBe(503);
+        expect(e.getResponse()).toMatchObject({
+          statusCode: 503,
+          code: 'PASSWORD_CHECK_UNAVAILABLE',
+        });
+        expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      });
     });
 
     it('propagates a non-APIError failure unconverted too', async () => {
