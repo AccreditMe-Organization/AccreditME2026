@@ -61,6 +61,16 @@ const task = (overrides: Partial<IMyTaskListItemDto>): IMyTaskListItemDto => ({
   heldAt: null,
   onHoldUntil: null,
   heldFromStatus: null,
+  slaStartAt: null,
+  slaLimitAt: null,
+  slaExtendedTo: null,
+  cancelledReason: null,
+  cancelledAt: null,
+  cancelledById: null,
+  reopenedReason: null,
+  reopenedAt: null,
+  reopenedById: null,
+  canManage: false,
   evidenceCount: 0,
   pool: null,
   openRequest: null,
@@ -558,5 +568,87 @@ describe('MyTasksComponent — requests and holds (ACC-173)', () => {
       expect(el.textContent).toContain('بانتظار قرارك');
       expect(el.textContent).toContain('يطلب Sara إيقافها مؤقتًا حتى');
     });
+  });
+});
+
+// ACC-174 — the creator's own actions: canManage says WHO, the status WHICH.
+describe('MyTasksComponent — edit, cancel and reopen (ACC-174)', () => {
+  const API = `${environment.apiUrl}/tasks`;
+  const FUTURE = '2099-01-01T09:00:00.000Z';
+  const T = 'Submit terms of reference';
+  let http: HttpTestingController;
+
+  function render(mine: IMyTaskListItemDto[], language: 'en' | 'ar' = 'en') {
+    TestBed.configureTestingModule({
+      imports: [MyTasksComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        ConfirmationService,
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: AuthService, useValue: { currentUser: () => ({ id: 'user-me' }) } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(language);
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(MyTasksComponent);
+    fixture.detectChanges();
+    http.expectOne(`${API}/my-tasks`).flush(mine);
+    http.expectOne(`${API}/available`).flush([]);
+    http.expectOne(`${API}/requests/awaiting-decision`).flush([]);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const button = (el: HTMLElement, label: string) => el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  const edit = `Edit “${T}”`;
+  const cancel = `Cancel “${T}”`;
+  const reopen = `Reopen “${T}”`;
+
+  afterEach(() => http.verify());
+
+  it('offers Edit and Cancel on an open task the viewer may manage', () => {
+    const el = render([task({ dueAt: FUTURE, canManage: true })]);
+    expect(button(el, edit)).not.toBeNull();
+    expect(button(el, cancel)).not.toBeNull();
+    expect(button(el, reopen)).toBeNull();
+  });
+
+  it('offers none of them where the viewer may not manage the task', () => {
+    const el = render([task({ dueAt: FUTURE, canManage: false })]);
+    for (const label of [edit, cancel, reopen]) expect(button(el, label)).toBeNull();
+  });
+
+  it("offers no Cancel on a workflow step's task — it ends with its step", () => {
+    const el = render([task({ dueAt: FUTURE, canManage: true, sourceStageId: 's1', workflowInstanceId: 'i1' })]);
+    expect(button(el, edit)).not.toBeNull();
+    expect(button(el, cancel)).toBeNull();
+  });
+
+  it('offers Reopen, and only Reopen, on a completed task', () => {
+    const el = render([task({ status: 'COMPLETED', dueAt: FUTURE, canManage: true })]);
+    expect(button(el, reopen)).not.toBeNull();
+    expect(button(el, edit)).toBeNull();
+    expect(button(el, cancel)).toBeNull();
+  });
+
+  it('offers Edit on a rejected or on-hold task — both are open', () => {
+    for (const status of ['REJECTED', 'ON_HOLD']) {
+      TestBed.resetTestingModule();
+      const el = render([task({ status, dueAt: FUTURE, onHoldUntil: FUTURE, canManage: true })]);
+      expect(button(el, edit)).withContext(status).not.toBeNull();
+      http.verify();
+    }
+  });
+
+  it("says why a cancelled task was cancelled, in both languages", () => {
+    const cancelled = task({ status: 'CANCELLED', dueAt: FUTURE, cancelledReason: 'The audit was postponed' });
+    expect(render([cancelled]).textContent).toContain('Cancelled: The audit was postponed');
+    http.verify();
+    TestBed.resetTestingModule();
+    expect(render([cancelled], 'ar').textContent).toContain('أُلغيت: The audit was postponed');
   });
 });
