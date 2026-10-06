@@ -273,6 +273,24 @@ describe('AcceptInvitationComponent (ACC-120 slice 9e)', () => {
       httpMock.expectNone(ACCEPT_URL);
     });
 
+    it('an invalid submit moves focus to the password field', () => {
+      const input = el().querySelector<HTMLInputElement>('#password')!;
+      // Non-vacuity guard: the field is in the page and not already focused.
+      expect(input).not.toBeNull();
+      expect(document.activeElement).not.toBe(input);
+
+      submit('');
+      expect(document.activeElement).toBe(input);
+      httpMock.expectNone(ACCEPT_URL);
+    });
+
+    it('a password the server refuses moves focus to the field too', () => {
+      submit('password123');
+      (el().querySelector('.am-password__toggle') as HTMLElement).focus();
+      refuseAccept(passwordRefusal('PASSWORD_COMPROMISED'), 400);
+      expect(document.activeElement).toBe(el().querySelector('#password'));
+    });
+
     it('the password field has a show/hide button', () => {
       const toggle = el().querySelector('.am-password__toggle')!;
       expect(toggle.tagName).toBe('BUTTON');

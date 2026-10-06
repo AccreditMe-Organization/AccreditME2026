@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  ElementRef,
   computed,
   inject,
   signal,
@@ -21,6 +22,7 @@ import {
   SKELETON_DELAY_MS,
 } from '../../../../core/request-outcome/request-outcome';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { focusFirstInvalid } from '../../../../shared/components/field/reveal-errors';
 import { PasswordInputComponent } from '../../../../shared/components/password-input/password-input.component';
 import { AuthLayoutComponent } from '../auth-layout/auth-layout.component';
 
@@ -157,6 +159,7 @@ export class AcceptInvitationComponent {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** In memory only — see the class comment. */
   private readonly token: string | null;
@@ -216,7 +219,12 @@ export class AcceptInvitationComponent {
 
   onSubmit(): void {
     const control = this.form.controls.password;
-    if (this.form.invalid || !this.token || this.submitting()) return;
+    if (this.form.invalid) {
+      // am-field reveals the error on submit; focus goes to it.
+      focusFirstInvalid(this.form, this.host);
+      return;
+    }
+    if (!this.token || this.submitting()) return;
     this.submitting.set(true);
     this.submitError.set(null);
 
@@ -294,11 +302,12 @@ export class AcceptInvitationComponent {
     this.submitError.set('auth.invitation.errorGeneric');
   }
 
-  /** A refusal of the password itself: on the field. */
+  /** A refusal of the password itself: on the field, with focus on it. */
   private refusePassword(errors: Record<string, true>): void {
     const control = this.form.controls.password;
     control.setErrors(errors);
     control.markAsTouched();
+    focusFirstInvalid(this.form, this.host);
   }
 }
 

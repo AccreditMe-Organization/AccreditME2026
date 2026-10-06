@@ -32,11 +32,27 @@ import { FormGroup } from '@angular/forms';
  */
 export function revealAndFocusFirstInvalid(form: FormGroup, host: ElementRef<HTMLElement>): void {
   form.markAllAsTouched();
+  focusFirstInvalid(form, host);
+}
 
+const FOCUSABLE = 'input, textarea, select, button, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * The focus half alone — ACC-120 slice 9e. For a SUBMIT, where `am-field`
+ * already reveals the errors and only focus is left to do; and for an error
+ * the server put on a field after the submit returned.
+ *
+ * Same control-order rule as above. If what matches is a wrapper rather than a
+ * control — `[formcontrolname]` lands on a component's host, which cannot take
+ * focus — the first focusable element inside it is focused instead.
+ */
+export function focusFirstInvalid(form: FormGroup, host: ElementRef<HTMLElement>): void {
   const firstInvalid = Object.keys(form.controls).find((name) => form.get(name)?.invalid);
   if (!firstInvalid) return;
 
-  host.nativeElement
-    .querySelector<HTMLElement>(`#${firstInvalid}, [formcontrolname="${firstInvalid}"]`)
-    ?.focus();
+  const match = host.nativeElement.querySelector<HTMLElement>(
+    `#${firstInvalid}, [formcontrolname="${firstInvalid}"]`,
+  );
+  const target = match?.matches(FOCUSABLE) ? match : match?.querySelector<HTMLElement>(FOCUSABLE);
+  target?.focus();
 }
