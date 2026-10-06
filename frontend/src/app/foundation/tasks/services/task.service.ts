@@ -44,6 +44,10 @@ export interface ITaskDto {
   // SlaMonitorProcessor, never by any caller.
   managerEscalatedAt: string | null;
   headEscalatedAt: string | null;
+  // ACC-173 — set only while the task is ON_HOLD (an approved hold request).
+  heldAt: string | null;
+  onHoldUntil: string | null;
+  heldFromStatus: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -80,6 +84,48 @@ export interface ITaskListItemDto extends ITaskDto {
   // ACC-167 — the pool, named for display; null when the task went to named
   // people only. Names are tenant data: shown by language, never translated.
   pool: TaskPoolDto | null;
+  // ACC-173 — the task's PENDING extension or hold request, if any.
+  openRequest: TaskOpenRequestDto | null;
+}
+
+// ACC-173 — mirrors the backend's ITaskOpenRequest. At most one per task.
+export type TaskRequestType = 'EXTENSION' | 'ON_HOLD';
+
+export interface TaskOpenRequestDto {
+  id: string;
+  type: TaskRequestType;
+  requestedDueAt: string | null;
+  holdUntil: string | null;
+  requestedById: string;
+  requestedByName: string;
+  reason: string;
+  createdAt: string;
+}
+
+/** A row of "Waiting for your decision". */
+export interface TaskRequestForDecisionDto extends TaskOpenRequestDto {
+  task: {
+    id: string;
+    title: string;
+    sourceType: string;
+    sourceId: string;
+    status: string;
+    priority: string;
+    dueAt: string | null;
+  };
+}
+
+// The new due date, or the hold date, as an ISO instant (New task's
+// convention: the picked day and time read in the browser's zone).
+export type CreateTaskRequestDto =
+  | { type: 'EXTENSION'; requestedDueAt: string; reason: string }
+  | { type: 'ON_HOLD'; holdUntil: string; reason: string };
+
+export interface TaskRequestDto {
+  id: string;
+  taskId: string;
+  type: TaskRequestType;
+  status: string;
 }
 
 // ACC-167 — mirrors the backend's ITaskPoolView. A POSITION pool fills the
@@ -299,6 +345,35 @@ export class TaskService {
   // server decides, and refuses anyone else as not found.
   reassign(id: string, dto: ReassignTaskDto): Observable<ITaskDto> {
     return this.http.post<ITaskDto>(`${this.base}/${id}/reassign`, dto);
+  }
+
+  // ACC-173 — extension and hold requests. The server decides who may: the
+  // assignee asks, the asker withdraws, the creator (or their cover, or a
+  // tasks:reassign holder) decides. Anyone else is told the task is not found.
+  requestChange(taskId: string, dto: CreateTaskRequestDto): Observable<TaskRequestDto> {
+    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests`, dto);
+  }
+
+  withdrawRequest(taskId: string, requestId: string): Observable<TaskRequestDto> {
+    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests/${requestId}/withdraw`, {});
+  }
+
+  approveRequest(taskId: string, requestId: string, note?: string): Observable<TaskRequestDto> {
+    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests/${requestId}/approve`, note ? { note } : {});
+  }
+
+  declineRequest(taskId: string, requestId: string, note: string): Observable<TaskRequestDto> {
+    return this.http.post<TaskRequestDto>(`${this.base}/${taskId}/requests/${requestId}/decline`, { note });
+  }
+
+  // "Resume now" — the assignee, or anyone who may decide.
+  resume(taskId: string): Observable<ITaskDto> {
+    return this.http.post<ITaskDto>(`${this.base}/${taskId}/resume`, {});
+  }
+
+  // "Waiting for your decision" — self-scoped.
+  getAwaitingDecision(): Observable<TaskRequestForDecisionDto[]> {
+    return this.http.get<TaskRequestForDecisionDto[]>(`${this.base}/requests/awaiting-decision`);
   }
 
   addEvidence(taskId: string, dto: AddTaskEvidenceDto): Observable<{ id: string }> {

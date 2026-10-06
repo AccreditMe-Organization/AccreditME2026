@@ -9,7 +9,14 @@ import ar from '../../../../../assets/i18n/ar.json';
 import { environment } from '../../../../../environments/environment';
 import { TestFormatContext } from '../../../../core/formatting/format-context';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
-import { IMyTaskListItemDto, ITaskListItemDto, TaskPoolDto } from '../../services/task.service';
+import {
+  IMyTaskListItemDto,
+  ITaskListItemDto,
+  TaskOpenRequestDto,
+  TaskPoolDto,
+  TaskRequestForDecisionDto,
+} from '../../services/task.service';
+import { AuthService } from '../../../../core/services/auth.service';
 import { MyTasksComponent } from './my-tasks.component';
 
 // ACC-94 — DEFECT 3. The due date rendered through Angular's DatePipe with no
@@ -51,8 +58,12 @@ const task = (overrides: Partial<IMyTaskListItemDto>): IMyTaskListItemDto => ({
   pooledAt: null,
   poolEscalateAt: null,
   poolEscalatedAt: null,
+  heldAt: null,
+  onHoldUntil: null,
+  heldFromStatus: null,
   evidenceCount: 0,
   pool: null,
+  openRequest: null,
   pickedByMe: false,
   managerEscalatedAt: null,
   headEscalatedAt: null,
@@ -85,6 +96,7 @@ describe('MyTasksComponent — due dates (ACC-94)', () => {
     TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/tasks/my-tasks`).flush(options.tasks);
     // ACC-167 — nothing waiting in the viewer's pools.
     TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/tasks/available`).flush([]);
+    TestBed.inject(HttpTestingController).expectOne(`${environment.apiUrl}/tasks/requests/awaiting-decision`).flush([]);
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
   }
@@ -126,7 +138,12 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
 
   let http: HttpTestingController;
 
-  function render(tasks: IMyTaskListItemDto[], language: 'en' | 'ar' = 'en', available: ITaskListItemDto[] = []) {
+  function render(
+    tasks: IMyTaskListItemDto[],
+    language: 'en' | 'ar' = 'en',
+    available: ITaskListItemDto[] = [],
+    awaiting: TaskRequestForDecisionDto[] = [],
+  ) {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
@@ -148,6 +165,7 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
     fixture.detectChanges();
     http.expectOne(`${API}/my-tasks`).flush(tasks);
     http.expectOne(`${API}/available`).flush(available);
+    http.expectOne(`${API}/requests/awaiting-decision`).flush(awaiting);
     fixture.detectChanges();
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }
@@ -292,7 +310,12 @@ describe('MyTasksComponent — pools (ACC-167)', () => {
 
   let http: HttpTestingController;
 
-  function render(mine: IMyTaskListItemDto[], available: ITaskListItemDto[], language: 'en' | 'ar' = 'en') {
+  function render(
+    mine: IMyTaskListItemDto[],
+    available: ITaskListItemDto[],
+    language: 'en' | 'ar' = 'en',
+    awaiting: TaskRequestForDecisionDto[] = [],
+  ) {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
@@ -312,6 +335,7 @@ describe('MyTasksComponent — pools (ACC-167)', () => {
     fixture.detectChanges();
     http.expectOne(`${API}/my-tasks`).flush(mine);
     http.expectOne(`${API}/available`).flush(available);
+    http.expectOne(`${API}/requests/awaiting-decision`).flush(awaiting);
     fixture.detectChanges();
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }
@@ -350,6 +374,7 @@ describe('MyTasksComponent — pools (ACC-167)', () => {
     req.flush({});
     http.expectOne(`${API}/my-tasks`).flush([]);
     http.expectOne(`${API}/available`).flush([]);
+    http.expectOne(`${API}/requests/awaiting-decision`).flush([]);
   });
 
   // Someone else was first: the server's own sentence, and the row leaves.
@@ -362,6 +387,7 @@ describe('MyTasksComponent — pools (ACC-167)', () => {
       .flush({ message: 'This task has already been picked up' }, { status: 409, statusText: 'Conflict' });
     http.expectOne(`${API}/my-tasks`).flush([]);
     http.expectOne(`${API}/available`).flush([]);
+    http.expectOne(`${API}/requests/awaiting-decision`).flush([]);
     fixture.detectChanges();
 
     expect(el.textContent).toContain('This task has already been picked up');
@@ -381,5 +407,156 @@ describe('MyTasksComponent — pools (ACC-167)', () => {
 
     expect(button(el, 'Release “Submit terms of reference”')).toBeNull();
     expect(button(el, 'Reject “Submit terms of reference”')).not.toBeNull();
+  });
+});
+
+// ACC-173 — requests for more time and holds.
+describe('MyTasksComponent — requests and holds (ACC-173)', () => {
+  const API = `${environment.apiUrl}/tasks`;
+  const FUTURE = '2099-01-01T09:00:00.000Z';
+  const ME = 'user-me';
+
+  let http: HttpTestingController;
+
+  function render(mine: IMyTaskListItemDto[], awaiting: TaskRequestForDecisionDto[] = [], language: 'en' | 'ar' = 'en') {
+    TestBed.configureTestingModule({
+      imports: [MyTasksComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        ConfirmationService,
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: AuthService, useValue: { currentUser: () => ({ id: ME }) } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(language);
+    http = TestBed.inject(HttpTestingController);
+
+    const fixture = TestBed.createComponent(MyTasksComponent);
+    fixture.detectChanges();
+    http.expectOne(`${API}/my-tasks`).flush(mine);
+    http.expectOne(`${API}/available`).flush([]);
+    http.expectOne(`${API}/requests/awaiting-decision`).flush(awaiting);
+    fixture.detectChanges();
+    return { fixture, el: fixture.nativeElement as HTMLElement };
+  }
+
+  const button = (el: HTMLElement, label: string) =>
+    el.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  const T = 'Submit terms of reference';
+
+  const pending = (overrides: Partial<TaskOpenRequestDto> = {}): TaskOpenRequestDto => ({
+    id: 'req-1',
+    type: 'EXTENSION',
+    requestedDueAt: '2099-02-01T13:00:00.000Z',
+    holdUntil: null,
+    requestedById: ME,
+    requestedByName: 'Me',
+    reason: 'Waiting on the lab',
+    createdAt: '2026-10-06T08:00:00.000Z',
+    ...overrides,
+  });
+
+  afterEach(() => http.verify());
+
+  it('offers "Request more time" and "Ask to put on hold" on an Assigned task with nothing pending', () => {
+    const { el } = render([task({ dueAt: FUTURE })]);
+    expect(button(el, `Request more time on “${T}”`)).not.toBeNull();
+    expect(button(el, `Ask to put “${T}” on hold`)).not.toBeNull();
+  });
+
+  it('shows a pending request on the row, with Withdraw for the person who asked — and no second request', () => {
+    const { el } = render([task({ dueAt: FUTURE, openRequest: pending() })]);
+
+    expect(el.textContent).toContain('More time requested · to');
+    expect(button(el, `Withdraw the request on “${T}”`)).not.toBeNull();
+    expect(button(el, `Request more time on “${T}”`)).toBeNull();
+  });
+
+  it('offers no Withdraw on a request a co-assignee made', () => {
+    const { el } = render([task({ dueAt: FUTURE, openRequest: pending({ requestedById: 'someone-else' }) })]);
+    expect(button(el, `Withdraw the request on “${T}”`)).toBeNull();
+  });
+
+  it('Withdraw posts to the request and reloads', () => {
+    const { el } = render([task({ dueAt: FUTURE, openRequest: pending() })]);
+
+    button(el, `Withdraw the request on “${T}”`)!.click();
+    const req = http.expectOne(`${API}/task-1/requests/req-1/withdraw`);
+    expect(req.request.method).toBe('POST');
+    req.flush({});
+    http.expectOne(`${API}/my-tasks`).flush([]);
+  });
+
+  it('an on-hold row says until when, offers Resume now and evidence — and nothing else', () => {
+    const { el } = render([
+      task({ status: 'ON_HOLD', heldFromStatus: 'IN_PROGRESS', onHoldUntil: '2099-01-10T05:00:00.000Z', dueAt: FUTURE }),
+    ]);
+
+    expect(el.textContent).toContain('On hold until 10 Jan 2099');
+    expect(el.textContent).toContain('On hold');
+    expect(button(el, `Resume “${T}” now`)).not.toBeNull();
+    expect(button(el, `Add link evidence to “${T}”`)).not.toBeNull();
+    for (const label of [`Start “${T}”`, `Complete “${T}”`, `Reject “${T}”`, `Request more time on “${T}”`]) {
+      expect(button(el, label)).toBeNull();
+    }
+  });
+
+  it('an on-hold task past its due date is not flagged overdue — its SLA is paused', () => {
+    const { el } = render([task({ status: 'ON_HOLD', onHoldUntil: FUTURE, dueAt: '2026-01-01T09:00:00.000Z' })]);
+    // The status cell: its own tags, one by one ("Overdue" is also a filter).
+    const tags = Array.from(el.querySelectorAll('tbody tr td')[4]?.querySelectorAll('p-tag') ?? []).map((t) =>
+      t.textContent?.trim(),
+    );
+    expect(tags).toEqual(['On hold']);
+  });
+
+  it('Resume now posts to /resume and reloads', () => {
+    const { el } = render([task({ status: 'ON_HOLD', onHoldUntil: FUTURE, dueAt: FUTURE })]);
+
+    button(el, `Resume “${T}” now`)!.click();
+    const req = http.expectOne(`${API}/task-1/resume`);
+    expect(req.request.method).toBe('POST');
+    req.flush({});
+    http.expectOne(`${API}/my-tasks`).flush([]);
+  });
+
+  describe('Waiting for your decision', () => {
+    const inbox = (overrides: Partial<TaskRequestForDecisionDto> = {}): TaskRequestForDecisionDto => ({
+      ...pending({ requestedById: 'sara', requestedByName: 'Sara' }),
+      task: {
+        id: 'task-9',
+        title: 'Collect the sample',
+        sourceType: 'COMMITTEE',
+        sourceId: 'c1',
+        status: 'PENDING',
+        priority: 'MEDIUM',
+        dueAt: FUTURE,
+      },
+      ...overrides,
+    });
+
+    it('renders nothing when nothing is waiting', () => {
+      const { el } = render([]);
+      expect(el.textContent).not.toContain('Waiting for your decision');
+    });
+
+    it('lists what was asked, by whom and why, with Review', () => {
+      const { el } = render([], [inbox()]);
+
+      expect(el.textContent).toContain('Waiting for your decision');
+      expect(el.textContent).toContain('Sara asks for the due date to move to');
+      expect(el.textContent).toContain('Reason: Waiting on the lab');
+      expect(button(el, 'Review the request on “Collect the sample”')).not.toBeNull();
+    });
+
+    it('names a hold request in Arabic', () => {
+      const { el } = render([], [inbox({ type: 'ON_HOLD', requestedDueAt: null, holdUntil: '2099-01-10T05:00:00.000Z' })], 'ar');
+      expect(el.textContent).toContain('بانتظار قرارك');
+      expect(el.textContent).toContain('يطلب Sara إيقافها مؤقتًا حتى');
+    });
   });
 });

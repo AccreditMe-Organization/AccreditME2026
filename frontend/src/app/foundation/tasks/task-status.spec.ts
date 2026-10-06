@@ -52,4 +52,13 @@ describe('task-status (ACC-163)', () => {
     expect(isTaskOverdue({ status: 'COMPLETED', dueAt: PAST }, NOW)).toBe(false);
     expect(isTaskOverdue({ status: 'CANCELLED', dueAt: PAST }, NOW)).toBe(false);
   });
+
+  // ACC-173 — on hold is open (it still holds its stage) but never overdue: its
+  // SLA is paused, and its due date moves forward when it resumes.
+  it('is open but never overdue while on hold', () => {
+    expect(isTaskOpen({ status: 'ON_HOLD' })).toBe(true);
+    expect(isTaskOverdue({ status: 'ON_HOLD', dueAt: PAST }, NOW)).toBe(false);
+    expect(taskStatusLabelKey({ status: 'ON_HOLD' })).toBe('task.status.on_hold');
+    expect(taskStatusSeverity({ status: 'ON_HOLD' })).toBe('info');
+  });
 });

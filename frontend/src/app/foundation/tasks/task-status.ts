@@ -17,6 +17,10 @@ import { ITaskDto } from './services/task.service';
 //      due time has passed. "Open" is the server's own definition (not
 //      COMPLETED, not CANCELLED) — the stage gate's — so a rejected task past
 //      its due date is overdue too, because the work is still owed.
+//
+//   4. ACC-173 — an ON_HOLD task is open (it still holds its stage) but never
+//      overdue: its SLA is paused, and its due date moves forward when it
+//      resumes.
 
 type TaskStatusLike = Pick<ITaskDto, 'status'>;
 type DueTask = Pick<ITaskDto, 'dueAt' | 'status'>;
@@ -39,6 +43,7 @@ export function taskStatusSeverity(task: TaskStatusLike): TaskStatusSeverity {
     case 'COMPLETED':
       return 'success';
     case 'IN_PROGRESS':
+    case 'ON_HOLD':
       return 'info';
     case 'REJECTED':
     case 'UNASSIGNED':
@@ -54,6 +59,6 @@ export function isTaskOpen(task: TaskStatusLike): boolean {
 
 // Compares instants, so it is correct in any time zone.
 export function isTaskOverdue(task: DueTask, now: Date = new Date()): boolean {
-  if (!task.dueAt || !isTaskOpen(task)) return false;
+  if (!task.dueAt || !isTaskOpen(task) || task.status === 'ON_HOLD') return false;
   return new Date(task.dueAt).getTime() < now.getTime();
 }
