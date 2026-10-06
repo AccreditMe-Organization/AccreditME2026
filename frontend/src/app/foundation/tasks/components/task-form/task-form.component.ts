@@ -708,9 +708,11 @@ export class TaskFormComponent implements OnInit {
     return window ? new Date(window.limitAt) : null;
   });
 
+  // A sentence to READ, so the display format — "8 أكتوبر 2026" in Arabic —
+  // not dateTimeForInput, which keeps English months for a value typed back.
   readonly limitText = computed(() => {
     const at = this.limit();
-    return at ? this.format.dateTimeForInput(at) : '';
+    return at ? this.format.dateTime(at) : '';
   });
 
   /**
@@ -735,7 +737,7 @@ export class TaskFormComponent implements OnInit {
     const window = this.preview()?.[this.priority() as TaskPriority];
     if (!window) return '';
     return this.translate.instant('task.edit.dueBecomes', {
-      date: this.format.dateTimeForInput(new Date(window.dueAt)),
+      date: this.format.dateTime(new Date(window.dueAt)),
     });
   });
 
@@ -1108,8 +1110,12 @@ export class TaskFormComponent implements OnInit {
     if (at === null) this.activePreset.set(null);
 
     const control = this.form.controls.dueDate;
-    control.setValue(at);
+    // Dirty BEFORE the value: setValue() fires valueChanges, which is where
+    // dirtyChange is emitted, and a control marked after it reads clean — so
+    // a change to the due date alone never reached the dialog's "Discard
+    // changes?" guard. Seen in the ACC-174 browser pass, on Edit.
     control.markAsDirty();
+    control.setValue(at);
     this.refreshDueErrors(control);
   }
 

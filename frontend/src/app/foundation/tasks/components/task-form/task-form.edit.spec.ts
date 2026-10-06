@@ -143,6 +143,16 @@ describe('TaskFormComponent — the SLA limit and Edit (ACC-174)', () => {
       expect(saved).toHaveBeenCalled();
     });
 
+    // Found in the browser pass: the control was marked dirty AFTER setValue(),
+    // so the change event reported a clean form and Escape discarded silently.
+    it('a change to the due date alone reports the form dirty, so Escape asks first', () => {
+      setup(TASK, preview);
+      const dirty: boolean[] = [];
+      component.dirtyChange.subscribe((d) => dirty.push(d));
+      component.onDayPicked(inDays(2));
+      expect(dirty.at(-1)).toBe(true);
+    });
+
     it('changing nothing sends nothing', () => {
       setup(TASK, preview);
       const saved = jasmine.createSpy('saved');

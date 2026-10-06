@@ -272,7 +272,7 @@ export class TaskReopenDialogComponent {
   readonly dueHint = computed(() => {
     const limit = this.limit();
     return limit
-      ? this.translate.instant('task.reopen.defaultDue', { date: this.format.dateTimeForInput(limit) })
+      ? this.translate.instant('task.reopen.defaultDue', { date: this.format.dateTime(limit) })
       : '';
   });
 
