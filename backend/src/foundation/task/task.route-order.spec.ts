@@ -22,6 +22,7 @@ import { TenantGuard } from '../../common/guards/tenant.guard';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { TaskRequestService } from './task-request.service';
 
 describe('Task routes — static paths are not swallowed by :id (ACC-167)', () => {
   let app: INestApplication<App>;
@@ -32,6 +33,14 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     getByIdForViewer: jest.fn().mockResolvedValue({}),
     pick: jest.fn().mockResolvedValue({}),
     release: jest.fn().mockResolvedValue({}),
+  };
+  const requests = {
+    create: jest.fn().mockResolvedValue({}),
+    withdraw: jest.fn().mockResolvedValue({}),
+    approve: jest.fn().mockResolvedValue({}),
+    decline: jest.fn().mockResolvedValue({}),
+    resume: jest.fn().mockResolvedValue({}),
+    awaitingDecision: jest.fn().mockResolvedValue([]),
   };
   const assignment = {
     listUnits: jest.fn().mockResolvedValue([]),
@@ -47,6 +56,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
       providers: [
         { provide: TaskService, useValue: taskService },
         { provide: TaskAssignmentService, useValue: assignment },
+        { provide: TaskRequestService, useValue: requests },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -88,6 +98,8 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     ['/tasks/assignees/committee?committeeId=c1&roleValueId=r1', () => assignment.listCommitteeMembers],
     ['/tasks/assignees?orgUnitId=u1&positionId=p1', () => assignment.listHolders],
     ['/tasks/my-tasks', () => taskService.getMyTasks],
+    // ACC-173
+    ['/tasks/requests/awaiting-decision', () => requests.awaitingDecision],
   ])('GET %s reaches its own handler', async (path, delegate) => {
     const res = await request(app.getHttpServer()).get(path);
 
@@ -111,6 +123,12 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
   it.each([
     ['/tasks/task-1/pick', () => taskService.pick],
     ['/tasks/task-1/release', () => taskService.release],
+    // ACC-173 — the service decides who may; none carries a route permission.
+    ['/tasks/task-1/requests', () => requests.create],
+    ['/tasks/task-1/requests/req-1/withdraw', () => requests.withdraw],
+    ['/tasks/task-1/requests/req-1/approve', () => requests.approve],
+    ['/tasks/task-1/requests/req-1/decline', () => requests.decline],
+    ['/tasks/task-1/resume', () => requests.resume],
   ])('POST %s reaches its handler with no route permission', async (path, delegate) => {
     const res = await request(app.getHttpServer()).post(path).send({ reason: 'Back to the pool' });
 

@@ -47,6 +47,8 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { TaskRequestService } from './task-request.service';
+import { TaskAuthorityService } from './task-authority.service';
 
 const TENANT_ID = 'org-a';
 const COMMITTEE_ID = 'committee-1';
@@ -109,6 +111,14 @@ describe('Child list gated by its parent (ACC-101)', () => {
         // ACC-167 — injected by TaskService and TaskController; never reached
         // by the reads under test here.
         TaskAssignmentService,
+        // ACC-173 — the creator acts for themself; covering is pinned in
+        // task-authority.service.spec.ts.
+        // ACC-173 — the controller's request routes; never reached here.
+        { provide: TaskRequestService, useValue: {} },
+        {
+          provide: TaskAuthorityService,
+          useValue: { canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId) },
+        },
         DelegationLabelService,
         // REAL, not a stub: the refusal under test is this service's, and a
         // stub here would leave the test asserting its own mock.

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { TaskAssignmentService, AssignmentViewer } from './task-assignment.service';
+import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 
@@ -53,7 +54,16 @@ describe('TaskAssignmentService (ACC-167)', () => {
     mockPrisma.lookupValue.findMany.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [TaskAssignmentService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        TaskAssignmentService,
+        { provide: PrismaService, useValue: mockPrisma },
+        // ACC-173 — the creator acts for themself; covering is pinned in
+        // task-authority.service.spec.ts.
+        {
+          provide: TaskAuthorityService,
+          useValue: { canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId) },
+        },
+      ],
     }).compile();
     service = module.get(TaskAssignmentService);
   });

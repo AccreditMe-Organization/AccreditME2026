@@ -382,6 +382,72 @@ describe('WorkingCalendarService', () => {
 
   // ── Tenant isolation ─────────────────────────────────────────────────────────
 
+  // ── workingHoursBetween (ACC-173) — the inverse of calculateDeadline ─────────
+
+  describe('workingHoursBetween — GCC (Sun–Thu, 08:00–16:00, Asia/Riyadh)', () => {
+    it('counts the working time inside one day', async () => {
+      // Sunday 10:00 → Sunday 13:30 Riyadh
+      const hours = await service.workingHoursBetween(
+        riyadhDateTime(2026, 7, 19, 10, 0),
+        riyadhDateTime(2026, 7, 19, 13, 30),
+        ORG_A,
+      );
+      expect(hours).toBeCloseTo(3.5);
+    });
+
+    it('skips the weekend: Thursday 14:00 to Sunday 10:00 is four working hours', async () => {
+      const hours = await service.workingHoursBetween(
+        riyadhDateTime(2026, 7, 16, 14, 0), // Thursday
+        riyadhDateTime(2026, 7, 19, 10, 0), // Sunday
+        ORG_A,
+      );
+      expect(hours).toBeCloseTo(4);
+    });
+
+    it('is zero for an interval wholly outside working hours', async () => {
+      const hours = await service.workingHoursBetween(
+        riyadhDateTime(2026, 7, 16, 17, 0), // Thursday after closing
+        riyadhDateTime(2026, 7, 18, 23, 0), // Saturday
+        ORG_A,
+      );
+      expect(hours).toBe(0);
+    });
+
+    it('skips a public holiday', async () => {
+      // Monday 20 Jul 2026 is a holiday: Sunday 12:00 → Tuesday 12:00 is 4 + 0 + 4.
+      mockPrisma.publicHoliday.findMany.mockResolvedValue([
+        { ...HOLIDAY_A, date: new Date('2026-07-20T00:00:00.000Z'), isRecurring: false },
+      ]);
+      const hours = await service.workingHoursBetween(
+        riyadhDateTime(2026, 7, 19, 12, 0),
+        riyadhDateTime(2026, 7, 21, 12, 0),
+        ORG_A,
+      );
+      expect(hours).toBeCloseTo(8);
+    });
+
+    it('is zero when the end is not after the start', async () => {
+      const at = riyadhDateTime(2026, 7, 19, 10, 0);
+      await expect(service.workingHoursBetween(at, at, ORG_A)).resolves.toBe(0);
+      await expect(service.workingHoursBetween(at, at.minus({ hours: 3 }), ORG_A)).resolves.toBe(0);
+    });
+
+    it('undoes calculateDeadline: the hours added are the hours counted back', async () => {
+      const start = riyadhDateTime(2026, 7, 16, 11, 15); // Thursday, within hours
+      for (const added of [1.5, 7, 13.25, 40]) {
+        const end = await service.calculateDeadline(start, added, ORG_A);
+        await expect(service.workingHoursBetween(start, end, ORG_A)).resolves.toBeCloseTo(added);
+      }
+    });
+
+    it("reads each tenant's own calendar", async () => {
+      // London, Mon–Fri 09:00–17:00: Monday 08:00 → Monday 10:00 is ONE hour.
+      const start = DateTime.fromObject({ year: 2026, month: 7, day: 20, hour: 8 }, { zone: 'Europe/London' });
+      const hours = await service.workingHoursBetween(start, start.plus({ hours: 2 }), ORG_B);
+      expect(hours).toBeCloseTo(1);
+    });
+  });
+
   describe('tenant isolation', () => {
     it('should NOT return records belonging to a different tenant', async () => {
       const resultA = await service.getOrCreate(ORG_A);
