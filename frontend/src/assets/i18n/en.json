@@ -26,6 +26,8 @@
     "reject": "Reject",
     "remove": "Remove",
     "retry": "Retry",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "save": "Save",
     "saveFailed": "Save failed.",
     "search": "Search",

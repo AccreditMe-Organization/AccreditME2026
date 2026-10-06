@@ -26,6 +26,8 @@
     "reject": "رفض",
     "remove": "إزالة",
     "retry": "إعادة المحاولة",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور",
     "save": "حفظ",
     "saveFailed": "تعذّر الحفظ.",
     "search": "بحث",
