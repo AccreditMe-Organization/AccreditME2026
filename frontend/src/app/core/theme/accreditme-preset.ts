@@ -140,13 +140,36 @@ export const AccreditMePreset = definePreset(Aura, {
     },
   },
 
-  // The one component token overridden: Aura derives a button's radius from
-  // the form field's, so setting fields to 4px (control) would also square
-  // every button off. The design gives buttons their own step — 6px.
   components: {
+    // Aura derives a button's radius from the form field's, so setting fields
+    // to 4px (control) would also square every button off. The design gives
+    // buttons their own step — 6px.
     button: {
       root: {
         borderRadius: token('radius-button'),
+      },
+    },
+    // ACC-120 slice 9e — Aura draws a success message as green.600 on green.50
+    // (3.15:1) and an error as red.600 on red.50 (4.41:1): both under 4.5:1
+    // for text. They now read the design's chip pairs, which check:contrast
+    // asserts (success-ink on success-bg, danger-ink on danger-bg), and
+    // message.contrast.spec.ts measures the rendered message itself.
+    message: {
+      colorScheme: {
+        light: {
+          success: {
+            background: token('success-bg'),
+            color: token('success-ink'),
+            outlined: { color: token('success-ink'), borderColor: token('success-ink') },
+            simple: { color: token('success-ink') },
+          },
+          error: {
+            background: token('danger-bg'),
+            color: token('danger-ink'),
+            outlined: { color: token('danger-ink'), borderColor: token('danger-ink') },
+            simple: { color: token('danger-ink') },
+          },
+        },
       },
     },
   },

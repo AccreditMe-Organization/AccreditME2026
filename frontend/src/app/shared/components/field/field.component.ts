@@ -5,6 +5,7 @@ import {
   ElementRef,
   afterNextRender,
   computed,
+  contentChild,
   effect,
   inject,
   input,
@@ -15,6 +16,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormGroupDirective } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { DIALOG_DENSITY } from '../edit-dialog/dialog-density';
+import { FIELD_TRAILING_CONTROL } from './trailing-control';
 
 /**
  * The field wrapper (ACC-111) — artboards 3 and 6 of the design system.
@@ -70,6 +72,9 @@ import { DIALOG_DENSITY } from '../edit-dialog/dialog-density';
       class="am-field"
       [class.am-field--readonly]="readonly()"
       [class.am-field--compact]="isCompact()"
+      [class.am-field--error]="showError()"
+      [class.am-field--trailing]="!!trailing()"
+      [style.--am-field-trailing-size]="trailing()"
     >
       <label class="am-field__label" [attr.for]="controlId()">
         {{ label() }}
@@ -179,6 +184,18 @@ import { DIALOG_DENSITY } from '../edit-dialog/dialog-density';
         font-weight: 700;
         font-size: var(--am-type-value-size);
         pointer-events: none;
+      }
+
+      /* ACC-120 slice 9e — a control with its own trailing part (the password
+         input's show/hide button) provides FIELD_TRAILING_CONTROL. The glyph
+         and the spinner move inward past it, and while an error shows the
+         input leaves room for both. Logical properties, so Arabic mirrors. */
+      .am-field--trailing .am-field__glyph,
+      .am-field--trailing .am-field__spinner {
+        inset-inline-end: calc(var(--am-field-trailing-size) + var(--am-space-4));
+      }
+      .am-field--trailing.am-field--error .am-field__control ::ng-deep input {
+        padding-inline-end: calc(var(--am-field-trailing-size) + var(--am-space-20));
       }
 
       .am-field__spinner {
@@ -320,6 +337,9 @@ export class FieldComponent {
    * throws in development (see the effect below).
    */
   readonly message = input<'reserved' | 'none'>('reserved');
+
+  /** The inline size of a projected control's own trailing part, if it has one. */
+  protected readonly trailing = contentChild(FIELD_TRAILING_CONTROL, { descendants: true });
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly destroyRef = inject(DestroyRef);

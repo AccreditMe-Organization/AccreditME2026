@@ -51,6 +51,11 @@ describe('unauthenticated navigation to a pre-auth route (ACC-24)', () => {
     await initPromise;
 
     const harness = await RouterTestingHarness.create('/accept-invitation?token=abc123');
+    // ACC-120 slice 9e — the screen looks its invitation up as it opens. It is
+    // a public endpoint, so answering it must not move the visitor either.
+    httpMock
+      .expectOne(`${environment.apiUrl}/auth/invitations/lookup`)
+      .flush({ name: 'Acme', nameAr: null });
 
     expect(TestBed.inject(Router).url).toContain('/accept-invitation');
     expect(harness.routeDebugElement?.componentInstance).toBeInstanceOf(AcceptInvitationComponent);

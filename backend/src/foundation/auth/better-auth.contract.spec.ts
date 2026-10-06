@@ -2,7 +2,10 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { createHmac } from 'crypto';
 import {
+  BETTER_AUTH_API_ERROR_NAME,
   BETTER_AUTH_INVALID_CREDENTIALS,
+  BETTER_AUTH_PASSWORD_CHECK_FAILED,
+  BETTER_AUTH_PASSWORD_CODES,
   BETTER_AUTH_TWO_FACTOR_CODES,
   SECURE_COOKIE_PREFIX,
   TWO_FACTOR_ATTEMPTS_PER_CHALLENGE,
@@ -69,6 +72,75 @@ describe('Better Auth contract (ACC-120 slice 9b)', () => {
       expect(codes).toContain(
         `${BETTER_AUTH_INVALID_CREDENTIALS}: "Invalid email or password"`,
       );
+    });
+  });
+
+  // ACC-120 slice 9e — accept-invitation maps these to its own stable codes
+  // (password-refusal.ts). A change here would turn a field-level message back
+  // into a generic error, so it fails by name instead.
+  describe('sign-up password refusals', () => {
+    it(`throws errors named ${BETTER_AUTH_API_ERROR_NAME}`, () => {
+      for (const build of [
+        'better-call/dist/error.cjs',
+        'better-call/dist/error.mjs',
+      ]) {
+        expect(source(build)).toContain(
+          `this.name = "${BETTER_AUTH_API_ERROR_NAME}";`,
+        );
+      }
+    });
+
+    it('builds every base error code with code equal to its key', () => {
+      expect(source('@better-auth/core/dist/utils/error-codes.mjs')).toMatch(
+        /\[key, \{\s*code: key,\s*message: value,/,
+      );
+      const codes = source('@better-auth/core/dist/error/codes.mjs');
+      expect(codes).toContain(
+        `${BETTER_AUTH_PASSWORD_CODES.TOO_SHORT}: "Password too short"`,
+      );
+      expect(codes).toContain(
+        `${BETTER_AUTH_PASSWORD_CODES.TOO_LONG}: "Password too long"`,
+      );
+    });
+
+    it(`refuses a short or long sign-up password with ${BETTER_AUTH_PASSWORD_CODES.TOO_SHORT} / ${BETTER_AUTH_PASSWORD_CODES.TOO_LONG}`, () => {
+      const signUp = source(`${BETTER_AUTH}/api/routes/sign-up.mjs`);
+      expect(signUp).toContain(
+        `throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.${BETTER_AUTH_PASSWORD_CODES.TOO_SHORT});`,
+      );
+      expect(signUp).toContain(
+        `throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.${BETTER_AUTH_PASSWORD_CODES.TOO_LONG});`,
+      );
+    });
+
+    it(`checks a sign-up password for breaches, refusing with ${BETTER_AUTH_PASSWORD_CODES.COMPROMISED}`, () => {
+      const pwned = source(`${BETTER_AUTH}/plugins/haveibeenpwned/index.mjs`);
+      expect(pwned).toContain('"/sign-up/email",');
+      expect(pwned).toContain(
+        'await checkPasswordCompromise(password, options?.customPasswordCompromisedMessage);',
+      );
+      expect(pwned).toContain(
+        `defineErrorCodes({ ${BETTER_AUTH_PASSWORD_CODES.COMPROMISED}: `,
+      );
+      expect(pwned).toContain(
+        `code: ERROR_CODES.${BETTER_AUTH_PASSWORD_CODES.COMPROMISED}.code`,
+      );
+    });
+
+    it(`reports a breach-check outage as a 500 with no code, its message starting "${BETTER_AUTH_PASSWORD_CHECK_FAILED}"`, () => {
+      const pwned = source(`${BETTER_AUTH}/plugins/haveibeenpwned/index.mjs`);
+      const outages = [
+        ...pwned.matchAll(
+          /new APIError\("INTERNAL_SERVER_ERROR", \{ message: [`"]([^`"]*)/g,
+        ),
+      ].map((m) => m[1] ?? '');
+      // Non-vacuity guard: both outage throws are found before they are judged.
+      expect(outages).toHaveLength(2);
+      for (const message of outages) {
+        expect(message.startsWith(BETTER_AUTH_PASSWORD_CHECK_FAILED)).toBe(
+          true,
+        );
+      }
     });
   });
 

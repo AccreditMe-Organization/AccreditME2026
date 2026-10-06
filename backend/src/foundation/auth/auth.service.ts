@@ -50,6 +50,10 @@ import {
 } from './better-auth.contract';
 import { AuthRefusalException } from './auth-refusal';
 import { InvitationRefusalException } from './invitation-refusal';
+import {
+  PasswordRefusalException,
+  passwordRefusalCode,
+} from './password-refusal';
 import { INVITATION_TOKEN_SHAPE, isOpenInvitation } from './open-invitation';
 import {
   attemptsRemaining,
@@ -854,16 +858,27 @@ export class AuthService {
     // always the same generic "Invalid credentials" regardless of the real
     // reason), there is no equivalent enumeration concern here: the caller
     // already proved possession of a valid, unexpired invitation token
-    // before reaching this point. A real Better Auth APIError (e.g. the
-    // haveIBeenPwned plugin's PASSWORD_COMPROMISED) carries a genuinely
-    // useful message the user needs to act on — this is allowed to throw
-    // naturally now (ACC-27): the global HttpExceptionFilter's isAPIError()
-    // branch forwards a real APIError's own safe message for the whole app,
-    // not just this one call site, using the exact same class-identity
-    // check this local try/catch used to do itself.
-    const signUpResult = await this.auth.api.signUpEmail({
-      body: { email: namespacedEmail, password: dto.password, name: user.name },
-    });
+    // before reaching this point, so saying what is wrong with the password
+    // tells them nothing they could not learn by choosing it.
+    //
+    // ACC-120 slice 9e — a password refusal leaves as a stable code
+    // (PasswordRefusalException), so the screen can put it on the field.
+    // Anything else still throws unconverted, and the global
+    // HttpExceptionFilter answers it as before (ACC-27).
+    let signUpResult: Awaited<ReturnType<typeof this.auth.api.signUpEmail>>;
+    try {
+      signUpResult = await this.auth.api.signUpEmail({
+        body: {
+          email: namespacedEmail,
+          password: dto.password,
+          name: user.name,
+        },
+      });
+    } catch (err) {
+      const refusal = passwordRefusalCode(err);
+      if (refusal) throw new PasswordRefusalException(refusal);
+      throw err;
+    }
 
     await this.prisma.user.update({
       where: { id: user.id },

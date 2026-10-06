@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { Location } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -9,6 +10,7 @@ import { MessageModule } from 'primeng/message';
 import { AuthService } from '../../../../core/services/auth.service';
 import { LANDING_ROUTE } from '../../../../core/navigation/landing-route';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
 
 @Component({
   selector: 'app-login',
@@ -32,6 +34,19 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
              which is what the 15-minute bug felt like. -->
         @if (signedOutForIdle) {
           <p-message severity="info" [text]="'session.signedOutIdle' | translate" />
+        }
+
+        <!-- ACC-120 slice 9e — arriving from Accept invitation. -->
+        @if (invitationAccepted) {
+          <!-- p-message hard-codes role="alert" with aria-live="polite", which
+               conflict: alert is assertive. This is a status, so the binding
+               replaces the role (bindings apply after host attributes) and
+               the polite live region stays. -->
+          <p-message
+            severity="success"
+            [attr.role]="'status'"
+            [text]="'auth.invitation.acceptedNotice' | translate"
+          />
         }
 
         @if (error()) {
@@ -104,6 +119,22 @@ export class LoginComponent {
   protected readonly signedOutForIdle =
     this.route.snapshot.queryParamMap.get('reason') === 'idle';
 
+  /**
+   * ACC-120 slice 9e — set by the navigation that brought them here from
+   * Accept invitation. Navigation STATE rather than a query parameter, so
+   * nothing is left in the address bar to bookmark.
+   *
+   * SHOWN ONCE, WHICH STATE ALONE DOES NOT GIVE: the browser keeps
+   * history.state across a reload, and Angular hands it back to the reloaded
+   * page's navigation as `extras.state`, so the notice reappeared on every
+   * refresh of /login. Once read, it is removed from the current history entry
+   * (see clearNotice()).
+   */
+  protected readonly invitationAccepted =
+    this.router.currentNavigation()?.extras.state?.['notice'] === INVITATION_ACCEPTED_NOTICE;
+
+  private readonly location = inject(Location);
+
   readonly submitting = signal(false);
   readonly error = signal<string | null>(null);
   readonly mfaRequired = signal(false);
@@ -117,6 +148,26 @@ export class LoginComponent {
   readonly mfaForm = this.fb.group({
     code: ['', [Validators.required, Validators.minLength(6), Validators.maxLength(6)]],
   });
+
+  constructor() {
+    if (this.invitationAccepted) this.clearNotice();
+  }
+
+  /**
+   * Drops the notice from the current history entry, keeping everything else
+   * in it — the router's own navigationId and page id live there too.
+   *
+   * Safe in the constructor: the router writes this entry (URL and state) at
+   * BeforeActivateRoutes, before any routed component is created
+   * (HistoryStateManager in @angular/router 21), so this replaces /login's own
+   * entry rather than the one before it.
+   */
+  private clearNotice(): void {
+    const state = this.location.getState();
+    if (!state || typeof state !== 'object' || !('notice' in state)) return;
+    const { notice: _, ...rest } = state as Record<string, unknown>;
+    this.location.replaceState(this.location.path(true), '', rest);
+  }
 
   onSubmitLogin(): void {
     if (this.loginForm.invalid) {
