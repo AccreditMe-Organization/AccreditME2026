@@ -240,16 +240,28 @@ describe('OrganizationProfileComponent — the organisation name pair (ACC-120)'
     expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('S3 key');
   });
 
-  it('shows the monogram at the three sizes a logo would appear at', () => {
+  it('shows the monogram at the two sizes a logo would appear at', () => {
     const fixture = render();
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     // "Al Nakheel Specialist Hospital" -> AN: the first letter of each of the
     // first TWO WORDS, not the first two letters of the first word. My first
     // version of this expectation said 'AL' and the code was right.
     expect(fixture.componentInstance.monogram()).toBe('AN');
-    expect(text).toContain('adminSettings.logoWhereSignIn');
     expect(text).toContain('adminSettings.logoWhereSidebar');
     expect(text).toContain('adminSettings.logoWhereReport');
+  });
+
+  // ACC-120 slice 9f — sign-in shows no organisation logo (decided 4 Oct), so
+  // there is no sign-in preview to draw.
+  it('has no sign-in preview: exactly the sidebar and report sizes', () => {
+    const el = render().nativeElement as HTMLElement;
+    const sizes = Array.from(el.querySelectorAll('[data-logo-size]')).map((t) =>
+      t.getAttribute('data-logo-size'),
+    );
+    // Non-vacuity guard: the preview row rendered at all.
+    expect(sizes.length).toBeGreaterThan(0);
+    expect(sizes).toEqual(['28', '20']);
+    expect(el.textContent).not.toContain('adminSettings.logoWhereSignIn');
   });
 
   // The drawing's own example, so the rule is pinned against the artboard
