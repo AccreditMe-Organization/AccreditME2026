@@ -1344,7 +1344,7 @@ the task" and "who is allowed to trigger the transition" (see 2.8).
 | `ROLE` | `userRole.findMany({ roleId: stage.assigneeRoleId, user: { organizationId, status: ACTIVE } })` → all active tenant-wide holders. For `SINGLE` approvalMode, returns only `userIds[0]` (arbitrary — whatever order Prisma returns, no deterministic "least loaded" or "primary" selection). | **Zero resource-instance awareness** — resolves to every holder of the role anywhere in the tenant, with no connection to which committee/document/CAPA triggered the instance. |
 | `ROUND_ROBIN` | **Identical code path to `ROLE`** (same `switch` case, `case 'ROLE': case 'ROUND_ROBIN':`). | No round-robin logic exists at all — no assignment-history tracking, no rotation. Falls back to `ROLE`'s "first active holder" behavior. Documented in-code as a known limitation, not an oversight. |
 | `ORG_UNIT_HEAD` | Reads `instance.orgUnitId` defensively and returns `[]` when absent; otherwise delegates to `OrganizationService.resolveActingHeadForOrgUnit()` (5.3). **Corrected ACC-54** — this row previously claimed the case "throws an `Error` unconditionally… not implemented at all", which was true before ACC-40 wired it and false ever since. Section 5.8 described it correctly the whole time; this row was simply never updated. | Resolves to `[]` for every object that exists today: no workflow-driven object carries an `orgUnitId` column, so the defensive read always finds nothing. Wired, unreachable — not broken. |
-| `POSITION_FIXED` (ACC-54) | `user.findMany({ organizationId, positionId: stage.assigneePositionId, primaryOrgUnitId: stage.assigneeOrgUnitId, status: ACTIVE })` → the holders of one specific position in one specific, config-time-chosen unit. `SINGLE` approvalMode takes `holderIds[0]`, mirroring `ROLE`. Returns `[]` when either field is unset. | **Instance-unaware by design, unlike its intended sibling.** The unit is fixed at configuration time, so every instance of the template resolves the same pool regardless of which object triggered it — that is the "FIXED" in the name. The RELATIVE variant, which would derive the unit from the triggering object, is deliberately not built: nothing carries an `orgUnitId` to derive from (same blocker as `ORG_UNIT_HEAD` above). |
+| `POSITION_FIXED` (ACC-54) | `user.findMany({ organizationId, positionId: stage.assigneePositionId, primaryOrgUnitId: stage.assigneeOrgUnitId, status: ACTIVE })` → the holders of one specific position in one specific, config-time-chosen unit. `SINGLE` approvalMode takes `holderIds[0]`, mirroring `ROLE`. Returns `[]` when either field is unset. | **Instance-unaware by design, unlike its intended sibling.** The unit is fixed at configuration time, so every instance of the template resolves the same pool regardless of which object triggered it — that is the "FIXED" in the name. The RELATIVE variant, which would derive the unit from the triggering object, is deliberately not built: nothing carries an `orgUnitId` to derive from (same blocker as `ORG_UNIT_HEAD` above). **ACC-167: for `CREATE_TASK` this resolver is no longer reached on a multi-holder position — see 2.5.2.** |
 | `SELF` | Finds the instance's first-ever `WorkflowInstanceStage` (`orderBy: enteredAt asc`) and returns its `actorId` — i.e. whoever started the instance. | Only meaningful for the literal instance-creator; cannot express "self" at any stage other than by reference to who opened the workflow. |
 | `COMMITTEE` | `committeeMember.findMany({ committeeId: stage.committeeId, organizationId, isActive: true, ...(stage.assigneeCommitteeRoleValueId ? { roleValueId: stage.assigneeCommitteeRoleValueId } : {}) })` → every active member, org-scoped, **optionally narrowed to one `committee_member_role` (ACC-28)**. | `assigneeCommitteeRoleValueId` defaults to `null` — every stage seeded before ACC-28 keeps returning every active member indiscriminately (Chairman, Secretary, Member, Observer, Advisor), unchanged. Only stages a tenant admin explicitly configures with a role filter narrow further. |
 
@@ -1358,6 +1358,50 @@ set, substitutes the acting user (notifies both, audit-logs the
 substitution). If out-of-office with **no** acting user set, keeps the
 original user assigned (does not remove them) and notifies all
 `TENANT_ADMIN`s of the coverage gap.
+
+
+### 2.5.2 Pool tasks from `POSITION_FIXED` and role-narrowed `COMMITTEE` stages (ACC-167)
+
+`executeCreateTask()` first asks `resolveStagePool(stage)`:
+
+| Stage | Task it creates |
+|---|---|
+| `POSITION_FIXED`, position **single-holder** (`isSingleAssignee`) | Straight to the holder(s) `resolveAssignee()` returns, as before — but the task now **remembers the pool** (`assignedOrgUnitId` / `assignedPositionId`), so a departure can return it there (3.9). No holder → `UNASSIGNED`, also remembering the pool. |
+| `POSITION_FIXED`, any other position | A **pool task**: the pool columns set, **no `TaskAssignee` row**, status `PENDING`, the pick-up clock started. `resolveAssignee()` is not called. `SINGLE` approval mode no longer means `holderIds[0]`. |
+| `COMMITTEE` with `assigneeCommitteeRoleValueId` | Always a pool task on (committee, role) — a role has no single-holder flag. |
+| every other strategy, `ROLE` included | Unchanged. `ROLE` stays until stage task definitions replace `CREATE_TASK` (decision 9). |
+
+The action log says `Task created for a pool of N current member(s)`, or, for
+a pool nobody is in, `Task created for a pool nobody is in yet — no one can
+pick it up` with `isUnassigned: true`.
+
+**What this does NOT change: who may approve or move the record.**
+`resolveApproverPool()` and the `ASSIGNEE_POOL` trigger read stage config,
+never task rows (2.8). A pool task changes who does the WORK only.
+
+**The holder rule — one rule, and what it deliberately leaves out.** A
+position pool's members are, at READ time, exactly:
+
+```
+User.positionId = the position  AND  User.primaryOrgUnitId = the unit  AND  User.status = ACTIVE
+```
+
+the same query `POSITION_FIXED` always used. Three kinds of coverage are
+**excluded**, and each exclusion is a decision (Ahmad, 6 Oct 2026), not a gap:
+
+- **Out-of-office acting users** (`User.actingUserId`). A pool has several
+  members by construction; one being away leaves the others. Routing a pool
+  task to the absent member's stand-in would put a person outside the pool on
+  it. OOO routing still applies where a task goes to ONE named person.
+- **Acting heads** (ACC-40's `ACTING_HEAD`). An acting head covers the head's
+  AUTHORITY — approvals, escalation — not membership of an ordinary position
+  in the unit.
+- **`User.actingOrgUnitId`** (a temporary second unit). The rule reads the
+  primary unit only. Someone seconded to Pharmacy does not pick up Pharmacy's
+  pool work through this field; make them a holder in Pharmacy if they should.
+
+Committee pools follow the same shape: active `CommitteeMember` rows with
+that role, whose user is ACTIVE.
 
 ### 2.6 `resolveApproverPool()` — Threshold Sizing Only (`workflow.service.ts:861–883`)
 
@@ -2130,6 +2174,14 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   the caller) is given, reassigns to them; otherwise, if no other active
   assignee remains on that task, flags it `UNASSIGNED`. Every change
   audit-logged individually with `metadata: { event: 'departure_reassignment' }`.
+  **ACC-167 — the pool branch, checked first:** an OPEN task with a pool
+  target goes back to its pool instead — whether the departing user picked it
+  up or was chosen directly. Their row is stamped `removedAt`; if nobody else
+  is on it, the status returns to `PENDING` and the pool clock restarts. No
+  row is created for the acting user. Audited `DELEGATE` with
+  `{ event: 'departure_returned_to_pool' }`, and counted in the new
+  `returnedToPoolCount` return field. A CLOSED pool task is left to the old
+  path (returning it would reopen it) — that path is ACC-165's to change.
 - **`attachAssigneesToUnassignedStageTasks()`** (ACC-51, made
   idempotent ACC-52) — the recovery half of the unassigned-task
   lifecycle, called from exactly one place:
@@ -2467,13 +2519,27 @@ NOT ungated — its permission check moved into the service (3.2).
   the tenant, closed ones included. Now self-scoped through the same
   helper as `complete()`.
 
-**Known limitation — reassigning needs `users:view` for the people picker
-(ACC-163).** The reassign dialog lists people through the user list, which
-requires `users:view`. Every seeded role that can create a task also holds
-it, but a custom role, or a workflow task's creator whose role lacks it,
-sees "assignees unavailable" and cannot reassign from the UI — the same
-degradation New Task already has. The server would accept the request;
-only the picker is missing.
+**ACC-167 adds eight more routes with no `@Permissions`, each deliberate**
+(`task.controller.spec.ts` asserts the absence):
+
+- `GET /tasks/available`, `POST /tasks/:id/pick` — self-scoped to the pools
+  the caller is in right now; a non-member gets the identical 404.
+- `POST /tasks/:id/release` — self-scoped to the active assignee who picked it.
+- `GET /tasks/assignment/units`, `/assignment/positions`,
+  `/assignment/committee-roles`, `/assignees`, `/assignees/committee` — the
+  picker. Its gate is "`tasks:create`, OR — for the task named by
+  `?taskId=` — its creator or a `tasks:reassign` holder", and the second half
+  is only knowable from the row, so `TaskAssignmentService.assertMayAssign()`
+  decides: 403 naming `tasks:create` when no task is named (ACC-101 clause a),
+  the identical 404 otherwise (clause b). The committee variants also need
+  `committees:view`, checked before anything is read.
+
+**CLOSED by ACC-167 (was ACC-166) — reassigning needed `users:view`.** The
+reassign dialog listed people through the user list. It now uses the picker
+above, passing the task's id, so a creator whose role lacks `users:view` can
+reassign their own task. The picker returns only what the cascade needs:
+units and positions (ids, names, `parentId`, `isSingleAssignee`,
+`holderCount`) and people (id, name, position name) — no email, no status.
 
 **`tasks:complete` is retired (ACC-162)**, which settles ACC-77's question
 of whether it should survive. Existing tenants lose it through
@@ -2503,6 +2569,10 @@ task surface reads the same helper.
 | `reject()` | `POST /tasks/:id/reject` | `task-reject-dialog.component.ts`, hosted by My tasks (ACC-163) |
 | `reassign()` | `POST /tasks/:id/reassign` | `task-reassign-dialog.component.ts` (ACC-163, extracted), hosted by Unassigned tasks and the committee record |
 | `addEvidence()` | `POST /tasks/:id/evidence` | `task-link-evidence-dialog.component.ts`, hosted by My tasks (ACC-163) — LINK only |
+| `getAvailable()` | `GET /tasks/available` | `my-tasks.component.ts` — "Available to pick up" (ACC-167) |
+| `pick()` | `POST /tasks/:id/pick` | `my-tasks.component.ts` (ACC-167) |
+| `release()` | `POST /tasks/:id/release` | `task-release-dialog.component.ts`, hosted by My tasks (ACC-167) |
+| `getAssignable*()`, `getAssignees()`, `getCommitteeAssignees()` | the five picker routes | `task-assignee-picker.component.ts`, used by New task (`layout="row"`) and Reassign (ACC-167) |
 
 **Two remaining gaps, static-check-confirmed**: there is no task-detail
 view anywhere in the frontend (`getById()` unused) — "My Tasks", the
@@ -2562,6 +2632,87 @@ fully populated and surfaced nowhere; ACC-76 is the first time they
 reach a screen.
 
 ---
+
+### 3.9 Pools — assignment by unit and position, pick up and release (ACC-167)
+
+A task can be assigned to WHERE the work sits rather than to named people: a
+position in a unit, or (on a committee's own task) a member role on that
+committee. Nobody is on it until a member picks it up.
+
+**Model.** `Task.assignedOrgUnitId` + `assignedPositionId`, or
+`assignedCommitteeId` + `assignedCommitteeRoleValueId` (FKs, `SET NULL`), plus
+the pick-up clock `pooledAt` / `poolEscalateAt` / `poolEscalatedAt`.
+`TaskAssignee.pickedAt` marks a row that came from a pick. The target is KEPT
+after a pick and after a direct choice, so a release or a departure can hand
+the task back. The migration is additive only.
+
+**Pools are resolved at READ time** — the holder rule in 2.5.2. Nothing is
+written when someone joins or leaves a position; the next read sees it.
+
+**Choosing a target** (`assignTo` on create and reassign; `resolvePlacement()`):
+
+| Choice | Outcome |
+|---|---|
+| a person in the pool (`userId`) | a direct row for them; 400 if they are not a current member |
+| single-holder position, no person | its holder; none → `UNASSIGNED` |
+| any other position, or any committee role | a pool task |
+
+A committee role is offered only on a task whose source IS that committee
+(400 otherwise). `assignTo` and the legacy `assigneeUserIds` /
+`newAssigneeUserIds` are mutually exclusive (400 for both; reassign also 400
+for neither). `ROLE` is never offered (decision 9).
+
+**Pick** (`POST /tasks/:id/pick`), under the row lock, in this order:
+tenant, existence, a pool target and membership — all the identical 404, so a
+non-member never learns whether a task exists or was picked. Only then the
+409s: closed, rejected, already picked (*"This task has already been picked
+up"*). A previous row for the same person is reused (A → B → A). Status
+becomes `PENDING`; audited `{ event: 'picked' }`.
+
+**Release** (`POST /tasks/:id/release { reason }`, required, max 1000): only
+an active assignee whose row has `pickedAt`; someone chosen directly gets a
+409 and rejects instead. The row is stamped `removedAt`, never deleted. If
+nobody else is on it, the task returns to `PENDING` and the clock restarts.
+Audited `{ event: 'released', reason, returnedToPool }`.
+
+**Notifications** (after commit, English and Arabic): the pool's current
+members once on creation and once on release — never the person who created
+or released it. A task created with a chosen person sends only the ordinary
+assignment notice.
+
+**Escalation.** A task waiting in its pool past `poolEscalateAt` (the
+priority's `managerEscalationAfterHours`, in working hours from `pooledAt`)
+escalates ONCE, within working hours, through
+`SlaMonitorProcessor.sweepUnpickedPoolTasks()`: to the unit's head
+(`resolveActingHeadForOrgUnit`) for a position pool, to the chair for a
+committee pool, or to the head of the committee's own unit when it has no
+chair. Nobody to tell → stamped anyway, with one `pool_escalation_skipped`
+audit row. The due-date sweep EXCLUDES waiting pool tasks (no assignee whose
+manager it could resolve); once picked, a task is ordinary again.
+
+**Departure** — 3.2's `reassignAllForUser()` pool branch.
+
+**Unassigned tasks and Setup health** list pool tasks nobody can pick up:
+open, no active assignee, and nobody currently in the pool (13.2).
+
+**Frontend.** `task-assignee-picker` (unit → position with its holder count →
+optional person showing their position; the committee and its roles first on
+a committee task) states the server's outcome before Save. My tasks gains
+"Available to pick up" and Release; the committee record reads "Assigned to
+{position}, {unit}" or "{role}, {committee}" until someone picks the task up.
+
+**Known limitations.**
+- Stage-created pool tasks were not exercised live: a temporary stage cannot
+  be removed once an instance has entered it (`WorkflowInstanceStage.stageId`
+  is a RESTRICT FK and `removeStage()` has no path around it), so none was
+  created on the shared database. The engine path is covered by
+  `workflow.service.spec.ts`.
+- The position list is the whole active catalogue with each position's holder
+  count in the chosen unit — a vacant single-holder position is a real choice
+  (its future holder picks the task up) — so it can be long.
+- No filter-search in the picker; typeahead only (`OverlaySelectComponent`,
+  10.7).
+- Out-of-office routing is not applied to pool members (2.5.2).
 
 ## 4. Notification System
 
@@ -6459,6 +6610,12 @@ reload does not reopen the dialog.
 - **Task without owner** is `Task.status = 'UNASSIGNED'`. Known gap: an
   open task whose only remaining assignee is inactive is not UNASSIGNED
   and is not detected (ACC-86; zero such tasks on dev at build time).
+  **ACC-167 extends it, under the same type, title and wording:** an open
+  pool task (`PENDING`/`OVERDUE`, a pool target) with no active assignee AND
+  nobody currently in its pool (`findEmptyPoolTasks()` — distinct holder and
+  member lookups, not one query per task). A pool with members is healthy
+  even while nobody has picked the task up yet; that is the escalation's
+  business (3.9), not a condition.
 
 **Deferred — `POSITION_WITHOUT_ROLE`.** Built, then deferred before
 shipping. It flagged ACTIVE positions with no `roleId` that someone ACTIVE

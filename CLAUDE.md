@@ -2826,6 +2826,56 @@ ticket is its statuses step. The decisions, briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-167)
+
+Full mechanism: SYSTEM-REFERENCE.md Section 3.9 (pools), 2.5.2 (the engine and
+the holder rule), 13.2 (the Setup health extension). The decisions, briefly:
+
+- **A task is assigned to WHERE the work sits, not to a list of people.** Unit
+  → position → optional person; on a committee's own task, the committee →
+  member role → optional person. A chosen person gets the task; a
+  single-holder position goes to its holder (none → `UNASSIGNED`); anything
+  else — and every committee role — is a POOL task nobody holds until a member
+  picks it up. **`ROLE` is never a task option**: it reached every holder in
+  the tenant, with no connection to the work. The workflow `ROLE` strategy is
+  untouched.
+- **Pools are resolved at READ time, never stored.** Membership is the holder
+  rule — `positionId` + `primaryOrgUnitId` + ACTIVE — or active committee
+  membership in the role. It deliberately EXCLUDES out-of-office acting users,
+  acting heads and `actingOrgUnitId` (Ahmad, 6 Oct). Do not add a membership
+  table: one would need a recomputer (ACC-82's rule) for a fact the user
+  record already states.
+- **The target is kept after a pick.** It is what lets a release, or a
+  departure, hand the task back. Departure returns ANY open pool task the
+  leaver holds to its pool, picked or chosen directly
+  (`departure_returned_to_pool`). `reassignAllForUser()` gained that branch;
+  ACC-165 owns the rest of that method.
+- **Release is not reject.** Only a PICKED row can be released (back to the
+  pool, whose members read the reason). Someone chosen directly rejects
+  (back to the creator). Rows are stamped, never deleted, so A → B → A
+  reuses the row.
+- **Pick checks membership BEFORE any 409.** A non-member gets the identical
+  404 for a missing, closed or already-picked task, so they never learn the
+  task exists or was taken.
+- **The picker answers to `tasks:create`, or to "may reassign THIS task"** —
+  its creator or a `tasks:reassign` holder, via `?taskId=`. This replaced the
+  `users:view` people list and closed ACC-166. It returns only what the
+  cascade needs; no email, no status.
+- **A pool nobody picks up escalates once** — to the unit head, or the
+  committee chair — on its own clock; the due-date sweep leaves waiting pool
+  tasks alone. **A pool nobody is in** is a Setup health condition, under the
+  existing "Task with no actionable owner" type.
+- **POSITION_FIXED and role-narrowed COMMITTEE stages now create pool tasks.**
+  Approvals and transition gating read stage config, never task rows, so this
+  changes who does the WORK only.
+- **A temporary workflow stage cannot be cleaned up once used.**
+  `WorkflowInstanceStage.stageId` is a RESTRICT FK and `removeStage()` has no
+  way past it, so a browser test that sends an instance through a test stage
+  leaves that stage behind for good. Do not run such a test against the shared
+  database; ACC-167's engine path is covered by specs, not by a live stage.
+
+---
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
