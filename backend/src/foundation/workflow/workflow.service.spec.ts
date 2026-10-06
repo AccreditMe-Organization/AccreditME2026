@@ -199,6 +199,9 @@ const mockPrisma = {
   // ACC-76 — findMany added for DelegationLabelService; getStageHistory()
   // also diffs visits against the template via workflowStage.findMany.
   orgUnit: { findFirst: jest.fn(), findMany: jest.fn() },
+  // ACC-167 — resolveStagePool() reads whether a POSITION_FIXED stage's
+  // position is single-holder.
+  orgPosition: { findFirst: jest.fn() },
 };
 
 const mockAuditLog = { log: jest.fn() };
@@ -945,6 +948,7 @@ describe('WorkflowService', () => {
         expect.objectContaining({ assigneeUserIds: ['holder-1', 'holder-2', 'holder-3'] }),
         ORG_A,
         ACTOR,
+        undefined,
       );
     });
 
@@ -975,6 +979,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({ dueDate: deadline.toJSDate().toISOString() }),
           ORG_A,
           ACTOR,
+          undefined,
         );
       });
 
@@ -1001,6 +1006,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({ dueDate: undefined }),
           ORG_A,
           ACTOR,
+          undefined,
         );
       });
     });
@@ -1033,6 +1039,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — Quality Committee` }),
           ORG_A,
           ACTOR,
+          undefined,
         );
       });
 
@@ -1054,6 +1061,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — ${BASE_INSTANCE.objectType}` }),
           ORG_A,
           ACTOR,
+          undefined,
         );
       });
 
@@ -1084,6 +1092,7 @@ describe('WorkflowService', () => {
           expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — Quality Committee` }),
           ORG_A,
           ACTOR,
+          undefined,
         );
       });
     });
@@ -1212,6 +1221,7 @@ describe('WorkflowService', () => {
         expect.objectContaining({ assigneeUserIds: ['member-1', 'member-2'] }),
         ORG_A,
         ACTOR,
+        undefined,
       );
     });
 
@@ -1240,19 +1250,31 @@ describe('WorkflowService', () => {
 
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
 
-      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
-        where: {
-          committeeId: 'committee-a',
-          organizationId: ORG_A,
-          isActive: true,
-          roleValueId: 'lookup-chairman-id',
-        },
-      });
+      // ACC-167 (decision 10) — a role-narrowed COMMITTEE stage creates a POOL
+      // task on that role: nobody is assigned until a member picks it up. A
+      // committee role has no single-holder shortcut, so even one member pools.
       expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['chairman-user'] }),
+        expect.objectContaining({ assigneeUserIds: [] }),
         ORG_A,
         ACTOR,
+        {
+          target: { kind: 'COMMITTEE_ROLE', committeeId: 'committee-a', roleValueId: 'lookup-chairman-id' },
+          pooled: true,
+          directUserIds: [],
+        },
       );
+      // The pool is only COUNTED, for the action log — with the role filter,
+      // org-scoped, and active users only.
+      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          committeeId: 'committee-a',
+          roleValueId: 'lookup-chairman-id',
+          isActive: true,
+          user: { status: 'ACTIVE' },
+        },
+        select: { userId: true },
+      });
     });
 
     // ACC-54 — POSITION_FIXED: whoever holds a specific position in a
@@ -1292,7 +1314,10 @@ describe('WorkflowService', () => {
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
     };
 
-    it("resolves a POSITION_FIXED stage's assignee to the ACTIVE holder of that position in that unit", async () => {
+    // ACC-167 — a SINGLE-HOLDER position still goes straight to its holder,
+    // and the task remembers the pool (so a departure can return it there).
+    it("assigns a single-holder POSITION_FIXED stage's task straight to the ACTIVE holder in that unit", async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: true });
       mockPositionHolders([{ id: 'holder-1' }]);
 
       await runPositionFixedTransition(positionFixedStage());
@@ -1310,6 +1335,11 @@ describe('WorkflowService', () => {
         expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
         ORG_A,
         ACTOR,
+        {
+          target: { kind: 'POSITION', orgUnitId: 'unit-a', positionId: 'position-a' },
+          pooled: false,
+          directUserIds: ['holder-1'],
+        },
       );
     });
 
@@ -1318,7 +1348,8 @@ describe('WorkflowService', () => {
     // must come back EMPTY, never throw. Pinned explicitly rather than
     // assumed — a throw here would abort the transition and, via the sweep,
     // take down every other step in that cycle.
-    it('returns an empty pool rather than throwing when no one holds the position in that unit', async () => {
+    it('returns an empty pool rather than throwing when no one holds a single-holder position in that unit', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: true });
       mockPrisma.user.findMany.mockResolvedValue([]);
 
       await expect(runPositionFixedTransition(positionFixedStage())).resolves.not.toThrow();
@@ -1327,6 +1358,7 @@ describe('WorkflowService', () => {
         expect.objectContaining({ assigneeUserIds: [] }),
         ORG_A,
         ACTOR,
+        expect.objectContaining({ pooled: false, directUserIds: [] }),
       );
     });
 
@@ -1346,35 +1378,59 @@ describe('WorkflowService', () => {
           expect.objectContaining({ assigneeUserIds: [] }),
           ORG_A,
           ACTOR,
+          undefined,
         );
       },
     );
 
-    it('narrows a POSITION_FIXED pool to one assignee under SINGLE approvalMode, like ROLE does', async () => {
-      mockPositionHolders([{ id: 'holder-1' }, { id: 'holder-2' }]);
+    // ACC-167 (decision 10) — a multi-holder position makes a POOL task, under
+    // every approval mode. Before, SINGLE mode handed the task to holderIds[0]
+    // — whichever holder the database returned first — and the other modes
+    // gave every holder a row, the first to complete closing it for all.
+    it.each(['SINGLE', 'PARALLEL'])(
+      'creates a pool task for a multi-holder POSITION_FIXED stage under %s approval mode — nobody assigned',
+      async (approvalMode) => {
+        mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: false });
+        mockPositionHolders([{ id: 'holder-1' }, { id: 'holder-2' }]);
 
-      await runPositionFixedTransition(positionFixedStage({ approvalMode: 'SINGLE' }));
+        await runPositionFixedTransition(positionFixedStage({ approvalMode }));
 
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
-        ORG_A,
-        ACTOR,
-      );
-    });
+        expect(mockTaskService.create).toHaveBeenCalledWith(
+          expect.objectContaining({ assigneeUserIds: [] }),
+          ORG_A,
+          ACTOR,
+          {
+            target: { kind: 'POSITION', orgUnitId: 'unit-a', positionId: 'position-a' },
+            pooled: true,
+            directUserIds: [],
+          },
+        );
+        expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
+          where: { id: 'position-a', organizationId: ORG_A },
+          select: { isSingleAssignee: true },
+        });
+      },
+    );
 
-    it('returns every holder for a non-SINGLE POSITION_FIXED stage', async () => {
-      mockPositionHolders([{ id: 'holder-1' }, { id: 'holder-2' }]);
+    // The pool is counted for the action log; an empty one is reported to the
+    // actor the way an unassigned task is.
+    it('reports a pool nobody is in yet as a warning, not an error', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: false });
+      mockPrisma.user.findMany.mockResolvedValue([]);
 
-      await runPositionFixedTransition(positionFixedStage({ approvalMode: 'PARALLEL' }));
+      await expect(runPositionFixedTransition(positionFixedStage())).resolves.not.toThrow();
 
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['holder-1', 'holder-2'] }),
-        ORG_A,
-        ACTOR,
+      expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            responseSummary: 'Task created for a pool nobody is in yet — no one can pick it up',
+          }),
+        }),
       );
     });
 
     itEnforcesTenantIsolation('POSITION_FIXED resolves holders only within the requested tenant', async () => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: true });
       mockPrisma.user.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
         Promise.resolve(where.organizationId === ORG_A ? [{ id: 'holder-1' }] : [{ id: 'leaked-holder' }]),
       );
@@ -1388,6 +1444,10 @@ describe('WorkflowService', () => {
         expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
         ORG_A,
         ACTOR,
+        expect.objectContaining({ pooled: false, directUserIds: ['holder-1'] }),
+      );
+      expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'position-a', organizationId: ORG_A } }),
       );
     });
 
@@ -1421,6 +1481,7 @@ describe('WorkflowService', () => {
         expect.objectContaining({ assigneeUserIds: ['acting-user-1'] }),
         ORG_A,
         ACTOR,
+        undefined,
       );
       expect(mockNotificationService.create).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'holder-1' }),
@@ -2991,6 +3052,7 @@ describe('WorkflowService', () => {
         }),
         ORG_A,
         ACTOR,
+        undefined,
       );
     });
   });

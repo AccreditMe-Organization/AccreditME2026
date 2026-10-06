@@ -2,6 +2,10 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { RejectTaskDto } from './reject-task.dto';
 import { AddTaskEvidenceDto } from './add-task-evidence.dto';
 import { GetMyTasksQueryDto } from './get-my-tasks-query.dto';
+import { ReleaseTaskDto } from './release-task.dto';
+import { CreateTaskDto } from './create-task.dto';
+import { ReassignTaskDto } from './reassign-task.dto';
+import { AssignmentHoldersQueryDto } from './assignment-query.dto';
 
 // ACC-163 — these DTOs ARE the refusal for most bad input, so they are tested
 // through a pipe configured exactly as main.ts configures the app's, not by
@@ -191,5 +195,119 @@ describe('GetMyTasksQueryDto', () => {
     expect(
       await messages(run(GetMyTasksQueryDto, { overdue: 'yes' }, 'query')),
     ).toEqual(expect.arrayContaining([expect.stringMatching(/^overdue /)]));
+  });
+});
+
+// ── ACC-167 ─────────────────────────────────────────────────────────────────
+
+describe('ReleaseTaskDto (ACC-167)', () => {
+  it('accepts a reason, trimmed', async () => {
+    const dto = await run(ReleaseTaskDto, { reason: '  On leave from tomorrow  ' });
+    expect(dto.reason).toBe('On leave from tomorrow');
+  });
+
+  it.each([
+    ['missing', {}],
+    ['blank after trimming', { reason: '   ' }],
+    ['over 1000 characters', { reason: 'x'.repeat(1001) }],
+  ])('refuses a reason that is %s', async (_label, body) => {
+    expect(await messages(run(ReleaseTaskDto, body))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^reason /)]),
+    );
+  });
+
+  it('accepts exactly 1000 characters', async () => {
+    await expect(run(ReleaseTaskDto, { reason: 'x'.repeat(1000) })).resolves.toBeDefined();
+  });
+});
+
+describe('CreateTaskDto.assignTo (ACC-167)', () => {
+  const BASE = { title: 'Collect the sample', sourceType: 'COMMITTEE', sourceId: 'committee-1' };
+
+  it('accepts a unit and position, with or without a person', async () => {
+    await expect(
+      run(CreateTaskDto, { ...BASE, assignTo: { kind: 'POSITION', orgUnitId: 'u1', positionId: 'p1' } }),
+    ).resolves.toBeDefined();
+    await expect(
+      run(CreateTaskDto, { ...BASE, assignTo: { kind: 'POSITION', orgUnitId: 'u1', positionId: 'p1', userId: 'x' } }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts a committee role', async () => {
+    await expect(
+      run(CreateTaskDto, { ...BASE, assignTo: { kind: 'COMMITTEE_ROLE', committeeId: 'c1', roleValueId: 'r1' } }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts no assignee at all — the UNASSIGNED path is unchanged', async () => {
+    await expect(run(CreateTaskDto, BASE)).resolves.toBeDefined();
+  });
+
+  it('refuses a position target missing its unit or position', async () => {
+    const errors = await messages(run(CreateTaskDto, { ...BASE, assignTo: { kind: 'POSITION' } }));
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^assignTo\.orgUnitId /),
+        expect.stringMatching(/^assignTo\.positionId /),
+      ]),
+    );
+  });
+
+  it('refuses a committee target missing its committee or role', async () => {
+    const errors = await messages(run(CreateTaskDto, { ...BASE, assignTo: { kind: 'COMMITTEE_ROLE' } }));
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^assignTo\.committeeId /),
+        expect.stringMatching(/^assignTo\.roleValueId /),
+      ]),
+    );
+  });
+
+  // Decision 9 — ROLE is never a task option.
+  it.each(['ROLE', 'USER', ''])('refuses the kind %p', async (kind) => {
+    expect(
+      await messages(run(CreateTaskDto, { ...BASE, assignTo: { kind, orgUnitId: 'u1', positionId: 'p1' } })),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/^assignTo\.kind /)]));
+  });
+
+  it('refuses a field the target does not have', async () => {
+    expect(
+      await messages(
+        run(CreateTaskDto, { ...BASE, assignTo: { kind: 'POSITION', orgUnitId: 'u1', positionId: 'p1', roleKey: 'QM' } }),
+      ),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/roleKey/)]));
+  });
+});
+
+describe('ReassignTaskDto.assignTo (ACC-167)', () => {
+  it('accepts a target in place of named people', async () => {
+    await expect(
+      run(ReassignTaskDto, { reason: 'Pharmacy owns this', assignTo: { kind: 'POSITION', orgUnitId: 'u1', positionId: 'p1' } }),
+    ).resolves.toBeDefined();
+  });
+
+  it('still accepts the legacy named people', async () => {
+    await expect(run(ReassignTaskDto, { reason: 'x', newAssigneeUserIds: ['u'] })).resolves.toBeDefined();
+  });
+
+  it('still refuses an empty list of named people', async () => {
+    expect(await messages(run(ReassignTaskDto, { reason: 'x', newAssigneeUserIds: [] }))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^newAssigneeUserIds /)]),
+    );
+  });
+});
+
+describe('AssignmentHoldersQueryDto (ACC-167)', () => {
+  it('needs both the unit and the position', async () => {
+    const errors = await messages(run(AssignmentHoldersQueryDto, {}, 'query'));
+    expect(errors).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^orgUnitId /), expect.stringMatching(/^positionId /)]),
+    );
+  });
+
+  it('takes an optional taskId', async () => {
+    await expect(
+      run(AssignmentHoldersQueryDto, { orgUnitId: 'u1', positionId: 'p1', taskId: 't1' }, 'query'),
+    ).resolves.toEqual({ orgUnitId: 'u1', positionId: 'p1', taskId: 't1' });
   });
 });

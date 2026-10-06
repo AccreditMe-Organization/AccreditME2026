@@ -46,6 +46,7 @@ import { NotificationService } from '../notification/notification.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
+import { TaskAssignmentService } from './task-assignment.service';
 
 const TENANT_ID = 'org-a';
 const COMMITTEE_ID = 'committee-1';
@@ -105,6 +106,9 @@ describe('Child list gated by its parent (ACC-101)', () => {
       controllers: [TaskController],
       providers: [
         TaskService,
+        // ACC-167 — injected by TaskService and TaskController; never reached
+        // by the reads under test here.
+        TaskAssignmentService,
         DelegationLabelService,
         // REAL, not a stub: the refusal under test is this service's, and a
         // stub here would leave the test asserting its own mock.

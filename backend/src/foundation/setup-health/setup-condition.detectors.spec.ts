@@ -20,6 +20,8 @@ describe('SetupConditionDetectors (ACC-82)', () => {
     orgUnit: { findMany: jest.Mock };
     workflowInstanceStage: { findMany: jest.Mock };
     task: { findMany: jest.Mock };
+    user: { findMany: jest.Mock };
+    committeeMember: { findMany: jest.Mock };
     orgUnitHeadAssignment: { findMany: jest.Mock };
   };
   let detectors: SetupConditionDetectors;
@@ -29,6 +31,10 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       orgUnit: { findMany: jest.fn().mockResolvedValue([]) },
       workflowInstanceStage: { findMany: jest.fn().mockResolvedValue([]) },
       task: { findMany: jest.fn().mockResolvedValue([]) },
+      // ACC-167 — the empty-pool half of TASK_WITHOUT_OWNER counts who is in
+      // each pool.
+      user: { findMany: jest.fn().mockResolvedValue([]) },
+      committeeMember: { findMany: jest.fn().mockResolvedValue([]) },
       orgUnitHeadAssignment: { findMany: jest.fn().mockResolvedValue([]) },
     };
     detectors = new SetupConditionDetectors(prisma as unknown as PrismaService);
@@ -279,16 +285,54 @@ describe('SetupConditionDetectors (ACC-82)', () => {
   });
 
   describe('tasksWithoutOwner', () => {
+    // ACC-167 — a pool task nobody holds, in a pool nobody is in right now, is
+    // the same condition: work nobody can pick up. A staffed pool is not.
+    it('also lists an open pool task whose pool nobody is in, and not one whose pool is staffed', async () => {
+      const waiting = (id: string, positionId: string) => ({
+        id,
+        title: `Pool task ${id}`,
+        sourceType: 'COMMITTEE',
+        sourceId: 'cmte-1',
+        dueAt: null,
+        assignedOrgUnitId: 'unit-1',
+        assignedPositionId: positionId,
+        assignedCommitteeId: null,
+        assignedCommitteeRoleValueId: null,
+      });
+      prisma.task.findMany.mockImplementation(({ where }: { where: { status: unknown } }) =>
+        Promise.resolve(
+          where.status === 'UNASSIGNED' ? [] : [waiting('empty', 'p-empty'), waiting('staffed', 'p-held')],
+        ),
+      );
+      prisma.user.findMany.mockResolvedValue([{ positionId: 'p-held', primaryOrgUnitId: 'unit-1' }]);
+
+      const result = await detectors.tasksWithoutOwner(ORG_A);
+
+      expect(result.map((c) => c.objectId)).toEqual(['empty']);
+      // Counted by tenant, among ACTIVE users only.
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A, status: 'ACTIVE' }) }),
+      );
+    });
+
     it('queries UNASSIGNED tasks of the tenant and records no opened-at', async () => {
-      prisma.task.findMany.mockResolvedValue([
-        {
-          id: 'task-1',
-          title: 'Chase December figures',
-          sourceType: 'COMMITTEE',
-          sourceId: 'cmte-1',
-          dueAt: null,
-        },
-      ]);
+      // The first query is UNASSIGNED; the second, ACC-167's, finds tasks
+      // waiting in a pool — none here.
+      prisma.task.findMany.mockImplementation(({ where }: { where: { status: unknown } }) =>
+        Promise.resolve(
+          where.status === 'UNASSIGNED'
+            ? [
+                {
+                  id: 'task-1',
+                  title: 'Chase December figures',
+                  sourceType: 'COMMITTEE',
+                  sourceId: 'cmte-1',
+                  dueAt: null,
+                },
+              ]
+            : [],
+        ),
+      );
 
       const result = await detectors.tasksWithoutOwner(ORG_A);
 
