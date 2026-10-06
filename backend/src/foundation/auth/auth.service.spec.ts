@@ -418,6 +418,7 @@ describe('AuthService', () => {
         organizationId: ORG_A,
         status: 'ACTIVE',
         tokenVersion: 2,
+        organization: { status: 'ACTIVE' },
       });
 
       const req = fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } });
@@ -1102,6 +1103,7 @@ describe('AuthService', () => {
       organizationId: ORG_A,
       status: 'ACTIVE',
       tokenVersion: 2,
+      organization: { status: 'ACTIVE' },
       ...over,
     });
 

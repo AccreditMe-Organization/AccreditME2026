@@ -664,9 +664,19 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const user = await this.prisma.user.findFirst({ where: { id: existing.userId } });
+    const user = await this.prisma.user.findFirst({
+      where: { id: existing.userId },
+      include: { organization: { select: { status: true } } },
+    });
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('This account is not active');
+    }
+    // ACC-168 — a closed organisation renews no session. The refresh token
+    // above is already revoked, so a refused refresh cannot be retried; once
+    // the organisation reopens the person signs in again (an access token that
+    // is still within its 15 minutes keeps working again too — TenantGuard).
+    if (!isOrganizationOpen(user.organization.status)) {
+      throw new AuthRefusalException('ORGANIZATION_UNAVAILABLE');
     }
 
     // ACC-122 — THE FORCED LOGOUT, MADE TRUE BY CONSTRUCTION.
