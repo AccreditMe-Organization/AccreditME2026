@@ -6,6 +6,7 @@ import { ReleaseTaskDto } from './release-task.dto';
 import { CreateTaskDto } from './create-task.dto';
 import { ReassignTaskDto } from './reassign-task.dto';
 import { AssignmentHoldersQueryDto } from './assignment-query.dto';
+import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './task-request.dto';
 
 // ACC-163 — these DTOs ARE the refusal for most bad input, so they are tested
 // through a pipe configured exactly as main.ts configures the app's, not by
@@ -309,5 +310,97 @@ describe('AssignmentHoldersQueryDto (ACC-167)', () => {
     await expect(
       run(AssignmentHoldersQueryDto, { orgUnitId: 'u1', positionId: 'p1', taskId: 't1' }, 'query'),
     ).resolves.toEqual({ orgUnitId: 'u1', positionId: 'p1', taskId: 't1' });
+  });
+});
+
+// ── ACC-173 ─────────────────────────────────────────────────────────────────
+
+describe('CreateTaskRequestDto (ACC-173)', () => {
+  it('accepts a request for more time, with the reason trimmed', async () => {
+    const dto = await run(CreateTaskRequestDto, {
+      type: 'EXTENSION',
+      requestedDueAt: '2026-10-20T13:00:00.000Z',
+      reason: '  Waiting on the lab  ',
+    });
+    expect(dto.reason).toBe('Waiting on the lab');
+  });
+
+  it('accepts a hold request', async () => {
+    await expect(
+      run(CreateTaskRequestDto, { type: 'ON_HOLD', holdUntil: '2026-10-25T05:00:00.000Z', reason: 'Supplier closed' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('needs the date its type asks for', async () => {
+    expect(await messages(run(CreateTaskRequestDto, { type: 'EXTENSION', reason: 'x' }))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^requestedDueAt /)]),
+    );
+    expect(await messages(run(CreateTaskRequestDto, { type: 'ON_HOLD', reason: 'x' }))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^holdUntil /)]),
+    );
+  });
+
+  it.each(['RESCHEDULE', 'on_hold', ''])('refuses the type %p', async (type) => {
+    expect(
+      await messages(run(CreateTaskRequestDto, { type, requestedDueAt: '2026-10-20T13:00:00.000Z', reason: 'x' })),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/^type /)]));
+  });
+
+  it('refuses a date that is not an ISO instant', async () => {
+    expect(
+      await messages(run(CreateTaskRequestDto, { type: 'EXTENSION', requestedDueAt: 'next Tuesday', reason: 'x' })),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/^requestedDueAt /)]));
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['blank after trimming', '   '],
+    ['over 1000 characters', 'x'.repeat(1001)],
+  ])('refuses a reason that is %s', async (_label, reason) => {
+    expect(
+      await messages(run(CreateTaskRequestDto, { type: 'ON_HOLD', holdUntil: '2026-10-25T05:00:00.000Z', reason })),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/^reason /)]));
+  });
+
+  it('refuses a field it does not have', async () => {
+    expect(
+      await messages(
+        run(CreateTaskRequestDto, {
+          type: 'EXTENSION',
+          requestedDueAt: '2026-10-20T13:00:00.000Z',
+          reason: 'x',
+          status: 'APPROVED',
+        }),
+      ),
+    ).toEqual(expect.arrayContaining([expect.stringMatching(/status/)]));
+  });
+});
+
+describe('ApproveTaskRequestDto and DeclineTaskRequestDto (ACC-173)', () => {
+  it('approve takes an optional note', async () => {
+    await expect(run(ApproveTaskRequestDto, {})).resolves.toEqual({});
+    await expect(run(ApproveTaskRequestDto, { note: '  Fine  ' })).resolves.toEqual({ note: 'Fine' });
+  });
+
+  it('decline needs a note, trimmed, at most 1000 characters', async () => {
+    expect(await messages(run(DeclineTaskRequestDto, {}))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^note /)]),
+    );
+    expect(await messages(run(DeclineTaskRequestDto, { note: '   ' }))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^note /)]),
+    );
+    expect(await messages(run(DeclineTaskRequestDto, { note: 'x'.repeat(1001) }))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^note /)]),
+    );
+    await expect(run(DeclineTaskRequestDto, { note: ' The date cannot move ' })).resolves.toEqual({
+      note: 'The date cannot move',
+    });
+  });
+
+  // Approve means approve as asked: no counter-proposal field exists.
+  it('approve refuses a counter-proposed date', async () => {
+    expect(await messages(run(ApproveTaskRequestDto, { requestedDueAt: '2026-11-01T13:00:00.000Z' }))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/requestedDueAt/)]),
+    );
   });
 });

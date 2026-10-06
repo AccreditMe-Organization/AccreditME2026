@@ -14,6 +14,9 @@ import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
 import { ReleaseTaskDto } from './dto/release-task.dto';
+import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './dto/task-request.dto';
+import { TaskRequestService } from './task-request.service';
+import { ITaskRequest, ITaskRequestForDecision } from './interfaces/task-request.interface';
 import {
   AssignmentCommitteeMembersQueryDto,
   AssignmentCommitteeRolesQueryDto,
@@ -38,6 +41,7 @@ export class TaskController {
   constructor(
     private readonly taskService: TaskService,
     private readonly assignment: TaskAssignmentService,
+    private readonly requests: TaskRequestService,
   ) {}
 
   // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
@@ -153,6 +157,19 @@ export class TaskController {
       query.positionId,
       query.taskId,
     );
+  }
+
+  // ACC-173 — "Waiting for your decision": pending extension and hold
+  // requests the caller may decide. No @Permissions: self-scoped — the
+  // service builds the query from who the caller is and whom they cover.
+  // Declared before ':id', which would otherwise swallow 'requests'.
+  @Get('requests/awaiting-decision')
+  getAwaitingDecision(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITaskRequestForDecision[]> {
+    return this.requests.awaitingDecision({ id: userId, permissions }, tenantId);
   }
 
   // Must be declared before ':id' — Nest matches routes in declaration order
@@ -306,6 +323,65 @@ export class TaskController {
     @CurrentUser() userId: string,
   ): Promise<ITask> {
     return this.taskService.release(id, dto, userId, tenantId);
+  }
+
+  // ACC-173 — extension and hold requests. None carries @Permissions: asking
+  // is an active assignee's, withdrawing the asker's, deciding the creator's
+  // (or their cover's, or a tasks:reassign holder's) — all only knowable from
+  // the row, so the service decides, with the identical 404 for anyone else.
+  @Post(':id/requests')
+  createRequest(
+    @Param('id') id: string,
+    @Body() dto: CreateTaskRequestDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskRequest> {
+    return this.requests.create(id, dto, userId, tenantId);
+  }
+
+  @Post(':id/requests/:requestId/withdraw')
+  withdrawRequest(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskRequest> {
+    return this.requests.withdraw(id, requestId, userId, tenantId);
+  }
+
+  @Post(':id/requests/:requestId/approve')
+  approveRequest(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @Body() dto: ApproveTaskRequestDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITaskRequest> {
+    return this.requests.approve(id, requestId, dto, { id: userId, permissions }, tenantId);
+  }
+
+  @Post(':id/requests/:requestId/decline')
+  declineRequest(
+    @Param('id') id: string,
+    @Param('requestId') requestId: string,
+    @Body() dto: DeclineTaskRequestDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITaskRequest> {
+    return this.requests.decline(id, requestId, dto, { id: userId, permissions }, tenantId);
+  }
+
+  // "Resume now" — an active assignee, or anyone who may decide.
+  @Post(':id/resume')
+  resume(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITask> {
+    return this.requests.resume(id, { id: userId, permissions }, tenantId);
   }
 
   @Post(':id/reassign')

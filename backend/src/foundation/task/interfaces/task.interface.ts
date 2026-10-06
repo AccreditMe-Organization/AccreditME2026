@@ -36,6 +36,11 @@ export interface ITask {
   // only by SlaMonitorProcessor, never by any caller.
   managerEscalatedAt: Date | null;
   headEscalatedAt: Date | null;
+  // ACC-173 — set only while the task is ON_HOLD (an approved hold request);
+  // all three cleared on resume.
+  heldAt: Date | null;
+  onHoldUntil: Date | null;
+  heldFromStatus: string | null; // TaskStatus — PENDING or IN_PROGRESS
   createdAt: Date;
   updatedAt: Date;
 }

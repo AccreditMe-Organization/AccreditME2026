@@ -12,6 +12,7 @@ import { OrganizationService } from '../organization/organization.service';
 import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
+import { TaskRequestService } from '../task/task-request.service';
 import {
   POOL_LABEL_INCLUDE,
   PICKABLE_STATUSES,
@@ -84,6 +85,10 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     // edge, same precedent as tenantService directly above.
     @Inject(forwardRef(() => TaskService))
     private readonly taskService: TaskService,
+    // ACC-173 — the hold resume sweep goes through TaskRequestService, which
+    // owns the working-time shift. Same forwardRef edge as taskService.
+    @Inject(forwardRef(() => TaskRequestService))
+    private readonly taskRequests: TaskRequestService,
     @InjectQueue('sla-monitor') private readonly slaMonitorQueue: Queue,
   ) {
     super();
@@ -132,6 +137,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
     );
     await this.runIsolatedStep('sweepOverdueTasks', failedSteps, () => this.sweepOverdueTasks(now));
     await this.runIsolatedStep('sweepUnpickedPoolTasks', failedSteps, () => this.sweepUnpickedPoolTasks(now));
+    await this.runIsolatedStep('sweepDueHolds', failedSteps, () => this.sweepDueHolds(now));
     await this.runIsolatedStep('sweepUnassignedStages', failedSteps, () => this.sweepUnassignedStages());
     await this.runIsolatedStep('sweepExpiredActingOrgUnitAssignments', failedSteps, () =>
       this.sweepExpiredActingOrgUnitAssignments(now),
@@ -576,7 +582,8 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       where: {
         dueAt: { lt: now },
         // A legacy OVERDUE row is open and still eligible — Finding 2's fix.
-        status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED'] },
+        // ACC-173 — an ON_HOLD task's SLA is paused: never breached while held.
+        status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED', 'ON_HOLD'] },
         // ACC-167 — not a task WAITING in a pool: nobody holds it, so there is
         // no assignee whose manager could be resolved, and the skipped-
         // escalation audit row would repeat every pass (REJECTED's reason).
@@ -618,6 +625,26 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
           await this.fireTaskEscalation(task, 'HEAD');
         }
       }
+    }
+  }
+
+  // ACC-173 — holds whose date has come resume, here, every fifteen minutes.
+  // Not gated on working hours: resuming is a state change, not an escalation,
+  // and the working-time shift already counts only working time.
+  //
+  // Each task resumes in its own transaction under its row lock, through
+  // TaskRequestService.resumeDueHold(), which re-reads the task and does
+  // nothing unless it is still a due hold — so a hold resumed by hand between
+  // this read and that lock is not resumed twice, and a hold resumes once.
+  // Tasks are taken across tenants (the sweep has no tenant); each one is
+  // resumed within its own organisation.
+  private async sweepDueHolds(now: Date): Promise<void> {
+    const due = await this.prisma.task.findMany({
+      where: { status: 'ON_HOLD', onHoldUntil: { lte: now } },
+      select: { id: true, organizationId: true },
+    });
+    for (const task of due) {
+      await this.taskRequests.resumeDueHold(task.id, task.organizationId, now);
     }
   }
 

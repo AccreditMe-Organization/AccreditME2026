@@ -317,6 +317,39 @@ export class WorkingCalendarService {
     return current.plus({ hours: remainingHours }).toUTC();
   }
 
+  // ACC-173 — the WORKING hours between two instants: how much of the
+  // tenant's working time (working days, working hours, minus holidays, in the
+  // calendar's own zone) falls inside [from, to). The inverse of
+  // calculateDeadline(): a task held from `from` to `to` resumes with its due
+  // date moved forward by exactly this many working hours.
+  //
+  // Day by day, summing the overlap of each working day's window with the
+  // interval. Holds are capped at 90 days, so the loop is short. A `to` at or
+  // before `from` is zero.
+  async workingHoursBetween(from: DateTime, to: DateTime, organizationId: string): Promise<number> {
+    if (to <= from) return 0;
+    const calendar = await this.getOrCreate(organizationId);
+    const holidays = await this.listHolidays(organizationId);
+    const [startHour, startMin] = this.parseHHmm(calendar.workingHoursStart);
+    const [endHour, endMin] = this.parseHHmm(calendar.workingHoursEnd);
+
+    const start = from.setZone(calendar.timezone);
+    const end = to.setZone(calendar.timezone);
+
+    let total = 0;
+    for (let day = start.startOf('day'); day < end; day = day.plus({ days: 1 })) {
+      if (!this.isWorkingDay(day, calendar, holidays)) continue;
+      const open = day.set({ hour: startHour, minute: startMin });
+      const close = day.set({ hour: endHour, minute: endMin });
+      const overlapStart = open > start ? open : start;
+      const overlapEnd = close < end ? close : end;
+      if (overlapEnd > overlapStart) {
+        total += overlapEnd.diff(overlapStart, 'hours').hours;
+      }
+    }
+    return total;
+  }
+
   private isWorkingDay(
     dt: DateTime,
     calendar: IWorkingCalendar,

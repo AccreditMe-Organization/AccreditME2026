@@ -165,6 +165,21 @@ enum TaskStatus {
   // longer written (overdue is a flag computed from dueAt); removing them is a
   // later, contracting migration, after the OVERDUE backfill has run.
   REJECTED
+  // ACC-173 — set only by an approved hold request; never chosen by hand.
+  ON_HOLD
+}
+
+enum TaskRequestType {
+  EXTENSION
+  ON_HOLD
+}
+
+enum TaskRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  WITHDRAWN
+  CANCELLED
 }
 
 enum TaskPriority {
@@ -357,6 +372,7 @@ model Organization {
   orgPositions           OrgPosition[]
   tasks                  Task[]
   taskEvidence           TaskEvidence[]
+  taskRequests           TaskRequest[]
   notifications          Notification[]
   setupConditions        SetupCondition[]
   setupConditionRuns     SetupConditionRun[]
@@ -490,6 +506,8 @@ model User {
   taskAssignments                 TaskAssignee[]             @relation("TaskAssigneeUser")
   taskAssignmentsMade             TaskAssignee[]             @relation("TaskAssigneeAssignedBy")
   taskEvidenceUploaded            TaskEvidence[]
+  taskRequestsMade                TaskRequest[]   @relation("TaskRequestRequestedBy")
+  taskRequestsDecided             TaskRequest[]   @relation("TaskRequestDecidedBy")
   notifications                   Notification[]
   committeeMembers                CommitteeMember[]
   committeeMembershipEvents       CommitteeMembershipEvent[]
@@ -1339,6 +1357,13 @@ model Task {
   pooledAt                     DateTime?
   poolEscalateAt               DateTime?
   poolEscalatedAt              DateTime?
+  // ACC-173 — the hold, set only when a hold request is approved. heldAt is
+  // when the clock stopped; onHoldUntil is when the SLA monitor resumes it
+  // (the start of working hours on the chosen day); heldFromStatus is where it
+  // returns to (PENDING or IN_PROGRESS). All three are cleared on resume.
+  heldAt                       DateTime?
+  onHoldUntil                  DateTime?
+  heldFromStatus               TaskStatus?
   createdAt                    DateTime       @default(now())
   updatedAt                    DateTime       @updatedAt
 
@@ -1352,6 +1377,7 @@ model Task {
   assignedCommitteeRoleValue LookupValue?      @relation("TaskAssignedCommitteeRole", fields: [assignedCommitteeRoleValueId], references: [id])
   assignees                  TaskAssignee[]
   evidence                   TaskEvidence[]
+  requests                   TaskRequest[]
 
   @@index([organizationId])
   @@index([status])
@@ -1363,6 +1389,41 @@ model Task {
   @@index([organizationId, assignedOrgUnitId, assignedPositionId])
   @@index([assignedCommitteeId, assignedCommitteeRoleValueId])
   @@index([poolEscalateAt])
+  @@index([onHoldUntil])
+}
+
+// ACC-173 — the person doing a task asks for more time (EXTENSION, with a new
+// due date) or for the task to be put ON_HOLD until a date. Decided by the
+// task's creator or whoever is covering for them (canActForCreator), or by a
+// tasks:reassign holder when the creator is no longer ACTIVE. At most one
+// PENDING request per task, enforced under the task's row lock rather than by
+// a partial unique index (Prisma cannot declare one, and migration files are
+// never hand-edited).
+model TaskRequest {
+  id             String            @id @default(cuid())
+  organizationId String
+  taskId         String
+  type           TaskRequestType
+  requestedById  String
+  reason         String
+  requestedDueAt DateTime?
+  holdUntil      DateTime?
+  status         TaskRequestStatus @default(PENDING)
+  decidedById    String?
+  decidedAt      DateTime?
+  decisionNote   String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  task         Task         @relation(fields: [taskId], references: [id])
+  requestedBy  User         @relation("TaskRequestRequestedBy", fields: [requestedById], references: [id])
+  decidedBy    User?        @relation("TaskRequestDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([taskId, status])
+  @@index([organizationId, status])
+  @@index([requestedById])
 }
 
 model TaskAssignee {

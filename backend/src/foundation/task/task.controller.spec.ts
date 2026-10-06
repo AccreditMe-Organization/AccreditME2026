@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { TaskRequestService } from './task-request.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -43,6 +44,9 @@ const MOCK_TASK: ITask = {
   pooledAt: null,
   poolEscalateAt: null,
   poolEscalatedAt: null,
+  heldAt: null,
+  onHoldUntil: null,
+  heldFromStatus: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: new Date('2026-01-01'),
@@ -76,6 +80,15 @@ describe('TaskController', () => {
     listCommitteeMembers: jest.Mock;
   };
 
+  const requests = {
+    create: jest.fn(),
+    withdraw: jest.fn(),
+    approve: jest.fn(),
+    decline: jest.fn(),
+    resume: jest.fn(),
+    awaitingDecision: jest.fn().mockResolvedValue([]),
+  };
+
   beforeEach(async () => {
     assignment = {
       listUnits: jest.fn().mockResolvedValue([]),
@@ -106,6 +119,7 @@ describe('TaskController', () => {
       providers: [
         { provide: TaskService, useValue: service },
         { provide: TaskAssignmentService, useValue: assignment },
+        { provide: TaskRequestService, useValue: requests },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -302,6 +316,15 @@ describe('TaskController', () => {
     'getAssignableCommitteeRoles',
     'getCommitteeAssignees',
     'getAssignees',
+    // ACC-173 — asking is an assignee's, withdrawing the asker's, deciding the
+    // creator's (or their cover's, or a tasks:reassign holder's): only the row
+    // can say, so the service decides.
+    'getAwaitingDecision',
+    'createRequest',
+    'withdrawRequest',
+    'approveRequest',
+    'declineRequest',
+    'resume',
   ] as const)('%s carries no route permission', (method) => {
     const reflector = new Reflector();
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype[method])).toBeUndefined();
@@ -333,5 +356,29 @@ describe('TaskController', () => {
 
     await controller.getCommitteeAssignees({ committeeId: 'c1', roleValueId: 'r1' }, TENANT_ID, USER_ID, perms);
     expect(assignment.listCommitteeMembers).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', 'r1', undefined);
+  });
+
+  it('the request routes delegate with the caller, their permissions and the tenant', async () => {
+    const perms = ['tasks:reassign'];
+    const viewer = { id: USER_ID, permissions: perms };
+    const dto = { type: 'EXTENSION' as const, requestedDueAt: '2026-10-20T13:00:00.000Z', reason: 'Lab is late' };
+
+    await controller.createRequest('task-1', dto, TENANT_ID, USER_ID);
+    expect(requests.create).toHaveBeenCalledWith('task-1', dto, USER_ID, TENANT_ID);
+
+    await controller.withdrawRequest('task-1', 'req-1', TENANT_ID, USER_ID);
+    expect(requests.withdraw).toHaveBeenCalledWith('task-1', 'req-1', USER_ID, TENANT_ID);
+
+    await controller.approveRequest('task-1', 'req-1', { note: 'ok' }, TENANT_ID, USER_ID, perms);
+    expect(requests.approve).toHaveBeenCalledWith('task-1', 'req-1', { note: 'ok' }, viewer, TENANT_ID);
+
+    await controller.declineRequest('task-1', 'req-1', { note: 'no' }, TENANT_ID, USER_ID, perms);
+    expect(requests.decline).toHaveBeenCalledWith('task-1', 'req-1', { note: 'no' }, viewer, TENANT_ID);
+
+    await controller.resume('task-1', TENANT_ID, USER_ID, perms);
+    expect(requests.resume).toHaveBeenCalledWith('task-1', viewer, TENANT_ID);
+
+    await controller.getAwaitingDecision(TENANT_ID, USER_ID, perms);
+    expect(requests.awaitingDecision).toHaveBeenCalledWith(viewer, TENANT_ID);
   });
 });

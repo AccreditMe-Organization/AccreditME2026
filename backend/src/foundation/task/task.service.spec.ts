@@ -3,6 +3,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
@@ -80,6 +81,14 @@ const mockPrisma = {
     findMany: jest.fn(),
     update: jest.fn(),
     create: jest.fn(),
+  },
+  // ACC-173 — the request lifecycle. No pending request unless a test sets one.
+  taskRequest: {
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    create: jest.fn(),
+    update: jest.fn(),
   },
   taskEvidence: {
     create: jest.fn(),
@@ -173,6 +182,12 @@ describe('TaskService', () => {
         // ACC-167 — REAL, over the same mockPrisma: it decides where a chosen
         // target lands, and a stub would leave those tests asserting a mock.
         TaskAssignmentService,
+        // ACC-173 — the creator acts for themself; covering is pinned in
+        // task-authority.service.spec.ts.
+        {
+          provide: TaskAuthorityService,
+          useValue: { canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId) },
+        },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         // The REAL service, not a mock — it takes only PrismaService, and
@@ -423,7 +438,7 @@ describe('TaskService', () => {
           where: expect.objectContaining({
             AND: [
               { status: 'IN_PROGRESS' },
-              { dueAt: { lt: expect.any(Date) }, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+              { dueAt: { lt: expect.any(Date) }, status: { notIn: ['COMPLETED', 'CANCELLED', 'ON_HOLD'] } },
             ],
           }),
         }),
@@ -1800,7 +1815,7 @@ describe('TaskService', () => {
       expect(cancelled).toBe(2);
       expect(mockPrisma.task.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['t-1', 't-2'] }, organizationId: ORG_A },
-        data: { status: 'CANCELLED' },
+        data: { status: 'CANCELLED', heldAt: null, onHoldUntil: null, heldFromStatus: null },
       });
     });
 

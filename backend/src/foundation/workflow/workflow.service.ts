@@ -14,6 +14,7 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TaskService } from '../task/task.service';
+import { taskStatusTitle } from '../task/task-status-label';
 import type { ResolvedPlacement } from '../task/task-assignment.service';
 import { PoolPlacement, resolvePoolMemberIds } from '../task/task-pool';
 import { RoleService } from '../roles/role.service';
@@ -1250,7 +1251,9 @@ export class WorkflowService {
     // Names what is outstanding rather than throwing a generic conflict —
     // the actor's next action is to go and complete those specific tasks,
     // and "a task is incomplete" does not tell them which.
-    const summary = outstanding.map((t) => `"${t.title}" (${t.status})`).join(', ');
+    // ACC-173 — the status as words ("On hold", "In progress"), never the raw
+    // enum. An on-hold task is open, so it holds the stage like any other.
+    const summary = outstanding.map((t) => `"${t.title}" (${taskStatusTitle(t.status)})`).join(', ');
     throw new ConflictException(
       `This stage has ${outstanding.length} incomplete task(s) that must be completed before ` +
         `this transition can fire: ${summary}`,

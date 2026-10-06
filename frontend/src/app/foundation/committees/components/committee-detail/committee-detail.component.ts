@@ -380,6 +380,13 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                         {{ rejectionLine(task) }}
                       </span>
                     }
+                    <!-- ACC-173 — a hold, and a request waiting for a decision.
+                         Shown, not acted on here: deciders act in My tasks. -->
+                    @if (requestOrHoldLine(task); as line) {
+                      <span class="am-task-rejection text-[11.5px] text-[var(--am-ink-700)]" [attr.title]="line">
+                        {{ line }}
+                      </span>
+                    }
                   </span>
                   <span class="flex items-center gap-2 shrink-0">
                     <!-- Overdue is the one thing worth colouring in a summary:
@@ -932,7 +939,8 @@ export class CommitteeDetailComponent implements OnInit {
   // whose assignment was completed by a colleague or reassigned away is
   // correctly excluded without a second check.
   canComplete(task: ITaskWithAssigneesDto): boolean {
-    if (!isTaskOpen(task)) return false;
+    // ACC-173 — a task on hold must be resumed first.
+    if (!isTaskOpen(task) || task.status === 'ON_HOLD') return false;
     const me = this.authService.currentUser()?.id;
     return !!me && task.assignees.some((a) => a.userId === me);
   }
@@ -944,6 +952,22 @@ export class CommitteeDetailComponent implements OnInit {
 
   statusLabel(task: ITaskWithAssigneesDto): string {
     return taskStatusLabelKey(task);
+  }
+
+  // ACC-173 — "On hold until 25 Oct 2026", or the request waiting for a
+  // decision: "Sara asked for more time — to 20 Oct 2026, 13:00".
+  requestOrHoldLine(task: ITaskWithAssigneesDto): string | null {
+    if (task.status === 'ON_HOLD') {
+      return this.translate.instant('task.request.onHoldUntil', { date: this.format.date(task.onHoldUntil) });
+    }
+    const r = task.openRequest;
+    if (!r) return null;
+    return r.type === 'EXTENSION'
+      ? this.translate.instant('task.request.recordExtension', {
+          name: r.requestedByName,
+          date: this.format.dateTime(r.requestedDueAt),
+        })
+      : this.translate.instant('task.request.recordHold', { name: r.requestedByName, date: this.format.date(r.holdUntil) });
   }
 
   // "Rejected by Sarah: Not my unit". The rejecter's name is read live, so a

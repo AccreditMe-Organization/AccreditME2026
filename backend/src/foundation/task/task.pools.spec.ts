@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
@@ -80,6 +81,14 @@ const mockPrisma = {
     update: jest.fn(),
   },
   taskAssignee: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
+  // ACC-173 — the request lifecycle. No pending request unless a test sets one.
+  taskRequest: {
+    findMany: jest.fn().mockResolvedValue([]),
+    findFirst: jest.fn().mockResolvedValue(null),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
   taskEvidence: { count: jest.fn() },
   user: {
     findMany: jest.fn(),
@@ -151,6 +160,12 @@ describe('TaskService — pools (ACC-167)', () => {
       providers: [
         TaskService,
         TaskAssignmentService,
+        // ACC-173 — the creator acts for themself; covering is pinned in
+        // task-authority.service.spec.ts.
+        {
+          provide: TaskAuthorityService,
+          useValue: { canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId) },
+        },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         DelegationLabelService,

@@ -2009,6 +2009,27 @@ model Task {
   rejectedById         String?   // → User ("TaskRejectedBy")  cleared by reassign
   managerEscalatedAt   DateTime?
   headEscalatedAt      DateTime?
+  heldAt               DateTime?                       // ACC-173 — set only while
+  onHoldUntil          DateTime?   // indexed            //   ON_HOLD, all three
+  heldFromStatus       TaskStatus?                     //   cleared on resume (3.10)
+}
+
+model TaskRequest {                // ACC-173 — more time, or a hold (3.10)
+  id             String            @id @default(cuid())
+  organizationId String
+  taskId         String
+  type           TaskRequestType   // EXTENSION | ON_HOLD
+  status         TaskRequestStatus @default(PENDING)
+                 // PENDING | APPROVED | DECLINED | WITHDRAWN | CANCELLED
+  requestedDueAt DateTime?         // EXTENSION only
+  holdUntil      DateTime?         // ON_HOLD only
+  reason         String
+  requestedById  String            // → User ("TaskRequestRequestedBy")
+  decidedById    String?           // → User ("TaskRequestDecidedBy"), SET NULL
+  decidedAt      DateTime?
+  decisionNote   String?
+  @@index([organizationId]) @@index([taskId, status])
+  @@index([organizationId, status]) @@index([requestedById])
 }
 
 model TaskAssignee {
@@ -2037,7 +2058,8 @@ model TaskEvidence {
 ```
 
 `TaskStatus`: `PENDING, IN_PROGRESS, COMPLETED, OVERDUE, CANCELLED,
-DELEGATED, UNASSIGNED, REJECTED`.
+DELEGATED, UNASSIGNED, REJECTED, ON_HOLD` (`ON_HOLD` added by ACC-173, written
+only by an approved hold — 3.10).
 
 **What is written, as of ACC-163**: `PENDING` (shown as **Assigned** — the
 rename is the translation only), `IN_PROGRESS` (by `start()`), `REJECTED`
@@ -2052,6 +2074,10 @@ Removing both values from the enum is a later, contracting migration.
 **"Open"** throughout this section means `notIn ['COMPLETED', 'CANCELLED']` —
 so `REJECTED` and `UNASSIGNED` are open: the work is still owed, and a
 rejected task holds its stage under the ACC-65 gate until it is reassigned.
+`ON_HOLD` is open too (ACC-173): a held task still blocks its stage, and the
+gate's refusal names it as "On hold", never the raw enum. It is never
+OVERDUE — the overdue filter and the overdue sweep both skip it, because its
+SLA is paused (3.10).
 
 **New evidence is `LINK` (http/https only) or `INTERNAL_REFERENCE`** (ACC-163,
 Q11). `TEXT` is no longer accepted — a note is a comment — and `ATTACHMENT`
@@ -2182,6 +2208,10 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
     rejected task goes back to its creator (Q4). Checked in the service,
     not by `@Permissions`, because creator-ness is only knowable from the
     row; anyone else gets the identical 404 (ACC-101 clause (b)).
+    **Widened by ACC-173 to whoever currently acts for the creator**
+    (`TaskAuthorityService.canActForCreator()`, 3.10) — the same rule the
+    picker's gate now uses. Reassigning also ends a hold and cancels any
+    open request (3.10's cascade).
   - **Closed tasks are refused** with 409. Before, reassigning a
     `COMPLETED` or `CANCELLED` task silently reopened it as `PENDING`.
   - **A returning assignee reuses their row** (removedAt cleared,
@@ -2402,8 +2432,10 @@ overdue is computed from `dueAt` wherever it is shown. The query also
 excludes `REJECTED`, for `UNASSIGNED`'s reason: no active assignee means no
 escalation target, and the skipped-escalation audit row would otherwise be
 written again on every pass for as long as the task waited for its creator.
-The query is now `notIn ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED']`
-— a legacy `OVERDUE` row is still swept.
+The query is now `notIn ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED',
+'ON_HOLD']` — a legacy `OVERDUE` row is still swept. `ON_HOLD` was added by
+ACC-173: a held task's SLA is paused, so it is never breached or escalated
+while held. Holds are ended by their own step, `sweepDueHolds()` (3.10).
 
 For each overdue task: stamps `slaBreachedAt` if it is still null, then reads
 the tenant's real `ITaskSlaTier` for the task's own `priority`
@@ -2568,6 +2600,20 @@ NOT ungated — its permission check moved into the service (3.2).
   decides: 403 naming `tasks:create` when no task is named (ACC-101 clause a),
   the identical 404 otherwise (clause b). The committee variants also need
   `committees:view`, checked before anything is read.
+
+**ACC-173 adds six more, again deliberately ungated** (`task.controller.spec.ts`
+asserts the absence). Every entitlement is knowable only from the row, so each
+is clause (b): the identical 404 "Task not found", decided before any 409.
+
+- `POST /tasks/:id/requests`, `.../requests/:requestId/withdraw` — an active
+  assignee; withdraw only by the person who asked.
+- `.../approve`, `.../decline`, `POST /tasks/:id/resume` — the creator, whoever
+  currently acts for them, or a `tasks:reassign` holder (resume also: an
+  active assignee). Deciding your own request is a 403 *"You cannot decide
+  your own request"*, checked AFTER the 404, so only someone already entitled
+  to decide learns why.
+- `GET /tasks/requests/awaiting-decision` — self-scoped: the requests the
+  caller may decide. Declared before `:id` (route-order spec).
 
 **CLOSED by ACC-167 (was ACC-166) — reassigning needed `users:view`.** The
 reassign dialog listed people through the user list. It now uses the picker
@@ -2749,6 +2795,118 @@ a committee task) states the server's outcome before Save. My tasks gains
 - No filter-search in the picker; typeahead only (`OverlaySelectComponent`,
   10.7).
 - Out-of-office routing is not applied to pool members (2.5.2).
+
+### 3.10 More time and holds — requests the creator decides (ACC-173)
+
+An assignee asks for more time (`EXTENSION`, a new due date) or for the task to
+be put on hold (`ON_HOLD`, until a date). The creator — or whoever currently
+acts for them — approves or declines. Files: `task-request.service.ts`,
+`task-authority.service.ts`, `task-request-lifecycle.ts`,
+`task-status-label.ts`.
+
+**Asking** (`POST /tasks/:id/requests { type, requestedDueAt | holdUntil,
+reason }`), under the row lock: an active assignee only (else 404), then the
+409s — *"This task is already on hold"*, *"{An on-hold / A completed / …} task
+cannot take a request"* (only Assigned, In progress and legacy `OVERDUE` can),
+*"This task already has a request waiting for a decision"*. **One open request
+per task** is enforced under the lock, because Prisma cannot express the
+partial unique index. Then the 400s: a new due date in the future and after
+the current one; a hold date in the future and at most 90 days away
+(`MAX_HOLD_DAYS`).
+
+**Deciding** — approve **as asked**; there is no counter-proposal. A decider
+who wants a different date declines with a note (required, the person who
+asked reads it) and the assignee asks again. Approve re-checks that the task
+can still take a request and that the asked-for date has not passed (409
+*"…has passed; decline and ask for a new one"*). A decided request is final:
+409 *"This request has already been approved / declined / withdrawn /
+cancelled"*.
+- **Extension approved** → `dueAt` = the asked date, `dueDateOverridden`,
+  and `slaBreachedAt` / both escalation stamps cleared so escalation can fire
+  again against the new date. Audited `due_date_extended`.
+- **Hold approved** → `status: ON_HOLD`, `heldFromStatus` (In progress stays
+  In progress; Assigned and legacy `OVERDUE` become `PENDING`), `heldAt`,
+  `onHoldUntil`. Audited `hold_started`.
+
+**Who decides — `TaskAuthorityService.canActForCreator()`.** The creator; or
+their out-of-office delegate (`actingUserId`, BOTH dates set, `from ≤ now ≤
+to`); or the acting head appointed for `ABSENCE` of a unit the creator heads
+substantively — read from the `OrgUnitHeadAssignment` period table (in force:
+`validFrom ≤ now`, not ended, `validTo` null or later), **never from the
+`OrgUnit.actingHeadUserId` cache** (ACC-82's rule). A `tasks:reassign` holder
+may also decide. Never the requester. `createdById` is always a human: a
+`SYSTEM_AUTOMATIC` transition throws, the SLA monitor fires none, and starting
+an instance creates no task — so "the creator" always names a person.
+
+**Who is told** (after commit, English and Arabic): a new request → the
+creator plus their current cover, and the `tasks:reassign` holders only when
+the creator is no longer ACTIVE; a decision → the person who asked; a resume →
+the assignees and the creator, never the person who resumed. The decider's
+inbox, "Waiting for your decision" on My tasks, is the same set, read from
+`GET /tasks/requests/awaiting-decision`.
+
+**While on hold.** Start, complete, reject and release refuse with 409
+*"Resume the task first"* (`lockOpenForActiveAssignee`'s `allowOnHold`);
+evidence may still be added. The task is never overdue (frontend
+`isTaskOverdue` agrees) and is skipped by the overdue sweep (3.4.1). It still
+blocks its stage (3.1).
+
+**Resume** — by hand (`POST /tasks/:id/resume`) or by
+`SlaMonitorProcessor.sweepDueHolds()` at `onHoldUntil`, an isolated step that
+runs every pass, not only within working hours. Both go through one `endHold()`:
+- the shift is `WorkingCalendarService.workingHoursBetween(heldAt, now)`, and
+  `dueAt` moves by that many WORKING hours via `calculateDeadline()`; a zero
+  shift writes no new date;
+- the escalation stamps are cleared only if the new `dueAt` is in the future;
+- status returns to `heldFromStatus`, and all three hold fields are cleared;
+- audited `resumed` with `heldWorkingHours`, `dueAtBefore`, `dueAtAfter`.
+
+`resumeDueHold()` re-checks under the lock that the task is still a due hold,
+so a hold resumed by hand, reassigned or closed since the sweep read it is
+skipped — **a hold resumes once**.
+
+**Dates.** The dialog follows New task's convention (ACC-96 Part A): the
+picked day and time are read in the BROWSER's zone and sent as an instant. An
+extension keeps the time picked; a hold ends at the start of working hours on
+the chosen day (`DueDateService.startOfDayFor`). Tenant time zones in the
+browser (ACC-96 Part B) are still open, so a reader in another zone picks in
+theirs.
+
+**The cancel cascade** (`cancelOpenRequests()`, audited per request as
+`request_cancelled` with its cause). An open request is cancelled — and a hold
+ended where stated — by:
+
+| Event | Requests cancelled | Hold |
+|---|---|---|
+| complete | all | — (cannot complete while held) |
+| reject | the rejecter's own, if others remain; all when the task becomes `REJECTED` | — |
+| release | the releaser's own, if others remain; all when the task returns to its pool | — |
+| reassign | all | ended |
+| `cancelForStage` / `cancelForInstance` | all | ended |
+| departure, an acting user takes over, or others remain | only the leaver's | kept |
+| departure, back to the pool or `UNASSIGNED` | all | ended |
+
+**Readable labels.** Every 409 and the stage gate's message name a status the
+way a person reads it — `aTaskThatIs()` ("An on-hold task") and
+`taskStatusTitle()` ("On hold") — never the enum or `status.toLowerCase()`.
+
+**Frontend.** My tasks: Request more time / Ask to put on hold on a row with
+nothing pending; the pending line and Withdraw for the person who asked; "On
+hold until {date}" and Resume now on a held row; the "Waiting for your
+decision" section with a review dialog (approve, optional note / decline,
+required note). The committee record shows the hold or the pending request
+on the task's row; deciding happens in My tasks only.
+
+**Known limitations.**
+- **The stage SLA is not shifted.** `WorkflowInstanceStage.slaDueAt` keeps
+  running while a task in that stage is on hold; only the task's own `dueAt`
+  moves.
+- `calculateDeadline()` treats a start BEFORE opening time on a working day as
+  the next working day, and the resume shift goes through it — ACC-175, whose
+  fix changes every SLA due date and needs its own plan. A zero shift is
+  skipped on resume, so the zero-hours normalisation cannot move a date.
+- A creator cannot yet edit or cancel their task directly; that is ACC-174,
+  next after this ticket.
 
 ## 4. Notification System
 

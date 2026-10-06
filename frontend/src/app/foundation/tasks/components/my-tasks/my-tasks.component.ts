@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { AmDateTimePipe, FormatService } from '../../../../core/formatting';
+import { Observable } from 'rxjs';
+import { AmDatePipe, AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
@@ -11,11 +12,17 @@ import {
   ITaskListItemDto,
   IMyTaskListItemDto,
   MyTasksQuery,
+  TaskOpenRequestDto,
   TaskPoolDto,
+  TaskRequestForDecisionDto,
+  TaskRequestType,
 } from '../../services/task.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { taskPoolLabel } from '../../task-pool-label';
 import { TaskReleaseDialogComponent } from '../task-release-dialog/task-release-dialog.component';
+import { TaskRequestDialogComponent } from '../task-request-dialog/task-request-dialog.component';
+import { TaskRequestDecisionDialogComponent } from '../task-request-decision-dialog/task-request-decision-dialog.component';
+import { AuthService } from '../../../../core/services/auth.service';
 import {
   displayStatus,
   isTaskOpen,
@@ -88,6 +95,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
   standalone: true,
   imports: [
     PageHeaderComponent,
+    AmDatePipe,
     AmDateTimePipe,
     TranslatePipe,
     TableModule,
@@ -99,10 +107,53 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
     TaskRejectDialogComponent,
     TaskLinkEvidenceDialogComponent,
     TaskReleaseDialogComponent,
+    TaskRequestDialogComponent,
+    TaskRequestDecisionDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
       <app-page-header [title]="'task.myTasks' | translate" />
+
+      <!-- ACC-173 — requests the viewer may decide: on tasks they created, or
+           created by someone they cover. Renders nothing when empty. -->
+      @if (awaiting().length > 0) {
+        <section class="am-available" aria-labelledby="awaitingHeading">
+          <h2 id="awaitingHeading" class="text-heading font-semibold">{{ 'task.request.awaiting' | translate }}</h2>
+          <p class="text-meta text-[var(--am-ink-500)]">{{ 'task.request.awaitingPurpose' | translate }}</p>
+          <p-table [value]="awaiting()" styleClass="w-full">
+            <ng-template pTemplate="header">
+              <tr>
+                <th style="width: 30%">{{ 'task.title' | translate }}</th>
+                <th style="width: 34%">{{ 'task.request.asked' | translate }}</th>
+                <th style="width: 15%">{{ 'task.dueDate' | translate }}</th>
+                <th style="width: 21%"><span class="sr-only">{{ 'common.actions' | translate }}</span></th>
+              </tr>
+            </ng-template>
+            <ng-template pTemplate="body" let-request>
+              <tr>
+                <td>{{ request.task.title }}</td>
+                <td>
+                  <span class="block">{{ askedLine(request) }}</span>
+                  <span class="block text-meta text-[var(--am-ink-500)]">
+                    {{ 'task.request.reasonQuoted' | translate: { reason: request.reason } }}
+                  </span>
+                </td>
+                <td>{{ request.task.dueAt | amDateTime }}</td>
+                <td class="text-end">
+                  @if (canReview(request)) {
+                    <p-button
+                      size="small"
+                      [label]="'task.request.review' | translate"
+                      [ariaLabel]="'task.request.reviewNamed' | translate: { title: request.task.title }"
+                      (onClick)="openDecision(request)"
+                    />
+                  }
+                </td>
+              </tr>
+            </ng-template>
+          </p-table>
+        </section>
+      }
 
       @if (available().length > 0) {
         <section class="am-available" aria-labelledby="availableHeading">
@@ -194,6 +245,15 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
                   {{ 'task.pickedUp' | translate }} · {{ poolLabel(task.pool) }}
                 </span>
               }
+              <!-- ACC-173 — a pending request, and a hold. -->
+              @if (task.openRequest; as r) {
+                <span class="block text-meta text-[var(--am-ink-500)]">{{ requestLine(r) }}</span>
+              }
+              @if (task.status === 'ON_HOLD') {
+                <span class="block text-meta text-[var(--am-ink-700)]">
+                  {{ 'task.request.onHoldUntil' | translate: { date: (task.onHoldUntil | amDate) } }}
+                </span>
+              }
               @if (task.requiresEvidence) {
                 <span class="block text-meta text-[var(--am-ink-500)]">
                   {{ evidenceLine(task) }}
@@ -224,6 +284,33 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
             </td>
             <td>
               <span class="inline-flex items-center gap-1">
+                @if (canResume(task)) {
+                  <am-icon-button
+                    icon="pi pi-step-forward"
+                    severity="primary"
+                    [label]="'task.request.resumeNamed' | translate: { title: task.title }"
+                    (activated)="onResume(task)"
+                  />
+                }
+                @if (canWithdraw(task)) {
+                  <am-icon-button
+                    icon="pi pi-undo"
+                    [label]="'task.request.withdrawNamed' | translate: { title: task.title }"
+                    (activated)="onWithdraw(task)"
+                  />
+                }
+                @if (canRequest(task)) {
+                  <am-icon-button
+                    icon="pi pi-calendar-plus"
+                    [label]="'task.request.extensionNamed' | translate: { title: task.title }"
+                    (activated)="openRequestDialog(task, 'EXTENSION')"
+                  />
+                  <am-icon-button
+                    icon="pi pi-pause"
+                    [label]="'task.request.holdNamed' | translate: { title: task.title }"
+                    (activated)="openRequestDialog(task, 'ON_HOLD')"
+                  />
+                }
                 @if (canStart(task)) {
                   <am-icon-button
                     icon="pi pi-play"
@@ -296,6 +383,19 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
       [task]="actionTarget()"
       (released)="reloadAll()"
     />
+    <app-task-request-dialog
+      [visible]="requestVisible()"
+      (visibleChange)="requestVisible.set($event)"
+      [task]="actionTarget()"
+      [type]="requestType()"
+      (requested)="loadTasks()"
+    />
+    <app-task-request-decision-dialog
+      [visible]="decisionVisible()"
+      (visibleChange)="decisionVisible.set($event)"
+      [request]="decisionTarget()"
+      (decided)="reloadAll()"
+    />
   `,
   styles: [
     `
@@ -312,6 +412,7 @@ export class MyTasksComponent implements OnInit {
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
+  private readonly auth = inject(AuthService);
 
   readonly filters = FILTERS;
   selectedFilter: FilterValue | null = null;
@@ -330,6 +431,13 @@ export class MyTasksComponent implements OnInit {
   readonly linkVisible = signal(false);
   readonly releaseVisible = signal(false);
 
+  // ACC-173 — requests.
+  readonly awaiting = signal<TaskRequestForDecisionDto[]>([]);
+  readonly requestVisible = signal(false);
+  readonly requestType = signal<TaskRequestType>('EXTENSION');
+  readonly decisionVisible = signal(false);
+  readonly decisionTarget = signal<TaskRequestForDecisionDto | null>(null);
+
   ngOnInit(): void {
     this.reloadAll();
   }
@@ -337,6 +445,7 @@ export class MyTasksComponent implements OnInit {
   reloadAll(): void {
     this.loadTasks();
     this.loadAvailable();
+    this.loadAwaiting();
   }
 
   poolLabel(pool: TaskPoolDto): string {
@@ -375,8 +484,50 @@ export class MyTasksComponent implements OnInit {
     return isTaskOpen(task) && task.status !== 'REJECTED';
   }
 
+  // ACC-173 — none of these is offered on a task on hold: the server answers
+  // "Resume the task first", and the row offers Resume now instead.
   canRelease(task: IMyTaskListItemDto): boolean {
-    return task.pickedByMe && !!task.pool && isTaskOpen(task);
+    return task.pickedByMe && !!task.pool && isTaskOpen(task) && task.status !== 'ON_HOLD';
+  }
+
+  // ACC-173 — ask for more time or a hold: an Assigned or In-progress task
+  // with no request already waiting (one at a time).
+  canRequest(task: IMyTaskListItemDto): boolean {
+    const status = displayStatus(task.status);
+    return (status === 'PENDING' || status === 'IN_PROGRESS') && !task.openRequest;
+  }
+
+  /** Only the person who asked may withdraw. */
+  canWithdraw(task: IMyTaskListItemDto): boolean {
+    return !!task.openRequest && task.openRequest.requestedById === this.auth.currentUser()?.id;
+  }
+
+  canResume(task: IMyTaskListItemDto): boolean {
+    return task.status === 'ON_HOLD';
+  }
+
+  /** Every inbox row is the viewer's to decide by construction; the server re-checks. */
+  canReview(request: TaskRequestForDecisionDto): boolean {
+    return request.requestedById !== this.auth.currentUser()?.id;
+  }
+
+  /** "More time requested · to 20 Oct 2026, 13:00" / "Hold requested · until 25 Oct 2026". */
+  requestLine(request: TaskOpenRequestDto): string {
+    return request.type === 'EXTENSION'
+      ? this.translate.instant('task.request.extensionPending', { date: this.format.dateTime(request.requestedDueAt) })
+      : this.translate.instant('task.request.holdPending', { date: this.format.date(request.holdUntil) });
+  }
+
+  askedLine(request: TaskRequestForDecisionDto): string {
+    return request.type === 'ON_HOLD'
+      ? this.translate.instant('task.request.askedHold', {
+          name: request.requestedByName,
+          date: this.format.date(request.holdUntil),
+        })
+      : this.translate.instant('task.request.askedExtension', {
+          name: request.requestedByName,
+          date: this.format.dateTime(request.requestedDueAt),
+        });
   }
 
   canStart(task: ITaskListItemDto): boolean {
@@ -393,7 +544,7 @@ export class MyTasksComponent implements OnInit {
   }
 
   canComplete(task: ITaskListItemDto): boolean {
-    return isTaskOpen(task);
+    return isTaskOpen(task) && task.status !== 'ON_HOLD';
   }
 
   priorityColor(priority: string): 'danger' | 'warn' | 'info' | 'secondary' {
@@ -431,6 +582,34 @@ export class MyTasksComponent implements OnInit {
   openReleaseDialog(task: ITaskListItemDto): void {
     this.actionTarget.set(task);
     this.releaseVisible.set(true);
+  }
+
+  openRequestDialog(task: ITaskListItemDto, type: TaskRequestType): void {
+    this.actionTarget.set(task);
+    this.requestType.set(type);
+    this.requestVisible.set(true);
+  }
+
+  openDecision(request: TaskRequestForDecisionDto): void {
+    this.decisionTarget.set(request);
+    this.decisionVisible.set(true);
+  }
+
+  onWithdraw(task: IMyTaskListItemDto): void {
+    if (!task.openRequest) return;
+    this.runAction(this.taskService.withdrawRequest(task.id, task.openRequest.id));
+  }
+
+  onResume(task: ITaskListItemDto): void {
+    this.runAction(this.taskService.resume(task.id));
+  }
+
+  loadAwaiting(): void {
+    this.taskService.getAwaitingDecision().subscribe({
+      next: (requests) => this.awaiting.set(requests),
+      // Like Available: an addition to the page, absent on failure.
+      error: () => this.awaiting.set([]),
+    });
   }
 
   // A 409 means someone else picked it up first — said in the server's own
@@ -489,7 +668,7 @@ export class MyTasksComponent implements OnInit {
     }
   }
 
-  private runAction(request: ReturnType<TaskService['start']>): void {
+  private runAction(request: Observable<unknown>): void {
     this.error.set(null);
     request.subscribe({
       next: () => this.loadTasks(),

@@ -40,6 +40,16 @@ import {
 } from './task-pool';
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
+import { TaskAuthorityService } from './task-authority.service';
+import { aTaskThatIs } from './task-status-label';
+import {
+  CancelledRequest,
+  HOLD_CLEARED,
+  OPEN_REQUEST_INCLUDE,
+  auditCancelledRequests,
+  cancelOpenRequests,
+  toOpenRequest,
+} from './task-request-lifecycle';
 
 // The raw row plus every TaskAssignee row, removed ones included — what the
 // active-assignee check reads. Not ITaskWithAssignees, which is a resolved
@@ -56,6 +66,10 @@ type TaskTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 // REJECTED is open on purpose: the work is still owed, and a rejected
 // mandatory task must keep holding its stage until the creator reassigns it.
 const CLOSED_STATUSES = ['COMPLETED', 'CANCELLED'] as const;
+
+// ACC-173 — an ON_HOLD task's SLA is paused, so it is never overdue: the
+// overdue filter and the overdue sweep skip it as they skip a closed task.
+const NOT_OVERDUE_STATUSES = [...CLOSED_STATUSES, 'ON_HOLD'] as const;
 
 // ACC-167 — the pick-up clock is all-or-nothing: a task in its pool carries
 // all three, a task out of it carries none.
@@ -91,6 +105,7 @@ export class TaskService {
     @Inject(forwardRef(() => TenantService))
     private readonly tenantService: TenantService,
     private readonly assignment: TaskAssignmentService,
+    private readonly authority: TaskAuthorityService,
   ) {}
 
   // ACC-167 — a task goes to named people (assigneeUserIds, the engine's path
@@ -231,7 +246,7 @@ export class TaskService {
       filters.push({ status: options.status });
     }
     if (options.overdue) {
-      filters.push({ dueAt: { lt: new Date() }, status: { notIn: [...CLOSED_STATUSES] } });
+      filters.push({ dueAt: { lt: new Date() }, status: { notIn: [...NOT_OVERDUE_STATUSES] } });
     }
 
     const tasks = await this.prisma.task.findMany({
@@ -246,11 +261,18 @@ export class TaskService {
         ...POOL_LABEL_INCLUDE,
         // ACC-167 — the caller's own row, to say whether it came from a pick.
         assignees: { where: { userId, removedAt: null }, select: { pickedAt: true } },
+        ...OPEN_REQUEST_INCLUDE,
       },
     });
-    return tasks.map(({ assignees, ...row }) => {
+    return tasks.map(({ assignees, requests, ...row }) => {
       const { task, evidenceCount, pool } = splitListRow(row);
-      return { ...task, evidenceCount, pool, pickedByMe: assignees.some((a) => a.pickedAt !== null) };
+      return {
+        ...task,
+        evidenceCount,
+        pool,
+        openRequest: toOpenRequest(requests),
+        pickedByMe: assignees.some((a) => a.pickedAt !== null),
+      };
     });
   }
 
@@ -272,9 +294,10 @@ export class TaskService {
       orderBy: { dueAt: 'asc' },
       include: { _count: { select: { evidence: true } }, ...POOL_LABEL_INCLUDE },
     });
+    // A task waiting in its pool has nobody on it, so nobody can have asked.
     return rows.map((row) => {
       const { task, evidenceCount, pool } = splitListRow(row);
-      return { ...task, evidenceCount, pool };
+      return { ...task, evidenceCount, pool, openRequest: null };
     });
   }
 
@@ -326,6 +349,8 @@ export class TaskService {
         // ACC-167 — the pool the task is in, so the record can say who it is
         // waiting for until somebody picks it up.
         ...POOL_LABEL_INCLUDE,
+        // ACC-173 — a pending extension or hold request, shown on the record.
+        ...OPEN_REQUEST_INCLUDE,
       },
     });
 
@@ -337,12 +362,13 @@ export class TaskService {
       permissions: viewerPermissions,
     });
 
-    return tasks.map(({ assignees, ...row }) => {
+    return tasks.map(({ assignees, requests, ...row }) => {
       const { task, evidenceCount, pool } = splitListRow(row);
       return {
       ...task,
       evidenceCount,
       pool,
+      openRequest: toOpenRequest(requests),
       assignees: assignees.map((assignee) => ({
         userId: assignee.userId,
         userName: assignee.user.name,
@@ -434,7 +460,7 @@ export class TaskService {
   // order of refusals is fixed: not yours (404), then closed (409), then no
   // evidence (409), so a non-assignee learns nothing about the task.
   async complete(id: string, userId: string, organizationId: string): Promise<ITask> {
-    const { existing, task } = await this.prisma.$transaction(async (tx) => {
+    const { existing, task, cancelled } = await this.prisma.$transaction(async (tx) => {
       const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be completed');
 
       if (existing.requiresEvidence) {
@@ -455,7 +481,9 @@ export class TaskService {
         data: { status: 'COMPLETED', completedAt: now, completedById: userId },
         include: { assignees: true },
       });
-      return { existing, task };
+      // ACC-173 — finished work needs no more time.
+      const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'task_completed');
+      return { existing, task, cancelled };
     });
 
     await this.auditLog.log({
@@ -468,6 +496,7 @@ export class TaskService {
       after: task as unknown as Record<string, unknown>,
       metadata: { completedBy: userId },
     });
+    await auditCancelledRequests(this.auditLog, cancelled, organizationId, userId);
 
     return task;
   }
@@ -483,7 +512,7 @@ export class TaskService {
         throw new ConflictException('This task is already in progress');
       }
       if (existing.status !== 'PENDING' && existing.status !== 'OVERDUE') {
-        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be started`);
+        throw new ConflictException(`${aTaskThatIs(existing.status)} cannot be started`);
       }
 
       const task = await tx.task.update({ where: { id }, data: { status: 'IN_PROGRESS' } });
@@ -521,14 +550,14 @@ export class TaskService {
     userId: string,
     organizationId: string,
   ): Promise<ITask> {
-    const { existing, task, lastAssigneeRejected } = await this.prisma.$transaction(async (tx) => {
+    const { existing, task, lastAssigneeRejected, cancelled } = await this.prisma.$transaction(async (tx) => {
       const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be rejected');
       if (
         existing.status !== 'PENDING' &&
         existing.status !== 'IN_PROGRESS' &&
         existing.status !== 'OVERDUE'
       ) {
-        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be rejected`);
+        throw new ConflictException(`${aTaskThatIs(existing.status)} cannot be rejected`);
       }
 
       const now = new Date();
@@ -542,16 +571,19 @@ export class TaskService {
       // seeing the other still there.
       const othersRemain = existing.assignees.some((a) => a.userId !== userId && a.removedAt === null);
       if (othersRemain) {
-        // The task itself is untouched; only the caller's assignment ended.
+        // The task itself is untouched; only the caller's assignment ended —
+        // and with it any request THEY made (ACC-173).
         const unchanged = await tx.task.findFirstOrThrow({ where: { id, organizationId } });
-        return { existing, task: unchanged, lastAssigneeRejected: false };
+        const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'requester_left_task', userId);
+        return { existing, task: unchanged, lastAssigneeRejected: false, cancelled };
       }
 
       const task = await tx.task.update({
         where: { id },
         data: { status: 'REJECTED', rejectedReason: dto.reason, rejectedAt: now, rejectedById: userId },
       });
-      return { existing, task, lastAssigneeRejected: true };
+      const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'task_rejected');
+      return { existing, task, lastAssigneeRejected: true, cancelled };
     });
 
     await this.auditLog.log({
@@ -564,6 +596,7 @@ export class TaskService {
       after: task as unknown as Record<string, unknown>,
       metadata: { reason: dto.reason, rejectedBy: userId, lastAssigneeRejected },
     });
+    await auditCancelledRequests(this.auditLog, cancelled, organizationId, userId);
 
     // After commit, never inside the transaction: the lock is held only for
     // the writes. A creator who rejected their own task is not told about it.
@@ -621,9 +654,15 @@ export class TaskService {
     });
     if (open.length === 0) return 0;
 
-    await this.prisma.task.updateMany({
-      where: { id: { in: open.map((t) => t.id) }, organizationId },
-      data: { status: 'CANCELLED' },
+    // ACC-173 — an ON_HOLD task is open and closes like any other: its hold
+    // ends here, and any pending request with it.
+    const ids = open.map((t) => t.id);
+    const cancelled = await this.prisma.$transaction(async (tx) => {
+      await tx.task.updateMany({
+        where: { id: { in: ids }, organizationId },
+        data: { status: 'CANCELLED', ...HOLD_CLEARED },
+      });
+      return cancelOpenRequests(tx, organizationId, ids, 'task_cancelled');
     });
 
     for (const before of open) {
@@ -634,10 +673,11 @@ export class TaskService {
         actorId,
         tenantId: organizationId,
         before: before as unknown as Record<string, unknown>,
-        after: { ...before, status: 'CANCELLED' } as unknown as Record<string, unknown>,
+        after: { ...before, status: 'CANCELLED', ...HOLD_CLEARED } as unknown as Record<string, unknown>,
         metadata: { cancelledBy: actorId, reason, workflowInstanceId, sourceStageId },
       });
     }
+    await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
 
     return open.length;
   }
@@ -661,9 +701,15 @@ export class TaskService {
     });
     if (open.length === 0) return 0;
 
-    await this.prisma.task.updateMany({
-      where: { id: { in: open.map((t) => t.id) }, organizationId },
-      data: { status: 'CANCELLED' },
+    // ACC-173 — holds end and pending requests are cancelled, as in
+    // cancelForStage().
+    const ids = open.map((t) => t.id);
+    const cancelled = await this.prisma.$transaction(async (tx) => {
+      await tx.task.updateMany({
+        where: { id: { in: ids }, organizationId },
+        data: { status: 'CANCELLED', ...HOLD_CLEARED },
+      });
+      return cancelOpenRequests(tx, organizationId, ids, 'task_cancelled');
     });
 
     for (const before of open) {
@@ -674,10 +720,11 @@ export class TaskService {
         actorId,
         tenantId: organizationId,
         before: before as unknown as Record<string, unknown>,
-        after: { ...before, status: 'CANCELLED' } as unknown as Record<string, unknown>,
+        after: { ...before, status: 'CANCELLED', ...HOLD_CLEARED } as unknown as Record<string, unknown>,
         metadata: { cancelledBy: actorId, reason: 'INSTANCE_CANCELLED', workflowInstanceId },
       });
     }
+    await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
 
     return open.length;
   }
@@ -702,10 +749,15 @@ export class TaskService {
   //    row is reactivated in place, as attachAssigneesToUnassignedStageTasks()
   //    already does; the audit row's `before` keeps the earlier state.
   //
-  // KNOWN LIMITATION, left for the extension ticket (CF-05): the task keeps
-  // its original dueAt, slaBreachedAt and escalation stamps, so a reassigned
-  // task is often already overdue, and escalations that already fired do not
-  // fire again for the new assignee.
+  // 4. ACC-173 — WHO widens to anyone acting for the creator
+  //    (TaskAuthorityService.canActForCreator(): their out-of-office delegate,
+  //    or the acting head covering their absence), and reassigning ENDS A HOLD
+  //    and cancels a pending request: the new assignee did not ask for either.
+  //
+  // KNOWN LIMITATION: the task keeps its original dueAt, slaBreachedAt and
+  // escalation stamps, so a reassigned task is often already overdue, and
+  // escalations that already fired do not fire again for the new assignee.
+  // An approved extension request (ACC-173) is how its due date moves.
   async reassign(
     id: string,
     dto: ReassignTaskDto,
@@ -718,7 +770,7 @@ export class TaskService {
       throw new BadRequestException('Choose who the task goes to: a unit and position, or named people');
     }
 
-    const { existing, task, eligibleAssigneeIds, pooled } = await this.prisma.$transaction(async (tx) => {
+    const { existing, task, eligibleAssigneeIds, pooled, cancelled } = await this.prisma.$transaction(async (tx) => {
       await this.lockTaskRow(tx, id, organizationId);
       const existing = await tx.task.findFirst({
         where: { id, organizationId },
@@ -726,12 +778,13 @@ export class TaskService {
       });
       const entitled =
         !!existing &&
-        (actorPermissions.includes(TASKS_PERMISSIONS.REASSIGN) || existing.createdById === actorId);
+        (actorPermissions.includes(TASKS_PERMISSIONS.REASSIGN) ||
+          (await this.authority.canActForCreator(existing.createdById, actorId, organizationId, tx)));
       if (!existing || !entitled) {
         throw new NotFoundException('Task not found');
       }
       if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
-        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be reassigned`);
+        throw new ConflictException(`${aTaskThatIs(existing.status)} cannot be reassigned`);
       }
 
       // ACC-167 — a target lands the task with named people or in a pool, and
@@ -786,12 +839,14 @@ export class TaskService {
           rejectedReason: null,
           rejectedAt: null,
           rejectedById: null,
+          ...HOLD_CLEARED,
           ...toPoolColumns(placement?.target ?? null),
           ...(pooled ? await this.poolClock(existing.priority, organizationId, now) : NO_POOL_CLOCK),
         },
         include: { assignees: true },
       });
-      return { existing, task, eligibleAssigneeIds, pooled };
+      const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'task_reassigned');
+      return { existing, task, eligibleAssigneeIds, pooled, cancelled };
     });
 
     await this.auditLog.log({
@@ -804,6 +859,7 @@ export class TaskService {
       after: task as unknown as Record<string, unknown>,
       metadata: { reason: dto.reason, newAssigneeUserIds: eligibleAssigneeIds, pooled },
     });
+    await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
 
     for (const userId of eligibleAssigneeIds) {
       await this.notificationService.create(
@@ -845,7 +901,7 @@ export class TaskService {
         throw new NotFoundException('Task not found');
       }
       if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
-        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be picked up`);
+        throw new ConflictException(`${aTaskThatIs(existing.status)} cannot be picked up`);
       }
       if (existing.status === 'REJECTED') {
         throw new ConflictException('A rejected task cannot be picked up');
@@ -905,7 +961,7 @@ export class TaskService {
     userId: string,
     organizationId: string,
   ): Promise<ITask> {
-    const { existing, task, returnedToPool } = await this.prisma.$transaction(async (tx) => {
+    const { existing, task, returnedToPool, cancelled } = await this.prisma.$transaction(async (tx) => {
       const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be released');
       const mine = existing.assignees.find((a) => a.userId === userId && a.removedAt === null);
       if (!mine?.pickedAt || !poolTargetOf(existing)) {
@@ -918,7 +974,9 @@ export class TaskService {
       const othersRemain = existing.assignees.some((a) => a.userId !== userId && a.removedAt === null);
       if (othersRemain) {
         const unchanged = await tx.task.findFirstOrThrow({ where: { id, organizationId } });
-        return { existing, task: unchanged, returnedToPool: false };
+        // ACC-173 — the caller's own request leaves with them.
+        const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'requester_left_task', userId);
+        return { existing, task: unchanged, returnedToPool: false, cancelled };
       }
       const task = await tx.task.update({
         where: { id },
@@ -928,7 +986,8 @@ export class TaskService {
           ...(await this.poolClock(existing.priority as TaskPriority, organizationId, now)),
         },
       });
-      return { existing, task, returnedToPool: true };
+      const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'task_released');
+      return { existing, task, returnedToPool: true, cancelled };
     });
 
     await this.auditLog.log({
@@ -941,6 +1000,7 @@ export class TaskService {
       after: task as unknown as Record<string, unknown>,
       metadata: { event: 'released', releasedBy: userId, reason: dto.reason, returnedToPool },
     });
+    await auditCancelledRequests(this.auditLog, cancelled, organizationId, userId);
     // After commit, and never to the person who released it.
     if (returnedToPool) {
       await this.notifyPool(id, organizationId, { event: 'released', excludeUserId: userId, reason: dto.reason });
@@ -988,6 +1048,16 @@ export class TaskService {
         (a) => a.id !== assignment.id && a.removedAt === null,
       );
 
+      // ACC-173 — a departure and a hold. Going to the acting user, or staying
+      // with others still on it, KEEPS the hold: the reason the work is paused
+      // usually still applies, and the hold still ends on its date. Going back
+      // to a pool, or becoming UNASSIGNED, ENDS it: a held task nobody owns
+      // would be invisible, because Available and the pool sweep skip ON_HOLD.
+      // The leaver's own pending request goes with them either way; a task
+      // that goes back to its pool or to nobody loses every pending request.
+      const wasOnHold = task.status === 'ON_HOLD';
+      const cancelled: CancelledRequest[] = [];
+
       // ACC-167 — a task with a pool goes back to its pool, whether the
       // departing person picked it up or was chosen for it directly: the pool
       // is still a valid owner, and the acting user may not hold the position.
@@ -1004,9 +1074,18 @@ export class TaskService {
         if (returned) {
           await this.prisma.task.update({
             where: { id: task.id },
-            data: { status: 'PENDING', ...(await this.poolClock(task.priority, organizationId, now)) },
+            data: {
+              status: 'PENDING',
+              ...HOLD_CLEARED,
+              ...(await this.poolClock(task.priority, organizationId, now)),
+            },
           });
           returnedToPoolCount += 1;
+          cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure')));
+        } else {
+          cancelled.push(
+            ...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure', fromUserId)),
+          );
         }
         await this.auditLog.log({
           action: 'DELEGATE',
@@ -1014,8 +1093,13 @@ export class TaskService {
           objectId: task.id,
           actorId,
           tenantId: organizationId,
-          metadata: { event: returned ? 'departure_returned_to_pool' : 'departure_left_with_others', fromUserId },
+          metadata: {
+            event: returned ? 'departure_returned_to_pool' : 'departure_left_with_others',
+            fromUserId,
+            ...(returned && wasOnHold ? { holdEnded: true } : {}),
+          },
         });
+        await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
         // Once, after this task's writes. The departing user was made INACTIVE
         // before this runs (UserService.deactivate()), so the pool no longer
         // holds them; excluding them anyway keeps that true if the order moves.
@@ -1025,6 +1109,7 @@ export class TaskService {
         continue;
       }
 
+      let holdEnded = false;
       if (validToUserId) {
         await this.prisma.taskAssignee.create({
           data: { taskId: task.id, userId: validToUserId, assignedById: actorId },
@@ -1033,9 +1118,17 @@ export class TaskService {
           await this.prisma.task.update({ where: { id: task.id }, data: { status: 'PENDING' } });
         }
         reassignedCount += 1;
+        cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure', fromUserId)));
       } else if (remainingActiveOthers.length === 0) {
-        await this.prisma.task.update({ where: { id: task.id }, data: { status: 'UNASSIGNED' } });
+        await this.prisma.task.update({
+          where: { id: task.id },
+          data: { status: 'UNASSIGNED', ...(wasOnHold ? HOLD_CLEARED : {}) },
+        });
         unassignedCount += 1;
+        holdEnded = wasOnHold;
+        cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure')));
+      } else {
+        cancelled.push(...(await cancelOpenRequests(this.prisma, organizationId, [task.id], 'departure', fromUserId)));
       }
 
       await this.auditLog.log({
@@ -1044,8 +1137,14 @@ export class TaskService {
         objectId: task.id,
         actorId,
         tenantId: organizationId,
-        metadata: { event: 'departure_reassignment', fromUserId, toUserId: validToUserId },
+        metadata: {
+          event: 'departure_reassignment',
+          fromUserId,
+          toUserId: validToUserId,
+          ...(holdEnded ? { holdEnded: true } : {}),
+        },
       });
+      await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
     }
 
     if (validToUserId && reassignedCount > 0) {
@@ -1253,7 +1352,10 @@ export class TaskService {
     // Only the fields of the evidence's own type are written: a LINK carries
     // no reference and a reference carries no URL, whatever else was sent.
     const evidence = await this.prisma.$transaction(async (tx) => {
-      await this.lockOpenForActiveAssignee(tx, taskId, actorId, organizationId, 'have evidence added');
+      // ACC-173 — evidence can still be added to a task on hold.
+      await this.lockOpenForActiveAssignee(tx, taskId, actorId, organizationId, 'have evidence added', {
+        allowOnHold: true,
+      });
       return tx.taskEvidence.create({
         data: {
           organizationId,
@@ -1306,12 +1408,17 @@ export class TaskService {
   // lock first (lockTaskRow), so every check below reads the locked state.
   // Every assignee action — start, reject, complete, add evidence — comes
   // through here, and reassign() takes the same lock itself.
+  //
+  // ACC-173 — an ON_HOLD task refuses every assignee action except adding
+  // evidence (`allowOnHold`), with one sentence that says what to do: the
+  // caller is an active assignee, so naming the hold discloses nothing.
   private async lockOpenForActiveAssignee(
     tx: TaskTx,
     id: string,
     userId: string,
     organizationId: string,
     refusedAction: string,
+    options: { allowOnHold?: boolean } = {},
   ): Promise<TaskWithAssigneeRows> {
     await this.lockTaskRow(tx, id, organizationId);
     const task = await tx.task.findFirst({
@@ -1326,7 +1433,10 @@ export class TaskService {
     }
 
     if (task.status === 'COMPLETED' || task.status === 'CANCELLED') {
-      throw new ConflictException(`A ${task.status.toLowerCase()} task cannot ${refusedAction}`);
+      throw new ConflictException(`${aTaskThatIs(task.status)} cannot ${refusedAction}`);
+    }
+    if (task.status === 'ON_HOLD' && !options.allowOnHold) {
+      throw new ConflictException('Resume the task first');
     }
     return task;
   }

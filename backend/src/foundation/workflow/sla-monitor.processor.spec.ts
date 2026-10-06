@@ -10,6 +10,7 @@ import { OrgUnitHeadService } from '../organization/org-unit-head.service';
 import { OrganizationService } from '../organization/organization.service';
 import { TenantService } from '../tenant/tenant.service';
 import { TaskService } from '../task/task.service';
+import { TaskRequestService } from '../task/task-request.service';
 import { WorkflowService } from './workflow.service';
 import { ITaskSlaSettings } from '../tenant/interfaces/tenant.interface';
 
@@ -124,6 +125,8 @@ const mockTaskService = {
   // unaffected by recovery now being reached on every non-blocked stage.
   hasUnassignedStageTasks: jest.fn(),
 };
+// ACC-173 — the hold resume sweep's delegate.
+const mockTaskRequestService = { resumeDueHold: jest.fn() };
 const mockOrgUnitHeadService = { completeHandoverAutomatically: jest.fn() };
 const mockOrganizationService = {
   resolveActingHeadForOrgUnit: jest.fn(),
@@ -195,6 +198,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         { provide: OrganizationService, useValue: mockOrganizationService },
         { provide: TenantService, useValue: mockTenantService },
         { provide: TaskService, useValue: mockTaskService },
+        { provide: TaskRequestService, useValue: mockTaskRequestService },
         { provide: getQueueToken('sla-monitor'), useValue: mockQueue },
       ],
     }).compile();
@@ -636,7 +640,7 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
         where: {
           dueAt: { lt: expect.any(Date) },
-          status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED'] },
+          status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED', 'ON_HOLD'] },
           // ACC-167 — not a task waiting in a pool: nobody holds it, so there
           // is no assignee to escalate for. sweepUnpickedPoolTasks() owns it.
           OR: [
@@ -1475,6 +1479,74 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
       expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'head-a' }), ORG_A);
       expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'head-b' }), 'org-b-id');
       expect(mockNotificationService.create).not.toHaveBeenCalledWith(expect.objectContaining({ userId: 'head-b' }), ORG_A);
+    });
+  });
+
+  // ACC-173 — holds whose date has come resume through TaskRequestService,
+  // which re-checks each under its row lock (so a hold resumes once).
+  describe('sweepDueHolds (ACC-173)', () => {
+    const servedHolds = (rows: unknown[]) =>
+      mockPrisma.task.findMany.mockImplementation(({ where }: { where?: { status?: unknown } }) =>
+        Promise.resolve(where?.status === 'ON_HOLD' ? rows : []),
+      );
+
+    it('selects only ON_HOLD tasks whose hold date has come', async () => {
+      servedHolds([]);
+
+      await runProcess();
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
+        where: { status: 'ON_HOLD', onHoldUntil: { lte: expect.any(Date) } },
+        select: { id: true, organizationId: true },
+      });
+    });
+
+    it('resumes each due hold within its own organisation, with the sweep clock', async () => {
+      servedHolds([
+        { id: 'held-1', organizationId: ORG_A },
+        { id: 'held-2', organizationId: 'org-b-id' },
+      ]);
+
+      await runProcess();
+
+      expect(mockTaskRequestService.resumeDueHold).toHaveBeenCalledTimes(2);
+      expect(mockTaskRequestService.resumeDueHold).toHaveBeenCalledWith('held-1', ORG_A, expect.any(Date));
+      expect(mockTaskRequestService.resumeDueHold).toHaveBeenCalledWith('held-2', 'org-b-id', expect.any(Date));
+    });
+
+    it('is not gated on working hours — resuming is a state change, not an escalation', async () => {
+      servedHolds([{ id: 'held-1', organizationId: ORG_A }]);
+      mockWorkingCalendar.getOrCreate.mockResolvedValue({ ...ALWAYS_OPEN_CALENDAR, workingDays: [] });
+
+      await runProcess();
+
+      expect(mockTaskRequestService.resumeDueHold).toHaveBeenCalledWith('held-1', ORG_A, expect.any(Date));
+    });
+
+    it('keeps on-hold tasks out of the overdue sweep: their SLA is paused', async () => {
+      servedHolds([]);
+
+      await runProcess();
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            dueAt: expect.anything(),
+            status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED', 'ON_HOLD'] },
+          }),
+        }),
+      );
+    });
+
+    it('is its own isolated step: a failing resume does not stop the other sweeps', async () => {
+      servedHolds([{ id: 'held-1', organizationId: ORG_A }]);
+      mockTaskRequestService.resumeDueHold.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(runProcess()).rejects.toThrow(/sweepDueHolds/);
+      // The overdue sweep, which runs before it, still ran.
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ dueAt: expect.anything() }) }),
+      );
     });
   });
 

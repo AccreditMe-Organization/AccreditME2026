@@ -216,6 +216,17 @@ export class DueDateService {
     return cal ? atTime(day, cal.workingHoursEnd) : null;
   }
 
+  /**
+   * ACC-173 — the start of working hours on a day: when a hold "until" that
+   * day resumes. Same convention as endOfDayFor(): a wall-clock time in the
+   * browser's zone (ACC-96 Part A), which is the tenant's whenever the two
+   * agree — the case `zoneMismatch` exists to flag.
+   */
+  startOfDayFor(day: Date): Date | null {
+    const cal = this.calendar();
+    return cal ? atTime(day, cal.workingHoursStart) : null;
+  }
+
   isWorkingDay(at: Date, cal = this.calendar()): boolean {
     if (!cal) return true;
     if (!cal.workingDays.includes(at.getDay())) return false;

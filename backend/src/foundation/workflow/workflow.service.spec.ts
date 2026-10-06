@@ -2010,10 +2010,32 @@ describe('WorkflowService', () => {
       ]);
 
       // The actor's next action is to complete those specific tasks — an
-      // error that does not name them cannot be acted on.
+      // error that does not name them cannot be acted on. ACC-173: each in
+      // words, never the raw enum (a legacy OVERDUE row is an Assigned task).
       await expect(
         service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
-      ).rejects.toThrow(/Draft the terms.*PENDING.*Collect signatures.*OVERDUE/s);
+      ).rejects.toThrow('"Draft the terms" (Assigned), "Collect signatures" (Assigned)');
+    });
+
+    // ACC-173 — an on-hold task is open, so it holds the stage, and the message
+    // says "On hold", not ON_HOLD or on_hold.
+    it('names an on-hold task as "On hold" — never the raw status', async () => {
+      arrangeTransition(GATED);
+      mockPrisma.task.findMany.mockResolvedValue([
+        { title: 'Collect signatures', status: 'ON_HOLD' },
+        { title: 'Draft the terms', status: 'IN_PROGRESS' },
+      ]);
+
+      const error = await service
+        .triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, [])
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(
+        'This stage has 2 incomplete task(s) that must be completed before this transition can fire: ' +
+          '"Collect signatures" (On hold), "Draft the terms" (In progress)',
+      );
+      expect((error as ConflictException).message).not.toMatch(/ON_HOLD|on_hold|IN_PROGRESS/);
     });
 
     it('allows the transition once the stage has no outstanding tasks', async () => {
