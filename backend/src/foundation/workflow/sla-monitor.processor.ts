@@ -13,6 +13,13 @@ import { TenantService } from '../tenant/tenant.service';
 import { WorkflowService } from './workflow.service';
 import { TaskService } from '../task/task.service';
 import {
+  POOL_LABEL_INCLUDE,
+  PICKABLE_STATUSES,
+  poolLabel,
+  poolTargetOf,
+  toPoolView,
+} from '../task/task-pool';
+import {
   Task as PrismaTask,
   TaskAssignee as PrismaTaskAssignee,
   WorkflowStage as PrismaWorkflowStage,
@@ -124,6 +131,7 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
       this.sweepBreachedStageEscalations(now),
     );
     await this.runIsolatedStep('sweepOverdueTasks', failedSteps, () => this.sweepOverdueTasks(now));
+    await this.runIsolatedStep('sweepUnpickedPoolTasks', failedSteps, () => this.sweepUnpickedPoolTasks(now));
     await this.runIsolatedStep('sweepUnassignedStages', failedSteps, () => this.sweepUnassignedStages());
     await this.runIsolatedStep('sweepExpiredActingOrgUnitAssignments', failedSteps, () =>
       this.sweepExpiredActingOrgUnitAssignments(now),
@@ -569,6 +577,15 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         dueAt: { lt: now },
         // A legacy OVERDUE row is open and still eligible — Finding 2's fix.
         status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED'] },
+        // ACC-167 — not a task WAITING in a pool: nobody holds it, so there is
+        // no assignee whose manager could be resolved, and the skipped-
+        // escalation audit row would repeat every pass (REJECTED's reason).
+        // An unpicked pool task escalates through sweepUnpickedPoolTasks()
+        // instead; once picked, it is an ordinary task again.
+        OR: [
+          { assignedPositionId: null, assignedCommitteeId: null },
+          { assignees: { some: { removedAt: null } } },
+        ],
       },
       include: { assignees: { where: { removedAt: null } } },
     });
@@ -602,6 +619,113 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
         }
       }
     }
+  }
+
+  // ACC-167 (decision 6, Q6) — a pool task nobody has picked up escalates once.
+  //
+  // THE RULE. A task is waiting when it has a pool target, an open pickable
+  // status and no active assignee. It entered the pool at pooledAt; it
+  // escalates when poolEscalateAt — the priority's managerEscalationAfterHours
+  // counted in WORKING hours from pooledAt, stored when it entered — has
+  // passed, and only within working hours, like every other escalation here.
+  // It fires once: poolEscalatedAt is stamped. A release (or a reassign onto a
+  // pool, or a departure) restarts the clock, so a task handed back can
+  // escalate again.
+  //
+  // WHO IS TOLD. A unit pool: the unit's head, through
+  // OrganizationService.resolveActingHeadForOrgUnit() — which walks to an
+  // acting head and up the tree. A committee pool: the committee's chair
+  // (members holding the `chairman` role), or the head of the committee's own
+  // unit when it has no chair.
+  //
+  // NO TARGET IS STILL STAMPED, once, with one "skipped" audit row. The
+  // due-date escalation above audits a skip on every pass; this one does not
+  // repeat it. A pool nobody can be told about is a Setup health condition
+  // (TASK_WITHOUT_OWNER when nobody is in the pool), not a log line every
+  // fifteen minutes.
+  private async sweepUnpickedPoolTasks(now: Date): Promise<void> {
+    const waiting = await this.prisma.task.findMany({
+      where: {
+        poolEscalateAt: { lte: now },
+        poolEscalatedAt: null,
+        status: { in: [...PICKABLE_STATUSES] },
+        OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
+        assignees: { none: { removedAt: null } },
+      },
+      include: POOL_LABEL_INCLUDE,
+    });
+
+    for (const task of waiting) {
+      if (!(await this.isWithinWorkingHours(task.organizationId))) continue;
+
+      const target = poolTargetOf(task);
+      const view = toPoolView(task);
+      if (!target || !view) continue;
+
+      const recipients =
+        target.kind === 'POSITION'
+          ? await this.organizationService.resolveActingHeadForOrgUnit(target.orgUnitId, task.organizationId)
+          : await this.resolveCommitteePoolEscalation(target.committeeId, task.organizationId);
+
+      await this.prisma.task.update({ where: { id: task.id }, data: { poolEscalatedAt: now } });
+      await this.auditLog.log({
+        tenantId: task.organizationId,
+        action: 'UPDATE',
+        objectType: 'Task',
+        objectId: task.id,
+        metadata:
+          recipients.length > 0
+            ? { event: 'pool_escalated', escalatedTo: recipients }
+            : { event: 'pool_escalation_skipped', reason: 'No unit head or committee chair could be resolved' },
+      });
+
+      const label = poolLabel(view);
+      for (const userId of recipients) {
+        await this.notificationService.create(
+          {
+            userId,
+            titleEn: 'Task not picked up',
+            titleAr: 'مهمة لم يستلمها أحد',
+            bodyEn: `Nobody in ${label.en} has picked up "${task.title}".`,
+            bodyAr: `لم يستلم أحد من ${label.ar} المهمة "${task.title}".`,
+            objectType: 'Task',
+            objectId: task.id,
+          },
+          task.organizationId,
+        );
+      }
+    }
+  }
+
+  // The committee's chair — active members holding a `chairman` role value
+  // (system or tenant) — or, with none, the head of the committee's own unit.
+  private async resolveCommitteePoolEscalation(committeeId: string, organizationId: string): Promise<string[]> {
+    const chairRoles = await this.prisma.lookupValue.findMany({
+      where: {
+        key: 'chairman',
+        category: { key: 'committee_member_role' },
+        OR: [{ organizationId: null }, { organizationId }],
+      },
+      select: { id: true },
+    });
+    if (chairRoles.length > 0) {
+      const chairs = await this.prisma.committeeMember.findMany({
+        where: {
+          organizationId,
+          committeeId,
+          isActive: true,
+          roleValueId: { in: chairRoles.map((r) => r.id) },
+          user: { status: 'ACTIVE' },
+        },
+        select: { userId: true },
+      });
+      if (chairs.length > 0) return chairs.map((c) => c.userId);
+    }
+    const committee = await this.prisma.committee.findFirst({
+      where: { id: committeeId, organizationId },
+      select: { orgUnitId: true },
+    });
+    return committee ? this.organizationService.resolveActingHeadForOrgUnit(committee.orgUnitId, organizationId) : [];
   }
 
   // ACC-46 Section 2.7.e — replaces the old task.escalationUserId-driven
