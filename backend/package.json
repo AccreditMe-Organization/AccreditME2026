@@ -36,7 +36,8 @@
     "backfill:acc141-root-unit-type": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc141-root-unit-type.ts",
     "backfill:acc123-read-only-admin-role": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc123-read-only-admin-role.ts",
     "backfill:retire-tasks-complete": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-retire-tasks-complete.ts",
-    "backfill:acc163-overdue-to-pending": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc163-overdue-to-pending.ts"
+    "backfill:acc163-overdue-to-pending": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc163-overdue-to-pending.ts",
+    "backfill:acc174-task-sla-limit": "ts-node -r tsconfig-paths/register -r ./prisma/seed/ts-node-js-resolver.js prisma/backfill-acc174-task-sla-limit.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
