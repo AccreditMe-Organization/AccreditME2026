@@ -3,13 +3,56 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { AuthService, MeResponse } from './auth.service';
+import { AuthService, InvitationOrganization, MeResponse } from './auth.service';
 import { LanguageService } from './language.service';
 
 // ACC-94 (D2) — the display context (tenant time zone, Hijri preference) that
 // the formatting layer reads. The case that matters most is a FRESH LOGIN: its
 // response carries no display context, so without the follow-up /auth/me a
 // user would see dates in the default zone until their first reload.
+// ACC-120 slice 9e — the invitation calls the Accept invitation screen makes.
+// The token goes in the BODY of both, never in a URL.
+describe('AuthService — invitations (ACC-120 slice 9e)', () => {
+  let service: AuthService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: LanguageService, useValue: { use: () => of(null) } },
+      ],
+    });
+    service = TestBed.inject(AuthService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('looks an invitation up by POSTing the token, and returns the organisation', () => {
+    let answer: InvitationOrganization | undefined;
+    service.lookupInvitation('a'.repeat(48)).subscribe((org) => (answer = org));
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/auth/invitations/lookup`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ token: 'a'.repeat(48) });
+    expect(req.request.urlWithParams).not.toContain('a'.repeat(48));
+    req.flush({ name: 'Al Nakheel', nameAr: 'النخيل' });
+
+    expect(answer).toEqual({ name: 'Al Nakheel', nameAr: 'النخيل' });
+  });
+
+  it('accepts an invitation by POSTing the token and password', () => {
+    service.acceptInvitation('b'.repeat(48), 'a long password').subscribe();
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/auth/accept-invitation`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ token: 'b'.repeat(48), password: 'a long password' });
+    req.flush(null);
+  });
+});
+
 describe('AuthService — display preferences (ACC-94)', () => {
   let service: AuthService;
   let httpMock: HttpTestingController;

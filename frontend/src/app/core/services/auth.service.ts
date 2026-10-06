@@ -49,6 +49,15 @@ export interface LoginResult {
   mfaRequired?: true;
 }
 
+/**
+ * ACC-120 slice 9c — which organisation is inviting the holder of a token.
+ * Exactly these two fields; the lookup says nothing else about the invitation.
+ */
+export interface InvitationOrganization {
+  name: string;
+  nameAr: string | null;
+}
+
 export interface MfaSetupResult {
   qrCodeDataUrl: string;
   secret: string;
@@ -108,6 +117,14 @@ export class AuthService {
     return this.http
       .post<{ success: true }>(`${this.baseUrl}/logout`, {})
       .pipe(tap(() => this.clearSession()));
+  }
+
+  // POST, so the token travels in the body and never lands in a URL or an
+  // access log (ACC-120 slice 9c).
+  lookupInvitation(token: string): Observable<InvitationOrganization> {
+    return this.http.post<InvitationOrganization>(`${this.baseUrl}/invitations/lookup`, {
+      token,
+    });
   }
 
   acceptInvitation(token: string, password: string): Observable<void> {
