@@ -41,6 +41,8 @@ import {
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
 import { TaskAuthorityService } from './task-authority.service';
+import { TaskSlaService, latest, priorityWords } from './task-sla.service';
+import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.dto';
 import { aTaskThatIs } from './task-status-label';
 import {
   CancelledRequest,
@@ -75,6 +77,24 @@ const NOT_OVERDUE_STATUSES = [...CLOSED_STATUSES, 'ON_HOLD'] as const;
 // all three, a task out of it carries none.
 const NO_POOL_CLOCK = { pooledAt: null, poolEscalateAt: null, poolEscalatedAt: null };
 
+// ACC-174 — a due date that moved forward re-arms escalation; one still in the
+// past keeps its stamps, so a breach that already escalated does not twice.
+const ESCALATION_CLEARED = { slaBreachedAt: null, managerEscalatedAt: null, headEscalatedAt: null };
+
+// The person acting on a task, as the routes pass them.
+export interface TaskViewer {
+  id: string;
+  permissions: readonly string[];
+}
+
+// Where a task came from. The SLA cap applies to a date a PERSON sets; the
+// engine's own stage SLA is recorded as a raised limit instead (ACC-174, C1).
+export type TaskOrigin = 'person' | 'engine';
+
+// ACC-174 — the creator's status on a list row, so canManage can apply the
+// "creator no longer ACTIVE" half of the rule without a query per row.
+const CREATOR_STATUS_INCLUDE = { createdBy: { select: { status: true } } } as const;
+
 // A list row as Prisma returns it, split into the task, its evidence count and
 // the pool it is in — the relations themselves never reach a response.
 function splitListRow<T extends { _count: { evidence: number } } & PoolLabelRelations>(row: T) {
@@ -106,6 +126,7 @@ export class TaskService {
     private readonly tenantService: TenantService,
     private readonly assignment: TaskAssignmentService,
     private readonly authority: TaskAuthorityService,
+    private readonly sla: TaskSlaService,
   ) {}
 
   // ACC-167 — a task goes to named people (assigneeUserIds, the engine's path
@@ -114,11 +135,19 @@ export class TaskService {
   // people or in a pool (TaskAssignmentService.resolvePlacement()). The engine
   // passes its own resolved placement for a POSITION_FIXED or committee-role
   // stage, because a stage's committee need not be the task's source.
+  //
+  // ACC-174 — the SLA limit. slaStartAt is now; the limit is the priority SLA
+  // from it. A due date a PERSON sends must be in the future and within the
+  // limit (400). The ENGINE's due date is its stage's SLA: when that is later
+  // than the priority limit, the limit is raised to it and the date recorded in
+  // slaExtendedTo — temporary, until stage task definitions (CF-07) give every
+  // stage task its own priority SLA from stage entry.
   async create(
     dto: CreateTaskDto,
     organizationId: string,
     actorId: string,
     enginePlacement?: ResolvedPlacement,
+    origin: TaskOrigin = 'person',
   ): Promise<ITask> {
     if (dto.assignTo && dto.assigneeUserIds?.length) {
       throw new BadRequestException('Choose either who the task goes to or named people, not both');
@@ -133,9 +162,16 @@ export class TaskService {
         : null);
 
     const priority = dto.priority ?? 'MEDIUM';
-    const dueAt = dto.dueDate
-      ? new Date(dto.dueDate)
-      : await this.computeSlaDueAt(priority, organizationId);
+    const slaStartAt = new Date();
+    const priorityLimit = await this.sla.windowFrom(slaStartAt, priority, organizationId);
+    const askedDueAt = dto.dueDate ? new Date(dto.dueDate) : null;
+    if (askedDueAt && origin === 'person') {
+      await this.sla.assertPersonDueDate(askedDueAt, priorityLimit, priority, organizationId, slaStartAt);
+    }
+    const slaExtendedTo =
+      origin === 'engine' && askedDueAt && askedDueAt > priorityLimit ? askedDueAt : null;
+    const dueAt = askedDueAt ?? priorityLimit;
+    const slaLimitAt = latest(priorityLimit, slaExtendedTo);
 
     const eligibleAssigneeIds = await this.filterActiveUsers(
       placement ? placement.directUserIds : (dto.assigneeUserIds ?? []),
@@ -171,6 +207,9 @@ export class TaskService {
         status: isUnassigned ? 'UNASSIGNED' : 'PENDING',
         dueAt,
         dueDateOverridden: !!dto.dueDate,
+        slaStartAt,
+        slaLimitAt,
+        slaExtendedTo,
         ...toPoolColumns(placement?.target ?? null),
         ...poolClock,
         assignees: eligibleAssigneeIds.length === 0
@@ -234,10 +273,14 @@ export class TaskService {
   //            runs, and every one of them is an Assigned task.
   //   overdue  an OPEN task whose dueAt has passed, by the server's clock —
   //            the same "open" the stage gate uses.
+  //
+  // ACC-174 — each row says whether the caller may manage it (canManage),
+  // decided once for the page.
   async getMyTasks(
     userId: string,
     organizationId: string,
     options: GetMyTasksQueryDto = {},
+    viewerPermissions: readonly string[] = [],
   ): Promise<IMyTaskListItem[]> {
     const filters: Prisma.TaskWhereInput[] = [];
     if (options.status === 'PENDING') {
@@ -262,18 +305,28 @@ export class TaskService {
         // ACC-167 — the caller's own row, to say whether it came from a pick.
         assignees: { where: { userId, removedAt: null }, select: { pickedAt: true } },
         ...OPEN_REQUEST_INCLUDE,
+        ...CREATOR_STATUS_INCLUDE,
       },
     });
-    return tasks.map(({ assignees, requests, ...row }) => {
+    const covered = await this.coveredCreators({ id: userId, permissions: viewerPermissions }, organizationId);
+    const rows: IMyTaskListItem[] = [];
+    for (const { assignees, requests, createdBy, ...row } of tasks) {
       const { task, evidenceCount, pool } = splitListRow(row);
-      return {
+      rows.push({
         ...task,
         evidenceCount,
         pool,
         openRequest: toOpenRequest(requests),
         pickedByMe: assignees.some((a) => a.pickedAt !== null),
-      };
-    });
+        canManage: await this.mayManage(
+          { createdById: task.createdById, createdBy },
+          { id: userId, permissions: viewerPermissions },
+          organizationId,
+          { covered },
+        ),
+      });
+    }
+    return rows;
   }
 
   // ACC-167 (decision 7) — open pool tasks the caller could pick up: every
@@ -285,20 +338,34 @@ export class TaskService {
   // their committee memberships, and the tasks — matched on Task's
   // (organizationId, assignedOrgUnitId, assignedPositionId) and
   // (assignedCommitteeId, assignedCommitteeRoleValueId) indexes.
-  async getAvailableToPick(userId: string, organizationId: string): Promise<ITaskListItem[]> {
+  async getAvailableToPick(
+    userId: string,
+    organizationId: string,
+    viewerPermissions: readonly string[] = [],
+  ): Promise<ITaskListItem[]> {
     const pools = await poolsOfUser(this.prisma, userId, organizationId);
     if (pools.length === 0) return [];
 
     const rows = await this.prisma.task.findMany({
       where: { ...waitingInPoolWhere(organizationId), AND: [{ OR: pools }] },
       orderBy: { dueAt: 'asc' },
-      include: { _count: { select: { evidence: true } }, ...POOL_LABEL_INCLUDE },
+      include: { _count: { select: { evidence: true } }, ...POOL_LABEL_INCLUDE, ...CREATOR_STATUS_INCLUDE },
     });
+    const viewer = { id: userId, permissions: viewerPermissions };
+    const covered = await this.coveredCreators(viewer, organizationId);
     // A task waiting in its pool has nobody on it, so nobody can have asked.
-    return rows.map((row) => {
+    const result: ITaskListItem[] = [];
+    for (const { createdBy, ...row } of rows) {
       const { task, evidenceCount, pool } = splitListRow(row);
-      return { ...task, evidenceCount, pool, openRequest: null };
-    });
+      result.push({
+        ...task,
+        evidenceCount,
+        pool,
+        openRequest: null,
+        canManage: await this.mayManage({ createdById: task.createdById, createdBy }, viewer, organizationId, { covered }),
+      });
+    }
+    return result;
   }
 
   // Module task lists — CLAUDE.md's "tasks filtered by sourceType + sourceId".
@@ -351,31 +418,37 @@ export class TaskService {
         ...POOL_LABEL_INCLUDE,
         // ACC-173 — a pending extension or hold request, shown on the record.
         ...OPEN_REQUEST_INCLUDE,
+        // ACC-174 — who cancelled it, beside the reason; and the creator's
+        // status, for canManage.
+        cancelledBy: { select: { id: true, name: true } },
+        ...CREATOR_STATUS_INCLUDE,
       },
     });
 
     // One resolve call for the whole page, not one per task — see
     // DelegationLabelService.resolveMany() on why that matters here.
+    const viewer = { id: viewerId, permissions: viewerPermissions };
     const allAssignees = tasks.flatMap((task) => task.assignees);
-    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId, {
-      id: viewerId,
-      permissions: viewerPermissions,
-    });
+    const delegations = await this.delegationLabels.resolveMany(allAssignees, organizationId, viewer);
+    const covered = await this.coveredCreators(viewer, organizationId);
 
-    return tasks.map(({ assignees, requests, ...row }) => {
+    const result: ITaskWithAssignees[] = [];
+    for (const { assignees, requests, createdBy, ...row } of tasks) {
       const { task, evidenceCount, pool } = splitListRow(row);
-      return {
-      ...task,
-      evidenceCount,
-      pool,
-      openRequest: toOpenRequest(requests),
-      assignees: assignees.map((assignee) => ({
-        userId: assignee.userId,
-        userName: assignee.user.name,
-        delegation: this.delegationLabels.lookup(assignee, delegations),
-      })),
-      };
-    });
+      result.push({
+        ...task,
+        evidenceCount,
+        pool,
+        openRequest: toOpenRequest(requests),
+        canManage: await this.mayManage({ createdById: task.createdById, createdBy }, viewer, organizationId, { covered }),
+        assignees: assignees.map((assignee) => ({
+          userId: assignee.userId,
+          userName: assignee.user.name,
+          delegation: this.delegationLabels.lookup(assignee, delegations),
+        })),
+      });
+    }
+    return result;
   }
 
   // Tenant-wide — unassigned tasks have no assignees, so getMyTasks()
@@ -605,6 +678,327 @@ export class TaskService {
     }
 
     return task;
+  }
+
+  // ── ACC-174 — the creator's own actions: edit, cancel, reopen ────────────
+  //
+  // WHO: mayManage() — the creator, anyone acting for them, or (while the
+  // creator is no longer ACTIVE) a tasks:reassign holder. Everyone else gets
+  // the identical 404 "Task not found", decided under the row lock BEFORE any
+  // 409, because entitlement is only knowable from the row (ACC-101 b).
+  // Audit rows and notifications are written after commit.
+
+  /**
+   * Title, description, due date and priority — the creator's to change.
+   *
+   * A priority change recomputes the due date and the limit from the task's SLA
+   * start under the new priority; the limit never drops below an approved
+   * extension (slaExtendedTo). A recomputed due date may be in the past — the
+   * overdue flag then tells the truth — so the escalation stamps are cleared
+   * only when the new due date is still ahead. A due date the creator SENDS
+   * must be in the future and within the limit; it also re-arms escalation.
+   *
+   * An ON_HOLD task's due date and priority wait until it resumes; its title
+   * and description do not. An open request for more time is left alone: at
+   * approval it must still be later than the due date (ACC-173, C5).
+   */
+  async update(id: string, dto: UpdateTaskDto, viewer: TaskViewer, organizationId: string): Promise<ITask> {
+    if (
+      dto.title === undefined &&
+      dto.description === undefined &&
+      dto.dueDate === undefined &&
+      dto.priority === undefined
+    ) {
+      throw new BadRequestException('Change at least one field');
+    }
+
+    const now = new Date();
+    const { existing, task, dueChanged, priorityChanged } = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockForManager(tx, id, viewer, organizationId);
+      if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
+        throw new ConflictException(`${aTaskThatIs(existing.status)} cannot be edited`);
+      }
+      if (existing.status === 'ON_HOLD' && (dto.dueDate !== undefined || dto.priority !== undefined)) {
+        throw new ConflictException('Resume the task first');
+      }
+
+      const data: Prisma.TaskUpdateInput = {};
+      if (dto.title !== undefined) data.title = dto.title;
+      if (dto.description !== undefined) data.description = dto.description;
+
+      const priority = dto.priority ?? existing.priority;
+      const priorityChanged = dto.priority !== undefined && dto.priority !== existing.priority;
+      let limitAt = await this.sla.limitOf(existing, organizationId);
+      let dueAt = existing.dueAt;
+      let dueDateOverridden = existing.dueDateOverridden;
+
+      if (priorityChanged) {
+        const window = await this.sla.windowForPriority(existing, priority, organizationId);
+        limitAt = window.limitAt;
+        dueAt = window.dueAt;
+        dueDateOverridden = false;
+        data.priority = priority as TaskPriority;
+        // A task still waiting in its pool escalates on the new priority's clock.
+        if (existing.pooledAt && !existing.poolEscalatedAt) {
+          const clock = await this.poolClock(priority as TaskPriority, organizationId, existing.pooledAt);
+          data.poolEscalateAt = clock.poolEscalateAt;
+        }
+      }
+      if (dto.dueDate !== undefined) {
+        const asked = new Date(dto.dueDate);
+        await this.sla.assertPersonDueDate(asked, limitAt, priority, organizationId, now);
+        dueAt = asked;
+        dueDateOverridden = true;
+      }
+
+      const dueChanged = (dueAt?.getTime() ?? null) !== (existing.dueAt?.getTime() ?? null);
+      if (dueChanged || priorityChanged) {
+        data.dueAt = dueAt;
+        data.dueDateOverridden = dueDateOverridden;
+        // Written out, so a row the backfill has not reached is filled here.
+        data.slaStartAt = this.sla.startOf(existing);
+        data.slaLimitAt = limitAt;
+        if (dueAt && dueAt > now) Object.assign(data, ESCALATION_CLEARED);
+      }
+
+      const task = await tx.task.update({ where: { id }, data });
+      return { existing, task, dueChanged, priorityChanged };
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: id,
+      actorId: viewer.id,
+      tenantId: organizationId,
+      before: existing as unknown as Record<string, unknown>,
+      after: task as unknown as Record<string, unknown>,
+      metadata: {
+        event: 'edited',
+        fields: (['title', 'description', 'dueDate', 'priority'] as const).filter((f) => dto[f] !== undefined),
+      },
+    });
+
+    // A changed date or priority is news to the people doing the work; a
+    // reworded title or description is not.
+    if (dueChanged || priorityChanged) {
+      await this.notifyAssigneesOfEdit(existing, task, { dueChanged, priorityChanged }, viewer.id, organizationId);
+    }
+    return task;
+  }
+
+  /**
+   * Cancel, with a reason the assignees read. Ends a hold, cancels pending
+   * requests and the pick-up clock; the assignee rows stay, so the task stays
+   * visible as Cancelled (ACC-68's reasoning).
+   *
+   * A WORKFLOW STAGE TASK cannot be cancelled by hand. Whether a stage task may
+   * end without its step depends on whether it is mandatory or optional, which
+   * stage task definitions (CF-07) introduce; until then the engine alone ends
+   * them, when the record leaves the stage.
+   */
+  async cancel(id: string, dto: CancelTaskDto, viewer: TaskViewer, organizationId: string): Promise<ITask> {
+    const { existing, task, cancelled } = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockForManager(tx, id, viewer, organizationId);
+      if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
+        throw new ConflictException(`${aTaskThatIs(existing.status)} cannot be cancelled`);
+      }
+      if (existing.sourceStageId || existing.workflowInstanceId) {
+        throw new ConflictException('This task belongs to a workflow step');
+      }
+      const task = await tx.task.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          cancelledReason: dto.reason,
+          cancelledAt: new Date(),
+          cancelledById: viewer.id,
+          ...HOLD_CLEARED,
+          ...NO_POOL_CLOCK,
+        },
+      });
+      const cancelled = await cancelOpenRequests(tx, organizationId, [id], 'task_cancelled_by_creator');
+      return { existing, task, cancelled };
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: id,
+      actorId: viewer.id,
+      tenantId: organizationId,
+      before: existing as unknown as Record<string, unknown>,
+      after: task as unknown as Record<string, unknown>,
+      metadata: { event: 'cancelled', reason: dto.reason, cancelledBy: viewer.id },
+    });
+    await auditCancelledRequests(this.auditLog, cancelled, organizationId, viewer.id);
+
+    const name = await this.userName(viewer.id, organizationId);
+    for (const userId of activeAssigneeIds(existing, viewer.id)) {
+      await this.notificationService.create(
+        {
+          userId,
+          titleEn: 'Task cancelled',
+          titleAr: 'أُلغيت مهمة',
+          bodyEn: `${name} cancelled "${task.title}". Reason: ${dto.reason}`,
+          bodyAr: `ألغى ${name} المهمة "${task.title}". السبب: ${dto.reason}`,
+          objectType: 'Task',
+          objectId: id,
+        },
+        organizationId,
+      );
+    }
+    return task;
+  }
+
+  /**
+   * Reopen a COMPLETED task — the evidence is wrong or not good enough. It goes
+   * back to Assigned with the people who were on it when it was completed:
+   * complete() stamps the others' removedAt with the same instant as
+   * completedAt, so those rows plus the completer's are exactly them. Anyone
+   * no longer ACTIVE is left off; if nobody is left, the task returns to its
+   * pool if it has one, or becomes UNASSIGNED — reassign()'s rules.
+   *
+   * The SLA restarts from now under the task's priority; the creator may set an
+   * earlier due date in the same call. The evidence stays.
+   *
+   * A stage task reopens only while its record is still in that stage and the
+   * workflow is still running — otherwise the step it gated is already decided.
+   */
+  async reopen(id: string, dto: ReopenTaskDto, viewer: TaskViewer, organizationId: string): Promise<ITask> {
+    const now = new Date();
+    const { existing, task, returningIds, pooled } = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockForManager(tx, id, viewer, organizationId);
+      if (existing.status === 'CANCELLED') {
+        throw new ConflictException('A cancelled task cannot be reopened');
+      }
+      if (existing.status !== 'COMPLETED') {
+        throw new ConflictException('Only a completed task can be reopened');
+      }
+      if (existing.workflowInstanceId) {
+        const instance = await tx.workflowInstance.findFirst({
+          where: { id: existing.workflowInstanceId, organizationId },
+          select: { status: true, currentStageId: true },
+        });
+        const stillInStep =
+          !!instance &&
+          (instance.status === 'PENDING' || instance.status === 'IN_PROGRESS') &&
+          instance.currentStageId === existing.sourceStageId;
+        if (!stillInStep) throw new ConflictException('The workflow has moved past this step');
+      }
+
+      const limitAt = await this.sla.windowFrom(now, existing.priority, organizationId);
+      let dueAt = limitAt;
+      if (dto.dueDate !== undefined) {
+        const asked = new Date(dto.dueDate);
+        await this.sla.assertPersonDueDate(asked, limitAt, existing.priority, organizationId, now);
+        dueAt = asked;
+      }
+
+      // The rows active at completion, and of those, the people still ACTIVE.
+      const completedAt = existing.completedAt?.getTime();
+      const atCompletion = existing.assignees.filter(
+        (a) => a.removedAt === null || (completedAt !== undefined && a.removedAt?.getTime() === completedAt),
+      );
+      const returningIds = await this.filterActiveUsers(
+        atCompletion.map((a) => a.userId),
+        organizationId,
+        tx,
+      );
+      const returning = atCompletion.filter((a) => returningIds.includes(a.userId)).map((a) => a.id);
+      const leaving = atCompletion.filter((a) => !returningIds.includes(a.userId) && a.removedAt === null).map((a) => a.id);
+      if (returning.length > 0) {
+        await tx.taskAssignee.updateMany({ where: { id: { in: returning } }, data: { removedAt: null } });
+      }
+      // A completer who has since left is not handed the task back.
+      if (leaving.length > 0) {
+        await tx.taskAssignee.updateMany({ where: { id: { in: leaving } }, data: { removedAt: now } });
+      }
+
+      const pooled = returningIds.length === 0 && !!poolTargetOf(existing);
+      const task = await tx.task.update({
+        where: { id },
+        data: {
+          status: returningIds.length > 0 || pooled ? 'PENDING' : 'UNASSIGNED',
+          completedAt: null,
+          completedById: null,
+          dueAt,
+          dueDateOverridden: dto.dueDate !== undefined,
+          slaStartAt: now,
+          slaLimitAt: limitAt,
+          slaExtendedTo: null,
+          ...ESCALATION_CLEARED,
+          reopenedReason: dto.reason,
+          reopenedAt: now,
+          reopenedById: viewer.id,
+          ...(pooled ? await this.poolClock(existing.priority as TaskPriority, organizationId, now) : NO_POOL_CLOCK),
+        },
+      });
+      return { existing, task, returningIds, pooled };
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: id,
+      actorId: viewer.id,
+      tenantId: organizationId,
+      before: existing as unknown as Record<string, unknown>,
+      after: task as unknown as Record<string, unknown>,
+      metadata: { event: 'reopened', reason: dto.reason, reopenedBy: viewer.id, assigneeUserIds: returningIds, pooled },
+    });
+
+    const name = await this.userName(viewer.id, organizationId);
+    const due = task.dueAt ? await this.sla.forPeople(task.dueAt, organizationId) : null;
+    for (const userId of returningIds.filter((u) => u !== viewer.id)) {
+      await this.notificationService.create(
+        {
+          userId,
+          titleEn: 'Task reopened',
+          titleAr: 'أُعيد فتح مهمة',
+          bodyEn: `${name} reopened "${task.title}"${due ? `, now due ${due.en}` : ''}. Reason: ${dto.reason}`,
+          bodyAr: `أعاد ${name} فتح المهمة "${task.title}"${due ? `، وموعد استحقاقها ${due.ar}` : ''}. السبب: ${dto.reason}`,
+          objectType: 'Task',
+          objectId: id,
+        },
+        organizationId,
+      );
+    }
+    if (pooled) {
+      await this.notifyPool(id, organizationId, { event: 'created', excludeUserId: viewer.id });
+    }
+    return task;
+  }
+
+  /**
+   * What New task's picker stops at: for every priority, the default due date
+   * and the limit, counted from now. Gated by tasks:create at the route.
+   */
+  slaPreview(organizationId: string): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+    return this.sla.preview(new Date(), organizationId);
+  }
+
+  /**
+   * The same, for one task's Edit: counted from its SLA start, never below an
+   * approved extension. The current priority's limit is the one in force, which
+   * may be higher than its window (a pre-ACC-174 due date kept by the backfill).
+   */
+  async slaPreviewForTask(
+    id: string,
+    viewer: TaskViewer,
+    organizationId: string,
+  ): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+    const task = await this.prisma.task.findFirst({
+      where: { id, organizationId },
+      include: CREATOR_STATUS_INCLUDE,
+    });
+    if (!task || !(await this.mayManage(task, viewer, organizationId))) {
+      throw new NotFoundException('Task not found');
+    }
+    const windows = await this.sla.preview(this.sla.startOf(task), organizationId, task.slaExtendedTo);
+    const current = windows[task.priority];
+    if (current) current.limitAt = await this.sla.limitOf(task, organizationId);
+    return windows;
   }
 
   // ACC-68 — cancels every OPEN task belonging to one stage of one workflow
@@ -1463,6 +1857,109 @@ export class TaskService {
     await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
   }
 
+  // ACC-174 — the row lock, then the identical 404 for anyone who may not
+  // manage the task, before the caller's own 409s.
+  private async lockForManager(
+    tx: TaskTx,
+    id: string,
+    viewer: TaskViewer,
+    organizationId: string,
+  ): Promise<TaskWithAssigneeRows> {
+    await this.lockTaskRow(tx, id, organizationId);
+    const task = await tx.task.findFirst({
+      where: { id, organizationId },
+      include: { assignees: true, ...CREATOR_STATUS_INCLUDE },
+    });
+    if (!task || !(await this.mayManage(task, viewer, organizationId, { client: tx }))) {
+      throw new NotFoundException('Task not found');
+    }
+    const { createdBy: _creator, ...row } = task;
+    return row;
+  }
+
+  /**
+   * ACC-174 — WHO MANAGES A TASK: edit, cancel, reopen, and every list row's
+   * canManage. THE ONE PLACE this rule lives; do not write a second.
+   *
+   *   1. the creator, or anyone acting for them — TaskAuthorityService's rule,
+   *      not a copy of it: canActForCreator() for one task, or the page's
+   *      covered-creator set (creatorsCoveredBy(), its inverse) for a list;
+   *   2. while the creator is no longer ACTIVE, a holder of the override
+   *      permission, so a departed creator's work can still be closed.
+   *
+   * The override is tasks:reassign today. The task permission model Ahmad
+   * decided on 6 October replaces it with "Manage tasks" per record type; that
+   * swap is a change to the one line below.
+   */
+  private async mayManage(
+    task: { createdById: string; createdBy?: { status: string } | null },
+    viewer: TaskViewer,
+    organizationId: string,
+    ctx: { client?: TaskTx; covered?: ReadonlySet<string> } = {},
+  ): Promise<boolean> {
+    const client = ctx.client ?? this.prisma;
+    const actsForCreator = ctx.covered
+      ? ctx.covered.has(task.createdById)
+      : await this.authority.canActForCreator(task.createdById, viewer.id, organizationId, client);
+    if (actsForCreator) return true;
+
+    if (!viewer.permissions.includes(TASKS_PERMISSIONS.REASSIGN)) return false;
+    const status =
+      task.createdBy !== undefined
+        ? task.createdBy?.status
+        : (await client.user.findFirst({ where: { id: task.createdById, organizationId }, select: { status: true } }))
+            ?.status;
+    return !!status && status !== 'ACTIVE';
+  }
+
+  // The creators a viewer may manage for, read once per page: themself and
+  // everyone they currently act for.
+  private async coveredCreators(viewer: TaskViewer, organizationId: string): Promise<ReadonlySet<string>> {
+    return new Set([viewer.id, ...(await this.authority.creatorsCoveredBy(viewer.id, organizationId))]);
+  }
+
+  // ACC-174 — a changed due date or priority, told to the active assignees in
+  // both languages. Never the person who made the change.
+  private async notifyAssigneesOfEdit(
+    before: TaskWithAssigneeRows,
+    after: ITask,
+    changed: { dueChanged: boolean; priorityChanged: boolean },
+    actorId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const en: string[] = [];
+    const ar: string[] = [];
+    if (changed.dueChanged && after.dueAt) {
+      const due = await this.sla.forPeople(after.dueAt, organizationId);
+      en.push(`it is now due ${due.en}`);
+      ar.push(`أصبح موعد استحقاقها ${due.ar}`);
+    }
+    if (changed.priorityChanged) {
+      const words = priorityWords(after.priority);
+      en.push(`its priority is now ${words.en}`);
+      ar.push(`أصبحت أولويتها ${words.ar}`);
+    }
+    for (const userId of activeAssigneeIds(before, actorId)) {
+      await this.notificationService.create(
+        {
+          userId,
+          titleEn: 'Task updated',
+          titleAr: 'تم تحديث مهمة',
+          bodyEn: `"${after.title}" was updated: ${en.join(', and ')}.`,
+          bodyAr: `تم تحديث المهمة "${after.title}": ${ar.join('، و')}.`,
+          objectType: 'Task',
+          objectId: after.id,
+        },
+        organizationId,
+      );
+    }
+  }
+
+  private async userName(userId: string, organizationId: string): Promise<string> {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, organizationId }, select: { name: true } });
+    return user?.name ?? '—';
+  }
+
   // ACC-163 — tells a rejected task's creator, naming the record the task
   // belongs to: the bell has no links, so the record's name is how they find
   // where to reassign it. English and Arabic both, as every new notification
@@ -1584,18 +2081,6 @@ export class TaskService {
     }
   }
 
-  // Priority SLA from Organization.settings.taskSla (ACC-46 Section 2.7.c —
-  // tenant-configurable, via TenantService.getTaskSla(), which itself falls
-  // back to DEFAULT_TASK_SLA_SETTINGS when absent). Never a module's own
-  // date math — always through WorkingCalendarService.
-  private async computeSlaDueAt(priority: TaskPriority, organizationId: string): Promise<Date> {
-    const slaConfig = await this.tenantService.getTaskSla(organizationId);
-    const hours = slaConfig[priority].dueAfterHours;
-
-    const deadline = await this.workingCalendar.calculateDeadline(DateTime.now(), hours, organizationId);
-    return deadline.toJSDate();
-  }
-
   // Excludes suspended/invited users from a resolved assignee list — an
   // inactive user should never end up as a task's sole assignee.
   //
@@ -1613,4 +2098,9 @@ export class TaskService {
     });
     return users.map((u) => u.id);
   }
+}
+
+// ACC-174 — the people currently on a task, less the person acting.
+function activeAssigneeIds(task: TaskWithAssigneeRows, exceptUserId: string): string[] {
+  return task.assignees.filter((a) => a.removedAt === null && a.userId !== exceptUserId).map((a) => a.userId);
 }

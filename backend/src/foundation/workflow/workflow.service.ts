@@ -1032,6 +1032,10 @@ export class WorkflowService {
       organizationId,
       actorId,
       placement,
+      // ACC-174 (C1) — the stage's SLA is the engine's date, not a person's:
+      // when it runs past the priority limit, the limit is raised to it rather
+      // than the task refused. Temporary until stage task definitions (CF-07).
+      'engine',
     );
 
     // A pool nobody is in right now is still a pool — it resolves at read time —

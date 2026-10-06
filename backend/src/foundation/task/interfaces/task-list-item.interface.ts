@@ -19,6 +19,11 @@ export interface ITaskListItem extends ITask {
   // ACC-173 — the task's PENDING extension or hold request, if any (at most
   // one per task), so a list can say "More time requested" and offer Withdraw.
   openRequest: ITaskOpenRequest | null;
+  // ACC-174 — the caller may edit, cancel and reopen this task: they created
+  // it, act for its creator, or (while the creator is no longer ACTIVE) hold
+  // the override permission. Computed once per page. Whether a given action
+  // applies to the task's state is the screen's call; the server re-checks.
+  canManage: boolean;
 }
 
 // ACC-167 — a row of the caller's OWN list. `pickedByMe` says the caller's
