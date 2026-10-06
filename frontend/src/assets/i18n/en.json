@@ -635,7 +635,39 @@
     "completeNeedsEvidence": "Add evidence before completing",
     "evidenceRequired": "Evidence required",
     "evidenceRequiredHint": "The assignee must add evidence before they can complete the task.",
-    "evidenceNone": "none added yet"
+    "evidenceNone": "none added yet",
+    "pick": "Pick up",
+    "pickNamed": "Pick up “{{title}}”",
+    "release": "Release",
+    "releaseNamed": "Release “{{title}}”",
+    "releaseReason": "Why are you handing it back?",
+    "releaseReasonHint": "Everyone in the pool reads this when the task comes back to them.",
+    "available": "Available to pick up",
+    "availablePurpose": "Tasks waiting in a pool you are in. Whoever picks one up first takes it.",
+    "noAvailable": "Nothing is waiting in your pools.",
+    "pickedUp": "Picked up",
+    "assign": {
+      "unit": "Unit",
+      "unitOrCommittee": "Unit or committee",
+      "position": "Position",
+      "role": "Committee role",
+      "person": "Person (optional)",
+      "chooseUnit": "Choose a unit",
+      "chooseUnitFirst": "Choose a unit first",
+      "choosePosition": "Choose a position",
+      "chooseRole": "Choose a role",
+      "anyone": "Anyone who holds it",
+      "chooseTargetFirst": "Choose a position first",
+      "thisCommittee": "This task's committee",
+      "singleHolder": "Single holder",
+      "singleHolderVacant": "Single holder · vacant",
+      "outcomeNone": "Nobody yet — the task is created unassigned.",
+      "outcomePerson": "Goes to {{name}}.",
+      "outcomeVacant": "Nobody holds this position here yet. The task waits, unassigned, until someone does.",
+      "outcomeEmptyPool": "Goes to a pool nobody is in yet. Nobody can pick it up until someone joins.",
+      "unavailable": "You cannot choose who this task goes to.",
+      "assignedToPool": "Assigned to {{pool}}"
+    }
   },
   "auth": {
     "login": "Log In",
@@ -998,6 +1030,14 @@
       "evidenceAdded": {
         "one": "{{count}} added",
         "other": "{{count}} added"
+      },
+      "holders": {
+        "one": "{{count}} holder",
+        "other": "{{count}} holders"
+      },
+      "assignPool": {
+        "one": "Goes to a pool of {{count}} — they pick it up.",
+        "other": "Goes to a pool of {{count}} — whoever picks it up first takes it."
       }
     },
     "user": {

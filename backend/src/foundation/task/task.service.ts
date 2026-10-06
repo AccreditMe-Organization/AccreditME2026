@@ -1,4 +1,11 @@
-import { ConflictException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -15,7 +22,22 @@ import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
 import { ITask } from './interfaces/task.interface';
-import { ITaskListItem } from './interfaces/task-list-item.interface';
+import { IMyTaskListItem, ITaskListItem } from './interfaces/task-list-item.interface';
+import { ReleaseTaskDto } from './dto/release-task.dto';
+import { ResolvedPlacement, TaskAssignmentService } from './task-assignment.service';
+import {
+  POOL_LABEL_INCLUDE,
+  PoolLabelRelations,
+  findEmptyPoolTasks,
+  isPoolMember,
+  poolLabel,
+  poolTargetOf,
+  poolsOfUser,
+  resolvePoolMemberIds,
+  toPoolColumns,
+  toPoolView,
+  waitingInPoolWhere,
+} from './task-pool';
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
 
@@ -35,6 +57,28 @@ type TaskTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 // mandatory task must keep holding its stage until the creator reassigns it.
 const CLOSED_STATUSES = ['COMPLETED', 'CANCELLED'] as const;
 
+// ACC-167 — the pick-up clock is all-or-nothing: a task in its pool carries
+// all three, a task out of it carries none.
+const NO_POOL_CLOCK = { pooledAt: null, poolEscalateAt: null, poolEscalatedAt: null };
+
+// A list row as Prisma returns it, split into the task, its evidence count and
+// the pool it is in — the relations themselves never reach a response.
+function splitListRow<T extends { _count: { evidence: number } } & PoolLabelRelations>(row: T) {
+  const {
+    _count,
+    assignedOrgUnit,
+    assignedPosition,
+    assignedCommittee,
+    assignedCommitteeRoleValue,
+    ...task
+  } = row;
+  return {
+    task,
+    evidenceCount: _count.evidence,
+    pool: toPoolView({ assignedOrgUnit, assignedPosition, assignedCommittee, assignedCommitteeRoleValue }),
+  };
+}
+
 @Injectable()
 export class TaskService {
   constructor(
@@ -46,15 +90,47 @@ export class TaskService {
     private readonly notificationService: NotificationService,
     @Inject(forwardRef(() => TenantService))
     private readonly tenantService: TenantService,
+    private readonly assignment: TaskAssignmentService,
   ) {}
 
-  async create(dto: CreateTaskDto, organizationId: string, actorId: string): Promise<ITask> {
+  // ACC-167 — a task goes to named people (assigneeUserIds, the engine's path
+  // and every task before this ticket), or to a TARGET: a position in a unit
+  // or a committee role, chosen through `assignTo`, which lands it with named
+  // people or in a pool (TaskAssignmentService.resolvePlacement()). The engine
+  // passes its own resolved placement for a POSITION_FIXED or committee-role
+  // stage, because a stage's committee need not be the task's source.
+  async create(
+    dto: CreateTaskDto,
+    organizationId: string,
+    actorId: string,
+    enginePlacement?: ResolvedPlacement,
+  ): Promise<ITask> {
+    if (dto.assignTo && dto.assigneeUserIds?.length) {
+      throw new BadRequestException('Choose either who the task goes to or named people, not both');
+    }
+    const placement =
+      enginePlacement ??
+      (dto.assignTo
+        ? await this.assignment.resolvePlacement(dto.assignTo, organizationId, {
+            sourceType: dto.sourceType,
+            sourceId: dto.sourceId,
+          })
+        : null);
+
+    const priority = dto.priority ?? 'MEDIUM';
     const dueAt = dto.dueDate
       ? new Date(dto.dueDate)
-      : await this.computeSlaDueAt(dto.priority ?? 'MEDIUM', organizationId);
+      : await this.computeSlaDueAt(priority, organizationId);
 
-    const eligibleAssigneeIds = await this.filterActiveUsers(dto.assigneeUserIds, organizationId);
-    const isUnassigned = eligibleAssigneeIds.length === 0;
+    const eligibleAssigneeIds = await this.filterActiveUsers(
+      placement ? placement.directUserIds : (dto.assigneeUserIds ?? []),
+      organizationId,
+    );
+    // A pool is not "unassigned" even when nobody is in it right now: it
+    // resolves at read time, and someone who joins the position sees it.
+    const pooled = placement?.pooled ?? false;
+    const isUnassigned = !pooled && eligibleAssigneeIds.length === 0;
+    const poolClock = pooled ? await this.poolClock(priority, organizationId, new Date()) : NO_POOL_CLOCK;
 
     // ACC-40 Section 2.6.3 — stamped once, at the moment each TaskAssignee
     // row is created, from the caller-supplied per-assignee delegation map
@@ -76,11 +152,13 @@ export class TaskService {
         meetingId: dto.meetingId ?? null,
         createdById: actorId,
         requiresEvidence: dto.requiresEvidence ?? false,
-        priority: dto.priority ?? 'MEDIUM',
+        priority,
         status: isUnassigned ? 'UNASSIGNED' : 'PENDING',
         dueAt,
         dueDateOverridden: !!dto.dueDate,
-        assignees: isUnassigned
+        ...toPoolColumns(placement?.target ?? null),
+        ...poolClock,
+        assignees: eligibleAssigneeIds.length === 0
           ? undefined
           : {
               create: eligibleAssigneeIds.map((userId) => {
@@ -110,19 +188,22 @@ export class TaskService {
     // Setup health condition (TASK_WITHOUT_OWNER), listed until someone is
     // assigned (SYSTEM-REFERENCE §13.7). Assignees are still told: that is an
     // event, addressed to the person who has to act.
-    if (!isUnassigned) {
-      for (const userId of eligibleAssigneeIds) {
-        await this.notificationService.create(
-          {
-            userId,
-            titleEn: 'New task assigned',
-            bodyEn: `You have been assigned: "${task.title}"`,
-            objectType: 'Task',
-            objectId: task.id,
-          },
-          organizationId,
-        );
-      }
+    for (const userId of eligibleAssigneeIds) {
+      await this.notificationService.create(
+        {
+          userId,
+          titleEn: 'New task assigned',
+          bodyEn: `You have been assigned: "${task.title}"`,
+          objectType: 'Task',
+          objectId: task.id,
+        },
+        organizationId,
+      );
+    }
+    // ACC-167 — a pool is told once, when the task enters it. A task created
+    // for one chosen person sends only the assignment notice above.
+    if (pooled) {
+      await this.notifyPool(task.id, organizationId, { event: 'created', excludeUserId: actorId });
     }
 
     return task;
@@ -142,7 +223,7 @@ export class TaskService {
     userId: string,
     organizationId: string,
     options: GetMyTasksQueryDto = {},
-  ): Promise<ITaskListItem[]> {
+  ): Promise<IMyTaskListItem[]> {
     const filters: Prisma.TaskWhereInput[] = [];
     if (options.status === 'PENDING') {
       filters.push({ status: { in: ['PENDING', 'OVERDUE'] } });
@@ -160,9 +241,41 @@ export class TaskService {
         AND: filters,
       },
       orderBy: { dueAt: 'asc' },
-      include: { _count: { select: { evidence: true } } },
+      include: {
+        _count: { select: { evidence: true } },
+        ...POOL_LABEL_INCLUDE,
+        // ACC-167 — the caller's own row, to say whether it came from a pick.
+        assignees: { where: { userId, removedAt: null }, select: { pickedAt: true } },
+      },
     });
-    return tasks.map(({ _count, ...task }) => ({ ...task, evidenceCount: _count.evidence }));
+    return tasks.map(({ assignees, ...row }) => {
+      const { task, evidenceCount, pool } = splitListRow(row);
+      return { ...task, evidenceCount, pool, pickedByMe: assignees.some((a) => a.pickedAt !== null) };
+    });
+  }
+
+  // ACC-167 (decision 7) — open pool tasks the caller could pick up: every
+  // pool they are in RIGHT NOW (task-pool.ts), with nobody holding the task.
+  // Self-scoped like my-tasks: the query is built from the caller's own
+  // position, unit and committee roles, so it cannot reach anyone else's pool.
+  //
+  // Three indexed queries however many tasks exist: the caller's user row,
+  // their committee memberships, and the tasks — matched on Task's
+  // (organizationId, assignedOrgUnitId, assignedPositionId) and
+  // (assignedCommitteeId, assignedCommitteeRoleValueId) indexes.
+  async getAvailableToPick(userId: string, organizationId: string): Promise<ITaskListItem[]> {
+    const pools = await poolsOfUser(this.prisma, userId, organizationId);
+    if (pools.length === 0) return [];
+
+    const rows = await this.prisma.task.findMany({
+      where: { ...waitingInPoolWhere(organizationId), AND: [{ OR: pools }] },
+      orderBy: { dueAt: 'asc' },
+      include: { _count: { select: { evidence: true } }, ...POOL_LABEL_INCLUDE },
+    });
+    return rows.map((row) => {
+      const { task, evidenceCount, pool } = splitListRow(row);
+      return { ...task, evidenceCount, pool };
+    });
   }
 
   // Module task lists — CLAUDE.md's "tasks filtered by sourceType + sourceId".
@@ -210,6 +323,9 @@ export class TaskService {
         // evidence it holds, so Complete can be disabled before it is refused.
         rejectedBy: { select: { id: true, name: true } },
         _count: { select: { evidence: true } },
+        // ACC-167 — the pool the task is in, so the record can say who it is
+        // waiting for until somebody picks it up.
+        ...POOL_LABEL_INCLUDE,
       },
     });
 
@@ -221,24 +337,43 @@ export class TaskService {
       permissions: viewerPermissions,
     });
 
-    return tasks.map(({ assignees, _count, ...task }) => ({
+    return tasks.map(({ assignees, ...row }) => {
+      const { task, evidenceCount, pool } = splitListRow(row);
+      return {
       ...task,
-      evidenceCount: _count.evidence,
+      evidenceCount,
+      pool,
       assignees: assignees.map((assignee) => ({
         userId: assignee.userId,
         userName: assignee.user.name,
         delegation: this.delegationLabels.lookup(assignee, delegations),
       })),
-    }));
+      };
+    });
   }
 
   // Tenant-wide — unassigned tasks have no assignees, so getMyTasks()
   // structurally can never surface them (ACC-34).
+  //
+  // ACC-167 — also lists open pool tasks whose pool nobody is in right now:
+  // nobody can pick them up, so they are work with no actionable owner exactly
+  // as an UNASSIGNED task is. Setup health's TASK_WITHOUT_OWNER lists the same
+  // tasks and its Fix opens them here.
   async listUnassigned(organizationId: string): Promise<ITask[]> {
-    return this.prisma.task.findMany({
-      where: { organizationId, status: 'UNASSIGNED' },
+    const [unassigned, emptyPools] = await Promise.all([
+      this.prisma.task.findMany({
+        where: { organizationId, status: 'UNASSIGNED' },
+        orderBy: { createdAt: 'desc' },
+      }),
+      findEmptyPoolTasks(this.prisma, organizationId),
+    ]);
+    if (emptyPools.length === 0) return unassigned;
+
+    const stranded = await this.prisma.task.findMany({
+      where: { organizationId, id: { in: emptyPools.map((t) => t.id) } },
       orderBy: { createdAt: 'desc' },
     });
+    return [...unassigned, ...stranded];
   }
 
   async getById(id: string, organizationId: string): Promise<ITask> {
@@ -578,7 +713,12 @@ export class TaskService {
     actorId: string,
     actorPermissions: readonly string[],
   ): Promise<ITask> {
-    const { existing, task, eligibleAssigneeIds } = await this.prisma.$transaction(async (tx) => {
+    // ACC-167 — exactly one way of saying who it goes to.
+    if (!!dto.assignTo === !!dto.newAssigneeUserIds?.length) {
+      throw new BadRequestException('Choose who the task goes to: a unit and position, or named people');
+    }
+
+    const { existing, task, eligibleAssigneeIds, pooled } = await this.prisma.$transaction(async (tx) => {
       await this.lockTaskRow(tx, id, organizationId);
       const existing = await tx.task.findFirst({
         where: { id, organizationId },
@@ -594,7 +734,22 @@ export class TaskService {
         throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be reassigned`);
       }
 
-      const eligibleAssigneeIds = await this.filterActiveUsers(dto.newAssigneeUserIds, organizationId, tx);
+      // ACC-167 — a target lands the task with named people or in a pool, and
+      // the task remembers it either way; legacy named people clear it.
+      const placement = dto.assignTo
+        ? await this.assignment.resolvePlacement(
+            dto.assignTo,
+            organizationId,
+            { sourceType: existing.sourceType, sourceId: existing.sourceId },
+            tx,
+          )
+        : null;
+      const eligibleAssigneeIds = await this.filterActiveUsers(
+        placement ? placement.directUserIds : (dto.newAssigneeUserIds ?? []),
+        organizationId,
+        tx,
+      );
+      const pooled = placement?.pooled ?? false;
 
       const now = new Date();
       await tx.taskAssignee.updateMany({
@@ -607,7 +762,7 @@ export class TaskService {
         if (previous) {
           // A manual reassignment carries no delegation: a stamp left from an
           // engine assignment would label this person as covering for someone
-          // they are not.
+          // they are not. Nor is it a pick (ACC-167).
           await tx.taskAssignee.update({
             where: { id: previous.id },
             data: {
@@ -616,6 +771,7 @@ export class TaskService {
               assignedById: actorId,
               delegationReason: null,
               delegationContextId: null,
+              pickedAt: null,
             },
           });
         } else {
@@ -626,14 +782,16 @@ export class TaskService {
       const task = await tx.task.update({
         where: { id },
         data: {
-          status: eligibleAssigneeIds.length === 0 ? 'UNASSIGNED' : 'PENDING',
+          status: pooled || eligibleAssigneeIds.length > 0 ? 'PENDING' : 'UNASSIGNED',
           rejectedReason: null,
           rejectedAt: null,
           rejectedById: null,
+          ...toPoolColumns(placement?.target ?? null),
+          ...(pooled ? await this.poolClock(existing.priority, organizationId, now) : NO_POOL_CLOCK),
         },
         include: { assignees: true },
       });
-      return { existing, task, eligibleAssigneeIds };
+      return { existing, task, eligibleAssigneeIds, pooled };
     });
 
     await this.auditLog.log({
@@ -644,7 +802,7 @@ export class TaskService {
       tenantId: organizationId,
       before: existing as unknown as Record<string, unknown>,
       after: task as unknown as Record<string, unknown>,
-      metadata: { reason: dto.reason, newAssigneeUserIds: eligibleAssigneeIds },
+      metadata: { reason: dto.reason, newAssigneeUserIds: eligibleAssigneeIds, pooled },
     });
 
     for (const userId of eligibleAssigneeIds) {
@@ -659,7 +817,134 @@ export class TaskService {
         organizationId,
       );
     }
+    if (pooled) {
+      await this.notifyPool(task.id, organizationId, { event: 'created', excludeUserId: actorId });
+    }
 
+    return task;
+  }
+
+  // ACC-167 (decision 4) — a current pool member takes the task: a TaskAssignee
+  // row stamped pickedAt, after which it is theirs and leaves everyone else's
+  // "available" list.
+  //
+  // THE ORDER OF REFUSALS IS THE POINT. Under the row lock: tenant, existence,
+  // being a pool task and being in its pool come FIRST, and every one of them
+  // is the identical 404 — so a non-member never learns whether the task
+  // exists, is closed, or has already been picked. Only a member is then told
+  // why they cannot have it (409): closed, rejected, or already picked up.
+  async pick(id: string, userId: string, organizationId: string): Promise<ITask> {
+    const { existing, task } = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskRow(tx, id, organizationId);
+      const existing = await tx.task.findFirst({
+        where: { id, organizationId },
+        include: { assignees: true },
+      });
+      const target = existing ? poolTargetOf(existing) : null;
+      if (!existing || !target || !(await isPoolMember(tx, userId, target, organizationId))) {
+        throw new NotFoundException('Task not found');
+      }
+      if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
+        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be picked up`);
+      }
+      if (existing.status === 'REJECTED') {
+        throw new ConflictException('A rejected task cannot be picked up');
+      }
+      if (existing.assignees.some((a) => a.removedAt === null)) {
+        throw new ConflictException('This task has already been picked up');
+      }
+
+      const now = new Date();
+      // Picking up a task you released earlier reuses your row (A → B → A).
+      const previous = existing.assignees.find((a) => a.userId === userId);
+      if (previous) {
+        await tx.taskAssignee.update({
+          where: { id: previous.id },
+          data: {
+            removedAt: null,
+            assignedAt: now,
+            assignedById: userId,
+            pickedAt: now,
+            delegationReason: null,
+            delegationContextId: null,
+          },
+        });
+      } else {
+        await tx.taskAssignee.create({ data: { taskId: id, userId, assignedById: userId, pickedAt: now } });
+      }
+
+      // UNASSIGNED here is a single-holder position's task picked up by a
+      // holder who appeared later — the pool resolving at read time.
+      const task = await tx.task.update({ where: { id }, data: { status: 'PENDING' } });
+      return { existing, task };
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: id,
+      actorId: userId,
+      tenantId: organizationId,
+      before: existing as unknown as Record<string, unknown>,
+      after: task as unknown as Record<string, unknown>,
+      metadata: { event: 'picked', pickedBy: userId },
+    });
+    return task;
+  }
+
+  // ACC-167 (decision 5, Q6) — whoever picked the task hands it back to its
+  // pool, with a reason. Their row is stamped removedAt, exactly as reject()
+  // stamps it — never deleted, so picking it up again reuses the row.
+  //
+  // Only a PICKED row may be released: a person the assigner chose directly
+  // was given the task, not offered it, and rejects instead (409, safe to say
+  // because the caller is an active assignee and so already entitled).
+  async release(
+    id: string,
+    dto: ReleaseTaskDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<ITask> {
+    const { existing, task, returnedToPool } = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be released');
+      const mine = existing.assignees.find((a) => a.userId === userId && a.removedAt === null);
+      if (!mine?.pickedAt || !poolTargetOf(existing)) {
+        throw new ConflictException('Only a task picked up from a pool can be released');
+      }
+
+      const now = new Date();
+      await tx.taskAssignee.update({ where: { id: mine.id }, data: { removedAt: now } });
+
+      const othersRemain = existing.assignees.some((a) => a.userId !== userId && a.removedAt === null);
+      if (othersRemain) {
+        const unchanged = await tx.task.findFirstOrThrow({ where: { id, organizationId } });
+        return { existing, task: unchanged, returnedToPool: false };
+      }
+      const task = await tx.task.update({
+        where: { id },
+        // ITask types enums as strings; this one was read from the enum column.
+        data: {
+          status: 'PENDING',
+          ...(await this.poolClock(existing.priority as TaskPriority, organizationId, now)),
+        },
+      });
+      return { existing, task, returnedToPool: true };
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: id,
+      actorId: userId,
+      tenantId: organizationId,
+      before: existing as unknown as Record<string, unknown>,
+      after: task as unknown as Record<string, unknown>,
+      metadata: { event: 'released', releasedBy: userId, reason: dto.reason, returnedToPool },
+    });
+    // After commit, and never to the person who released it.
+    if (returnedToPool) {
+      await this.notifyPool(id, organizationId, { event: 'released', excludeUserId: userId, reason: dto.reason });
+    }
     return task;
   }
 
@@ -677,7 +962,7 @@ export class TaskService {
     toUserId: string | null,
     organizationId: string,
     actorId: string,
-  ): Promise<{ reassignedCount: number; unassignedCount: number }> {
+  ): Promise<{ reassignedCount: number; unassignedCount: number; returnedToPoolCount: number }> {
     const activeAssignments = await this.prisma.taskAssignee.findMany({
       where: { userId: fromUserId, removedAt: null, task: { organizationId } },
       include: { task: { include: { assignees: true } } },
@@ -688,6 +973,7 @@ export class TaskService {
 
     let reassignedCount = 0;
     let unassignedCount = 0;
+    let returnedToPoolCount = 0;
 
     for (const assignment of activeAssignments) {
       const task = assignment.task;
@@ -701,6 +987,43 @@ export class TaskService {
       const remainingActiveOthers = task.assignees.filter(
         (a) => a.id !== assignment.id && a.removedAt === null,
       );
+
+      // ACC-167 — a task with a pool goes back to its pool, whether the
+      // departing person picked it up or was chosen for it directly: the pool
+      // is still a valid owner, and the acting user may not hold the position.
+      // Only an OPEN task — this loop also reaches closed tasks (ACC-165), and
+      // returning one to its pool would reopen it. Creates no row for the
+      // acting user, so it never reaches the duplicate-row create below that
+      // ACC-165 owns.
+      //
+      // It RETURNS to the pool only when nobody else is still on it; otherwise
+      // it stays with them, is not counted as returned, and is audited as
+      // departure_left_with_others.
+      if (poolTargetOf(task) && task.status !== 'COMPLETED' && task.status !== 'CANCELLED') {
+        const returned = remainingActiveOthers.length === 0;
+        if (returned) {
+          await this.prisma.task.update({
+            where: { id: task.id },
+            data: { status: 'PENDING', ...(await this.poolClock(task.priority, organizationId, now)) },
+          });
+          returnedToPoolCount += 1;
+        }
+        await this.auditLog.log({
+          action: 'DELEGATE',
+          objectType: 'Task',
+          objectId: task.id,
+          actorId,
+          tenantId: organizationId,
+          metadata: { event: returned ? 'departure_returned_to_pool' : 'departure_left_with_others', fromUserId },
+        });
+        // Once, after this task's writes. The departing user was made INACTIVE
+        // before this runs (UserService.deactivate()), so the pool no longer
+        // holds them; excluding them anyway keeps that true if the order moves.
+        if (returned) {
+          await this.notifyPool(task.id, organizationId, { event: 'departure', excludeUserId: fromUserId });
+        }
+        continue;
+      }
 
       if (validToUserId) {
         await this.prisma.taskAssignee.create({
@@ -737,7 +1060,7 @@ export class TaskService {
       );
     }
 
-    return { reassignedCount, unassignedCount };
+    return { reassignedCount, unassignedCount, returnedToPoolCount };
   }
 
   // ACC-51 — the recovery half of the unassigned-task lifecycle. Called only
@@ -1085,6 +1408,70 @@ export class TaskService {
       en: `a ${task.sourceType.toLowerCase().replace(/_/g, ' ')} record`,
       ar: 'السجل المرتبط بها',
     };
+  }
+
+  // ACC-167 (decision 6) — the pick-up clock, started whenever a task enters
+  // its pool. poolEscalateAt is the priority's managerEscalationAfterHours
+  // counted in WORKING hours through WorkingCalendarService — no module
+  // computes its own dates — and stored, so the sweep compares one column.
+  private async poolClock(
+    priority: TaskPriority,
+    organizationId: string,
+    from: Date,
+  ): Promise<{ pooledAt: Date; poolEscalateAt: Date; poolEscalatedAt: null }> {
+    const slaConfig = await this.tenantService.getTaskSla(organizationId);
+    const hours = slaConfig[priority].managerEscalationAfterHours;
+    const at = await this.workingCalendar.calculateDeadline(DateTime.fromJSDate(from), hours, organizationId);
+    return { pooledAt: from, poolEscalateAt: at.toJSDate(), poolEscalatedAt: null };
+  }
+
+  // ACC-167 — tells the CURRENT members of a task's pool, once: when the task
+  // enters it, when it is handed back, and when a departure returns it. Never
+  // the person who released it (or who just created it). English and Arabic.
+  // Called after the writes it reports.
+  private async notifyPool(
+    taskId: string,
+    organizationId: string,
+    options: { event: 'created' | 'released' | 'departure'; excludeUserId: string | null; reason?: string },
+  ): Promise<void> {
+    const task = await this.prisma.task.findFirst({
+      where: { id: taskId, organizationId },
+      include: POOL_LABEL_INCLUDE,
+    });
+    const target = task ? poolTargetOf(task) : null;
+    const view = task ? toPoolView(task) : null;
+    if (!task || !target || !view) return;
+
+    const label = poolLabel(view);
+    const members = (await resolvePoolMemberIds(this.prisma, target, organizationId)).filter(
+      (id) => id !== options.excludeUserId,
+    );
+    const text = {
+      created: {
+        titleEn: 'New task to pick up',
+        titleAr: 'مهمة جديدة متاحة للاستلام',
+        bodyEn: `"${task.title}" is waiting for someone in ${label.en} to pick it up.`,
+        bodyAr: `المهمة "${task.title}" بانتظار أن يستلمها أحد من ${label.ar}.`,
+      },
+      released: {
+        titleEn: 'Task handed back to pick up',
+        titleAr: 'أُعيدت مهمة لتُستلم',
+        bodyEn: `"${task.title}" was handed back to ${label.en}. Reason: ${options.reason ?? ''}`,
+        bodyAr: `أُعيدت المهمة "${task.title}" إلى ${label.ar}. السبب: ${options.reason ?? ''}`,
+      },
+      departure: {
+        titleEn: 'Task back to pick up',
+        titleAr: 'أُعيدت مهمة لتُستلم',
+        bodyEn: `"${task.title}" is back with ${label.en} because the person working on it has left.`,
+        bodyAr: `عادت المهمة "${task.title}" إلى ${label.ar} لأن الشخص الذي كان يعمل عليها غادر.`,
+      },
+    }[options.event];
+    for (const userId of members) {
+      await this.notificationService.create(
+        { userId, ...text, objectType: 'Task', objectId: task.id },
+        organizationId,
+      );
+    }
   }
 
   // Priority SLA from Organization.settings.taskSla (ACC-46 Section 2.7.c —

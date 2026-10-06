@@ -57,6 +57,10 @@ const mockPrisma = {
   orgUnit: { findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   organization: { findMany: jest.fn() },
   orgPosition: { findMany: jest.fn() },
+  // ACC-167 — the committee-pool escalation resolves the chair.
+  lookupValue: { findMany: jest.fn() },
+  committeeMember: { findMany: jest.fn() },
+  committee: { findFirst: jest.fn() },
 };
 
 // Always-open working-hours calendar — avoids clock-dependent flakiness in
@@ -633,6 +637,12 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
         where: {
           dueAt: { lt: expect.any(Date) },
           status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED'] },
+          // ACC-167 — not a task waiting in a pool: nobody holds it, so there
+          // is no assignee to escalate for. sweepUnpickedPoolTasks() owns it.
+          OR: [
+            { assignedPositionId: null, assignedCommitteeId: null },
+            { assignees: { some: { removedAt: null } } },
+          ],
         },
         include: { assignees: { where: { removedAt: null } } },
       });
@@ -1273,6 +1283,201 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
   //   sweepExpiredActingOrgUnitAssignments -> user.findMany
   //   sweepDueHandovers                  -> orgUnit.findMany
   //   sweepOrgUnitVacancies              -> organization.findMany — the last step
+  // ACC-167 (decision 6) — a pool task nobody picks up escalates ONCE: to the
+  // unit head for a position pool, to the chair for a committee-role pool.
+  describe('sweepUnpickedPoolTasks (ACC-167)', () => {
+    const LABELS = {
+      assignedOrgUnit: { nameEn: 'Pharmacy', nameAr: 'الصيدلية' },
+      assignedPosition: { nameEn: 'Quality Officer', nameAr: 'مسؤول الجودة' },
+      assignedCommittee: null,
+      assignedCommitteeRoleValue: null,
+    };
+    const waitingPositionTask = (overrides: Record<string, unknown> = {}) => ({
+      id: 'pool-task-1',
+      organizationId: ORG_A,
+      title: 'Collect the audit sample',
+      status: 'PENDING',
+      assignedOrgUnitId: 'unit-1',
+      assignedPositionId: 'pos-qo',
+      assignedCommitteeId: null,
+      assignedCommitteeRoleValueId: null,
+      poolEscalateAt: new Date('2026-01-01T00:00:00.000Z'),
+      poolEscalatedAt: null,
+      ...LABELS,
+      ...overrides,
+    });
+    const waitingCommitteeTask = () =>
+      waitingPositionTask({
+        assignedOrgUnitId: null,
+        assignedPositionId: null,
+        assignedCommitteeId: 'committee-1',
+        assignedCommitteeRoleValueId: 'role-sec',
+        assignedOrgUnit: null,
+        assignedPosition: null,
+        assignedCommittee: { nameEn: 'Infection Control Committee', nameAr: null },
+        assignedCommitteeRoleValue: { labelEn: 'Secretary', labelAr: 'أمين السر', labelOverrideEn: null, labelOverrideAr: null },
+      });
+
+    // Only the pool sweep's query carries poolEscalateAt.
+    const servePool = (tasks: unknown[]) =>
+      mockPrisma.task.findMany.mockImplementation(({ where }: { where?: { poolEscalateAt?: unknown } }) =>
+        Promise.resolve(where?.poolEscalateAt ? tasks : []),
+      );
+
+    beforeEach(() => {
+      mockPrisma.task.update.mockResolvedValue({});
+      mockPrisma.lookupValue.findMany.mockResolvedValue([{ id: 'role-chair' }]);
+      mockPrisma.committeeMember.findMany.mockResolvedValue([]);
+      mockPrisma.committee.findFirst.mockResolvedValue({ orgUnitId: 'committee-unit' });
+    });
+
+    it('selects only waiting pool tasks past their pick-up deadline and not yet escalated', async () => {
+      servePool([]);
+
+      await runProcess();
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            poolEscalateAt: { lte: expect.any(Date) },
+            poolEscalatedAt: null,
+            status: { in: ['PENDING', 'OVERDUE', 'UNASSIGNED'] },
+            OR: [{ assignedPositionId: { not: null } }, { assignedCommitteeId: { not: null } }],
+            assignees: { none: { removedAt: null } },
+          },
+        }),
+      );
+    });
+
+    it("escalates a position pool to the unit's head, once — stamped, audited, told in both languages", async () => {
+      servePool([waitingPositionTask()]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockImplementation((unitId: string) =>
+        Promise.resolve(unitId === 'unit-1' ? ['head-1'] : []),
+      );
+
+      await runProcess();
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'pool-task-1' },
+        data: { poolEscalatedAt: expect.any(Date) },
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ objectId: 'pool-task-1', metadata: { event: 'pool_escalated', escalatedTo: ['head-1'] } }),
+      );
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        {
+          userId: 'head-1',
+          titleEn: 'Task not picked up',
+          titleAr: 'مهمة لم يستلمها أحد',
+          bodyEn: 'Nobody in Quality Officer, Pharmacy has picked up "Collect the audit sample".',
+          bodyAr: 'لم يستلم أحد من مسؤول الجودة، الصيدلية المهمة "Collect the audit sample".',
+          objectType: 'Task',
+          objectId: 'pool-task-1',
+        },
+        ORG_A,
+      );
+    });
+
+    it("escalates a committee-role pool to the committee's chair", async () => {
+      servePool([waitingCommitteeTask()]);
+      mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'chair-1' }]);
+
+      await runProcess();
+
+      expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
+        where: {
+          organizationId: ORG_A,
+          committeeId: 'committee-1',
+          isActive: true,
+          roleValueId: { in: ['role-chair'] },
+          user: { status: 'ACTIVE' },
+        },
+        select: { userId: true },
+      });
+      expect(mockNotificationService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'chair-1', bodyEn: expect.stringContaining('Secretary, Infection Control Committee') }),
+        ORG_A,
+      );
+    });
+
+    it("falls back to the head of the committee's own unit when the committee has no chair", async () => {
+      servePool([waitingCommitteeTask()]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockImplementation((unitId: string) =>
+        Promise.resolve(unitId === 'committee-unit' ? ['unit-head'] : []),
+      );
+
+      await runProcess();
+
+      expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'unit-head' }), ORG_A);
+    });
+
+    // Not every pass: the stamp is written even with nobody to tell, so the
+    // skip is audited once rather than every fifteen minutes.
+    it('stamps a pool with nobody to tell, with one "skipped" audit row and no notification', async () => {
+      servePool([waitingPositionTask()]);
+
+      await runProcess();
+
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'pool-task-1' },
+        data: { poolEscalatedAt: expect.any(Date) },
+      });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ event: 'pool_escalation_skipped' }) }),
+      );
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    it('waits for working hours, like every other escalation', async () => {
+      servePool([waitingPositionTask()]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockResolvedValue(['head-1']);
+      mockWorkingCalendar.getOrCreate.mockResolvedValue({ ...ALWAYS_OPEN_CALENDAR, workingDays: [] });
+
+      await runProcess();
+
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.create).not.toHaveBeenCalled();
+    });
+
+    // A task waiting in a pool has no assignee, so the due-date sweep has no
+    // manager to resolve; it is excluded there and escalates here instead.
+    it('keeps waiting pool tasks out of the due-date sweep', async () => {
+      servePool([]);
+
+      await runProcess();
+
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            dueAt: expect.anything(),
+            OR: [
+              { assignedPositionId: null, assignedCommitteeId: null },
+              { assignees: { some: { removedAt: null } } },
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      const other = waitingPositionTask({ id: 'pool-task-2', organizationId: 'org-b-id', assignedOrgUnitId: 'unit-b' });
+      servePool([waitingPositionTask(), other]);
+      mockOrganizationService.resolveActingHeadForOrgUnit.mockImplementation((unitId: string, orgId: string) =>
+        Promise.resolve(
+          unitId === 'unit-1' && orgId === ORG_A ? ['head-a'] : unitId === 'unit-b' && orgId === 'org-b-id' ? ['head-b'] : [],
+        ),
+      );
+
+      await runProcess();
+
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-1', ORG_A);
+      expect(mockOrganizationService.resolveActingHeadForOrgUnit).toHaveBeenCalledWith('unit-b', 'org-b-id');
+      expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'head-a' }), ORG_A);
+      expect(mockNotificationService.create).toHaveBeenCalledWith(expect.objectContaining({ userId: 'head-b' }), 'org-b-id');
+      expect(mockNotificationService.create).not.toHaveBeenCalledWith(expect.objectContaining({ userId: 'head-b' }), ORG_A);
+    });
+  });
+
   describe('per-step error isolation (ACC-49)', () => {
     // The literal ACC-48 failure: a Prisma query throwing because the
     // deployed code queried columns a prematurely-applied migration had
@@ -1334,7 +1539,11 @@ describe('SlaMonitorProcessor — sweepUnassignedStages (ACC-28 Section 2.5.1)',
     // step into a silently-successful job. BullMQ's failed-job list is where
     // ACC-48's own failures were eventually found.
     it('still fails the job so a broken step stays visible to BullMQ, naming the step', async () => {
-      mockPrisma.task.findMany.mockRejectedValue(ACC48_STYLE_FAILURE);
+      // Only the due-date sweep's query fails (it is the one filtering on
+      // dueAt). ACC-167's pool sweep reads the same table and must still run.
+      mockPrisma.task.findMany.mockImplementation(({ where }: { where?: { dueAt?: unknown } }) =>
+        where?.dueAt ? Promise.reject(ACC48_STYLE_FAILURE) : Promise.resolve([]),
+      );
 
       await expect(runProcess()).rejects.toThrow(
         /SLA monitor sweep completed with 1 failed step\(s\): sweepOverdueTasks/,

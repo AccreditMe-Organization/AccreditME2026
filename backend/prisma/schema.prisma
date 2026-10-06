@@ -677,6 +677,7 @@ model LookupValue {
   organization Organization?  @relation(fields: [organizationId], references: [id])
   category     LookupCategory @relation(fields: [categoryId], references: [id])
   orgUnits     OrgUnit[]      @relation("OrgUnitType") // ACC-137
+  poolTasks    Task[]         @relation("TaskAssignedCommitteeRole") // ACC-167
 
   @@unique([categoryId, key, organizationId])
   @@index([organizationId])
@@ -830,6 +831,7 @@ model OrgUnit {
   // ones, the same way it already blocks on active users: the relation and its
   // guard ship together.
   committees                      Committee[]
+  poolTasks                       Task[]                  @relation("TaskAssignedOrgUnit") // ACC-167
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -1054,6 +1056,7 @@ model OrgPosition {
   headAssignments OrgUnitHeadAssignment[] // ACC-120 slice 2
   // ACC-54 — back-relation for WorkflowStage.assigneePositionId (POSITION_FIXED).
   workflowStages  WorkflowStage[]
+  poolTasks       Task[]                  @relation("TaskAssignedPosition") // ACC-167
 
   @@unique([organizationId, nameEn])
   @@index([organizationId])
@@ -1277,31 +1280,31 @@ model WorkflowActionLog {
 // ---------------------------------------------------------------------------
 
 model Task {
-  id                 String         @id @default(cuid())
-  organizationId     String
-  title              String
-  description        String?
-  sourceType         TaskSourceType
-  sourceId           String
-  sourceStageId      String?
-  workflowInstanceId String?
-  meetingId          String?
-  createdById        String
-  status             TaskStatus     @default(PENDING)
-  priority           TaskPriority   @default(MEDIUM)
-  dueAt              DateTime?
-  dueDateOverridden  Boolean        @default(false)
-  slaBreachedAt      DateTime?
-  completedAt        DateTime?
-  completedById      String?
+  id                           String         @id @default(cuid())
+  organizationId               String
+  title                        String
+  description                  String?
+  sourceType                   TaskSourceType
+  sourceId                     String
+  sourceStageId                String?
+  workflowInstanceId           String?
+  meetingId                    String?
+  createdById                  String
+  status                       TaskStatus     @default(PENDING)
+  priority                     TaskPriority   @default(MEDIUM)
+  dueAt                        DateTime?
+  dueDateOverridden            Boolean        @default(false)
+  slaBreachedAt                DateTime?
+  completedAt                  DateTime?
+  completedById                String?
   // ACC-163 — when true, complete() refuses until at least one TaskEvidence
   // row exists. Set from the manual task form; workflow tasks stay false
   // until stage task definitions exist.
-  requiresEvidence   Boolean        @default(false)
+  requiresEvidence             Boolean        @default(false)
   // ACC-163 — set when the LAST active assignee rejects; cleared by reassign.
-  rejectedReason     String?
-  rejectedAt         DateTime?
-  rejectedById       String?
+  rejectedReason               String?
+  rejectedAt                   DateTime?
+  rejectedById                 String?
   // ACC-46 Section 2.7.b — escalationUserId/escalationAfterHours/escalatedAt
   // removed via real migration, not left as dead/repurposed columns
   // (ACC-44's own precedent for a confirmed-dead field): both were
@@ -1314,23 +1317,52 @@ model Task {
   // Replaced by two system-only timestamps, written only by
   // SlaMonitorProcessor, never by any caller — the "no human choice
   // anywhere" redesign (2.7.b/2.7.c) extends to the schema itself.
-  managerEscalatedAt DateTime?
-  headEscalatedAt    DateTime?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  managerEscalatedAt           DateTime?
+  headEscalatedAt              DateTime?
+  // ACC-167 — the POOL a task is assigned to, when it is assigned to a
+  // position in a unit, or to a committee member role, rather than to named
+  // people. Exactly one pair is set, or neither. Who is IN the pool is resolved
+  // at READ time from these columns (holders: positionId + primaryOrgUnitId +
+  // ACTIVE; members: active CommitteeMember rows with that role), never
+  // snapshotted. A task with a pool target and no active TaskAssignee row is
+  // waiting to be picked up.
+  assignedOrgUnitId            String?
+  assignedPositionId           String?
+  assignedCommitteeId          String?
+  assignedCommitteeRoleValueId String?
+  // ACC-167 — the pick-up clock. pooledAt: when the task last entered its pool
+  // (creation, release, reassign onto a pool, or a departure). poolEscalateAt:
+  // when an unpicked task escalates, computed once through
+  // WorkingCalendarService from the priority's managerEscalationAfterHours.
+  // poolEscalatedAt: stamped once when it fired (or was skipped for want of a
+  // target); cleared when the task re-enters the pool.
+  pooledAt                     DateTime?
+  poolEscalateAt               DateTime?
+  poolEscalatedAt              DateTime?
+  createdAt                    DateTime       @default(now())
+  updatedAt                    DateTime       @updatedAt
 
-  organization     Organization      @relation(fields: [organizationId], references: [id])
-  createdBy        User              @relation("TaskCreator", fields: [createdById], references: [id])
-  rejectedBy       User?             @relation("TaskRejectedBy", fields: [rejectedById], references: [id])
-  workflowInstance WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
-  assignees        TaskAssignee[]
-  evidence         TaskEvidence[]
+  organization               Organization      @relation(fields: [organizationId], references: [id])
+  createdBy                  User              @relation("TaskCreator", fields: [createdById], references: [id])
+  rejectedBy                 User?             @relation("TaskRejectedBy", fields: [rejectedById], references: [id])
+  workflowInstance           WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
+  assignedOrgUnit            OrgUnit?          @relation("TaskAssignedOrgUnit", fields: [assignedOrgUnitId], references: [id])
+  assignedPosition           OrgPosition?      @relation("TaskAssignedPosition", fields: [assignedPositionId], references: [id])
+  assignedCommittee          Committee?        @relation("TaskAssignedCommittee", fields: [assignedCommitteeId], references: [id])
+  assignedCommitteeRoleValue LookupValue?      @relation("TaskAssignedCommitteeRole", fields: [assignedCommitteeRoleValueId], references: [id])
+  assignees                  TaskAssignee[]
+  evidence                   TaskEvidence[]
 
   @@index([organizationId])
   @@index([status])
   @@index([dueAt])
   @@index([sourceType, sourceId])
   @@index([meetingId])
+  // ACC-167 — the read-time pool lookups ("what can I pick up?") and the
+  // pick-up escalation sweep.
+  @@index([organizationId, assignedOrgUnitId, assignedPositionId])
+  @@index([assignedCommitteeId, assignedCommitteeRoleValueId])
+  @@index([poolEscalateAt])
 }
 
 model TaskAssignee {
@@ -1340,6 +1372,11 @@ model TaskAssignee {
   assignedAt          DateTime          @default(now())
   assignedById        String
   removedAt           DateTime?
+  // ACC-167 — set when this row came from a PICK out of the task's pool. Only a
+  // picked row may be released back to the pool; a person the assigner chose
+  // directly rejects instead. A row reused on a later pick (A → B → A) gets a
+  // fresh stamp.
+  pickedAt            DateTime?
   // ACC-40 Section 2.6.3 — stamped once, at the moment this row is created,
   // by fireTransitionActions()'s CREATE_TASK handling — the exact moment
   // resolveAssignee() has full, fresh knowledge of why each resolved user
@@ -1532,6 +1569,7 @@ model Committee {
   members              CommitteeMember[]
   membershipEvents     CommitteeMembershipEvent[]
   meetings             Meeting[]
+  poolTasks            Task[]                     @relation("TaskAssignedCommittee") // ACC-167
 
   @@index([organizationId])
   @@index([orgUnitId]) // ACC-135

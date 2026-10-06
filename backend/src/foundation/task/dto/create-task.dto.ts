@@ -10,6 +10,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { AssignTargetDto } from './assign-target.dto';
 
 const DELEGATION_REASONS = ['ACTING_HEAD', 'OUT_OF_OFFICE_COVERAGE'] as const;
 
@@ -83,10 +84,22 @@ export class CreateTaskDto {
   @IsOptional()
   meetingId?: string;
 
+  // Named people — the workflow engine's path, and every task before
+  // ACC-167. Optional since ACC-167: the task form sends `assignTo` instead.
+  // Sending both is refused (400) by the service rather than one silently
+  // winning. Sending neither creates an UNASSIGNED task, as before.
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
-  assigneeUserIds!: string[];
+  assigneeUserIds?: string[];
+
+  // ACC-167 (Q5) — assign by org unit and position (or committee role), with
+  // an optional person. See AssignTargetDto for the three outcomes.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AssignTargetDto)
+  assignTo?: AssignTargetDto;
 
   // ACC-40 Section 2.6.3 — optional, workflow-engine-only. Not every
   // assigneeUserIds entry needs an entry here — only those resolved via

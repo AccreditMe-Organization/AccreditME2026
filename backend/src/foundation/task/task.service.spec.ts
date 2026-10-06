@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
+import { TaskAssignmentService } from './task-assignment.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
@@ -169,6 +170,9 @@ describe('TaskService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
+        // ACC-167 — REAL, over the same mockPrisma: it decides where a chosen
+        // target lands, and a stub would leave those tests asserting a mock.
+        TaskAssignmentService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
         // The REAL service, not a mock — it takes only PrismaService, and
@@ -1073,7 +1077,12 @@ describe('TaskService', () => {
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: { status: 'PENDING', rejectedReason: null, rejectedAt: null, rejectedById: null },
+          data: expect.objectContaining({
+            status: 'PENDING',
+            rejectedReason: null,
+            rejectedAt: null,
+            rejectedById: null,
+          }),
         }),
       );
     });
@@ -1115,6 +1124,8 @@ describe('TaskService', () => {
           assignedById: ACTOR,
           delegationReason: null,
           delegationContextId: null,
+          // ACC-167 — a reassignment is not a pick.
+          pickedAt: null,
         },
       });
       expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
@@ -1237,7 +1248,7 @@ describe('TaskService', () => {
       expect(mockPrisma.taskAssignee.create).toHaveBeenCalledWith({
         data: { taskId: 'task-1', userId: USER_B, assignedById: ACTOR },
       });
-      expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0 });
+      expect(result).toEqual({ reassignedCount: 1, unassignedCount: 0, returnedToPoolCount: 0 });
     });
 
     it('flags a task UNASSIGNED when no acting user is given and no other assignee remains', async () => {
@@ -1249,7 +1260,7 @@ describe('TaskService', () => {
         where: { id: 'task-1' },
         data: { status: 'UNASSIGNED' },
       });
-      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1 });
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1, returnedToPoolCount: 0 });
     });
 
     it('does NOT flag UNASSIGNED when another active assignee remains on the task (multi-assignee)', async () => {
@@ -1269,7 +1280,7 @@ describe('TaskService', () => {
       const result = await service.reassignAllForUser(USER_A, null, ORG_A, ACTOR);
 
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
-      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0 });
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 0 });
     });
 
     it('falls back to UNASSIGNED when the requested acting user is not active in this tenant', async () => {
@@ -1279,7 +1290,7 @@ describe('TaskService', () => {
       const result = await service.reassignAllForUser(USER_A, 'inactive-user', ORG_A, ACTOR);
 
       expect(mockPrisma.taskAssignee.create).not.toHaveBeenCalled();
-      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1 });
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 1, returnedToPoolCount: 0 });
     });
 
     it('logs an audit entry per reassigned task', async () => {
@@ -1305,7 +1316,7 @@ describe('TaskService', () => {
 
       const result = await service.reassignAllForUser(USER_A, null, ORG_B, ACTOR);
 
-      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0 });
+      expect(result).toEqual({ reassignedCount: 0, unassignedCount: 0, returnedToPoolCount: 0 });
     });
   });
 
@@ -1437,9 +1448,18 @@ describe('TaskService', () => {
   });
 
   describe('listUnassigned (ACC-34)', () => {
-    it('returns only status: UNASSIGNED tasks, tenant-wide', async () => {
+    // Two queries since ACC-167: UNASSIGNED tasks, and tasks waiting in a pool
+    // (status IN [...]) — each answered by its own shape of where-clause.
+    const answerTaskQueries = (unassigned: unknown[], waitingInPool: unknown[], byId: unknown[] = []) =>
+      mockPrisma.task.findMany.mockImplementation(({ where }: { where: { status?: unknown; id?: unknown } }) =>
+        Promise.resolve(
+          where.status === 'UNASSIGNED' ? unassigned : where.id ? byId : waitingInPool,
+        ),
+      );
+
+    it('returns only status: UNASSIGNED tasks, tenant-wide, when no pool is stranded', async () => {
       const unassignedTask = { ...BASE_TASK, status: 'UNASSIGNED', assignees: [] };
-      mockPrisma.task.findMany.mockResolvedValue([unassignedTask]);
+      answerTaskQueries([unassignedTask], []);
 
       const result = await service.listUnassigned(ORG_A);
 
@@ -1451,8 +1471,24 @@ describe('TaskService', () => {
       expect(result).toEqual([unassignedTask]);
     });
 
+    // ACC-167 — a pool nobody is in is work nobody can pick up, exactly as an
+    // UNASSIGNED task is; Setup health's Fix opens it on this screen.
+    it('also lists an open pool task whose pool nobody is in, and not one whose pool is staffed', async () => {
+      const stranded = { ...BASE_TASK, id: 'task-empty', assignedOrgUnitId: 'u1', assignedPositionId: 'p-empty' };
+      const staffed = { ...BASE_TASK, id: 'task-staffed', assignedOrgUnitId: 'u1', assignedPositionId: 'p-held' };
+      answerTaskQueries([], [stranded, staffed], [stranded]);
+      mockPrisma.user.findMany.mockResolvedValue([{ positionId: 'p-held', primaryOrgUnitId: 'u1' }]);
+
+      const result = await service.listUnassigned(ORG_A);
+
+      expect(result.map((t) => t.id)).toEqual(['task-empty']);
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organizationId: ORG_A, id: { in: ['task-empty'] } } }),
+      );
+    });
+
     it('is not scoped to the calling user — no assignees filter applied', async () => {
-      mockPrisma.task.findMany.mockResolvedValue([]);
+      answerTaskQueries([], []);
 
       await service.listUnassigned(ORG_A);
 
@@ -1463,7 +1499,7 @@ describe('TaskService', () => {
     it('should NOT return records belonging to a different tenant', async () => {
       const unassignedTask = { ...BASE_TASK, status: 'UNASSIGNED', assignees: [] };
       mockPrisma.task.findMany.mockImplementation(({ where }) =>
-        Promise.resolve(where.organizationId === ORG_A ? [unassignedTask] : []),
+        Promise.resolve(where.organizationId === ORG_A && where.status === 'UNASSIGNED' ? [unassignedTask] : []),
       );
 
       const result = await service.listUnassigned(ORG_B);

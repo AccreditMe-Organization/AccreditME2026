@@ -5,6 +5,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
+import { TaskAssignmentService } from './task-assignment.service';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -25,7 +26,10 @@ import { TaskService } from './task.service';
     forwardRef(() => TenantModule),
   ],
   controllers: [TaskController],
-  providers: [TaskService],
+  // ACC-167 — TaskAssignmentService serves this module's picker endpoints
+  // only. The workflow engine decides a stage's pool itself, from the stage,
+  // through the shared rules in task-pool.ts.
+  providers: [TaskService, TaskAssignmentService],
   exports: [TaskService],
 })
 export class TaskModule {}

@@ -13,6 +13,7 @@ import { TaskFormFooterComponent } from '../../../tasks/components/task-form/tas
 import { TaskFormStepsComponent } from '../../../tasks/components/task-form/task-form-steps.component';
 import { TaskService, ITaskWithAssigneesDto } from '../../../tasks/services/task.service';
 import { isTaskOpen, taskStatusLabelKey } from '../../../tasks/task-status';
+import { taskPoolLabel } from '../../../tasks/task-pool-label';
 import {
   TaskReassignDialogComponent,
   TaskRejection,
@@ -592,6 +593,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       (visibleChange)="reassignVisible.set($event)"
       [task]="reassignTarget()"
       [rejection]="reassignRejection()"
+      [committeeName]="committee() ? displayName(committee()!) : null"
       (reassigned)="loadTasks()"
     />
 
@@ -726,8 +728,20 @@ export class CommitteeDetailComponent implements OnInit {
   // Names come resolved from the backend (ACC-76), so this needs no user
   // lookup. Beyond two, the names stop being readable in a summary row and a
   // count says more.
+  //
+  // ACC-167 — a pool task nobody has picked up names its pool ("Assigned to
+  // Secretary, Infection Control Committee") until someone does; then it
+  // names that person like any other task.
   assigneeSummary(task: ITaskWithAssigneesDto): string {
     this.translate.currentLang();
+    if (task.assignees.length === 0 && task.pool && isTaskOpen(task) && task.status !== 'REJECTED') {
+      const pool = taskPoolLabel(
+        task.pool,
+        (en, ar) => this.languageService.bilingual(en, ar),
+        this.languageService.isArabic(),
+      );
+      return this.translate.instant('task.assign.assignedToPool', { pool });
+    }
     if (task.assignees.length === 0) return this.translate.instant('task.unassigned');
     if (task.assignees.length <= 2) return task.assignees.map((a) => a.userName).join(', ');
     return this.format.count('task.assignees', task.assignees.length);

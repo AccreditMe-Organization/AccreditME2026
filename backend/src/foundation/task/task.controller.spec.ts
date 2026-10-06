@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
+import { TaskAssignmentService } from './task-assignment.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -35,6 +36,13 @@ const MOCK_TASK: ITask = {
   rejectedReason: null,
   rejectedAt: null,
   rejectedById: null,
+  assignedOrgUnitId: null,
+  assignedPositionId: null,
+  assignedCommitteeId: null,
+  assignedCommitteeRoleValueId: null,
+  pooledAt: null,
+  poolEscalateAt: null,
+  poolEscalatedAt: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: new Date('2026-01-01'),
@@ -52,12 +60,30 @@ describe('TaskController', () => {
     complete: jest.Mock;
     start: jest.Mock;
     reject: jest.Mock;
+    pick: jest.Mock;
+    release: jest.Mock;
+    getAvailableToPick: jest.Mock;
     reassign: jest.Mock;
     addEvidence: jest.Mock;
     listUnassigned: jest.Mock;
   };
 
+  let assignment: {
+    listUnits: jest.Mock;
+    listPositions: jest.Mock;
+    listHolders: jest.Mock;
+    listCommitteeRoles: jest.Mock;
+    listCommitteeMembers: jest.Mock;
+  };
+
   beforeEach(async () => {
+    assignment = {
+      listUnits: jest.fn().mockResolvedValue([]),
+      listPositions: jest.fn().mockResolvedValue([]),
+      listHolders: jest.fn().mockResolvedValue([]),
+      listCommitteeRoles: jest.fn().mockResolvedValue([]),
+      listCommitteeMembers: jest.fn().mockResolvedValue([]),
+    };
     service = {
       getMyTasks: jest.fn().mockResolvedValue([MOCK_TASK]),
       getForSource: jest.fn().mockResolvedValue([MOCK_TASK]),
@@ -67,6 +93,9 @@ describe('TaskController', () => {
       complete: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'COMPLETED' }),
       start: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'IN_PROGRESS' }),
       reject: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'REJECTED' }),
+      pick: jest.fn().mockResolvedValue(MOCK_TASK),
+      release: jest.fn().mockResolvedValue(MOCK_TASK),
+      getAvailableToPick: jest.fn().mockResolvedValue([]),
       reassign: jest.fn().mockResolvedValue(MOCK_TASK),
       addEvidence: jest.fn().mockResolvedValue({ id: 'evidence-1' }),
       listUnassigned: jest.fn().mockResolvedValue([{ ...MOCK_TASK, status: 'UNASSIGNED' }]),
@@ -74,7 +103,10 @@ describe('TaskController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TaskController],
-      providers: [{ provide: TaskService, useValue: service }],
+      providers: [
+        { provide: TaskService, useValue: service },
+        { provide: TaskAssignmentService, useValue: assignment },
+      ],
     })
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
@@ -255,5 +287,51 @@ describe('TaskController', () => {
 
     expect(service.listUnassigned).toHaveBeenCalledWith(TENANT_ID);
     expect(result).toEqual([{ ...MOCK_TASK, status: 'UNASSIGNED' }]);
+  });
+
+  // ACC-167 — none of these carries a route permission. Pick and release are
+  // scoped to the pool and the picker by the service; the available list is
+  // self-scoped; the picker's gate is "tasks:create, or entitled to reassign
+  // the named task", whose second half only the row can answer.
+  it.each([
+    'pick',
+    'release',
+    'getAvailable',
+    'getAssignableUnits',
+    'getAssignablePositions',
+    'getAssignableCommitteeRoles',
+    'getCommitteeAssignees',
+    'getAssignees',
+  ] as const)('%s carries no route permission', (method) => {
+    const reflector = new Reflector();
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype[method])).toBeUndefined();
+  });
+
+  it('pick and release delegate with the caller and tenant', async () => {
+    await controller.pick('task-1', TENANT_ID, USER_ID);
+    expect(service.pick).toHaveBeenCalledWith('task-1', USER_ID, TENANT_ID);
+
+    await controller.release('task-1', { reason: 'Back to the pool' }, TENANT_ID, USER_ID);
+    expect(service.release).toHaveBeenCalledWith('task-1', { reason: 'Back to the pool' }, USER_ID, TENANT_ID);
+  });
+
+  it('the picker endpoints forward the viewer, tenant and optional task', async () => {
+    const perms = ['tasks:create'];
+    const viewer = { id: USER_ID, permissions: perms };
+
+    await controller.getAssignableUnits({ taskId: 'task-1' }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listUnits).toHaveBeenCalledWith(viewer, TENANT_ID, 'task-1');
+
+    await controller.getAssignablePositions({ orgUnitId: 'u1' }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listPositions).toHaveBeenCalledWith(viewer, TENANT_ID, 'u1', undefined);
+
+    await controller.getAssignees({ orgUnitId: 'u1', positionId: 'p1' }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listHolders).toHaveBeenCalledWith(viewer, TENANT_ID, 'u1', 'p1', undefined);
+
+    await controller.getAssignableCommitteeRoles({ committeeId: 'c1' }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listCommitteeRoles).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', undefined);
+
+    await controller.getCommitteeAssignees({ committeeId: 'c1', roleValueId: 'r1' }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listCommitteeMembers).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', 'r1', undefined);
   });
 });
