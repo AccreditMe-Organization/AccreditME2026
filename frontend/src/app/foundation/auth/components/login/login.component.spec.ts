@@ -71,6 +71,15 @@ describe('LoginComponent — after accepting an invitation (ACC-120 slice 9e)', 
     expect(load().textContent).toContain(NOTICE_TEXT);
   });
 
+  it('announces it politely, as a status rather than an alert', () => {
+    arriveFromAcceptInvitation();
+    const notice = load().querySelector('p-message')!;
+    // Non-vacuity guard: it is the notice being judged, not some other message.
+    expect(notice.textContent).toContain(NOTICE_TEXT);
+    expect(notice.getAttribute('role')).toBe('status');
+    expect(notice.getAttribute('aria-live')).toBe('polite');
+  });
+
   it('removes it from the history entry, keeping the router\'s own keys and the URL', () => {
     arriveFromAcceptInvitation();
     load();

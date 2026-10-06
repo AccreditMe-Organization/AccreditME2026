@@ -38,7 +38,15 @@ import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitati
 
         <!-- ACC-120 slice 9e — arriving from Accept invitation. -->
         @if (invitationAccepted) {
-          <p-message severity="success" [text]="'auth.invitation.acceptedNotice' | translate" />
+          <!-- p-message hard-codes role="alert" with aria-live="polite", which
+               conflict: alert is assertive. This is a status, so the binding
+               replaces the role (bindings apply after host attributes) and
+               the polite live region stays. -->
+          <p-message
+            severity="success"
+            [attr.role]="'status'"
+            [text]="'auth.invitation.acceptedNotice' | translate"
+          />
         }
 
         @if (error()) {
