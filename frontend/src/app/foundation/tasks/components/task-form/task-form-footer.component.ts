@@ -30,7 +30,24 @@ import { TaskFormComponent } from './task-form.component';
   template: `
     @if (form(); as f) {
       <div class="am-task-form__footer">
-          @if (f.step() === 1) {
+          @if (f.isEdit()) {
+            <!-- ACC-174 — Edit is one step: Cancel and Save. -->
+            <p-button
+              [label]="'common.cancel' | translate"
+              severity="secondary"
+              [text]="true"
+              type="button"
+              (onClick)="f.cancelled.emit()"
+              [disabled]="f.saving()"
+            />
+            <p-button
+              [label]="'common.save' | translate"
+              type="button"
+              (onClick)="f.onSubmit()"
+              [loading]="f.saving()"
+              [disabled]="f.form.invalid || f.isPast() || f.afterLimit()"
+            />
+          } @else if (f.step() === 1) {
             <p-button
               [label]="'common.cancel' | translate"
               severity="secondary"
