@@ -1069,6 +1069,31 @@ order (a malformed body still gets the pipe's own message), the 409 position
 conflict and the tenant-admin notifications it sends on every attempt, and
 Better Auth's sign-up errors passed through.
 
+**Accept's password refusals carry stable codes (slice 9e).** A password Better
+Auth refuses leaves accept as `PasswordRefusalException`
+(`foundation/auth/password-refusal.ts`), same pattern as the invitation refusal,
+so the Accept invitation screen can put it on the field:
+
+| code | status | when |
+|---|---|---|
+| `PASSWORD_COMPROMISED` | 400 | haveIBeenPwned found it in a breach |
+| `PASSWORD_TOO_SHORT` / `PASSWORD_TOO_LONG` | 400 | outside Better Auth's 8–128 (the screen checks the same range first) |
+| `PASSWORD_CHECK_UNAVAILABLE` | 503 | the breach check could not run — not a verdict on the password |
+
+Mapped in accept only, by `passwordRefusalCode()`. **The global
+`HttpExceptionFilter` still drops `code` from every other Better Auth error**, on
+purpose: forwarding it would make Better Auth's codes part of every endpoint's
+contract. Better Auth gives the outage NO code, so it is recognised as a 500 whose
+message starts "Failed to check password." — that fact, the codes and the
+`APIError` name are pinned against the installed library in
+`better-auth.contract.spec.ts`. Any other sign-up error still propagates
+unconverted.
+
+**Known, not changed: accept is not atomic.** If `signUpEmail()` succeeds and the
+`user.update()` after it fails, the Better Auth account exists while the user is
+still INVITED, and every retry gets "User already exists" for good. A separate
+ticket will follow.
+
 **RESOLVED (ACC-168) — a closed organisation is closed everywhere.** Found here
 on 2026-10-05: the invitation rule was the only code that read
 `Organization.status`, so a SUSPENDED, CANCELLED or OFFBOARDING tenant's people
@@ -1106,9 +1131,9 @@ moves an organisation off TRIAL when `trialEndsAt` passes, so TRIAL is open
 indefinitely. Background work for a closed tenant — SLA sweeps, Setup health,
 email delivery — still runs.
 
-**Not done, recorded:** clearing the token from the page's address bar after
-reading it (9e); hashing invitation tokens at rest (they are plaintext in
-`User.invitationToken` and in the stored invitation email body).
+**Not done, recorded:** hashing invitation tokens at rest (they are plaintext in
+`User.invitationToken` and in the stored invitation email body). Clearing the
+token from the page's address bar is DONE in 9e (§10.16).
 
 ---
 
@@ -5889,6 +5914,21 @@ so the wrapper sets `outline: none` on a focus-visible projected control and a
 spec asserts it. This only shows up via the keyboard, which is the path least
 likely to be found by accident.
 
+**A control with its own trailing part provides `FIELD_TRAILING_CONTROL`**
+(`shared/components/field/trailing-control.ts`, ACC-120 slice 9e), its value the
+part's inline size. The wrapper then moves its error glyph and spinner inward past
+it, and while an error shows the input leaves room for both — logical properties
+throughout, so Arabic mirrors. Found in the browser: the "!" sat on the password's
+show/hide button. `field-trailing-control.spec.ts` measures both directions, with
+a non-vacuity guard first.
+
+**Focus after an invalid SUBMIT is `focusFirstInvalid(form, host)`**
+(`reveal-errors.ts`), the focus half of `revealAndFocusFirstInvalid()` — a submit
+needs no reveal, because the wrapper reads `submitted`. Same control-order rule;
+when the match is a component's host (`[formcontrolname]` lands there, and a host
+cannot take focus) it focuses the first focusable element inside. Also used after
+the server puts an error on a field.
+
 Consumers: the ACC-111 proof screens; every screen migration inherits it.
 
 
@@ -6022,6 +6062,52 @@ none is a saved change.
 
 **Zero baseline, not a ratchet.** Every real ungated control was fixed in
 ACC-123 (26 gated at the time of writing), so the scan fails on any finding.
+
+### 10.16 The Sign-in Screens — Auth Layout, Remembered Language, Password Input (ACC-120 slice 9e)
+
+Built for Accept invitation; sign-in and password reset move onto them in 9d.
+
+**`AuthLayoutComponent`** (`foundation/auth/components/auth-layout/`): Template
+7's frame — one centred card, max 340px, with the EN / ع toggle in its header.
+It opens in the language from **`SignInLanguageService`**
+(`core/services/sign-in-language.service.ts`): the last one chosen on a sign-in
+screen (localStorage `am.signInLanguage`), else Arabic for an Arabic browser,
+else English; every storage read and write is guarded. A choice is remembered
+through the toggle's `chosen` output, emitted only once the switch has landed.
+**It never writes the profile's saved language** (§10.11's session-toggle rule),
+and it leaves a signed-in session's language alone. Content is shown once the
+language is applied, so the card does not flash English first.
+
+**`am-password-input`** (`shared/components/password-input/`) replaces
+`p-password [toggleMask]` where a show/hide control is wanted. PrimeNG draws that
+toggle as a bare `<svg (click)>` — no role, no name, not in the tab order — and
+its icon templates cannot cure it: each is wrapped in PrimeNG's own clickable
+`<span>` and the two are swapped with `*ngIf`, so a button inside is destroyed by
+its own click and focus falls to the page (primeng-password.mjs 21.2.13). The
+input stays PrimeNG's `pInputText`; the toggle is a native `<button>`, named
+"Show password" / "Hide password" in the UI language, with `aria-pressed`, and it
+is one element that changes so focus stays on it. It is a ControlValueAccessor and
+provides `FIELD_TRAILING_CONTROL` (§10.12). **Login and the user profile still use
+`p-password`** until they migrate (9d).
+
+**The Accept invitation screen** reads the token once, removes it from the address
+bar (`Location.replaceState`) and keeps it in memory, so a refresh shows the
+invalid state. It shows the form only after the lookup (§1.13) says the invitation
+is open; every `INVITATION_INVALID` is one state with no form. The organisation is
+named through `LanguageService.bilingual()`, isolated in the translated sentence
+with U+2068/U+2069 (a `<bdi>` cannot sit inside a translated string). It lands on
+/login with a one-time notice passed as navigation STATE — and **cleared from
+`history.state` once read**, because the browser keeps that state across a reload
+and Angular hands it back to the reloaded page's navigation. The notice binds
+`role="status"`: `p-message` hard-codes `role="alert"` with `aria-live="polite"`,
+which conflict.
+
+**Message colours (preset).** Aura drew a success message as green.600 on green.50
+(3.15:1) and an error as red.600 on red.50 (4.41:1). The preset maps both to the
+success and danger chip pairs `check:contrast` asserts, and
+`core/theme/message.contrast.spec.ts` measures the rendered message under the real
+preset. **Known, not changed:** Aura's warning message is about 2.85:1; info
+measures 4.75:1.
 
 ---
 
