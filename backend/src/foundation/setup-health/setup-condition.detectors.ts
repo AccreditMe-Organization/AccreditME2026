@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+// ACC-167 — plain functions over a Prisma client: importing them pulls in no
+// Nest module, so this module still imports only Prisma and the queue.
+import { findEmptyPoolTasks } from '../task/task-pool';
 // Type-only: the generated client is replaced by a stub under Jest
 // (package.json moduleNameMapper), so its enum OBJECTS do not exist at test
 // runtime. String literals typed by the enum — the same convention as
@@ -262,19 +265,30 @@ export class SetupConditionDetectors {
   // Tasks nobody can act on. No timestamp records when a task became unassigned,
   // and adding one would have to be set by every writer of task status (§13.3),
   // so openedAt is null and the age is "first detected".
+  //
+  // ACC-167 — two kinds, one condition: an UNASSIGNED task, and an open pool
+  // task with nobody on it whose pool nobody is in right now (a position no one
+  // holds in that unit, a committee role no active member has). Both are work
+  // nobody can pick up. The pool rule is task-pool.ts's — the same one the
+  // picker, Pick and the Unassigned tasks screen use — so the three cannot
+  // disagree about who is in a pool. One extra query set per tenant per hour.
   async tasksWithoutOwner(
     organizationId: string,
   ): Promise<DetectedCondition[]> {
-    const tasks = await this.prisma.task.findMany({
-      where: { organizationId, status: 'UNASSIGNED' },
-      select: {
-        id: true,
-        title: true,
-        sourceType: true,
-        sourceId: true,
-        dueAt: true,
-      },
-    });
+    const [unassigned, emptyPools] = await Promise.all([
+      this.prisma.task.findMany({
+        where: { organizationId, status: 'UNASSIGNED' },
+        select: {
+          id: true,
+          title: true,
+          sourceType: true,
+          sourceId: true,
+          dueAt: true,
+        },
+      }),
+      findEmptyPoolTasks(this.prisma, organizationId),
+    ]);
+    const tasks = [...unassigned, ...emptyPools];
 
     return tasks.map((task) => ({
       objectId: task.id,
