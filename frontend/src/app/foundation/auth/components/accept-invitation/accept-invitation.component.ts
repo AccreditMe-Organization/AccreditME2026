@@ -12,7 +12,6 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { Subscription } from 'rxjs';
-import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { AuthService, InvitationOrganization } from '../../../../core/services/auth.service';
@@ -22,6 +21,7 @@ import {
   SKELETON_DELAY_MS,
 } from '../../../../core/request-outcome/request-outcome';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { PasswordInputComponent } from '../../../../shared/components/password-input/password-input.component';
 import { AuthLayoutComponent } from '../auth-layout/auth-layout.component';
 
 /** Better Auth's limits on a sign-up password (create-context.mjs, 8 and 128). */
@@ -61,7 +61,7 @@ const isolate = (text: string): string => `\u2068${text}\u2069`;
   imports: [
     ReactiveFormsModule,
     TranslatePipe,
-    PasswordModule,
+    PasswordInputComponent,
     ButtonModule,
     MessageModule,
     FieldComponent,
@@ -90,14 +90,10 @@ const isolate = (text: string): string => `\u2068${text}\u2069`;
               [hint]="'auth.invitation.passwordHint' | translate"
               [errorMessages]="passwordErrors"
             >
-              <p-password
+              <am-password-input
                 inputId="password"
                 formControlName="password"
                 autocomplete="new-password"
-                [feedback]="false"
-                [toggleMask]="true"
-                styleClass="w-full"
-                inputStyleClass="w-full"
               />
             </am-field>
 
@@ -274,22 +270,18 @@ export class AcceptInvitationComponent {
 
   /** Each accept refusal to where it belongs: the whole screen, the field, or one message. */
   private showAcceptFailure(err: unknown): void {
-    const control = this.form.controls.password;
     switch (refusalCode(err)) {
       case 'INVITATION_INVALID':
         this.lookup.set({ status: 'invalid' });
         return;
       case 'PASSWORD_COMPROMISED':
-        control.setErrors({ compromised: true });
-        control.markAsTouched();
+        this.refusePassword({ compromised: true });
         return;
       case 'PASSWORD_TOO_SHORT':
-        control.setErrors({ minlength: true });
-        control.markAsTouched();
+        this.refusePassword({ minlength: true });
         return;
       case 'PASSWORD_TOO_LONG':
-        control.setErrors({ maxlength: true });
-        control.markAsTouched();
+        this.refusePassword({ maxlength: true });
         return;
       case 'PASSWORD_CHECK_UNAVAILABLE':
         this.submitError.set('auth.invitation.errorCheckUnavailable');
@@ -300,6 +292,13 @@ export class AcceptInvitationComponent {
       return;
     }
     this.submitError.set('auth.invitation.errorGeneric');
+  }
+
+  /** A refusal of the password itself: on the field. */
+  private refusePassword(errors: Record<string, true>): void {
+    const control = this.form.controls.password;
+    control.setErrors(errors);
+    control.markAsTouched();
   }
 }
 

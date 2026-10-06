@@ -88,6 +88,8 @@ describe('AcceptInvitationComponent (ACC-120 slice 9e)', () => {
 
     httpMock = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(AcceptInvitationComponent);
+    // In the document, so focus can be asserted.
+    document.body.appendChild(fixture.nativeElement);
     fixture.detectChanges();
   }
 
@@ -116,7 +118,10 @@ describe('AcceptInvitationComponent (ACC-120 slice 9e)', () => {
     return req;
   }
 
-  afterEach(() => httpMock.verify());
+  afterEach(() => {
+    httpMock.verify();
+    fixture.nativeElement.remove();
+  });
 
   describe('the token', () => {
     it('is taken out of the address bar, and sent from memory to the lookup and to accept', () => {
@@ -266,6 +271,12 @@ describe('AcceptInvitationComponent (ACC-120 slice 9e)', () => {
       expect(fieldMessage()).toBe('auth.invitation.passwordTooLong');
 
       httpMock.expectNone(ACCEPT_URL);
+    });
+
+    it('the password field has a show/hide button', () => {
+      const toggle = el().querySelector('.am-password__toggle')!;
+      expect(toggle.tagName).toBe('BUTTON');
+      expect(toggle.getAttribute('aria-label')).toBe('common.showPassword');
     });
 
     it('accepts exactly 8 and exactly 128 characters', () => {
