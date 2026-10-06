@@ -2890,11 +2890,16 @@ cancelled"*.
   `onHoldUntil`. Audited `hold_started`, with `heldWorkingHours`,
   `dueAtBefore` and `dueAtAfter`.
   **ACC-174 changed when the clock moves: AT APPROVAL.** The SLA window moves
-  to start when the hold ends — `dueAt`, `slaStartAt`, `slaLimitAt` and
-  `slaExtendedTo` all move forward by
+  to start when the hold ends: `slaStartAt` is SET to `onHoldUntil`, and
+  `dueAt`, `slaLimitAt` and `slaExtendedTo` move forward by
   `workingHoursBetween(approval time, holdUntil)`, through
-  `calculateDeadline()`; a zero shift moves nothing (ACC-175's normalisation).
-  The escalation stamps are cleared when the moved due date is ahead.
+  `calculateDeadline()`; a zero shift moves those three not at all (ACC-175's
+  normalisation). The escalation stamps are cleared when the moved due date is
+  ahead. The start is set rather than shifted (Ahmad, 6 Oct) because shifting
+  it went through `calculateDeadline()`, which moves a start outside working
+  hours to the next opening first: in the first ACC-174 browser pass, a start
+  of Tue 16:43 Riyadh shifted by 16 hours landed on Thu 16:00, not where the
+  hold ended.
 
 **Who decides — `TaskAuthorityService.canActForCreator()`.** The creator; or
 their out-of-office delegate (`actingUserId`, BOTH dates set, `from ≤ now ≤
@@ -2972,13 +2977,11 @@ on the task's row; deciding happens in My tasks only.
   running while a task in that stage is on hold; only the task's own dates
   move.
 - `calculateDeadline()` treats a start outside working hours — and BEFORE
-  opening time on a working day — as the next opening, and the hold shift goes
-  through it — ACC-175, whose fix changes every SLA due date and needs its own
-  plan. So a task created after hours whose hold is approved has its
-  `slaStartAt` land at the end of the shifted window's first opening, not
-  exactly `heldHours` later (seen in the ACC-174 pass: 16 hours from Tue 16:43
-  Riyadh became Thu 16:00). A zero shift is skipped, so the zero-hours
-  normalisation cannot move a date.
+  opening time on a working day — as the next opening, and the hold's shift of
+  the due date, limit and extension goes through it — ACC-175, whose fix
+  changes every SLA due date and needs its own plan. The SLA start is not
+  shifted (it becomes `onHoldUntil`), so it is not affected. A zero shift is
+  skipped, so the zero-hours normalisation cannot move a date.
 - The creator's own edit and cancel are ACC-174 (3.11).
 
 ### 3.11 The SLA limit, and edit, cancel and reopen by the creator (ACC-174)

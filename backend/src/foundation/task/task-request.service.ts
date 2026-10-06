@@ -250,11 +250,17 @@ export class TaskRequestService {
           throw new ConflictException('The requested hold date has passed; decline and ask for a new one');
         }
         // ACC-174 — THE SLA WINDOW MOVES AT APPROVAL, to start when the hold
-        // ends: due date, SLA start, limit and any approved extension all move
-        // forward by the working hours between now and the hold date. Resume
-        // then shifts nothing, so resuming early keeps the dates set here.
-        // Zero working hours (a hold that ends before the next working hour)
-        // moves nothing — calculateDeadline() would normalise the date (ACC-175).
+        // ends: the SLA start BECOMES the hold's end date, and the due date,
+        // limit and any approved extension move forward by the working hours
+        // between now and the hold date. Resume then shifts nothing, so
+        // resuming early keeps the dates set here. Zero working hours (a hold
+        // that ends before the next working hour) moves those three not at all
+        // — calculateDeadline() would normalise the date (ACC-175).
+        //
+        // The start is SET, not shifted (Ahmad, 6 Oct): shifting it went
+        // through calculateDeadline(), which first moves a start outside
+        // working hours to the next opening, so a task created after hours
+        // landed somewhere other than where its hold ended.
         heldHours = await this.workingCalendar.workingHoursBetween(
           DateTime.fromJSDate(now),
           DateTime.fromJSDate(existing.holdUntil),
@@ -262,7 +268,7 @@ export class TaskRequestService {
         );
         const shift = (d: Date | null) => (d ? this.sla.shift(d, heldHours, organizationId) : Promise.resolve(null));
         const dueAt = await shift(task.dueAt);
-        const slaStartAt = await this.sla.shift(this.sla.startOf(task), heldHours, organizationId);
+        const slaStartAt = existing.holdUntil;
         const slaLimitAt = await this.sla.shift(await this.sla.limitOf(task, organizationId), heldHours, organizationId);
         const slaExtendedTo = await shift(task.slaExtendedTo);
         after = await tx.task.update({

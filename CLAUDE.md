@@ -2899,10 +2899,12 @@ change). The decisions — Ahmad's, 6 October — briefly:
   "Must be in the future" applies only to a date a person SENDS; a recomputed
   one is the SLA's truth, and the overdue flag shows it. Escalation stamps are
   cleared only when the new due date is still ahead.
-- **A HOLD MOVES THE WINDOW AT APPROVAL** (this changed ACC-173): due date, SLA
-  start, limit and extension all move forward by the working hours between the
-  approval and the hold date. Resume — by hand or by the sweep — shifts nothing,
-  so an early resume keeps the later dates.
+- **A HOLD MOVES THE WINDOW AT APPROVAL** (this changed ACC-173): the SLA start
+  BECOMES the hold's end date (set, not shifted — shifting through
+  `calculateDeadline()` moved an after-hours start to the next opening first),
+  and the due date, limit and extension move forward by the working hours
+  between the approval and the hold date. Resume — by hand or by the sweep —
+  shifts nothing, so an early resume keeps the later dates.
 - **Only the creator edits, cancels and reopens** — or whoever acts for them
   (`canActForCreator()`), or a `tasks:reassign` holder while the creator is no
   longer ACTIVE. **`TaskService.mayManage()` is the ONE place this rule lives**,

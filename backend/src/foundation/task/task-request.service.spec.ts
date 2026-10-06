@@ -457,7 +457,10 @@ describe('TaskRequestService (ACC-173)', () => {
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
     });
 
-    it('moves due date, SLA start, limit and extension forward by the working hours to the hold date', async () => {
+    // The SLA start is SET to the hold's end, never shifted (Ahmad, 6 Oct):
+    // shifting it went through calculateDeadline(), which moves a start
+    // outside working hours to the next opening first (ACC-175).
+    it('starts the SLA window at the hold date, and moves due date, limit and extension by its working hours', async () => {
       const due = inDays(2);
       const start = inDays(-1);
       const limit = inDays(3);
@@ -486,11 +489,17 @@ describe('TaskRequestService (ACC-173)', () => {
       expect(data).toEqual(
         expect.objectContaining({
           dueAt: plus48(due),
-          slaStartAt: plus48(start),
+          slaStartAt: until,
           slaLimitAt: plus48(limit),
           slaExtendedTo: plus48(extended),
         }),
       );
+      // Three dates moved through the calendar — the start is not one of them.
+      const shifted = (mockCalendar.calculateDeadline.mock.calls as [DateTime, number, string][]).map(([at]) =>
+        at.toJSDate().getTime(),
+      );
+      expect(shifted.sort()).toEqual([due, limit, extended].map((d) => d.getTime()).sort());
+      expect(shifted).not.toContain(start.getTime());
       expect(mockAudit.log).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ event: 'hold_started', heldWorkingHours: 48, dueAtBefore: due }),
@@ -501,8 +510,9 @@ describe('TaskRequestService (ACC-173)', () => {
     it('moves nothing when no working hour lies before the hold date (a zero shift would normalise)', async () => {
       const due = inDays(2);
       mockPrisma.task.findFirst.mockResolvedValue(task({ dueAt: due }));
+      const holdEnds = inDays(0.5);
       mockPrisma.taskRequest.findFirst.mockResolvedValue(
-        request({ type: 'ON_HOLD', requestedDueAt: null, holdUntil: inDays(0.5) }),
+        request({ type: 'ON_HOLD', requestedDueAt: null, holdUntil: holdEnds }),
       );
       mockCalendar.workingHoursBetween.mockResolvedValue(0);
 
@@ -511,6 +521,8 @@ describe('TaskRequestService (ACC-173)', () => {
       expect(mockCalendar.calculateDeadline).not.toHaveBeenCalled();
       const { data } = mockPrisma.task.update.mock.calls[0][0] as { data: Record<string, unknown> };
       expect(data['dueAt']).toEqual(due);
+      // The window still starts when the hold ends.
+      expect(data['slaStartAt']).toEqual(holdEnds);
     });
 
     it('lets a tasks:reassign holder decide, though they do not cover the creator', async () => {
