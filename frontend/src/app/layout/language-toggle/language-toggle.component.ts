@@ -1,8 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, output, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 import { LanguageService } from '../../core/services/language.service';
 
-type InterfaceLanguage = 'en' | 'ar';
+import { InterfaceLanguage } from '../../core/services/sign-in-language.service';
 
 // ACC-79 — the reading-mode toggle: EN / ع in the top bar, from the page-level
 // design references (Users List, Committee Record).
@@ -21,6 +21,10 @@ type InterfaceLanguage = 'en' | 'ar';
 // receiving English email, nor be pinned out of their organisation's default.
 // If a toggle ever needs to survive a reload, that is sessionStorage in THIS
 // component — still not the saved preference.
+//
+// ACC-120 slice 9e — the sign-in screens reuse it, and remember the choice
+// themselves through `chosen` (AuthLayoutComponent → SignInLanguageService).
+// The toggle still writes nothing; the shell's copy listens to nothing.
 //
 // WHAT IT SWITCHES, AND WHAT IT NEVER WILL. Interface language controls the
 // chrome, and which of a record's two stored names (nameEn / nameAr) is shown
@@ -101,6 +105,9 @@ export class LanguageToggleComponent {
 
   readonly switching = signal(false);
 
+  /** A switch that has landed. Emitted only once the language is applied. */
+  readonly chosen = output<InterfaceLanguage>();
+
   current(): InterfaceLanguage {
     return this.languageService.isArabic() ? 'ar' : 'en';
   }
@@ -111,7 +118,10 @@ export class LanguageToggleComponent {
     // The translation file may need fetching on first switch; keep the
     // control disabled until it lands so a double click cannot race it.
     this.languageService.use(lang).subscribe({
-      complete: () => this.switching.set(false),
+      complete: () => {
+        this.switching.set(false);
+        this.chosen.emit(lang);
+      },
       error: () => this.switching.set(false),
     });
   }
