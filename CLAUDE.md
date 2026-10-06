@@ -2795,6 +2795,37 @@ Section 9.3. The decisions, briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-163)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 3 (3.1, 3.2, 3.4.1, 3.6).
+The task model is Ahmad's (5 Oct, "Tasks across the product", Q1–Q11); this
+ticket is its statuses step. The decisions, briefly:
+
+- **OVERDUE IS A FLAG, NOT A STATUS (Q8).** A task can be In progress AND
+  overdue, and both facts matter. Overdue means an open task whose `dueAt` has
+  passed, computed wherever it is shown or filtered; the SLA sweep records the
+  breach in `slaBreachedAt` and escalates, and writes no status. Rows stored as
+  `OVERDUE` before this shipped are Assigned tasks, read as `PENDING`
+  everywhere until `backfill-acc163-overdue-to-pending.ts` runs — **after the
+  deploy, never before**, because the old sweep rewrites them within fifteen
+  minutes. Removing `OVERDUE`/`DELEGATED` from the enum is a later contracting
+  migration.
+- **A rejected task goes back to its creator, who reassigns it (Q4).** Reject
+  removes only the caller; the task becomes `REJECTED` when nobody active
+  remains. "Creator" for a workflow task is whoever moved the record into the
+  stage (Q3). Reassign is therefore open to the creator as well as
+  `tasks:reassign` holders — checked in the service, with the identical 404 for
+  anyone else, because creator-ness is only knowable from the row.
+- **THE FIRST ROW LOCK.** Every task status change takes `SELECT … FOR UPDATE`
+  on the task first, inside a short transaction, with notifications after
+  commit. Read-check-write without it let a reject overwrite a completion. A
+  new status-changing task action takes the same lock — see
+  `TaskService.lockTaskRow()`.
+- **Evidence is a link or a record reference (Q11)**; a note is a comment.
+  `requiresEvidence` makes Complete refuse until some exists.
+
+---
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

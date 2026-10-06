@@ -1862,9 +1862,12 @@ model Task {
   slaBreachedAt        DateTime?
   completedAt          DateTime?
   completedById        String?
-  escalationUserId     String?
-  escalationAfterHours Int?
-  escalatedAt          DateTime?
+  requiresEvidence     Boolean        @default(false)  // ACC-163
+  rejectedReason       String?                         // ACC-163 — set by the last
+  rejectedAt           DateTime?                       //   active assignee's reject,
+  rejectedById         String?   // → User ("TaskRejectedBy")  cleared by reassign
+  managerEscalatedAt   DateTime?
+  headEscalatedAt      DateTime?
 }
 
 model TaskAssignee {
@@ -1893,7 +1896,27 @@ model TaskEvidence {
 ```
 
 `TaskStatus`: `PENDING, IN_PROGRESS, COMPLETED, OVERDUE, CANCELLED,
-DELEGATED, UNASSIGNED`. `TaskSourceType` (closed, 10 values):
+DELEGATED, UNASSIGNED, REJECTED`.
+
+**What is written, as of ACC-163**: `PENDING` (shown as **Assigned** — the
+rename is the translation only), `IN_PROGRESS` (by `start()`), `REJECTED`
+(by `reject()`), `COMPLETED`, `CANCELLED` and `UNASSIGNED`. **`OVERDUE` and
+`DELEGATED` are no longer written by anything.** Overdue is a FLAG, not a
+status (Q8): an open task whose `dueAt` has passed, computed wherever it is
+shown or filtered. Rows written as `OVERDUE` before ACC-163 are rewritten to
+`PENDING` by `backfill-acc163-overdue-to-pending.ts`, run after the deploy;
+until then every read treats a legacy `OVERDUE` row exactly as `PENDING`.
+Removing both values from the enum is a later, contracting migration.
+
+**"Open"** throughout this section means `notIn ['COMPLETED', 'CANCELLED']` —
+so `REJECTED` and `UNASSIGNED` are open: the work is still owed, and a
+rejected task holds its stage under the ACC-65 gate until it is reassigned.
+
+**New evidence is `LINK` (http/https only) or `INTERNAL_REFERENCE`** (ACC-163,
+Q11). `TEXT` is no longer accepted — a note is a comment — and `ATTACHMENT`
+waits for the storage tickets. Existing rows of either type are untouched.
+
+`TaskSourceType` (closed, 10 values):
 `MEETING, DOCUMENT, AUDIT, CAPA, INCIDENT, CORRECTIVE_ACTION, STANDARD,
 KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 `COMMITTEE`**, the exact enum gap already documented in Section 2.9.
@@ -1913,7 +1936,12 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 - **`getMyTasks()`** — every task where the caller has an active
   (`removedAt: null`) `TaskAssignee` row. This is the literal backing
   query for a "My Tasks" view — see Section 11 for the still-missing
-  Dashboard/Home page that would surface it.
+  Dashboard/Home page that would surface it. ACC-163: the query is a
+  validated DTO (`status` ∈ `PENDING | IN_PROGRESS | COMPLETED | CANCELLED`,
+  `overdue=true`), so an unknown status is a 400 rather than a Prisma 500.
+  `status=PENDING` also matches legacy `OVERDUE` rows; `overdue=true` is an
+  open task past `dueAt` by the server's clock, combinable with a status.
+  Rows carry `evidenceCount` (`ITaskListItem`, shared with `getForSource()`).
 - **`getForSource()`** — the module task-list query CLAUDE.md refers to
   ("tasks filtered by sourceType + sourceId"). **The ONLY list query
   here that returns assignees** (ACC-76), typed `ITaskWithAssignees[]`
@@ -1927,7 +1955,8 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   resolved `userName` and, where present, ACC-40 §2.6.3's delegation
   stamp resolved to a label by `DelegationLabelService` (see 3.8).
   Before ACC-76 **no list endpoint in the product returned assignee
-  data at all** — the defect ACC-58 tracked.
+  data at all** — the defect ACC-58 tracked. ACC-163 adds `evidenceCount`
+  and `rejectedBy { id, name }` (null unless the task is `REJECTED`).
 - **`complete()`** — ANY-assignee-completes semantics: the first active
   assignee to call this stamps `removedAt` on every *other* active
   `TaskAssignee` row for the same task (not deleted — a permanent
@@ -1937,7 +1966,39 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   Since ACC-162 it is the same `404 "Task not found"` whether the task is
   missing, another tenant's, or simply not the caller's, and a `COMPLETED`
   or `CANCELLED` task is refused with 409 — both checks live in the
-  `findOpenForActiveAssignee()` helper it shares with `addEvidence()`.
+  `findOpenForActiveAssignee()` helper it shares with `addEvidence()` —
+  renamed `lockOpenForActiveAssignee()` in ACC-163, when it began taking
+  the row lock described below. **ACC-163 adds a third refusal**: a task
+  with `requiresEvidence` and no `TaskEvidence` row is refused with 409
+  *"Evidence is required before this task can be completed"*. The order
+  is fixed — 404, then closed, then evidence — so only the person who could
+  complete the task learns why they cannot.
+- **`start()`** (ACC-163) — an active assignee moves an Assigned task to
+  `IN_PROGRESS`. A legacy `OVERDUE` row starts like `PENDING`. Already
+  in progress → 409 *"This task is already in progress"*; closed → 409;
+  not an active assignee → the identical 404. Audited
+  `UPDATE` `{ event: 'started' }`. Self-scoped, no permission (3.6).
+- **`reject(reason)`** (ACC-163, Q4) — an active assignee on an Assigned or
+  In-progress task hands it back. Only the caller's own `TaskAssignee` row
+  is stamped. While anyone else is still assigned, the task stays open for
+  them, unchanged. When the caller was the **last** active assignee, the
+  task becomes `REJECTED` with `rejectedReason`/`rejectedAt`/`rejectedById`,
+  and its creator (`createdById` — for a workflow task, the person who moved
+  the record into the stage, Q3) is notified in English and Arabic, naming
+  the record, because the bell has no links. A creator who rejected their
+  own task is not notified. **Every** reject is audited with action
+  `REJECT`, including one that leaves the task open. Reason: trimmed,
+  required, at most 1000 characters. Self-scoped, no permission (3.6).
+- **The row lock (ACC-163) — the codebase's first.** `start()`, `reject()`,
+  `complete()`, `addEvidence()` and `reassign()` each run in one short
+  interactive transaction that first takes `SELECT … FOR UPDATE` on the
+  task (scoped by `id` AND `organizationId`), then reads the task and its
+  assignees inside it, so every check sees the locked state. It exists for
+  two races: a complete and a reject interleaving (the reject read the task
+  while it was open, so it would write `REJECTED` over `COMPLETED`), and the
+  last two assignees rejecting together (each sees the other still
+  assigned, so the task ends with nobody on it and nobody told). Audit rows
+  and notifications are written after commit, never while the lock is held.
 - **`cancelForStage()`** / **`cancelForInstance()`** (ACC-68) — the
   only producers of `TaskStatus.CANCELLED` anywhere in the codebase.
   Before ACC-68 that enum value was **unreachable**: declared in
@@ -1972,11 +2033,28 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   `cancelInstance()` calls `cancelForInstance()`. **Not retroactive** —
   tasks orphaned before ACC-68 stay open.
 - **`reassign()`** — Pattern 2 (Manual Reassignment). Removes every
-  current active assignee (`removedAt` stamped), creates new
-  `TaskAssignee` rows for `dto.newAssigneeUserIds` (filtered through
-  `filterActiveUsers()` again), notifies each new assignee with the
-  given reason. Zero eligible new assignees → `UNASSIGNED`, same as
-  `create()`.
+  current active assignee (`removedAt` stamped), assigns
+  `dto.newAssigneeUserIds` (filtered through `filterActiveUsers()` again),
+  notifies each new assignee with the given reason. Zero eligible new
+  assignees → `UNASSIGNED`, same as `create()`. ACC-163 changed four things:
+  - **Who**: a `tasks:reassign` holder OR the task's own creator — a
+    rejected task goes back to its creator (Q4). Checked in the service,
+    not by `@Permissions`, because creator-ness is only knowable from the
+    row; anyone else gets the identical 404 (ACC-101 clause (b)).
+  - **Closed tasks are refused** with 409. Before, reassigning a
+    `COMPLETED` or `CANCELLED` task silently reopened it as `PENDING`.
+  - **A returning assignee reuses their row** (removedAt cleared,
+    assignedAt/assignedById set to now and the actor, delegation stamp
+    cleared), as `attachAssigneesToUnassignedStageTasks()` does. This
+    **fixes the latent A → B → A unique-constraint bug** recorded below
+    under that method — reassigning back to the person who rejected is
+    the common case after a reject.
+  - **The rejection is cleared** and the task is set back to Assigned.
+
+  **Known limitation, left for the extension ticket (CF-05):** reassign
+  keeps the task's original `dueAt`, `slaBreachedAt` and escalation stamps.
+  A reassigned task is therefore often already overdue, and an escalation
+  tier that already fired does not fire again for the new assignee.
 - **`reassignAllForUser()`** — the bulk version, called from exactly one
   place: `UserService.deactivate()` (`user.service.ts:244`, the
   departure flow) — confirmed via grep, no other caller exists. For
@@ -2022,10 +2100,13 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
     (required human `reason`, hardcoded `DELEGATE` audit action,
     "reassigned to you" wording, required `actorId`, and a
     `removedAt`-stamp-then-recreate sequence that would violate the
-    unique constraint on a repeat recovery). That last one is a real
-    **pre-existing latent bug in `reassign()` itself** (reachable
-    manually too: reassign A → B → A) — not fixed by ACC-51, not
-    inherited by it, and not currently tracked by its own ticket.
+    unique constraint on a repeat recovery). That last one was a real
+    **latent bug in `reassign()` itself** (reachable manually too:
+    reassign A → B → A) — not fixed by ACC-51, not inherited by it, and
+    **fixed in ACC-163**, which made `reassign()` reuse the row in place.
+    `reassignAllForUser()` still creates a row for its `toUserId` without
+    checking for a removed one, so a departure reassignment to someone who
+    held the task before can hit the same constraint; not yet ticketed.
 - **`hasUnassignedStageTasks()`** (ACC-52) — a `count > 0` existence
   check for orphaned `UNASSIGNED` tasks on a given
   `(workflowInstanceId, sourceStageId)` pair, tenant-scoped like every
@@ -2039,7 +2120,9 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
   read here and acted on later would be a stale snapshot).
 - **`addEvidence()`** — self-scoped exactly as `complete()` is (ACC-162):
   same helper, same identical 404 for anyone not a currently-active
-  assignee, same 409 for a closed task. `INTERNAL_REFERENCE` evidence sets
+  assignee, same 409 for a closed task. ACC-163: accepts `LINK` (http/https
+  only — the URL is rendered clickable) and `INTERNAL_REFERENCE` only, and
+  writes only the fields of the evidence's own type. `INTERNAL_REFERENCE` evidence sets
   `refDisplay: dto.refId` verbatim (the raw id, not a resolved display
   name) — code comment states plainly: *"no functional module exists
   yet to resolve a real display name from."* A real limitation, not
@@ -2158,9 +2241,17 @@ permanently skipped forever after. `sweepOverdueTasks()`
 re-evaluation on every subsequent sweep until both escalation tiers
 have fired.
 
-For each overdue task: flips `status: 'OVERDUE'` + stamps
-`slaBreachedAt` (only if not already `OVERDUE` — no redundant
-re-write on a task already flipped by an earlier sweep), then reads
+**ACC-163 — the sweep writes no status.** It used to flip each overdue task
+to `OVERDUE`, which erased whether the task had been started. It now stamps
+`slaBreachedAt` once (only while it is null) and leaves the status alone;
+overdue is computed from `dueAt` wherever it is shown. The query also
+excludes `REJECTED`, for `UNASSIGNED`'s reason: no active assignee means no
+escalation target, and the skipped-escalation audit row would otherwise be
+written again on every pass for as long as the task waited for its creator.
+The query is now `notIn ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED']`
+— a legacy `OVERDUE` row is still swept.
+
+For each overdue task: stamps `slaBreachedAt` if it is still null, then reads
 the tenant's real `ITaskSlaTier` for the task's own `priority`
 (Section 3.3) and computes `hoursSinceDue`. Two-tier, strictly
 sequential, if/else-if — **no fall-through**:
@@ -2194,9 +2285,9 @@ Working-hours gating is unchanged from the pre-ACC-46 mechanism:
 check inline since no dedicated method exists on
 `WorkingCalendarService`) wraps both tiers' firing — CLAUDE.md's
 "Escalation triggers only fire during working hours," still genuinely
-enforced. The status-flip to `OVERDUE` is unconditional regardless of
-working hours; only the escalation notify/stamp/audit-log steps are
-gated.
+enforced. Recording the breach (`slaBreachedAt`) is unconditional
+regardless of working hours; only the escalation notify/stamp/audit-log
+steps are gated.
 
 **Per-step error isolation — closed by ACC-49.** `process()` used to
 run `sweepOverdueTasks()` and its sibling steps as sequential
@@ -2271,7 +2362,9 @@ tasks:complete   — RETIRED (ACC-162). Gated nothing once complete()
                    (ACC-76) and addEvidence() (ACC-162) became
                    self-scoped; removed from the constants, the seed
                    and existing tenants
-tasks:reassign   — TaskController: reassign
+tasks:reassign   — TaskService.reassign(), checked IN THE SERVICE since
+                   ACC-163 (holder OR the task's creator); the route
+                   carries no decorator
 tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
                    `@Permissions()` consumer. Previously seeded into
                    role permission sets (role.seed.ts) but not checked
@@ -2279,9 +2372,12 @@ tasks:manage     — TaskController: getUnassigned (ACC-34) — its first
                    longer inert as of ACC-34.
 ```
 
-**Three endpoints here carry NO permission, and the omission is load-bearing
+**Six endpoints here carry NO `@Permissions`, and the omission is load-bearing
 in each — do not "restore" any of them for consistency with its neighbours.**
-The specs assert the absence explicitly for that reason.
+The specs assert the absence explicitly for that reason. Five are
+self-scoped: the three below, plus `start()` and `reject()` (ACC-163), which
+follow `complete()`'s reasoning exactly. The sixth is `reassign()`, which is
+NOT ungated — its permission check moved into the service (3.2).
 
 - **`getMyTasks()`** (ACC-70) — every query filters
   `assignees.some(userId = caller)`, so it cannot reach another user's
@@ -2304,6 +2400,14 @@ The specs assert the absence explicitly for that reason.
   the tenant, closed ones included. Now self-scoped through the same
   helper as `complete()`.
 
+**Known limitation — reassigning needs `users:view` for the people picker
+(ACC-163).** The reassign dialog lists people through the user list, which
+requires `users:view`. Every seeded role that can create a task also holds
+it, but a custom role, or a workflow task's creator whose role lacks it,
+sees "assignees unavailable" and cannot reassign from the UI — the same
+degradation New Task already has. The server would accept the request;
+only the picker is missing.
+
 **`tasks:complete` is retired (ACC-162)**, which settles ACC-77's question
 of whether it should survive. Existing tenants lose it through
 `backfill-retire-tasks-complete.ts`, which also deletes the catalog row so
@@ -2314,8 +2418,11 @@ specific strings, against ACC-44's required pattern).
 
 ### 3.7 Frontend Consumption (Static Check)
 
-`frontend/src/app/foundation/tasks/services/task.service.ts` — 8
-methods, one per `TaskController` endpoint:
+`frontend/src/app/foundation/tasks/services/task.service.ts` — 10
+methods, one per `TaskController` endpoint. **How a status is SHOWN** lives
+in one place, `tasks/task-status.ts` (ACC-163): `PENDING` and legacy
+`OVERDUE` read as Assigned, overdue is a badge beside the status, and every
+task surface reads the same helper.
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
@@ -2325,16 +2432,18 @@ methods, one per `TaskController` endpoint:
 | `getById()` | `GET /tasks/:id` | **ZERO frontend callers found** |
 | `create()` | `POST /tasks` | `task-form.component.ts:124` (rendered from `task-list.component.ts`, confirmed referenced there) |
 | `complete()` | `POST /tasks/:id/complete` | `my-tasks.component.ts` **+ `committee-detail.component.ts`** (ACC-76) |
-| `reassign()` | `POST /tasks/:id/reassign` | `unassigned-tasks.component.ts` (ACC-34) — was zero frontend callers, closed by this ticket |
-| `addEvidence()` | `POST /tasks/:id/evidence` | **ZERO frontend callers found** |
+| `start()` | `POST /tasks/:id/start` | `my-tasks.component.ts` (ACC-163) |
+| `reject()` | `POST /tasks/:id/reject` | `task-reject-dialog.component.ts`, hosted by My tasks (ACC-163) |
+| `reassign()` | `POST /tasks/:id/reassign` | `task-reassign-dialog.component.ts` (ACC-163, extracted), hosted by Unassigned tasks and the committee record |
+| `addEvidence()` | `POST /tasks/:id/evidence` | `task-link-evidence-dialog.component.ts`, hosted by My tasks (ACC-163) — LINK only |
 
 **Two remaining gaps, static-check-confirmed**: there is no task-detail
 view anywhere in the frontend (`getById()` unused) — "My Tasks", the
 per-source task list, and the new Unassigned Tasks view all render list
-rows only, nothing navigates to a single task. There is no
-evidence-upload UI (`addEvidence()` unused) — `complete()` can be
-called with zero evidence ever attached, even though `TaskEvidence`'s
-schema (3.1) is fully built out for it. These are exactly the class of
+rows only, nothing navigates to a single task. Evidence is LINK-only in the
+UI since ACC-163 — there is still no file upload (no storage) and no UI for
+an internal reference — and a task that does not require evidence can still
+be completed with none. These are exactly the class of
 finding the separately-queued live-audit exists to catch systematically
 — flagged here as a cheap static signal, not a substitute for it.
 `reassign()` was the third gap in this list until ACC-34's Unassigned

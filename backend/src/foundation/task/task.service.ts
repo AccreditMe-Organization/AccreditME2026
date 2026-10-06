@@ -7,22 +7,33 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
 import { TenantService } from '../tenant/tenant.service';
-import { TaskStatus, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
+import { Prisma, TaskSourceType, TaskPriority, TaskAssignee } from '../../../generated/prisma/client';
+import { TASKS_PERMISSIONS } from '../../common/constants/permissions';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { ReassignTaskDto } from './dto/reassign-task.dto';
+import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
+import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
 import { ITask } from './interfaces/task.interface';
+import { ITaskListItem } from './interfaces/task-list-item.interface';
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
 import { ITaskEvidence } from './interfaces/task-evidence.interface';
-
-interface GetTasksOptions {
-  status?: TaskStatus;
-}
 
 // The raw row plus every TaskAssignee row, removed ones included — what the
 // active-assignee check reads. Not ITaskWithAssignees, which is a resolved
 // view of ACTIVE assignees for list surfaces.
 type TaskWithAssigneeRows = ITask & { assignees: TaskAssignee[] };
+
+// The client inside this.prisma.$transaction(async (tx) => …). Read off
+// PrismaService rather than named as Prisma.TransactionClient, because
+// PrismaService is an EXTENDED client (the AuditLog append-only hooks) and its
+// transaction client is that extension's type, not the base one.
+type TaskTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
+
+// "Open" — the same definition the ACC-65 stage gate and cancelForStage() use.
+// REJECTED is open on purpose: the work is still owed, and a rejected
+// mandatory task must keep holding its stage until the creator reassigns it.
+const CLOSED_STATUSES = ['COMPLETED', 'CANCELLED'] as const;
 
 @Injectable()
 export class TaskService {
@@ -64,6 +75,7 @@ export class TaskService {
         workflowInstanceId: dto.workflowInstanceId ?? null,
         meetingId: dto.meetingId ?? null,
         createdById: actorId,
+        requiresEvidence: dto.requiresEvidence ?? false,
         priority: dto.priority ?? 'MEDIUM',
         status: isUnassigned ? 'UNASSIGNED' : 'PENDING',
         dueAt,
@@ -118,19 +130,39 @@ export class TaskService {
 
   // "My Tasks" — every task where the calling user has an active
   // (removedAt: null) TaskAssignee row.
+  //
+  // ACC-163 — two filters, and they combine:
+  //   status   PENDING also matches legacy OVERDUE rows. OVERDUE is no longer
+  //            written (overdue is a flag now), but rows written before this
+  //            shipped keep it until backfill-acc163-overdue-to-pending.ts
+  //            runs, and every one of them is an Assigned task.
+  //   overdue  an OPEN task whose dueAt has passed, by the server's clock —
+  //            the same "open" the stage gate uses.
   async getMyTasks(
     userId: string,
     organizationId: string,
-    options: GetTasksOptions = {},
-  ): Promise<ITask[]> {
-    return this.prisma.task.findMany({
+    options: GetMyTasksQueryDto = {},
+  ): Promise<ITaskListItem[]> {
+    const filters: Prisma.TaskWhereInput[] = [];
+    if (options.status === 'PENDING') {
+      filters.push({ status: { in: ['PENDING', 'OVERDUE'] } });
+    } else if (options.status) {
+      filters.push({ status: options.status });
+    }
+    if (options.overdue) {
+      filters.push({ dueAt: { lt: new Date() }, status: { notIn: [...CLOSED_STATUSES] } });
+    }
+
+    const tasks = await this.prisma.task.findMany({
       where: {
         organizationId,
-        ...(options.status ? { status: options.status } : {}),
         assignees: { some: { userId, removedAt: null } },
+        AND: filters,
       },
       orderBy: { dueAt: 'asc' },
+      include: { _count: { select: { evidence: true } } },
     });
+    return tasks.map(({ _count, ...task }) => ({ ...task, evidenceCount: _count.evidence }));
   }
 
   // Module task lists — CLAUDE.md's "tasks filtered by sourceType + sourceId".
@@ -174,6 +206,10 @@ export class TaskService {
           where: { removedAt: null },
           include: { user: { select: { id: true, name: true } } },
         },
+        // ACC-163 — who rejected it, for the record's task list, and how much
+        // evidence it holds, so Complete can be disabled before it is refused.
+        rejectedBy: { select: { id: true, name: true } },
+        _count: { select: { evidence: true } },
       },
     });
 
@@ -185,8 +221,9 @@ export class TaskService {
       permissions: viewerPermissions,
     });
 
-    return tasks.map(({ assignees, ...task }) => ({
+    return tasks.map(({ assignees, _count, ...task }) => ({
       ...task,
+      evidenceCount: _count.evidence,
       assignees: assignees.map((assignee) => ({
         userId: assignee.userId,
         userName: assignee.user.name,
@@ -257,19 +294,33 @@ export class TaskService {
   // CANCELLED task could complete it, overwriting the cancellation, and an
   // already-COMPLETED task could be completed again, overwriting who finished
   // it and when.
+  //
+  // ACC-163 — a task that requires evidence is refused until it has some. The
+  // order of refusals is fixed: not yours (404), then closed (409), then no
+  // evidence (409), so a non-assignee learns nothing about the task.
   async complete(id: string, userId: string, organizationId: string): Promise<ITask> {
-    const existing = await this.findOpenForActiveAssignee(id, userId, organizationId, 'be completed');
+    const { existing, task } = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be completed');
 
-    const now = new Date();
-    await this.prisma.taskAssignee.updateMany({
-      where: { taskId: id, removedAt: null, userId: { not: userId } },
-      data: { removedAt: now },
-    });
+      if (existing.requiresEvidence) {
+        const evidenceCount = await tx.taskEvidence.count({ where: { taskId: id, organizationId } });
+        if (evidenceCount === 0) {
+          throw new ConflictException('Evidence is required before this task can be completed');
+        }
+      }
 
-    const task = await this.prisma.task.update({
-      where: { id },
-      data: { status: 'COMPLETED', completedAt: now, completedById: userId },
-      include: { assignees: true },
+      const now = new Date();
+      await tx.taskAssignee.updateMany({
+        where: { taskId: id, removedAt: null, userId: { not: userId } },
+        data: { removedAt: now },
+      });
+
+      const task = await tx.task.update({
+        where: { id },
+        data: { status: 'COMPLETED', completedAt: now, completedById: userId },
+        include: { assignees: true },
+      });
+      return { existing, task };
     });
 
     await this.auditLog.log({
@@ -282,6 +333,108 @@ export class TaskService {
       after: task as unknown as Record<string, unknown>,
       metadata: { completedBy: userId },
     });
+
+    return task;
+  }
+
+  // ACC-163 — an active assignee moves an Assigned task to In progress. A
+  // legacy OVERDUE row is an Assigned task (OVERDUE was only ever written over
+  // PENDING), so it may be started too.
+  async start(id: string, userId: string, organizationId: string): Promise<ITask> {
+    const { existing, task } = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be started');
+
+      if (existing.status === 'IN_PROGRESS') {
+        throw new ConflictException('This task is already in progress');
+      }
+      if (existing.status !== 'PENDING' && existing.status !== 'OVERDUE') {
+        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be started`);
+      }
+
+      const task = await tx.task.update({ where: { id }, data: { status: 'IN_PROGRESS' } });
+      return { existing, task };
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Task',
+      objectId: id,
+      actorId: userId,
+      tenantId: organizationId,
+      before: existing as unknown as Record<string, unknown>,
+      after: task as unknown as Record<string, unknown>,
+      metadata: { event: 'started', startedBy: userId },
+    });
+
+    return task;
+  }
+
+  // ACC-163 — an active assignee hands the task back, with a reason (Q4).
+  //
+  // Only the caller leaves: their own TaskAssignee row is stamped. While
+  // anyone else is still assigned the task stays open for them, unchanged.
+  // When the caller was the LAST active assignee, the task becomes REJECTED,
+  // carries the reason, and goes back to its creator — who, for a workflow
+  // task, is the person who moved the record into the stage (Q3). The creator
+  // acts on it by reassigning (reassign() clears the rejection).
+  //
+  // Every reject is audited, including one that leaves the task open: it is
+  // still a person declining work they were given.
+  async reject(
+    id: string,
+    dto: RejectTaskDto,
+    userId: string,
+    organizationId: string,
+  ): Promise<ITask> {
+    const { existing, task, lastAssigneeRejected } = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be rejected');
+      if (
+        existing.status !== 'PENDING' &&
+        existing.status !== 'IN_PROGRESS' &&
+        existing.status !== 'OVERDUE'
+      ) {
+        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be rejected`);
+      }
+
+      const now = new Date();
+      await tx.taskAssignee.updateMany({
+        where: { taskId: id, userId, removedAt: null },
+        data: { removedAt: now },
+      });
+
+      // Read from the LOCKED snapshot: no other assignee can have left or
+      // joined since, so "nobody else remains" cannot be two people each
+      // seeing the other still there.
+      const othersRemain = existing.assignees.some((a) => a.userId !== userId && a.removedAt === null);
+      if (othersRemain) {
+        // The task itself is untouched; only the caller's assignment ended.
+        const unchanged = await tx.task.findFirstOrThrow({ where: { id, organizationId } });
+        return { existing, task: unchanged, lastAssigneeRejected: false };
+      }
+
+      const task = await tx.task.update({
+        where: { id },
+        data: { status: 'REJECTED', rejectedReason: dto.reason, rejectedAt: now, rejectedById: userId },
+      });
+      return { existing, task, lastAssigneeRejected: true };
+    });
+
+    await this.auditLog.log({
+      action: 'REJECT',
+      objectType: 'Task',
+      objectId: id,
+      actorId: userId,
+      tenantId: organizationId,
+      before: existing as unknown as Record<string, unknown>,
+      after: task as unknown as Record<string, unknown>,
+      metadata: { reason: dto.reason, rejectedBy: userId, lastAssigneeRejected },
+    });
+
+    // After commit, never inside the transaction: the lock is held only for
+    // the writes. A creator who rejected their own task is not told about it.
+    if (lastAssigneeRejected && task.createdById !== userId) {
+      await this.notifyCreatorOfRejection(task, userId, dto.reason, organizationId);
+    }
 
     return task;
   }
@@ -395,37 +548,92 @@ export class TaskService {
   }
 
   // Pattern 2 — Manual Reassignment (Absence and Departure Management).
+  //
+  // ACC-163 — three changes:
+  //
+  // 1. WHO. A tasks:reassign holder, as before, OR the task's own creator — a
+  //    rejected task comes back to its creator, and reassigning it is how they
+  //    act (Q4). Because the second half is only knowable from the row, the
+  //    check lives here rather than in @Permissions, and anyone else gets the
+  //    same 404 as a task that does not exist (ACC-101 clause (b)).
+  //
+  // 2. NOT A CLOSED TASK. A COMPLETED or CANCELLED task is refused with 409.
+  //    Before, reassigning one silently reopened it as PENDING.
+  //
+  // 3. A RETURNING ASSIGNEE REUSES THEIR ROW. TaskAssignee is unique on
+  //    (taskId, userId) with no exemption for removed rows, so reassigning
+  //    A → B → A used to fail on the unique constraint — and after a reject,
+  //    reassigning back to the person who rejected is the common case. Their
+  //    row is reactivated in place, as attachAssigneesToUnassignedStageTasks()
+  //    already does; the audit row's `before` keeps the earlier state.
+  //
+  // KNOWN LIMITATION, left for the extension ticket (CF-05): the task keeps
+  // its original dueAt, slaBreachedAt and escalation stamps, so a reassigned
+  // task is often already overdue, and escalations that already fired do not
+  // fire again for the new assignee.
   async reassign(
     id: string,
     dto: ReassignTaskDto,
     organizationId: string,
     actorId: string,
+    actorPermissions: readonly string[],
   ): Promise<ITask> {
-    const existing = await this.prisma.task.findFirst({
-      where: { id, organizationId },
-      include: { assignees: true },
-    });
-    if (!existing) {
-      throw new NotFoundException('Task not found');
-    }
+    const { existing, task, eligibleAssigneeIds } = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskRow(tx, id, organizationId);
+      const existing = await tx.task.findFirst({
+        where: { id, organizationId },
+        include: { assignees: true },
+      });
+      const entitled =
+        !!existing &&
+        (actorPermissions.includes(TASKS_PERMISSIONS.REASSIGN) || existing.createdById === actorId);
+      if (!existing || !entitled) {
+        throw new NotFoundException('Task not found');
+      }
+      if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
+        throw new ConflictException(`A ${existing.status.toLowerCase()} task cannot be reassigned`);
+      }
 
-    const now = new Date();
-    await this.prisma.taskAssignee.updateMany({
-      where: { taskId: id, removedAt: null },
-      data: { removedAt: now },
-    });
+      const eligibleAssigneeIds = await this.filterActiveUsers(dto.newAssigneeUserIds, organizationId, tx);
 
-    const eligibleAssigneeIds = await this.filterActiveUsers(dto.newAssigneeUserIds, organizationId);
+      const now = new Date();
+      await tx.taskAssignee.updateMany({
+        where: { taskId: id, removedAt: null },
+        data: { removedAt: now },
+      });
 
-    const task = await this.prisma.task.update({
-      where: { id },
-      data: {
-        status: eligibleAssigneeIds.length === 0 ? 'UNASSIGNED' : 'PENDING',
-        assignees: {
-          create: eligibleAssigneeIds.map((userId) => ({ userId, assignedById: actorId })),
+      for (const userId of eligibleAssigneeIds) {
+        const previous = existing.assignees.find((a) => a.userId === userId);
+        if (previous) {
+          // A manual reassignment carries no delegation: a stamp left from an
+          // engine assignment would label this person as covering for someone
+          // they are not.
+          await tx.taskAssignee.update({
+            where: { id: previous.id },
+            data: {
+              removedAt: null,
+              assignedAt: now,
+              assignedById: actorId,
+              delegationReason: null,
+              delegationContextId: null,
+            },
+          });
+        } else {
+          await tx.taskAssignee.create({ data: { taskId: id, userId, assignedById: actorId } });
+        }
+      }
+
+      const task = await tx.task.update({
+        where: { id },
+        data: {
+          status: eligibleAssigneeIds.length === 0 ? 'UNASSIGNED' : 'PENDING',
+          rejectedReason: null,
+          rejectedAt: null,
+          rejectedById: null,
         },
-      },
-      include: { assignees: true },
+        include: { assignees: true },
+      });
+      return { existing, task, eligibleAssigneeIds };
     });
 
     await this.auditLog.log({
@@ -716,30 +924,30 @@ export class TaskService {
     organizationId: string,
     actorId: string,
   ): Promise<ITaskEvidence> {
-    await this.findOpenForActiveAssignee(taskId, actorId, organizationId, 'have evidence added');
-
-    let refDisplay: string | null = null;
-    if (dto.type === 'INTERNAL_REFERENCE' && dto.refId) {
-      refDisplay = dto.refId; // no functional module exists yet to resolve a real display name from
-    }
-
-    const evidence = await this.prisma.taskEvidence.create({
-      data: {
-        organizationId,
-        taskId,
-        type: dto.type,
-        content: dto.content ?? null,
-        s3Key: dto.s3Key ?? null,
-        fileName: dto.fileName ?? null,
-        fileSize: dto.fileSize ?? null,
-        mimeType: dto.mimeType ?? null,
-        url: dto.url ?? null,
-        linkTitle: dto.linkTitle ?? null,
-        refType: dto.refType ?? null,
-        refId: dto.refId ?? null,
-        refDisplay,
-        uploadedById: actorId,
-      },
+    // ACC-163 — locked like the status changes, so evidence cannot land on a
+    // task a colleague is completing at the same moment.
+    //
+    // Only the fields of the evidence's own type are written: a LINK carries
+    // no reference and a reference carries no URL, whatever else was sent.
+    const evidence = await this.prisma.$transaction(async (tx) => {
+      await this.lockOpenForActiveAssignee(tx, taskId, actorId, organizationId, 'have evidence added');
+      return tx.taskEvidence.create({
+        data: {
+          organizationId,
+          taskId,
+          type: dto.type,
+          uploadedById: actorId,
+          ...(dto.type === 'LINK'
+            ? { url: dto.url ?? null, linkTitle: dto.linkTitle ?? null }
+            : {
+                refType: dto.refType ?? null,
+                refId: dto.refId ?? null,
+                // No functional module exists yet to resolve a real display
+                // name from.
+                refDisplay: dto.refId ?? null,
+              }),
+        },
+      });
     });
 
     await this.auditLog.log({
@@ -770,13 +978,20 @@ export class TaskService {
   //    leaves a cancelled task's assignees attached, and the completer's own
   //    row is never stamped, so the assignee check alone admits both.
   //    `refusedAction` completes the sentence "A cancelled task cannot …".
-  private async findOpenForActiveAssignee(
+  //
+  // ACC-163 — it now runs INSIDE the caller's transaction and takes the row
+  // lock first (lockTaskRow), so every check below reads the locked state.
+  // Every assignee action — start, reject, complete, add evidence — comes
+  // through here, and reassign() takes the same lock itself.
+  private async lockOpenForActiveAssignee(
+    tx: TaskTx,
     id: string,
     userId: string,
     organizationId: string,
     refusedAction: string,
   ): Promise<TaskWithAssigneeRows> {
-    const task = await this.prisma.task.findFirst({
+    await this.lockTaskRow(tx, id, organizationId);
+    const task = await tx.task.findFirst({
       where: { id, organizationId },
       include: { assignees: true },
     });
@@ -793,6 +1008,85 @@ export class TaskService {
     return task;
   }
 
+  // ACC-163 — THE CODEBASE'S FIRST ROW LOCK, and why it exists.
+  //
+  // Every status change here is read-check-write: read the task and its
+  // assignees, decide, write. Two of them interleaving produce states no single
+  // one allows:
+  //   - A completes while B rejects. B read the task while it was still open,
+  //     so B's write turns a COMPLETED task into REJECTED.
+  //   - The last two assignees reject together. Each reads the other as still
+  //     assigned, so each leaves the task open — and it ends with nobody on it,
+  //     not REJECTED, and nobody told.
+  // SELECT … FOR UPDATE makes the second caller wait until the first commits,
+  // then read what the first wrote. It is scoped by id AND organizationId, like
+  // every query here, so it can never lock another tenant's row.
+  //
+  // Keep these transactions SHORT: only the reads and writes the decision
+  // needs. Audit rows and notifications are written after commit, never while
+  // the lock is held. A row that does not exist locks nothing, and the read
+  // that follows returns the ordinary 404.
+  private async lockTaskRow(tx: TaskTx, id: string, organizationId: string): Promise<void> {
+    await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
+  }
+
+  // ACC-163 — tells a rejected task's creator, naming the record the task
+  // belongs to: the bell has no links, so the record's name is how they find
+  // where to reassign it. English and Arabic both, as every new notification
+  // should be.
+  private async notifyCreatorOfRejection(
+    task: ITask,
+    rejectedById: string,
+    reason: string,
+    organizationId: string,
+  ): Promise<void> {
+    const rejecter = await this.prisma.user.findFirst({
+      where: { id: rejectedById, organizationId },
+      select: { name: true },
+    });
+    const name = rejecter?.name ?? '—';
+    const record = await this.resolveSourceRecordLabel(task, organizationId);
+
+    await this.notificationService.create(
+      {
+        userId: task.createdById,
+        titleEn: 'Task rejected',
+        titleAr: 'تم رفض مهمة',
+        bodyEn: `${name} rejected "${task.title}" on ${record.en}. Reason: ${reason}`,
+        bodyAr: `رفض ${name} المهمة "${task.title}" في ${record.ar}. السبب: ${reason}`,
+        objectType: 'Task',
+        objectId: task.id,
+      },
+      organizationId,
+    );
+  }
+
+  // The record a task belongs to, as a phrase for a sentence. Committee is the
+  // only module with records today, so it is the only one named; the others
+  // read as their kind of record until their modules exist. A committee with
+  // no Arabic name is named in English (ACC-160).
+  private async resolveSourceRecordLabel(
+    task: ITask,
+    organizationId: string,
+  ): Promise<{ en: string; ar: string }> {
+    if (task.sourceType === 'COMMITTEE') {
+      const committee = await this.prisma.committee.findFirst({
+        where: { id: task.sourceId, organizationId },
+        select: { nameEn: true, nameAr: true },
+      });
+      if (committee) {
+        return {
+          en: `the committee "${committee.nameEn}"`,
+          ar: `اللجنة "${committee.nameAr ?? committee.nameEn}"`,
+        };
+      }
+    }
+    return {
+      en: `a ${task.sourceType.toLowerCase().replace(/_/g, ' ')} record`,
+      ar: 'السجل المرتبط بها',
+    };
+  }
+
   // Priority SLA from Organization.settings.taskSla (ACC-46 Section 2.7.c —
   // tenant-configurable, via TenantService.getTaskSla(), which itself falls
   // back to DEFAULT_TASK_SLA_SETTINGS when absent). Never a module's own
@@ -807,9 +1101,16 @@ export class TaskService {
 
   // Excludes suspended/invited users from a resolved assignee list — an
   // inactive user should never end up as a task's sole assignee.
-  private async filterActiveUsers(userIds: string[], organizationId: string): Promise<string[]> {
+  //
+  // `client` lets reassign() read inside its transaction; everyone else reads
+  // through the ordinary client.
+  private async filterActiveUsers(
+    userIds: string[],
+    organizationId: string,
+    client: Pick<TaskTx, 'user'> = this.prisma,
+  ): Promise<string[]> {
     if (userIds.length === 0) return [];
-    const users = await this.prisma.user.findMany({
+    const users = await client.user.findMany({
       where: { id: { in: userIds }, organizationId, status: 'ACTIVE' },
       select: { id: true },
     });

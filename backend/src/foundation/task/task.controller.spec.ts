@@ -31,6 +31,10 @@ const MOCK_TASK: ITask = {
   slaBreachedAt: null,
   completedAt: null,
   completedById: null,
+  requiresEvidence: false,
+  rejectedReason: null,
+  rejectedAt: null,
+  rejectedById: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: new Date('2026-01-01'),
@@ -46,6 +50,8 @@ describe('TaskController', () => {
     getByIdForViewer: jest.Mock;
     create: jest.Mock;
     complete: jest.Mock;
+    start: jest.Mock;
+    reject: jest.Mock;
     reassign: jest.Mock;
     addEvidence: jest.Mock;
     listUnassigned: jest.Mock;
@@ -59,6 +65,8 @@ describe('TaskController', () => {
       getByIdForViewer: jest.fn().mockResolvedValue(MOCK_TASK),
       create: jest.fn().mockResolvedValue(MOCK_TASK),
       complete: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'COMPLETED' }),
+      start: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'IN_PROGRESS' }),
+      reject: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'REJECTED' }),
       reassign: jest.fn().mockResolvedValue(MOCK_TASK),
       addEvidence: jest.fn().mockResolvedValue({ id: 'evidence-1' }),
       listUnassigned: jest.fn().mockResolvedValue([{ ...MOCK_TASK, status: 'UNASSIGNED' }]),
@@ -79,10 +87,11 @@ describe('TaskController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  it('getMyTasks delegates to the service', async () => {
-    const result = await controller.getMyTasks(TENANT_ID, USER_ID, 'PENDING');
+  it('getMyTasks delegates to the service, passing the validated query through', async () => {
+    const query = { status: 'PENDING' as const, overdue: true };
+    const result = await controller.getMyTasks(TENANT_ID, USER_ID, query);
 
-    expect(service.getMyTasks).toHaveBeenCalledWith(USER_ID, TENANT_ID, { status: 'PENDING' });
+    expect(service.getMyTasks).toHaveBeenCalledWith(USER_ID, TENANT_ID, query);
     expect(result).toEqual([MOCK_TASK]);
   });
 
@@ -132,6 +141,34 @@ describe('TaskController', () => {
     expect(required).toBeUndefined();
   });
 
+  // ACC-163 — start and reject are self-scoped for complete()'s reason.
+  it.each(['start', 'reject'] as const)(
+    '%s requires NO permission — it is self-scoped to an active assignee',
+    (method) => {
+      const reflector = new Reflector();
+      const required = reflector.get<string[] | undefined>(
+        PERMISSIONS_KEY,
+        TaskController.prototype[method],
+      );
+
+      expect(required).toBeUndefined();
+    },
+  );
+
+  // ACC-163 — reassign carries no decorator, but it is NOT ungated: the
+  // service checks tasks:reassign OR creator-ness, and only the row can tell
+  // the second. A decorator would refuse a rejected task's creator before the
+  // row was read. The service spec proves the refusal.
+  it('reassign carries no route permission — tasks:reassign is checked in the service, alongside creator-ness', () => {
+    const reflector = new Reflector();
+    const required = reflector.get<string[] | undefined>(
+      PERMISSIONS_KEY,
+      TaskController.prototype.reassign,
+    );
+
+    expect(required).toBeUndefined();
+  });
+
   it('the non-self-scoped task endpoints remain permission-gated', () => {
     const reflector = new Reflector();
 
@@ -141,11 +178,6 @@ describe('TaskController', () => {
     ]);
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getById)).toEqual([
       TASKS_PERMISSIONS.VIEW,
-    ]);
-    // reassign() acts on someone ELSE's assignment — genuinely administrative,
-    // and stays gated.
-    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.reassign)).toEqual([
-      TASKS_PERMISSIONS.REASSIGN,
     ]);
   });
 
@@ -188,15 +220,30 @@ describe('TaskController', () => {
     expect(result.status).toBe('COMPLETED');
   });
 
-  it('reassign delegates to the service with tenant and actor', async () => {
+  it('reassign delegates to the service with tenant, actor and the caller permissions', async () => {
     const dto = { newAssigneeUserIds: ['u2'], reason: 'Ahmad is on leave' };
-    await controller.reassign('task-1', dto, TENANT_ID, USER_ID);
+    await controller.reassign('task-1', dto, TENANT_ID, USER_ID, ['tasks:reassign']);
 
-    expect(service.reassign).toHaveBeenCalledWith('task-1', dto, TENANT_ID, USER_ID);
+    expect(service.reassign).toHaveBeenCalledWith('task-1', dto, TENANT_ID, USER_ID, ['tasks:reassign']);
+  });
+
+  it('start delegates to the service with tenant and actor', async () => {
+    const result = await controller.start('task-1', TENANT_ID, USER_ID);
+
+    expect(service.start).toHaveBeenCalledWith('task-1', USER_ID, TENANT_ID);
+    expect(result.status).toBe('IN_PROGRESS');
+  });
+
+  it('reject delegates to the service with the reason, tenant and actor', async () => {
+    const dto = { reason: 'Not my unit' };
+    const result = await controller.reject('task-1', dto, TENANT_ID, USER_ID);
+
+    expect(service.reject).toHaveBeenCalledWith('task-1', dto, USER_ID, TENANT_ID);
+    expect(result.status).toBe('REJECTED');
   });
 
   it('addEvidence delegates to the service with tenant and actor', async () => {
-    const dto = { type: 'TEXT' as const, content: 'Done' };
+    const dto = { type: 'LINK' as const, url: 'https://intranet/minutes' };
     const result = await controller.addEvidence('task-1', dto, TENANT_ID, USER_ID);
 
     expect(service.addEvidence).toHaveBeenCalledWith('task-1', dto, TENANT_ID, USER_ID);

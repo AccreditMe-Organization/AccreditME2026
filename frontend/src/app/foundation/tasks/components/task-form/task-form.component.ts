@@ -23,11 +23,20 @@
 // meaning INSTEAD OF rather than BELOW — and it applies only because the
 // presets already cover the common case.
 //
-// ## Not built here, deliberately
+// ## Evidence required (ACC-163), and what is still not built
 //
-// Template 3's step 2 also draws evidence-required and a delegation label.
-// Neither exists in CreateTaskDto; both wait for the task analysis, and a
-// disabled placeholder would be worse than their absence.
+// Template 3's step 2 draws an evidence-required checkbox, and it is here now:
+// the task analysis (5 Oct) made it a real flag, and Complete is refused while
+// it is set and nothing has been added. It sits on step 2 because it is part of
+// the substance — what proves the work — not the ten-second urgent path.
+//
+// Step 2 with the checkbox, MEASURED in the browser (5 Oct 2026, 1440x900):
+// 263px English and 274px Arabic with the source unlocked (/tasks/all), 264px
+// English with it locked (a committee record) — all against the 420 cap, none
+// scrolling. FORM density holds: three blocks, not five.
+//
+// Template 3's delegation label is still not built: it waits for stage task
+// definitions (CF-07), and a disabled placeholder would be worse than nothing.
 
 import { Component, DestroyRef, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
@@ -38,6 +47,7 @@ import { TextareaModule } from 'primeng/textarea';
 import { InputMaskModule } from 'primeng/inputmask';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
+import { CheckboxModule } from 'primeng/checkbox';
 import { TaskService } from '../../services/task.service';
 import { DueDateService, DuePreset } from '../../services/due-date.service';
 import { UserService, IUserDto } from '../../../user/services/user.service';
@@ -79,6 +89,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     InputMaskModule,
     ButtonModule,
     MessageModule,
+    CheckboxModule,
     OverlaySelectComponent,
     InlineCalendarComponent,
   ],
@@ -191,6 +202,19 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
           </label>
           <textarea pTextarea id="description" formControlName="description" rows="3"></textarea>
           <small class="am-hint">{{ 'task.descriptionHint' | translate }}</small>
+        </div>
+
+        <!-- ACC-163 — Complete is refused until the assignee has added
+             evidence. The hint says so, because the assignee is the one who
+             meets the consequence and the creator is the one choosing it. -->
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-3">
+            <p-checkbox formControlName="requiresEvidence" [binary]="true" inputId="requiresEvidence" />
+            <label for="requiresEvidence" class="text-sm font-medium cursor-pointer">
+              {{ 'task.evidenceRequired' | translate }}
+            </label>
+          </div>
+          <small class="am-hint">{{ 'task.evidenceRequiredHint' | translate }}</small>
         </div>
 
         @if (isSourceLocked()) {
@@ -784,6 +808,7 @@ export class TaskFormComponent implements OnInit {
     assigneeUserIds: [[] as string[]],
     priority: ['MEDIUM'],
     dueDate: [null as Date | null],
+    requiresEvidence: [false],
   });
 
   private dateViewLayerId: number | null = null;
@@ -1019,6 +1044,7 @@ export class TaskFormComponent implements OnInit {
         // UNASSIGNED task. A task worth recording now is worth recording
         // before its owner is known.
         assigneeUserIds: value.assigneeUserIds ?? [],
+        requiresEvidence: value.requiresEvidence ?? false,
       })
       .subscribe({
         next: () => {

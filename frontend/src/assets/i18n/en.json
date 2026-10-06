@@ -34,7 +34,8 @@
     "unsaved": "Unsaved",
     "view": "View",
     "yes": "Yes",
-    "notActiveYet": "Not active yet"
+    "notActiveYet": "Not active yet",
+    "actions": "Actions"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -555,12 +556,12 @@
     },
     "status": {
       "title": "Status",
-      "pending": "Pending",
-      "in_progress": "In Progress",
-      "overdue": "Overdue",
+      "pending": "Assigned",
+      "in_progress": "In progress",
       "completed": "Completed",
       "cancelled": "Cancelled",
-      "unassigned": "Unassigned"
+      "unassigned": "Unassigned",
+      "rejected": "Rejected"
     },
     "evidenceType": {
       "text": "Text",
@@ -611,7 +612,30 @@
       "closeCalendarFirst": "Close the calendar to continue"
     },
     "removeAssignee": "Remove",
-    "raisedFrom": "on {{record}}"
+    "raisedFrom": "on {{record}}",
+    "overdueBadge": "Overdue",
+    "start": "Start",
+    "startNamed": "Start “{{title}}”",
+    "reject": "Reject",
+    "rejectNamed": "Reject “{{title}}”",
+    "rejectReason": "Reason",
+    "rejectReasonHint": "Whoever assigned this task reads this and reassigns it.",
+    "rejectReasonTooLong": "Use 1,000 characters or fewer.",
+    "rejectedByNamed": "Rejected by {{name}}: {{reason}}",
+    "rejectedReasonOnly": "Rejected: {{reason}}",
+    "addLink": "Add link",
+    "addLinkNamed": "Add link evidence to “{{title}}”",
+    "linkUrl": "Link",
+    "linkUrlHint": "Starts with https:// or http://",
+    "linkUrlInvalid": "Enter a link that starts with https:// or http://.",
+    "linkTitle": "Title",
+    "linkTitleHint": "Optional — how the link should read to a reviewer.",
+    "completeNamed": "Complete “{{title}}”",
+    "completeNamedNeedsEvidence": "Complete “{{title}}” — add evidence first",
+    "completeNeedsEvidence": "Add evidence before completing",
+    "evidenceRequired": "Evidence required",
+    "evidenceRequiredHint": "The assignee must add evidence before they can complete the task.",
+    "evidenceNone": "none added yet"
   },
   "auth": {
     "login": "Log In",
@@ -970,6 +994,10 @@
       "assignees": {
         "one": "{{count}} assignee",
         "other": "{{count}} assignees"
+      },
+      "evidenceAdded": {
+        "one": "{{count}} added",
+        "other": "{{count}} added"
       }
     },
     "user": {

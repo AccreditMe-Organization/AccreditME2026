@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsISO8601,
   IsNotEmpty,
@@ -104,4 +105,11 @@ export class CreateTaskDto {
   @IsISO8601()
   @IsOptional()
   dueDate?: string;
+
+  // ACC-163 — complete() refuses until at least one piece of evidence exists.
+  // Set from the manual task form; the workflow engine never sends it, so a
+  // workflow task stays false until stage task definitions exist.
+  @IsBoolean()
+  @IsOptional()
+  requiresEvidence?: boolean;
 }

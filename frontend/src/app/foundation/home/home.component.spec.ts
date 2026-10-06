@@ -137,6 +137,30 @@ describe('HomeComponent', () => {
     expect(text()).not.toContain('Task 3');
   });
 
+  // ACC-163 (Q8) — overdue is a flag beside the status, not a status. With the
+  // no-op loader the text is the KEY, so these assert which label was chosen.
+  it('shows an Overdue badge beside the status of an open task past its due time', () => {
+    setup({
+      tasks: [
+        { ...task('1', 'IN_PROGRESS'), dueAt: '2026-01-01T09:00:00.000Z' },
+        { ...task('2', 'PENDING'), dueAt: '2099-01-01T09:00:00.000Z' },
+      ],
+    });
+
+    const rows = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('tbody tr'));
+    expect(rows[0]!.textContent).toContain('task.status.in_progress');
+    expect(rows[0]!.textContent).toContain('task.overdueBadge');
+    expect(rows[1]!.textContent).not.toContain('task.overdueBadge');
+  });
+
+  it('shows a legacy OVERDUE row as Assigned, with the badge, never as an "Overdue" status', () => {
+    setup({ tasks: [{ ...task('1', 'OVERDUE'), dueAt: '2026-01-01T09:00:00.000Z' }] });
+
+    expect(text()).toContain('task.status.pending');
+    expect(text()).toContain('task.overdueBadge');
+    expect(text()).not.toContain('task.status.overdue');
+  });
+
   // The zero-permission case this page exists for: neither endpoint is
   // permission-gated, so both panels render — empty, but present and honest.
   it('renders both panels for a user with no tasks and no notifications', () => {

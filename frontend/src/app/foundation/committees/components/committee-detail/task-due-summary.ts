@@ -1,16 +1,13 @@
 import { TranslateService } from '@ngx-translate/core';
 import { EMPTY_VALUE, FormatService } from '../../../../core/formatting';
 import { ITaskWithAssigneesDto } from '../../../tasks/services/task.service';
+import { isTaskOverdue } from '../../../tasks/task-status';
 
 type DueTask = Pick<ITaskWithAssigneesDto, 'dueAt' | 'status'>;
 
-// A task that is finished or cancelled is not overdue however old its due
-// date — the state that matters is "still owed and past due". Compares
-// instants, so it is correct in any time zone.
-export function isTaskOverdue(task: DueTask, now: Date = new Date()): boolean {
-  if (!task.dueAt || task.status === 'COMPLETED' || task.status === 'CANCELLED') return false;
-  return new Date(task.dueAt).getTime() < now.getTime();
-}
+// ACC-163 — isTaskOverdue moved to tasks/task-status.ts, where every task
+// surface reads it; re-exported so this file's existing importers keep working.
+export { isTaskOverdue };
 
 // The Committee record's task summary: how late, or when due. The elapsed form
 // is used only when overdue, because that is when the magnitude changes what a

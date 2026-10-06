@@ -3,7 +3,6 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
-import { TooltipModule } from 'primeng/tooltip';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import { RecordPanelComponent } from '../../../../shared/components/record-panel/record-panel.component';
@@ -13,6 +12,11 @@ import { TaskFormComponent } from '../../../tasks/components/task-form/task-form
 import { TaskFormFooterComponent } from '../../../tasks/components/task-form/task-form-footer.component';
 import { TaskFormStepsComponent } from '../../../tasks/components/task-form/task-form-steps.component';
 import { TaskService, ITaskWithAssigneesDto } from '../../../tasks/services/task.service';
+import { isTaskOpen, taskStatusLabelKey } from '../../../tasks/task-status';
+import {
+  TaskReassignDialogComponent,
+  TaskRejection,
+} from '../../../tasks/components/task-reassign-dialog/task-reassign-dialog.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
@@ -50,7 +54,6 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     ButtonModule,
     TagModule,
     MessageModule,
-    TooltipModule,
     RecordPanelComponent,
     ListRowDirective,
     IconButtonComponent,
@@ -58,6 +61,7 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     TaskFormComponent,
     TaskFormFooterComponent,
     TaskFormStepsComponent,
+    TaskReassignDialogComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
@@ -360,20 +364,48 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                          not yet due. -->
                     <span class="block text-[11.5px] text-[var(--am-text-secondary)] truncate">
                       {{ assigneeSummary(task) }} ·
-                      {{ 'task.status.' + task.status.toLowerCase() | translate }}
+                      {{ statusLabel(task) | translate }}
                     </span>
+                    <!-- ACC-163 — a rejected task says who handed it back and
+                         why: that is what its creator acts on when they
+                         reassign it. Clamped to two lines at this panel's
+                         width; the whole reason is in the title attribute and
+                         in the reassign dialog. -->
+                    @if (task.status === 'REJECTED' && task.rejectedReason) {
+                      <span
+                        class="am-task-rejection text-[11.5px] text-[var(--am-warning-ink)]"
+                        [attr.title]="rejectionLine(task)"
+                      >
+                        {{ rejectionLine(task) }}
+                      </span>
+                    }
                   </span>
                   <span class="flex items-center gap-2 shrink-0">
                     <!-- Overdue is the one thing worth colouring in a summary:
-                         it is the only state that demands action today. -->
+                         it is the only state that demands action today.
+                         ACC-163 — drawn as a BADGE when overdue (Q8: a flag
+                         beside the status), using the due text itself as the
+                         badge's words, because this panel's 320px floor has
+                         no width for a separate chip. -->
                     <span
                       dir="ltr"
                       style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
                       class="text-[11.5px] font-medium whitespace-nowrap"
-                      [style.color]="isOverdue(task) ? 'var(--am-severity-critical)' : 'var(--am-text-secondary)'"
+                      [class.am-task-overdue-badge]="isOverdue(task)"
+                      [style.color]="isOverdue(task) ? null : 'var(--am-text-secondary)'"
                     >
                       {{ dueSummary(task) }}
                     </span>
+                    <!-- ACC-163 — the creator (Q4) or a tasks:reassign holder.
+                         The server applies the same rule and refuses anyone
+                         else as not found. -->
+                    @if (canReassign(task)) {
+                      <am-icon-button
+                        icon="pi pi-user-edit"
+                        [label]="'task.reassignNamed' | translate: { title: task.title }"
+                        (activated)="openReassign(task)"
+                      />
+                    }
                     <!-- Shown on rows the caller is actually assigned to, and
                          on no others. NOT permission-gated: completing a task
                          is self-scoped, so POST /tasks/:id/complete carries no
@@ -381,13 +413,20 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                          this on a permission would hide it from exactly the
                          people entitled to use it: whoever the engine assigned
                          the task to, whatever role they hold. -->
+                    <!-- ACC-163 — disabled while evidence is required and none
+                         has been added; the server refuses that too. Adding
+                         the evidence happens on My tasks, where the assignee
+                         works. -->
                     @if (canComplete(task)) {
-                      <p-button
+                      <am-icon-button
                         icon="pi pi-check"
-                        [text]="true"
-                        size="small"
-                        [pTooltip]="'task.complete' | translate"
-                        (onClick)="onCompleteTask(task)"
+                        severity="primary"
+                        [disabled]="needsEvidence(task)"
+                        [label]="
+                          (needsEvidence(task) ? 'task.completeNamedNeedsEvidence' : 'task.completeNamed')
+                            | translate: { title: task.title }
+                        "
+                        (activated)="onCompleteTask(task)"
                       />
                     }
                   </span>
@@ -548,6 +587,14 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       [footer]="taskFooterTpl"
     />
 
+    <app-task-reassign-dialog
+      [visible]="reassignVisible()"
+      (visibleChange)="reassignVisible.set($event)"
+      [task]="reassignTarget()"
+      [rejection]="reassignRejection()"
+      (reassigned)="loadTasks()"
+    />
+
     <ng-template #memberFormTpl>
       <app-committee-member-form
         [committeeId]="committeeId"
@@ -563,6 +610,29 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       [content]="memberFormTpl"
     />
   `,
+  styles: [
+    `
+      /* ACC-163 — a rejected task's reason, at most two lines in a panel whose
+         floor is 320px. The full text is on the title attribute and in the
+         reassign dialog. */
+      .am-task-rejection {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        overflow-wrap: anywhere;
+      }
+      /* ACC-163 — overdue as a badge (Q8: a flag beside the status). The due
+         text is the badge's words, so it costs no width the panel lacks. */
+      .am-task-overdue-badge {
+        color: var(--am-danger-ink);
+        background: var(--am-danger-bg);
+        border: 1px solid var(--am-danger-border);
+        border-radius: var(--am-radius-control);
+        padding: 1px 6px;
+      }
+    `,
+  ],
 })
 export class CommitteeDetailComponent implements OnInit {
   @ViewChild('committeeFormTpl', { read: TemplateRef, static: true }) committeeFormTpl!: TemplateRef<unknown>;
@@ -848,9 +918,49 @@ export class CommitteeDetailComponent implements OnInit {
   // whose assignment was completed by a colleague or reassigned away is
   // correctly excluded without a second check.
   canComplete(task: ITaskWithAssigneesDto): boolean {
-    if (task.status === 'COMPLETED' || task.status === 'CANCELLED') return false;
+    if (!isTaskOpen(task)) return false;
     const me = this.authService.currentUser()?.id;
     return !!me && task.assignees.some((a) => a.userId === me);
+  }
+
+  // ACC-163 — evidence is required and none has been added.
+  needsEvidence(task: ITaskWithAssigneesDto): boolean {
+    return task.requiresEvidence && task.evidenceCount === 0;
+  }
+
+  statusLabel(task: ITaskWithAssigneesDto): string {
+    return taskStatusLabelKey(task);
+  }
+
+  // "Rejected by Sarah: Not my unit". The rejecter's name is read live, so a
+  // renamed user reads correctly; null only if that account no longer exists.
+  rejectionLine(task: ITaskWithAssigneesDto): string {
+    return task.rejectedBy
+      ? this.translate.instant('task.rejectedByNamed', { name: task.rejectedBy.name, reason: task.rejectedReason })
+      : this.translate.instant('task.rejectedReasonOnly', { reason: task.rejectedReason });
+  }
+
+  // ACC-163 — the same rule the server applies: a tasks:reassign holder, or
+  // the task's own creator, on an open task. A rejected task comes back to its
+  // creator (Q4), who usually holds no task permission at all. Shown for any
+  // open task, not only rejected ones, because that is what the rule allows.
+  canReassign(task: ITaskWithAssigneesDto): boolean {
+    if (!isTaskOpen(task)) return false;
+    const me = this.authService.currentUser()?.id;
+    return this.navigationAccess.hasPermission('tasks:reassign') || (!!me && task.createdById === me);
+  }
+
+  readonly reassignVisible = signal(false);
+  readonly reassignTarget = signal<ITaskWithAssigneesDto | null>(null);
+  readonly reassignRejection = computed<TaskRejection | null>(() => {
+    const task = this.reassignTarget();
+    if (!task || task.status !== 'REJECTED' || !task.rejectedReason) return null;
+    return { byName: task.rejectedBy?.name ?? null, reason: task.rejectedReason };
+  });
+
+  openReassign(task: ITaskWithAssigneesDto): void {
+    this.reassignTarget.set(task);
+    this.reassignVisible.set(true);
   }
 
   onCompleteTask(task: ITaskWithAssigneesDto): void {
@@ -878,7 +988,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.loadTasks();
   }
 
-  private loadTasks(): void {
+  loadTasks(): void {
     this.tasksLoading.set(true);
     this.taskService.getForSource('COMMITTEE', this.committeeId).subscribe({
       next: (tasks) => {

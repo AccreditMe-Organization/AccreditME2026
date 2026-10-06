@@ -551,20 +551,33 @@ export class SlaMonitorProcessor extends WorkerHost implements OnModuleInit {
   // fall-through to the Head tier just because the Manager tier had
   // nothing to resolve for this particular task (the `else if` below only
   // considers the Head tier once the Manager tier has actually fired).
+  //
+  // ACC-163 — OVERDUE IS NO LONGER A STATUS (Q8). This sweep used to flip an
+  // overdue task to status OVERDUE, which erased whether it had been started:
+  // a task can be In progress AND overdue, and both facts matter. Overdue is
+  // now computed from dueAt wherever it is shown. The sweep still records the
+  // breach — slaBreachedAt, stamped once, the first time it sees one — and
+  // still escalates; it simply writes no status.
+  //
+  // REJECTED is excluded for the reason UNASSIGNED is: a rejected task has no
+  // active assignee, so escalation resolves no target, and the skipped-
+  // escalation audit row below would be written again on every 15-minute pass
+  // for as long as it sat waiting for its creator.
   private async sweepOverdueTasks(now: Date): Promise<void> {
     const overdueTasks = await this.prisma.task.findMany({
       where: {
         dueAt: { lt: now },
-        status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED'] }, // 'OVERDUE' no longer excluded — Finding 2's fix
+        // A legacy OVERDUE row is open and still eligible — Finding 2's fix.
+        status: { notIn: ['COMPLETED', 'CANCELLED', 'UNASSIGNED', 'REJECTED'] },
       },
       include: { assignees: { where: { removedAt: null } } },
     });
 
     for (const task of overdueTasks) {
-      if (task.status !== 'OVERDUE') {
+      if (!task.slaBreachedAt) {
         await this.prisma.task.update({
           where: { id: task.id },
-          data: { status: 'OVERDUE', slaBreachedAt: now },
+          data: { slaBreachedAt: now },
         });
       }
 
