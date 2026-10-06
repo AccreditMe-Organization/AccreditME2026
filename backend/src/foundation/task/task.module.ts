@@ -5,6 +5,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
+import { TaskAssignmentService } from './task-assignment.service';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -25,7 +26,9 @@ import { TaskService } from './task.service';
     forwardRef(() => TenantModule),
   ],
   controllers: [TaskController],
-  providers: [TaskService],
-  exports: [TaskService],
+  // ACC-167 — TaskAssignmentService is exported for the workflow engine, which
+  // creates pool tasks from POSITION_FIXED and committee-role stages.
+  providers: [TaskService, TaskAssignmentService],
+  exports: [TaskService, TaskAssignmentService],
 })
 export class TaskModule {}
