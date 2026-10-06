@@ -213,9 +213,17 @@ function notBlank(control: AbstractControl): ValidationErrors | null {
       .am-request-date__button:hover {
         border-color: var(--am-control-border-hover);
       }
+      /* The INNER input needs sizing too, as in New task's due row: the
+         <input> PrimeNG renders inside <p-inputmask> is not styled by the
+         wrapper, and at its default width it scrolled this body sideways —
+         seen in the ACC-173 browser pass. 112px for the Arabic placeholder. */
       .am-request-date .p-inputmask {
         flex: none;
         inline-size: 112px;
+      }
+      .am-request-date ::ng-deep .p-inputmask input {
+        inline-size: 112px;
+        min-inline-size: 0;
       }
       .am-request-dateview {
         display: flex;
