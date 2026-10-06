@@ -48,6 +48,20 @@ export interface ITaskDto {
   heldAt: string | null;
   onHoldUntil: string | null;
   heldFromStatus: string | null;
+  // ACC-174 — the SLA window. slaLimitAt is the latest due date a person may
+  // set. Null on a task from before ACC-174 until its backfill runs: a picker
+  // reads the limit from the SLA preview instead of trusting a null here.
+  slaStartAt: string | null;
+  slaLimitAt: string | null;
+  slaExtendedTo: string | null;
+  // ACC-174 — a cancel by the creator (null when the engine cancelled it), and
+  // the last reopen.
+  cancelledReason: string | null;
+  cancelledAt: string | null;
+  cancelledById: string | null;
+  reopenedReason: string | null;
+  reopenedAt: string | null;
+  reopenedById: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -86,6 +100,11 @@ export interface ITaskListItemDto extends ITaskDto {
   pool: TaskPoolDto | null;
   // ACC-173 — the task's PENDING extension or hold request, if any.
   openRequest: TaskOpenRequestDto | null;
+  // ACC-174 — the caller may edit, cancel and reopen this task (its creator,
+  // whoever acts for them, or — while the creator is gone — a tasks:reassign
+  // holder). Which of those applies to the task's state is the screen's call;
+  // the server re-checks every one.
+  canManage: boolean;
 }
 
 // ACC-173 — mirrors the backend's ITaskOpenRequest. At most one per task.
@@ -157,6 +176,8 @@ export interface ITaskWithAssigneesDto extends ITaskListItemDto {
   assignees: TaskAssigneeDto[];
   // ACC-163 — who rejected a REJECTED task; null on every other task.
   rejectedBy: { id: string; name: string } | null;
+  // ACC-174 — who cancelled it, beside cancelledReason; null when the engine did.
+  cancelledBy: { id: string; name: string } | null;
 }
 
 // ACC-163 — the statuses my-tasks can be filtered by. OVERDUE is not one of
@@ -242,6 +263,34 @@ export interface AssignableCommitteeRoleDto {
 export interface RejectTaskDto {
   reason: string;
 }
+
+// ACC-174 — the creator's edit: any of the four, at least one. dueDate is an
+// ISO instant (New task's convention).
+export interface UpdateTaskDto {
+  title?: string;
+  description?: string | null;
+  dueDate?: string;
+  priority?: TaskPriority;
+}
+
+export type TaskPriority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface CancelTaskDto {
+  reason: string;
+}
+
+export interface ReopenTaskDto {
+  reason: string;
+  dueDate?: string;
+}
+
+// ACC-174 — per priority, the due date the SLA gives and the latest a person
+// may set. From now (New task) or from a task's own SLA start (Edit).
+export interface SlaWindowDto {
+  dueAt: string;
+  limitAt: string;
+}
+export type SlaPreviewDto = Record<TaskPriority, SlaWindowDto>;
 
 // ACC-163 (Q11) — new evidence is a link (http or https) or a reference to a
 // record. A note is a comment, not proof, and attachments wait for storage.
@@ -374,6 +423,34 @@ export class TaskService {
   // "Waiting for your decision" — self-scoped.
   getAwaitingDecision(): Observable<TaskRequestForDecisionDto[]> {
     return this.http.get<TaskRequestForDecisionDto[]>(`${this.base}/requests/awaiting-decision`);
+  }
+
+  // ACC-174 — the creator's own actions. The server decides who may (the
+  // creator, whoever acts for them, or a tasks:reassign holder while the
+  // creator is gone) and tells anyone else the task is not found.
+  update(id: string, dto: UpdateTaskDto): Observable<ITaskDto> {
+    return this.http.patch<ITaskDto>(`${this.base}/${id}`, dto);
+  }
+
+  cancel(id: string, dto: CancelTaskDto): Observable<ITaskDto> {
+    return this.http.post<ITaskDto>(`${this.base}/${id}/cancel`, dto);
+  }
+
+  reopen(id: string, dto: ReopenTaskDto): Observable<ITaskDto> {
+    return this.http.post<ITaskDto>(`${this.base}/${id}/reopen`, dto);
+  }
+
+  // New task's picker: every priority's due date and limit from now. Needs
+  // tasks:create, like creating one.
+  getSlaPreview(): Observable<SlaPreviewDto> {
+    return this.http.get<SlaPreviewDto>(`${this.base}/sla-preview`);
+  }
+
+  // Edit's picker: the same, from this task's own SLA start. `restart` is
+  // Reopen's: from now, as a reopened task's SLA restarts.
+  getTaskSlaPreview(id: string, restart = false): Observable<SlaPreviewDto> {
+    const params = restart ? new HttpParams().set('restart', 'true') : new HttpParams();
+    return this.http.get<SlaPreviewDto>(`${this.base}/${id}/sla-preview`, { params });
   }
 
   addEvidence(taskId: string, dto: AddTaskEvidenceDto): Observable<{ id: string }> {

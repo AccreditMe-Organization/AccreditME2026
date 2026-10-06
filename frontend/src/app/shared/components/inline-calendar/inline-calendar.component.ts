@@ -220,6 +220,7 @@ export class CalendarA11yDirective implements AfterViewChecked {
         [showOtherMonths]="true"
         [selectOtherMonths]="false"
         [minDate]="minDate() ?? undefined"
+        [maxDate]="maxDate() ?? undefined"
         [amCalendarA11y]="describeDay"
       >
         <ng-template #date let-d>
@@ -428,6 +429,11 @@ export class InlineCalendarComponent {
    * mechanism to keep in step.
    */
   readonly minDate = input<Date | null>(null);
+  /**
+   * ACC-174 — the latest selectable day, by the same PrimeNG mechanism: a task's
+   * SLA limit. A day past it is p-disabled, so pointer and arrow keys skip it.
+   */
+  readonly maxDate = input<Date | null>(null);
 
   /** 0=Sun … 6=Sat. Null or empty means "not known" — nothing is hatched. */
   readonly workingDays = input<readonly number[] | null>(null);
