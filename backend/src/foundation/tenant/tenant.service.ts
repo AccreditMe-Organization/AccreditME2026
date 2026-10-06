@@ -29,6 +29,7 @@ import {
   ITaskSlaSettings,
 } from './interfaces/tenant.interface';
 import { ModuleAccessLevel, resolveModuleEntitlements } from './module-entitlements';
+import { DEFAULT_TASK_SLA_SETTINGS, taskSlaFromSettings } from './task-sla-settings';
 
 // ACC-46 Section 2.7.d — replaces TaskService's own old
 // DEFAULT_TASK_SLA_HOURS/FALLBACK_SLA_HOURS pair (a flat hours-per-priority
@@ -40,13 +41,8 @@ import { ModuleAccessLevel, resolveModuleEntitlements } from './module-entitleme
 // reasonable starting point (roughly half of dueAfterHours for the
 // Manager tier, dueAfterHours again for the Head tier), not a fixed
 // product decision — a tenant admin can change every field via the new
-// settings page.
-const DEFAULT_TASK_SLA_SETTINGS: ITaskSlaSettings = {
-  CRITICAL: { dueAfterHours: 4, managerEscalationAfterHours: 2, headEscalationAfterHours: 4 },
-  HIGH: { dueAfterHours: 16, managerEscalationAfterHours: 8, headEscalationAfterHours: 16 },
-  MEDIUM: { dueAfterHours: 40, managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
-  LOW: { dueAfterHours: 80, managerEscalationAfterHours: 48, headEscalationAfterHours: 96 },
-};
+// settings page. The values live in task-sla-settings.ts (ACC-174), with the
+// one function that reads them, so the SLA limit and its backfill share them.
 
 @Injectable()
 export class TenantService {
@@ -322,8 +318,7 @@ export class TenantService {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
 
-    const settings = (org.settings as { taskSla?: ITaskSlaSettings } | null) ?? {};
-    return settings.taskSla ?? DEFAULT_TASK_SLA_SETTINGS;
+    return taskSlaFromSettings(org.settings);
   }
 
   async updateTaskSla(id: string, dto: UpdateTaskSlaDto, actorId: string): Promise<void> {
