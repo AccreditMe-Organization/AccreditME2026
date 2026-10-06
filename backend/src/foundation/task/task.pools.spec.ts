@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { TaskSlaService } from './task-sla.service';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
@@ -73,6 +74,7 @@ const row = (userId: string, overrides: Record<string, unknown> = {}) => ({
 let holders: string[];
 
 const mockPrisma = {
+  organization: { findFirst: jest.fn() },
   task: {
     create: jest.fn(),
     findFirst: jest.fn(),
@@ -164,7 +166,10 @@ describe('TaskService — pools (ACC-167)', () => {
         // task-authority.service.spec.ts.
         {
           provide: TaskAuthorityService,
-          useValue: { canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId) },
+          useValue: {
+            canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId),
+            creatorsCoveredBy: jest.fn(async () => []),
+          },
         },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
@@ -173,6 +178,7 @@ describe('TaskService — pools (ACC-167)', () => {
           provide: ObjectVisibilityService,
           useValue: { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() },
         },
+        TaskSlaService,
         { provide: WorkingCalendarService, useValue: mockCalendar },
         { provide: NotificationService, useValue: mockNotifications },
         { provide: TenantService, useValue: mockTenant },

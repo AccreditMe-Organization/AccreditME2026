@@ -47,6 +47,15 @@ const MOCK_TASK: ITask = {
   heldAt: null,
   onHoldUntil: null,
   heldFromStatus: null,
+  slaStartAt: null,
+  slaLimitAt: null,
+  slaExtendedTo: null,
+  cancelledReason: null,
+  cancelledAt: null,
+  cancelledById: null,
+  reopenedReason: null,
+  reopenedAt: null,
+  reopenedById: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: new Date('2026-01-01'),
@@ -70,6 +79,11 @@ describe('TaskController', () => {
     reassign: jest.Mock;
     addEvidence: jest.Mock;
     listUnassigned: jest.Mock;
+    update: jest.Mock;
+    cancel: jest.Mock;
+    reopen: jest.Mock;
+    slaPreview: jest.Mock;
+    slaPreviewForTask: jest.Mock;
   };
 
   let assignment: {
@@ -112,6 +126,11 @@ describe('TaskController', () => {
       reassign: jest.fn().mockResolvedValue(MOCK_TASK),
       addEvidence: jest.fn().mockResolvedValue({ id: 'evidence-1' }),
       listUnassigned: jest.fn().mockResolvedValue([{ ...MOCK_TASK, status: 'UNASSIGNED' }]),
+      update: jest.fn().mockResolvedValue(MOCK_TASK),
+      cancel: jest.fn().mockResolvedValue({ ...MOCK_TASK, status: 'CANCELLED' }),
+      reopen: jest.fn().mockResolvedValue(MOCK_TASK),
+      slaPreview: jest.fn().mockResolvedValue({}),
+      slaPreviewForTask: jest.fn().mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -135,9 +154,10 @@ describe('TaskController', () => {
 
   it('getMyTasks delegates to the service, passing the validated query through', async () => {
     const query = { status: 'PENDING' as const, overdue: true };
-    const result = await controller.getMyTasks(TENANT_ID, USER_ID, query);
+    const result = await controller.getMyTasks(TENANT_ID, USER_ID, query, VIEWER_PERMISSIONS);
 
-    expect(service.getMyTasks).toHaveBeenCalledWith(USER_ID, TENANT_ID, query);
+    // ACC-174 — the permissions travel too, for each row's canManage.
+    expect(service.getMyTasks).toHaveBeenCalledWith(USER_ID, TENANT_ID, query, VIEWER_PERMISSIONS);
     expect(result).toEqual([MOCK_TASK]);
   });
 
@@ -325,6 +345,13 @@ describe('TaskController', () => {
     'approveRequest',
     'declineRequest',
     'resume',
+    // ACC-174 — edit, cancel and reopen are the creator's (or their cover's,
+    // or a tasks:reassign holder's while the creator is gone): only the row
+    // can say, so the service decides. Edit's preview is the same.
+    'update',
+    'cancel',
+    'reopen',
+    'getTaskSlaPreview',
   ] as const)('%s carries no route permission', (method) => {
     const reflector = new Reflector();
     expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype[method])).toBeUndefined();
@@ -380,5 +407,32 @@ describe('TaskController', () => {
 
     await controller.getAwaitingDecision(TENANT_ID, USER_ID, perms);
     expect(requests.awaitingDecision).toHaveBeenCalledWith(viewer, TENANT_ID);
+  });
+
+  // ACC-174 — New task's preview names no task, so it is gated like creating
+  // one: clause (a), a 403 naming the permission.
+  it('the New task SLA preview requires tasks:create', () => {
+    const reflector = new Reflector();
+    expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getSlaPreview)).toEqual(['tasks:create']);
+  });
+
+  it("the creator's routes delegate with the caller, their permissions and the tenant", async () => {
+    const perms = ['tasks:reassign'];
+    const viewer = { id: USER_ID, permissions: perms };
+
+    await controller.update('task-1', { priority: 'HIGH' }, TENANT_ID, USER_ID, perms);
+    expect(service.update).toHaveBeenCalledWith('task-1', { priority: 'HIGH' }, viewer, TENANT_ID);
+
+    await controller.cancel('task-1', { reason: 'No longer needed' }, TENANT_ID, USER_ID, perms);
+    expect(service.cancel).toHaveBeenCalledWith('task-1', { reason: 'No longer needed' }, viewer, TENANT_ID);
+
+    await controller.reopen('task-1', { reason: 'Evidence is wrong' }, TENANT_ID, USER_ID, perms);
+    expect(service.reopen).toHaveBeenCalledWith('task-1', { reason: 'Evidence is wrong' }, viewer, TENANT_ID);
+
+    await controller.getTaskSlaPreview('task-1', TENANT_ID, USER_ID, perms);
+    expect(service.slaPreviewForTask).toHaveBeenCalledWith('task-1', viewer, TENANT_ID);
+
+    await controller.getSlaPreview(TENANT_ID);
+    expect(service.slaPreview).toHaveBeenCalledWith(TENANT_ID);
   });
 });

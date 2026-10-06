@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { TaskSlaService } from './task-sla.service';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskRequestService } from './task-request.service';
@@ -21,6 +22,10 @@ const ADMIN = 'admin';
 const DAY = 24 * 60 * 60 * 1000;
 const inDays = (days: number) => new Date(Date.now() + days * DAY);
 
+// Fixed instants, so two fixtures built a moment apart still compare equal.
+const START = inDays(-1);
+const DUE = inDays(2);
+
 const row = (userId: string, overrides: Record<string, unknown> = {}) => ({
   id: `ta-${userId}`,
   taskId: 'task-1',
@@ -36,7 +41,13 @@ const task = (overrides: Record<string, unknown> = {}) => ({
   title: 'Collect the audit sample',
   createdById: CREATOR,
   status: 'PENDING',
-  dueAt: inDays(2),
+  priority: 'MEDIUM',
+  createdAt: START,
+  dueAt: DUE,
+  // ACC-174 — the SLA window: started yesterday, limit at the due date.
+  slaStartAt: START,
+  slaLimitAt: DUE,
+  slaExtendedTo: null,
   slaBreachedAt: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
@@ -61,6 +72,7 @@ const request = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const mockPrisma = {
+  organization: { findFirst: jest.fn() },
   task: { findFirst: jest.fn(), update: jest.fn() },
   taskRequest: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   user: { findFirst: jest.fn() },
@@ -69,7 +81,11 @@ const mockPrisma = {
 };
 const mockAudit = { log: jest.fn() };
 const mockNotifications = { create: jest.fn() };
-const mockCalendar = { workingHoursBetween: jest.fn(), calculateDeadline: jest.fn() };
+const mockCalendar = {
+  workingHoursBetween: jest.fn(),
+  calculateDeadline: jest.fn(),
+  getEffectiveTimeZone: jest.fn(async () => 'Asia/Riyadh'),
+};
 const mockAuthority = {
   canActForCreator: jest.fn(),
   decisionRecipients: jest.fn(),
@@ -113,6 +129,12 @@ describe('TaskRequestService (ACC-173)', () => {
     mockAuthority.canActForCreator.mockImplementation(async (createdBy: string, viewer: string) => createdBy === viewer);
     mockAuthority.decisionRecipients.mockResolvedValue([CREATOR]);
     mockAuthority.creatorsCoveredBy.mockResolvedValue([]);
+    // ACC-174 — a predictable calendar: N working hours is N clock hours. The
+    // real arithmetic is WorkingCalendarService's own spec's business.
+    mockCalendar.calculateDeadline.mockImplementation(async (start: DateTime, hours: number) =>
+      start.plus({ hours }),
+    );
+    mockCalendar.workingHoursBetween.mockResolvedValue(0);
 
     const module = await Test.createTestingModule({
       providers: [
@@ -120,6 +142,7 @@ describe('TaskRequestService (ACC-173)', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAudit },
         { provide: NotificationService, useValue: mockNotifications },
+        TaskSlaService,
         { provide: WorkingCalendarService, useValue: mockCalendar },
         { provide: TaskAuthorityService, useValue: mockAuthority },
       ],
@@ -331,9 +354,19 @@ describe('TaskRequestService (ACC-173)', () => {
 
       await service.approve('task-1', 'req-1', {}, creator, ORG_A);
 
+      // ACC-174 — the limit rises to the approved date, and the date is kept.
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
-        data: { dueAt: asked, dueDateOverridden: true, slaBreachedAt: null, managerEscalatedAt: null, headEscalatedAt: null },
+        data: {
+          dueAt: asked,
+          dueDateOverridden: true,
+          slaStartAt: task().slaStartAt,
+          slaLimitAt: asked,
+          slaExtendedTo: asked,
+          slaBreachedAt: null,
+          managerEscalatedAt: null,
+          headEscalatedAt: null,
+        },
       });
       expect(mockPrisma.taskRequest.update).toHaveBeenCalledWith({
         where: { id: 'req-1' },
@@ -369,7 +402,12 @@ describe('TaskRequestService (ACC-173)', () => {
 
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
-        data: { status: 'ON_HOLD', heldFromStatus: returnTo, heldAt: expect.any(Date), onHoldUntil: until },
+        data: expect.objectContaining({
+          status: 'ON_HOLD',
+          heldFromStatus: returnTo,
+          heldAt: expect.any(Date),
+          onHoldUntil: until,
+        }),
       });
       expect(mockPrisma.taskRequest.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ decisionNote: 'Fine' }) }),
@@ -388,6 +426,91 @@ describe('TaskRequestService (ACC-173)', () => {
       const error = await captureError(service.approve('task-1', 'req-1', {}, creator, ORG_A));
       expect((error as ConflictException).message).toBe(message);
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    // ── ACC-174 — the SLA limit and the hold ──────────────────────────────
+    it('never lowers the limit: an approved date inside it leaves the limit where it was (C3)', async () => {
+      const limit = inDays(8);
+      const asked = inDays(5);
+      mockPrisma.task.findFirst.mockResolvedValue(task({ dueAt: inDays(2), slaLimitAt: limit }));
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(request({ requestedDueAt: asked }));
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      const { data } = mockPrisma.task.update.mock.calls[0][0] as { data: Record<string, unknown> };
+      expect(data['dueAt']).toEqual(asked);
+      expect(data['slaLimitAt']).toEqual(limit);
+      // Kept anyway, as the floor a later priority change cannot drop below.
+      expect(data['slaExtendedTo']).toEqual(asked);
+    });
+
+    it('refuses an extension that is no longer after the current due date (C5, 409)', async () => {
+      // The creator moved the due date past the asked-for one after it was asked.
+      mockPrisma.task.findFirst.mockResolvedValue(task({ dueAt: inDays(6), slaLimitAt: inDays(6) }));
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(request({ requestedDueAt: inDays(5) }));
+
+      const error = await captureError(service.approve('task-1', 'req-1', {}, creator, ORG_A));
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).message).toBe(
+        'The requested due date is no longer after the current one; decline and ask again',
+      );
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    it('moves due date, SLA start, limit and extension forward by the working hours to the hold date', async () => {
+      const due = inDays(2);
+      const start = inDays(-1);
+      const limit = inDays(3);
+      const extended = inDays(3);
+      const until = inDays(10);
+      mockPrisma.task.findFirst.mockResolvedValue(
+        task({ dueAt: due, slaStartAt: start, slaLimitAt: limit, slaExtendedTo: extended }),
+      );
+      const asked = request({ type: 'ON_HOLD', requestedDueAt: null, holdUntil: until });
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(asked);
+      mockPrisma.taskRequest.update.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...asked, ...data }),
+      );
+      mockCalendar.workingHoursBetween.mockResolvedValue(48);
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      // From approval to the hold date — never from heldAt at resume.
+      expect(mockCalendar.workingHoursBetween).toHaveBeenCalledWith(
+        expect.any(DateTime),
+        DateTime.fromJSDate(until),
+        ORG_A,
+      );
+      const plus48 = (d: Date) => new Date(d.getTime() + 48 * 60 * 60 * 1000);
+      const { data } = mockPrisma.task.update.mock.calls[0][0] as { data: Record<string, unknown> };
+      expect(data).toEqual(
+        expect.objectContaining({
+          dueAt: plus48(due),
+          slaStartAt: plus48(start),
+          slaLimitAt: plus48(limit),
+          slaExtendedTo: plus48(extended),
+        }),
+      );
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ event: 'hold_started', heldWorkingHours: 48, dueAtBefore: due }),
+        }),
+      );
+    });
+
+    it('moves nothing when no working hour lies before the hold date (a zero shift would normalise)', async () => {
+      const due = inDays(2);
+      mockPrisma.task.findFirst.mockResolvedValue(task({ dueAt: due }));
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(
+        request({ type: 'ON_HOLD', requestedDueAt: null, holdUntil: inDays(0.5) }),
+      );
+      mockCalendar.workingHoursBetween.mockResolvedValue(0);
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      expect(mockCalendar.calculateDeadline).not.toHaveBeenCalled();
+      const { data } = mockPrisma.task.update.mock.calls[0][0] as { data: Record<string, unknown> };
+      expect(data['dueAt']).toEqual(due);
     });
 
     it('lets a tasks:reassign holder decide, though they do not cover the creator', async () => {
@@ -488,54 +611,32 @@ describe('TaskRequestService (ACC-173)', () => {
 
     beforeEach(() => {
       mockPrisma.task.findFirst.mockResolvedValue(onHold());
-      mockCalendar.workingHoursBetween.mockResolvedValue(16);
-      mockCalendar.calculateDeadline.mockResolvedValue(DateTime.fromJSDate(inDays(4)));
     });
 
-    it('moves the due date forward by the working time on hold, and returns to the held-from status', async () => {
+    // ACC-174 — the window moved when the hold was approved; resume only ends it.
+    it('shifts nothing: it returns to the held-from status and clears the hold, and that is all', async () => {
       await service.resume('task-1', assignee, ORG_A);
 
-      expect(mockCalendar.workingHoursBetween).toHaveBeenCalledWith(
-        DateTime.fromJSDate(heldAt),
-        expect.any(DateTime),
-        ORG_A,
-      );
-      expect(mockCalendar.calculateDeadline).toHaveBeenCalledWith(DateTime.fromJSDate(dueAt), 16, ORG_A);
+      expect(mockCalendar.workingHoursBetween).not.toHaveBeenCalled();
+      expect(mockCalendar.calculateDeadline).not.toHaveBeenCalled();
       expect(mockPrisma.task.update).toHaveBeenCalledWith({
         where: { id: 'task-1' },
-        data: {
-          status: 'IN_PROGRESS',
-          dueAt: expect.any(Date),
-          heldAt: null,
-          onHoldUntil: null,
-          heldFromStatus: null,
-          slaBreachedAt: null,
-          managerEscalatedAt: null,
-          headEscalatedAt: null,
-        },
+        data: { status: 'IN_PROGRESS', heldAt: null, onHoldUntil: null, heldFromStatus: null },
       });
       expect(mockAudit.log).toHaveBeenCalledWith(
         expect.objectContaining({
           actorId: ASSIGNEE,
-          metadata: expect.objectContaining({ event: 'resumed', automatic: false, heldWorkingHours: 16 }),
+          metadata: { event: 'resumed', automatic: false, early: true },
         }),
       );
     });
 
-    it('moves nothing when no working time passed (a zero shift would normalise the date)', async () => {
-      mockCalendar.workingHoursBetween.mockResolvedValue(0);
-      await service.resume('task-1', assignee, ORG_A);
-      expect(mockCalendar.calculateDeadline).not.toHaveBeenCalled();
-      expect(mockPrisma.task.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ dueAt }) }),
-      );
-    });
-
-    it('keeps the escalation stamps when the shifted due date is still past — no second escalation', async () => {
-      mockCalendar.calculateDeadline.mockResolvedValue(DateTime.fromJSDate(inDays(-1)));
+    it('resuming early keeps the dates set at approval', async () => {
       await service.resume('task-1', assignee, ORG_A);
       const { data } = mockPrisma.task.update.mock.calls[0][0] as { data: Record<string, unknown> };
-      expect(data).not.toHaveProperty('slaBreachedAt');
+      for (const field of ['dueAt', 'slaStartAt', 'slaLimitAt', 'slaExtendedTo', 'slaBreachedAt']) {
+        expect(data).not.toHaveProperty(field);
+      }
     });
 
     it('tells the assignee and the creator — never the person who resumed it', async () => {
@@ -576,21 +677,18 @@ describe('TaskRequestService (ACC-173)', () => {
   });
 
   describe('resumeDueHold — the sweep', () => {
-    beforeEach(() => {
-      mockCalendar.workingHoursBetween.mockResolvedValue(8);
-      mockCalendar.calculateDeadline.mockResolvedValue(DateTime.fromJSDate(inDays(3)));
-    });
-
-    it('resumes a hold whose date has come, with no actor, audited as automatic', async () => {
+    it('resumes a hold whose date has come, with no actor, audited as automatic — and shifts nothing', async () => {
       mockPrisma.task.findFirst.mockResolvedValue(
         task({ status: 'ON_HOLD', heldFromStatus: 'PENDING', heldAt: inDays(-5), onHoldUntil: inDays(-0.01) }),
       );
 
       await expect(service.resumeDueHold('task-1', ORG_A)).resolves.toBe(true);
 
-      expect(mockPrisma.task.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING', onHoldUntil: null }) }),
-      );
+      expect(mockPrisma.task.update).toHaveBeenCalledWith({
+        where: { id: 'task-1' },
+        data: { status: 'PENDING', heldAt: null, onHoldUntil: null, heldFromStatus: null },
+      });
+      expect(mockCalendar.workingHoursBetween).not.toHaveBeenCalled();
       const audit = mockAudit.log.mock.calls[0][0] as Record<string, unknown>;
       expect(audit).not.toHaveProperty('actorId');
       expect(audit['metadata']).toEqual(expect.objectContaining({ event: 'resumed', automatic: true }));
