@@ -949,6 +949,7 @@ describe('WorkflowService', () => {
         ORG_A,
         ACTOR,
         undefined,
+        'engine',
       );
     });
 
@@ -980,6 +981,7 @@ describe('WorkflowService', () => {
           ORG_A,
           ACTOR,
           undefined,
+          'engine',
         );
       });
 
@@ -1007,6 +1009,7 @@ describe('WorkflowService', () => {
           ORG_A,
           ACTOR,
           undefined,
+          'engine',
         );
       });
     });
@@ -1040,6 +1043,7 @@ describe('WorkflowService', () => {
           ORG_A,
           ACTOR,
           undefined,
+          'engine',
         );
       });
 
@@ -1062,6 +1066,7 @@ describe('WorkflowService', () => {
           ORG_A,
           ACTOR,
           undefined,
+          'engine',
         );
       });
 
@@ -1093,6 +1098,7 @@ describe('WorkflowService', () => {
           ORG_A,
           ACTOR,
           undefined,
+          'engine',
         );
       });
     });
@@ -1222,6 +1228,7 @@ describe('WorkflowService', () => {
         ORG_A,
         ACTOR,
         undefined,
+        'engine',
       );
     });
 
@@ -1262,6 +1269,7 @@ describe('WorkflowService', () => {
           pooled: true,
           directUserIds: [],
         },
+        'engine',
       );
       // The pool is only COUNTED, for the action log — with the role filter,
       // org-scoped, and active users only.
@@ -1340,6 +1348,7 @@ describe('WorkflowService', () => {
           pooled: false,
           directUserIds: ['holder-1'],
         },
+        'engine',
       );
     });
 
@@ -1359,6 +1368,7 @@ describe('WorkflowService', () => {
         ORG_A,
         ACTOR,
         expect.objectContaining({ pooled: false, directUserIds: [] }),
+        'engine',
       );
     });
 
@@ -1379,6 +1389,7 @@ describe('WorkflowService', () => {
           ORG_A,
           ACTOR,
           undefined,
+          'engine',
         );
       },
     );
@@ -1404,6 +1415,7 @@ describe('WorkflowService', () => {
             pooled: true,
             directUserIds: [],
           },
+          'engine',
         );
         expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
           where: { id: 'position-a', organizationId: ORG_A },
@@ -1445,6 +1457,7 @@ describe('WorkflowService', () => {
         ORG_A,
         ACTOR,
         expect.objectContaining({ pooled: false, directUserIds: ['holder-1'] }),
+        'engine',
       );
       expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'position-a', organizationId: ORG_A } }),
@@ -1482,6 +1495,7 @@ describe('WorkflowService', () => {
         ORG_A,
         ACTOR,
         undefined,
+        'engine',
       );
       expect(mockNotificationService.create).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'holder-1' }),
@@ -3075,6 +3089,7 @@ describe('WorkflowService', () => {
         ORG_A,
         ACTOR,
         undefined,
+        'engine',
       );
     });
   });

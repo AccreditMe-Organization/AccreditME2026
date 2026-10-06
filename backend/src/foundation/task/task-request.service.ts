@@ -16,6 +16,7 @@ import { ITask } from './interfaces/task.interface';
 import { ITaskRequest, ITaskRequestForDecision } from './interfaces/task-request.interface';
 import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './dto/task-request.dto';
 import { TaskAuthorityService } from './task-authority.service';
+import { TaskSlaService, latest } from './task-sla.service';
 import { aTaskThatIs } from './task-status-label';
 import { HOLD_CLEARED, REQUESTABLE_STATUSES } from './task-request-lifecycle';
 
@@ -55,9 +56,11 @@ const REQUEST_STATUS_PHRASE: Record<string, string> = {
  * Every status change takes the task's row lock (ACC-163) inside a short
  * transaction; audit rows and notifications are written after commit.
  *
- * ON HOLD pauses the SLA. On resume — at onHoldUntil by the SLA monitor, or
- * early by hand — the due date moves forward by the WORKING time the task spent
- * on hold (WorkingCalendarService; no module computes its own dates).
+ * ON HOLD pauses the SLA. ACC-174 changed WHEN: the SLA window moves at
+ * APPROVAL — due date, SLA start and limit all move forward by the WORKING
+ * time between the approval and the hold date (WorkingCalendarService; no
+ * module computes its own dates). Resume, at onHoldUntil by the SLA monitor or
+ * early by hand, shifts nothing: it restores the status and clears the hold.
  *
  * KNOWN LIMITATION: the stage's own SLA clock (WorkflowInstanceStage.slaDueAt)
  * is NOT shifted. Pausing a stage with its tasks belongs to stage task
@@ -71,6 +74,7 @@ export class TaskRequestService {
     private readonly workingCalendar: WorkingCalendarService,
     private readonly notificationService: NotificationService,
     private readonly authority: TaskAuthorityService,
+    private readonly sla: TaskSlaService,
   ) {}
 
   // ── Ask ────────────────────────────────────────────────────────────────
@@ -202,7 +206,7 @@ export class TaskRequestService {
     organizationId: string,
   ): Promise<ITaskRequest> {
     const now = new Date();
-    const { before, task, request } = await this.prisma.$transaction(async (tx) => {
+    const { before, task, request, heldHours } = await this.prisma.$transaction(async (tx) => {
       const { task, request: existing } = await this.lockForDecision(tx, taskId, requestId, viewer, organizationId);
 
       if (!REQUESTABLE_STATUSES.includes(task.status)) {
@@ -210,17 +214,32 @@ export class TaskRequestService {
       }
 
       let after;
+      let heldHours = 0;
       if (existing.type === 'EXTENSION') {
         if (!existing.requestedDueAt || existing.requestedDueAt <= now) {
           throw new ConflictException('The requested due date has passed; decline and ask for a new one');
         }
+        // ACC-174 (C5) — the creator may have moved the due date since the
+        // request was made; asking for a date that is no longer later is moot.
+        if (task.dueAt && existing.requestedDueAt <= task.dueAt) {
+          throw new ConflictException(
+            'The requested due date is no longer after the current one; decline and ask again',
+          );
+        }
         // As asked — no counter-proposal. The escalation stamps are cleared so
-        // escalation can fire again against the new date.
+        // escalation can fire again against the new date. ACC-174 (C3): the
+        // limit rises to the approved date and never falls — a request never
+        // takes time away — and slaExtendedTo keeps that date, so a later
+        // priority change cannot drop the limit below it.
+        const limitAt = await this.sla.limitOf(task, organizationId);
         after = await tx.task.update({
           where: { id: taskId },
           data: {
             dueAt: existing.requestedDueAt,
             dueDateOverridden: true,
+            slaStartAt: this.sla.startOf(task),
+            slaLimitAt: latest(limitAt, existing.requestedDueAt),
+            slaExtendedTo: latest(existing.requestedDueAt, task.slaExtendedTo),
             slaBreachedAt: null,
             managerEscalatedAt: null,
             headEscalatedAt: null,
@@ -230,6 +249,28 @@ export class TaskRequestService {
         if (!existing.holdUntil || existing.holdUntil <= now) {
           throw new ConflictException('The requested hold date has passed; decline and ask for a new one');
         }
+        // ACC-174 — THE SLA WINDOW MOVES AT APPROVAL, to start when the hold
+        // ends: the SLA start BECOMES the hold's end date, and the due date,
+        // limit and any approved extension move forward by the working hours
+        // between now and the hold date. Resume then shifts nothing, so
+        // resuming early keeps the dates set here. Zero working hours (a hold
+        // that ends before the next working hour) moves those three not at all
+        // — calculateDeadline() would normalise the date (ACC-175).
+        //
+        // The start is SET, not shifted (Ahmad, 6 Oct): shifting it went
+        // through calculateDeadline(), which first moves a start outside
+        // working hours to the next opening, so a task created after hours
+        // landed somewhere other than where its hold ended.
+        heldHours = await this.workingCalendar.workingHoursBetween(
+          DateTime.fromJSDate(now),
+          DateTime.fromJSDate(existing.holdUntil),
+          organizationId,
+        );
+        const shift = (d: Date | null) => (d ? this.sla.shift(d, heldHours, organizationId) : Promise.resolve(null));
+        const dueAt = await shift(task.dueAt);
+        const slaStartAt = existing.holdUntil;
+        const slaLimitAt = await this.sla.shift(await this.sla.limitOf(task, organizationId), heldHours, organizationId);
+        const slaExtendedTo = await shift(task.slaExtendedTo);
         after = await tx.task.update({
           where: { id: taskId },
           data: {
@@ -238,6 +279,15 @@ export class TaskRequestService {
             heldFromStatus: task.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'PENDING',
             heldAt: now,
             onHoldUntil: existing.holdUntil,
+            dueAt,
+            slaStartAt,
+            slaLimitAt,
+            slaExtendedTo,
+            // A due date moved past now re-arms escalation; one still past keeps
+            // its stamps, so a breach is not escalated twice.
+            ...(heldHours > 0 && dueAt && dueAt > now
+              ? { slaBreachedAt: null, managerEscalatedAt: null, headEscalatedAt: null }
+              : {}),
           },
         });
       }
@@ -246,7 +296,7 @@ export class TaskRequestService {
         where: { id: requestId },
         data: { status: 'APPROVED', decidedById: viewer.id, decidedAt: now, decisionNote: dto.note || null },
       });
-      return { before: task, task: after, request };
+      return { before: task, task: after, request, heldHours };
     });
 
     await this.auditLog.log({
@@ -269,7 +319,14 @@ export class TaskRequestService {
       metadata:
         request.type === 'EXTENSION'
           ? { event: 'due_date_extended', requestId, dueAtBefore: before.dueAt, dueAtAfter: task.dueAt }
-          : { event: 'hold_started', requestId, onHoldUntil: task.onHoldUntil },
+          : {
+              event: 'hold_started',
+              requestId,
+              onHoldUntil: task.onHoldUntil,
+              heldWorkingHours: heldHours,
+              dueAtBefore: before.dueAt,
+              dueAtAfter: task.dueAt,
+            },
     });
 
     await this.notificationService.create(
@@ -341,8 +398,7 @@ export class TaskRequestService {
 
   /** "Resume now" — by an active assignee, or by anyone who may decide. */
   async resume(taskId: string, viewer: RequestViewer, organizationId: string): Promise<ITask> {
-    const now = new Date();
-    const { before, task, heldHours } = await this.prisma.$transaction(async (tx) => {
+    const { before, task } = await this.prisma.$transaction(async (tx) => {
       const task = await this.lockTask(tx, taskId, organizationId);
       const entitled =
         !!task &&
@@ -351,9 +407,9 @@ export class TaskRequestService {
           (await this.authority.canActForCreator(task.createdById, viewer.id, organizationId, tx)));
       if (!task || !entitled) throw new NotFoundException(NOT_FOUND);
       if (task.status !== 'ON_HOLD') throw new ConflictException('This task is not on hold');
-      return this.endHold(tx, task, now);
+      return this.endHold(tx, task);
     });
-    await this.afterResume(before, task, heldHours, organizationId, viewer.id);
+    await this.afterResume(before, task, organizationId, viewer.id);
     return task;
   }
 
@@ -366,10 +422,10 @@ export class TaskRequestService {
     const result = await this.prisma.$transaction(async (tx) => {
       const task = await this.lockTask(tx, taskId, organizationId);
       if (!task || task.status !== 'ON_HOLD' || !task.onHoldUntil || task.onHoldUntil > now) return null;
-      return this.endHold(tx, task, now);
+      return this.endHold(tx, task);
     });
     if (!result) return false;
-    await this.afterResume(result.before, result.task, result.heldHours, organizationId, undefined);
+    await this.afterResume(result.before, result.task, organizationId, undefined);
     return true;
   }
 
@@ -452,44 +508,23 @@ export class TaskRequestService {
     return { task, request };
   }
 
-  // The shift: the working hours between heldAt and now, added to the due date
-  // through WorkingCalendarService. Zero working hours moves nothing — a zero
-  // calculateDeadline() would still normalise an out-of-hours due date (ACC-175).
-  // The escalation stamps are cleared only if the new due date is still ahead,
-  // so a breach that already escalated before the hold does not escalate twice.
-  private async endHold(tx: TaskTx, task: TaskWithAssigneeRows, now: Date) {
-    const organizationId = task.organizationId;
-    const heldHours = task.heldAt
-      ? await this.workingCalendar.workingHoursBetween(
-          DateTime.fromJSDate(task.heldAt),
-          DateTime.fromJSDate(now),
-          organizationId,
-        )
-      : 0;
-    const dueAt =
-      task.dueAt && heldHours > 0
-        ? (
-            await this.workingCalendar.calculateDeadline(DateTime.fromJSDate(task.dueAt), heldHours, organizationId)
-          ).toJSDate()
-        : task.dueAt;
-    const stillAhead = !!dueAt && dueAt > now;
-
+  // ACC-174 — resuming SHIFTS NOTHING. The SLA window was moved when the hold
+  // was approved, to start when the hold ends; resume only restores the status
+  // and clears the hold. Resuming early therefore keeps the later dates.
+  private async endHold(tx: TaskTx, task: TaskWithAssigneeRows) {
     const updated = await tx.task.update({
       where: { id: task.id },
       data: {
         status: (task.heldFromStatus as TaskStatus | null) ?? 'PENDING',
-        dueAt,
         ...HOLD_CLEARED,
-        ...(stillAhead ? { slaBreachedAt: null, managerEscalatedAt: null, headEscalatedAt: null } : {}),
       },
     });
-    return { before: task, task: updated, heldHours };
+    return { before: task, task: updated };
   }
 
   private async afterResume(
     before: TaskWithAssigneeRows,
     task: ITask,
-    heldHours: number,
     organizationId: string,
     actorId: string | undefined,
   ): Promise<void> {
@@ -504,9 +539,7 @@ export class TaskRequestService {
       metadata: {
         event: 'resumed',
         automatic: !actorId,
-        heldWorkingHours: heldHours,
-        dueAtBefore: before.dueAt,
-        dueAtAfter: task.dueAt,
+        early: !!before.onHoldUntil && new Date() < before.onHoldUntil,
       },
     });
 

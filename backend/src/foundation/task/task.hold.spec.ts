@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { TaskSlaService } from './task-sla.service';
 import { ConflictException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
@@ -67,6 +68,7 @@ const onHold = (overrides: Record<string, unknown> = {}) =>
 const PENDING_REQUEST = { id: 'req-1', taskId: 'task-1' };
 
 const mockPrisma = {
+  organization: { findFirst: jest.fn() },
   task: { findFirst: jest.fn(), findFirstOrThrow: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   taskAssignee: { create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn() },
   taskEvidence: { count: jest.fn(), create: jest.fn() },
@@ -85,7 +87,7 @@ const mockTenant = {
     MEDIUM: { dueAfterHours: 40, managerEscalationAfterHours: 24, headEscalationAfterHours: 48 },
   }),
 };
-const mockAuthority = { canActForCreator: jest.fn() };
+const mockAuthority = { canActForCreator: jest.fn(), creatorsCoveredBy: jest.fn(async () => [] as string[]) };
 
 async function captureError(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -129,6 +131,7 @@ describe('TaskService — holds and requests (ACC-173)', () => {
         { provide: AuditLogService, useValue: mockAudit },
         DelegationLabelService,
         { provide: ObjectVisibilityService, useValue: { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() } },
+        TaskSlaService,
         { provide: WorkingCalendarService, useValue: mockCalendar },
         { provide: NotificationService, useValue: mockNotifications },
         { provide: TenantService, useValue: mockTenant },

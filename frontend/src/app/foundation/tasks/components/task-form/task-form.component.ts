@@ -65,7 +65,8 @@ import { TextareaModule } from 'primeng/textarea';
 import { InputMaskModule } from 'primeng/inputmask';
 import { ButtonModule } from 'primeng/button';
 import { CheckboxModule } from 'primeng/checkbox';
-import { TaskService } from '../../services/task.service';
+import { ITaskDto, SlaPreviewDto, TaskPriority, TaskService, UpdateTaskDto } from '../../services/task.service';
+import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { DueDateService, DuePreset } from '../../services/due-date.service';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 import { InlineCalendarComponent } from '../../../../shared/components/inline-calendar/inline-calendar.component';
@@ -144,6 +145,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               [value]="dueDay()"
               (valueChange)="onDayPicked($event)"
               [minDate]="today()"
+              [maxDate]="limit()"
               [workingDays]="dueDates.workingDays()"
               [holidays]="dueDates.holidays()"
             />
@@ -180,16 +182,38 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
           <!-- ACC-167 — unit, position, optional person; the committee route
                only when the task is raised from a committee record, whose id
                is the one the route needs. -->
-          <app-task-assignee-picker
-            [group]="form.controls.assignTo"
-            [sourceType]="lockedSourceType()"
-            [sourceId]="lockedSourceId()"
-            [committeeName]="lockedSourceLabel()"
-            [forceShowErrors]="showAssignErrors()"
-            layout="row"
-          />
+          @if (!isEdit()) {
+            <app-task-assignee-picker
+              [group]="form.controls.assignTo"
+              [sourceType]="lockedSourceType()"
+              [sourceId]="lockedSourceId()"
+              [committeeName]="lockedSourceLabel()"
+              [forceShowErrors]="showAssignErrors()"
+              layout="row"
+            />
+          }
 
-          <ng-container *ngTemplateOutlet="dueBlock" />
+          @if (dueLocked()) {
+            <!-- ACC-174 — an ON_HOLD task's date and priority wait until it
+                 resumes; its title and description do not. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-sm font-medium">{{ 'task.dueDate' | translate }}</label>
+              <p class="text-sm">{{ lockedDueText() }}</p>
+              <small class="am-hint">{{ 'task.edit.resumeFirst' | translate }}</small>
+            </div>
+          } @else {
+            <ng-container *ngTemplateOutlet="dueBlock" />
+          }
+
+          @if (isEdit()) {
+            <!-- ACC-174 — Edit is ONE step: the four fields the creator owns. -->
+            <div class="flex flex-col gap-1">
+              <label for="description" class="text-sm font-medium">
+                {{ 'task.description' | translate }}
+              </label>
+              <textarea pTextarea id="description" formControlName="description" rows="3"></textarea>
+            </div>
+          }
         }
       } @else {
         <!-- ── Step 2 — the substance ──────────────────────────────────── -->
@@ -238,6 +262,9 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
         }
       }
 
+      @if (saveError()) {
+        <p class="text-sm text-[var(--am-danger-ink)]" role="alert">{{ saveError()! | translate }}</p>
+      }
     </form>
 
     <!-- The due block is identical on both step-1 views, which is the point:
@@ -266,7 +293,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
                A real <button> with a name, not an icon glyph:
                check:icon-labels refuses an unnamed icon-only control, and the
                target is 28x28, above the 24px WCAG 2.5.8 floor. -->
-          <div class="am-due__field" [class.am-due__field--invalid]="isPast()">
+          <div class="am-due__field" [class.am-due__field--invalid]="isPast() || afterLimit()">
             <input
               pInputText
               id="dueDate"
@@ -276,8 +303,8 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               (input)="onDateTyped($any($event.target).value)"
               (blur)="commitTypedDate()"
               [placeholder]="'task.due.datePlaceholder' | translate"
-              [attr.aria-invalid]="isPast() ? 'true' : null"
-              [attr.aria-errormessage]="isPast() ? 'dueDateError' : null"
+              [attr.aria-invalid]="isPast() || afterLimit() ? 'true' : null"
+              [attr.aria-errormessage]="isPast() || afterLimit() ? 'dueDateError' : null"
               autocomplete="off"
             />
             <!-- A TOGGLE, not a one-way opener (Rev 7): aria-expanded, a
@@ -348,10 +375,16 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
           @if (showPresets !== false) {
             <p class="am-due__resolved">{{ resolvedText() }}</p>
           }
-          @if (warning().kind === 'past') {
+          @if (isPast()) {
             <p id="dueDateError" class="am-due__resolved am-due__error">
               {{ 'task.due.past' | translate }}
             </p>
+          } @else if (afterLimit()) {
+            <p id="dueDateError" class="am-due__resolved am-due__error">
+              {{ 'task.due.afterLimit' | translate: { date: limitText() } }}
+            </p>
+          } @else if (recomputedText()) {
+            <p class="am-due__resolved">{{ recomputedText() }}</p>
           } @else if (warningText()) {
             <p class="am-due__resolved am-due__warn">{{ warningText() }}</p>
           }
@@ -641,6 +674,73 @@ export class TaskFormComponent implements OnInit {
     () => !!this.lockedSourceType() && !!this.lockedSourceId() && !!this.lockedSourceLabel(),
   );
 
+  // ── ACC-174 — Edit ─────────────────────────────────────────────────────
+  //
+  // Given a task, this form is its creator's EDIT: the four fields they own —
+  // title, priority, due date, description — in ONE step, with the same
+  // controls New task uses, so the two cannot drift apart. Who it is assigned
+  // to is not here: that is Reassign. Only what changed is sent.
+  readonly task = input<ITaskDto | null>(null);
+  readonly isEdit = computed(() => !!this.task());
+  /** An ON_HOLD task's date and priority wait until it resumes (the server's 409). */
+  readonly dueLocked = computed(() => this.task()?.status === 'ON_HOLD');
+  readonly lockedDueText = computed(() => {
+    const due = this.task()?.dueAt;
+    return due ? this.format.dateTime(due) : '—';
+  });
+  readonly saveError = signal<string | null>(null);
+
+  // ── ACC-174 — the SLA limit ────────────────────────────────────────────
+  //
+  // The latest due date a person may set: the priority's SLA from the task's
+  // SLA start (from now, for a new task), raised by an approved extension.
+  // The SERVER computes it — no screen does working-hours arithmetic — and
+  // hands every priority's window over at once (the SLA preview), so changing
+  // the priority moves the limit without another request. Without a preview
+  // (it failed to load) nothing is blocked here; the server still refuses.
+  private readonly preview = signal<SlaPreviewDto | null>(null);
+  private readonly priority = signal<string>('MEDIUM');
+  /** Edit only: the due date was set by the person, not carried or recomputed. */
+  private readonly dueTouched = signal(false);
+
+  readonly limit = computed<Date | null>(() => {
+    const window = this.preview()?.[this.priority() as TaskPriority];
+    return window ? new Date(window.limitAt) : null;
+  });
+
+  // A sentence to READ, so the display format — "8 أكتوبر 2026" in Arabic —
+  // not dateTimeForInput, which keeps English months for a value typed back.
+  readonly limitText = computed(() => {
+    const at = this.limit();
+    return at ? this.format.dateTime(at) : '';
+  });
+
+  /**
+   * A due date past the limit — an error, like a past one. In Edit only a date
+   * the person set counts: the one the task already carries, or one the server
+   * recomputed from a new priority, is the server's to answer for (C4).
+   */
+  readonly afterLimit = computed(() => {
+    const limit = this.limit();
+    const due = this.due();
+    if (!limit || !due) return false;
+    if (this.isEdit() && !this.dueTouched()) return false;
+    return due.getTime() > limit.getTime();
+  });
+
+  /**
+   * Edit: a new priority recomputes the due date from the task's SLA start, and
+   * the reader sees it BEFORE saving. Shown until they set a date themselves.
+   */
+  readonly recomputedText = computed(() => {
+    if (!this.isEdit() || this.dueTouched() || this.priority() === this.task()?.priority) return '';
+    const window = this.preview()?.[this.priority() as TaskPriority];
+    if (!window) return '';
+    return this.translate.instant('task.edit.dueBecomes', {
+      date: this.format.dateTime(new Date(window.dueAt)),
+    });
+  });
+
   readonly steps = [
     { n: 1 as const, key: 'task.step1' },
     { n: 2 as const, key: 'task.step2' },
@@ -698,7 +798,11 @@ export class TaskFormComponent implements OnInit {
    * "Today at a time already gone" counts: the comparison is against the
    * instant, not the day.
    */
-  readonly isPast = computed(() => this.warning().kind === 'past');
+  //
+  // ACC-174 — in Edit, only a date the person SET can be refused for being
+  // past: an overdue task's own due date, or one recomputed from a new
+  // priority, is a fact about the task, not an input to correct.
+  readonly isPast = computed(() => this.warning().kind === 'past' && (!this.isEdit() || this.dueTouched()));
 
   readonly calendarToggleLabel = computed(() => {
     this.translate.currentLang();
@@ -766,7 +870,7 @@ export class TaskFormComponent implements OnInit {
   readonly canCreateFromStep1 = computed(() => {
     if (this.saving()) return false;
     if (!this.isSourceLocked()) return false;
-    if (this.isPast()) return false;
+    if (this.isPast() || this.afterLimit()) return false;
     return this.titleValid() && this.assignValid();
   });
 
@@ -836,6 +940,27 @@ export class TaskFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.dueDates.load();
+
+    const task = this.task();
+    if (task) {
+      this.form.patchValue({ title: task.title, description: task.description ?? '', priority: task.priority });
+      this.form.controls.sourceType.disable();
+      this.form.controls.sourceId.disable();
+      if (task.status === 'ON_HOLD') this.form.controls.priority.disable();
+      // The task's own due date is shown, not set: it is not an edit.
+      this.showDue(task.dueAt ? new Date(task.dueAt) : null);
+      this.form.markAsPristine();
+    }
+    this.priority.set(this.form.controls.priority.value ?? 'MEDIUM');
+    (task ? this.taskService.getTaskSlaPreview(task.id) : this.taskService.getSlaPreview()).subscribe({
+      next: (preview) => {
+        this.preview.set(preview);
+        this.refreshDueErrors();
+      },
+      // No preview, no limit drawn: the server still refuses a date past it.
+      error: () => this.preview.set(null),
+    });
+    this.form.controls.priority.valueChanges.subscribe((value) => this.onPriorityChanged(value ?? 'MEDIUM'));
 
     this.ready.emit(this);
     this.titleValid.set(this.form.controls.title.valid);
@@ -958,14 +1083,39 @@ export class TaskFormComponent implements OnInit {
     this.activePreset.set(preset.key);
   }
 
+  /** The value shown in the due fields without it counting as the person's choice. */
+  private showDue(at: Date | null): void {
+    this.due.set(at);
+    this.typedDate.set(null);
+    this.form.controls.dueDate.setValue(at, { emitEvent: false });
+  }
+
+  private onPriorityChanged(priority: string): void {
+    this.priority.set(priority);
+    const task = this.task();
+    // Edit: until the person sets a date, the due date follows the priority —
+    // back to the task's own when they return to its priority.
+    if (task && !this.dueTouched()) {
+      const window = this.preview()?.[priority as TaskPriority];
+      if (priority === task.priority) this.showDue(task.dueAt ? new Date(task.dueAt) : null);
+      else if (window) this.showDue(new Date(window.dueAt));
+    }
+    this.refreshDueErrors();
+  }
+
   private setDue(at: Date | null): void {
+    this.dueTouched.set(true);
     this.due.set(at);
     this.typedDate.set(null);
     if (at === null) this.activePreset.set(null);
 
     const control = this.form.controls.dueDate;
-    control.setValue(at);
+    // Dirty BEFORE the value: setValue() fires valueChanges, which is where
+    // dirtyChange is emitted, and a control marked after it reads clean — so
+    // a change to the due date alone never reached the dialog's "Discard
+    // changes?" guard. Seen in the ACC-174 browser pass, on Edit.
     control.markAsDirty();
+    control.setValue(at);
     this.refreshDueErrors(control);
   }
 
@@ -978,7 +1128,9 @@ export class TaskFormComponent implements OnInit {
     const errors = { ...(control.errors ?? {}) };
     delete errors['invalidDate'];
     delete errors['pastDate'];
+    delete errors['afterLimit'];
     if (this.isPast()) errors['pastDate'] = true;
+    if (this.afterLimit()) errors['afterLimit'] = true;
     control.setErrors(Object.keys(errors).length > 0 ? errors : null);
   }
 
@@ -993,6 +1145,11 @@ export class TaskFormComponent implements OnInit {
     // gone past must not slip through on the press that follows it.
     this.now.set(new Date());
     this.refreshDueErrors();
+
+    if (this.isEdit()) {
+      this.submitEdit();
+      return;
+    }
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
@@ -1029,7 +1186,47 @@ export class TaskFormComponent implements OnInit {
           this.saving.set(false);
           this.saved.emit();
         },
-        error: () => this.saving.set(false),
+        error: (err: unknown) => {
+          this.saving.set(false);
+          this.saveError.set(extractErrorMessage(err, 'task.errorAction'));
+        },
       });
+  }
+
+  /** ACC-174 — the creator's edit: only what changed is sent. */
+  private submitEdit(): void {
+    const task = this.task()!;
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    const value = this.form.getRawValue();
+    const dto: UpdateTaskDto = {};
+    const title = (value.title ?? '').trim();
+    if (title !== task.title) dto.title = title;
+    const description = (value.description ?? '').trim() || null;
+    if (description !== (task.description ?? null)) dto.description = description;
+    if (!this.dueLocked() && value.priority && value.priority !== task.priority) {
+      dto.priority = value.priority as TaskPriority;
+    }
+    if (!this.dueLocked() && this.dueTouched() && value.dueDate) dto.dueDate = value.dueDate.toISOString();
+
+    if (Object.keys(dto).length === 0) {
+      this.saved.emit();
+      return;
+    }
+    this.saving.set(true);
+    this.saveError.set(null);
+    this.taskService.update(task.id, dto).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.form.markAsPristine();
+        this.saved.emit();
+      },
+      error: (err: unknown) => {
+        this.saving.set(false);
+        this.saveError.set(extractErrorMessage(err, 'task.errorAction'));
+      },
+    });
   }
 }

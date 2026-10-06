@@ -32,6 +32,7 @@
 // BY MESSAGE, not merely by status — both are 403, and reading them as
 // interchangeable is how this test would quietly stop testing anything.
 import { ExecutionContext, INestApplication } from '@nestjs/common';
+import { TaskSlaService } from './task-sla.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -117,7 +118,10 @@ describe('Child list gated by its parent (ACC-101)', () => {
         { provide: TaskRequestService, useValue: {} },
         {
           provide: TaskAuthorityService,
-          useValue: { canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId) },
+          useValue: {
+            canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId),
+            creatorsCoveredBy: jest.fn(async () => []),
+          },
         },
         DelegationLabelService,
         // REAL, not a stub: the refusal under test is this service's, and a
@@ -126,6 +130,7 @@ describe('Child list gated by its parent (ACC-101)', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: { log: jest.fn() } },
         { provide: NotificationService, useValue: { create: jest.fn() } },
+        TaskSlaService,
         { provide: WorkingCalendarService, useValue: { calculateDeadline: jest.fn() } },
         { provide: TenantService, useValue: { getTaskSlaSettings: jest.fn() } },
       ],

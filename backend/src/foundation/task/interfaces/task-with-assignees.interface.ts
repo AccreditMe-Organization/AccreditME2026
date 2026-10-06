@@ -43,4 +43,7 @@ export interface ITaskWithAssignees extends ITaskListItem {
   // assigned to everyone who was ever on it.
   assignees: ITaskAssigneeView[];
   rejectedBy: ITaskRejectedBy | null;
+  // ACC-174 — who cancelled it, beside cancelledReason on the record's list.
+  // Null for a task the engine cancelled, or one not cancelled.
+  cancelledBy: ITaskRejectedBy | null;
 }

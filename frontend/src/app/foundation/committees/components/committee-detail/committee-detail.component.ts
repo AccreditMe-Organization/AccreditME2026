@@ -18,6 +18,9 @@ import {
   TaskReassignDialogComponent,
   TaskRejection,
 } from '../../../tasks/components/task-reassign-dialog/task-reassign-dialog.component';
+import { TaskEditDialogComponent } from '../../../tasks/components/task-edit-dialog/task-edit-dialog.component';
+import { TaskCancelDialogComponent } from '../../../tasks/components/task-cancel-dialog/task-cancel-dialog.component';
+import { TaskReopenDialogComponent } from '../../../tasks/components/task-reopen-dialog/task-reopen-dialog.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
@@ -63,6 +66,9 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     TaskFormFooterComponent,
     TaskFormStepsComponent,
     TaskReassignDialogComponent,
+    TaskEditDialogComponent,
+    TaskCancelDialogComponent,
+    TaskReopenDialogComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
@@ -380,6 +386,13 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                         {{ rejectionLine(task) }}
                       </span>
                     }
+                    <!-- ACC-174 — why the creator cancelled it, and who did.
+                         The engine's own cancellations carry no reason. -->
+                    @if (task.status === 'CANCELLED' && task.cancelledReason) {
+                      <span class="am-task-rejection text-[11.5px] text-[var(--am-ink-700)]" [attr.title]="cancelledLine(task)">
+                        {{ cancelledLine(task) }}
+                      </span>
+                    }
                     <!-- ACC-173 — a hold, and a request waiting for a decision.
                          Shown, not acted on here: deciders act in My tasks. -->
                     @if (requestOrHoldLine(task); as line) {
@@ -412,6 +425,30 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                         icon="pi pi-user-edit"
                         [label]="'task.reassignNamed' | translate: { title: task.title }"
                         (activated)="openReassign(task)"
+                      />
+                    }
+                    <!-- ACC-174 — the creator's own actions, where the server
+                         says the viewer may manage the task (canManage). -->
+                    @if (canEditTask(task)) {
+                      <am-icon-button
+                        icon="pi pi-pencil"
+                        [label]="'task.edit.named' | translate: { title: task.title }"
+                        (activated)="openTaskAction(task, 'edit')"
+                      />
+                    }
+                    @if (canCancelTask(task)) {
+                      <am-icon-button
+                        icon="pi pi-ban"
+                        severity="danger"
+                        [label]="'task.cancelTask.named' | translate: { title: task.title }"
+                        (activated)="openTaskAction(task, 'cancel')"
+                      />
+                    }
+                    @if (canReopenTask(task)) {
+                      <am-icon-button
+                        icon="pi pi-refresh"
+                        [label]="'task.reopen.named' | translate: { title: task.title }"
+                        (activated)="openTaskAction(task, 'reopen')"
                       />
                     }
                     <!-- Shown on rows the caller is actually assigned to, and
@@ -602,6 +639,24 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       [rejection]="reassignRejection()"
       [committeeName]="committee() ? displayName(committee()!) : null"
       (reassigned)="loadTasks()"
+    />
+    <app-task-edit-dialog
+      [visible]="taskAction() === 'edit'"
+      (visibleChange)="closeTaskAction($event)"
+      [task]="taskActionTarget()"
+      (edited)="loadTasks()"
+    />
+    <app-task-cancel-dialog
+      [visible]="taskAction() === 'cancel'"
+      (visibleChange)="closeTaskAction($event)"
+      [task]="taskActionTarget()"
+      (cancelledTask)="loadTasks()"
+    />
+    <app-task-reopen-dialog
+      [visible]="taskAction() === 'reopen'"
+      (visibleChange)="closeTaskAction($event)"
+      [task]="taskActionTarget()"
+      (reopened)="loadTasks()"
     />
 
     <ng-template #memberFormTpl>
@@ -982,10 +1037,46 @@ export class CommitteeDetailComponent implements OnInit {
   // the task's own creator, on an open task. A rejected task comes back to its
   // creator (Q4), who usually holds no task permission at all. Shown for any
   // open task, not only rejected ones, because that is what the rule allows.
+  // ACC-174 — "the creator" now reads canManage, the server's answer, which
+  // also covers whoever acts for them (ACC-173's widening, until now missed
+  // here).
   canReassign(task: ITaskWithAssigneesDto): boolean {
     if (!isTaskOpen(task)) return false;
-    const me = this.authService.currentUser()?.id;
-    return this.navigationAccess.hasPermission('tasks:reassign') || (!!me && task.createdById === me);
+    return this.navigationAccess.hasPermission('tasks:reassign') || task.canManage;
+  }
+
+  // ── ACC-174 — the creator's actions ───────────────────────────────────
+  // canManage is the server's answer to WHO; the status decides WHICH.
+  canEditTask(task: ITaskWithAssigneesDto): boolean {
+    return task.canManage && isTaskOpen(task);
+  }
+
+  /** Not a workflow step's task: those end with their step until CF-07. */
+  canCancelTask(task: ITaskWithAssigneesDto): boolean {
+    return this.canEditTask(task) && !task.sourceStageId && !task.workflowInstanceId;
+  }
+
+  canReopenTask(task: ITaskWithAssigneesDto): boolean {
+    return task.canManage && task.status === 'COMPLETED';
+  }
+
+  // "Cancelled by Yasser: The audit was postponed".
+  cancelledLine(task: ITaskWithAssigneesDto): string {
+    return task.cancelledBy
+      ? this.translate.instant('task.cancelTask.lineNamed', { name: task.cancelledBy.name, reason: task.cancelledReason })
+      : this.translate.instant('task.cancelTask.line', { reason: task.cancelledReason });
+  }
+
+  readonly taskAction = signal<'edit' | 'cancel' | 'reopen' | null>(null);
+  readonly taskActionTarget = signal<ITaskWithAssigneesDto | null>(null);
+
+  openTaskAction(task: ITaskWithAssigneesDto, action: 'edit' | 'cancel' | 'reopen'): void {
+    this.taskActionTarget.set(task);
+    this.taskAction.set(action);
+  }
+
+  closeTaskAction(visible: boolean): void {
+    if (!visible) this.taskAction.set(null);
   }
 
   readonly reassignVisible = signal(false);

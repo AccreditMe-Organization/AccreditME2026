@@ -58,6 +58,8 @@ export type RequestCancelCause =
   | 'task_released'
   | 'task_reassigned'
   | 'task_cancelled'
+  // ACC-174 — a cancel by the creator, as opposed to the engine's own.
+  | 'task_cancelled_by_creator'
   | 'requester_left_task'
   | 'departure';
 

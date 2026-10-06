@@ -35,6 +35,9 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { TaskRejectDialogComponent } from '../task-reject-dialog/task-reject-dialog.component';
 import { TaskLinkEvidenceDialogComponent } from '../task-link-evidence-dialog/task-link-evidence-dialog.component';
+import { TaskEditDialogComponent } from '../task-edit-dialog/task-edit-dialog.component';
+import { TaskCancelDialogComponent } from '../task-cancel-dialog/task-cancel-dialog.component';
+import { TaskReopenDialogComponent } from '../task-reopen-dialog/task-reopen-dialog.component';
 
 // ACC-163 — "Overdue" is a filter, not a status (Q8): it asks the server for
 // open tasks past their due time, whatever their status. The other three are
@@ -109,6 +112,9 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
     TaskReleaseDialogComponent,
     TaskRequestDialogComponent,
     TaskRequestDecisionDialogComponent,
+    TaskEditDialogComponent,
+    TaskCancelDialogComponent,
+    TaskReopenDialogComponent,
   ],
   template: `
     <div class="flex flex-col h-full gap-4">
@@ -254,6 +260,12 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
                   {{ 'task.request.onHoldUntil' | translate: { date: (task.onHoldUntil | amDate) } }}
                 </span>
               }
+              <!-- ACC-174 — why the creator cancelled it. -->
+              @if (task.status === 'CANCELLED' && task.cancelledReason) {
+                <span class="block text-meta text-[var(--am-ink-700)]" [attr.title]="task.cancelledReason">
+                  {{ 'task.cancelTask.line' | translate: { reason: task.cancelledReason } }}
+                </span>
+              }
               @if (task.requiresEvidence) {
                 <span class="block text-meta text-[var(--am-ink-500)]">
                   {{ evidenceLine(task) }}
@@ -352,6 +364,30 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
                     (activated)="onComplete(task)"
                   />
                 }
+                <!-- ACC-174 — the creator's own actions, offered where the
+                     server says the viewer may manage the task (canManage). -->
+                @if (canEdit(task)) {
+                  <am-icon-button
+                    icon="pi pi-pencil"
+                    [label]="'task.edit.named' | translate: { title: task.title }"
+                    (activated)="openEditDialog(task)"
+                  />
+                }
+                @if (canCancel(task)) {
+                  <am-icon-button
+                    icon="pi pi-ban"
+                    severity="danger"
+                    [label]="'task.cancelTask.named' | translate: { title: task.title }"
+                    (activated)="openCancelDialog(task)"
+                  />
+                }
+                @if (canReopen(task)) {
+                  <am-icon-button
+                    icon="pi pi-refresh"
+                    [label]="'task.reopen.named' | translate: { title: task.title }"
+                    (activated)="openReopenDialog(task)"
+                  />
+                }
               </span>
             </td>
           </tr>
@@ -396,6 +432,24 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
       [request]="decisionTarget()"
       (decided)="reloadAll()"
     />
+    <app-task-edit-dialog
+      [visible]="editVisible()"
+      (visibleChange)="editVisible.set($event)"
+      [task]="actionTarget()"
+      (edited)="loadTasks()"
+    />
+    <app-task-cancel-dialog
+      [visible]="cancelVisible()"
+      (visibleChange)="cancelVisible.set($event)"
+      [task]="actionTarget()"
+      (cancelledTask)="reloadAll()"
+    />
+    <app-task-reopen-dialog
+      [visible]="reopenVisible()"
+      (visibleChange)="reopenVisible.set($event)"
+      [task]="actionTarget()"
+      (reopened)="reloadAll()"
+    />
   `,
   styles: [
     `
@@ -437,6 +491,11 @@ export class MyTasksComponent implements OnInit {
   readonly requestType = signal<TaskRequestType>('EXTENSION');
   readonly decisionVisible = signal(false);
   readonly decisionTarget = signal<TaskRequestForDecisionDto | null>(null);
+
+  // ACC-174 — the creator's actions.
+  readonly editVisible = signal(false);
+  readonly cancelVisible = signal(false);
+  readonly reopenVisible = signal(false);
 
   ngOnInit(): void {
     this.reloadAll();
@@ -545,6 +604,38 @@ export class MyTasksComponent implements OnInit {
 
   canComplete(task: ITaskListItemDto): boolean {
     return isTaskOpen(task) && task.status !== 'ON_HOLD';
+  }
+
+  // ── ACC-174 — the creator's actions ───────────────────────────────────
+  // canManage is the server's answer to WHO; the status decides WHICH.
+
+  /** An open task's four fields — REJECTED and ON_HOLD included. */
+  canEdit(task: ITaskListItemDto): boolean {
+    return task.canManage && isTaskOpen(task);
+  }
+
+  /** Not a workflow step's task: those end with their step until CF-07. */
+  canCancel(task: ITaskListItemDto): boolean {
+    return this.canEdit(task) && !task.sourceStageId && !task.workflowInstanceId;
+  }
+
+  canReopen(task: ITaskListItemDto): boolean {
+    return task.canManage && task.status === 'COMPLETED';
+  }
+
+  openEditDialog(task: ITaskListItemDto): void {
+    this.actionTarget.set(task);
+    this.editVisible.set(true);
+  }
+
+  openCancelDialog(task: ITaskListItemDto): void {
+    this.actionTarget.set(task);
+    this.cancelVisible.set(true);
+  }
+
+  openReopenDialog(task: ITaskListItemDto): void {
+    this.actionTarget.set(task);
+    this.reopenVisible.set(true);
   }
 
   priorityColor(priority: string): 'danger' | 'warn' | 'info' | 'secondary' {

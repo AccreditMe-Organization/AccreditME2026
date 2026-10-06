@@ -612,7 +612,8 @@
         "nextDay": "{{day}} 09:00"
       },
       "hideCalendar": "Hide calendar",
-      "closeCalendarFirst": "Close the calendar to continue"
+      "closeCalendarFirst": "Close the calendar to continue",
+      "afterLimit": "Past the SLA limit, {{date}}. Choose that or earlier."
     },
     "removeAssignee": "Remove",
     "raisedFrom": "on {{record}}",
@@ -710,6 +711,30 @@
       "withdrawNamed": "Withdraw the request on “{{title}}”",
       "recordExtension": "{{name}} asked for more time — to {{date}}",
       "recordHold": "{{name}} asked to put it on hold until {{date}}"
+    },
+    "edit": {
+      "named": "Edit “{{title}}”",
+      "dueBecomes": "With this priority, the due date becomes {{date}}.",
+      "resumeFirst": "Resume the task to change its due date or priority."
+    },
+    "cancelTask": {
+      "named": "Cancel “{{title}}”",
+      "reason": "Why cancel it?",
+      "reasonHint": "The people working on the task read this.",
+      "keep": "Keep the task",
+      "confirm": "Cancel task",
+      "line": "Cancelled: {{reason}}",
+      "lineNamed": "Cancelled by {{name}}: {{reason}}"
+    },
+    "reopen": {
+      "named": "Reopen “{{title}}”",
+      "reason": "Why reopen it?",
+      "reasonHint": "The people on the task read this — say what is wrong with it, or with its evidence.",
+      "dueDate": "Earlier due date (optional)",
+      "defaultDue": "Leave it empty and it is due {{date}}, the SLA counted from now.",
+      "errorAfterLimit": "Choose a date at or before the SLA limit.",
+      "errorTime": "Enter a time.",
+      "confirm": "Reopen"
     }
   },
   "auth": {

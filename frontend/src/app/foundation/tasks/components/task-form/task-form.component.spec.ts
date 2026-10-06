@@ -54,6 +54,10 @@ const NEXT_WORKING_DAY = nextDayWhere((day) => day >= 0 && day <= 4);
 /** Fri or Sat here. */
 const NEXT_NON_WORKING_DAY = nextDayWhere((day) => day === 5 || day === 6);
 
+// Past every date these tests type, including 1 Jan 2099 at the end of the day.
+const FAR = { dueAt: '2100-01-01T00:00:00.000Z', limitAt: '2100-01-01T00:00:00.000Z' };
+const FAR_LIMITS = { CRITICAL: FAR, HIGH: FAR, MEDIUM: FAR, LOW: FAR };
+
 describe('TaskFormComponent — due control (ACC-96)', () => {
   let fixture: ComponentFixture<TaskFormComponent>;
   let component: TaskFormComponent;
@@ -74,6 +78,9 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
       updatedAt: '2026-01-01T00:00:00.000Z',
     });
     httpMock.expectOne(`${environment.apiUrl}/working-calendar/holidays`).flush([]);
+    // ACC-174 — the SLA limit per priority. Far off here, so the date tests
+    // above are about the date rules alone; the limit has its own spec.
+    httpMock.expectOne(`${environment.apiUrl}/tasks/sla-preview`).flush(FAR_LIMITS);
   };
 
   beforeEach(() => {

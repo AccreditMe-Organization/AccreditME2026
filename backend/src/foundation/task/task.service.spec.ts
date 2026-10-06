@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { TaskSlaService } from './task-sla.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
@@ -63,6 +64,7 @@ const BASE_TASK = {
 };
 
 const mockPrisma = {
+  organization: { findFirst: jest.fn() },
   task: {
     create: jest.fn(),
     findMany: jest.fn(),
@@ -186,7 +188,10 @@ describe('TaskService', () => {
         // task-authority.service.spec.ts.
         {
           provide: TaskAuthorityService,
-          useValue: { canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId) },
+          useValue: {
+            canActForCreator: jest.fn(async (createdById: string, viewerId: string) => createdById === viewerId),
+            creatorsCoveredBy: jest.fn(async () => []),
+          },
         },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
@@ -204,6 +209,7 @@ describe('TaskService', () => {
           provide: ObjectVisibilityService,
           useValue: { assertCanView: jest.fn(), assertCanViewOrNotFound: jest.fn() },
         },
+        TaskSlaService,
         { provide: WorkingCalendarService, useValue: mockWorkingCalendar },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: TenantService, useValue: mockTenantService },
@@ -214,15 +220,15 @@ describe('TaskService', () => {
   });
 
   describe('create', () => {
-    // ACC-46 Section 2.7.c — computeSlaDueAt() now reads dueAfterHours via
-    // TenantService.getTaskSla() instead of parsing Organization.settings
-    // itself; getTaskSla()'s own fallback-to-platform-defaults behavior is
-    // TenantService's responsibility, tested in tenant.service.spec.ts, not
-    // duplicated here.
-    it("computes dueAt from TenantService.getTaskSla()'s tier for the task's priority when no explicit due date given", async () => {
-      mockTenantService.getTaskSla.mockResolvedValue({
-        ...DEFAULT_SLA,
-        HIGH: { dueAfterHours: 8, managerEscalationAfterHours: 4, headEscalationAfterHours: 8 },
+    // ACC-174 — the due date and the limit come from TaskSlaService, which
+    // reads Organization.settings.taskSla through taskSlaFromSettings() — the
+    // one reading TenantService.getTaskSla() also uses. Its fallback to the
+    // platform defaults is pinned in task-sla.service.spec.ts.
+    it("computes dueAt from the tenant's SLA tier for the task's priority when no explicit due date given", async () => {
+      mockPrisma.organization.findFirst.mockResolvedValue({
+        settings: {
+          taskSla: { ...DEFAULT_SLA, HIGH: { dueAfterHours: 8, managerEscalationAfterHours: 4, headEscalationAfterHours: 8 } },
+        },
       });
       mockPrisma.task.create.mockResolvedValue(BASE_TASK);
 
@@ -232,7 +238,9 @@ describe('TaskService', () => {
         ACTOR,
       );
 
-      expect(mockTenantService.getTaskSla).toHaveBeenCalledWith(ORG_A);
+      expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: ORG_A } }),
+      );
       expect(mockWorkingCalendar.calculateDeadline).toHaveBeenCalledWith(expect.any(DateTime), 8, ORG_A);
     });
 

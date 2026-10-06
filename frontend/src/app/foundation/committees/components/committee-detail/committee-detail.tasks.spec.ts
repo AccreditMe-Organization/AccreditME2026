@@ -75,9 +75,11 @@ describe('CommitteeDetailComponent — tasks (ACC-163)', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   describe('canReassign — the rule the server applies', () => {
-    it("lets the task's creator reassign it without holding tasks:reassign (Q4)", () => {
+    // ACC-174 — "the creator" is the server's canManage now: the creator or
+    // whoever acts for them, which the old createdById check missed.
+    it("lets whoever manages the task — its creator or their cover — reassign it without tasks:reassign (Q4)", () => {
       const c = build([]);
-      expect(c.canReassign(task({ status: 'REJECTED', createdById: ME, assignees: [] }))).toBe(true);
+      expect(c.canReassign(task({ status: 'REJECTED', createdById: OTHER, canManage: true, assignees: [] }))).toBe(true);
     });
 
     it('lets a tasks:reassign holder reassign a task someone else created', () => {
@@ -87,7 +89,7 @@ describe('CommitteeDetailComponent — tasks (ACC-163)', () => {
 
     it('offers nothing to someone who is neither', () => {
       const c = build(['tasks:view']);
-      expect(c.canReassign(task({ status: 'REJECTED', createdById: OTHER }))).toBe(false);
+      expect(c.canReassign(task({ status: 'REJECTED', createdById: OTHER, canManage: false }))).toBe(false);
     });
 
     it('offers nothing on a closed task, even to the creator — the server refuses it', () => {
@@ -147,6 +149,55 @@ describe('CommitteeDetailComponent — tasks (ACC-163)', () => {
       const c = build([]);
       expect(c.statusLabel(task({ status: 'REJECTED' }))).toBe('task.status.rejected');
       expect(c.statusLabel(task({ status: 'PENDING' }))).toBe('task.status.pending');
+    });
+  });
+
+  // ACC-174 — the creator's actions on the record's list.
+  describe('edit, cancel and reopen — canManage says who, the status says which', () => {
+    it('offers Edit and Cancel on an open task the viewer manages', () => {
+      const c = build([]);
+      const t = task({ canManage: true });
+      expect(c.canEditTask(t)).toBe(true);
+      expect(c.canCancelTask(t)).toBe(true);
+      expect(c.canReopenTask(t)).toBe(false);
+    });
+
+    it('offers nothing where the viewer does not manage the task — whatever they hold', () => {
+      const c = build(['tasks:reassign', 'tasks:create']);
+      const t = task({ canManage: false });
+      expect(c.canEditTask(t)).toBe(false);
+      expect(c.canCancelTask(t)).toBe(false);
+      expect(c.canReopenTask(task({ status: 'COMPLETED', canManage: false }))).toBe(false);
+    });
+
+    it("offers no Cancel on a workflow step's task", () => {
+      const c = build([]);
+      const t = task({ canManage: true, sourceStageId: 's1', workflowInstanceId: 'i1' });
+      expect(c.canEditTask(t)).toBe(true);
+      expect(c.canCancelTask(t)).toBe(false);
+    });
+
+    it('offers Reopen only on a completed task, and Edit on none that is closed', () => {
+      const c = build([]);
+      expect(c.canReopenTask(task({ status: 'COMPLETED', canManage: true }))).toBe(true);
+      expect(c.canEditTask(task({ status: 'COMPLETED', canManage: true }))).toBe(false);
+      expect(c.canEditTask(task({ status: 'CANCELLED', canManage: true }))).toBe(false);
+      expect(c.canReopenTask(task({ status: 'CANCELLED', canManage: true }))).toBe(false);
+    });
+
+    it('names who cancelled it and why', () => {
+      const c = build([]);
+      TestBed.inject(TranslateService).setTranslation(
+        'en',
+        { task: { cancelTask: { line: 'Cancelled: {{reason}}', lineNamed: 'Cancelled by {{name}}: {{reason}}' } } },
+        true,
+      );
+      expect(
+        c.cancelledLine(task({ status: 'CANCELLED', cancelledReason: 'Postponed', cancelledBy: { id: 'u', name: 'Yasser' } })),
+      ).toBe('Cancelled by Yasser: Postponed');
+      expect(c.cancelledLine(task({ status: 'CANCELLED', cancelledReason: 'Postponed', cancelledBy: null }))).toBe(
+        'Cancelled: Postponed',
+      );
     });
   });
 });

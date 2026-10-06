@@ -33,6 +33,11 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     getByIdForViewer: jest.fn().mockResolvedValue({}),
     pick: jest.fn().mockResolvedValue({}),
     release: jest.fn().mockResolvedValue({}),
+    update: jest.fn().mockResolvedValue({}),
+    cancel: jest.fn().mockResolvedValue({}),
+    reopen: jest.fn().mockResolvedValue({}),
+    slaPreview: jest.fn().mockResolvedValue({}),
+    slaPreviewForTask: jest.fn().mockResolvedValue({}),
   };
   const requests = {
     create: jest.fn().mockResolvedValue({}),
@@ -129,10 +134,34 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     ['/tasks/task-1/requests/req-1/approve', () => requests.approve],
     ['/tasks/task-1/requests/req-1/decline', () => requests.decline],
     ['/tasks/task-1/resume', () => requests.resume],
+    // ACC-174 — the creator's actions; the service decides who may.
+    ['/tasks/task-1/cancel', () => taskService.cancel],
+    ['/tasks/task-1/reopen', () => taskService.reopen],
   ])('POST %s reaches its handler with no route permission', async (path, delegate) => {
     const res = await request(app.getHttpServer()).post(path).send({ reason: 'Back to the pool' });
 
     expect(res.status).toBe(201);
     expect(delegate()).toHaveBeenCalledTimes(1);
+  });
+
+  // ACC-174 — the New task preview is gated by tasks:create, which this caller
+  // lacks. A refusal NAMING tasks:create proves the static path reached its own
+  // handler's guard: swallowed by ':id', it would name tasks:view.
+  it('GET /tasks/sla-preview is its own route, gated by tasks:create', async () => {
+    const res = await request(app.getHttpServer()).get('/tasks/sla-preview');
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(res.body)).toContain('tasks:create');
+    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
+  });
+
+  it('GET /tasks/:id/sla-preview and PATCH /tasks/:id reach their handlers with no route permission', async () => {
+    const preview = await request(app.getHttpServer()).get('/tasks/task-1/sla-preview');
+    expect(preview.status).toBe(200);
+    expect(taskService.slaPreviewForTask).toHaveBeenCalledTimes(1);
+
+    const edit = await request(app.getHttpServer()).patch('/tasks/task-1').send({ title: 'Renamed' });
+    expect(edit.status).toBe(200);
+    expect(taskService.update).toHaveBeenCalledTimes(1);
   });
 });

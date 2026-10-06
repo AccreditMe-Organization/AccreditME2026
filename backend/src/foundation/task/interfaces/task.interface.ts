@@ -41,6 +41,19 @@ export interface ITask {
   heldAt: Date | null;
   onHoldUntil: Date | null;
   heldFromStatus: string | null; // TaskStatus — PENDING or IN_PROGRESS
+  // ACC-174 — the SLA window (task-sla.service.ts). Null on a row from before
+  // ACC-174 until backfill-acc174-task-sla-limit.ts runs.
+  slaStartAt: Date | null;
+  slaLimitAt: Date | null;
+  slaExtendedTo: Date | null;
+  // ACC-174 — a cancel by the creator (or whoever acts for them); the engine's
+  // own cancellations leave these null. And the last reopen.
+  cancelledReason: string | null;
+  cancelledAt: Date | null;
+  cancelledById: string | null;
+  reopenedReason: string | null;
+  reopenedAt: Date | null;
+  reopenedById: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

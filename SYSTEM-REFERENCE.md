@@ -2037,6 +2037,15 @@ model Task {
   heldAt               DateTime?                       // ACC-173 — set only while
   onHoldUntil          DateTime?   // indexed            //   ON_HOLD, all three
   heldFromStatus       TaskStatus?                     //   cleared on resume (3.10)
+  slaStartAt           DateTime?   // ACC-174 — the SLA window (3.11); null on a
+  slaLimitAt           DateTime?   //   pre-ACC-174 row until its backfill runs
+  slaExtendedTo        DateTime?   //   the floor an approved extension set
+  cancelledReason      String?     // ACC-174 — a cancel by the creator; the
+  cancelledAt          DateTime?   //   engine's own cancellations leave these
+  cancelledById        String?     //   null → User ("TaskCancelledBy")
+  reopenedReason       String?     // ACC-174 — the last reopen
+  reopenedAt           DateTime?
+  reopenedById         String?     // → User ("TaskReopenedBy")
 }
 
 model TaskRequest {                // ACC-173 — more time, or a hold (3.10)
@@ -2340,8 +2349,18 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 
 ### 3.3 SLA Computation
 
-`TaskService.computeSlaDueAt(priority, organizationId)`
-(`task.service.ts:388`) calls `TenantService.getTaskSla(organizationId)`
+**ACC-174 — the computation now lives in `TaskSlaService`** (`task-sla.service.ts`),
+the one home of the SLA limit (3.11): `windowFrom(start, priority)` reads the
+tenant's tier through `taskSlaFromSettings()` (`tenant/task-sla-settings.ts`,
+the ONE reading of `Organization.settings.taskSla`, shared with
+`TenantService.getTaskSla()` and the ACC-174 backfill), takes
+`dueAfterHours`, and counts it in working hours with
+`WorkingCalendarService.calculateDeadline()` — never its own date math.
+`TaskService.computeSlaDueAt()` is gone. The history below is kept for what it
+records about the settings key.
+
+Before ACC-174: `TaskService.computeSlaDueAt(priority, organizationId)`
+called `TenantService.getTaskSla(organizationId)`
 for the tenant's real, per-`TaskPriority` tiered settings, then
 `hours = slaConfig[priority].dueAfterHours`, then
 `WorkingCalendarService.calculateDeadline()` — never its own date
@@ -2640,6 +2659,18 @@ is clause (b): the identical 404 "Task not found", decided before any 409.
 - `GET /tasks/requests/awaiting-decision` — self-scoped: the requests the
   caller may decide. Declared before `:id` (route-order spec).
 
+**ACC-174 adds four more ungated routes and one gated one** (3.11):
+
+- `PATCH /tasks/:id`, `POST /tasks/:id/cancel`, `POST /tasks/:id/reopen`,
+  `GET /tasks/:id/sla-preview` — the creator, anyone acting for them, or a
+  `tasks:reassign` holder while the creator is no longer ACTIVE. Only the row
+  can say, so `TaskService.mayManage()` decides, and everyone else gets the
+  identical 404 "Task not found" before any 409 (clause b).
+- `GET /tasks/sla-preview` — names no task, so it is gated like creating one:
+  `@Permissions(tasks:create)`, a 403 naming it (clause a). Declared before
+  `:id`; the route-order spec proves it by the refusal naming `tasks:create`
+  rather than `tasks:view`.
+
 **CLOSED by ACC-167 (was ACC-166) — reassigning needed `users:view`.** The
 reassign dialog listed people through the user list. It now uses the picker
 above, passing the task's id, so a creator whose role lacks `users:view` can
@@ -2848,10 +2879,27 @@ can still take a request and that the asked-for date has not passed (409
 cancelled"*.
 - **Extension approved** → `dueAt` = the asked date, `dueDateOverridden`,
   and `slaBreachedAt` / both escalation stamps cleared so escalation can fire
-  again against the new date. Audited `due_date_extended`.
+  again against the new date. Audited `due_date_extended`. ACC-174: the SLA
+  limit rises to the approved date and **never falls** (`slaLimitAt =
+  max(limit, approved)`), and `slaExtendedTo` keeps the date as the floor a
+  later priority change cannot drop below (3.11). Approval also refuses
+  (409) a date that is **no longer after the current due date** — the creator
+  may have moved it since the request was made.
 - **Hold approved** → `status: ON_HOLD`, `heldFromStatus` (In progress stays
   In progress; Assigned and legacy `OVERDUE` become `PENDING`), `heldAt`,
-  `onHoldUntil`. Audited `hold_started`.
+  `onHoldUntil`. Audited `hold_started`, with `heldWorkingHours`,
+  `dueAtBefore` and `dueAtAfter`.
+  **ACC-174 changed when the clock moves: AT APPROVAL.** The SLA window moves
+  to start when the hold ends: `slaStartAt` is SET to `onHoldUntil`, and
+  `dueAt`, `slaLimitAt` and `slaExtendedTo` move forward by
+  `workingHoursBetween(approval time, holdUntil)`, through
+  `calculateDeadline()`; a zero shift moves those three not at all (ACC-175's
+  normalisation). The escalation stamps are cleared when the moved due date is
+  ahead. The start is set rather than shifted (Ahmad, 6 Oct) because shifting
+  it went through `calculateDeadline()`, which moves a start outside working
+  hours to the next opening first: in the first ACC-174 browser pass, a start
+  of Tue 16:43 Riyadh shifted by 16 hours landed on Thu 16:00, not where the
+  hold ended.
 
 **Who decides — `TaskAuthorityService.canActForCreator()`.** The creator; or
 their out-of-office delegate (`actingUserId`, BOTH dates set, `from ≤ now ≤
@@ -2878,13 +2926,15 @@ blocks its stage (3.1).
 
 **Resume** — by hand (`POST /tasks/:id/resume`) or by
 `SlaMonitorProcessor.sweepDueHolds()` at `onHoldUntil`, an isolated step that
-runs every pass, not only within working hours. Both go through one `endHold()`:
-- the shift is `WorkingCalendarService.workingHoursBetween(heldAt, now)`, and
-  `dueAt` moves by that many WORKING hours via `calculateDeadline()`; a zero
-  shift writes no new date;
-- the escalation stamps are cleared only if the new `dueAt` is in the future;
-- status returns to `heldFromStatus`, and all three hold fields are cleared;
-- audited `resumed` with `heldWorkingHours`, `dueAtBefore`, `dueAtAfter`.
+runs every pass, not only within working hours. Both go through one `endHold()`,
+which since ACC-174 **shifts nothing**: status returns to `heldFromStatus` and
+the three hold fields are cleared. The dates were moved at approval, so an
+EARLY resume keeps them — the extra working time is the assignee's. Audited
+`resumed` with `automatic` and `early`.
+
+(ACC-173 as shipped shifted at resume, by `workingHoursBetween(heldAt, now)`.
+Any hold approved under that code and resumed under this one moves by nothing
+at either end; there were none on the shared database when ACC-174 shipped.)
 
 `resumeDueHold()` re-checks under the lock that the task is still a due hold,
 so a hold resumed by hand, reassigned or closed since the sweep read it is
@@ -2924,14 +2974,105 @@ on the task's row; deciding happens in My tasks only.
 
 **Known limitations.**
 - **The stage SLA is not shifted.** `WorkflowInstanceStage.slaDueAt` keeps
-  running while a task in that stage is on hold; only the task's own `dueAt`
-  moves.
-- `calculateDeadline()` treats a start BEFORE opening time on a working day as
-  the next working day, and the resume shift goes through it — ACC-175, whose
-  fix changes every SLA due date and needs its own plan. A zero shift is
-  skipped on resume, so the zero-hours normalisation cannot move a date.
-- A creator cannot yet edit or cancel their task directly; that is ACC-174,
-  next after this ticket.
+  running while a task in that stage is on hold; only the task's own dates
+  move.
+- `calculateDeadline()` treats a start outside working hours — and BEFORE
+  opening time on a working day — as the next opening, and the hold's shift of
+  the due date, limit and extension goes through it — ACC-175, whose fix
+  changes every SLA due date and needs its own plan. The SLA start is not
+  shifted (it becomes `onHoldUntil`), so it is not affected. A zero shift is
+  skipped, so the zero-hours normalisation cannot move a date.
+- The creator's own edit and cancel are ACC-174 (3.11).
+
+### 3.11 The SLA limit, and edit, cancel and reopen by the creator (ACC-174)
+
+Files: `task-sla.service.ts` (the limit), `task.service.ts` (`update`,
+`cancel`, `reopen`, `mayManage`), `tenant/task-sla-settings.ts`,
+`prisma/backfill-acc174-task-sla-limit.ts`.
+
+**The SLA limit.** Every task has one: its priority's SLA
+(`Organization.settings.taskSla[priority].dueAfterHours`, counted in working
+hours) from its **SLA start** — creation; for a workflow stage task, the
+moment the record entered the stage, which is when the engine creates it.
+**A due date a PERSON sets may be at or before the limit, never after it**:
+on New task, on every edit and on reopen. Past it: 400 *"The due date can't be
+later than {date}, the SLA limit for {Priority} priority"* — the date in the
+tenant's zone, formatted as the frontend does (server text bypasses the
+formatting layer, ACC-95). The default due date IS the limit.
+
+The only ways past it:
+- **an approved request for more time** (3.10) raises the limit to the
+  approved date — never lowers it — and records the date in `slaExtendedTo`;
+- **an engine-created task whose stage sets an SLA** (`slaWorkingHours`):
+  `TaskService.create(…, 'engine')` raises the limit to the stage date when
+  that is later, recorded in `slaExtendedTo`, instead of refusing the task
+  inside the transition. Four seeded stages carry 240 hours against MEDIUM's
+  40. **TEMPORARY**: with stage task definitions (CF-07), every stage task takes
+  its due date from its own priority SLA counted from stage entry, and the
+  stage SLA stays the record's clock only.
+
+**A priority change** recomputes the due date and the limit from the SLA start
+under the new priority; the limit never drops below `slaExtendedTo`. The same
+edit may also send a due date at or before the new limit. A recomputed due
+date may be in the PAST — the overdue flag then tells the truth — so the
+"must be in the future" rule applies only to a date a person sends, and the
+escalation stamps are cleared only when the new due date is still ahead.
+
+**Before the backfill.** Rows from before ACC-174 have null `slaStartAt` /
+`slaLimitAt`. `TaskSlaService.initialLimit()` computes exactly what the backfill
+writes — the priority SLA from `createdAt`, raised to the current due date and
+any approved extension, so no existing task starts out over its limit — so
+running it changes nothing a person sees. The backfill
+(`npm run backfill:acc174-task-sla-limit`, dry run by default) runs after the
+deploy, fills open tasks only, dates through `WorkingCalendarService` in a small
+Nest context with no queue module, and writes one audit row per organization.
+
+**Who manages a task — `TaskService.mayManage()`, the ONE place.** The
+creator, or anyone acting for them (`canActForCreator()` for one task; the
+page's `creatorsCoveredBy()` set for a list), or — while the creator is no
+longer ACTIVE — a `tasks:reassign` holder. The permission is named in ONE line:
+the task permission model Ahmad decided on 6 October replaces it with "Manage
+tasks" per record type, a one-line change. Lists carry `canManage` per row,
+decided once per page.
+
+| Action | Refusals, in order |
+|---|---|
+| `PATCH /tasks/:id {title?, description?, dueDate?, priority?}` | 400 empty → 404 → 409 closed → 409 *"Resume the task first"* (ON_HOLD, date or priority; title and description still edit) → 400 past → 400 over the limit |
+| `POST /tasks/:id/cancel {reason}` | 404 → 409 closed → 409 *"This task belongs to a workflow step"* |
+| `POST /tasks/:id/reopen {reason, dueDate?}` | 404 → 409 cancelled / not completed → 409 *"The workflow has moved past this step"* → 400 past / over the limit |
+
+- **Edit** — a due date sets `dueDateOverridden` and re-arms escalation. An open
+  request for more time is left alone (approval re-checks it). Title and
+  description edits are silent; a changed date or priority tells the active
+  assignees in English and Arabic.
+- **Cancel** — `CANCELLED` with `cancelledReason/At/ById`; ends a hold, cancels
+  pending requests (cause `task_cancelled_by_creator`), clears the pick-up
+  clock, keeps the assignee rows (ACC-68's reasoning). Tells the assignees,
+  with the reason. **A workflow stage task cannot be cancelled by hand** — a
+  stage task ends with its step only if optional, and mandatory/optional
+  arrives with stage task definitions; **CF-07 opens cancelling for optional
+  stage tasks.**
+- **Reopen** — a COMPLETED task back to Assigned with the people on it at
+  completion (`complete()` stamps the others' `removedAt` with the same instant
+  as `completedAt`), less anyone no longer ACTIVE; nobody left → its pool with
+  the pick-up clock, or `UNASSIGNED`. Completion cleared, evidence kept, the
+  SLA restarted from now (`slaExtendedTo` cleared), an optional earlier due
+  date. A stage task reopens only while its record is still in that stage and
+  the workflow is PENDING or IN_PROGRESS. Tells the assignees, with the reason.
+
+**SLA previews.** `GET /tasks/sla-preview` (New task, from now) and
+`GET /tasks/:id/sla-preview` (Edit, from the task's SLA start, the current
+priority at the limit in force; `?restart=true` for Reopen, from now) return
+`{dueAt, limitAt}` for every priority, so the pickers stop at the limit and a
+priority change shows its due date before saving. No screen does working-hours
+arithmetic.
+
+**Frontend.** Edit is New task's own form given a task (one step, the four
+fields, only what changed sent); Cancel and Reopen are modelled on Reject.
+Offered where `canManage` is true, by state: Edit on an open task, Cancel unless
+it belongs to a workflow step, Reopen on a completed one — on My tasks and the
+record's task list, which also shows a cancelled task's reason and who
+cancelled it. The record's Reassign now reads `canManage` too.
 
 ## 4. Notification System
 

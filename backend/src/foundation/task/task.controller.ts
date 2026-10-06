@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -14,6 +14,7 @@ import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
 import { ReleaseTaskDto } from './dto/release-task.dto';
+import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.dto';
 import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './dto/task-request.dto';
 import { TaskRequestService } from './task-request.service';
 import { ITaskRequest, ITaskRequestForDecision } from './interfaces/task-request.interface';
@@ -68,13 +69,17 @@ export class TaskController {
   // PermissionGuard still runs (class-level @UseGuards) and returns true when
   // no @Permissions metadata is present; TenantGuard still authenticates and
   // populates @CurrentUser()/@CurrentTenant().
+  //
+  // ACC-174 — the caller's permissions are read for each row's canManage only;
+  // they never widen which rows come back.
   @Get('my-tasks')
   getMyTasks(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
     @Query() query: GetMyTasksQueryDto,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<IMyTaskListItem[]> {
-    return this.taskService.getMyTasks(userId, tenantId, query);
+    return this.taskService.getMyTasks(userId, tenantId, query, permissions);
   }
 
   // ── ACC-167 — STATIC GET ROUTES, ALL DECLARED BEFORE ':id' ─────────────────
@@ -89,8 +94,18 @@ export class TaskController {
   getAvailable(
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
   ): Promise<ITaskListItem[]> {
-    return this.taskService.getAvailableToPick(userId, tenantId);
+    return this.taskService.getAvailableToPick(userId, tenantId, permissions);
+  }
+
+  // ACC-174 — what New task's date picker stops at: the default due date and
+  // the SLA limit for every priority, counted from now. It names no task, so it
+  // is gated like creating one (ACC-101 clause a — a 403 naming the permission).
+  @Get('sla-preview')
+  @Permissions(TASKS_PERMISSIONS.CREATE)
+  getSlaPreview(@CurrentTenant() tenantId: string): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+    return this.taskService.slaPreview(tenantId);
   }
 
   // The assignment picker (decision 8). No @Permissions on any of these, by
@@ -229,6 +244,59 @@ export class TaskController {
     @CurrentUser() actorId: string,
   ): Promise<ITask> {
     return this.taskService.getByIdForViewer(id, tenantId, actorPermissions, actorId);
+  }
+
+  // ── ACC-174 — the creator's own actions ─────────────────────────────────
+  // No @Permissions on any of these, by design: who may act is the creator,
+  // anyone acting for them, or (while the creator is no longer ACTIVE) a
+  // tasks:reassign holder — only knowable from the row. TaskService decides,
+  // and everyone else gets the identical 404 (ACC-101 clause b).
+
+  // Edit's date picker: the due date and limit each priority would give THIS
+  // task, from its own SLA start — or, with ?restart=true, from now, for
+  // Reopen's picker (a reopened task's SLA restarts).
+  @Get(':id/sla-preview')
+  getTaskSlaPreview(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+    @Query('restart') restart?: string,
+  ): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
+    return this.taskService.slaPreviewForTask(id, { id: userId, permissions }, tenantId, restart === 'true');
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateTaskDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITask> {
+    return this.taskService.update(id, dto, { id: userId, permissions }, tenantId);
+  }
+
+  @Post(':id/cancel')
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelTaskDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITask> {
+    return this.taskService.cancel(id, dto, { id: userId, permissions }, tenantId);
+  }
+
+  @Post(':id/reopen')
+  reopen(
+    @Param('id') id: string,
+    @Body() dto: ReopenTaskDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITask> {
+    return this.taskService.reopen(id, dto, { id: userId, permissions }, tenantId);
   }
 
   @Post()

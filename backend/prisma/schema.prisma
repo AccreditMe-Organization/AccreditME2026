@@ -503,6 +503,8 @@ model User {
   workflowApprovals               WorkflowApproval[]
   tasksCreated                    Task[]                     @relation("TaskCreator")
   tasksRejected                   Task[]                     @relation("TaskRejectedBy")
+  tasksCancelled                  Task[]                     @relation("TaskCancelledBy")
+  tasksReopened                   Task[]                     @relation("TaskReopenedBy")
   taskAssignments                 TaskAssignee[]             @relation("TaskAssigneeUser")
   taskAssignmentsMade             TaskAssignee[]             @relation("TaskAssigneeAssignedBy")
   taskEvidenceUploaded            TaskEvidence[]
@@ -1364,12 +1366,33 @@ model Task {
   heldAt                       DateTime?
   onHoldUntil                  DateTime?
   heldFromStatus               TaskStatus?
+  // ACC-174 — the SLA limit. slaStartAt is when the task's SLA window opened
+  // (creation, a reopen, or moved forward by an approved hold); slaLimitAt is
+  // the latest due date a person may set. slaExtendedTo is the date an approved
+  // request for more time raised the limit to, kept so a priority change cannot
+  // lower the limit below it. All nullable: rows from before ACC-174 are filled
+  // by backfill-acc174-task-sla-limit.ts, and until then a null is computed
+  // from createdAt and the priority.
+  slaStartAt                   DateTime?
+  slaLimitAt                   DateTime?
+  slaExtendedTo                DateTime?
+  // ACC-174 — a cancel by the creator (or whoever acts for them). The engine's
+  // own cancellations leave all three null.
+  cancelledReason              String?
+  cancelledAt                  DateTime?
+  cancelledById                String?
+  // ACC-174 — the last reopen of a completed task.
+  reopenedReason               String?
+  reopenedAt                   DateTime?
+  reopenedById                 String?
   createdAt                    DateTime       @default(now())
   updatedAt                    DateTime       @updatedAt
 
   organization               Organization      @relation(fields: [organizationId], references: [id])
   createdBy                  User              @relation("TaskCreator", fields: [createdById], references: [id])
   rejectedBy                 User?             @relation("TaskRejectedBy", fields: [rejectedById], references: [id])
+  cancelledBy                User?             @relation("TaskCancelledBy", fields: [cancelledById], references: [id])
+  reopenedBy                 User?             @relation("TaskReopenedBy", fields: [reopenedById], references: [id])
   workflowInstance           WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
   assignedOrgUnit            OrgUnit?          @relation("TaskAssignedOrgUnit", fields: [assignedOrgUnitId], references: [id])
   assignedPosition           OrgPosition?      @relation("TaskAssignedPosition", fields: [assignedPositionId], references: [id])
