@@ -430,7 +430,10 @@ describe('TaskController', () => {
     expect(service.reopen).toHaveBeenCalledWith('task-1', { reason: 'Evidence is wrong' }, viewer, TENANT_ID);
 
     await controller.getTaskSlaPreview('task-1', TENANT_ID, USER_ID, perms);
-    expect(service.slaPreviewForTask).toHaveBeenCalledWith('task-1', viewer, TENANT_ID);
+    expect(service.slaPreviewForTask).toHaveBeenCalledWith('task-1', viewer, TENANT_ID, false);
+
+    await controller.getTaskSlaPreview('task-1', TENANT_ID, USER_ID, perms, 'true');
+    expect(service.slaPreviewForTask).toHaveBeenLastCalledWith('task-1', viewer, TENANT_ID, true);
 
     await controller.getSlaPreview(TENANT_ID);
     expect(service.slaPreview).toHaveBeenCalledWith(TENANT_ID);

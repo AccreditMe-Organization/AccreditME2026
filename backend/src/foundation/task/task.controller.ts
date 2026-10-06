@@ -253,15 +253,17 @@ export class TaskController {
   // and everyone else gets the identical 404 (ACC-101 clause b).
 
   // Edit's date picker: the due date and limit each priority would give THIS
-  // task, from its own SLA start.
+  // task, from its own SLA start — or, with ?restart=true, from now, for
+  // Reopen's picker (a reopened task's SLA restarts).
   @Get(':id/sla-preview')
   getTaskSlaPreview(
     @Param('id') id: string,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
+    @Query('restart') restart?: string,
   ): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
-    return this.taskService.slaPreviewForTask(id, { id: userId, permissions }, tenantId);
+    return this.taskService.slaPreviewForTask(id, { id: userId, permissions }, tenantId, restart === 'true');
   }
 
   @Patch(':id')

@@ -983,10 +983,15 @@ export class TaskService {
    * approved extension. The current priority's limit is the one in force, which
    * may be higher than its window (a pre-ACC-174 due date kept by the backfill).
    */
+  //
+  // `restart` is Reopen's picker: a reopened task's SLA restarts from now with
+  // no extension, so the windows are counted from now — behind the same
+  // entitlement as reopening it, not tasks:create.
   async slaPreviewForTask(
     id: string,
     viewer: TaskViewer,
     organizationId: string,
+    restart = false,
   ): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
     const task = await this.prisma.task.findFirst({
       where: { id, organizationId },
@@ -995,6 +1000,7 @@ export class TaskService {
     if (!task || !(await this.mayManage(task, viewer, organizationId))) {
       throw new NotFoundException('Task not found');
     }
+    if (restart) return this.sla.preview(new Date(), organizationId);
     const windows = await this.sla.preview(this.sla.startOf(task), organizationId, task.slaExtendedTo);
     const current = windows[task.priority];
     if (current) current.limitAt = await this.sla.limitOf(task, organizationId);

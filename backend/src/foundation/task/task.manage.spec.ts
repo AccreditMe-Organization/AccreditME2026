@@ -675,6 +675,15 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
     expect(preview['HIGH']).toEqual({ dueAt: plusHours(START, 16), limitAt: plusHours(START, 16) });
   });
 
+  it("Reopen's preview counts from now, for every priority, with no extension", async () => {
+    mockPrisma.task.findFirst.mockResolvedValue(task({ slaExtendedTo: plusHours(START, 90) }));
+    const before = Date.now();
+    const preview = await service.slaPreviewForTask('task-1', creator, ORG_A, true);
+    const start = preview['MEDIUM']!.dueAt.getTime() - 40 * HOUR;
+    expect(start).toBeGreaterThanOrEqual(before);
+    expect(preview['MEDIUM']!.limitAt).toEqual(preview['MEDIUM']!.dueAt);
+  });
+
   itEnforcesTenantIsolation('slaPreviewForTask', async () => {
     mockPrisma.task.findFirst.mockResolvedValue(null);
     await expect(service.slaPreviewForTask('task-1', creator, ORG_B)).rejects.toThrow(NotFoundException);
