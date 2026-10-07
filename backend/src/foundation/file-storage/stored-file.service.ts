@@ -8,6 +8,7 @@ import { IStorageLocation, IStoredFileLocation, StorageResolverService } from '.
 import { maxUploadBytes } from './storage-platform-env';
 import { StorageRefusalException } from './storage-refusal';
 import { DOWNLOAD_TTL_SECONDS, issueDownloadToken } from './download-token';
+import { StorageNoticesService } from './storage-notices.service';
 import { IFileDownload, IStoredFileSummary, IUploadedFile } from './interfaces/stored-file.interface';
 
 // A Prisma transaction client, as handed to a $transaction callback.
@@ -37,25 +38,36 @@ export interface IPreparedUpload {
 
 const GIB = 1024 ** 3;
 
+/** The share of maxStorageGb at which the tenant admins are told (once). */
+export const STORAGE_WARNING_RATIO = 0.9;
+
 /**
  * ACC-177 — every stored file goes through here: validate, write, record,
  * read back, delete. A module attaching files (task evidence today; meetings
  * and documents later) calls these in order and never touches a provider.
  *
+ * NOTHING IS STORED UNTIL THE ORGANISATION HAS CONFIRMED WHERE (Ahmad, 7 Oct):
+ * prepare() refuses STORAGE_NOT_CONFIRMED first, before anything else is
+ * looked at.
+ *
  * THE UPLOAD ORDER, and why:
- *   1. prepare()  — the file is judged (size, type from content), the key is
- *                   built, the provider resolved and the quota pre-checked.
- *                   Nothing is written.
+ *   1. prepare()  — confirmation, then the file is judged (size, type from
+ *                   content), the key built, the provider resolved and — on
+ *                   AccreditMe cloud — the quota pre-checked. Nothing written.
  *   2. put()      — the bytes go to storage, OUTSIDE any transaction: a slow
  *                   upload must never hold a row lock.
  *   3. recordInTx() — inside the caller's transaction, under a per-
- *                   organisation advisory lock: the quota is checked again
- *                   against live rows and the StoredFile row written. Two
- *                   uploads racing for the last megabyte cannot both pass.
+ *                   organisation advisory lock: the quota is checked again and
+ *                   the StoredFile row written. Two uploads racing for the
+ *                   last megabyte cannot both pass.
  *   4. discard()  — if step 3 (or anything else in the caller's transaction)
  *                   throws, the caller deletes the bytes again.
- * A crash between 2 and 3 leaves an object no row names; the orphan
- * reconciler is a follow-up (Linear).
+ *   5. afterUpload() — after commit: the 90% warning.
+ * A crash between 2 and 3 leaves an object no row names (ACC-179).
+ *
+ * THE QUOTA COUNTS ACCREDITME CLOUD ONLY — a customer's own MinIO or folder
+ * is theirs to size — and counts DELETED files until they are purged: a
+ * deleted file's bytes are still stored for its 30 days (RecycleBinService).
  */
 @Injectable()
 export class StoredFileService {
@@ -64,9 +76,11 @@ export class StoredFileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly resolver: StorageResolverService,
+    private readonly notices: StorageNoticesService,
   ) {}
 
   async prepare(organizationId: string, owner: IStoredFileOwner, file: IUploadedFile | undefined): Promise<IPreparedUpload> {
+    await this.assertConfirmed(organizationId);
     if (!file) throw new StorageRefusalException('FILE_MISSING');
     const cap = maxUploadBytes();
     if (file.size > cap || file.buffer.length > cap) {
@@ -79,7 +93,9 @@ export class StoredFileService {
     }
 
     const { provider, location } = await this.resolver.forUpload(organizationId);
-    await this.assertWithinQuota(this.prisma, organizationId, file.buffer.length);
+    if (location.provider === 'S3') {
+      await this.assertWithinQuota(this.prisma, organizationId, file.buffer.length);
+    }
 
     return {
       organizationId,
@@ -110,10 +126,12 @@ export class StoredFileService {
 
   /** Inside the caller's transaction: the authoritative quota check, then the row. */
   async recordInTx(tx: StoredFileTx, prepared: IPreparedUpload, uploadedById: string) {
-    // One lock per organisation for the duration of this transaction, so the
-    // sum below and the insert after it are one step.
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`stored-file-quota:${prepared.organizationId}`}))::text`;
-    await this.assertWithinQuota(tx, prepared.organizationId, prepared.sizeBytes);
+    if (prepared.location.provider === 'S3') {
+      // One lock per organisation for the duration of this transaction, so the
+      // sum below and the insert after it are one step.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`stored-file-quota:${prepared.organizationId}`}))::text`;
+      await this.assertWithinQuota(tx, prepared.organizationId, prepared.sizeBytes);
+    }
     return tx.storedFile.create({
       data: {
         organizationId: prepared.organizationId,
@@ -133,6 +151,41 @@ export class StoredFileService {
     });
   }
 
+  /** After commit: the 90% warning, for a file stored on AccreditMe cloud. */
+  async afterUpload(prepared: IPreparedUpload): Promise<void> {
+    if (prepared.location.provider !== 'S3') return;
+    try {
+      await this.reviewWarning(prepared.organizationId);
+    } catch (error) {
+      this.logger.error(`The storage warning check failed for org ${prepared.organizationId}: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * At 90% or more of maxStorageGb: stamp storageWarnedAt and tell the tenant
+   * admins — ONCE, because only the call that moves the stamp from null to set
+   * sends. Below 90%: clear the stamp, so the next crossing tells them again.
+   * Called after an upload and after a purge.
+   */
+  async reviewWarning(organizationId: string): Promise<void> {
+    const org = await this.prisma.organization.findFirst({ where: { id: organizationId }, select: { maxStorageGb: true } });
+    if (!org) return;
+    const limit = org.maxStorageGb * GIB;
+    const used = await this.cloudUsageBytes(this.prisma, organizationId);
+    if (limit > 0 && used >= limit * STORAGE_WARNING_RATIO) {
+      const stamped = await this.prisma.organization.updateMany({
+        where: { id: organizationId, storageWarnedAt: null },
+        data: { storageWarnedAt: new Date() },
+      });
+      if (stamped.count === 1) await this.notices.storageAlmostFull(organizationId, used, limit);
+    } else {
+      await this.prisma.organization.updateMany({
+        where: { id: organizationId, storageWarnedAt: { not: null } },
+        data: { storageWarnedAt: null },
+      });
+    }
+  }
+
   /** Undo put() after the record was refused. Never throws; a failure is logged. */
   async discard(prepared: IPreparedUpload): Promise<void> {
     try {
@@ -144,35 +197,30 @@ export class StoredFileService {
     }
   }
 
-  /** Live bytes stored by an organisation, counted from the rows, never cached. */
-  async usageBytes(client: Pick<PrismaService, 'storedFile'>, organizationId: string): Promise<number> {
+  /**
+   * Bytes on AccreditMe cloud that count toward maxStorageGb: every S3 file not
+   * yet purged — a deleted one included, since its bytes are still stored.
+   * Counted from the rows, never cached.
+   */
+  async cloudUsageBytes(client: Pick<PrismaService, 'storedFile'>, organizationId: string): Promise<number> {
     const total = await client.storedFile.aggregate({
-      where: { organizationId, deletedAt: null },
+      where: { organizationId, provider: 'S3', purgedAt: null },
       _sum: { sizeBytes: true },
     });
     return total._sum.sizeBytes ?? 0;
   }
 
-  /** Live files at one location — what a settings change would strand. */
-  async liveFilesAt(organizationId: string, location: IStorageLocation): Promise<number> {
-    return this.prisma.storedFile.count({
-      where: {
-        organizationId,
-        deletedAt: null,
-        provider: location.provider,
-        bucket: location.bucket,
-        endpoint: location.endpoint,
-        rootPath: location.rootPath,
-      },
-    });
-  }
-
   /**
    * A download for a file the CALLER HAS ALREADY BEEN ENTITLED TO — this
-   * checks nothing about who is asking. S3/MinIO: a pre-signed URL. Local: a
-   * token URL on this API (download-token.ts). Both valid fifteen minutes.
+   * checks nothing about who is asking. A deleted file is refused here as
+   * well, whatever the caller checked: it can never be viewed or downloaded.
+   * S3/MinIO: a pre-signed URL. Local: a token URL on this API. Both valid
+   * fifteen minutes.
    */
-  async openDownload(file: IStoredFileLocation & { id: string; storageKey: string; originalName: string; mimeType: string }): Promise<IFileDownload> {
+  async openDownload(
+    file: IStoredFileLocation & { id: string; storageKey: string; originalName: string; mimeType: string; deletedAt: Date | null },
+  ): Promise<IFileDownload> {
+    if (file.deletedAt) throw new StorageRefusalException('FILE_UNAVAILABLE');
     const provider = await this.resolver.forFile(file);
     if (provider.signedDownloadUrl) {
       try {
@@ -189,7 +237,12 @@ export class StoredFileService {
     return { url: `files/stream/${token}`, viaApi: true, expiresAt: expiresAt.toISOString() };
   }
 
-  /** Inside the caller's transaction. The bytes go after commit, by removeBytes(). */
+  /**
+   * A delete, inside the caller's transaction. It HIDES the file at once and
+   * KEEPS its bytes: the file is in the recycle bin for 30 days, restorable by
+   * a tenant admin, and purged after (RecycleBinService). The caller writes
+   * the audit row.
+   */
   async softDeleteInTx(tx: Pick<PrismaService, 'storedFile'>, fileId: string, organizationId: string, actorId: string) {
     return tx.storedFile.update({
       where: { id: fileId, organizationId },
@@ -198,10 +251,9 @@ export class StoredFileService {
   }
 
   /**
-   * Removes a soft-deleted file's bytes (Ahmad, 7 Oct: delete removes the
-   * bytes and keeps the row). After commit; a failure is logged, not raised —
-   * the record already says the file is gone, and an orphan object is the
-   * reconciler's to find.
+   * A purged file's bytes. After commit; a failure is logged, not raised — the
+   * row already says the file is purged, and an orphan object is the
+   * reconciler's to find (ACC-179).
    */
   async removeBytes(file: IStoredFileLocation & { storageKey: string }): Promise<void> {
     try {
@@ -209,7 +261,7 @@ export class StoredFileService {
       await provider.delete(file.storageKey);
     } catch (error) {
       this.logger.error(
-        `Could not remove the bytes of a deleted file in org ${file.organizationId} (${file.provider}, key ${file.storageKey}): ${(error as Error).message}`,
+        `Could not remove the bytes of a purged file in org ${file.organizationId} (${file.provider}, key ${file.storageKey}): ${(error as Error).message}`,
       );
     }
   }
@@ -224,10 +276,18 @@ export class StoredFileService {
     };
   }
 
+  private async assertConfirmed(organizationId: string): Promise<void> {
+    const org = await this.prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { storageConfirmedAt: true },
+    });
+    if (!org?.storageConfirmedAt) throw new StorageRefusalException('STORAGE_NOT_CONFIRMED');
+  }
+
   private async assertWithinQuota(client: Pick<PrismaService, 'storedFile' | 'organization'>, organizationId: string, adding: number): Promise<void> {
     const org = await client.organization.findFirst({ where: { id: organizationId }, select: { maxStorageGb: true } });
     const limit = (org?.maxStorageGb ?? 0) * GIB;
-    const used = await this.usageBytes(client, organizationId);
+    const used = await this.cloudUsageBytes(client, organizationId);
     if (used + adding > limit) {
       throw new StorageRefusalException('STORAGE_QUOTA_EXCEEDED', { maxBytes: limit });
     }

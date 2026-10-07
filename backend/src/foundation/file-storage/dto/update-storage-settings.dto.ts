@@ -74,3 +74,11 @@ export class UpdateStorageSettingsDto {
 // POST /tenant/storage/test — every field optional: an empty body tests the
 // stored settings; a body is a candidate, merged with the stored secrets.
 export class TestStorageSettingsDto extends PartialType(UpdateStorageSettingsDto) {}
+
+// POST /tenant/storage/change-request — an optional note for AccreditMe.
+export class StorageChangeRequestDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  message?: string;
+}

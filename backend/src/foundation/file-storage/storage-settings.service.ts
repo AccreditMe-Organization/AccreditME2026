@@ -5,28 +5,43 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { StorageProvider } from '../../providers/storage/storage.provider';
 import { completeMinio, IStorageConfig, readStorageConfig, writeStorageConfig } from './storage-config';
-import { maxUploadBytes, platformS3Settings } from './storage-platform-env';
+import { maxUploadBytes } from './storage-platform-env';
 import { StorageRefusalException } from './storage-refusal';
 import { isPrivateEndpointRefusal, StoredFileService } from './stored-file.service';
-import { IStorageLocation, StorageProviderKind, StorageResolverService } from './storage-resolver.service';
-import { TestStorageSettingsDto, UpdateStorageSettingsDto } from './dto/update-storage-settings.dto';
+import { StorageProviderKind, StorageResolverService } from './storage-resolver.service';
+import { StorageNoticesService } from './storage-notices.service';
+import { StorageChangeRequestDto, TestStorageSettingsDto, UpdateStorageSettingsDto } from './dto/update-storage-settings.dto';
 import { IStorageSettings, IStorageTestResult, StorageTestStep } from './interfaces/storage-settings.interface';
 
 const STEP_TIMEOUT_MS = 10_000;
 
+type SettingsOrg = {
+  storageProvider: StorageProviderKind;
+  storageConfig: string | null;
+  maxStorageGb: number;
+  storageConfirmedAt: Date | null;
+  storageConfirmedBy: { id: string; name: string } | null;
+  storageChangeRequestedAt: Date | null;
+  storageChangeRequestedBy: { id: string; name: string } | null;
+};
+
 /**
  * ACC-177 — a tenant admin's storage settings (tenant:manage_config). The
- * screen is lane A's; this is its API.
+ * screens are lane A's; this is their API.
  *
- * SECRETS ARE WRITE-ONLY. The read answers "set" or null; an update that
- * omits a key keeps the stored one; the audit row names the fields changed,
- * never a value.
+ * CONFIRM, THEN IT IS ACCREDITME'S (Ahmad, 7 Oct):
+ *   - Every organisation starts on AccreditMe cloud and UNCONFIRMED; nothing
+ *     can be uploaded until a tenant admin confirms where files go (confirm()).
+ *     MinIO and a local folder must pass a connection test to be confirmed.
+ *   - Once confirmed, the location is AccreditMe's to change: update() refuses
+ *     a different provider, MinIO endpoint or bucket, or local root with 403
+ *     STORAGE_CHANGE_BY_PLATFORM. Only new keys for the SAME MinIO endpoint
+ *     and bucket are accepted, after a passing test. A tenant ASKS for a change
+ *     (requestChange()), and every platform admin is told.
  *
- * A LOCATION IN USE CANNOT BE CHANGED (Ahmad, 7 Oct): changing the MinIO
- * endpoint or bucket, or the Local root, while live files are stored there is
- * refused, naming how many. New keys for the same endpoint and bucket are
- * fine, and so is switching provider — each file keeps its own location, and
- * the other provider's settings stay stored so its files remain readable.
+ * SECRETS ARE WRITE-ONLY, and ACCREDITME'S OWN SETTINGS ARE NEVER SHOWN: for
+ * AccreditMe cloud a tenant sees only the provider, never its region, bucket
+ * or endpoint.
  */
 @Injectable()
 export class StorageSettingsService {
@@ -37,6 +52,7 @@ export class StorageSettingsService {
     private readonly resolver: StorageResolverService,
     private readonly storedFiles: StoredFileService,
     private readonly auditLog: AuditLogService,
+    private readonly notices: StorageNoticesService,
   ) {}
 
   async get(organizationId: string): Promise<IStorageSettings> {
@@ -45,7 +61,11 @@ export class StorageSettingsService {
     return {
       provider: org.storageProvider,
       offeredProviders: this.resolver.offeredProviders(),
-      platformStorageReady: platformS3Settings() !== null,
+      confirmed: org.storageConfirmedAt !== null,
+      confirmedAt: org.storageConfirmedAt,
+      confirmedBy: org.storageConfirmedBy,
+      changeRequestedAt: org.storageChangeRequestedAt,
+      changeRequestedBy: org.storageChangeRequestedBy,
       minio: {
         endpoint: config.minio?.endpoint ?? null,
         region: config.minio?.region ?? null,
@@ -55,26 +75,76 @@ export class StorageSettingsService {
       },
       local: { rootPath: config.local?.rootPath ?? null },
       usage: {
-        usedBytes: await this.storedFiles.usageBytes(this.prisma, organizationId),
+        // AccreditMe cloud only — the only storage that counts toward the limit.
+        usedBytes: await this.storedFiles.cloudUsageBytes(this.prisma, organizationId),
         maxStorageGb: org.maxStorageGb,
       },
       maxUploadBytes: maxUploadBytes(),
     };
   }
 
+  /**
+   * Confirms where files are stored, ONCE. AccreditMe cloud needs nothing from
+   * the tenant; MinIO and a local folder must pass the connection test first.
+   */
+  async confirm(organizationId: string, dto: UpdateStorageSettingsDto, actorId: string): Promise<IStorageSettings> {
+    const org = await this.loadOrg(organizationId);
+    if (org.storageConfirmedAt) throw new StorageRefusalException('STORAGE_ALREADY_CONFIRMED');
+    const stored = readStorageConfig(org.storageConfig);
+    const next = this.merge(stored, dto);
+    this.assertUsable(dto.provider, next);
+    if (dto.provider !== 'S3') await this.assertTestPasses(organizationId, dto.provider, next);
+
+    const now = new Date();
+    // Guarded on storageConfirmedAt still being null, so two admins confirming
+    // at once cannot both win.
+    const saved = await this.prisma.organization.updateMany({
+      where: { id: organizationId, storageConfirmedAt: null },
+      data: {
+        storageProvider: dto.provider,
+        storageConfig: writeStorageConfig(next),
+        storageConfirmedAt: now,
+        storageConfirmedById: actorId,
+      },
+    });
+    if (saved.count !== 1) throw new StorageRefusalException('STORAGE_ALREADY_CONFIRMED');
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: organizationId,
+      actorId,
+      tenantId: organizationId,
+      before: { storageProvider: org.storageProvider, storageConfirmedAt: null },
+      after: { storageProvider: dto.provider, storageConfirmedAt: now.toISOString() },
+      metadata: { event: 'storage_confirmed', changedFields: changedFields(stored, next) },
+    });
+    return this.get(organizationId);
+  }
+
+  /**
+   * Before confirmation: saves a draft (it unlocks nothing). After: only new
+   * keys for the same MinIO endpoint and bucket, after a passing test —
+   * anything else is AccreditMe's to change.
+   */
   async update(organizationId: string, dto: UpdateStorageSettingsDto, actorId: string): Promise<IStorageSettings> {
     const org = await this.loadOrg(organizationId);
     const stored = readStorageConfig(org.storageConfig);
     const next = this.merge(stored, dto);
-    this.assertUsable(dto.provider, next);
 
-    await this.assertLocationNotStranded(organizationId, stored, next);
+    if (org.storageConfirmedAt) {
+      this.assertOnlyKeysChange(org.storageProvider, stored, dto.provider, next);
+      if (changedFields(stored, next).length > 0) {
+        await this.assertTestPasses(organizationId, dto.provider, next);
+      }
+    } else {
+      this.assertUsable(dto.provider, next);
+    }
 
     await this.prisma.organization.update({
       where: { id: organizationId },
       data: { storageProvider: dto.provider, storageConfig: writeStorageConfig(next) },
     });
-
     await this.auditLog.log({
       action: 'UPDATE',
       objectType: 'Organization',
@@ -83,9 +153,39 @@ export class StorageSettingsService {
       tenantId: organizationId,
       before: { storageProvider: org.storageProvider },
       after: { storageProvider: dto.provider },
-      metadata: { event: 'storage_settings_updated', changedFields: changedFields(stored, next) },
+      metadata: {
+        event: org.storageConfirmedAt ? 'storage_keys_replaced' : 'storage_settings_updated',
+        changedFields: changedFields(stored, next),
+      },
     });
+    return this.get(organizationId);
+  }
 
+  /**
+   * A tenant asks AccreditMe to change where its files are stored — only once
+   * confirmed. A repeat request moves the date and tells the platform admins
+   * again. The switch itself is done by AccreditMe (ACC-182).
+   */
+  async requestChange(organizationId: string, dto: StorageChangeRequestDto, actorId: string): Promise<IStorageSettings> {
+    const org = await this.loadOrg(organizationId);
+    if (!org.storageConfirmedAt) throw new StorageRefusalException('STORAGE_NOT_CONFIRMED');
+    const now = new Date();
+    const message = dto.message?.trim() || null;
+    await this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { storageChangeRequestedAt: now, storageChangeRequestedById: actorId },
+    });
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: organizationId,
+      actorId,
+      tenantId: organizationId,
+      after: { storageChangeRequestedAt: now.toISOString() },
+      metadata: { event: 'storage_change_requested', message },
+    });
+    // After the change is committed; a failed notice is logged inside.
+    await this.notices.storageChangeRequested(organizationId, actorId, now, message);
     return this.get(organizationId);
   }
 
@@ -97,8 +197,10 @@ export class StorageSettingsService {
   async test(organizationId: string, dto: TestStorageSettingsDto = {}): Promise<IStorageTestResult> {
     const org = await this.loadOrg(organizationId);
     const stored = readStorageConfig(org.storageConfig);
-    const provider: StorageProviderKind = dto?.provider ?? org.storageProvider;
-    const candidate = this.merge(stored, dto);
+    return this.runTest(organizationId, dto.provider ?? org.storageProvider, this.merge(stored, dto));
+  }
+
+  private async runTest(organizationId: string, provider: StorageProviderKind, candidate: IStorageConfig): Promise<IStorageTestResult> {
     const passed: StorageTestStep[] = [];
     const fail = (step: StorageTestStep, error: unknown): IStorageTestResult => {
       const refusal = this.asRefusal(error, step);
@@ -157,6 +259,35 @@ export class StorageSettingsService {
     return { ok: true, provider, passed, failedStep: null, code: null, message: null };
   }
 
+  private async assertTestPasses(organizationId: string, provider: StorageProviderKind, candidate: IStorageConfig): Promise<void> {
+    const result = await this.runTest(organizationId, provider, candidate);
+    if (!result.ok) {
+      throw new StorageRefusalException('STORAGE_TEST_FAILED', {
+        failedStep: result.failedStep ?? undefined,
+        cause: result.code ?? undefined,
+      });
+    }
+  }
+
+  // Once confirmed, the location belongs to AccreditMe: the same provider,
+  // and for MinIO the same endpoint, region and bucket; for a local folder
+  // the same root. Only the two MinIO keys may differ.
+  private assertOnlyKeysChange(
+    storedProvider: StorageProviderKind,
+    stored: IStorageConfig,
+    nextProvider: StorageProviderKind,
+    next: IStorageConfig,
+  ): void {
+    const keys = new Set(['minio.accessKeyId', 'minio.secretAccessKey']);
+    const changed = changedFields(stored, next);
+    if (nextProvider !== storedProvider || changed.some((field) => !keys.has(field))) {
+      throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
+    }
+    if (changed.length > 0 && storedProvider !== 'MINIO') {
+      throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
+    }
+  }
+
   // Stored settings with the sent ones on top. An omitted field — a secret
   // above all — keeps its stored value.
   private merge(stored: IStorageConfig, dto: TestStorageSettingsDto): IStorageConfig {
@@ -194,24 +325,6 @@ export class StorageSettingsService {
     }
   }
 
-  private async assertLocationNotStranded(organizationId: string, stored: IStorageConfig, next: IStorageConfig): Promise<void> {
-    const checks: IStorageLocation[] = [];
-    if (
-      stored.minio?.endpoint &&
-      stored.minio.bucket &&
-      (stored.minio.endpoint !== next.minio?.endpoint || stored.minio.bucket !== next.minio?.bucket)
-    ) {
-      checks.push({ provider: 'MINIO', endpoint: stored.minio.endpoint, bucket: stored.minio.bucket, rootPath: null });
-    }
-    if (stored.local?.rootPath && stored.local.rootPath !== next.local?.rootPath) {
-      checks.push({ provider: 'LOCAL_FILESYSTEM', endpoint: null, bucket: null, rootPath: stored.local.rootPath });
-    }
-    for (const location of checks) {
-      const fileCount = await this.storedFiles.liveFilesAt(organizationId, location);
-      if (fileCount > 0) throw new StorageRefusalException('STORAGE_LOCATION_IN_USE', { fileCount });
-    }
-  }
-
   private asRefusal(error: unknown, step: StorageTestStep): StorageRefusalException {
     if (error instanceof StorageRefusalException) return error;
     if (isPrivateEndpointRefusal(error)) return new StorageRefusalException('STORAGE_ENDPOINT_NOT_ALLOWED');
@@ -228,10 +341,18 @@ export class StorageSettingsService {
     }
   }
 
-  private async loadOrg(organizationId: string) {
+  private async loadOrg(organizationId: string): Promise<SettingsOrg> {
     const org = await this.prisma.organization.findFirst({
       where: { id: organizationId },
-      select: { storageProvider: true, storageConfig: true, maxStorageGb: true },
+      select: {
+        storageProvider: true,
+        storageConfig: true,
+        maxStorageGb: true,
+        storageConfirmedAt: true,
+        storageConfirmedBy: { select: { id: true, name: true } },
+        storageChangeRequestedAt: true,
+        storageChangeRequestedBy: { select: { id: true, name: true } },
+      },
     });
     if (!org) throw new NotFoundException('Tenant not found');
     return org;
