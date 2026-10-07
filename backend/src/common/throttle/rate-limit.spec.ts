@@ -59,9 +59,11 @@ function sessionFor(sub: string, secret = SECRET): string {
  * configureHttp() (trust proxy + cookies). Only the services behind the routes
  * are stand-ins. Every limit is exercised at its REAL number.
  *
- * supertest connects over loopback, which is a trusted proxy, so the
- * X-Forwarded-For a test sends decides the client address — exactly as
- * Railway's does in production.
+ * configureHttp() trusts two proxy hops (Railway's router, then its edge). The
+ * loopback socket supertest connects over is the first; so the X-Forwarded-For
+ * a test sends decides the client address, exactly as Railway's does. A
+ * single-entry header is the visitor; the Railway-shaped tests send
+ * "<visitor>, <edge>", as measured on 7 Oct.
  */
 describe('rate limiting (ACC-129)', () => {
   // The high-volume tests send up to 602 requests through a real app.
@@ -235,11 +237,30 @@ describe('rate limiting (ACC-129)', () => {
 
   it('ignores an address the client put on the left of X-Forwarded-For', async () => {
     const statuses = await times(RATE_LIMITS.invitationLookup.limit, (i) =>
-      lookup(`10.0.0.${i}, 198.51.100.9`),
+      lookup(`10.0.0.${i}, 198.51.100.9, 152.233.15.123`),
     );
     expect(statuses.every((s) => s === 200)).toBe(true);
     // A new spoofed value cannot escape the real client's bucket.
-    expect((await lookup('8.8.8.8, 198.51.100.9')).status).toBe(429);
+    expect((await lookup('8.8.8.8, 198.51.100.9, 152.233.15.123')).status).toBe(
+      429,
+    );
+  });
+
+  it("counts one visitor as one, whichever of Railway's edge addresses they came through", async () => {
+    // Measured 7 Oct: the edge appends its own address, and a different one
+    // from request to request. Counting the edge split one visitor into
+    // several buckets and none filled.
+    const EDGES = ['152.233.15.123', '152.233.68.97'];
+    const statuses = await times(RATE_LIMITS.invitationLookup.limit, (i) =>
+      lookup(`203.0.113.7, ${EDGES[i % 2]}`),
+    );
+    expect(statuses.every((s) => s === 200)).toBe(true);
+    expect((await lookup(`203.0.113.7, ${EDGES[1]}`)).status).toBe(429);
+    expect(warnings().some((w) => w.includes('ip:203.0.113.7 over'))).toBe(
+      true,
+    );
+    // Another visitor behind the same edges still has their own bucket.
+    expect((await lookup(`203.0.113.8, ${EDGES[0]}`)).status).toBe(200);
   });
 
   describe('password reset', () => {
