@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 6 Oct 2026 · Task screens, one system · on Design System Rev 8, Templates Rev 6</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Tasks</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 100ch; text-wrap: pretty;">Every surface a task appears on, drawn from one row anatomy and one status vocabulary: its own page, My tasks, the record's panel, New task, the request and decision dialogs, evidence, edit and cancel, stage task setup, and Home. Builds on what was already drawn; the “Supersedes” list at the end names every earlier statement this replaces. Behaviour questions are listed for the product owner and not decided here. Tweaks: who is looking at the task page, and whether the row menu is shown open.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div>
+          <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; margin-block-start: 12px;">
+      <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Status vocabulary · artboard 5 “record status”: dot + word, the expected value plain</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 10px 22px; padding: 10px 12px;">
+        <sc-for list="{{ statusKey }}" as="s" hint-placeholder-count="9">
+          <span style="display: inline-flex; flex-direction: column; gap: 2px; min-width: 120px;">
+            <span style="{{ s.statusStyle }}"><sc-if value="{{ s.hasDot }}" hint-placeholder-val="{{ true }}"><span style="{{ s.dotStyle }}"></span></sc-if>{{ s.status }}<sc-if value="{{ s.flag }}" hint-placeholder-val="{{ false }}"><span style="{{ flagStyle }}">{{ s.flag }}</span></sc-if></span>
+            <span style="font-size: 11px; color: #5A6779;">{{ s.note }}</span>
+          </span>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="t1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">A task's own view: a record page at /tasks/:id</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Template 2, small. Viewer: {{ viewerLabel }}. Switch the viewer in Tweaks.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 16px 18px;">
+      <div style="font-size: 12px; color: #5A6779; display: flex; flex-wrap: wrap; gap: 6px;"><a href="#t1" style="text-decoration: none;">Committees</a><span>/</span><a href="#t1" style="text-decoration: none;">Infection Prevention &amp; Control</a><span>/</span><span>Tasks</span></div>
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-block-start: 6px;">
+        <div style="min-width: 0; flex: 1 1 520px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5A6779;">Task</div>
+          <div style="font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.015em;">Update hand-hygiene audit tool</div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-block-start: 6px;">
+            <span style="display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; color: #1F5480;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2E6FA3; margin-inline-end: 6px;"></span>In progress</span>
+            <span style="font-size: 13px; color: #4A5568;">▲ High priority</span>
+            <span style="font-size: 13px; color: #2D3748;">Due <strong style="font-weight: 600;">15 Oct 2026, 17:00</strong> <span style="color: #5A6779;">+03</span></span>
+            <span style="font-size: 12px; color: #5A6779;">moved from 8 Oct · more time approved 3 Oct</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+          <sc-for list="{{ viewActions }}" as="a" hint-placeholder-count="3">
+            <button aria-label="{{ a.aria }}" style="{{ a.style }}">{{ a.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 0; border: 1px solid #E2E8F0; border-radius: 6px; background: #fff; margin-block-start: 12px;">
+        <div style="padding: 9px 12px; border-inline-end: 1px solid #E2E8F0;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">About</div><div style="display: flex; gap: 6px; align-items: center; margin-block-start: 2px;"><span style="color: #5A6779;">◇</span><a href="#t1" style="font-size: 14px; font-weight: 500; text-decoration: none;">Infection Prevention &amp; Control</a></div><div style="font-size: 11.5px; color: #5A6779;">Committee · Terms Review 2/4</div></div>
+        <div style="padding: 9px 12px; border-inline-end: 1px solid #E2E8F0;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">With</div><div style="font-size: 14px; font-weight: 500; margin-block-start: 2px;"><a href="#t1" style="text-decoration: none;">Dr. Huda Zahrani</a></div><div style="font-size: 11.5px; color: #5A6779;">Clinical Pharmacist · Pharmacy · picked up from pool 2 Oct</div></div>
+        <div style="padding: 9px 12px; border-inline-end: 1px solid #E2E8F0;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Created by</div><div style="font-size: 14px; font-weight: 500; margin-block-start: 2px;"><a href="#t1" style="text-decoration: none;">Nora Al-Otaibi</a></div><div style="font-size: 11.5px; color: #5A6779;">Quality Manager · 1 Oct 2026, by hand</div></div>
+        <div style="padding: 9px 12px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Evidence</div><div style="font-size: 14px; font-weight: 500; margin-block-start: 2px;">Required · 2 added</div><div style="font-size: 11.5px; color: #5A6779;">Complete is available</div></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; margin-block-start: 12px; align-items: start;">
+        <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;">
+            <div style="padding: 9px 12px; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Description</div>
+            <div style="padding: 10px 12px; font-size: 13.5px; color: #2D3748; text-wrap: pretty;">Align the ward audit form with WHO's five moments. Remove the “partial” option, which surveyors read as non-compliance, and add a field for the observer's unit.</div>
+          </div>
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-block-end: 1px solid #E2E8F0;">
+              <span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Evidence</span><span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;">3</span><span style="font-size: 11.5px; color: #5A6779;">required</span></span>
+              <sc-if value="{{ viewerIsAssignee }}" hint-placeholder-val="{{ true }}"><a href="#t6" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">Add evidence</a></sc-if>
+            </div>
+            <sc-for list="{{ evidenceList }}" as="e" hint-placeholder-count="3">
+              <div style="display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;">
+                <span style="flex: none; width: 26px; height: 26px; border-radius: 5px; border: 1px solid #E2E8F0; background: #F4F7FA; color: #4A5568; font-size: 12px; display: flex; align-items: center; justify-content: center;">{{ e.glyph }}</span>
+                <span style="flex: 1 1 auto; min-width: 0;">
+                  <span style="{{ e.titleStyle }}">{{ e.title }}</span>
+                  <span style="display: block; font-size: 11.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ e.meta }}</span>
+                </span>
+                <sc-if value="{{ e.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ e.chipStyle }}">{{ e.chip }}</span></sc-if>
+              </div>
+            </sc-for>
+            <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">The blocked file doesn't count towards “required”. Only evidence that can be opened does. The file row is drawn now and is absent until file storage ships.</div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+          <div style="background: #fff; border: 1px solid #FEDF89; border-radius: 8px;">
+            <div style="padding: 9px 12px; border-block-end: 1px solid #FEDF89; background: #FFFAEB; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708;">Open request</span>
+              <span style="font-size: 11.5px; color: #4A5568;">one at a time per task</span>
+            </div>
+            <div style="padding: 10px 12px;">
+              <div style="font-size: 13.5px; font-weight: 600;">Hold until 20 Oct 2026</div>
+              <div style="font-size: 12.5px; color: #1F5480;">If approved, start and due dates move to 20 Oct. The due date can't be changed while on hold.</div>
+              <div style="font-size: 12px; color: #5A6779;">Asked by Dr. Huda Zahrani · 5 Oct 2026, 14:20 · waiting for Nora Al-Otaibi</div>
+              <div style="font-size: 13px; color: #4A5568; background: #F4F7FA; border-radius: 6px; padding: 8px 10px; margin-block-start: 8px; text-wrap: pretty;">“The audit form needs Infection Control sign-off, and their lead is on leave until 19 Oct.”</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 10px;">
+                <sc-for list="{{ requestActions }}" as="a" hint-placeholder-count="2">
+                  <button style="{{ a.style }}">{{ a.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;">
+            <div style="padding: 9px 12px; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">History</div>
+            <sc-for list="{{ history }}" as="h" hint-placeholder-count="8">
+              <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7;">
+                <span style="font-size: 11.5px; color: #5A6779; font-variant-numeric: tabular-nums;">{{ h.when }}</span>
+                <span style="min-width: 0;"><span style="font-size: 12.5px; font-weight: 500;">{{ h.what }}</span><sc-if value="{{ h.why }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ h.why }}</span></sc-if></span>
+              </div>
+            </sc-for>
+            <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779;">Oldest first, every event with its actor. The stage-task variant opens with “Created by the workflow when the record entered Terms Review · creator of record: Nora Al-Otaibi”.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Why a page and not a side panel</div>
+        <sc-for list="{{ whyPage }}" as="w" hint-placeholder-count="4">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;">{{ w }}</span></div>
+        </sc-for>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block: 12px 6px;">Six request outcomes</div>
+        <sc-for list="{{ outcomesView }}" as="o" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: 112px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div>
+        </sc-for>
+      </div>
+      <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; background: #F4F7FA; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="font-size: 12.5px; color: #5A6779; display: flex; gap: 6px;"><a href="#t1" style="text-decoration: none;">اللجان</a><span>/</span><a href="#t1" style="text-decoration: none;">لجنة مكافحة العدوى</a><span>/</span><span>المهام</span></div>
+        <div style="font-size: 12px; font-weight: 700; color: #5A6779; margin-block-start: 6px;">مهمة</div>
+        <div style="font-size: 29px; line-height: 40px; font-weight: 600;">تحديث أداة تدقيق نظافة اليدين</div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-block-start: 4px;">
+          <span style="display: inline-flex; align-items: center; font-size: 14px; font-weight: 500; color: #1F5480;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2E6FA3; margin-inline-end: 6px;"></span>قيد التنفيذ</span>
+          <span style="font-size: 14px; color: #4A5568;">▲ أولوية عالية</span>
+          <span style="font-size: 14px;">تستحق <strong dir="ltr" style="font-weight: 600; unicode-bidi: isolate;">15 Oct 2026, 17:00</strong> <span dir="ltr" style="color: #5A6779; unicode-bidi: isolate;">+03</span></span>
+        </div>
+        <div style="font-size: 12.5px; color: #5A6779;">نُقل الموعد من <span dir="ltr" style="unicode-bidi: isolate;">8 Oct</span> · وافق على تمديد المهلة في <span dir="ltr" style="unicode-bidi: isolate;">3 Oct</span></div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 10px;">
+          <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px; font-weight: 600;">إنجاز</button>
+          <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 14px;">إضافة دليل</button>
+          <button aria-label="إجراءات أخرى" style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 11px; font-family: inherit; font-size: 14px;">⋯</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); border: 1px solid #E2E8F0; border-radius: 6px; background: #fff; margin-block-start: 12px;">
+          <div style="padding: 8px 11px; border-inline-end: 1px solid #E2E8F0;"><div style="font-size: 12px; font-weight: 700; color: #5A6779;">بخصوص</div><div style="font-size: 14px; font-weight: 500;"><span style="color: #5A6779;">◇</span> <a href="#t1" style="text-decoration: none;">لجنة مكافحة العدوى</a></div></div>
+          <div style="padding: 8px 11px; border-inline-end: 1px solid #E2E8F0;"><div style="font-size: 12px; font-weight: 700; color: #5A6779;">لدى</div><div style="font-size: 14px; font-weight: 500;"><a href="#t1" style="text-decoration: none;">د. هدى الزهراني</a></div><div style="font-size: 12.5px; color: #5A6779;">صيدلي إكلينيكي · الصيدلية</div></div>
+          <div style="padding: 8px 11px;"><div style="font-size: 12px; font-weight: 700; color: #5A6779;">أنشأها</div><div style="font-size: 14px; font-weight: 500;"><a href="#t1" style="text-decoration: none;">نورة العتيبي</a></div><div style="font-size: 12.5px; color: #5A6779;">مديرة الجودة · <span dir="ltr" style="unicode-bidi: isolate;">1 Oct 2026</span></div></div>
+        </div>
+        <div dir="ltr" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11.5px; color: #5A6779; margin-block-start: 10px; text-wrap: pretty;">Mirrored by dir alone. The breadcrumb reads right to left, the action group sits at the inline end (left), and the date, time and offset are isolated LTR runs so “+03” can't jump to the other side of the time. Unit, position and committee names come from tenant data in the reader's language, with an English fallback.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="t2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">My tasks</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Template 1 at 1130px of content. Two sections that appear only when something is in them, then the saved-view list.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 16px 18px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px;">
+        <div><div style="font-size: 22px; line-height: 28px; font-weight: 600;">My tasks</div><div style="font-size: 12.5px; color: #5A6779;">9 open · 1 overdue</div></div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <sc-for list="{{ savedViews }}" as="v" hint-placeholder-count="4"><span style="{{ v.style }}">{{ v.label }}</span></sc-for>
+        </div>
+      </div>
+
+      <div style="background: #fff; border: 1px solid #FEDF89; border-radius: 8px; margin-block-start: 14px; overflow: hidden;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; background: #FFFAEB; border-block-end: 1px solid #FEDF89;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708;">Waiting for your decision</span>
+          <span style="font-size: 11px; font-weight: 600; color: #B54708; background: #fff; border: 1px solid #FEDF89; border-radius: 4px; padding: 1px 6px;">3</span>
+          <span style="font-size: 11.5px; color: #4A5568;">on tasks you created or cover for. Someone is blocked until you answer.</span>
+        </div>
+        <sc-for list="{{ decideRows }}" as="r" hint-placeholder-count="3">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7; min-height: 36px;">
+            <span style="flex: 1 1 300px; min-width: 0;">
+              <span style="display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.title }}</span>
+              <span style="display: block; font-size: 11.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><span>{{ r.glyph }}</span> <a href="#t2" style="text-decoration: none;">{{ r.rec }}</a> · {{ r.who }}</span>
+            </span>
+            <span style="flex: 1 1 320px; min-width: 0;">
+              <span style="display: block; font-size: 12.5px; font-weight: 600; color: #B54708;">{{ r.ask }}</span>
+              <span style="display: block; font-size: 12px; color: #4A5568; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.why }}</span>
+            </span>
+            <button style="flex: none; background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 4px 11px; font-family: inherit; font-size: 12.5px; font-weight: 500;">{{ r.action }}</button>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="background: #fff; border: 1px solid #C5DAEA; border-radius: 8px; margin-block-start: 12px; overflow: hidden;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; background: #F2F7FB; border-block-end: 1px solid #C5DAEA;">
+          <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480;">Available to pick up</span>
+          <span style="font-size: 11px; font-weight: 600; color: #1F5480; background: #fff; border: 1px solid #C5DAEA; border-radius: 4px; padding: 1px 6px;">2</span>
+          <span style="font-size: 11.5px; color: #4A5568;">offered to a position you hold. The first person to pick one up owns it.</span>
+        </div>
+        <sc-for list="{{ poolRows }}" as="r" hint-placeholder-count="2">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;">
+            <span style="flex: 1 1 340px; min-width: 0;">
+              <span style="display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.title }}</span>
+              <span style="display: block; font-size: 11.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><span>{{ r.glyph }}</span> <a href="#t2" style="text-decoration: none;">{{ r.rec }}</a> · {{ r.pool }}</span>
+            </span>
+            <span style="flex: none; width: 84px; font-size: 12.5px; color: #4A5568;">{{ r.prio }}</span>
+            <span style="flex: none; width: 150px; font-size: 12.5px; color: #4A5568; font-variant-numeric: tabular-nums;">{{ r.due }}</span>
+            <button style="flex: none; background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 4px 11px; font-family: inherit; font-size: 12.5px; font-weight: 500;">Pick up</button>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; margin-block-start: 12px; overflow: visible; position: relative;">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-block-end: 1px solid #E2E8F0;">
+          <span style="display: flex; align-items: center; gap: 7px; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 9px; flex: 0 1 280px; font-size: 12.5px; color: #8A94A6;">⌕ Search title or record…</span>
+          <sc-for list="{{ statusChips }}" as="c" hint-placeholder-count="5"><span style="{{ c.style }}">{{ c.label }}</span></sc-for>
+          <span style="margin-inline-start: auto; font-size: 12px; color: #5A6779;">Sorted by due, soonest first</span>
+        </div>
+        <div style="display: flex; gap: 12px; padding: 6px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #5A6779;">
+          <span style="flex: 1 1 340px; min-width: 240px;">Task · record</span><span style="flex: none; width: 84px;">Priority</span><span style="flex: none; width: 150px;">Due ▲</span><span style="flex: none; width: 190px;">Status</span><span style="flex: none; width: 150px;"></span>
+        </div>
+        <sc-for list="{{ myRows }}" as="r" hint-placeholder-count="8">
+          <div style="{{ r.rowStyle }}">
+            <span style="flex: 1 1 340px; min-width: 240px;">
+              <span style="{{ r.titleStyle }}">{{ r.title }}</span>
+              <span style="display: block; font-size: 11.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><span>{{ r.glyph }}</span> <a href="#t2" style="text-decoration: none;">{{ r.rec }}</a><sc-if value="{{ r.line2 }}" hint-placeholder-val="{{ false }}"> · <span style="{{ r.line2Style }}">{{ r.line2 }}</span></sc-if></span>
+            </span>
+            <span style="flex: none; width: 84px; font-size: 12.5px; color: #4A5568;">{{ r.prio }}</span>
+            <span style="{{ r.dueStyle }}">{{ r.due }}</span>
+            <span style="flex: none; width: 190px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span style="{{ r.statusStyle }}"><sc-if value="{{ r.hasDot }}" hint-placeholder-val="{{ true }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.status }}</span><sc-if value="{{ r.flag }}" hint-placeholder-val="{{ false }}"><span style="{{ flagStyle }}">{{ r.flag }}</span></sc-if></span>
+            <span style="flex: none; width: 150px; display: flex; justify-content: flex-end; gap: 6px; position: relative;">
+              <sc-if value="{{ r.primary }}" hint-placeholder-val="{{ true }}"><button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 4px 10px; font-family: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap;">{{ r.primary }}</button></sc-if>
+              <button aria-label="{{ r.menuAria }}" style="width: 28px; height: 28px; border: 1px solid #5A6779; border-radius: 6px; background: #fff; color: #2D3748; font-size: 13px;">⋯</button>
+              <sc-if value="{{ r.menuOpen }}" hint-placeholder-val="{{ false }}">
+                <span role="menu" style="position: absolute; inset-inline-end: 0; top: 32px; z-index: 2; width: 248px; background: #fff; border: 1px solid #8A94A6; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); padding: 4px 0; display: flex; flex-direction: column;">
+                  <sc-for list="{{ menuItems }}" as="m" hint-placeholder-count="7">
+                    <span role="menuitem" style="{{ m.style }}"><span style="display: block;">{{ m.label }}</span><sc-if value="{{ m.why }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 11.5px; color: #5A6779; font-weight: 400;">{{ m.why }}</span></sc-if></span>
+                  </sc-for>
+                </span>
+              </sc-if>
+            </span>
+          </div>
+        </sc-for>
+        <div style="display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px; font-size: 12px; color: #5A6779;"><span>1–9 of 9</span><span>Paginator hidden: one page</span></div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div>
+        <sc-for list="{{ myTasksNotes }}" as="n" hint-placeholder-count="7">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Actions by relationship and status · never by permission</div>
+          <div style="border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;">
+            <sc-for list="{{ actionMatrix }}" as="a" hint-placeholder-count="8">
+              <div style="display: grid; grid-template-columns: 150px 110px 1fr; gap: 8px; padding: 6px 10px; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="font-weight: 600;">{{ a.who }}</span><span style="color: #1F5480; font-weight: 600;">{{ a.primary }}</span><span style="color: #4A5568; text-wrap: pretty;">{{ a.menu }}</span></div>
+            </sc-for>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-top: 6px; margin-block-start: 6px; text-wrap: pretty;">Column 2 is the row's one visible button. Column 3 is the worded menu. Missing actions are absent, not greyed. The single exception is Complete without evidence: it shows disabled in the menu with its reason, because the person needs to know why it's missing.</div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Six request outcomes · per section</div>
+          <sc-for list="{{ outcomesList }}" as="o" hint-placeholder-count="6">
+            <div style="display: grid; grid-template-columns: 112px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 14px 16px; margin-block-start: 14px; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+      <div style="font-size: 23px; line-height: 32px; font-weight: 600;">مهامي</div>
+      <div style="background: #fff; border: 1px solid #C5DAEA; border-radius: 8px; margin-block-start: 10px; overflow: hidden;">
+        <div style="padding: 8px 12px; background: #F2F7FB; border-block-end: 1px solid #C5DAEA; font-size: 12px; font-weight: 700; color: #1F5480;">متاحة للاستلام · <span dir="ltr" style="unicode-bidi: isolate;">2</span></div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 8px 12px;">
+          <span style="flex: 1 1 300px; min-width: 0;"><span style="display: block; font-size: 14px; font-weight: 500;">مطابقة سجل المواد المخدرة</span><span style="display: block; font-size: 12.5px; color: #5A6779;">◇ <a href="#t2" style="text-decoration: none;">لجنة سلامة الأدوية</a> · لكل مسؤولي الجودة، الصيدلية (<span dir="ltr" style="unicode-bidi: isolate;">4</span>)</span></span>
+          <span style="flex: none; width: 150px; font-size: 13.5px; color: #4A5568;"><span dir="ltr" style="unicode-bidi: isolate;">9 Oct 2026</span></span>
+          <button style="flex: none; background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 4px 11px; font-family: inherit; font-size: 13.5px;">استلام</button>
+        </div>
+      </div>
+      <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; margin-block-start: 12px; overflow: hidden;">
+        <div style="display: flex; gap: 12px; padding: 6px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 12px; font-weight: 700; color: #5A6779;">
+          <span style="flex: 1 1 300px;">المهمة · السجل</span><span style="flex: none; width: 150px;">الاستحقاق ▲</span><span style="flex: none; width: 200px;">الحالة</span><span style="flex: none; width: 140px;"></span>
+        </div>
+        <sc-for list="{{ myRowsAr }}" as="r" hint-placeholder-count="4">
+          <div style="{{ r.rowStyle }}">
+            <span style="flex: 1 1 300px; min-width: 0;"><span style="display: block; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.title }}</span><span style="display: block; font-size: 12.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">◇ <a href="#t2" style="text-decoration: none;">{{ r.rec }}</a><sc-if value="{{ r.line2 }}" hint-placeholder-val="{{ false }}"> · <span style="{{ r.line2Style }}">{{ r.line2 }}</span></sc-if></span></span>
+            <span style="{{ r.dueStyle }}"><span dir="ltr" style="unicode-bidi: isolate;">{{ r.due }}</span>{{ r.dueTail }}</span>
+            <span style="flex: none; width: 200px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span style="{{ r.statusStyle }}"><sc-if value="{{ r.hasDot }}" hint-placeholder-val="{{ true }}"><span style="{{ r.dotStyle }}"></span></sc-if>{{ r.status }}</span><sc-if value="{{ r.flag }}" hint-placeholder-val="{{ false }}"><span style="{{ flagStyleAr }}">{{ r.flag }}</span></sc-if></span>
+            <span style="flex: none; width: 140px; display: flex; justify-content: flex-end; gap: 6px;"><button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 4px 10px; font-family: inherit; font-size: 13.5px;">{{ r.primary }}</button><button aria-label="إجراءات أخرى" style="width: 28px; height: 28px; border: 1px solid #5A6779; border-radius: 6px; background: #fff; font-size: 13px;">⋯</button></span>
+          </div>
+        </sc-for>
+      </div>
+      <div dir="ltr" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Column order mirrors: Task is at the right, and the action cell at the left with ⋯ on the outer edge. The menu opens from its inline end, so it hangs leftward and stays inside the table. Arabic rows are 2px taller (lines at 22/20), so a two-line row is 54px against 52px.</div>
+    </div>
+  </section>
+
+  <section id="t3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The record's tasks panel</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The Compact List Panel at 360px, on the Committee record. Every record type inherits it unchanged.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px; margin-block-end: 14px;">
+      <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Record header · the stage indicator carries the required-task summary</div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;">
+        <span style="display: inline-flex; font-size: 11.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 4px; padding: 2px 8px;">Terms Review · 2/4</span>
+        <span style="font-size: 13px; color: #2D3748;"><strong style="font-weight: 600;">2 of 3 required tasks done</strong> · 3 optional</span>
+        <span style="flex: 1 1 auto;"></span>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 3px;">
+          <span style="display: flex; gap: 8px;">
+            <button style="background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px;">Revise Terms</button>
+            <button disabled="disabled" aria-describedby="fwd-why" style="background: #DCE5EE; color: #5A6779; border: 1px solid #DCE5EE; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600; cursor: not-allowed;">Approve Committee</button>
+          </span>
+          <span id="fwd-why" style="font-size: 12px; color: #B54708; font-weight: 500;">1 required task is still open: <a href="#t3" style="text-decoration: none; font-weight: 600;">Collect member CVs</a></span>
+        </span>
+      </div>
+      <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The forward action is disabled, never absent: the person is entitled to it and is waiting on work, so the reason sits beside it and links to the task. Backward actions (Revise Terms) never wait for tasks. Optional tasks don't count and don't block. When the last required task is completed the button enables in place, and a polite live region announces “Approve Committee is now available”.</div>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;">
+      <div style="flex: 0 1 360px; min-width: 0;">
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;">
+            <span style="display: flex; align-items: center; gap: 7px;"><span style="font-size: 13px; font-weight: 600;">Tasks</span><span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;">7</span></span>
+            <a href="#t4" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">New task</a>
+          </div>
+          <div style="padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12px; color: #4A5568; background: #FBFCFD;">Required for Terms Review · <strong style="font-weight: 600;">2 of 3 done</strong></div>
+          <sc-for list="{{ panelRows }}" as="r" hint-placeholder-count="6">
+            <div style="{{ r.rowStyle }}">
+              <span style="flex: 1 1 auto; min-width: 0;">
+                <span style="display: flex; align-items: center; gap: 6px; min-width: 0;"><span style="{{ r.titleStyle }}">{{ r.title }}</span><sc-if value="{{ r.req }}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 10.5px; font-weight: 700; color: #4A5568; border: 1px solid #8A94A6; border-radius: 3px; padding: 0 5px;">{{ r.req }}</span></sc-if></span>
+                <span style="{{ r.line2Style }}">{{ r.line2 }}</span>
+                <sc-if value="{{ r.reason }}" hint-placeholder-val="{{ false }}"><span style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: #4A5568; margin-block-start: 2px;">{{ r.reason }}</span></sc-if>
+              </span>
+              <span style="flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; max-width: 110px;">
+                <span style="{{ r.rightStyle }}">{{ r.right }}</span>
+                <sc-if value="{{ r.act }}" hint-placeholder-val="{{ false }}"><a href="#t5" style="font-size: 12px; font-weight: 600; text-decoration: none;">{{ r.act }}</a></sc-if>
+              </span>
+            </div>
+          </sc-for>
+          <div style="padding: 7px 12px; font-size: 12px;"><a href="#t2" style="text-decoration: none;">All 7 tasks, with history</a></div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Order: open required, open optional, then done and cancelled. Each group is by due date, so what blocks the stage is always at the top. “Required” is a worded outline tag, never a colour. Search appears above the rows at 9 or more, and nothing else does (decided). A cancelled task stays, with its title in ink-700 and “Cancelled 28 Sep · Record moved on” on its second line and the stage it belonged to at its right edge. Decided: when a record leaves a stage, only that stage's open optional tasks are cancelled, with that reason. Required tasks don't end with the stage. If the record returns, fresh tasks are created and the old ones stay in history.</div>
+      </div>
+
+      <div dir="rtl" style="flex: 0 1 360px; min-width: 0; font-family: 'IBM Plex Sans Arabic', sans-serif;">
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;">
+            <span style="display: flex; align-items: center; gap: 7px;"><span style="font-size: 14px; font-weight: 600;">المهام</span><span style="font-size: 12px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 0 6px;">6</span></span>
+            <a href="#t4" style="font-size: 13.5px; font-weight: 600; text-decoration: none;">مهمة جديدة</a>
+          </div>
+          <div style="padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 13px; color: #4A5568; background: #FBFCFD;">المطلوبة لمرحلة مراجعة الشروط · <strong style="font-weight: 600;">أُنجز <span dir="ltr" style="unicode-bidi: isolate;">2</span> من <span dir="ltr" style="unicode-bidi: isolate;">3</span></strong></div>
+          <sc-for list="{{ panelRowsAr }}" as="r" hint-placeholder-count="4">
+            <div style="{{ r.rowStyle }}">
+              <span style="flex: 1 1 auto; min-width: 0;">
+                <span style="display: flex; align-items: center; gap: 6px; min-width: 0;"><span style="{{ r.titleStyle }}">{{ r.title }}</span><sc-if value="{{ r.req }}" hint-placeholder-val="{{ false }}"><span style="flex: none; font-size: 11.5px; font-weight: 700; color: #4A5568; border: 1px solid #8A94A6; border-radius: 3px; padding: 0 5px;">{{ r.req }}</span></sc-if></span>
+                <span style="{{ r.line2Style }}">{{ r.line2 }}</span>
+                <sc-if value="{{ r.reason }}" hint-placeholder-val="{{ false }}"><span style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; color: #4A5568;">{{ r.reason }}</span></sc-if>
+              </span>
+              <span style="flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; max-width: 110px;">
+                <span style="{{ r.rightStyle }}"><span dir="ltr" style="unicode-bidi: isolate;">{{ r.right }}</span></span>
+                <sc-if value="{{ r.act }}" hint-placeholder-val="{{ false }}"><a href="#t5" style="font-size: 13px; font-weight: 600; text-decoration: none;">{{ r.act }}</a></sc-if>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+        <div dir="ltr" style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The due summary moves to the left edge. “Required” is «مطلوبة», 11.5px/700 with no tracking. The two-line clamp on a rejection reason stays at two lines in Arabic, at 13/20.</div>
+      </div>
+
+      <div style="flex: 0 1 360px; min-width: 0;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Viewer without View all tasks on Committees</div>
+        <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;">
+            <span style="display: flex; align-items: center; gap: 7px;"><span style="font-size: 13px; font-weight: 600;">Your tasks on this committee</span><span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;">2</span></span>
+          </div>
+          <div style="display: flex; gap: 10px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;"><span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 500;">Update hand-hygiene audit tool</span><span style="display: block; font-size: 11.5px; color: #1F5480; font-weight: 500;">You · In progress · hold asked to 20 Oct</span></span><span style="flex: none; font-size: 12px; color: #4A5568;">Due 15 Oct</span></div>
+          <div style="display: flex; gap: 10px; padding: 8px 12px;"><span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 500;">Collect ward signatures for IPC-04</span><span style="display: block; font-size: 11.5px; color: #1F5480; font-weight: 500;">Offered to you · Secretary, IPC</span></span><span style="flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;"><span style="font-size: 12px; color: #4A5568;">Due 14 Oct</span><a href="#t3" style="font-size: 12px; font-weight: 600; text-decoration: none;">Pick up</a></span></div>
+        </div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">The title and count say whose tasks these are, so “2” is never read as the committee's total. New task is absent without Create tasks on Committees. The record header's “2 of 3 required tasks done” stays visible to everyone who can open the record.</div>
+      </div>
+
+      <div style="flex: 1 1 320px; min-width: 0; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Six request outcomes · panel</div>
+        <sc-for list="{{ outcomesPanel }}" as="o" hint-placeholder-count="6">
+          <div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div>
+        </sc-for>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block: 12px 6px;">What the row's right edge shows</div>
+        <div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">The due summary (“Due 9 Oct”, “4 days overdue” in danger ink at weight 600, “Done 3 Oct”), plus at most one link for an action the viewer owns on that row: Decide, Reassign, or Pick up. Everything else is on the task page, one click away. A panel row never carries a ⋯ menu: at 360px the menu would cover the next panel.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="t4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">New task · step 1 with the real assignee picker</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Form dialog 560, compact density (6 field blocks). Step 2 (description, evidence required) is unchanged from Templates.</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+      <sc-for list="{{ dlgNew }}" as="d" hint-placeholder-count="3">
+        <div style="flex: 0 1 560px; min-width: 0;">
+          <div dir="{{ d.dir }}" style="{{ d.capStyle }}">{{ d.cap }}</div>
+          <div dir="{{ d.dir }}" style="{{ d.frame }}">
+            <div style="{{ d.headStyle }}"><span style="min-width: 0;"><span style="{{ d.titleStyle }}">{{ d.title }}</span><span style="{{ d.ctxStyle }}">{{ d.ctx }}</span></span><span aria-label="Close" style="color: #5A6779; font-size: 13px;">✕</span></div>
+            <div style="{{ d.bodyStyle }}">
+              <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="5">
+                <div style="{{ it.wrap }}">
+                  <sc-if value="{{ it.isCols }}" hint-placeholder-val="{{ true }}">
+                    <div style="{{ it.grid }}">
+                      <sc-for list="{{ it.cols }}" as="c" hint-placeholder-count="2">
+                        <div style="min-width: 0;">
+                          <div style="{{ c.lab }}">{{ c.label }}<span style="{{ c.reqStyle }}">{{ c.req }}</span></div>
+                          <sc-if value="{{ c.isBox }}" hint-placeholder-val="{{ true }}"><div style="{{ c.box }}"><span dir="{{ c.vdir }}" style="{{ c.val }}">{{ c.value }}</span><span style="{{ c.glyphStyle }}">{{ c.glyph }}</span></div></sc-if>
+                          <sc-if value="{{ c.isSeg }}" hint-placeholder-val="{{ false }}"><div style="{{ c.segWrap }}"><sc-for list="{{ c.opts }}" as="o" hint-placeholder-count="4"><span style="{{ o.style }}">{{ o.label }}</span></sc-for></div></sc-if>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <sc-if value="{{ it.hasRowHelp }}" hint-placeholder-val="{{ false }}"><div style="{{ it.rowHelpStyle }}"><sc-if value="{{ it.rowGlyph }}" hint-placeholder-val="{{ false }}"><span style="flex: none;">{{ it.rowGlyph }}</span></sc-if><span style="min-width: 0;">{{ it.rowHelp }}</span></div></sc-if>
+                  </sc-if>
+                  <sc-if value="{{ it.isPresets }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; gap: 6px;"><sc-for list="{{ it.chips }}" as="p" hint-placeholder-count="4"><span style="{{ p.style }}">{{ p.label }}</span></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isPairs }}" hint-placeholder-val="{{ false }}"><div style="{{ it.grid }}"><sc-for list="{{ it.pairs }}" as="p" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ p.lab }}">{{ p.k }}</div><div style="{{ p.val }}">{{ p.v }}</div></div></sc-for></div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="{{ d.footStyle }}"><span style="{{ d.footLeftStyle }}">{{ d.footLeft }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ d.buttons }}" as="b" hint-placeholder-count="3"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ d.measure }}</div>
+        </div>
+      </sc-for>
+
+      <div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 12px;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">The outcome sentence · stated before Save, in the row's message slot</div>
+          <sc-for list="{{ outcomes }}" as="o" hint-placeholder-count="5">
+            <div style="padding: 7px 0; border-block-end: 1px solid #F0F3F7;">
+              <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6;">{{ o.when }}</div>
+              <div style="display: flex; gap: 6px; font-size: 12px; line-height: 17px; color: #1F5480; text-wrap: pretty;"><span>ⓘ</span><span>{{ o.en }}</span></div>
+              <div dir="rtl" style="display: flex; gap: 6px; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 12.5px; line-height: 20px; color: #1F5480; margin-block-start: 2px; text-wrap: pretty;"><span>ⓘ</span><span>{{ o.ar }}</span></div>
+            </div>
+          </sc-for>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;">Every sentence fits two lines at 560 in both languages. The sentence is the row's message slot, so “Choose a position” replaces it in danger ink with no layout shift. Same names are told apart by position: the person picker's options are “Name” over “Position · Unit”.</div>
+        </div>
+        <div style="border: 1px solid #FEDF89; background: #FFFAEB; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 6px;">The three known flaws, fixed</div>
+          <sc-for list="{{ flaws }}" as="f" hint-placeholder-count="3">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0; font-size: 12px;"><span style="color: #B54708; font-weight: 700;">{{ f.n }}</span><span style="color: #4A5568; text-wrap: pretty;">{{ f.b }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="t5" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">5–8</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Reassign, requests and decisions, evidence, edit and cancel</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Standard density unless stated. Each body is measured below its frame, with the full table after.</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+      <sc-for list="{{ dlgMore }}" as="d" hint-placeholder-count="10">
+        <div style="{{ d.outer }}">
+          <div dir="{{ d.dir }}" style="{{ d.capStyle }}">{{ d.cap }}</div>
+          <div dir="{{ d.dir }}" style="{{ d.frame }}">
+            <div style="{{ d.headStyle }}"><span style="min-width: 0;"><span style="{{ d.titleStyle }}">{{ d.title }}</span><span style="{{ d.ctxStyle }}">{{ d.ctx }}</span></span><span aria-label="Close" style="color: #5A6779; font-size: 13px;">✕</span></div>
+            <div style="{{ d.bodyStyle }}">
+              <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="3">
+                <div style="{{ it.wrap }}">
+                  <sc-if value="{{ it.isCols }}" hint-placeholder-val="{{ true }}">
+                    <div style="{{ it.grid }}">
+                      <sc-for list="{{ it.cols }}" as="c" hint-placeholder-count="1">
+                        <div style="min-width: 0;">
+                          <div style="{{ c.lab }}">{{ c.label }}<span style="{{ c.reqStyle }}">{{ c.req }}</span></div>
+                          <sc-if value="{{ c.isBox }}" hint-placeholder-val="{{ true }}"><div style="{{ c.box }}"><span dir="{{ c.vdir }}" style="{{ c.val }}">{{ c.value }}</span><span style="{{ c.glyphStyle }}">{{ c.glyph }}</span></div></sc-if>
+                          <sc-if value="{{ c.isSeg }}" hint-placeholder-val="{{ false }}"><div style="{{ c.segWrap }}"><sc-for list="{{ c.opts }}" as="o" hint-placeholder-count="3"><span style="{{ o.style }}">{{ o.label }}</span></sc-for></div></sc-if>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <sc-if value="{{ it.hasRowHelp }}" hint-placeholder-val="{{ false }}"><div style="{{ it.rowHelpStyle }}"><sc-if value="{{ it.rowGlyph }}" hint-placeholder-val="{{ false }}"><span style="flex: none;">{{ it.rowGlyph }}</span></sc-if><span style="min-width: 0;">{{ it.rowHelp }}</span></div></sc-if>
+                  </sc-if>
+                  <sc-if value="{{ it.isPairs }}" hint-placeholder-val="{{ false }}"><div style="{{ it.grid }}"><sc-for list="{{ it.pairs }}" as="p" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ p.lab }}">{{ p.k }}</div><div style="{{ p.val }}">{{ p.v }}</div></div></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isQuote }}" hint-placeholder-val="{{ false }}"><div style="{{ it.lab }}">{{ it.label }}</div><div style="{{ it.quoteStyle }}">{{ it.text }}</div></sc-if>
+                  <sc-if value="{{ it.isArea }}" hint-placeholder-val="{{ false }}"><div style="{{ it.lab }}">{{ it.label }}<span style="{{ it.reqStyle }}">{{ it.req }}</span></div><div style="{{ it.areaStyle }}">{{ it.text }}</div><div style="{{ it.helpStyle }}">{{ it.help }}</div></sc-if>
+                  <sc-if value="{{ it.isNote }}" hint-placeholder-val="{{ false }}"><div style="{{ it.noteStyle }}">{{ it.text }}</div></sc-if>
+                  <sc-if value="{{ it.isSpacer }}" hint-placeholder-val="{{ false }}"><div style="{{ it.spacerStyle }}">{{ it.text }}</div></sc-if>
+                  <sc-if value="{{ it.isDrop }}" hint-placeholder-val="{{ false }}"><div style="{{ it.dropStyle }}"><span style="font-size: 13px; font-weight: 600; color: #1F5480;">Drop files here, or <span style="text-decoration: underline;">browse</span></span><span style="font-size: 11.5px; color: #4A5568;">PDF, Word, Excel, PNG or JPG · up to 20 MB each · up to 3 at a time</span><span style="font-size: 11.5px; color: #5A6779;">Files are scanned before anyone can open them</span></div></sc-if>
+                  <sc-if value="{{ it.isFiles }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column;"><sc-for list="{{ it.files }}" as="f" hint-placeholder-count="3"><div style="display: flex; align-items: center; gap: 10px; height: {{ f.h }}px; box-sizing: border-box; border-block-end: 1px solid #F0F3F7;"><span style="flex: none; width: 24px; height: 24px; border-radius: 4px; border: 1px solid #E2E8F0; background: #F4F7FA; font-size: 11px; display: flex; align-items: center; justify-content: center; color: #4A5568;">▦</span><span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ f.name }}</span><sc-if value="{{ f.bar }}" hint-placeholder-val="{{ false }}"><span style="display: block; height: 4px; border-radius: 2px; background: #E2E8F0; overflow: hidden; margin-block-start: 3px;"><span style="{{ f.bar }}"></span></span></sc-if></span><span style="{{ f.stateStyle }}">{{ f.state }}</span><span aria-label="{{ f.removeAria }}" style="flex: none; width: 24px; height: 24px; border: 1px solid #8A94A6; border-radius: 4px; font-size: 11px; display: flex; align-items: center; justify-content: center; color: #4A5568;">✕</span></div></sc-for></div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="{{ d.footStyle }}"><span style="{{ d.footLeftStyle }}">{{ d.footLeft }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ d.buttons }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ d.measure }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 14px; margin-block-start: 16px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Every dialog body, both languages · cap 420</div>
+        <div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #E2E8F0; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #8A94A6;"><span style="flex: 1 1 0; min-width: 0;">Dialog</span><span style="flex: none; width: 92px;">Size · density</span><span style="flex: none; width: 50px; text-align: end;">EN</span><span style="flex: none; width: 50px; text-align: end;">AR</span></div>
+        <sc-for list="{{ measures }}" as="m" hint-placeholder-count="12">
+          <div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12px; align-items: baseline;"><span style="flex: 1 1 0; min-width: 0; font-weight: 500;">{{ m.d }}</span><span style="flex: none; width: 92px; color: #5A6779;">{{ m.s }}</span><span style="flex: none; width: 50px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.en }}</span><span style="flex: none; width: 50px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.ar }}</span></div>
+        </sc-for>
+        <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Sizes assumed, from DS Rev 7/8. EN standard block 79 (label 18 + 4 + control 36 + 4 + message 17), no-slot 58. EN compact 71 (18 + 2 + 32 + 2 + 17). AR standard 84 (20 + 4 + 36 + 4 + 20), AR compact 76 (20 + 2 + 32 + 2 + 20). Three-row textarea: EN 119 (18 + 4 + 76 + 4 + 17), AR 130 (20 + 4 + 82 + 4 + 20). Read-only pair: EN 40, AR 44. Gaps: 12 standard, 8 compact. Two-line outcome slot: EN 34, AR 40. Date fields expand into the Templates date view (calendar 28×28 cells, measured there) and are not re-measured here. If any constant differs from the system file, the system file wins and these sums are what to recompute.</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div>
+        <sc-for list="{{ dialogNotes }}" as="n" hint-placeholder-count="8">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="t6" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">9</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Stage task setup · a Tasks section for the stage editor</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">A page panel. It scrolls as the document, with no inner scroll container (pass 5 rule), so its selects are safe.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;">
+            <span><span style="font-size: 13px; font-weight: 600;">Tasks</span> <span style="font-size: 12px; color: #5A6779;">created when a record enters Terms Review</span></span>
+            <span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #fff; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;">3</span>
+          </div>
+          <sc-for list="{{ stageDefs }}" as="s" hint-placeholder-count="3">
+            <div style="display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border-block-end: 1px solid #F0F3F7;">
+              <span style="flex: 1 1 auto; min-width: 0;">
+                <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;"><span style="font-size: 13px; font-weight: 500;">{{ s.title }}</span><span style="{{ s.reqStyle }}">{{ s.req }}</span><sc-if value="{{ s.ev }}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; color: #4A5568; border: 1px solid #E2E8F0; border-radius: 3px; padding: 0 5px;">Evidence required</span></sc-if></span>
+                <span style="display: block; font-size: 12px; color: #5A6779;">{{ s.who }}</span>
+              </span>
+              <a href="#t6" style="flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none;">Edit</a>
+              <span aria-label="{{ s.menuAria }}" style="flex: none; width: 26px; height: 26px; border: 1px solid #8A94A6; border-radius: 4px; font-size: 12px; display: flex; align-items: center; justify-content: center;">⋯</span>
+            </div>
+          </sc-for>
+          <div style="padding: 9px 12px;"><span style="font-size: 12.5px; font-weight: 600; color: #2E6FA3; border: 1px dashed #8A94A6; border-radius: 5px; padding: 5px 11px;">+ Add task</span></div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Empty</div>
+          <div style="border: 1px dashed #CBD5E0; border-radius: 6px; padding: 14px; text-align: center;">
+            <div style="font-size: 13px; font-weight: 600;">No tasks are created at this stage</div>
+            <div style="font-size: 12px; color: #5A6779; margin-block-start: 2px; text-wrap: pretty;">Records enter Terms Review and can move on as soon as someone approves. Add a task to make work happen here, or to make it required before moving on.</div>
+            <span style="display: inline-block; margin-block-start: 9px; font-size: 12.5px; font-weight: 600; color: #2E6FA3; border: 1px solid #8A94A6; border-radius: 5px; padding: 5px 11px;">+ Add first task</span>
+          </div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning</div>
+          <sc-for list="{{ stageNotes }}" as="n" hint-placeholder-count="5">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="border: 1px solid #2E6FA3; border-radius: 8px; padding: 14px 16px; min-width: 0;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-block-end: 10px;"><span style="font-size: 14px; font-weight: 600;">Edit task · Collect member CVs</span><span style="font-size: 11.5px; color: #5A6779;">expanded in place, rows below move down</span></div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px;">
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Title · English <span style="color: #5A6779; font-weight: 400;">· required</span></div><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-size: 13px;">Collect member CVs</div></div>
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Title · Arabic <span style="color: #5A6779; font-weight: 400;">· optional</span></div><div dir="rtl" style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 14px;">جمع السير الذاتية للأعضاء</div><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px;">If empty, Arabic readers see the English title</div></div>
+        </div>
+        <div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block: 14px 4px;">Description</div>
+        <div style="border: 1px solid #8A94A6; border-radius: 4px; padding: 8px 10px; height: 60px; box-sizing: border-box; font-size: 13px; color: #2D3748;">One current CV per member, signed, for the JCI GLD.3 evidence file.</div>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block: 14px 6px;">Who it goes to</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px;">
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Source · required</div><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; font-size: 13px;"><span>The record's committee</span><span style="font-size: 10px; color: #5A6779;">▼</span></div><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px;">Fixed unit · The record's unit · Fixed committee · The record's committee</div></div>
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Member role · required</div><div style="height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; font-size: 13px;"><span>Secretary</span><span style="font-size: 10px; color: #5A6779;">▼</span></div></div>
+        </div>
+        <div style="display: flex; gap: 6px; font-size: 12px; line-height: 17px; color: #1F5480; margin-block-start: 6px; text-wrap: pretty;"><span>ⓘ</span><span>Goes to the Secretary of whichever committee the record is. If that committee has two secretaries, it becomes a pool for both. When nobody holds the role, a single-seat role reads “Nobody holds this position here yet. The task waits, unassigned, until someone does.” and a several-seat role reads “Goes to a pool nobody is in yet. Nobody can pick it up until someone joins.”</span></div>
+        <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">No person picker under “the record's …” sources: no single person can be named for a unit or committee not yet known. Under a fixed source, the optional Person field appears, as in New task.</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; margin-block-start: 14px;">
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Required before moving on</div><div style="display: inline-flex; border: 1px solid #8A94A6; border-radius: 4px; overflow: hidden; height: 36px;"><span style="display: flex; align-items: center; padding: 0 14px; font-size: 13px; font-weight: 600; color: #1F5480; background: #E4EEF6; border-inline-end: 1px solid #8A94A6;">Required</span><span style="display: flex; align-items: center; padding: 0 14px; font-size: 13px;">Optional</span></div></div>
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Evidence</div><div style="display: flex; align-items: center; gap: 8px; height: 36px;"><span style="width: 16px; height: 16px; box-sizing: border-box; border: 1px solid #1F5480; border-radius: 3px; background: #2E6FA3; color: #fff; font-size: 11px; line-height: 14px; text-align: center;">✓</span><span style="font-size: 13px;">Evidence required to complete</span></div></div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; margin-block-start: 14px;">
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Priority <span style="color: #5A6779; font-weight: 400;">· required</span></div><div style="display: flex; height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; overflow: hidden;"><span style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px;">Low</span><span style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border-inline-start: 1px solid #8A94A6;">Medium</span><span style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; border-inline-start: 1px solid #8A94A6;">High</span><span style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; border-inline-start: 1px solid #8A94A6;">Critical</span></div><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">Due at the Medium limit, 10 working days after the record enters the stage</div></div>
+          <div><div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Due sooner <span style="color: #5A6779; font-weight: 400;">· optional</span></div><div style="display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; padding: 0 10px; font-size: 13px;"><span style="flex: 1 1 auto;">5</span><span style="flex: none; color: #5A6779; font-size: 12.5px;">working days</span></div><div style="font-size: 11.5px; color: #5A6779; margin-block-start: 4px; min-height: 17px;">At most 10, the Medium limit. Leave empty to use the limit.</div></div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 8px; border-block-start: 1px solid #E2E8F0; padding-block-start: 12px; margin-block-start: 14px;">
+          <button style="background: transparent; color: #2E6FA3; border: 1px solid transparent; border-radius: 6px; padding: 7px 12px; font-family: inherit; font-size: 13px;">Cancel</button>
+          <button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;">Save task</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="t7" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">10</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Home</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The My tasks panel takes the decisions and the pool as lines. “Awaiting my action” stays approvals only.</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;">
+      <div style="flex: 0 1 420px; min-width: 0; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="display: flex; align-items: center; gap: 7px;"><span style="font-size: 13px; font-weight: 600;">My tasks</span><span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;">9</span></span><span style="font-size: 12px; font-weight: 600; color: #B42318;">1 overdue</span></div>
+        <a href="#t2" style="display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px; border-block-end: 1px solid #FEDF89; background: #FFFAEB; text-decoration: none;"><span style="font-size: 12.5px; font-weight: 600; color: #B54708;">3 waiting for your decision</span><span style="font-size: 12px; color: #4A5568;">2 requests · 1 rejected ›</span></a>
+        <a href="#t2" style="display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px; border-block-end: 1px solid #C5DAEA; background: #F2F7FB; text-decoration: none;"><span style="font-size: 12.5px; font-weight: 600; color: #1F5480;">2 available to pick up</span><span style="font-size: 12px; color: #4A5568;">Quality Officer, Pharmacy ›</span></a>
+        <sc-for list="{{ homeRows }}" as="r" hint-placeholder-count="4">
+          <div style="display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;">
+            <span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.title }}</span><span style="display: block; font-size: 11.5px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">◇ {{ r.rec }} · <span style="{{ r.stStyle }}">{{ r.st }}</span></span></span>
+            <span style="{{ r.dueStyle }}">{{ r.due }}</span>
+          </div>
+        </sc-for>
+        <div style="padding: 8px 12px; font-size: 12.5px;"><a href="#t2" style="text-decoration: none; font-weight: 600;">All my tasks</a></div>
+      </div>
+      <div style="flex: 0 1 360px; min-width: 0; background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="display: flex; align-items: center; gap: 7px;"><span style="font-size: 13px; font-weight: 600;">Awaiting my action</span><span style="font-size: 11px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 1px 6px;">2</span></span><span style="font-size: 11.5px; color: #5A6779;">records to approve or return</span></div>
+        <div style="padding: 8px 12px; border-block-end: 1px solid #F0F3F7;"><span style="display: block; font-size: 13px; font-weight: 500;">Outbreak Response Task Force</span><span style="display: block; font-size: 11.5px; color: #5A6779;">Committee · Terms Review 2/4 · since 3 Oct</span></div>
+        <div style="padding: 8px 12px;"><span style="display: block; font-size: 13px; font-weight: 500;">Medication Safety</span><span style="display: block; font-size: 11.5px; color: #5A6779;">Committee · Formation 1/4 · since 5 Oct</span></div>
+      </div>
+      <div style="flex: 1 1 300px; min-width: 0; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Why one panel, and how the two stay apart</div>
+        <sc-for list="{{ homeNotes }}" as="n" hint-placeholder-count="4">
+          <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;">{{ n }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="t8" style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #FEDF89; padding-block-end: 10px; margin-block-end: 14px;">
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Questions for the product owner</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Behaviour, not look. Not decided here. Each is drawn so that either answer needs no redraw. Earlier questions settled on 6 Oct and in round 3 are listed under Supersedes.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="10">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;">
+          <div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div>
+          <sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2">
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="t9" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Supersedes</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Earlier statements this file replaces. The earlier files aren't edited; this list is the diff.</span>
+    </div>
+    <sc-for list="{{ supersedes }}" as="s" hint-placeholder-count="7">
+      <div style="display: grid; grid-template-columns: minmax(0, 220px) 1fr; gap: 12px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12.5px; font-weight: 600;">{{ s.where }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ s.what }}</span></div>
+    </sc-for>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;viewer&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;assignee&quot;, &quot;creator&quot;, &quot;reader&quot;], &quot;default&quot;: &quot;assignee&quot;, &quot;tsType&quot;: &quot;'assignee' | 'creator' | 'reader'&quot;, &quot;section&quot;: &quot;Task page&quot;}, &quot;showRowMenu&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;My tasks&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const viewer = this.props.viewer || "assignee";
+    const menuOpen = this.props.showRowMenu ?? true;
+    const btn = {
+      primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 600;",
+      secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 7px 13px; font-family: inherit; font-size: 13px; font-weight: 500;",
+      danger: "background: transparent; color: #B42318; border: 1px solid transparent; border-radius: 6px; padding: 7px 10px; font-family: inherit; font-size: 13px; font-weight: 500;"
+    };
+    const dot = (c) => "width: 6px; height: 6px; border-radius: 50%; background: " + c + "; margin-inline-end: 6px; flex: none;";
+    const ST = {
+      assigned: { status: "Assigned", hasDot: false, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; color: #4A5568;", dotStyle: "" },
+      progress: { status: "In progress", hasDot: true, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #1F5480;", dotStyle: dot("#2E6FA3") },
+      waiting: { status: "Waiting to be picked up", hasDot: true, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #1F5480;", dotStyle: dot("#6E9CC0") },
+      unassigned: { status: "Unassigned", hasDot: true, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #B54708;", dotStyle: dot("#F79009") },
+      hold: { status: "On hold until 20 Oct", hasDot: true, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #4A5568;", dotStyle: dot("#8A94A6") },
+      rejected: { status: "Rejected", hasDot: true, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #B54708;", dotStyle: dot("#F79009") },
+      done: { status: "Completed ✓", hasDot: false, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; color: #4A5568;", dotStyle: "" },
+      cancelled: { status: "Cancelled", hasDot: true, statusStyle: "display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 500; color: #4A5568;", dotStyle: dot("#8A94A6") }
+    };
+    const flagStyle = "display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 999px; padding: 1px 8px; white-space: nowrap;";
+    const tone = { warn: "color: #B54708; font-weight: 600;", info: "color: #1F5480; font-weight: 500;", plain: "color: #5A6779;", ok: "color: #067647; font-weight: 500;", danger: "color: #B42318; font-weight: 600;" };
+    const row = (o) => Object.assign({}, ST[o.st], {
+      title: o.title, glyph: o.glyph || "◇", rec: o.rec, line2: o.line2 || null, line2Style: tone[o.tone || "plain"],
+      prio: o.prio, due: o.due, flag: o.flag || null, primary: o.primary || null, menuOpen: !!o.menu && menuOpen,
+      menuAria: "More actions for " + o.title,
+      dueStyle: "flex: none; width: 150px; font-size: 12.5px; font-variant-numeric: tabular-nums; " + (o.flag ? "color: #B42318; font-weight: 600;" : "color: #4A5568;"),
+      titleStyle: "display: block; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" + (o.st === "hold" ? " color: #4A5568;" : ""),
+      rowStyle: "display: flex; align-items: center; gap: 12px; padding: 8px 12px; min-height: 36px; border-block-end: 1px solid #F0F3F7; background: " + (o.flag ? "#FFFBFA" : "#fff") + ";"
+    });
+
+    const vAssignee = [
+      { label: "Complete", style: btn.primary, aria: "Complete task" },
+      { label: "Add evidence", style: btn.secondary, aria: "Add evidence" },
+      { label: "⋯", style: btn.secondary + " padding: 7px 11px;", aria: "More actions: withdraw hold request, request more time is unavailable while a request is open, reject" }
+    ];
+    const vCreator = [
+      { label: "Decide hold request…", style: btn.primary, aria: "Decide hold request" },
+      { label: "Edit", style: btn.secondary, aria: "Edit task" },
+      { label: "Reassign…", style: btn.secondary, aria: "Reassign task" },
+      { label: "⋯", style: btn.secondary + " padding: 7px 11px;", aria: "More actions: cancel task" }
+    ];
+    const vOther = [];
+
+    const mk = (ar, compact) => {
+      const F = ar ? { lab: 13, labLh: 20, val: 14, valLh: 22, help: 12.5, helpLh: 20, title: 17, ctx: 12.5 } : { lab: 12, labLh: 18, val: 13, valLh: 20, help: 11.5, helpLh: 17, title: 16, ctx: 12 };
+      const ctl = compact ? 32 : 36, g = compact ? 2 : 4;
+      const lab = "display: block; font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: " + g + "px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;";
+      const box = (st) => "display: flex; align-items: center; gap: 8px; height: " + ctl + "px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: #fff; border: 1px solid " + (st === "err" ? "#B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);" : st === "focus" ? "#2E6FA3; box-shadow: 0 0 0 3px rgba(46,111,163,0.18);" : "#8A94A6;");
+      const val = (ph) => "flex: 1 1 auto; min-width: 0; font-size: " + F.val + "px; color: " + (ph ? "#8A94A6" : "#2D3748") + "; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; unicode-bidi: isolate;";
+      const helpInk = (t) => t === "info" ? "#1F5480" : t === "error" ? "#B42318; font-weight: 500" : "#5A6779";
+      const col = (o) => {
+        const action = o.glyph && o.glyph.length > 2;
+        return {
+          label: o.label, req: o.req ? (ar ? " · مطلوب" : " · required") : o.reqText ? o.reqText : o.opt ? (ar ? " · اختياري" : " · optional") : "",
+          reqStyle: "font-weight: 400; color: #5A6779;", lab,
+          isBox: !o.seg, isSeg: !!o.seg, box: box(o.st), val: val(o.ph), value: o.value || "", vdir: o.ltr ? "ltr" : "auto",
+          glyph: o.glyph || "", glyphStyle: "flex: none; font-size: " + (action ? F.lab : 10) + "px; font-weight: " + (action ? 600 : 400) + "; color: " + (action ? "#2E6FA3" : "#5A6779") + ";",
+          segWrap: "display: flex; height: " + ctl + "px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; overflow: hidden;",
+          opts: (o.seg || []).map((s, i) => ({ label: s, style: "flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 4px; font-size: " + (F.val - 0.5) + "px; white-space: nowrap;" + (i ? " border-inline-start: 1px solid #8A94A6;" : "") + (s === o.sel ? " font-weight: 600; color: #1F5480; background: #E4EEF6;" : " color: #2D3748; background: #fff;") }))
+        };
+      };
+      const base = (top) => "margin-block-start: " + (top || 0) + "px;";
+      return {
+        F,
+        cols: (arr, top, help) => ({
+          isCols: true, cols: arr.map(col), wrap: base(top),
+          grid: "display: grid; grid-template-columns: " + (arr.length === 2 ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)") + "; gap: 12px;",
+          hasRowHelp: !!help, rowHelp: help ? help.t : "", rowGlyph: help && help.g ? help.g : null,
+          rowHelpStyle: "display: flex; gap: 6px; font-size: " + F.help + "px; line-height: " + F.helpLh + "px; min-height: " + (F.helpLh * ((help && help.lines) || 1)) + "px; margin-block-start: " + g + "px; color: " + helpInk(help && help.tone) + "; text-wrap: pretty;"
+        }),
+        presets: (list, top) => ({ isPresets: true, wrap: base(top), chips: list.map(l => ({ label: l, style: "display: inline-flex; align-items: center; height: " + (ar ? 30 : 28) + "px; box-sizing: border-box; padding: 0 10px; font-size: " + (ar ? 13 : 12) + "px; color: #2D3748; background: #fff; border: 1px solid #8A94A6; border-radius: 999px; white-space: nowrap;" })) }),
+        pairs: (arr, top) => ({ isPairs: true, wrap: base(top),
+          grid: "display: grid; grid-template-columns: " + (arr.length === 2 ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)") + "; gap: 12px;",
+          pairs: arr.map(p => ({ k: p.k, v: p.v, lab: "font-size: " + F.lab + "px; line-height: " + F.labLh + "px; font-weight: 500; color: #5A6779; margin-block-end: 2px;", val: "font-size: " + F.val + "px; line-height: " + F.valLh + "px; font-weight: 500; color: #2D3748; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" })) }),
+        quote: (label, text, lines, top) => ({ isQuote: true, wrap: base(top), label, text, lab,
+          quoteStyle: "font-size: " + F.val + "px; line-height: " + F.valLh + "px; color: #2D3748; background: #F4F7FA; border-radius: 6px; padding: 8px 10px; height: " + (F.valLh * lines) + "px; display: -webkit-box; -webkit-line-clamp: " + lines + "; -webkit-box-orient: vertical; overflow: hidden;" }),
+        area: (o, top) => ({ isArea: true, wrap: base(top), label: o.label, lab,
+          req: o.req ? (ar ? " · مطلوب" : " · required") : o.reqText || "", reqStyle: "font-weight: 400; color: #5A6779;",
+          text: o.text || o.ph || "", help: o.help || "",
+          areaStyle: "box-sizing: border-box; height: " + (ar ? 82 : 76) + "px; border: 1px solid " + (o.st === "err" ? "#B42318" : "#8A94A6") + "; border-radius: 4px; padding: 8px 10px; font-size: " + F.val + "px; line-height: " + F.valLh + "px; color: " + (o.text ? "#2D3748" : "#8A94A6") + "; overflow: hidden;",
+          helpStyle: "font-size: " + F.help + "px; line-height: " + F.helpLh + "px; min-height: " + F.helpLh + "px; margin-block-start: " + g + "px; color: " + helpInk(o.tone) + ";" }),
+        note: (text, boxed, top) => ({ isNote: true, wrap: base(top), text,
+          noteStyle: boxed ? "font-size: " + (ar ? 13.5 : 12.5) + "px; line-height: " + (ar ? 22 : 18) + "px; padding: 8px 10px; border-radius: 6px; box-shadow: inset 0 0 0 1px #C5DAEA; background: #F2F7FB; color: #1F5480; text-wrap: pretty;" : "font-size: " + (ar ? 14.5 : 14) + "px; line-height: " + (ar ? 24 : 21) + "px; color: #2D3748; text-wrap: pretty;" }),
+        spacer: (h, text, top) => ({ isSpacer: true, wrap: base(top), text, spacerStyle: "height: " + h + "px; box-sizing: border-box; border: 1px dashed #CBD5E0; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11.5px; color: #8A94A6; text-align: center; padding: 0 12px;" }),
+        drop: (top) => ({ isDrop: true, wrap: base(top), dropStyle: "height: " + (ar ? 124 : 118) + "px; box-sizing: border-box; border: 1.5px dashed #5A6779; border-radius: 8px; background: #F2F7FB; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 10px;" }),
+        files: (list, top) => ({ isFiles: true, wrap: base(top), files: list.map(f => ({ name: f.name, state: f.state, removeAria: "Remove " + f.name, h: ar ? 44 : 40,
+          bar: f.pct ? "display: block; height: 4px; width: " + f.pct + "%; background: #2E6FA3;" : null,
+          stateStyle: "flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; white-space: nowrap; " + ({ up: "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;", check: "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;", blocked: "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;", ok: "color: #067647; background: #ECFDF3; border: 1px solid #ABEFC6;" })[f.k] })) })
+      };
+    };
+    const B = (label, kind, ar) => ({ label, style: "font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; border-radius: 6px; padding: 7px 13px; white-space: nowrap; " + ({
+      primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;",
+      secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;",
+      text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;",
+      danger: "background: #B42318; color: #fff; border: 1px solid #912018; font-weight: 600;"
+    })[kind] });
+    const dlg = (ar, compact, o) => {
+      const F = mk(ar, compact).F;
+      return {
+        cap: o.cap, dir: ar ? "rtl" : "ltr",
+        capStyle: ar ? "font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0; color: #5A6779; margin-block-end: 6px;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;", title: o.title, ctx: o.ctx, items: o.items, buttons: o.buttons, footLeft: o.footLeft || "", measure: o.measure,
+        outer: "flex: 0 1 " + o.w + "px; min-width: 0;",
+        frame: "width: 100%; max-width: " + o.w + "px; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;" + (ar ? " font-family: 'IBM Plex Sans Arabic', sans-serif;" : ""),
+        headStyle: "display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 20px; border-block-end: 1px solid #E2E8F0;",
+        titleStyle: "display: block; font-size: " + F.title + "px; line-height: 1.4; font-weight: 600;",
+        ctxStyle: "display: block; font-size: " + F.ctx + "px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+        bodyStyle: "padding: 16px 20px;",
+        footStyle: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;",
+        footLeftStyle: "font-size: " + F.ctx + "px; color: #5A6779;"
+      };
+    };
+    const en = mk(false, false), enC = mk(false, true), ar = mk(true, false), arC = mk(true, true);
+    const blank = { t: "" };
+    const poolEn = { t: "Pool of 4 Quality Officers, Pharmacy. The first to pick it up owns it; the unit head is told if nobody does.", g: "ⓘ", tone: "info", lines: 2 };
+    const poolAr = { t: "مجموعة من ⁦4⁩ مسؤولي جودة في الصيدلية. أول من يستلمها يملكها، ويُبلَّغ رئيس الوحدة إن لم يستلمها أحد.", g: "ⓘ", tone: "info", lines: 2 };
+
+    const dlgNew = [
+      dlg(false, true, { w: 560, cap: "English · unit-shaped (pool of 4)", title: "New task", ctx: "◇ Infection Prevention & Control", footLeft: "Step 1 of 2",
+        items: [
+          enC.cols([{ label: "Title", req: 1, value: "Update hand-hygiene audit tool" }], 0, blank),
+          enC.cols([{ label: "Org unit", req: 1, value: "Pharmacy & Therapeutics Department, King Fahad Medical City", glyph: "▼" }], 8, blank),
+          enC.cols([{ label: "Position", req: 1, value: "Quality Officer", glyph: "▼" }, { label: "Person", opt: 1, value: "Anyone holding it", ph: 1, glyph: "▼" }], 8, poolEn),
+          enC.cols([{ label: "Due", req: 1, value: "9 Oct 2026, 17:00 +03", glyph: "▢", ltr: 1 }, { label: "Priority", seg: ["Low", "Medium", "High", "Critical"], sel: "Medium" }], 8, { t: "Latest 20 Oct 2026 · Medium priority limit" }),
+          enC.presets(["+1h", "+2h", "End of working day", "Tomorrow 09:00"], 4)
+        ],
+        buttons: [B("Cancel", "text"), B("Create", "secondary"), B("Next: details", "primary")],
+        measure: "Body 357px of 420, compact (6 field blocks). Title 71 + 8 + Unit 71 + 8 + Position|Person 88 (18 + 2 + 32 + 2 + two-line outcome 34) + 8 + Due|Priority 71 + 4 + presets 28 = 357. 63px spare." }),
+      dlg(true, true, { w: 560, cap: "العربية · نفس البنية", title: "مهمة جديدة", ctx: "◇ لجنة مكافحة العدوى", footLeft: "الخطوة ⁦1⁩ من ⁦2⁩",
+        items: [
+          arC.cols([{ label: "العنوان", req: 1, value: "تحديث أداة تدقيق نظافة اليدين" }], 0, blank),
+          arC.cols([{ label: "الوحدة التنظيمية", req: 1, value: "إدارة الصيدلة والعلاجيات، مدينة الملك فهد الطبية", glyph: "▼" }], 8, blank),
+          arC.cols([{ label: "المسمى الوظيفي", req: 1, value: "مسؤول الجودة", glyph: "▼" }, { label: "الشخص", opt: 1, value: "أي شخص يشغله", ph: 1, glyph: "▼" }], 8, poolAr),
+          arC.cols([{ label: "الاستحقاق", req: 1, value: "9 Oct 2026, 17:00 +03", glyph: "▢", ltr: 1 }, { label: "الأولوية", seg: ["منخفضة", "متوسطة", "عالية", "حرجة"], sel: "متوسطة" }], 8, { t: "الحد الأقصى ⁦20 Oct 2026⁩ · حد الأولوية المتوسطة" }),
+          arC.presets(["⁦+1⁩ ساعة", "⁦+2⁩ ساعة", "نهاية يوم العمل", "غدًا ⁦09:00⁩"], 4)
+        ],
+        buttons: [B("إلغاء", "text", true), B("إنشاء", "secondary", true), B("التالي: التفاصيل", "primary", true)],
+        measure: "Body 382px of 420. Title 76 + 8 + Unit 76 + 8 + Position|Person 96 (20 + 2 + 32 + 2 + 40) + 8 + Due|Priority 76 + 4 + presets 30 = 382. 38px spare. The segmented priority fits at 248px: the longest Arabic option, «متوسطة», is 52px at 13.5px." }),
+      dlg(false, true, { w: 560, cap: "English · committee-shaped, on a committee's record", title: "New task", ctx: "◇ Infection Prevention & Control", footLeft: "Step 1 of 2",
+        items: [
+          enC.cols([{ label: "Title", req: 1, value: "Circulate draft terms to members" }], 0, blank),
+          enC.pairs([{ k: "Committee", v: "◇ Infection Prevention & Control (this record)" }], 8),
+          enC.cols([{ label: "Member role", req: 1, value: "Secretary", glyph: "▼" }, { label: "Member", opt: 1, value: "Whoever holds the role", ph: 1, glyph: "▼" }], 8, { t: "Secretary has one holder, so it goes to Dr. Sara Al-Qahtani automatically.", g: "ⓘ", tone: "info", lines: 2 }),
+          enC.cols([{ label: "Due", req: 1, value: "13 Oct 2026, 12:00 +03", glyph: "▢", ltr: 1 }, { label: "Priority", seg: ["Low", "Medium", "High", "Critical"], sel: "Low" }], 8, { t: "Latest 27 Oct 2026 · Low priority limit" }),
+          enC.presets(["+1h", "+2h", "End of working day", "Tomorrow 09:00"], 4)
+        ],
+        buttons: [B("Cancel", "text"), B("Create", "secondary"), B("Next: details", "primary")],
+        measure: "Body 326px EN: Title 71 + 8 + Committee pair 40 + 8 + Role|Member 88 + 8 + Due|Priority 71 + 4 + presets 28. Arabic 350px: 76 + 8 + 44 + 8 + 96 + 8 + 76 + 4 + 30. Same geometry as the unit shape. The committee is this record, so it's a read-only pair, not a field." })
+    ];
+
+    const dlgMore = [
+      dlg(false, false, { w: 560, cap: "Reassign · opened by the creator on a rejected task", title: "Reassign task", ctx: "Collect member CVs · ◇ Outbreak Response Task Force",
+        items: [
+          en.quote("Rejected by Tariq Suleiman · 5 Oct 2026", "“I'm not on this task force any more. Please send it to the secretary.”", 2, 0),
+          en.pairs([{ k: "Committee", v: "◇ Outbreak Response Task Force" }], 12),
+          en.cols([{ label: "Member role", req: 1, value: "Secretary", glyph: "▼" }, { label: "Member", opt: 1, value: "Dr. Sara Al-Qahtani", glyph: "▼" }], 12, { t: "Goes straight to Dr. Sara Al-Qahtani (Secretary). Tariq Suleiman is told it moved.", g: "ⓘ", tone: "info", lines: 2 })
+        ],
+        buttons: [B("Cancel", "text"), B("Reassign", "primary")],
+        measure: "Committee shape: reason 78 (18 + 4 + 2-line box 56) + 12 + pair 40 + 12 + Role|Member 96 (18 + 4 + 36 + 4 + 34) = 238. Unit shape (Unit row instead of the pair): 78 + 12 + 79 + 12 + 96 = 277. Arabic: 256 and 296." }),
+      dlg(false, false, { w: 560, cap: "Request more time · the assignee", title: "Request more time", ctx: "Update hand-hygiene audit tool · Nora Al-Otaibi decides",
+        items: [
+          en.pairs([{ k: "Due now", v: "8 Oct 2026, 17:00 +03" }], 0),
+          en.cols([{ label: "New due date", req: 1, value: "15 Oct 2026, 17:00 +03", glyph: "▢", ltr: 1, st: "focus" }], 12, { t: "5 working days later, and inside working hours", tone: "info" }),
+          en.area({ label: "Reason", req: 1, text: "The draft needs a second ward to pilot it before sign-off.", help: "Nora Al-Otaibi sees this with your request." }, 12)
+        ],
+        buttons: [B("Cancel", "text"), B("Send request", "primary")],
+        measure: "Pair 40 + 12 + New due 79 + 12 + Reason 119 = 262. Arabic 44 + 12 + 84 + 12 + 130 = 282. With the date view open, the body is the Templates date view (measured there)." }),
+      dlg(false, false, { w: 560, cap: "Ask to put on hold · the assignee", title: "Ask to put on hold", ctx: "Update hand-hygiene audit tool · Nora Al-Otaibi decides",
+        items: [
+          en.cols([{ label: "Hold until", req: 1, value: "20 Oct 2026", glyph: "▢", ltr: 1 }], 0, { t: "At most 90 days ahead: latest 4 Jan 2027" }),
+          en.area({ label: "Reason", req: 1, text: "The audit form needs Infection Control sign-off, and their lead is on leave until 19 Oct.", help: "" }, 12),
+          en.note("While on hold the task is never overdue. Evidence can still be added. Start, Complete, Reject and Hand back wait until it resumes.", true, 12)
+        ],
+        buttons: [B("Cancel", "text"), B("Send request", "primary")],
+        measure: "Until 79 + 12 + Reason 119 + 12 + note 52 (2 × 18 + 16) = 274. Arabic 84 + 12 + 130 + 12 + 60 = 298." }),
+      dlg(false, false, { w: 560, cap: "Decide · the creator or whoever covers", title: "Decide: hold until 20 Oct", ctx: "Update hand-hygiene audit tool · ◇ Infection Prevention & Control",
+        items: [
+          en.pairs([{ k: "Asked by", v: "Dr. Huda Zahrani · 5 Oct, 14:20" }, { k: "If approved · on hold to 20 Oct", v: "Start and due dates move to 20 Oct" }], 0),
+          en.quote("Reason given", "“The audit form needs Infection Control sign-off, and their lead is on leave until 19 Oct. I'll pilot it on 4B in the meantime.”", 3, 12),
+          en.area({ label: "Note to Dr. Huda Zahrani", reqText: " · required to decline", ph: "Optional when approving", help: "" }, 12)
+        ],
+        buttons: [B("Cancel", "text"), B("Decline", "secondary"), B("Approve hold", "primary")],
+        measure: "Pairs 40 + 12 + reason 98 (18 + 4 + 3-line box 76) + 12 + Note 119 = 281. Arabic, drawn next: 304." }),
+      dlg(true, false, { w: 560, cap: "البت · العربية", title: "البت في طلب التعليق", ctx: "تحديث أداة تدقيق نظافة اليدين · ◇ لجنة مكافحة العدوى",
+        items: [
+          ar.pairs([{ k: "طلبته", v: "د. هدى الزهراني · ⁦5 Oct, 14:20⁩" }, { k: "عند الموافقة · معلّقة حتى ⁦20 Oct⁩", v: "يُنقل البدء والاستحقاق إلى ⁦20 Oct⁩" }], 0),
+          ar.quote("السبب المذكور", "«يحتاج النموذج اعتماد مكافحة العدوى، ورئيستها في إجازة حتى ⁦19 Oct⁩. سأجرّبه في الجناح ⁦4B⁩ خلال ذلك.»", 3, 12),
+          ar.area({ label: "ملاحظة إلى د. هدى الزهراني", reqText: " · مطلوبة للرفض", ph: "اختيارية عند الموافقة", help: "" }, 12)
+        ],
+        buttons: [B("إلغاء", "text", true), B("رفض", "secondary", true), B("الموافقة على التعليق", "primary", true)],
+        measure: "Pairs 44 + 12 + reason 106 (20 + 4 + 82) + 12 + Note 130 = 304. The dates inside Arabic text are isolated LTR runs. The footer mirrors, so Approve sits at the far left." }),
+      dlg(false, false, { w: 420, cap: "Resume now · Confirm 420", title: "Resume now?", ctx: "Update sharps-injury reporting form",
+        items: [
+          en.note("It's on hold until 20 Oct. Resuming ends the hold today, and Start and Complete come back.", false, 0),
+          en.pairs([{ k: "Due date", v: "20 Oct 2026, moved when the hold was approved" }], 12)
+        ],
+        buttons: [B("Keep on hold", "text"), B("Resume now", "primary")],
+        measure: "Sentence 42 (2 × 21) + 12 + pair 40 = 94. Arabic 48 + 12 + 44 = 104. Decided: start and due dates moved to the hold's end when it was approved, so resuming changes neither; history already records the move. The exact calculation is being confirmed by the functional lane." }),
+      dlg(false, false, { w: 560, cap: "Edit · the creator (decided, not built)", title: "Edit task", ctx: "Dr. Huda Zahrani is told what changed",
+        items: [
+          en.cols([{ label: "Title", req: 1, value: "Update hand-hygiene audit tool" }], 0, blank),
+          en.area({ label: "Description", text: "Align the ward audit form with WHO's five moments. Remove the “partial” option.", help: "79 / 2000" }, 12),
+          en.cols([{ label: "Due", req: 1, value: "15 Oct 2026, 17:00 +03", glyph: "▢", ltr: 1 }, { label: "Priority", seg: ["Low", "Medium", "High", "Critical"], sel: "High" }], 12, { t: "Due date set from the High priority limit", tone: "info" })
+        ],
+        buttons: [B("Cancel", "text"), B("Save changes", "primary")],
+        measure: "Title 79 + 12 + Description 119 + 12 + Due|Priority 79 = 301. Arabic 84 + 12 + 130 + 12 + 84 = 322. Drawn just after Priority changed from Medium to High: the due date was recalculated from the High limit and the slot says so. On an on-hold task the Due field is read-only with “Resume the task first” in the same slot. Who it's with isn't edited here: that's Reassign." }),
+      dlg(false, false, { w: 420, cap: "Cancel task · Confirm 420", title: "Cancel this task?", ctx: "Collect member CVs",
+        items: [
+          en.note("It stays in the record's history as Cancelled, with your reason. Tariq Suleiman is told.", false, 0),
+          en.area({ label: "Reason", req: 1, text: "", ph: "Why it's no longer needed", help: "" }, 12)
+        ],
+        buttons: [B("Keep task", "text"), B("Cancel task", "danger")],
+        measure: "Sentence 42 + 12 + Reason 119 = 173. Arabic 48 + 12 + 130 = 190." }),
+      dlg(false, false, { w: 420, cap: "Reopen task · Confirm 420 · the creator only", title: "Reopen this task?", ctx: "Confirm CBAHI LD.4 evidence index",
+        items: [
+          en.note("It goes back to Dr. Huda Zahrani as an open task. History records “Reopened by Nora Al-Otaibi” with your reason.", false, 0),
+          en.area({ label: "Reason", req: 1, text: "The index is missing LD.4.2; the surveyor asked for it on 6 Oct.", help: "" }, 12)
+        ],
+        buttons: [B("Keep completed", "text"), B("Reopen task", "primary")],
+        measure: "Sentence 42 + 12 + Reason 119 = 173. Arabic 48 + 12 + 130 = 190. The reopened row reads “Reopened · see reason”. Its exact status and whether its evidence unlocks are Q12 and Q13." }),
+      dlg(false, false, { w: 560, cap: "Add evidence · Link", title: "Add evidence", ctx: "Submit hand-hygiene audit results · evidence required",
+        items: [
+          en.cols([{ label: "Kind", seg: ["Link", "Record", "File"], sel: "Link" }], 0),
+          en.cols([{ label: "Web address", req: 1, value: "https://www.who.int/publications/i/item/9789241597906", ltr: 1 }], 12, blank),
+          en.cols([{ label: "Title", opt: 1, value: "WHO hand-hygiene observation form" }], 12, blank),
+          en.spacer(68, "Held to the tallest kind (File), so switching kinds never moves the footer", 12)
+        ],
+        buttons: [B("Cancel", "text"), B("Add link", "primary")],
+        measure: "Kind 58 + 12 + slot 250 (URL 79 + 12 + Title 79 + 12 + held 68) = 320. Arabic 60 + 12 + 268 = 340, the same for every kind." }),
+      dlg(false, false, { w: 560, cap: "Add evidence · Record (decided, no screen yet)", title: "Add evidence", ctx: "Submit hand-hygiene audit results · evidence required",
+        items: [
+          en.cols([{ label: "Kind", seg: ["Link", "Record", "File"], sel: "Record" }], 0),
+          en.cols([{ label: "Record type", req: 1, value: "Document", glyph: "▼" }], 12, { t: "Only types this tenant has" }),
+          en.cols([{ label: "Record", req: 1, value: "▤  IPC-04 Isolation policy, v3 · Approved", glyph: "Change…" }], 12, { t: "Opens the record picker (Picker 520), a second layer with search" }),
+          en.spacer(68, "Held to the tallest kind (File)", 12)
+        ],
+        buttons: [B("Cancel", "text"), B("Add record", "primary")],
+        measure: "Kind 58 + 12 + slot 250 (Type 79 + 12 + Record 79 + 12 + held 68) = 320. The record shows as a relation (artboard 4): glyph, name in the reader's language, state." }),
+      dlg(false, false, { w: 560, cap: "Add evidence · File (coming soon; absent until storage ships)", title: "Add evidence", ctx: "Submit hand-hygiene audit results · evidence required",
+        items: [
+          en.cols([{ label: "Kind", seg: ["Link", "Record", "File"], sel: "File" }], 0),
+          en.drop(12),
+          en.files([
+            { name: "ward-audit-results-4B.pdf", state: "Uploading 64%", k: "up", pct: 64 },
+            { name: "pilot-observations.xlsx", state: "Checking…", k: "check" },
+            { name: "audit-macro.xlsm", state: "Blocked · type not accepted", k: "blocked" }
+          ], 12)
+        ],
+        buttons: [B("Cancel", "text"), B("Add 2 files", "primary")],
+        measure: "Kind 58 + 12 + slot 250 (drop zone 118 + 12 + 3 file rows × 40) = 320. Arabic 60 + 12 + (124 + 12 + 3 × 44) = 340. This is the tallest kind, so it sets the slot for all three." })
+    ];
+
+    const panelBase = "display: flex; gap: 10px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;";
+    const pTone = { warn: "color: #B54708; font-weight: 600;", info: "color: #1F5480; font-weight: 500;", plain: "color: #5A6779;" };
+    const pRow = (o, arabic) => ({
+      title: o.title, req: o.req || null, line2: o.line2, reason: o.reason || null, right: o.right, act: o.act || null,
+      rowStyle: panelBase + (o.flag ? " background: #FFFBFA;" : ""),
+      titleStyle: "min-width: 0; font-size: " + (arabic ? 14 : 13) + "px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: " + (o.done ? "#4A5568" : "#2D3748") + ";",
+      line2Style: "display: block; font-size: " + (arabic ? 12.5 : 11.5) + "px; " + pTone[o.tone || "plain"],
+      rightStyle: "font-size: " + (arabic ? 13 : 12) + "px; font-variant-numeric: tabular-nums; text-align: end; " + (o.flag ? "color: #B42318; font-weight: 600;" : "color: #4A5568;")
+    });
+
+    const MEAS = [
+      ["New task · step 1 · unit shape", "560 · compact", "357", "382"],
+      ["New task · step 1 · committee shape", "560 · compact", "326", "350"],
+      ["New task · step 2", "560 · standard", "Templates", "Templates"],
+      ["Reassign · committee shape", "560 · standard", "238", "256"],
+      ["Reassign · unit shape", "560 · standard", "277", "296"],
+      ["Request more time", "560 · standard", "262", "282"],
+      ["Ask to put on hold", "560 · standard", "274", "298"],
+      ["Decide a request", "560 · standard", "281", "304"],
+      ["Resume now", "420 · confirm", "94", "104"],
+      ["Edit task", "560 · standard", "301", "322"],
+      ["Cancel task", "420 · confirm", "173", "190"],
+      ["Add evidence · every kind", "560 · standard", "320", "340"],
+      ["Reopen task", "420 · confirm", "173", "190"],
+      ["Reject (unchanged, reason only)", "420 · confirm", "173", "190"],
+      ["Hand back (unchanged, reason only)", "420 · confirm", "173", "190"]
+    ];
+
+    return {
+      dlgNew, dlgMore,
+      measures: MEAS.map(m => ({ d: m[0], s: m[1], en: m[2], ar: m[3] })),
+      outcomes: [
+        { when: "A person chosen", en: "Goes straight to Dr. Huda Zahrani (Clinical Pharmacist, Pharmacy).", ar: "تُسند مباشرة إلى د. هدى الزهراني (صيدلي إكلينيكي، الصيدلية)." },
+        { when: "A single-holder position", en: "Pharmacy Director has one holder, so it goes to Dr. Fahad Al-Anazi automatically.", ar: "لهذا المسمى شاغل واحد، فتُسند تلقائيًا إلى د. فهد العنزي (مدير الصيدلية)." },
+        { when: "A pool of 4", en: poolEn.t, ar: poolAr.t },
+        { when: "Nobody chosen", en: "No unit chosen: the task is created Unassigned, and someone with task-management rights must assign it.", ar: "لم تُختر وحدة: تُنشأ المهمة غير مُسندة، ويُسندها من لديه صلاحية إدارة المهام." },
+        { when: "A single-holder position nobody holds", en: "Nobody holds this position here yet. The task waits, unassigned, until someone does.", ar: "لا أحد يشغل هذا المسمى هنا بعد. تنتظر المهمة دون إسناد حتى يشغله أحد." },
+        { when: "A several-seat position with nobody in it", en: "Goes to a pool nobody is in yet. Nobody can pick it up until someone joins.", ar: "تذهب إلى مجموعة لا أحد فيها بعد. لا يمكن لأحد استلامها حتى ينضم إليها أحد." }
+      ],
+      flaws: [
+        { n: "1", b: "Long unit names were cut off. Org unit now has its own full-width row (520px). The overlay-select's hierarchy options wrap to two lines rather than truncate. Past 520px the field ellipsises, with the full name in its title." },
+        { n: "2", b: "Position had no required marker once a unit was chosen. It reads “Position · required” from the start, and Person reads “· optional”. A marker never appears or disappears with another field's value." },
+        { n: "3", b: "Labels didn't use the shared field style. Every label is am-field's: 12/18, 500, ink-700 (Arabic 13/20), with the message slot declared. Title, Unit and Due are reserved; Priority is none; Position and Person share one row slot, which carries the outcome sentence. Cost: 337 → 357 EN, 348 → 382 AR, still under the cap." }
+      ],
+      dialogNotes: [
+        { k: "Requests are sent, not applied.", v: "The button says “Send request”. Nothing about the task changes until it's decided, and the row's second line says who it's waiting for." },
+        { k: "One request at a time.", v: "While one is open, both request items are absent from the menu and Withdraw request replaces them." },
+        { k: "Decline needs a note; Approve doesn't.", v: "Pressing Decline with an empty note puts “Write a note to decline” in the note's message slot and focuses it. The rule is in the label (“· required to decline”) before anyone presses anything." },
+        { k: "Due dates are capped by the priority's limit.", v: "The latest allowed date sits in the due field's slot (“Latest 20 Oct 2026 · Medium priority limit”). Later days are unavailable in the date view, and a preset past the limit is absent. Changing the priority recalculates the due date from the new limit, and the slot says “Due date set from the High priority limit”. The only way past the limit is an approved Request more time; the Decide dialog then says “Past the Medium limit · approved as an exception”." },
+        { k: "Dates validate against what the request means.", v: "A new due date must be later than the current one. The hold date must be today or later and at most 90 days ahead. Out-of-hours times get the Templates working-hours warning, converted to working time." },
+        { k: "Escape.", v: "First Escape collapses an open date view. The second closes the dialog, through edit-dialog's [dirty] guard: “Discard this request?” if anything was typed. One Escape closes one thing (Templates rule)." },
+        { k: "Destructive is filled only in its own confirm.", v: "Cancel task, Reject and Hand back are worded menu items. They become filled danger buttons only inside their 420 confirms (artboard 6)." },
+        { k: "Evidence is a variant form (artboard 10).", v: "Kind first, segmented because there are three. The slot is sized to File, the tallest kind, so nothing moves when a kind changes. Until storage ships, File is absent and Kind has two segments. The slot keeps its height, so the arrival of File is not a redraw." },
+        { k: "Evidence only while open.", v: "Decided: Add evidence is present only on an open task. Once completed it's absent everywhere; evidence already added stays listed, read-only." },
+        { k: "File states.", v: "Uploading shows a progress bar. Checking means it can't be opened yet and doesn't count towards required. Blocked names why and never counts. Ready counts. Limits are on the drop zone before anything is chosen; the numbers are question 10." }
+      ],
+
+      panelRows: [
+        pRow({ title: "Collect member CVs", req: "Required", line2: "Rejected by Tariq Suleiman · needs a new assignee", tone: "warn", reason: "“I'm not a member of this committee any more. Please send it to the secretary.”", right: "4 days overdue", flag: true, act: "Reassign" }),
+        pRow({ title: "Collect ward signatures for IPC-04", req: "Optional", line2: "Waiting for Secretary, IPC · 2 can pick up", tone: "info", right: "Due 14 Oct" }),
+        pRow({ title: "Update hand-hygiene audit tool", line2: "Dr. Huda Zahrani · In progress · hold asked to 20 Oct", tone: "info", right: "Due 15 Oct", act: "Decide" }),
+        pRow({ title: "Book venue for kickoff", line2: "Omar Haddad · On hold until 20 Oct", right: "Due 20 Oct · moved by hold" }),
+        pRow({ title: "Draft terms of reference", req: "Required", line2: "Nora Al-Otaibi · Completed ✓", right: "Done 3 Oct", done: true }),
+        pRow({ title: "Circulate formation notice", req: "Optional", line2: "Cancelled 28 Sep · Record moved on", right: "Formation", done: true }),
+        pRow({ title: "Confirm quorum rule with Legal", req: "Required", line2: "Legal Advisor, Legal Affairs · Completed ✓", right: "Done 4 Oct", done: true })
+      ],
+      panelRowsAr: [
+        pRow({ title: "جمع السير الذاتية للأعضاء", req: "مطلوبة", line2: "رفضها طارق سليمان · تحتاج إسنادًا جديدًا", tone: "warn", reason: "«لم أعد عضوًا في هذه اللجنة. أرجو إرسالها إلى أمين السر.»", right: "4 days overdue", flag: true, act: "إعادة إسناد" }, true),
+        pRow({ title: "جمع توقيعات الأجنحة على ⁦IPC-04⁩", req: "اختيارية", line2: "بانتظار أمين سر اللجنة · يمكن لـ ⁦2⁩ استلامها", tone: "info", right: "14 Oct" }, true),
+        pRow({ title: "تحديث أداة تدقيق نظافة اليدين", line2: "د. هدى الزهراني · قيد التنفيذ · طُلب التعليق", tone: "info", right: "15 Oct", act: "البت" }, true),
+        pRow({ title: "صياغة الشروط المرجعية", req: "مطلوبة", line2: "نورة العتيبي · مكتملة ✓", right: "3 Oct", done: true }, true)
+      ],
+      outcomesPanel: [
+        { k: "Loading", v: "Four skeleton rows at the two-line height. The header shows title and New task at once; the count and “2 of 3 required” show “—” until loaded." },
+        { k: "Populated", v: "As drawn." },
+        { k: "Empty", v: "“No tasks on this committee yet.” with New task. At a stage with required tasks this can't happen, because they're created on entry." },
+        { k: "Denied", v: "Never absent for someone who can open the record. Without View all tasks on the record type it becomes “Your tasks on this committee”, showing only their own (drawn beside). The header's required summary stays for everyone." },
+        { k: "Error", v: "In-panel error with Retry. The header's required summary shows “—”, and the forward button stays disabled with “Couldn't check required tasks · Retry”: it never enables on unknown data." },
+        { k: "Partial", v: "Doesn't apply: one request." }
+      ],
+
+      stageDefs: [
+        { title: "Collect member CVs", req: "Required", ev: true, who: "The record's committee · Secretary" },
+        { title: "Confirm quorum rule with Legal", req: "Required", ev: false, who: "Fixed unit: Legal Affairs · Legal Advisor · pool of 2" },
+        { title: "Brief the medical staff", req: "Optional", ev: false, who: "The record's unit · Unit Director (one holder)" }
+      ].map(s => Object.assign(s, { menuAria: "More actions for " + s.title, reqStyle: "font-size: 10.5px; font-weight: 700; color: #4A5568; border: 1px solid " + (s.req === "Required" ? "#5A6779" : "#CBD5E0") + "; border-radius: 3px; padding: 0 5px;" })),
+      stageNotes: [
+        { k: "In flow, not a dialog.", v: "The stage editor is a page that scrolls as the document. Opening a definition expands it in place, and its selects are overlay-selects with nothing scrolling around them." },
+        { k: "Source is the kind selector (artboard 10).", v: "Four sources, so a select, first in the group. A fixed unit or committee adds a unit or committee field and the optional Person. A “record's” source adds neither: no single person can be named for a unit or committee not yet known." },
+        { k: "The outcome sentence works here too.", v: "It describes a rule, not a person, because the record isn't known yet: “Goes to the Secretary of whichever committee the record is…”." },
+        { k: "Order is display only.", v: "All of a stage's tasks are created together on entry, so there's no reordering. The list is sorted Required first, then by title." },
+        { k: "Leaving the stage.", v: "Decided: only the stage's open optional tasks are cancelled automatically, with “Record moved on”. Required tasks don't end with the stage. Returning creates fresh ones; the old ones stay in history." },
+        { k: "Remove.", v: "In the row menu, it confirms with “Records that start this workflow from now on won't get this task. Records already in progress keep theirs.” Decided: any change to a workflow's setup applies only to records that start it afterwards." }
+      ],
+
+      homeRows: [
+        { title: "Validate antibiogram data", rec: "Antimicrobial Stewardship", st: "In progress", stStyle: "", due: "4 days overdue", dueStyle: "flex: none; font-size: 12px; font-weight: 600; color: #B42318;" },
+        { title: "Submit hand-hygiene audit results", rec: "Infection Prevention & Control", st: "Evidence required · none added", stStyle: "color: #B54708; font-weight: 600;", due: "Due 7 Oct, 12:00", dueStyle: "flex: none; font-size: 12px; color: #4A5568;" },
+        { title: "Update hand-hygiene audit tool", rec: "Infection Prevention & Control", st: "More time asked", stStyle: "color: #1F5480;", due: "Due 8 Oct", dueStyle: "flex: none; font-size: 12px; color: #4A5568;" },
+        { title: "Update sharps-injury reporting form", rec: "Occupational Health", st: "On hold until 20 Oct", stStyle: "", due: "Due 20 Oct", dueStyle: "flex: none; font-size: 12px; color: #5A6779;" }
+      ],
+      homeNotes: [
+        "Decisions on tasks are task work, so they're the first line of the task panel. Approvals are record work and keep their own panel, renamed in its subtitle to “records to approve or return” so the two can't be read as one.",
+        "Both lines are links to their sections on My tasks, carry counts, and are absent at zero. Pool tasks aren't counted in the panel's 9: they aren't yours yet.",
+        "Rows: overdue first, then soonest due. On hold sorts last and reads “On hold until 20 Oct”, never overdue. Its start and due dates moved to 20 Oct when the hold was approved.",
+        "Six outcomes follow the panel rules in §3. A failed decision count shows “— waiting for your decision · Retry”, never a missing line."
+      ],
+
+      questions: [
+        { n: "Q4", q: "The creator edits the due date while a more-time request is open.", opts: ["Editing within the limit is allowed (decided). Open: does the edit close the request as superseded, with the requester told?", "…or does the request stay open, to be decided against the new date?"] },
+        { n: "Q10", q: "File limits.", opts: ["Drawn as PDF, Word, Excel, PNG and JPG; 20 MB each; 3 per add. Confirm or replace the numbers. The drop zone's line is the only place they appear."] },
+        { n: "Q12", q: "A reopened task's status.", opts: ["Assigned, back with the same assignee (drawn).", "In progress, as if it had never completed."] },
+        { n: "Q13", q: "Does a reopened task's evidence unlock?", opts: ["Yes: evidence can be added again, since the task is open.", "Existing evidence stays locked; only new evidence can be added."] }
+      ],
+      supersedes: [
+        { where: "Decided · round 3 · was Q1, Q2, Q8, Q11", what: "Due dates are capped by the priority's limit, and only an approved Request more time can pass it. Approving a hold moves start and due dates at approval, not on resume. Leaving a stage cancels only open optional tasks. A stage task's due is its priority's limit from stage entry, or sooner. Workflow setup changes apply to new records only. The creator can reopen a completed task with a reason. Task permissions are per record type: View all tasks, Create tasks, Manage tasks." },
+        { where: "Decided 6 Oct · was Q3, Q5, Q6, Q7, Q8 (first half), Q9", what: "Hold: superseded in round 3 (dates move at approval). Pool: unpicked tasks escalate after the per-priority manager-escalation hours in Task SLA settings, with no new setting. Leaving a stage: corrected in round 3 to optional tasks only. Arabic fields are never mandatory: the stage task's Arabic title is optional, falling back to English. Evidence can be added only while a task is open. Empty positions have two outcome sentences." },
+        { where: "Templates · tabs vs filters", what: "“Overdue tinted rather than chipped” becomes a flag pill beside the status, plus the words in the due cell, and the row tint stays. The brief makes overdue a flag on the status." },
+        { where: "Templates · New task step 1", what: "The picker is restacked: Unit full width, Position|Person sharing one row whose slot holds the outcome sentence. Re-measured 357 EN / 382 AR, from 337 / 348 as built." },
+        { where: "Templates · Unassigned", what: "From “should become a filter” to a saved view of one /tasks list. The rail item goes." },
+        { where: "Templates · the task page answer", what: "/tasks/:id is drawn here in full. Where an earlier statement about a task's own view differs, this file wins." },
+        { where: "My tasks as built", what: "The Source column becomes the record as a relation in the task cell. The icon strip becomes one next-step button plus a worded ⋯ menu through the CDK overlay with the reposition strategy." },
+        { where: "App shell · Home", what: "The My tasks panel gains two lines: decisions and pool. “Awaiting my action” gains a subtitle." },
+        { where: "Committee record · Tasks panel", what: "Gains Required/Optional tags, the required summary, pool, request, hold and rejected rows, and the forward button's reason in the header." }
+      ],
+
+      flagStyle, flagStyleAr: flagStyle + " font-size: 12px;",
+      viewer, viewerIsAssignee: viewer === "assignee",
+      viewerLabel: viewer === "creator" ? "the creator, Nora Al-Otaibi" : viewer === "reader" ? "a reader with no relationship to the task" : "the assignee, Dr. Huda Zahrani",
+      viewActions: viewer === "creator" ? vCreator : viewer === "reader" ? vOther : vAssignee,
+      requestActions: viewer === "creator"
+        ? [{ label: "Approve hold", style: btn.primary }, { label: "Decline…", style: btn.secondary }]
+        : viewer === "assignee" ? [{ label: "Withdraw request", style: btn.secondary }] : [],
+
+      decisions: [
+        { t: "1 · A task gets its own page", b: "/tasks/:id is a small instance of the record template. It's the one place everything a task knows fits: evidence, the open request, a rejection, a hold, and history. Rows and panels link to it. See §1 for why it isn't a side panel." },
+        { t: "2 · “Waiting for your decision” is a section", b: "It sits at the top of My tasks, only when non-empty, with Decide and Reassign as its actions. It isn't a saved view, because it would be easy to miss there. It isn't a chip, because its rows are someone else's tasks and the main list is your own." },
+        { t: "3 · Unassigned and All tasks become saved views", b: "One /tasks list. “Unassigned” is a saved view, present only for people with task-management rights. “All tasks” is a saved view for anyone holding View all tasks on a record type, limited to those types. Unassigned is for Manage tasks. The Unassigned rail item goes." },
+        { t: "4 · One next-step button and a worded menu", b: "Each row shows the single action its state calls for. Everything else is in a worded ⋯ menu, mounted through the CDK overlay with the reposition strategy (artboard 7). It survives table scroll. Seven icons become one button and a menu." },
+        { t: "5 · The record's name replaces “COMMITTEE”", b: "The task cell's second line is the record as a relation: type glyph and the record's name, linked. The Source column goes." },
+        { t: "6 · Overdue is a flag pill beside the status", b: "It's the one saturated fill a row may carry, and the due cell repeats it in words. This replaces Templates' “tinted rather than chipped”, because the brief makes overdue a flag on the status. An on-hold task is never flagged." },
+        { t: "7 · Home folds decisions into its My tasks panel", b: "A line in the My tasks panel, not a second panel beside “Awaiting my action”. Two panels whose names both say “awaiting” would be read as one. Decisions on tasks are task work; approvals are record work." },
+        { t: "8 · Stage task setup is an in-flow panel", b: "Not a dialog. The stage editor is a page that scrolls as the document (pass 5), so the definition form expands in place and inherits that protection." }
+      ],
+
+      statusKey: [
+        Object.assign({}, ST.waiting, { note: "pool, nobody yet" }),
+        Object.assign({}, ST.unassigned, { note: "needs an assigner" }),
+        Object.assign({}, ST.assigned, { note: "expected value: plain" }),
+        Object.assign({}, ST.progress, { note: "only after Start" }),
+        Object.assign({}, ST.hold, { note: "set by approval; never overdue" }),
+        Object.assign({}, ST.rejected, { note: "back with the creator" }),
+        Object.assign({}, ST.done, { note: "plain, with a check" }),
+        Object.assign({}, ST.cancelled, { note: "title in ink-700" }),
+        Object.assign({}, ST.progress, { flag: "Overdue", note: "flag beside any open status" })
+      ],
+
+      evidenceList: [
+        { glyph: "↗", title: "WHO hand-hygiene observation form (2024)", meta: "Link · who.int/publications/… · added by Dr. Huda Zahrani · 4 Oct", chip: null, chipStyle: "", titleStyle: "display: block; font-size: 13px; font-weight: 500; color: #2E6FA3;" },
+        { glyph: "▤", title: "IPC-04 Isolation policy, v3", meta: "Record · Document · Approved · added 5 Oct", chip: null, chipStyle: "", titleStyle: "display: block; font-size: 13px; font-weight: 500; color: #2E6FA3;" },
+        { glyph: "▦", title: "ward-audit-draft.xlsx", meta: "File · 412 KB · added 5 Oct", chip: "Blocked · can't be opened", chipStyle: "flex: none; font-size: 11px; font-weight: 600; color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 999px; padding: 1px 8px;", titleStyle: "display: block; font-size: 13px; font-weight: 500; color: #4A5568;" }
+      ],
+
+      history: [
+        { when: "1 Oct 09:12", what: "Created by Nora Al-Otaibi, offered to Quality Officer, Pharmacy (4 people)", why: null },
+        { when: "2 Oct 08:40", what: "Picked up by Dr. Huda Zahrani", why: null },
+        { when: "2 Oct 10:05", what: "Started", why: null },
+        { when: "2 Oct 15:30", what: "More time requested: 8 Oct → 15 Oct", why: "“Draft needs a second ward to pilot.”" },
+        { when: "3 Oct 09:02", what: "More time approved by Nora Al-Otaibi. Due 15 Oct 2026, 17:00", why: null },
+        { when: "4 Oct 11:18", what: "Evidence added: a link", why: null },
+        { when: "5 Oct 13:55", what: "Evidence added: a document and a file (file blocked by scan)", why: null },
+        { when: "5 Oct 14:20", what: "Hold requested until 20 Oct", why: "“The audit form needs Infection Control sign-off…” If approved, history adds “Hold approved · start and due dates moved to 20 Oct”." }
+      ],
+
+      whyPage: [
+        "Work arrives by notification and lands on a record (brief 1). A task needs an address a notification can open, deep-link and share, and that a surveyor can be shown. A side panel over My tasks has no address of its own.",
+        "Tasks are reached from three places: My tasks, a record's panel, and Home. A side panel belongs to one list. A page works from all three, and Back returns to whichever one the person came from.",
+        "Evidence pickers, record search and date fields would put selects inside a scrolling side panel, which is the platform fault artboard 7 exists to prevent. A page scrolls as the document.",
+        "It's small on purpose: no tabs, no panel grid. A header with four relations, then two columns: description and evidence; the open request and history."
+      ],
+      outcomesView: [
+        { k: "Loading", v: "Header skeleton at the final heights: 28/34 title bar, the four relation cells and both column panels. The action group renders after the task loads, because it depends on the viewer's relationship to the task." },
+        { k: "Populated", v: "As drawn." },
+        { k: "Empty", v: "There's no empty task. Panels inside it can be empty: Evidence says “None yet” (or “Required · none yet” in warning ink). The request panel is absent when no request is open." },
+        { k: "Denied", v: "Permission wall: “You can't open this task.” It names who holds it and links to the record if the viewer can open that. It reads “You can open this task if it's yours, or if you hold View all tasks on Committees.”" },
+        { k: "Error", v: "Whole-page error with Retry and an error ID. Nothing is shown half-loaded." },
+        { k: "Partial", v: "History has its own request. If it fails, the History panel shows Retry and the rest of the page stands. Actions don't depend on history." }
+      ],
+
+      savedViews: [
+        { label: "Open, mine, soonest first", style: "font-size: 12.5px; font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; border-radius: 6px; padding: 5px 10px;" },
+        { label: "Created by me", style: "font-size: 12.5px; color: #2D3748; background: #fff; border: 1px solid #8A94A6; border-radius: 6px; padding: 5px 10px;" },
+        { label: "Unassigned · 3", style: "font-size: 12.5px; color: #2D3748; background: #fff; border: 1px solid #8A94A6; border-radius: 6px; padding: 5px 10px;" },
+        { label: "All tasks", style: "font-size: 12.5px; color: #2D3748; background: #fff; border: 1px solid #8A94A6; border-radius: 6px; padding: 5px 10px;" }
+      ],
+      statusChips: [
+        { label: "All open · 9", on: true }, { label: "Assigned · 4" }, { label: "In progress · 3" }, { label: "On hold · 1" }, { label: "Completed" }
+      ].map(c => ({ label: c.label, style: "font-size: 12px; border-radius: 999px; padding: 3px 10px; " + (c.on ? "font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3;" : "color: #2D3748; background: #fff; border: 1px solid #8A94A6;") })),
+
+      decideRows: [
+        { title: "Update hand-hygiene audit tool", rec: "Infection Prevention & Control", glyph: "◇", who: "Dr. Huda Zahrani", ask: "Hold until 20 Oct", why: "“Needs Infection Control sign-off; their lead is on leave until 19 Oct.”", action: "Decide…" },
+        { title: "Validate antibiogram data", rec: "Antimicrobial Stewardship", glyph: "◇", who: "Omar Haddad", ask: "More time: 2 Oct → 9 Oct", why: "“Microbiology LIS export was delayed by the upgrade.”", action: "Decide…" },
+        { title: "Collect member CVs", rec: "Outbreak Response Task Force", glyph: "◇", who: "Tariq Suleiman", ask: "Rejected, needs a new assignee", why: "“I'm not on this task force. Please send it to the secretary.”", action: "Reassign…" }
+      ],
+      poolRows: [
+        { title: "Reconcile narcotic register for September", rec: "Medication Safety", glyph: "◇", pool: "offered to Quality Officer, Pharmacy (4)", prio: "Medium", due: "9 Oct 2026" },
+        { title: "Collect ward signatures for IPC-04", rec: "Infection Prevention & Control", glyph: "◇", pool: "offered to Secretary, IPC committee (2)", prio: "Low", due: "14 Oct 2026" }
+      ],
+      myRows: [
+        row({ st: "progress", title: "Validate antibiogram data", rec: "Antimicrobial Stewardship", prio: "!! Critical", due: "2 Oct · 4 days overdue", flag: "Overdue", primary: "Complete" }),
+        row({ st: "progress", title: "Submit hand-hygiene audit results", rec: "Infection Prevention & Control", prio: "▲ High", due: "7 Oct 2026, 12:00", line2: "Evidence required · none added", tone: "warn", primary: "Add evidence", menu: true }),
+        row({ st: "progress", title: "Update hand-hygiene audit tool", rec: "Infection Prevention & Control", prio: "▲ High", due: "8 Oct 2026", line2: "More time asked · to 15 Oct · waiting for Nora Al-Otaibi", tone: "info", primary: "Complete" }),
+        row({ st: "assigned", title: "Reconcile narcotic register for August", rec: "Medication Safety", prio: "Medium", due: "9 Oct 2026", line2: "Picked up from Quality Officer, Pharmacy", primary: "Start" }),
+        row({ st: "assigned", title: "Review isolation policy IPC-04", rec: "Infection Prevention & Control", prio: "Medium", due: "9 Oct 2026", primary: "Start" }),
+        row({ st: "assigned", title: "Draft terms of reference", rec: "Outbreak Response Task Force", prio: "Medium", due: "13 Oct 2026", line2: "Hold asked · until 1 Nov · waiting for Nora Al-Otaibi", tone: "info", primary: "Start" }),
+        row({ st: "assigned", title: "Book training room for CBAHI mock survey", rec: "Quality & Patient Safety Council", prio: "Low", due: "14 Oct 2026", line2: "More time approved · was 7 Oct", tone: "ok", primary: "Start" }),
+        row({ st: "hold", title: "Update sharps-injury reporting form", rec: "Occupational Health", prio: "Medium", due: "Due 20 Oct · moved by hold", primary: "Resume now" }),
+        row({ st: "assigned", title: "Confirm CBAHI LD.4 evidence index", rec: "Quality & Patient Safety Council", prio: "Medium", due: "16 Oct 2026", line2: "Reopened · see reason", tone: "warn", primary: "Start" }),
+        row({ st: "progress", title: "Compile Q3 KPI narrative", rec: "Quality & Patient Safety Council", prio: "Low", due: "20 Oct 2026", line2: "Hold declined · see note from Nora Al-Otaibi", tone: "warn", primary: "Complete" })
+      ],
+      menuItems: [
+        { label: "Complete", why: "Add at least one piece of evidence first", dis: true },
+        { label: "Add evidence…" },
+        { label: "Request more time…" },
+        { label: "Ask to put on hold…" },
+        { label: "Reject…" },
+        { label: "Open task" }
+      ].map(m => ({ label: m.label, why: m.why || null, style: "display: block; padding: 7px 12px; font-size: 13px; line-height: 18px; cursor: " + (m.dis ? "not-allowed; color: #8A94A6;" : "pointer; color: #2D3748;") + (m.label === "Open task" ? " border-block-start: 1px solid #E2E8F0; margin-block-start: 4px;" : "") })),
+
+      myTasksNotes: [
+        { k: "Order: decisions, pool, then mine.", v: "Your decision unblocks someone else, so it comes first. Pool tasks are offers with a race attached. Your own list is the steady state. Both sections are absent when empty: no heading, no zero." },
+        { k: "Pool tasks aren't in the main list until picked up.", v: "They aren't yours. Mixing them in would inflate “9 open” with work that may go to a colleague a minute later." },
+        { k: "The second line carries the one fact that changes what you do.", v: "Picked from a pool, a request waiting or decided, evidence needed. One fact at most, chosen in that order. Everything else is on the task page." },
+        { k: "How the requester learns the answer.", v: "The second line changes to “More time approved · was 7 Oct” or “Hold declined · see note from …” and stays for 7 days or until the next action, whichever is sooner. The notification links to the task page, where the note is in history." },
+        { k: "Priority is text, with a shape for the top two.", v: "▲ High and !! Critical. It isn't coloured: priority is a property, not a call to act. The overdue flag is the call to act." },
+        { k: "Rows are 52px with two lines (36px minimum, single-line).", v: "This is compact density. The row's button is 28px tall inside a 36px hit area, and the ⋯ button is 28×28 visually with a 32×32 target." },
+        { k: "Unassigned and All tasks.", v: "Both are saved views of the same list. All tasks is present for anyone holding View all tasks on at least one record type, and lists tasks on those record types only, with a Record type filter. Unassigned is present for people holding Manage tasks. Both are absent otherwise. A person's own relationship to a task (assignee, creator, cover, pool member) always works with no permission." }
+      ],
+      actionMatrix: [
+        { who: "Pool member", primary: "Pick up", menu: "Open task" },
+        { who: "Assignee · Assigned", primary: "Start", menu: "Add evidence · Complete · Request more time · Ask to put on hold · Reject · Hand back (if picked from pool)" },
+        { who: "Assignee · In progress", primary: "Complete", menu: "Add evidence · Request more time · Ask to put on hold · Reject · Hand back" },
+        { who: "· evidence required, none", primary: "Add evidence", menu: "Complete shown disabled with its reason. Otherwise the same" },
+        { who: "Assignee · request open", primary: "unchanged", menu: "Withdraw request replaces the two request items" },
+        { who: "Assignee · On hold", primary: "Resume now", menu: "Add evidence · Withdraw is n/a. Start, Complete, Reject and Hand back are absent" },
+        { who: "Creator or cover · request", primary: "Decide…", menu: "Edit · Reassign · Cancel task (in the decision section)" },
+        { who: "Creator or cover · rejected", primary: "Reassign…", menu: "Edit · Cancel task" },
+        { who: "Creator · any open task", primary: "—", menu: "Edit · Reassign · Cancel task (“Created by me” view, task page)" },
+        { who: "Creator · completed task", primary: "—", menu: "Reopen task… (creator only, reason required)" }
+      ],
+      outcomesList: [
+        { k: "Loading", v: "Each section loads separately. Decisions and pool show nothing until loaded: no skeleton, because their absence is normal. The list shows 9 skeleton rows at 52px." },
+        { k: "Populated", v: "As drawn." },
+        { k: "Empty", v: "Default view with no open tasks: “Nothing open for you. Tasks you're given on any record appear here.” No action, because tasks are only created from records. Filtered empty: “No tasks match. Clear filters.”" },
+        { k: "Denied", v: "Doesn't apply to My tasks. Everyone has a list of their own. The Unassigned view is absent without task-management rights, not walled." },
+        { k: "Error", v: "List error with Retry. A failed decisions or pool section shows a one-line “Couldn't load requests · Retry” in its place, never silence, because a missing section would read as “nothing waiting”." },
+        { k: "Partial", v: "A failed count shows “—”, never 0 (artboard 8)." }
+      ],
+      myRowsAr: [
+        { title: "التحقق من بيانات المضادات الحيوية", rec: "الإشراف على المضادات الحيوية", due: "2 Oct", dueTail: " · متأخرة ⁦4⁩ أيام", flag: "متأخرة", primary: "إنجاز", st: "progress" },
+        { title: "رفع نتائج تدقيق نظافة اليدين", rec: "لجنة مكافحة العدوى", due: "7 Oct, 12:00", dueTail: "", line2: "الدليل مطلوب · لم يُضف شيء", tone: "warn", primary: "إضافة دليل", st: "progress" },
+        { title: "مراجعة سياسة العزل ⁦IPC-04⁩", rec: "لجنة مكافحة العدوى", due: "9 Oct 2026", dueTail: "", primary: "بدء", st: "assigned" },
+        { title: "تحديث نموذج الإبلاغ عن وخز الإبر", rec: "الصحة المهنية", due: "12 Oct", dueTail: " · موقوفة", primary: "استئناف الآن", st: "hold" }
+      ].map(r => {
+        const map = { progress: ["قيد التنفيذ", "#1F5480", "#2E6FA3", true], assigned: ["مُسندة", "#4A5568", "", false], hold: ["معلّقة حتى 20 Oct", "#4A5568", "#8A94A6", true] }[r.st];
+        return { title: r.title, rec: r.rec, due: r.due, dueTail: r.dueTail, flag: r.flag || null, primary: r.primary,
+          line2: r.line2 || null, line2Style: r.tone === "warn" ? "color: #B54708; font-weight: 600;" : "",
+          status: map[0].replace("20 Oct", "⁦20 Oct⁩"), hasDot: map[3], dotStyle: map[2] ? dot(map[2]) : "",
+          statusStyle: "display: inline-flex; align-items: center; font-size: 13.5px; color: " + map[1] + ";" + (map[3] ? " font-weight: 500;" : ""),
+          dueStyle: "flex: none; width: 150px; font-size: 13.5px; " + (r.flag ? "color: #B42318; font-weight: 600;" : "color: #4A5568;"),
+          rowStyle: "display: flex; align-items: center; gap: 12px; padding: 8px 12px; min-height: 38px; border-block-end: 1px solid #F0F3F7; background: " + (r.flag ? "#FFFBFA" : "#fff") + ";" };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>
