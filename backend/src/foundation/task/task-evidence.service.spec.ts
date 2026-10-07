@@ -179,6 +179,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
       prisma.task.findFirst.mockResolvedValue({ ...TASK, status: 'COMPLETED' });
       const list = await service.list('task-1', ORG, viewer(ASSIGNEE));
       expect(list.canAdd).toBe(false);
+      expect(list.closed).toBe(true);
       expect(list.items[0]!.canDelete).toBe(false);
     });
 

@@ -50,4 +50,6 @@ export interface ITaskEvidenceList {
   items: ITaskEvidenceView[];
   /** The viewer may add evidence: an active assignee on an open or on-hold task. */
   canAdd: boolean;
+  /** The task is completed or cancelled: its evidence is read-only for everyone. */
+  closed: boolean;
 }

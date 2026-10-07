@@ -124,6 +124,7 @@ export class TaskEvidenceService {
     return {
       items: evidence.map((e) => this.view(e, { viewerId: viewer.id, viewerIsActiveAssignee, taskOpen })),
       canAdd: viewerIsActiveAssignee && taskOpen,
+      closed: !taskOpen,
     };
   }
 
