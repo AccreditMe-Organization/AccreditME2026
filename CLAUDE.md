@@ -1164,7 +1164,12 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
   plan"). Files are buffered in memory, which is why the default is lower.
   Per-plan caps are not built.
 - **The organisation's storage limit — BUILT**: `maxStorageGb`, counted live
-  from stored files under a per-organisation lock.
+  from AccreditMe-cloud files not yet purged, under a per-organisation lock;
+  the tenant admins are told once at 90%.
+- **Nothing is uploaded until a tenant admin confirms where files go** — BUILT
+  (`STORAGE_NOT_CONFIRMED`).
+- **A deleted file is kept 30 days in a recycle bin**, then purged by a daily
+  job — BUILT.
 - **Signed URLs only — BUILT**: a 15-minute pre-signed URL (S3/MinIO) or a
   15-minute token URL on the API (local folder). Storage keys never reach a
   client. Uploads go THROUGH the API (multipart), so there is no upload URL.
@@ -1208,7 +1213,9 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
 > 2026-10-01: there is no `data-retention` processor, no archival state, no
 > expiry sweep and no deletion certificate anywhere in `backend/src`. The four
 > real BullMQ processors are `email-delivery`, `setup-health`, `sla-monitor` and
-> `workflow-actions`. Nothing below is enforced by code today.
+> `workflow-actions`. Nothing below is enforced by code today. (ACC-177 added a
+> fifth, `storage-purge` — it purges deleted FILES after their 30 days in the
+> recycle bin; it is not this policy, which covers records.)
 
 Configured per tenant with system minimums that cannot be reduced.
 
@@ -1409,6 +1416,7 @@ data-retention      Nightly check for records approaching retention expiry
 sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
                     recompute cached org-unit vacancy and stage-reachability flags
 setup-health        Hourly — reconcile Setup health conditions (ACC-82)
+storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177)
 notification-digest Daily digest emails for digest-mode users
 data-export         Tenant data export packages (async, notified when ready)
 report-scheduler    Scheduled automated report generation and email delivery
@@ -3001,37 +3009,68 @@ briefly:
   DNS change after the settings were saved cannot slip past it. Proved live: a
   MinIO endpoint named `localhost` passes configuration and is refused at the
   first write.
-- **EACH FILE REMEMBERS WHERE IT WAS WRITTEN** (provider, bucket, endpoint, or
-  local root). Switching provider affects new uploads only. Changing a MinIO
-  endpoint or bucket, or a local root, while live files are stored there is
-  REFUSED (409, naming the count); new keys for the same location are fine.
-  Moving files between locations is ACC-180.
+- **NOTHING IS UPLOADED UNTIL A TENANT ADMIN CONFIRMS WHERE FILES GO**
+  (Ahmad, 7 Oct). Every organisation starts on AccreditMe cloud, unconfirmed;
+  uploads refuse `STORAGE_NOT_CONFIRMED` ("File storage isn't set up yet.
+  Ask your administrator.") before anything else is checked.
+  `POST /tenant/storage/confirm` confirms once — MinIO and a local folder
+  only after a passing connection test — stamping `storageConfirmedAt/ById`.
+- **AFTER THAT, WHERE FILES LIVE IS ACCREDITME'S TO CHANGE, NOT THE TENANT'S.**
+  `PATCH /tenant/storage` refuses another provider, MinIO endpoint, region or
+  bucket, or local root with 403 `STORAGE_CHANGE_BY_PLATFORM`; only new keys
+  for the SAME MinIO location are accepted, after a passing test. A tenant
+  ASKS (`POST /tenant/storage/change-request`, every platform admin told in
+  both languages), and the switch is done outside the system until ACC-182's
+  screens exist. A tenant is never shown AccreditMe's own region, bucket or
+  endpoint. Each file remembers where it was written, so a switch moves no
+  file; moving them is ACC-180.
 - **KEYS ARE BUILT BY THE SERVER ONLY**:
   `{organizationId}/{module}/{recordId}/{random}-{asciiName}`. The original
   name — Arabic included — is kept for display and download (RFC 5987
   `filename*`). multer must be given `defParamCharset: 'utf8'`, or every Arabic
   file name arrives as latin1 mojibake.
 - **TYPE FROM CONTENT AS WELL AS NAME; 25 MB; THE STORAGE LIMIT COUNTED LIVE.**
-  The allow-list and the in-house sniffer are `file-content.ts`. The quota is
-  checked again inside the recording transaction under a per-organisation
-  advisory lock, so two uploads cannot both take the last megabyte.
+  The allow-list and the in-house sniffer are `file-content.ts`. **Only
+  AccreditMe-cloud files count toward `maxStorageGb` — deleted ones too,
+  until purged**: a customer's MinIO or folder is theirs to size, and a deleted
+  file's bytes are still stored. The quota is checked again inside the
+  recording transaction under a per-organisation advisory lock, so two uploads
+  cannot both take the last megabyte.
+- **AT 90%, THE TENANT ADMINS ARE TOLD ONCE**: `storageWarnedAt` is stamped by
+  the one call that moves it from null, and cleared when usage falls below 90%
+  (after a purge), so the next crossing tells them again. Setup health shows
+  "File storage almost full" for as long as it is true (`STORAGE_ALMOST_FULL`)
+  — the bell holds the event, Setup health the condition (ACC-82).
 - **DOWNLOADS: PERMISSION FIRST, THEN A 15-MINUTE LINK.** A pre-signed URL, or
   for a local folder a token URL on the API that is the whole entitlement for
   fifteen minutes — the local equivalent of a pre-signed URL. No audit row for
   a download (ACC-101's reasoning for reads); a log line.
+- **DELETING A FILE IS A 30-DAY SOFT DELETE, FOR EVERY RECORD TYPE** (Ahmad,
+  7 Oct): hidden at once, audited, bytes KEPT. A tenant admin's recycle bin
+  (`/tenant/recycle-bin`) lists, restores — to its record, even a closed one;
+  refused if the record is gone — and purges 1 to 100 files all or nothing. A
+  daily worker on its own queue purges anything deleted more than 30 days ago.
+  A deleted file can never be viewed or downloaded. Deleted links and record
+  references are soft-deleted too but hold no file, so they are not in the bin.
 - **FILE EVIDENCE IS `ATTACHMENT`, LABELLED "FILE"**, with the same rule as a
   link: an active assignee, task open or on hold. Evidence is soft-deleted by
-  its uploader while the task is open; a file's bytes are removed and its rows
-  kept. **Every evidence count excludes deleted evidence.** Evidence on a
-  closed task is read-only.
+  its uploader while the task is open. **Every evidence count excludes deleted
+  evidence.** Evidence on a closed task is read-only.
 - **SECRETS ARE WRITE-ONLY.** `GET /tenant/storage` and `GET /tenant/config`
   answer "set" or null. **`GET /tenant/email-config` still returns its secrets
   in clear**, deliberately left: the email settings screen fills a JSON editor
   from it and saves the whole object back, so masking it would save the word
-  "set" over the stored secrets. That needs the screen changed first (lane A).
+  "set" over the stored secrets. That needs the screen changed first — ACC-181
+  (lane A, High).
 - **Not built, each with a ticket:** virus scanning (ACC-178, High — legacy
   Office files can carry macros), the orphan-object reconciler (ACC-179),
-  moving files between locations (ACC-180), rate limiting (ACC-129).
+  moving files between locations (ACC-180), the platform admin storage screens
+  (ACC-182), rate limiting (ACC-129). The storage settings, confirm,
+  request-a-change and recycle bin screens are lane A's, from the design
+  thread's drawings.
+- **`STORAGE_ALMOST_FULL` must not exist as a row on a shared database before
+  the deploy** (ACC-173's rule for enum values): the deployed client does not
+  know it. No organisation is near 90% today, so none is opened.
 
 ---
 

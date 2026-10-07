@@ -166,7 +166,7 @@ Also:
 - [x] Docs: CLAUDE.md, SYSTEM-REFERENCE.md
 - [x] Linear follow-ups: ACC-178 (virus scanning, High), ACC-179 (orphan reconciler, Medium), ACC-180 (moving files, Low)
 - [x] Browser pass, EN/AR (no-bucket refusal, link evidence, Evidence panel, layering)
-- [ ] MinIO end to end — BLOCKED: dl.min.io answers 410 Gone for every community server binary; only AIStor is served (needs Ahmad's decision)
+- [x] Live store end to end — SeaweedFS 4.48 (Apache-2.0, Windows build, MD5 verified), not MinIO (410 Gone) or AIStor (commercial)
 - [x] Cleanup proof
 
 ---
@@ -257,3 +257,17 @@ through the new endpoint to prove uploads; at the end al-nakheel's
 `storageConfirmedAt` and `storageConfirmedById` are reset to null. Cleanup proof
 as before, plus 0 live `StoredFile` rows, the SeaweedFS files gone, and no
 organisation's storage settings changed.
+
+### Progress (§14)
+
+- [x] Plan section, ACC-181 (lane A, High) and ACC-182 (Medium) created
+- [x] Second migration applied and committed (`20261007050540_acc177_storage_confirmation_recycle_bin`)
+- [x] Confirm, no self-service switching, change requests
+- [x] 30-day recycle bin, restore, purge, daily purge job
+- [x] Quota on AccreditMe cloud only, deleted-unpurged counted
+- [x] 90% warning and "Storage almost full"
+- [x] Frontend: the not-confirmed message, recycle-bin wording, Setup health row
+- [x] Specs and tenant isolation tests
+- [x] Live proof against SeaweedFS: upload, list, download, delete, restore, purge, daily purge
+- [x] Docs: CLAUDE.md, SYSTEM-REFERENCE.md §16
+- [x] Cleanup proof: 0 live StoredFile rows, SeaweedFS removed, all three organisations unconfirmed with no config

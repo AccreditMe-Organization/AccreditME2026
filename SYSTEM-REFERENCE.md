@@ -7007,6 +7007,7 @@ opening creates no bell entry; the rail badge is the signal.
 | `ORG_UNIT_WITHOUT_HEAD` | `OrgUnit.id` | `BLOCKS_WORK` if `isHeadFullyUnresolved` (escalation resolves no one); else `AT_RISK` (vacant but covered) | `OrgUnit.headVacantSince` | `/organization?head=<id>` — that unit's head panel |
 | `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages?stage=<id>` — the stage list with that stage expanded |
 | `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks/unassigned?reassign=<id>` — that task's reassign dialog |
+| `STORAGE_ALMOST_FULL` (ACC-177) | the organisation | `AT_RISK` | first detection | **no Fix yet** — the recycle bin screen is lane A's; the row's hint says to purge deleted files or ask AccreditMe for more storage. Section 16.12 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
 
 The Fix link's parameter is read once by the destination and removed from
@@ -7819,8 +7820,8 @@ World", is not run by CI, and is untouched.
 
 ## 16. File Storage — Per Organisation, and File Evidence (ACC-177)
 
-Plan and Ahmad's answers: `backend/Plans/step-177-file-storage.md`. Decisions:
-CLAUDE.md, Key Architecture Decisions (ACC-177).
+Plan and Ahmad's answers (7 Oct, two rounds): `backend/Plans/step-177-file-storage.md`
+(§11 and §14). Decisions: CLAUDE.md, Key Architecture Decisions (ACC-177).
 
 ### 16.1 Model
 
@@ -7839,18 +7840,28 @@ model StoredFile {
   ownerType      StoredFileOwnerType    // TASK (meetings, documents add values)
   ownerId        String
   uploadedById, uploadedAt
-  deletedAt, deletedById                // soft delete; the bytes are removed
+  deletedAt, deletedById                // the 30-day soft delete; bytes KEPT
+  purgedAt                              // bytes deleted; counts toward nothing
+  restoredAt, restoredById              // brought back from the recycle bin
   @@unique([organizationId, storageKey])
-  @@index([organizationId, deletedAt])  // the live-usage sum
+  @@index([organizationId, deletedAt])
+}
+
+model Organization {
+  …
+  storageConfirmedAt, storageConfirmedById           // uploads refused until set
+  storageChangeRequestedAt, storageChangeRequestedById
+  storageWarnedAt                                    // the 90% notice was sent
 }
 ```
 
 `TaskEvidence` gained `storedFileId` (unique, RESTRICT), `deletedAt` and
-`deletedById`. Its legacy `s3Key` / `fileName` / `fileSize` / `mimeType`
-columns are unused and dropped by a later contracting migration.
+`deletedById`; its legacy `s3Key` / `fileName` / `fileSize` / `mimeType`
+columns are unused (a later contracting migration drops them).
+`SetupConditionType` gained `STORAGE_ALMOST_FULL`.
 
-Migration `20261007034532_acc177_stored_file`: a new table, a new enum and
-nullable columns only.
+Migrations, both additive: `20261007034532_acc177_stored_file` and
+`20261007050540_acc177_storage_confirmation_recycle_bin`.
 
 ### 16.2 Who builds a provider — `StorageResolverService`
 
@@ -7866,13 +7877,15 @@ env-reading `S3StorageProvider` are deleted.
 - **S3** — platform env only: `AWS_REGION`, `AWS_S3_BUCKET`,
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`; optional `AWS_S3_ENDPOINT` and
   `AWS_S3_FORCE_PATH_STYLE`. No default region. Not subject to the address
-  guard: AccreditMe's own settings are trusted.
+  guard: AccreditMe's own settings are trusted. **Never shown to a tenant.**
 - **MinIO** — `storageConfig.minio` (endpoint, region, bucket, both keys),
   path-style, the same `S3CompatibleStorageProvider` class.
 - **Local folder** — offered only where `LOCAL_STORAGE_BASE` is set;
   `storageConfig.local.rootPath` is relative and must resolve inside it.
   `LocalFilesystemStorageProvider` refuses any key that is not
   `[A-Za-z0-9._-]` segments, or that resolves outside its root.
+- `storageConfig` is NULL when there is nothing to keep (AccreditMe cloud) —
+  `writeStorageConfig()` never stores an encrypted empty object.
 
 ### 16.3 The address guard — at connect time (`endpoint-guard.ts`)
 
@@ -7888,10 +7901,9 @@ A customer's MinIO endpoint must be HTTPS on a public address, unless
   exactly the vetted addresses. So the check runs on every connection, and the
   approved address is the one used.
 
-**Verified live (7 Oct)**: `POST /tenant/storage/test` with a MinIO endpoint of
-`https://10.0.0.5:9000` failed at `configure`; with `https://localhost:9000` it
-passed `configure` and was refused at `write`, when the name resolved to
-loopback.
+**Verified live (7 Oct)**: a MinIO endpoint of `https://10.0.0.5:9000` failed
+the connection test at `configure`; `https://localhost:9000` passed
+`configure` and was refused at `write`, when the name resolved to loopback.
 
 ### 16.4 Upload — `StoredFileService` and the interceptor
 
@@ -7901,40 +7913,46 @@ multer decodes an Arabic file name as latin1. Its size refusal carries the
 `FILE_TOO_LARGE` code. Guards run first, so nothing is parsed for a refused
 caller.
 
-1. `prepare()` — refuses a missing, empty, too-large (25 MB, `MAX_UPLOAD_MB`)
-   or disallowed file (`file-content.ts`: extension on the list AND content of
-   that kind; macro-enabled Office refused by name and by content). Builds the
-   key `{orgId}/{module}/{recordId}/{random}-{asciiName}`, resolves the
-   provider, pre-checks the storage limit.
+1. `prepare()` — **`STORAGE_NOT_CONFIRMED` first, before anything else**; then
+   a missing, empty, too-large (25 MB, `MAX_UPLOAD_MB`) or disallowed file
+   (`file-content.ts`: extension on the list AND content of that kind;
+   macro-enabled Office refused by name and by content). Builds the key
+   `{orgId}/{module}/{recordId}/{random}-{asciiName}`, resolves the provider,
+   and — on AccreditMe cloud only — pre-checks the storage limit.
 2. `put()` — the bytes, outside any transaction.
-3. `recordInTx()` — inside the caller's transaction: a per-organisation
-   `pg_advisory_xact_lock`, the limit checked again against live rows
-   (`Organization.maxStorageGb`), then the row.
+3. `recordInTx()` — inside the caller's transaction: for AccreditMe cloud, a
+   per-organisation `pg_advisory_xact_lock` and the limit checked again; then
+   the row.
 4. `discard()` — the caller's compensation if step 3 or anything after it
    throws.
+5. `afterUpload()` — after commit, the 90% check (16.12).
 
-A crash between 2 and 3 leaves an object no row names — the reconciler is
-ACC-179.
+A crash between 2 and 3 leaves an object no row names — ACC-179.
 
 ### 16.5 Download
 
-Permission first (the owning module decides), then `openDownload()`: a
-15-minute pre-signed URL carrying the original name and type, or, for a local
-folder, `files/stream/{token}` — an HMAC token (HKDF from `ENCRYPTION_KEY`)
-naming one file in one organisation for fifteen minutes.
-`GET /files/stream/:token` has NO session guard: the token is the entitlement.
-A bad, expired or forged token, a deleted file and a non-local file are all the
-same 404. The response carries `Content-Disposition` (RFC 5987), `nosniff` and
-`no-store`.
+Permission first (the owning module decides), then `openDownload()` — which
+refuses a DELETED file itself (`FILE_UNAVAILABLE`), whatever the caller
+checked: a deleted file can never be viewed or downloaded. A 15-minute
+pre-signed URL carrying the original name and type, or, for a local folder,
+`files/stream/{token}` — an HMAC token (HKDF from `ENCRYPTION_KEY`) naming one
+file in one organisation for fifteen minutes. `GET /files/stream/:token` has NO
+session guard: the token is the entitlement. A bad, expired or forged token, a
+deleted file and a non-local file are all the same 404. The response carries
+`Content-Disposition` (RFC 5987), `nosniff` and `no-store`.
+
+**Verified live against SeaweedFS (7 Oct)**: the pre-signed URL returned the
+same bytes (SHA-256 equal) with
+`filename*=UTF-8''%D9%85%D8%AD%D8%B6%D8%B1%20…pdf`.
 
 ### 16.6 File evidence (`TaskEvidenceService`)
 
 | Route | Who | Notes |
 |---|---|---|
-| `POST /tasks/:id/evidence/file` | an active assignee, task open or on hold | checked before any byte is stored, and again under the row lock; one audit row |
-| `GET /tasks/:id/evidence` | anyone who is or was on the task, may manage it, or can see its record | `{ items, canAdd, closed }`; no storage key |
+| `POST /tasks/:id/evidence/file` | an active assignee, task open or on hold | checked before any byte is stored, and again under the row lock; one audit row; the 90% check after commit |
+| `GET /tasks/:id/evidence` | anyone who is or was on the task, may manage it, or can see its record | `{ items, canAdd, closed }`; no storage key; deleted evidence never listed |
 | `GET /tasks/:id/evidence/:evidenceId/download` | the same | checked BEFORE the evidence is read |
-| `DELETE /tasks/:id/evidence/:evidenceId` | its uploader, still an active assignee, task open or on hold | every evidence type; soft delete, a file's bytes removed; 403 for a co-assignee, 409 on a closed task; one audit row |
+| `DELETE /tasks/:id/evidence/:evidenceId` | its uploader, still an active assignee, task open or on hold | every evidence type; soft delete; a FILE goes to the recycle bin with its bytes kept (16.11); 403 for a co-assignee, 409 on a closed task; one audit row (`recoverable` true for a file) |
 
 Everyone else, and every other organisation, gets the identical 404 "Task not
 found". `complete()`'s evidence check, the three list counts and
@@ -7942,26 +7960,30 @@ found". `complete()`'s evidence check, the three list counts and
 
 ### 16.7 Settings (`tenant:manage_config`)
 
-`GET /tenant/storage` (secrets "set" or null; usage; what this installation
-offers), `PATCH /tenant/storage` (secrets write-only; the location-in-use
-refusal; the audit row names changed fields only), `POST /tenant/storage/test`
-(candidate or stored settings; probe written, read back, compared, deleted;
-reports `configure | write | read | verify | delete`; saves nothing).
+| Route | Does |
+|---|---|
+| `GET /tenant/storage` | provider, offered providers, `confirmed` / `confirmedAt` / `confirmedBy`, `changeRequestedAt` / `changeRequestedBy`, the tenant's own MinIO/local settings with secrets "set" or null, AccreditMe-cloud usage. **Never AccreditMe's region, bucket or endpoint.** |
+| `POST /tenant/storage/confirm` | ONCE (`STORAGE_ALREADY_CONFIRMED` after, including the loser of a race). AccreditMe cloud: no test. MinIO / local folder: the connection test must pass (`STORAGE_TEST_FAILED`, naming the step). Stamps who and when; audited. |
+| `PATCH /tenant/storage` | Before confirmation: a draft, which unlocks nothing. After: only new keys for the SAME MinIO endpoint, region and bucket, after a passing test; anything else is 403 `STORAGE_CHANGE_BY_PLATFORM`. Audited by field NAME. |
+| `POST /tenant/storage/change-request` | Only once confirmed. Optional message ≤ 1,000. Stamps who and when (a repeat moves the date), audits the message, and after commit tells every ACTIVE `PLATFORM_ADMIN` of the platform organisation in-app, EN/AR. The switch itself: ACC-182. |
+| `POST /tenant/storage/test` | Candidate or stored settings; probe written, read back, compared, deleted; reports `configure \| write \| read \| verify \| delete`; saves nothing. |
+
 `GET /tenant/config` reports each provider config as "set" or null.
-**`GET /tenant/email-config` is still unmasked** — see CLAUDE.md (ACC-177).
-The settings screen is lane A's.
+**`GET /tenant/email-config` is still unmasked** — ACC-181. All the screens are
+lane A's.
 
 ### 16.8 Refusal codes
 
-`STORAGE_NOT_CONFIGURED` 503, `STORAGE_PROVIDER_NOT_ALLOWED` 400,
+`STORAGE_NOT_CONFIRMED` 409, `STORAGE_ALREADY_CONFIRMED` 409,
+`STORAGE_CHANGE_BY_PLATFORM` 403, `STORAGE_TEST_FAILED` 400 (+ `failedStep`,
+`cause`), `STORAGE_NOT_CONFIGURED` 503, `STORAGE_PROVIDER_NOT_ALLOWED` 400,
 `STORAGE_ENDPOINT_NOT_ALLOWED` 400, `STORAGE_UNAVAILABLE` 502,
-`STORAGE_QUOTA_EXCEEDED` 409, `STORAGE_LOCATION_IN_USE` 409 (+ `fileCount`),
-`STORAGE_SETTINGS_INCOMPLETE` 400, `FILE_MISSING` 400, `FILE_EMPTY` 400,
-`FILE_TOO_LARGE` 413 (+ `maxBytes`), `FILE_TYPE_NOT_ALLOWED` 415,
-`FILE_UNAVAILABLE` 409. One English message per code (`storage-refusal.ts`);
-the frontend's words are `files.refusal.*` in both languages
-(`FilesService.refusal()`). A provider's own error text is logged, never
-returned — it can name a host or bucket.
+`STORAGE_QUOTA_EXCEEDED` 409, `STORAGE_SETTINGS_INCOMPLETE` 400,
+`FILE_MISSING` 400, `FILE_EMPTY` 400, `FILE_TOO_LARGE` 413 (+ `maxBytes`),
+`FILE_TYPE_NOT_ALLOWED` 415, `FILE_UNAVAILABLE` 409, `FILE_RECORD_GONE` 409.
+One English message per code (`storage-refusal.ts`); the frontend's words are
+`files.refusal.*` in both languages (`FilesService.refusal()`). A provider's
+own error text is logged, never returned — it can name a host or bucket.
 
 ### 16.9 Frontend Consumption
 
@@ -7969,19 +7991,73 @@ returned — it can name a host or bucket.
   until a record picker exists), slot held to File's height (268px; measured
   Arabic worst case 251). Up to three files, judged against
   `GET /files/upload-limits` on first opening, uploaded one request each with
-  progress.
-- `TaskEvidenceListComponent` — the drawing's Evidence panel, hosted
-  unchanged by the evidence dialog today and the task page later.
+  progress; a refusal — "File storage isn't set up yet. Ask your
+  administrator." among them — shows on its row in the reader's language.
+- `TaskEvidenceListComponent` — the drawing's Evidence panel, hosted unchanged
+  by the evidence dialog today and the task page later. Removing a file says
+  it can be restored from the recycle bin for 30 days.
 - `TaskEvidenceDialogComponent` — the panel in a dialog, Add evidence as its
   own layer.
 - Opened from My tasks and the committee task list: "Add evidence" (active
   assignee, open task) and "Evidence" (any task with some).
+- Setup health lists "File storage almost full" (16.12).
 - `FilesService` — limits, opening a download (navigation, not a popup),
   sizes, refusal codes.
 
-### 16.10 Not built
+### 16.10 Quota — AccreditMe cloud only
+
+`cloudUsageBytes()` = the `sizeBytes` of every `provider = 'S3'` file with
+`purgedAt` null — **deleted files included**, because their bytes are still
+stored. A customer's MinIO or local folder counts toward nothing. Purged files
+stop counting. The same count drives the upload refusal
+(`STORAGE_QUOTA_EXCEEDED`), the 90% notice and the Setup health condition.
+
+### 16.11 The recycle bin (`RecycleBinService`) and the daily purge
+
+| Route (`tenant:manage_config`) | Does |
+|---|---|
+| `GET /tenant/recycle-bin` | deleted, unpurged files: name, size, type, the record (type, id, display name — null when the record is gone), who deleted it, when, `purgesAt`, `daysLeft`. Never the key. |
+| `POST /tenant/recycle-bin/:fileId/restore` | back to its record — for task evidence the evidence row too — stamping `restoredAt/By`; allowed into a closed record; `FILE_RECORD_GONE` if the record no longer exists; audited (`RESTORE`). |
+| `POST /tenant/recycle-bin/purge` | `fileIds` 1–100, ALL OR NOTHING: any id not a deleted, unpurged file of THIS organisation is the identical 404 and nothing changes (a restore landing mid-purge rolls it back too). `purgedAt` set in one transaction; bytes deleted after commit; one audit row per file; then the 90% stamp is reviewed. |
+
+**The daily job** — `StoragePurgeProcessor` on its own `storage-purge` queue,
+registered only behind `workersEnabled()` (ACC-92), repeating every 24 hours —
+calls `purgeExpired()`: every file deleted more than 30 days ago and not yet
+purged, per organisation, in batches of 100, audited with no actor and
+`by: daily_job_after_30_days`. A restored file has `deletedAt` null and is
+never selected. One failing organisation fails the job after the rest ran.
+**Verify it locally by calling `purgeExpired()` in-process, never by
+enqueueing** — the Redis queue is shared.
+
+Which record a file came from is read straight from that record's table, one
+case per owner type (Setup health's choice), so the module adds no dependency
+edge back into the modules that use it.
+
+**Verified live against SeaweedFS (7 Oct)**: delete kept the object; restore
+brought it back and it downloaded; an all-or-nothing purge with one unknown id
+changed nothing; a purge deleted the object; a purged file could not be
+restored; a file backdated 31 days was purged by `purgeExpired()` in-process,
+its object gone, audited with no actor.
+
+### 16.12 The 90% warning and "Storage almost full"
+
+`StoredFileService.reviewWarning()` — after an upload to AccreditMe cloud and
+after every purge. At ≥ 90% of `maxStorageGb`: `updateMany` sets
+`storageWarnedAt` only where it is null, and ONLY the call that set it sends
+the notice to the organisation's ACTIVE tenant admins (EN/AR, after commit). So
+they are told once per crossing. Below 90%: `storageWarnedAt` is cleared.
+
+The standing condition is Setup health's `STORAGE_ALMOST_FULL` (`AT_RISK`, one
+per organisation, `FIRST_DETECTED`), counted the same way; it clears itself on
+the next pass after usage drops. The bell holds the event, Setup health the
+condition (ACC-82). **No row of it may exist on a shared database before the
+deploy** (ACC-173's enum rule).
+
+### 16.13 Not built
 
 Virus scanning (ACC-178), the orphan-object reconciler (ACC-179), moving files
-between locations (ACC-180), rate limiting (ACC-129), per-plan upload caps,
-and the storage settings screen (lane A). **No bucket exists**: until one does,
-production refuses every upload with "File storage isn't set up yet".
+between locations (ACC-180), the email settings screen's secrets (ACC-181),
+the platform admin storage screens (ACC-182), rate limiting (ACC-129),
+per-plan upload caps, and the tenant storage, confirm, request-a-change and
+recycle bin screens (lane A). **No bucket exists**: until one does — and until
+each organisation confirms — production refuses every upload.
