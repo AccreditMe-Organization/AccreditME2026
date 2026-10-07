@@ -1,4 +1,16 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsNotIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
+import {
+  DNS_LABEL,
+  RESERVED_SLUGS,
+} from '../../../common/tenant/reserved-slugs';
 
 export class CreateTenantDto {
   @IsString()
@@ -8,7 +20,13 @@ export class CreateTenantDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/^[a-z0-9-]+$/, { message: 'slug must be lowercase letters, numbers, and hyphens only' })
+  // ACC-139 — the slug is the tenant's address, {slug}.accreditme.app, so it
+  // must be a DNS label and must not be a name reserved for us.
+  @Matches(DNS_LABEL, {
+    message:
+      'slug must be lowercase letters, numbers and hyphens, start and end with a letter or number, and not start with xn--',
+  })
+  @IsNotIn([...RESERVED_SLUGS], { message: 'slug is reserved: choose another' })
   @MaxLength(63)
   slug!: string;
 
