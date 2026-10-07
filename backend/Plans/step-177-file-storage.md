@@ -168,3 +168,92 @@ Also:
 - [x] Browser pass, EN/AR (no-bucket refusal, link evidence, Evidence panel, layering)
 - [ ] MinIO end to end — BLOCKED: dl.min.io answers 410 Gone for every community server binary; only AIStor is served (needs Ahmad's decision)
 - [x] Cleanup proof
+
+---
+
+## 14. Changes after the build report (Ahmad, 7 Oct 04:17 and 04:32)
+
+Everything above stands except where this section replaces it.
+
+### Answers to the build report
+
+- **Live proof**: not AIStor (commercial licence). SeaweedFS (Apache-2.0) from
+  its official GitHub releases — the Windows build if one exists, otherwise the
+  Linux build in WSL Ubuntu — verified against the release's published
+  checksum, its S3 gateway bound to 127.0.0.1 only, the local backend's PLATFORM
+  settings pointed at it (`AWS_S3_ENDPOINT`, path-style). Prove upload, list,
+  download, delete, restore and purge end to end as seeded personas; then
+  delete the binary and its data folder.
+- `StoredFile.rootPath`: accepted. Leaving `GET /tenant/email-config`
+  unmasked: accepted — a High lane A ticket, "Email settings screen shows and
+  saves raw secrets" (the JSON editor needs write-only secret fields before the
+  endpoint can be masked).
+- No Record kind, no scanning line, the Evidence dialog standing in for the
+  task page, the two scan changes and `closed` on the list: accepted.
+
+### New behaviour
+
+1. **Confirm before first upload.** A new organisation defaults to AccreditMe
+   cloud (S3), but ALL uploads are refused until a tenant admin confirms.
+   Nullable `Organization.storageConfirmedAt` and `storageConfirmedById` (FK,
+   ON DELETE SET NULL). `POST /tenant/storage/confirm` (`tenant:manage_config`)
+   takes the chosen location (AccreditMe cloud, or MinIO or Local where this
+   installation allows them), requires a passing connection test for MinIO and
+   Local, saves, sets the two columns and writes an audit row. Until then
+   uploads refuse with `STORAGE_NOT_CONFIRMED`, "File storage isn't set up yet.
+   Ask your administrator.", checked before `STORAGE_NOT_CONFIGURED`. All three
+   existing organisations are unconfirmed; no backfill.
+2. **No self-service switching** (replaces answer 2 of §11). Once confirmed,
+   `PATCH /tenant/storage` refuses any change of provider, MinIO endpoint or
+   bucket, or Local root with 403 `STORAGE_CHANGE_BY_PLATFORM`, "Changing where
+   files are stored is done by AccreditMe. Contact support." Replacing the
+   access key and secret for the SAME MinIO endpoint and bucket stays allowed,
+   with a passing test. `GET /tenant/storage` returns confirmed true/false and
+   who confirmed and when. AccreditMe's own region, bucket or endpoint is never
+   returned to a tenant; for AccreditMe cloud, only the provider.
+3. **Request a change.** `POST /tenant/storage/change-request`
+   (`tenant:manage_config`, only once confirmed), optional message ≤ 1,000
+   characters. Notifies every platform admin of AccreditMe's platform
+   organisation (in-app, EN/AR, after commit), naming the organisation, who
+   asked, when, and the message. Nullable `Organization.storageChangeRequestedAt`
+   and `storageChangeRequestedById` (FK, ON DELETE SET NULL), returned by
+   `GET /tenant/storage`. A repeat request updates the date and notifies again.
+   Audited. The switch itself happens outside the system, later from platform
+   admin screens — a Medium Linear ticket, "screens not designed yet".
+4. **Deleting a file is a 30-day soft delete** (replaces answer 3 of §11), for
+   every record type, through `StoredFileService`: hidden from users at once,
+   audited, bytes KEPT. Nullable `StoredFile.purgedAt`, `restoredAt`,
+   `restoredById`. Tenant admins (`tenant:manage_config`):
+   - `GET /tenant/recycle-bin` — deleted, unpurged files: name, size, type, the
+     record it came from (type and display name), who deleted it and when, days
+     left. A deleted file can never be viewed, downloaded or edited.
+   - `POST /tenant/recycle-bin/:fileId/restore` — back to its original record
+     (task evidence: the evidence row's `deletedAt` cleared too), audited.
+     Restoring into a record that has since closed is allowed; refused, with a
+     reason, if the record no longer exists.
+   - `POST /tenant/recycle-bin/purge` with `fileIds` (1–100) — bytes deleted
+     now, `purgedAt` set, one audit row per file. All or nothing; an id not in
+     this organisation's bin gets the identical 404. The warning is the
+     screen's job.
+   - A daily worker job purges files deleted more than 30 days ago (bytes
+     deleted, `purgedAt` set, audited; restored files untouched). Unit-tested,
+     and proved locally once with a backdated test file.
+   Deleted links and record references are soft-deleted and audited, but are
+   not in the bin and cannot be restored.
+5. **Quota**: only files on AccreditMe cloud count toward `maxStorageGb`,
+   including deleted files not yet purged. Purged files stop counting.
+6. **90% warning**: an upload that takes AccreditMe-cloud usage to 90% or more
+   notifies the organisation's tenant admins once (EN/AR, after commit).
+   Nullable `Organization.storageWarnedAt`, cleared when usage drops below 90%.
+   A Setup health condition "Storage almost full" shows while usage is at 90%
+   or more.
+7. **Frontend**: the Add evidence dialog shows the `STORAGE_NOT_CONFIRMED`
+   message. The storage settings, confirm, request-a-change and recycle bin
+   screens are NOT built here (lane A, from the design thread's drawings).
+
+**Migration**: a NEW migration file, additive only; the first one stays as
+applied. **Local testing**: AccreditMe cloud may be confirmed for al-nakheel
+through the new endpoint to prove uploads; at the end al-nakheel's
+`storageConfirmedAt` and `storageConfirmedById` are reset to null. Cleanup proof
+as before, plus 0 live `StoredFile` rows, the SeaweedFS files gone, and no
+organisation's storage settings changed.
