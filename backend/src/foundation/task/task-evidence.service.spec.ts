@@ -89,6 +89,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
     openDownload: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: 'x' }),
     softDeleteInTx: jest.fn().mockResolvedValue({}),
     removeBytes: jest.fn().mockResolvedValue(undefined),
+    afterUpload: jest.fn().mockResolvedValue(undefined),
     summary: (f: typeof STORED) => ({ id: f.id, name: f.originalName, mimeType: f.mimeType, sizeBytes: f.sizeBytes, uploadedAt: f.uploadedAt }),
   };
   const visibility = { assertCanViewOrNotFound: jest.fn().mockRejectedValue(new NotFoundException('Task not found')) };
@@ -139,6 +140,8 @@ describe('TaskEvidenceService (ACC-177)', () => {
       expect(auditLog.log.mock.calls[0]![0]).toEqual(
         expect.objectContaining({ action: 'CREATE', objectType: 'TaskEvidence', objectId: 'ev-1', tenantId: ORG }),
       );
+      // After commit: the 90% warning.
+      expect(storedFiles.afterUpload).toHaveBeenCalledWith(prepared);
       expect(view.file).toEqual(expect.objectContaining({ id: 'file-1', name: 'evidence.pdf' }));
       expect(JSON.stringify(view)).not.toContain('storageKey');
     });
@@ -247,7 +250,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
   });
 
   describe('remove', () => {
-    it('the uploader soft-deletes the evidence and its file, removes the bytes after commit, and audits once', async () => {
+    it('the uploader soft-deletes the evidence and its file, KEEPS the bytes (the recycle bin), and audits once', async () => {
       await service.remove('task-1', 'ev-1', ORG, ASSIGNEE);
 
       expect(tasks.lockOpenForActiveAssignee).toHaveBeenCalledWith(prisma, 'task-1', ASSIGNEE, ORG, 'have evidence removed', { allowOnHold: true });
@@ -256,9 +259,11 @@ describe('TaskEvidenceService (ACC-177)', () => {
         data: { deletedAt: expect.any(Date), deletedById: ASSIGNEE },
       });
       expect(storedFiles.softDeleteInTx).toHaveBeenCalledWith(prisma, 'file-1', ORG, ASSIGNEE);
-      expect(storedFiles.removeBytes).toHaveBeenCalledWith(STORED);
+      expect(storedFiles.removeBytes).not.toHaveBeenCalled();
       expect(auditLog.log).toHaveBeenCalledTimes(1);
-      expect(auditLog.log.mock.calls[0]![0]).toEqual(expect.objectContaining({ action: 'DELETE', objectType: 'TaskEvidence', objectId: 'ev-1' }));
+      expect(auditLog.log.mock.calls[0]![0]).toEqual(
+        expect.objectContaining({ action: 'DELETE', objectType: 'TaskEvidence', objectId: 'ev-1', metadata: { recoverable: true } }),
+      );
     });
 
     it('a link is soft-deleted the same way, with no file to remove', async () => {
