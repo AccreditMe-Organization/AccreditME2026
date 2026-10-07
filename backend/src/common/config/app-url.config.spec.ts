@@ -54,12 +54,12 @@ describe('resolveAppLinkConfig (ACC-158)', () => {
     });
   });
 
-  it('accepts a loopback APP_LINK_ORIGIN, without a trailing slash', () => {
+  it('accepts http(s)://localhost[:port] as APP_LINK_ORIGIN, without a trailing slash', () => {
     for (const [value, expected] of [
       ['http://localhost:4200', 'http://localhost:4200'],
       ['http://localhost:4200/', 'http://localhost:4200'],
-      ['http://127.0.0.1:4200', 'http://127.0.0.1:4200'],
-      ['http://al-nakheel.localhost:4200', 'http://al-nakheel.localhost:4200'],
+      ['http://localhost:4201', 'http://localhost:4201'],
+      ['https://localhost', 'https://localhost'],
     ]) {
       expect(
         resolveAppLinkConfig({ ...BASE, APP_LINK_ORIGIN: value }).devOrigin,
@@ -76,6 +76,12 @@ describe('resolveAppLinkConfig (ACC-158)', () => {
       'http://localhost:4200/accept-invitation',
       'ftp://localhost',
       'localhost:4200',
+      // ACC-139 — a tenant subdomain cannot be put in front of these, so the
+      // only link they could build would carry no organisation.
+      'http://127.0.0.1:4200',
+      'http://[::1]:4200',
+      // The slug comes from the tenant, never from the variable.
+      'http://al-nakheel.localhost:4200',
     ]) {
       expect(() =>
         resolveAppLinkConfig({ ...BASE, APP_LINK_ORIGIN: value }),
@@ -117,13 +123,27 @@ describe('buildTenantUrl (ACC-158)', () => {
     ).toBe('https://al-nakheel.accreditme.app/accept-invitation?token=abc');
   });
 
-  it('uses the development origin verbatim, without the slug, when it is set', () => {
+  // ACC-139 — the organisation is read from the address, so a local link must
+  // carry the slug too, or it would open the "which organisation?" note.
+  it("builds the tenant's own local host when the development origin is set", () => {
     expect(
       buildTenantUrl('al-nakheel', '/accept-invitation?token=abc', {
         ...BASE,
         APP_LINK_ORIGIN: 'http://localhost:4200',
       }),
-    ).toBe('http://localhost:4200/accept-invitation?token=abc');
+    ).toBe('http://al-nakheel.localhost:4200/accept-invitation?token=abc');
+    expect(
+      buildTenantUrl('al-manara', '/reset-password?token=x', {
+        ...BASE,
+        APP_LINK_ORIGIN: 'http://localhost:4201/',
+      }),
+    ).toBe('http://al-manara.localhost:4201/reset-password?token=x');
+    expect(
+      buildTenantUrl('al-manara', '/x', {
+        ...BASE,
+        APP_LINK_ORIGIN: 'https://localhost',
+      }),
+    ).toBe('https://al-manara.localhost/x');
   });
 
   it('refuses a path without a leading slash', () => {

@@ -42,18 +42,25 @@ describe('renderEmailHtml (ACC-158)', () => {
     }
   });
 
-  it('links the development origin exactly when it is configured, and nothing else on localhost', () => {
+  // ACC-139 — a local link is the tenant's own local host
+  // (http://{slug}.localhost:4200), which is what buildTenantUrl writes.
+  it("links a tenant's local host when the development origin is configured, and nothing else on localhost", () => {
     const dev: AppLinkConfig = {
       baseDomain: 'accreditme.app',
       devOrigin: 'http://localhost:4200',
     };
-    const local = 'http://localhost:4200/accept-invitation?token=1';
+    const local = 'http://al-nakheel.localhost:4200/accept-invitation?token=1';
     expect(renderEmailHtml(local, 'ltr', dev)).toBe(
       `<p><a href="${local}" dir="ltr">${local}</a></p>`,
     );
-    expect(renderEmailHtml('http://localhost:3000/x', 'ltr', dev)).toBe(
-      '<p>http://localhost:3000/x</p>',
-    );
+    for (const other of [
+      'http://localhost:4200/x', // no organisation in it
+      'http://al-nakheel.localhost:3000/x', // another port
+      'https://al-nakheel.localhost:4200/x', // another scheme
+      'http://a.b.localhost:4200/x', // two labels
+    ]) {
+      expect(renderEmailHtml(other, 'ltr', dev)).toBe(`<p>${other}</p>`);
+    }
     expect(renderEmailHtml(local, 'ltr', LINKS)).toBe(`<p>${local}</p>`);
   });
 
