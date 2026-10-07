@@ -2115,8 +2115,12 @@ OVERDUE — the overdue filter and the overdue sweep both skip it, because its
 SLA is paused (3.10).
 
 **New evidence is `LINK` (http/https only) or `INTERNAL_REFERENCE`** (ACC-163,
-Q11). `TEXT` is no longer accepted — a note is a comment — and `ATTACHMENT`
-waits for the storage tickets. Existing rows of either type are untouched.
+Q11), **or `ATTACHMENT` — a file, labelled "File" — through
+`POST /tasks/:id/evidence/file` (ACC-177, Section 16)**. A file evidence row
+points at its `StoredFile` (`storedFileId`); the legacy `s3Key` / `fileName` /
+`fileSize` / `mimeType` columns stay unused. `TEXT` is no longer accepted — a
+note is a comment. Evidence is soft-deleted (`deletedAt`) by its uploader while
+the task is open, and **every evidence count excludes deleted rows**.
 
 `TaskSourceType` (closed, 10 values):
 `MEETING, DOCUMENT, AUDIT, CAPA, INCIDENT, CORRECTIVE_ACTION, STANDARD,
@@ -2715,10 +2719,10 @@ task surface reads the same helper.
 **Two remaining gaps, static-check-confirmed**: there is no task-detail
 view anywhere in the frontend (`getById()` unused) — "My Tasks", the
 per-source task list, and the new Unassigned Tasks view all render list
-rows only, nothing navigates to a single task. Evidence is LINK-only in the
-UI since ACC-163 — there is still no file upload (no storage) and no UI for
-an internal reference — and a task that does not require evidence can still
-be completed with none. These are exactly the class of
+rows only, nothing navigates to a single task. Evidence in the UI is a link
+or a file since ACC-177 (Add evidence and the Evidence panel, Section 16.9) —
+there is still no UI for an internal reference — and a task that does not
+require evidence can still be completed with none. These are exactly the class of
 finding the separately-queued live-audit exists to catch systematically
 — flagged here as a cheap static signal, not a substitute for it.
 `reassign()` was the third gap in this list until ACC-34's Unassigned
@@ -7812,3 +7816,172 @@ answer for more than one is in CLAUDE.md (Redis, after ACC-143).
 controllers, and the tenant-isolation suite is service-level. Nothing is
 disabled to achieve that. `test/app.e2e-spec.ts` is the scaffold's "Hello
 World", is not run by CI, and is untouched.
+
+## 16. File Storage — Per Organisation, and File Evidence (ACC-177)
+
+Plan and Ahmad's answers: `backend/Plans/step-177-file-storage.md`. Decisions:
+CLAUDE.md, Key Architecture Decisions (ACC-177).
+
+### 16.1 Model
+
+```prisma
+model StoredFile {
+  id, organizationId
+  provider       StorageProvider        // S3 | MINIO | LOCAL_FILESYSTEM — where it was WRITTEN
+  bucket         String?                // S3 / MinIO
+  endpoint       String?                // MinIO (or the platform's S3-compatible endpoint)
+  rootPath       String?                // local folder, relative to LOCAL_STORAGE_BASE
+  storageKey     String                 // server-built; never sent to a client
+  originalName   String                 // display / download name, Arabic kept
+  mimeType       String                 // decided by the server from content
+  sizeBytes      Int
+  sha256         String @db.Char(64)
+  ownerType      StoredFileOwnerType    // TASK (meetings, documents add values)
+  ownerId        String
+  uploadedById, uploadedAt
+  deletedAt, deletedById                // soft delete; the bytes are removed
+  @@unique([organizationId, storageKey])
+  @@index([organizationId, deletedAt])  // the live-usage sum
+}
+```
+
+`TaskEvidence` gained `storedFileId` (unique, RESTRICT), `deletedAt` and
+`deletedById`. Its legacy `s3Key` / `fileName` / `fileSize` / `mimeType`
+columns are unused and dropped by a later contracting migration.
+
+Migration `20261007034532_acc177_stored_file`: a new table, a new enum and
+nullable columns only.
+
+### 16.2 Who builds a provider — `StorageResolverService`
+
+The ONLY code that constructs a `StorageProvider`. `STORAGE_PROVIDER` and the
+env-reading `S3StorageProvider` are deleted.
+
+| Call | Answers | Refuses |
+|---|---|---|
+| `forUpload(orgId)` | the organisation's CURRENT provider and location | `STORAGE_NOT_CONFIGURED` when its settings are incomplete |
+| `forFile(file)` | the location THAT FILE was written to | `FILE_UNAVAILABLE` when that location is no longer configured (never reads elsewhere) |
+| `forCandidate(provider, config)` | a configuration under test | — saves nothing |
+
+- **S3** — platform env only: `AWS_REGION`, `AWS_S3_BUCKET`,
+  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`; optional `AWS_S3_ENDPOINT` and
+  `AWS_S3_FORCE_PATH_STYLE`. No default region. Not subject to the address
+  guard: AccreditMe's own settings are trusted.
+- **MinIO** — `storageConfig.minio` (endpoint, region, bucket, both keys),
+  path-style, the same `S3CompatibleStorageProvider` class.
+- **Local folder** — offered only where `LOCAL_STORAGE_BASE` is set;
+  `storageConfig.local.rootPath` is relative and must resolve inside it.
+  `LocalFilesystemStorageProvider` refuses any key that is not
+  `[A-Za-z0-9._-]` segments, or that resolves outside its root.
+
+### 16.3 The address guard — at connect time (`endpoint-guard.ts`)
+
+A customer's MinIO endpoint must be HTTPS on a public address, unless
+`STORAGE_ALLOW_PRIVATE_ENDPOINTS=true`. Two halves, because Node never calls
+`lookup` for an IP literal:
+
+- `assertEndpointHostAllowed()` — an IP-literal host, every time a provider is
+  built;
+- `guardedLookup()` — the HTTP(S) agent's `lookup`: it resolves the name,
+  refuses if ANY address is private, loopback, link-local, CGNAT, multicast,
+  documentation or NAT64 (v4 and v6, v4-mapped included), and hands the socket
+  exactly the vetted addresses. So the check runs on every connection, and the
+  approved address is the one used.
+
+**Verified live (7 Oct)**: `POST /tenant/storage/test` with a MinIO endpoint of
+`https://10.0.0.5:9000` failed at `configure`; with `https://localhost:9000` it
+passed `configure` and was refused at `write`, when the name resolved to
+loopback.
+
+### 16.4 Upload — `StoredFileService` and the interceptor
+
+`SingleFileUploadInterceptor` reads ONE file in the field `file` (no other
+field), into memory, up to the cap, with `defParamCharset: 'utf8'` — without it
+multer decodes an Arabic file name as latin1. Its size refusal carries the
+`FILE_TOO_LARGE` code. Guards run first, so nothing is parsed for a refused
+caller.
+
+1. `prepare()` — refuses a missing, empty, too-large (25 MB, `MAX_UPLOAD_MB`)
+   or disallowed file (`file-content.ts`: extension on the list AND content of
+   that kind; macro-enabled Office refused by name and by content). Builds the
+   key `{orgId}/{module}/{recordId}/{random}-{asciiName}`, resolves the
+   provider, pre-checks the storage limit.
+2. `put()` — the bytes, outside any transaction.
+3. `recordInTx()` — inside the caller's transaction: a per-organisation
+   `pg_advisory_xact_lock`, the limit checked again against live rows
+   (`Organization.maxStorageGb`), then the row.
+4. `discard()` — the caller's compensation if step 3 or anything after it
+   throws.
+
+A crash between 2 and 3 leaves an object no row names — the reconciler is
+ACC-179.
+
+### 16.5 Download
+
+Permission first (the owning module decides), then `openDownload()`: a
+15-minute pre-signed URL carrying the original name and type, or, for a local
+folder, `files/stream/{token}` — an HMAC token (HKDF from `ENCRYPTION_KEY`)
+naming one file in one organisation for fifteen minutes.
+`GET /files/stream/:token` has NO session guard: the token is the entitlement.
+A bad, expired or forged token, a deleted file and a non-local file are all the
+same 404. The response carries `Content-Disposition` (RFC 5987), `nosniff` and
+`no-store`.
+
+### 16.6 File evidence (`TaskEvidenceService`)
+
+| Route | Who | Notes |
+|---|---|---|
+| `POST /tasks/:id/evidence/file` | an active assignee, task open or on hold | checked before any byte is stored, and again under the row lock; one audit row |
+| `GET /tasks/:id/evidence` | anyone who is or was on the task, may manage it, or can see its record | `{ items, canAdd, closed }`; no storage key |
+| `GET /tasks/:id/evidence/:evidenceId/download` | the same | checked BEFORE the evidence is read |
+| `DELETE /tasks/:id/evidence/:evidenceId` | its uploader, still an active assignee, task open or on hold | every evidence type; soft delete, a file's bytes removed; 403 for a co-assignee, 409 on a closed task; one audit row |
+
+Everyone else, and every other organisation, gets the identical 404 "Task not
+found". `complete()`'s evidence check, the three list counts and
+`GET /tasks/:id` all exclude deleted evidence.
+
+### 16.7 Settings (`tenant:manage_config`)
+
+`GET /tenant/storage` (secrets "set" or null; usage; what this installation
+offers), `PATCH /tenant/storage` (secrets write-only; the location-in-use
+refusal; the audit row names changed fields only), `POST /tenant/storage/test`
+(candidate or stored settings; probe written, read back, compared, deleted;
+reports `configure | write | read | verify | delete`; saves nothing).
+`GET /tenant/config` reports each provider config as "set" or null.
+**`GET /tenant/email-config` is still unmasked** — see CLAUDE.md (ACC-177).
+The settings screen is lane A's.
+
+### 16.8 Refusal codes
+
+`STORAGE_NOT_CONFIGURED` 503, `STORAGE_PROVIDER_NOT_ALLOWED` 400,
+`STORAGE_ENDPOINT_NOT_ALLOWED` 400, `STORAGE_UNAVAILABLE` 502,
+`STORAGE_QUOTA_EXCEEDED` 409, `STORAGE_LOCATION_IN_USE` 409 (+ `fileCount`),
+`STORAGE_SETTINGS_INCOMPLETE` 400, `FILE_MISSING` 400, `FILE_EMPTY` 400,
+`FILE_TOO_LARGE` 413 (+ `maxBytes`), `FILE_TYPE_NOT_ALLOWED` 415,
+`FILE_UNAVAILABLE` 409. One English message per code (`storage-refusal.ts`);
+the frontend's words are `files.refusal.*` in both languages
+(`FilesService.refusal()`). A provider's own error text is logged, never
+returned — it can name a host or bucket.
+
+### 16.9 Frontend Consumption
+
+- `TaskAddEvidenceDialogComponent` — one dialog, Link | File (Record absent
+  until a record picker exists), slot held to File's height (268px; measured
+  Arabic worst case 251). Up to three files, judged against
+  `GET /files/upload-limits` on first opening, uploaded one request each with
+  progress.
+- `TaskEvidenceListComponent` — the drawing's Evidence panel, hosted
+  unchanged by the evidence dialog today and the task page later.
+- `TaskEvidenceDialogComponent` — the panel in a dialog, Add evidence as its
+  own layer.
+- Opened from My tasks and the committee task list: "Add evidence" (active
+  assignee, open task) and "Evidence" (any task with some).
+- `FilesService` — limits, opening a download (navigation, not a popup),
+  sizes, refusal codes.
+
+### 16.10 Not built
+
+Virus scanning (ACC-178), the orphan-object reconciler (ACC-179), moving files
+between locations (ACC-180), rate limiting (ACC-129), per-plan upload caps,
+and the storage settings screen (lane A). **No bucket exists**: until one does,
+production refuses every upload with "File storage isn't set up yet".

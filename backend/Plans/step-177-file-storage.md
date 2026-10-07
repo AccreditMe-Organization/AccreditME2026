@@ -154,16 +154,17 @@ Also:
 
 ## 13. Progress
 
-- [ ] Plan and design reference committed
-- [ ] Migration applied and committed
-- [ ] File-storage module: providers, resolver, address guard, sniffer, keys, names, stored files, quota, download token
-- [ ] Storage settings API
-- [ ] Secret masking on `/tenant/config` and `/tenant/email-config`
-- [ ] Task evidence: file upload, list, download, delete; counts exclude deleted
-- [ ] Backend specs and tenant isolation tests
-- [ ] Frontend: Add evidence dialog, evidence list, wired into My tasks and the committee task list
-- [ ] i18n EN/AR
-- [ ] Docs: CLAUDE.md, SYSTEM-REFERENCE.md
-- [ ] Linear follow-ups
-- [ ] MinIO end to end and browser pass, EN/AR
-- [ ] Cleanup proof
+- [x] Plan and design reference committed
+- [x] Migration applied and committed
+- [x] File-storage module: providers, resolver, address guard, sniffer, keys, names, stored files, quota, download token
+- [x] Storage settings API
+- [x] Secret masking on `/tenant/config` (`/tenant/email-config` left unmasked: its screen saves the whole object back — reported)
+- [x] Task evidence: file upload, list, download, delete; counts exclude deleted
+- [x] Backend specs and tenant isolation tests
+- [x] Frontend: Add evidence dialog, evidence list, wired into My tasks and the committee task list
+- [x] i18n EN/AR
+- [x] Docs: CLAUDE.md, SYSTEM-REFERENCE.md
+- [x] Linear follow-ups: ACC-178 (virus scanning, High), ACC-179 (orphan reconciler, Medium), ACC-180 (moving files, Low)
+- [x] Browser pass, EN/AR (no-bucket refusal, link evidence, Evidence panel, layering)
+- [ ] MinIO end to end — BLOCKED: dl.min.io answers 410 Gone for every community server binary; only AIStor is served (needs Ahmad's decision)
+- [x] Cleanup proof

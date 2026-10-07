@@ -229,8 +229,10 @@ export interface QueuedFile {
       }
 
       /* Held to the tallest kind — File with three rows — so switching kind
-         never moves the footer (the drawing's "slot"). The value is the File
-         view measured with three rows, in Arabic, which is the taller. */
+         never moves the footer (the drawing's "slot"). Measured in the browser
+         (7 Oct 2026, 1440x900), File view with three rows and their refusals:
+         English 245, Arabic 251 (the limits line wraps); Link view 176 / 186.
+         Body with the slot held: 339 English, 342 Arabic, against the 420 cap. */
       .am-evidence-slot {
         min-block-size: 268px;
       }
