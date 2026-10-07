@@ -124,7 +124,7 @@ describe('StorageSettingsService (ACC-177)', () => {
       await service.confirm('org-a', { provider: 'S3' }, 'admin-1');
       expect(prisma.organization.updateMany).toHaveBeenCalledWith({
         where: { id: 'org-a', storageConfirmedAt: null },
-        data: expect.objectContaining({ storageProvider: 'S3', storageConfirmedAt: expect.any(Date), storageConfirmedById: 'admin-1' }),
+        data: expect.objectContaining({ storageProvider: 'S3', storageConfig: null, storageConfirmedAt: expect.any(Date), storageConfirmedById: 'admin-1' }),
       });
       expect(auditLog.log.mock.calls[0]![0]).toEqual(expect.objectContaining({ metadata: expect.objectContaining({ event: 'storage_confirmed' }) }));
     });

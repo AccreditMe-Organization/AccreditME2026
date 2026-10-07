@@ -39,7 +39,14 @@ export function readStorageConfig(encrypted: string | null): IStorageConfig {
   };
 }
 
-export function writeStorageConfig(config: IStorageConfig): string {
+/**
+ * The encrypted column value, or NULL when there is nothing to keep — an
+ * organisation on AccreditMe cloud with no MinIO or local settings stores no
+ * config at all, exactly as before it confirmed (found in ACC-177's live run:
+ * confirming AccreditMe cloud wrote an encrypted "{}").
+ */
+export function writeStorageConfig(config: IStorageConfig): string | null {
+  if (!config.minio && !config.local) return null;
   return encryptTenantConfig(config as Record<string, unknown>, getEncryptionKey());
 }
 
