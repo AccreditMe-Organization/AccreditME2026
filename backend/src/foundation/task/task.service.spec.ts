@@ -527,8 +527,9 @@ describe('TaskService', () => {
       expect((error as ConflictException).message).toBe(
         'Evidence is required before this task can be completed',
       );
+      // ACC-177 — deleted evidence does not count.
       expect(mockPrisma.taskEvidence.count).toHaveBeenCalledWith({
-        where: { taskId: 'task-1', organizationId: ORG_A },
+        where: { taskId: 'task-1', organizationId: ORG_A, deletedAt: null },
       });
       expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
@@ -1397,7 +1398,8 @@ describe('TaskService', () => {
         expect.objectContaining({
           include: expect.objectContaining({
             rejectedBy: { select: { id: true, name: true } },
-            _count: { select: { evidence: true } },
+            // ACC-177 — the count excludes deleted evidence.
+            _count: { select: { evidence: { where: { deletedAt: null } } } },
           }),
         }),
       );

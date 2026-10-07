@@ -49,6 +49,7 @@ import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
+import { TaskEvidenceService } from './task-evidence.service';
 import { TaskAuthorityService } from './task-authority.service';
 
 const TENANT_ID = 'org-a';
@@ -116,6 +117,7 @@ describe('Child list gated by its parent (ACC-101)', () => {
         // task-authority.service.spec.ts.
         // ACC-173 — the controller's request routes; never reached here.
         { provide: TaskRequestService, useValue: {} },
+        { provide: TaskEvidenceService, useValue: {} },
         {
           provide: TaskAuthorityService,
           useValue: {
