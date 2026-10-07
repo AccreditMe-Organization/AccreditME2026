@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpEvent, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 
@@ -293,10 +293,47 @@ export interface SlaWindowDto {
 export type SlaPreviewDto = Record<TaskPriority, SlaWindowDto>;
 
 // ACC-163 (Q11) — new evidence is a link (http or https) or a reference to a
-// record. A note is a comment, not proof, and attachments wait for storage.
+// record. A note is a comment, not proof. ACC-177 — a file goes through
+// addFileEvidence() instead, as multipart.
 export type AddTaskEvidenceDto =
   | { type: 'LINK'; url: string; linkTitle?: string }
   | { type: 'INTERNAL_REFERENCE'; refType: string; refId: string };
+
+// ACC-177 — one piece of evidence as the evidence list shows it. A file is its
+// summary only; where it is stored never reaches the browser.
+export interface ITaskEvidenceDto {
+  id: string;
+  /** LINK | INTERNAL_REFERENCE | ATTACHMENT (a file, labelled "File") | TEXT (legacy) */
+  type: string;
+  url: string | null;
+  linkTitle: string | null;
+  refType: string | null;
+  refId: string | null;
+  refDisplay: string | null;
+  file: { id: string; name: string; mimeType: string; sizeBytes: number; uploadedAt: string } | null;
+  uploadedBy: { id: string; name: string };
+  uploadedAt: string;
+  canDelete: boolean;
+}
+
+export interface ITaskEvidenceListDto {
+  items: ITaskEvidenceDto[];
+  /** The viewer is an active assignee and the task is open or on hold. */
+  canAdd: boolean;
+  /** Completed or cancelled: the evidence is read-only for everyone. */
+  closed: boolean;
+}
+
+/**
+ * Where to fetch a file for the next fifteen minutes. `viaApi`: `url` is a
+ * path on the API (a local folder's token route); otherwise it is a
+ * pre-signed storage URL.
+ */
+export interface IFileDownloadDto {
+  url: string;
+  viaApi: boolean;
+  expiresAt: string;
+}
 
 @Injectable({ providedIn: 'root' })
 export class TaskService {
@@ -455,6 +492,28 @@ export class TaskService {
 
   addEvidence(taskId: string, dto: AddTaskEvidenceDto): Observable<{ id: string }> {
     return this.http.post<{ id: string }>(`${this.base}/${taskId}/evidence`, dto);
+  }
+
+  // ACC-177 — a file, as multipart, with upload progress. One file per call.
+  addFileEvidence(taskId: string, file: File): Observable<HttpEvent<ITaskEvidenceDto>> {
+    const body = new FormData();
+    body.append('file', file, file.name);
+    return this.http.post<ITaskEvidenceDto>(`${this.base}/${taskId}/evidence/file`, body, {
+      reportProgress: true,
+      observe: 'events',
+    });
+  }
+
+  listEvidence(taskId: string): Observable<ITaskEvidenceListDto> {
+    return this.http.get<ITaskEvidenceListDto>(`${this.base}/${taskId}/evidence`);
+  }
+
+  downloadEvidence(taskId: string, evidenceId: string): Observable<IFileDownloadDto> {
+    return this.http.get<IFileDownloadDto>(`${this.base}/${taskId}/evidence/${evidenceId}/download`);
+  }
+
+  removeEvidence(taskId: string, evidenceId: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/${taskId}/evidence/${evidenceId}`);
   }
 }
 
