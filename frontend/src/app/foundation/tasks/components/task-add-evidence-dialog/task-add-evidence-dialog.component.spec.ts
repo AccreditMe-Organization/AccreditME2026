@@ -215,6 +215,22 @@ describe('TaskAddEvidenceDialogComponent (ACC-177)', () => {
       expect(dialog.queue()[0]!.reason).toBe("File storage isn't set up yet. Ask your administrator.");
     });
 
+    it("says storage isn't set up yet — ask your administrator — until storage is confirmed, in both languages", async () => {
+      const { fixture, dialog } = setup('ar');
+      dialog.chooseKind('FILE');
+      dialog.enqueue([file('a.pdf')]);
+      dialog.submit();
+      http
+        .expectOne(FILE_URL)
+        .flush(
+          { statusCode: 409, code: 'STORAGE_NOT_CONFIRMED', message: "File storage isn't set up yet. Ask your administrator." },
+          { status: 409, statusText: 'Conflict' },
+        );
+      await fixture.whenStable();
+      expect(dialog.queue()[0]!.reason).toBe('لم يُجهَّز تخزين الملفات بعد. راجع مسؤول النظام.');
+      expect(fixture.componentInstance.visible()).toBe(true);
+    });
+
     it('asks for a file rather than sending nothing', () => {
       const { dialog } = setup();
       dialog.chooseKind('FILE');

@@ -130,7 +130,10 @@ describe('TaskEvidenceListComponent (ACC-177)', () => {
 
     const confirmation = TestBed.inject(ConfirmationService);
     spyOn(confirmation, 'confirm').and.callFake((c) => {
-      expect(c.message).toBe('“محضر الاجتماع.pdf” will no longer count as evidence for this task. The record that it was added stays.');
+      // A file goes to the recycle bin for 30 days.
+      expect(c.message).toBe(
+        '“محضر الاجتماع.pdf” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days.',
+      );
       expect(c.acceptLabel).toBe('Remove');
       c.accept!();
       return confirmation;
