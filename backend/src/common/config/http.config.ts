@@ -2,47 +2,44 @@ import cookieParser from 'cookie-parser';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 
 /**
- * The proxies whose X-Forwarded-For entries Express may trust — ACC-129.
+ * How many proxies stand between a visitor and this app on Railway — ACC-129.
  *
- * On Railway every request arrives from Railway's proxy. Without this, Express
- * reports the proxy as `req.ip` for every user — measured: the one deployed
- * sign-in recorded `::ffff:100.64.0.1`, while Railway's own HTTP log showed the
- * real client. So the rate limiter would have counted all anonymous traffic as
- * one address, and the sign-in records and the new-IP email recorded the proxy.
+ * Without `trust proxy`, Express reports the nearest proxy as `req.ip` for
+ * every user, so the rate limiter counted all anonymous traffic as one address,
+ * and the sign-in records and the new-IP email recorded the proxy.
  *
- * A SUBNET, not a hop count. Express walks X-Forwarded-For from the right,
- * skipping addresses it trusts, and takes the first one it does not: the
- * client. Railway has described its edge both as appending to a client-sent
- * X-Forwarded-For and as stripping it; this is right under either, and a value
- * a client put on the left cannot be chosen, because the walk stops at the real
- * client before reaching it.
+ * A HOP COUNT, not a subnet, because of what Railway actually sends. Measured on
+ * 7 Oct with `LOG_CLIENT_ADDRESS=true`, three requests from one visitor:
  *
- * `loopback` covers local development and the tests (supertest connects over
- * loopback). A CDN in front (Cloudflare) would add its own ranges here —
- * revisit this then.
+ *   socket=::ffff:100.64.0.2  xff=188.236.50.136, 152.233.68.97
+ *   socket=::ffff:100.64.0.3  xff=188.236.50.136, 152.233.15.123
+ *   socket=::ffff:100.64.0.4  xff=188.236.50.136, 152.233.15.123
  *
- * RAILWAY'S PRIVATE NETWORK, `fd00::/8` (ACC-129 follow-up). Railway carries
- * traffic from its edge to the container over its private IPv6 network: the
- * HTTP log's `upstreamAddress` is `http://[fd12:…]:3000`, so the proxy hop the
- * container sees is an `fd12:` address. Trusting only 100.64.0.0/10 left that
- * hop untrusted, Express ignored X-Forwarded-For, and the per-address limits
- * never triggered on Railway — measured 7 Oct: 31 lookups from one client, all
- * 400, no 429. `fd00::/8` is the IPv6 unique-local range: such an address is
- * reachable only inside Railway's own network, so no visitor can arrive from
- * one, and trusting it trusts nothing outside Railway.
+ *   hop 1 — the socket: Railway's internal router (::ffff:100.64.0.x).
+ *   hop 2 — the right-most X-Forwarded-For entry: Railway's edge, which appends
+ *           its own public address, and a DIFFERENT one from request to request
+ *           (152.233.x.x).
+ *   then  — the visitor (188.236.50.136, which is Railway's own srcIp for them).
  *
- * 100.64.0.0/10 stays: the 5 Oct one-off `::ffff:100.64.0.1` was the older
- * path, and keeping it costs nothing if that path is still used anywhere.
+ * Trusting the 100.64 router by subnet stopped at the edge address, so one
+ * visitor was counted under several edge addresses and never reached a limit —
+ * 31 lookups, all 400. Trusting the edge by subnet would mean tracking Railway's
+ * public ranges, which they do not publish as a contract. Two hops is the shape
+ * itself.
+ *
+ * Express takes the address two in from the right, so anything a visitor writes
+ * into X-Forwarded-For lands further LEFT and is never reached. With no
+ * X-Forwarded-For (local development, the tests) `req.ip` is the socket.
+ *
+ * IF A CDN IS PUT IN FRONT (Cloudflare, say), THIS MUST BECOME 3: it adds one
+ * more hop, and at 2 every visitor behind a CDN node would share that node's
+ * bucket. Prove it with `LOG_CLIENT_ADDRESS=true` after the change.
  */
-export const TRUSTED_PROXIES: readonly string[] = [
-  'loopback',
-  '100.64.0.0/10',
-  'fd00::/8',
-];
+export const RAILWAY_PROXY_HOPS = 2;
 
 /** Request handling shared by main.ts and every test that exercises it. */
 export function configureHttp(app: NestExpressApplication): void {
-  app.set('trust proxy', [...TRUSTED_PROXIES]);
+  app.set('trust proxy', RAILWAY_PROXY_HOPS);
   // Populates req.cookies — required for TenantGuard (and the rate limiter) to
   // read the access_token httpOnly cookie (Step 9, Section 12 Discussion 4).
   app.use(cookieParser());

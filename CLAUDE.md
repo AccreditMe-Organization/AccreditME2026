@@ -1093,20 +1093,26 @@ GET  /health                      not limited — the only exemption
   log line naming the counted identity (`user:<id>`, `ip:<address>` or
   `email:<hash>` — never a token or an email). Accept invitation shows its own
   message; Login and Forgot password get theirs in slice 9d.
-- **The client address is real because Express trusts Railway's proxy**
-  (`common/config/http.config.ts`: `trust proxy` = loopback + `100.64.0.0/10`
-  + `fd00::/8`). Without it every request on Railway came from the proxy.
-  **`fd00::/8` is the one that matters today:** Railway's edge reaches the
-  container over its private IPv6 network (`fd12:…`), and with only
-  `100.64.0.0/10` trusted the per-address limits never triggered on Railway
-  (7 Oct: 31 lookups, all 400). Unique-local addresses are reachable only inside
-  Railway, so trusting them trusts nothing a visitor can arrive from. A CDN in
-  front (Cloudflare) adds its own ranges there.
+- **The client address is real because Express trusts exactly TWO proxy hops**
+  (`common/config/http.config.ts`: `trust proxy` = `RAILWAY_PROXY_HOPS` = 2).
+  What Railway actually sends, measured 7 Oct:
+  `socket=::ffff:100.64.0.3 xff=188.236.50.136, 152.233.15.123`. Hop 1 is the
+  socket, Railway's internal router (`::ffff:100.64.0.x`). Hop 2 is the
+  right-most `X-Forwarded-For` entry, Railway's EDGE, which appends its own
+  public address and a different one per request (`152.233.x.x`). Next left is
+  the visitor (Railway's `srcIp`). Trusting the router by subnet counted the edge
+  instead, so one visitor was split across edge addresses and no per-address
+  limit ever triggered (31 lookups, all 400). Anything a visitor writes into the
+  header lands further left and is never reached.
+  **If a CDN (Cloudflare) is ever put in front, this must become 3**, then be
+  proved with the diagnostic below. At 2 every visitor behind a CDN node would
+  share that node's bucket.
 - **Proving it on Railway: `LOG_CLIENT_ADDRESS=true`.** Off by default. When set
   to exactly `true`, the guard logs one `[ClientAddress]` line per request to a
   public auth route (`ip=`, `socket=`, `xff=` truncated to 200 characters) —
   never a body, token, cookie or email. Set it only for a proof run, and remove
-  it afterwards; each change redeploys.
+  it afterwards. **Setting it redeploys; deleting it did NOT** (7 Oct), so run
+  `railway redeploy` after deleting it and check that a lookup writes no line.
 - **Storage is in memory, which is correct at ONE replica** (`.railway/
   railway.ts`). A restart clears the counters. **When the API runs more than one
   replica, or a second region**, move the counters to Redis (a Redis
