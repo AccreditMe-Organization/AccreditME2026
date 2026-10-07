@@ -7789,9 +7789,26 @@ carry no standard header at all.
 **The client address.** On Railway every request arrives from Railway's proxy.
 Without `trust proxy`, `req.ip` was the proxy for every user — **measured**: the
 one deployed sign-in recorded `::ffff:100.64.0.1`, while Railway's HTTP log
-(`srcIp`) showed the real client. Express now trusts loopback and
-`100.64.0.0/10` and walks `X-Forwarded-For` from the right to the first address
-it does not trust. A subnet rather than a hop count, because Railway's staff have
+(`srcIp`) showed the real client. Express now trusts loopback,
+`100.64.0.0/10` and `fd00::/8`, and walks `X-Forwarded-For` from the right to
+the first address it does not trust.
+
+**`fd00::/8` was added after the first deploy failed its proof** (7 Oct, 31
+lookups from one client, all 400, no 429). Railway's edge reaches the container
+over its private IPv6 network — the HTTP log's `upstreamAddress` is
+`http://[fd12:…]:3000` — so the hop the container sees is an `fd12:` address.
+With only `100.64.0.0/10` trusted, Express ignored `X-Forwarded-For` and counted
+that hop. Unique-local addresses are reachable only inside Railway's network, so
+no visitor can arrive from one. `100.64.0.0/10` stays for the older path that
+recorded the 5 Oct `::ffff:100.64.0.1`. `http.config.spec.ts` proves both,
+through Express's own `req.ip` getter.
+
+**The diagnostic, `LOG_CLIENT_ADDRESS=true`, off by default.** The guard then
+logs one `[ClientAddress]` line per request to a public auth route — the routes
+`perAddress()` marks — with `req.ip`, the socket's address and the raw
+`X-Forwarded-For` truncated to 200 characters. It never logs a body, token,
+cookie or email, and with the variable unset nothing is read or computed. It is
+for a proof run on Railway; set it, run the proof, remove it. A subnet rather than a hop count, because Railway's staff have
 described the edge both as appending to a client-sent `X-Forwarded-For` and as
 stripping it, and this is right under either; a value a client puts on the left
 cannot be chosen, because the walk stops at the real client first.

@@ -1088,9 +1088,19 @@ GET  /health                      not limited — the only exemption
   `email:<hash>` — never a token or an email). Accept invitation shows its own
   message; Login and Forgot password get theirs in slice 9d.
 - **The client address is real because Express trusts Railway's proxy**
-  (`common/config/http.config.ts`: `trust proxy` = loopback + `100.64.0.0/10`).
-  Without it every request on Railway came from the proxy. A CDN in front
-  (Cloudflare) adds its own ranges there.
+  (`common/config/http.config.ts`: `trust proxy` = loopback + `100.64.0.0/10`
+  + `fd00::/8`). Without it every request on Railway came from the proxy.
+  **`fd00::/8` is the one that matters today:** Railway's edge reaches the
+  container over its private IPv6 network (`fd12:…`), and with only
+  `100.64.0.0/10` trusted the per-address limits never triggered on Railway
+  (7 Oct: 31 lookups, all 400). Unique-local addresses are reachable only inside
+  Railway, so trusting them trusts nothing a visitor can arrive from. A CDN in
+  front (Cloudflare) adds its own ranges there.
+- **Proving it on Railway: `LOG_CLIENT_ADDRESS=true`.** Off by default. When set
+  to exactly `true`, the guard logs one `[ClientAddress]` line per request to a
+  public auth route (`ip=`, `socket=`, `xff=` truncated to 200 characters) —
+  never a body, token, cookie or email. Set it only for a proof run, and remove
+  it afterwards; each change redeploys.
 - **Storage is in memory, which is correct at ONE replica** (`.railway/
   railway.ts`). A restart clears the counters. **When the API runs more than one
   replica, or a second region**, move the counters to Redis (a Redis
