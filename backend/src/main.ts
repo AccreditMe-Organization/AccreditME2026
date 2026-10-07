@@ -18,7 +18,7 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
   if (config.appLinks.devOrigin) {
     logger.warn(
-      `APP_LINK_ORIGIN is set: emailed links point at ${config.appLinks.devOrigin}, ` +
+      `APP_LINK_ORIGIN is set: emailed links point at {slug}.localhost on ${config.appLinks.devOrigin}, ` +
         'not at tenant subdomains. Development only — never set it on a deployed service.',
     );
   } else {
@@ -45,7 +45,8 @@ async function bootstrap(): Promise<void> {
   configureHttp(app);
 
   // FRONTEND_URL is an exact, required origin, and the API refuses to start
-  // without it (ACC-128). httpOnly cookies require credentials: true, and
+  // without it (ACC-128). Every tenant's own https://{slug}.{APP_BASE_DOMAIN}
+  // is allowed beside it (ACC-139). httpOnly cookies require credentials: true, and
   // browsers reject a wildcard origin whenever credentials is set — so there is
   // no safe default to fall back to, and a missing value must stop the boot
   // rather than be guessed at.
@@ -54,7 +55,9 @@ async function bootstrap(): Promise<void> {
   // `process.env['FRONTEND_URL']` with no check, and that variable is unset on
   // Railway. See cors.config.ts for what the middleware measurably does with
   // `undefined` — it is not what the defect report assumed.
-  app.enableCors(buildCorsOptions(config.frontendOrigin));
+  app.enableCors(
+    buildCorsOptions(config.frontendOrigin, config.appLinks.baseDomain),
+  );
 
   app.setGlobalPrefix('api/v1');
 

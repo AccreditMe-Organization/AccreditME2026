@@ -1,4 +1,5 @@
 import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
+import { DNS_LABEL } from '../tenant/reserved-slugs';
 
 /**
  * CORS, as an exact required origin that fails loudly — ACC-128.
@@ -32,6 +33,9 @@ import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.int
  *
  * ## The origin is the STRING, and row three is the whole reason
  *
+ * (ACC-128's reasoning, kept as the record. The origin is a function since
+ * ACC-139 — see the last section — but what it says about refusals still holds.)
+ *
  * ACC-128's second criterion reads: *"A request from an unlisted origin is
  * **refused rather than reflected**."*
  *
@@ -61,11 +65,30 @@ import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.int
  * visibility is wanted it is a log line and a deliberate decision, not a status
  * code smuggled in beside a configuration fix.
  *
- * ## One exact origin, no list and no pattern
+ * ## ACC-139 — every tenant's own origin, which SUPERSEDES "one exact origin"
  *
- * Deliberately not a comma-separated list and not a wildcard pattern. See
- * `SYSTEM-REFERENCE.md` §15.10 for the preview-deployment decision and why
- * `*.vercel.app` in particular is unsafe.
+ * Until ACC-139 this was one exact string. Every tenant now signs in at its
+ * own address, `https://{slug}.{APP_BASE_DOMAIN}`, and that set grows with
+ * every new organisation, so one string can no longer express it. The origin
+ * is now a FUNCTION (`isAllowedOrigin()` below) that allows exactly:
+ *
+ * - `FRONTEND_URL`, compared exactly, as before; and
+ * - `https://{label}.{APP_BASE_DOMAIN}` — https, ONE DNS label, no port.
+ *
+ * It REFLECTS such an origin, because `credentials: true` forbids a wildcard.
+ * **That is not the reflection ACC-128 refused.** ACC-128 refused reflecting
+ * ANY origin — the requester choosing what is echoed. Here only a host under a
+ * registrable domain WE OWN is echoed, and nobody else can create one. That is
+ * also why `*.vercel.app` stays unsafe (§15.10): it is a public namespace,
+ * where anyone can create a host.
+ *
+ * Anything else gets `callback(null, false)`: no `Access-Control-Allow-Origin`
+ * header at all, and the request itself still answered 200 — the browser is
+ * what blocks, exactly as the section above argues. Not a 403, for the reason
+ * that section gives.
+ *
+ * No tenant lookup: refusing `notatenant.accreditme.app` would be tidiness, not
+ * security, and would cost a query on every preflight.
  */
 
 /** The message a boot failure carries. Asserted by spec, so it is a constant. */
@@ -88,11 +111,49 @@ export function resolveFrontendOrigin(env: NodeJS.ProcessEnv = process.env): str
 }
 
 /**
- * `CorsOptions` allowing exactly `allowedOrigin`.
+ * Whether a browser origin may make credentialed requests: exactly
+ * `frontendOrigin`, or `https://{one DNS label}.{baseDomain}` with no port.
+ */
+export function isAllowedOrigin(
+  origin: string,
+  frontendOrigin: string,
+  baseDomain: string,
+): boolean {
+  if (origin === frontendOrigin) return true;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  // An Origin header is scheme://host[:port] and nothing else; anything with
+  // more in it is not one.
+  if (url.origin !== origin) return false;
+  if (url.protocol !== 'https:' || url.port !== '') return false;
+  const suffix = `.${baseDomain}`;
+  if (!url.hostname.endsWith(suffix)) return false;
+  // DNS_LABEL has no dot in it, so a.b.{baseDomain} is refused here.
+  return DNS_LABEL.test(url.hostname.slice(0, -suffix.length));
+}
+
+/**
+ * `CorsOptions` allowing `frontendOrigin` and every tenant's own origin.
  *
  * `credentials: true` is what forbids a wildcard: browsers reject `*` whenever
- * credentials are set, which is why there is no permissive fallback to reach for.
+ * credentials are set, which is why an allowed origin is reflected rather than
+ * answered with `*`.
  */
-export function buildCorsOptions(allowedOrigin: string): CorsOptions {
-  return { origin: allowedOrigin, credentials: true };
+export function buildCorsOptions(
+  frontendOrigin: string,
+  baseDomain: string,
+): CorsOptions {
+  return {
+    origin: (origin, callback) =>
+      callback(
+        null,
+        origin !== undefined &&
+          isAllowedOrigin(origin, frontendOrigin, baseDomain),
+      ),
+    credentials: true,
+  };
 }
