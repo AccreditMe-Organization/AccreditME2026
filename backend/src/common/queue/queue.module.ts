@@ -25,6 +25,8 @@ import { logWorkerRegistration } from './workers.config';
     // sla-monitor: a failed run does not retry, it stays visible in the failed
     // list and the next hourly run tries again.
     BullModule.registerQueue({ name: 'setup-health' }),
+    // ACC-177 — the daily purge of files deleted more than 30 days ago.
+    BullModule.registerQueue({ name: 'storage-purge' }),
     BullModule.registerQueue({
       name: 'email-delivery',
       defaultJobOptions: {

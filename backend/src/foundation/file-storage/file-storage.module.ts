@@ -1,5 +1,11 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { QueueModule } from '../../common/queue/queue.module';
+import { workersEnabled } from '../../common/queue/workers.config';
+import { RecycleBinService } from './recycle-bin.service';
+import { RecycleBinController } from './recycle-bin.controller';
+import { StorageNoticesService } from './storage-notices.service';
+import { StoragePurgeProcessor } from './storage-purge.processor';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { StorageResolverService } from './storage-resolver.service';
 import { StoredFileService } from './stored-file.service';
@@ -15,9 +21,21 @@ import { FilesController } from './files.controller';
 // it is stateless over PrismaService, and importing TenantModule would pull
 // its forwardRef web into every module that stores a file.
 @Module({
-  imports: [PrismaModule],
-  controllers: [StorageSettingsController, FilesController],
-  providers: [StorageResolverService, StoredFileService, StorageSettingsService, AuditLogService],
+  imports: [PrismaModule, QueueModule],
+  controllers: [StorageSettingsController, RecycleBinController, FilesController],
+  providers: [
+    StorageResolverService,
+    StoredFileService,
+    StorageSettingsService,
+    StorageNoticesService,
+    RecycleBinService,
+    AuditLogService,
+    // The daily purge both consumes its queue and schedules its own repeat, so
+    // it is registered only where workers run (ACC-92). RecycleBinService stays
+    // registered everywhere: purgeExpired() is what a local verification calls
+    // in-process.
+    ...(workersEnabled() ? [StoragePurgeProcessor] : []),
+  ],
   exports: [StoredFileService],
 })
 export class FileStorageModule {}
