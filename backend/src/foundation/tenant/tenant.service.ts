@@ -218,25 +218,18 @@ export class TenantService {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
 
+    // ACC-177 — each config is reported as "set" or null, never decrypted.
+    // These blobs hold provider secrets (a MinIO secret key, an AI key), and
+    // this route used to return them in clear to anyone holding
+    // tenant:manage_config. Nothing on the frontend reads this route; storage
+    // settings have their own masked read at GET /tenant/storage.
     return {
       authProvider: org.authProvider,
       storageProvider: org.storageProvider,
       aiProvider: org.aiProvider,
-      authConfig: org.authConfig
-        ? (JSON.parse(
-            this.decryptConfig(org.authConfig),
-          ) as Record<string, unknown>)
-        : null,
-      storageConfig: org.storageConfig
-        ? (JSON.parse(
-            this.decryptConfig(org.storageConfig),
-          ) as Record<string, unknown>)
-        : null,
-      aiConfig: org.aiConfig
-        ? (JSON.parse(
-            this.decryptConfig(org.aiConfig),
-          ) as Record<string, unknown>)
-        : null,
+      authConfig: org.authConfig ? 'set' : null,
+      storageConfig: org.storageConfig ? 'set' : null,
+      aiConfig: org.aiConfig ? 'set' : null,
     };
   }
 

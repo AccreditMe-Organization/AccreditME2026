@@ -472,16 +472,22 @@ describe('TenantService', () => {
       expect(config.aiConfig).toBeNull();
     });
 
-    it('decrypts stored configs', async () => {
-      const payload = { apiKey: 'secret-key' };
-      const encrypted = service.encryptConfig(payload);
+    // ACC-177 — a stored config is reported as "set", never decrypted: these
+    // blobs hold provider secrets.
+    it('reports a stored config as "set" and never returns its contents', async () => {
+      const encrypted = service.encryptConfig({ apiKey: 'secret-key' });
       prisma.organization.findUnique.mockResolvedValue({
         ...ORG_A,
+        authConfig: encrypted,
+        storageConfig: service.encryptConfig({ minio: { secretAccessKey: 'minio-secret' } }),
         aiConfig: encrypted,
       });
 
       const config = await service.getTenantConfig('org-a');
-      expect(config.aiConfig).toEqual(payload);
+      expect(config).toEqual(
+        expect.objectContaining({ authConfig: 'set', storageConfig: 'set', aiConfig: 'set' }),
+      );
+      expect(JSON.stringify(config)).not.toContain('secret');
     });
   });
 

@@ -70,9 +70,10 @@ export interface ITenantConfig {
   authProvider: 'LOCAL' | 'AZURE_AD' | 'GOOGLE';
   storageProvider: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';
   aiProvider: 'ANTHROPIC' | 'AZURE_OPENAI' | 'OPENAI' | 'OLLAMA';
-  authConfig: Record<string, unknown> | null;
-  storageConfig: Record<string, unknown> | null;
-  aiConfig: Record<string, unknown> | null;
+  // ACC-177 — masked: 'set' when a config is stored, never its contents.
+  authConfig: 'set' | null;
+  storageConfig: 'set' | null;
+  aiConfig: 'set' | null;
 }
 
 export interface IEmailConfig {
