@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FilesService } from '../../../../shared/files/files.service';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { TooltipModule } from 'primeng/tooltip';
@@ -39,6 +40,7 @@ const TYPE_ORDER: SetupConditionType[] = [
   'ORG_UNIT_WITHOUT_TYPE',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
+  'STORAGE_ALMOST_FULL',
 ];
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = { BLOCKS_WORK: 0, AT_RISK: 1 };
@@ -90,6 +92,10 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
         queryParams: { reassign: condition.objectId },
         permissions: ['tasks:manage', 'tasks:reassign'],
       };
+    case 'STORAGE_ALMOST_FULL':
+      // ACC-177 — no Fix yet: the recycle bin screen, where deleted files are
+      // purged, is lane A's and not built. The row's hint says what to do.
+      return null;
   }
 }
 
@@ -337,6 +343,7 @@ export class SetupHealthPageComponent implements OnInit {
   private readonly languageService = inject(LanguageService);
   private readonly translate = inject(TranslateService);
   private readonly format = inject(FormatService);
+  private readonly files = inject(FilesService);
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -478,7 +485,9 @@ export class SetupHealthPageComponent implements OnInit {
       // trigger, and the condition does not record which (§13.2) — so the row
       // says to check both rather than implying one.
       hint:
-        condition.type === 'STAGE_WITHOUT_ASSIGNEE' ? this.translate.instant('setupHealth.hint.STAGE_WITHOUT_ASSIGNEE') : null,
+        condition.type === 'STAGE_WITHOUT_ASSIGNEE' || condition.type === 'STORAGE_ALMOST_FULL'
+          ? this.translate.instant(`setupHealth.hint.${condition.type}`)
+          : null,
       age: this.age(condition),
       openedAt: condition.openedAt,
       fix:
@@ -497,6 +506,7 @@ export class SetupHealthPageComponent implements OnInit {
   private objectName(condition: SetupConditionDto): string {
     const s = condition.subject;
     if (condition.type === 'TASK_WITHOUT_OWNER') return s.title ?? '—';
+    if (condition.type === 'STORAGE_ALMOST_FULL') return this.translate.instant('setupHealth.storageObject');
     return (this.languageService.isArabic() && s.nameAr) || s.nameEn || '—';
   }
 
@@ -520,6 +530,11 @@ export class SetupHealthPageComponent implements OnInit {
         return this.format.count('setupHealth.stageItemsBlocked', s.affectedInstances ?? 0);
       case 'TASK_WITHOUT_OWNER':
         return t('task');
+      case 'STORAGE_ALMOST_FULL':
+        return t('storage', {
+          percent: this.format.number(s.percent ?? 0),
+          limit: this.files.size(s.limitBytes ?? 0),
+        });
     }
   }
 

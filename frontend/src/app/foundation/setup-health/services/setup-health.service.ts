@@ -12,7 +12,9 @@ export type SetupConditionType =
   | 'ORG_UNIT_WITHOUT_HEAD'
   | 'ORG_UNIT_WITHOUT_TYPE'
   | 'STAGE_WITHOUT_ASSIGNEE'
-  | 'TASK_WITHOUT_OWNER';
+  | 'TASK_WITHOUT_OWNER'
+  // ACC-177 — AccreditMe-cloud storage at 90% or more of the organisation's limit.
+  | 'STORAGE_ALMOST_FULL';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -34,6 +36,10 @@ export interface SetupConditionSubject {
   templateNameEn?: string;
   templateNameAr?: string | null;
   affectedInstances?: number;
+  // ACC-177 — STORAGE_ALMOST_FULL: AccreditMe-cloud usage against the limit.
+  usedBytes?: number;
+  limitBytes?: number;
+  percent?: number;
 }
 
 export interface SetupConditionDto {

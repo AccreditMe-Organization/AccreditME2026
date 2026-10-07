@@ -301,7 +301,10 @@ export class TaskEvidenceListComponent {
   confirmRemove(item: ITaskEvidenceDto): void {
     this.confirmation.confirm({
       header: this.translate.instant('task.evidence.removeTitle'),
-      message: this.translate.instant('task.evidence.removeMessage', { name: this.title(item) }),
+      // A file goes to the recycle bin for 30 days; a link or a reference is gone.
+      message: this.translate.instant(item.file ? 'task.evidence.removeMessageFile' : 'task.evidence.removeMessage', {
+        name: this.title(item),
+      }),
       acceptLabel: this.translate.instant('task.evidence.removeConfirm'),
       rejectLabel: this.translate.instant('task.evidence.keep'),
       icon: 'pi pi-exclamation-triangle',
