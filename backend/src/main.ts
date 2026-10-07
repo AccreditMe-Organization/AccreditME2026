@@ -18,8 +18,8 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
   if (config.appLinks.devOrigin) {
     logger.warn(
-      `APP_LINK_ORIGIN is set: emailed links point at {slug}.localhost on ${config.appLinks.devOrigin}, ` +
-        'not at tenant subdomains. Development only — never set it on a deployed service.',
+      `APP_LINK_ORIGIN is set: emailed links point at each tenant's local host on ${config.appLinks.devOrigin} ` +
+        '(http://{slug}.localhost…), not at the deployed domain. Development only — never set it on a deployed service.',
     );
   } else {
     logger.log(
