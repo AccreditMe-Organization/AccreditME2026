@@ -18,10 +18,27 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
  * client before reaching it.
  *
  * `loopback` covers local development and the tests (supertest connects over
- * loopback). Railway's proxies are in 100.64.0.0/10. A CDN in front (Cloudflare)
- * would add its own ranges here — revisit this then.
+ * loopback). A CDN in front (Cloudflare) would add its own ranges here —
+ * revisit this then.
+ *
+ * RAILWAY'S PRIVATE NETWORK, `fd00::/8` (ACC-129 follow-up). Railway carries
+ * traffic from its edge to the container over its private IPv6 network: the
+ * HTTP log's `upstreamAddress` is `http://[fd12:…]:3000`, so the proxy hop the
+ * container sees is an `fd12:` address. Trusting only 100.64.0.0/10 left that
+ * hop untrusted, Express ignored X-Forwarded-For, and the per-address limits
+ * never triggered on Railway — measured 7 Oct: 31 lookups from one client, all
+ * 400, no 429. `fd00::/8` is the IPv6 unique-local range: such an address is
+ * reachable only inside Railway's own network, so no visitor can arrive from
+ * one, and trusting it trusts nothing outside Railway.
+ *
+ * 100.64.0.0/10 stays: the 5 Oct one-off `::ffff:100.64.0.1` was the older
+ * path, and keeping it costs nothing if that path is still used anywhere.
  */
-export const TRUSTED_PROXIES: readonly string[] = ['loopback', '100.64.0.0/10'];
+export const TRUSTED_PROXIES: readonly string[] = [
+  'loopback',
+  '100.64.0.0/10',
+  'fd00::/8',
+];
 
 /** Request handling shared by main.ts and every test that exercises it. */
 export function configureHttp(app: NestExpressApplication): void {

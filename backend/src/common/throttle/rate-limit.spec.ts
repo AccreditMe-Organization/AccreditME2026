@@ -284,4 +284,76 @@ describe('rate limiting (ACC-129)', () => {
       );
     });
   });
+
+  // ACC-129 follow-up — the diagnostic that proves on Railway which address is
+  // counted. Off unless LOG_CLIENT_ADDRESS is exactly 'true'.
+  describe('the client-address diagnostic', () => {
+    const COOKIE_VALUE = 'cookie-secret-value-1234';
+    const BEARER = 'bearer-secret-value-5678';
+    const BODY_TOKEN = 'b'.repeat(48);
+    let info: jest.SpyInstance<void, [message: unknown, ...rest: unknown[]]>;
+
+    beforeEach(() => {
+      info = jest
+        .spyOn(Logger.prototype, 'log')
+        .mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      info.mockRestore();
+      delete process.env['LOG_CLIENT_ADDRESS'];
+    });
+
+    const addressLines = (): string[] =>
+      info.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes(' ip='));
+
+    const lookupWithSecrets = (forwardedFor = '198.51.100.7') =>
+      request(server())
+        .post('/api/v1/auth/invitations/lookup?debug=1')
+        .set('X-Forwarded-For', forwardedFor)
+        .set('Cookie', `access_token=${COOKIE_VALUE}`)
+        .set('Authorization', `Bearer ${BEARER}`)
+        .send({ token: BODY_TOKEN });
+
+    it('logs one line per public auth request when set, with no secrets', async () => {
+      process.env['LOG_CLIENT_ADDRESS'] = 'true';
+      await lookupWithSecrets();
+
+      const lines = addressLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(
+        /^POST \/api\/v1\/auth\/invitations\/lookup ip=198\.51\.100\.7 socket=\S+ xff=198\.51\.100\.7$/,
+      );
+      for (const secret of [COOKIE_VALUE, BEARER, BODY_TOKEN, 'debug=1']) {
+        expect(lines[0]).not.toContain(secret);
+      }
+    });
+
+    it('truncates X-Forwarded-For to 200 characters', async () => {
+      process.env['LOG_CLIENT_ADDRESS'] = 'true';
+      const long = `${'10.0.0.1, '.repeat(40)}198.51.100.7`;
+      await lookupWithSecrets(long);
+      const xff = addressLines()[0]?.split(' xff=')[1] ?? '';
+      expect(xff).toHaveLength(200);
+    });
+
+    it('logs nothing for a route that is not a public auth route', async () => {
+      process.env['LOG_CLIENT_ADDRESS'] = 'true';
+      await request(server())
+        .get('/api/v1/probe')
+        .set('X-Forwarded-For', '198.51.100.7');
+      await request(server()).get('/api/v1/health');
+      expect(addressLines()).toEqual([]);
+    });
+
+    it.each([undefined, 'false', '1', 'TRUE'])(
+      'logs nothing when LOG_CLIENT_ADDRESS is %p',
+      async (value) => {
+        if (value !== undefined) process.env['LOG_CLIENT_ADDRESS'] = value;
+        await lookupWithSecrets();
+        expect(addressLines()).toEqual([]);
+      },
+    );
+  });
 });
