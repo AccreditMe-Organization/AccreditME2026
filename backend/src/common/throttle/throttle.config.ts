@@ -1,7 +1,14 @@
-import type { ExecutionContext } from '@nestjs/common';
+import {
+  applyDecorators,
+  SetMetadata,
+  type ExecutionContext,
+} from '@nestjs/common';
 import { Throttle, type ThrottlerModuleOptions } from '@nestjs/throttler';
 import { RATE_LIMITS, RESET_EMAIL_THROTTLER } from './rate-limits';
-import { RESET_EMAIL_LIMITED } from './accreditme-throttler.guard';
+import {
+  PUBLIC_AUTH_ROUTE,
+  RESET_EMAIL_LIMITED,
+} from './accreditme-throttler.guard';
 import {
   byAddress,
   byOrganisationAndEmail,
@@ -55,16 +62,20 @@ export function throttlerOptions(): ThrottlerModuleOptions {
 
 /**
  * A public route's own limit, counted per ADDRESS — the auth routes, which a
- * person reaches before they have a session.
+ * person reaches before they have a session. Also marks the route as a public
+ * auth route, which is what the client-address diagnostic logs.
  */
 export const perAddress = (limit: {
   limit: number;
   ttl: number;
 }): MethodDecorator & ClassDecorator =>
-  Throttle({
-    default: {
-      limit: limit.limit,
-      ttl: limit.ttl,
-      getTracker: (req) => byAddress(req as HttpRequest),
-    },
-  });
+  applyDecorators(
+    Throttle({
+      default: {
+        limit: limit.limit,
+        ttl: limit.ttl,
+        getTracker: (req) => byAddress(req as HttpRequest),
+      },
+    }),
+    SetMetadata(PUBLIC_AUTH_ROUTE, true),
+  );

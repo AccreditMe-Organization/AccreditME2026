@@ -5,7 +5,7 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { ThrottlerGuard, ThrottlerLimitDetail } from '@nestjs/throttler';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { RateLimitedException } from './rate-limited.exception';
 
 /**
@@ -23,6 +23,40 @@ import { RateLimitedException } from './rate-limited.exception';
 @Injectable()
 export class AccreditMeThrottlerGuard extends ThrottlerGuard {
   private readonly logger = new Logger('RateLimit');
+  private readonly addressLogger = new Logger('ClientAddress');
+
+  /**
+   * DIAGNOSTIC, OFF BY DEFAULT (ACC-129 follow-up): with LOG_CLIENT_ADDRESS set
+   * to 'true', one line per request to a public auth route showing what the
+   * limiter sees — `req.ip`, the socket's own address and the raw
+   * X-Forwarded-For. It exists to prove on Railway that the counted address is
+   * the visitor's. It never logs a body, a token, a cookie or an email; the
+   * header is truncated. Unset, nothing is read or computed.
+   */
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (process.env['LOG_CLIENT_ADDRESS'] === 'true') {
+      this.logClientAddress(context);
+    }
+    return super.canActivate(context);
+  }
+
+  private logClientAddress(context: ExecutionContext): void {
+    if (
+      this.reflector.get<boolean>(PUBLIC_AUTH_ROUTE, context.getHandler()) !==
+      true
+    ) {
+      return;
+    }
+    const req = context.switchToHttp().getRequest<Request>();
+    const header = req.headers['x-forwarded-for'];
+    const xff = (
+      Array.isArray(header) ? header.join(', ') : (header ?? '')
+    ).slice(0, 200);
+    const path = (req.originalUrl ?? req.url).split('?')[0];
+    this.addressLogger.log(
+      `${req.method} ${path} ip=${req.ip ?? ''} socket=${req.socket?.remoteAddress ?? ''} xff=${xff}`,
+    );
+  }
 
   /**
    * Over a limit: a standard Retry-After header, one warning line naming the
@@ -51,6 +85,9 @@ export class AccreditMeThrottlerGuard extends ThrottlerGuard {
     throw new RateLimitedException(retryAfterSeconds);
   }
 }
+
+/** Marks the public auth routes — set by perAddress() in throttle.config.ts. */
+export const PUBLIC_AUTH_ROUTE = 'accreditme:public-auth-route';
 
 /** Marks the one route the per-email password-reset limit applies to. */
 export const RESET_EMAIL_LIMITED = 'accreditme:reset-email-limited';
