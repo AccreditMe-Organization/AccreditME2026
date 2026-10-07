@@ -105,7 +105,10 @@ describe('rate limiting (ACC-129)', () => {
     configureHttp(nest);
     nest.setGlobalPrefix('api/v1');
     nest.useGlobalFilters(new HttpExceptionFilter());
-    await nest.init();
+    // Listening once, before any request: supertest otherwise calls listen(0)
+    // per request, and the concurrent batches below then race to bind the same
+    // server — Linux answers that with ECONNRESET (CI did; Windows did not).
+    await nest.listen(0);
     app = nest;
   });
 
