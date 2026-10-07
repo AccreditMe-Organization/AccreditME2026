@@ -942,8 +942,9 @@ logs.
 | `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
 
 **KNOWN AND ACCEPTED LIMITATION — sign-in reveals whether an ORGANISATION
-exists.** Accepted for now; **revisited with ACC-129** (per-IP rate limiting),
-which is what makes guessing organisations expensive. The reason it is accepted
+exists.** Accepted for now. **ACC-129 made guessing slower, not closed:**
+sign-in is limited to 60 a minute per address (§15.12), deliberately generous
+because of hospitals' shared addresses. The reason it is accepted
 is that the timing gap below already reveals it in a single request, so closing
 the second route alone would buy nothing. Two routes:
 
@@ -7754,3 +7755,60 @@ and no set-before-merge step: the boot check passes on the existing value. Its
 value moves from `accreditme.com` to `accreditme.app` as a dashboard change.
 `APP_LINK_ORIGIN` must never be set there.
 
+### 15.12 Rate limiting, and the client address (ACC-129)
+
+**One global guard.** `AccreditMeThrottlerGuard`
+(`backend/src/common/throttle/`) is `APP_GUARD`, so every endpoint is limited
+unless it is exempted with a visible `@SkipThrottle()`. Before ACC-129 the
+`ThrottlerModule` was configured and no guard consulted it: no endpoint was
+limited at all. Numbers: CLAUDE.md "Rate Limiting", from `rate-limits.ts`,
+pinned by `rate-limits.spec.ts`.
+
+| piece | file | what it does |
+|---|---|---|
+| the numbers | `rate-limits.ts` | every limit, in one object |
+| the throttlers | `throttle.config.ts` | `default` (600/min per user, 300/min per address; `perAddress()` replaces it on the public auth routes) and `reset-email` (3/hour per organisation + email, only where `@LimitResetsPerEmail()` marks the route) |
+| who is counted | `throttle-identity.ts` | `user:<id>` for a verified session, `ip:<address>` otherwise, `email:<hash>` for password reset. Cached per request |
+| the refusal | `accreditme-throttler.guard.ts`, `rate-limited.exception.ts` | 429 `RATE_LIMITED` in the API's error shape, a standard `Retry-After`, one warning line |
+| the client address | `common/config/http.config.ts` | `trust proxy` + cookie parsing, shared by `main.ts` and the tests |
+
+**It runs BEFORE TenantGuard**, because global guards run first. So it verifies
+the session itself, with `readSessionToken()` and `verifyJwt()` exported from
+`tenant.guard.ts` — signature only, no tokenVersion or permission lookup: it
+decides whose counter a request goes on, and TenantGuard still decides whether it
+may proceed.
+
+**Two library behaviours this works around, both verified in
+`@nestjs/throttler` 6.5's source:** its `ThrottlerException` body is a bare
+string, which `HttpExceptionFilter` would pass straight through, so the guard
+throws `RateLimitedException` instead; and it names the header
+`Retry-After-{name}` for any throttler not called `default`, so the guard sets
+the standard `Retry-After` itself — otherwise the password-reset limit would
+carry no standard header at all.
+
+**The client address.** On Railway every request arrives from Railway's proxy.
+Without `trust proxy`, `req.ip` was the proxy for every user — **measured**: the
+one deployed sign-in recorded `::ffff:100.64.0.1`, while Railway's HTTP log
+(`srcIp`) showed the real client. Express now trusts loopback and
+`100.64.0.0/10` and walks `X-Forwarded-For` from the right to the first address
+it does not trust. A subnet rather than a hop count, because Railway's staff have
+described the edge both as appending to a client-sent `X-Forwarded-For` and as
+stripping it, and this is right under either; a value a client puts on the left
+cannot be chosen, because the walk stops at the real client first.
+
+**This changed more than the rate limiter.** `req.ip` is also what
+`LoginAttempt.ipAddress`, `AuditLog.ipAddress`, `User.lastLoginIp` and the
+new-IP sign-in email record (`auth.service.ts`). **They now see the real client
+address; before ACC-129 the deployed API recorded Railway's proxy for every
+user.** One consequence, expected and harmless while there are no customers: a
+user's first sign-in on the deployed API after this ships compares a real
+address with a stored proxy address, so it can send one "new IP" email.
+
+**Storage** is the library's in-memory default, correct at one replica. The
+answer for more than one is in CLAUDE.md (Redis, after ACC-143).
+
+**The existing suites cannot trip it.** The guard is registered only in
+`AppModule`; every HTTP-level spec builds its own module from specific
+controllers, and the tenant-isolation suite is service-level. Nothing is
+disabled to achieve that. `test/app.e2e-spec.ts` is the scaffold's "Hello
+World", is not run by CI, and is untouched.

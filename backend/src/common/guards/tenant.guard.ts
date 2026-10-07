@@ -45,7 +45,7 @@ import {
 import { isOrganizationOpen } from '../tenant/organization-status';
 import { AuthRefusalException } from '../../foundation/auth/auth-refusal';
 
-interface JwtPayload {
+export interface JwtPayload {
   sub: string;
   organizationId: string;
   tokenVersion: number;
@@ -64,7 +64,26 @@ interface AuthenticatedRequest extends Request {
   // (cookie-parser is mounted in main.ts) — no redeclaration needed here.
 }
 
-function verifyJwt(token: string, secret: string): JwtPayload {
+/**
+ * The session token a request carries: the access_token cookie first (browser
+ * clients), then a Bearer header (API clients that cannot hold cookies).
+ * Exported for the rate limiter (ACC-129), which must identify a signed-in user
+ * the same way this guard does, and runs before it.
+ */
+export function readSessionToken(request: {
+  cookies?: Record<string, unknown>;
+  headers: Record<string, string | string[] | undefined>;
+}): string | undefined {
+  const cookieToken = request.cookies?.['access_token'];
+  if (typeof cookieToken === 'string' && cookieToken) return cookieToken;
+  const authHeader = request.headers['authorization'];
+  return typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : undefined;
+}
+
+/** Exported for the rate limiter (ACC-129); see readSessionToken(). */
+export function verifyJwt(token: string, secret: string): JwtPayload {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Malformed token');
 
@@ -104,10 +123,7 @@ export class TenantGuard implements CanActivate {
 
     // Cookie first (browser clients — the login flow, Commit 3), then the
     // Authorization header (non-browser API clients that can't hold cookies).
-    const cookieToken = request.cookies?.['access_token'] as string | undefined;
-    const authHeader = request.headers['authorization'];
-    const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-    const token = cookieToken ?? headerToken;
+    const token = readSessionToken(request);
 
     if (!token) {
       throw new UnauthorizedException('Missing bearer token');

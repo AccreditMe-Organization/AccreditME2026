@@ -1,11 +1,12 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
-import cookieParser from 'cookie-parser';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { buildCorsOptions } from './common/config/cors.config';
 import { validateBootConfig } from './common/config/boot.config';
+import { configureHttp } from './common/config/http.config';
 
 async function bootstrap(): Promise<void> {
   // Every required value is checked BEFORE the app is created — before the
@@ -26,7 +27,7 @@ async function bootstrap(): Promise<void> {
     );
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   app.use(
     helmet({
@@ -38,9 +39,10 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // Populates req.cookies — required for TenantGuard to read the
-  // access_token httpOnly cookie (Step 9, Section 12 Discussion 4).
-  app.use(cookieParser());
+  // Trusted proxies (so req.ip is the client, not Railway's proxy) and cookie
+  // parsing — shared with the rate-limit tests, so they exercise the same
+  // request handling (ACC-129).
+  configureHttp(app);
 
   // FRONTEND_URL is an exact, required origin, and the API refuses to start
   // without it (ACC-128). httpOnly cookies require credentials: true, and

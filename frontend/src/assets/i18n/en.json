@@ -763,6 +763,7 @@
       "errorCheckUnavailable": "We couldn't check your password just now. Try again.",
       "errorConflict": "This invitation can't be completed right now. Your administrator has been told; try again later or ask them.",
       "errorGeneric": "Something went wrong. Your password hasn't been set. Try again.",
+      "errorRateLimited": "Too many attempts. Wait a minute, then try again.",
       "invalidTitle": "This invitation link is invalid or has expired.",
       "invalidBody": "Ask your administrator to send a new one.",
       "lookupFailed": "We couldn't load this invitation. Check your connection and try again.",

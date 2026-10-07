@@ -214,7 +214,7 @@ accreditme/
 │   │   │   ├── storage/              # S3 + MinIO + Local filesystem
 │   │   │   └── ai/                   # Anthropic + Azure OpenAI + OpenAI
 │   │   ├── common/                   # Shared guards, decorators, filters, pipes
-│   │   │   ├── guards/               # TenantGuard, PermissionGuard, ThrottleGuard
+│   │   │   ├── guards/               # TenantGuard, PermissionGuard (rate limiter: common/throttle/)
 │   │   │   ├── interceptors/         # AuditLogInterceptor, ResponseTransformer
 │   │   │   ├── decorators/           # @Permissions(), @CurrentTenant(), @CurrentUser()
 │   │   │   └── filters/              # GlobalExceptionFilter
@@ -1045,21 +1045,63 @@ happens to a tenant already in breach: Key Architecture Decisions (ACC-120).
 
 ## Security Configuration
 
-### Rate Limiting — CONFIGURED BUT NOT ENFORCED (ACC-129)
+### Rate Limiting — ENFORCED SINCE ACC-129
 
-**There is no rate limiting in effect today.** `app.module.ts` imports
-`ThrottlerModule.forRoot([{ name: 'global', ttl: 60000, limit: 100 }])`, and
-**no `ThrottlerGuard` is registered anywhere** — not as an `APP_GUARD`
-provider, not with `@UseGuards` on any controller, not in `main.ts`. The module
-is configured and inert.
+**Every endpoint is limited, by one global guard.** `AccreditMeThrottlerGuard`
+is registered as `APP_GUARD` (`app.module.ts`), so an endpoint is limited the day
+it is written. The numbers live in ONE file,
+`backend/src/common/throttle/rate-limits.ts`, and `rate-limits.spec.ts` pins
+them — change both, and this table, together.
 
-The three other tiers this section used to list — auth endpoints at 5 attempts
-per 15 minutes per IP, file upload at 10 per 60 seconds per tenant, AI at 20 per
-60 seconds per tenant — **do not exist in any form**. No code has ever
-implemented them.
+```
+Every route                      600 / min per signed-in USER
+                                 300 / min per ADDRESS (no valid session)
+POST /auth/login                  60 / min per address
+POST /auth/mfa/verify             60 / min per address
+POST /auth/refresh               300 / min per address
+POST /auth/invitations/lookup     30 / min per address
+POST /auth/accept-invitation      20 / min per address
+POST /auth/forgot-password         3 / hour per organisation + email
+                                  AND 20 / hour per address
+POST /auth/reset-password         20 / hour per address
+GET  /health                      not limited — the only exemption
+```
 
-Enforcement is **ACC-129**. Do not restate the intended tiers here as though
-they were live; that is what made this section wrong.
+- **Who is counted.** A request with a valid session is counted per USER (the
+  token is verified exactly as `TenantGuard` verifies it); anything else per
+  ADDRESS. A hospital puts its whole staff behind one internet address, so a
+  per-address limit on signed-in traffic would throttle the whole hospital at
+  once. A forged or expired token is counted by address, so an invented token
+  buys no fresh counter.
+- **Sign-in is generous on purpose.** The per-account lockout below is what
+  stops password guessing. **Do not reintroduce "5 per 15 minutes per IP" on
+  login** — behind a hospital's shared address it locks out a shift change and
+  adds nothing the lockout does not.
+- **Password reset is keyed by EMAIL** as well as address, so nobody can flood
+  one inbox, or our Resend quota, from many addresses.
+- **The one exemption is `GET /api/v1/health`** (`@SkipThrottle`): an uptime
+  monitor polls it by design. There are no webhook receivers to exempt. A new
+  exemption needs a `@SkipThrottle()` with its reason beside it.
+- **A refusal is 429** `{ statusCode, message, error, code: 'RATE_LIMITED',
+  retryAfterSeconds }` with a standard `Retry-After` header, and one warning
+  log line naming the counted identity (`user:<id>`, `ip:<address>` or
+  `email:<hash>` — never a token or an email). Accept invitation shows its own
+  message; Login and Forgot password get theirs in slice 9d.
+- **The client address is real because Express trusts Railway's proxy**
+  (`common/config/http.config.ts`: `trust proxy` = loopback + `100.64.0.0/10`).
+  Without it every request on Railway came from the proxy. A CDN in front
+  (Cloudflare) adds its own ranges there.
+- **Storage is in memory, which is correct at ONE replica** (`.railway/
+  railway.ts`). A restart clears the counters. **When the API runs more than one
+  replica, or a second region**, move the counters to Redis (a Redis
+  `ThrottlerStorage`, e.g. `@nest-lab/throttler-storage-redis`, on the existing
+  `REDIS_URL`) — **but only after ACC-143 moves Redis out of San Francisco**:
+  otherwise every request pays a trip across the Atlantic. In memory, each
+  replica counts alone and every limit silently multiplies by the replica count.
+- **Not covered:** Better Auth's own rate limiter only runs for requests through
+  its HTTP handler, and we call `auth.api.*` server-side — so this guard is the
+  only limit. File-upload and AI limits do not exist because neither feature
+  does; the tiers this section once listed were never implemented.
 
 ### Account Lockout — REAL SINCE ACC-120 SLICE 9b, AND NOT THE SAME CONTROL
 

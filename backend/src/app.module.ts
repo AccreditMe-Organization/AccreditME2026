@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
@@ -19,6 +20,8 @@ import { UserModule } from './foundation/user/user.module';
 import { SetupHealthModule } from './foundation/setup-health/setup-health.module';
 import { PlanModule } from './platform/plan/plan.module';
 import { PlatformModule } from './platform/tenant/platform.module';
+import { AccreditMeThrottlerGuard } from './common/throttle/accreditme-throttler.guard';
+import { throttlerOptions } from './common/throttle/throttle.config';
 
 @Module({
   imports: [
@@ -26,13 +29,10 @@ import { PlatformModule } from './platform/tenant/platform.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    ThrottlerModule.forRoot([
-      {
-        name: 'global',
-        ttl: 60000,
-        limit: 100,
-      },
-    ]),
+    // ACC-129 — the limits are in common/throttle/rate-limits.ts; the guard is
+    // registered globally below, so every endpoint is limited unless it says
+    // otherwise.
+    ThrottlerModule.forRoot(throttlerOptions()),
     PrismaModule,
     TenantModule,
     OrganizationModule,
@@ -52,5 +52,6 @@ import { PlatformModule } from './platform/tenant/platform.module';
     PlanModule,
     PlatformModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: AccreditMeThrottlerGuard }],
 })
 export class AppModule {}
