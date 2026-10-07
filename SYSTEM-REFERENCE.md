@@ -7794,29 +7794,53 @@ carry no standard header at all.
 **The client address.** On Railway every request arrives from Railway's proxy.
 Without `trust proxy`, `req.ip` was the proxy for every user — **measured**: the
 one deployed sign-in recorded `::ffff:100.64.0.1`, while Railway's HTTP log
-(`srcIp`) showed the real client. Express now trusts loopback,
-`100.64.0.0/10` and `fd00::/8`, and walks `X-Forwarded-For` from the right to
-the first address it does not trust.
+(`srcIp`) showed the real client. **Express now trusts exactly two hops**
+(`RAILWAY_PROXY_HOPS = 2`) and takes the address two in from the right.
 
-**`fd00::/8` was added after the first deploy failed its proof** (7 Oct, 31
-lookups from one client, all 400, no 429). Railway's edge reaches the container
-over its private IPv6 network — the HTTP log's `upstreamAddress` is
-`http://[fd12:…]:3000` — so the hop the container sees is an `fd12:` address.
-With only `100.64.0.0/10` trusted, Express ignored `X-Forwarded-For` and counted
-that hop. Unique-local addresses are reachable only inside Railway's network, so
-no visitor can arrive from one. `100.64.0.0/10` stays for the older path that
-recorded the 5 Oct `::ffff:100.64.0.1`. `http.config.spec.ts` proves both,
-through Express's own `req.ip` getter.
+**What Railway's headers actually look like**, measured 7 Oct with the
+diagnostic below, three requests from one visitor:
+
+```
+socket=::ffff:100.64.0.2  xff=188.236.50.136, 152.233.68.97
+socket=::ffff:100.64.0.3  xff=188.236.50.136, 152.233.15.123
+socket=::ffff:100.64.0.4  xff=188.236.50.136, 152.233.15.123
+```
+
+- hop 1, the socket: Railway's internal router, `::ffff:100.64.0.x`;
+- hop 2, the right-most `X-Forwarded-For` entry: Railway's edge, which appends
+  its own public address, and a different one from request to request;
+- then the visitor, `188.236.50.136` — Railway's own `srcIp` for them.
+
+**Why a hop count and not a subnet.** Two subnet attempts failed their proofs on
+Railway. The first trusted `100.64.0.0/10` (the router); the follow-up added
+`fd00::/8` on the theory that the hop was Railway's private IPv6 network (the HTTP
+log's `upstreamAddress` is `http://[fd12:…]:3000`). That theory was wrong:
+`fd12:` is how the edge reaches the container, not the address the container
+sees. Both times Express stopped at the untrusted edge address, so one visitor
+was split across several edge buckets and 31 lookups all returned 400. Trusting
+the edge by subnet would mean tracking Railway's public ranges, which Railway
+does not publish as a contract. Two hops is the shape itself.
+
+**Spoofing.** A value the visitor writes into `X-Forwarded-For` arrives to the
+LEFT of their own address (`6.6.6.6, <visitor>, <edge>`) and is never reached.
+With a single entry, that entry is the visitor; with none (local development,
+the tests), `req.ip` is the socket. `http.config.spec.ts` proves each case
+through Express's own `req.ip` getter. `rate-limit.spec.ts` proves one visitor
+behind alternating edge addresses fills ONE bucket; with the hop count mutated to
+1, that test goes red.
+
+**If a CDN (Cloudflare) is ever put in front, the count must become 3**, then be
+proved on Railway with the diagnostic. Left at 2, every visitor behind one CDN
+node would share that node's bucket.
 
 **The diagnostic, `LOG_CLIENT_ADDRESS=true`, off by default.** The guard then
 logs one `[ClientAddress]` line per request to a public auth route — the routes
 `perAddress()` marks — with `req.ip`, the socket's address and the raw
 `X-Forwarded-For` truncated to 200 characters. It never logs a body, token,
 cookie or email, and with the variable unset nothing is read or computed. It is
-for a proof run on Railway; set it, run the proof, remove it. A subnet rather than a hop count, because Railway's staff have
-described the edge both as appending to a client-sent `X-Forwarded-For` and as
-stripping it, and this is right under either; a value a client puts on the left
-cannot be chosen, because the walk stops at the real client first.
+for a proof run on Railway; set it, run the proof, remove it. Setting it
+redeploys the service; **deleting it did not** (7 Oct), so after deleting it run
+`railway redeploy` and confirm one lookup writes no `[ClientAddress]` line.
 
 **This changed more than the rate limiter.** `req.ip` is also what
 `LoginAttempt.ipAddress`, `AuditLog.ipAddress`, `User.lastLoginIp` and the
