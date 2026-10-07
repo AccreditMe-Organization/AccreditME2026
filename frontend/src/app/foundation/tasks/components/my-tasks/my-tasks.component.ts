@@ -34,7 +34,8 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { TaskRejectDialogComponent } from '../task-reject-dialog/task-reject-dialog.component';
-import { TaskLinkEvidenceDialogComponent } from '../task-link-evidence-dialog/task-link-evidence-dialog.component';
+import { TaskAddEvidenceDialogComponent } from '../task-add-evidence-dialog/task-add-evidence-dialog.component';
+import { TaskEvidenceDialogComponent } from '../task-evidence-dialog/task-evidence-dialog.component';
 import { TaskEditDialogComponent } from '../task-edit-dialog/task-edit-dialog.component';
 import { TaskCancelDialogComponent } from '../task-cancel-dialog/task-cancel-dialog.component';
 import { TaskReopenDialogComponent } from '../task-reopen-dialog/task-reopen-dialog.component';
@@ -57,14 +58,15 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
  *
  * ## ACC-163 — the assignee's actions, and why none is permission-gated
  *
- * Start, Add link evidence, Reject and Complete are all SELF-SCOPED: the
+ * Start, Add evidence, Reject and Complete are all SELF-SCOPED: the
  * server refuses anyone who is not a currently-active assignee, and no
  * permission is involved, because the engine assigns work to people who hold
  * no task permission at all. Every row here is the viewer's own assignment by
  * construction, so what decides which actions show is the task's STATUS:
  *
  *   Start              Assigned only
- *   Add link evidence  any open task
+ *   Add evidence       any open task — a link or a file (ACC-177)
+ *   Evidence           any task that has some; read-only once it is closed
  *   Reject             Assigned or In progress
  *   Complete           any open task — DISABLED, with the reason written on the
  *                      row, while evidence is required and none has been added.
@@ -108,7 +110,8 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
     IconButtonComponent,
     ButtonModule,
     TaskRejectDialogComponent,
-    TaskLinkEvidenceDialogComponent,
+    TaskAddEvidenceDialogComponent,
+    TaskEvidenceDialogComponent,
     TaskReleaseDialogComponent,
     TaskRequestDialogComponent,
     TaskRequestDecisionDialogComponent,
@@ -330,11 +333,20 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
                     (activated)="onStart(task)"
                   />
                 }
+                <!-- ACC-177 — one Add evidence for every kind (link or file),
+                     and the evidence itself wherever there is some. -->
                 @if (canAddEvidence(task)) {
                   <am-icon-button
-                    icon="pi pi-link"
-                    [label]="'task.addLinkNamed' | translate: { title: task.title }"
-                    (activated)="openLinkDialog(task)"
+                    icon="pi pi-paperclip"
+                    [label]="'task.evidence.addNamed' | translate: { title: task.title }"
+                    (activated)="openAddEvidence(task)"
+                  />
+                }
+                @if (task.evidenceCount > 0) {
+                  <am-icon-button
+                    icon="pi pi-folder-open"
+                    [label]="'task.evidence.viewNamed' | translate: { title: task.title }"
+                    (activated)="openEvidence(task)"
                   />
                 }
                 @if (canRelease(task)) {
@@ -407,11 +419,17 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
       [task]="actionTarget()"
       (rejected)="loadTasks()"
     />
-    <app-task-link-evidence-dialog
-      [visible]="linkVisible()"
-      (visibleChange)="linkVisible.set($event)"
+    <app-task-add-evidence-dialog
+      [visible]="addEvidenceVisible()"
+      (visibleChange)="addEvidenceVisible.set($event)"
       [task]="actionTarget()"
       (added)="loadTasks()"
+    />
+    <app-task-evidence-dialog
+      [visible]="evidenceVisible()"
+      (visibleChange)="evidenceVisible.set($event)"
+      [task]="actionTarget()"
+      (changed)="loadTasks()"
     />
     <app-task-release-dialog
       [visible]="releaseVisible()"
@@ -482,7 +500,9 @@ export class MyTasksComponent implements OnInit {
 
   readonly actionTarget = signal<ITaskListItemDto | null>(null);
   readonly rejectVisible = signal(false);
-  readonly linkVisible = signal(false);
+  // ACC-177
+  readonly addEvidenceVisible = signal(false);
+  readonly evidenceVisible = signal(false);
   readonly releaseVisible = signal(false);
 
   // ACC-173 — requests.
@@ -665,9 +685,14 @@ export class MyTasksComponent implements OnInit {
     this.rejectVisible.set(true);
   }
 
-  openLinkDialog(task: ITaskListItemDto): void {
+  openAddEvidence(task: ITaskListItemDto): void {
     this.actionTarget.set(task);
-    this.linkVisible.set(true);
+    this.addEvidenceVisible.set(true);
+  }
+
+  openEvidence(task: ITaskListItemDto): void {
+    this.actionTarget.set(task);
+    this.evidenceVisible.set(true);
   }
 
   openReleaseDialog(task: ITaskListItemDto): void {
