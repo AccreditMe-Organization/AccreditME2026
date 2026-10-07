@@ -16,7 +16,8 @@
     "check:action-gating": "node scripts/check-action-gating.mjs",
     "check:action-gating:selftest": "node scripts/check-action-gating.selftest.mjs",
     "check:field-control": "node scripts/check-field-control.mjs",
-    "check:confirm-translated": "node scripts/check-confirm-translated.mjs"
+    "check:confirm-translated": "node scripts/check-confirm-translated.mjs",
+    "check:reserved-slugs": "node scripts/check-reserved-slugs.mjs"
   },
   "private": true,
   "dependencies": {
