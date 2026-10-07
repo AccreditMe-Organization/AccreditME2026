@@ -170,9 +170,12 @@ around; anything above it may be used freely.
   volume is region-bound with 5 GB attached, and `REDIS_URL` is `preserve()`d,
   so recreating the service produces a URL something has to carry across.
 - File storage: AWS S3 — **NOT PROVISIONED.** No bucket, no credentials, no
-  AWS variable in `.railway/railway.ts`, and no feature injects
-  `STORAGE_PROVIDER` — it is registered in `tenant.module.ts` and consumed by
-  nothing. The region is undecided rather than wrong.
+  AWS variable in `.railway/railway.ts`. **Region DECIDED (Ahmad, 7 Oct):
+  `eu-central-1` (Frankfurt) for now, beside the database; both move to the
+  Gulf before the first real customer.** The code that uses it is built
+  (ACC-177, `foundation/file-storage/`): until the bucket and the four `AWS_*`
+  variables exist, every upload is refused with "File storage isn't set up
+  yet" — by design, never a default region.
 - On-premises storage alternative: MinIO (S3-compatible)
 - CDN: Cloudflare (free tier)
 - Containers: Docker (every service containerized from day one)
@@ -606,14 +609,17 @@ SSO tenants are redirected to their IdP. Local tenants use Better Auth directly.
 
 ### Storage Providers Per Tenant
 ```
-Option 1: AWS S3 (default) — region undecided; not provisioned yet,
-        see Infrastructure
+Option 1: AWS S3 (default) — AccreditMe's own bucket, eu-central-1 for now;
+        not provisioned yet, see Infrastructure
 Option 2: MinIO on customer infrastructure (on-premises S3-compatible)
 Option 3: Local filesystem / NAS mount (legacy on-premises)
 ```
-All built against the StorageProvider interface. Zero application code changes
-when switching providers — only tenant configuration changes.
-Local filesystem provider streams files through NestJS API (no signed URLs).
+All built against the StorageProvider interface (ACC-177). Zero application
+code changes when switching providers — only tenant configuration changes, and
+switching affects NEW uploads only: each stored file reads from the location it
+was written to. Local filesystem provider streams files through the NestJS API
+behind a 15-minute token (no signed URLs). Full rules: Key Architecture
+Decisions (ACC-177).
 
 ### AI Providers Per Tenant
 ```
@@ -1110,8 +1116,10 @@ GET  /health                      not limited — the only exemption
   replica counts alone and every limit silently multiplies by the replica count.
 - **Not covered:** Better Auth's own rate limiter only runs for requests through
   its HTTP handler, and we call `auth.api.*` server-side — so this guard is the
-  only limit. File-upload and AI limits do not exist because neither feature
-  does; the tiers this section once listed were never implemented.
+  only limit. File upload now exists (ACC-177) and is covered by the global
+  per-user limit; there is no upload-specific tier. AI limits do not exist
+  because the feature does not; the tiers this section once listed were never
+  implemented.
 
 ### Account Lockout — REAL SINCE ACC-120 SLICE 9b, AND NOT THE SAME CONTROL
 
@@ -1153,22 +1161,34 @@ tenant has.
 **Conflating this with an IP throttle produced a false statement from both
 Claude and Ahmad on 2026-10-01.** The numbers coincide; the controls do not.
 
-### File Upload Security — NONE OF THIS IS BUILT
+### File Upload Security — BUILT IN ACC-177, EXCEPT VIRUS SCANNING
 
-**Measured 2026-10-01: zero of the controls below exist.** No ClamAV, no
-`mime-types` validation, no `multer`, no `FileInterceptor`, no size limit, no
-signed-URL issuance on any route — searched across all of `backend/src`. There
-is also no upload endpoint to apply them to, and S3 itself is not provisioned
-(see Infrastructure).
+Was "none of this is built" (measured 2026-10-01). As of ACC-177:
 
-Kept as the REQUIREMENTS for whoever builds file upload, which is what this list
-has always actually been — not as a description of the product:
-
-- Validate actual MIME type via mime-types — not just file extension
-- ClamAV virus scan every upload before storing to S3
-- Max file size: 50MB default, configurable per tenant plan
-- Signed URLs only for file access — direct S3 paths never exposed to clients
-- Signed URL expiry: 15 minutes for downloads, 5 minutes for uploads
+- **Type from content, not only the extension — BUILT.** The extension must be
+  on the allow-list (PDF, DOCX/XLSX/PPTX, legacy DOC/XLS/PPT, CSV, TXT, PNG,
+  JPEG, GIF, WEBP, HEIC) AND the bytes must be that kind of file; the stored
+  MIME type is the server's. An in-house sniffer (`file-content.ts`), not the
+  `mime-types` package, which only maps names. Macro-enabled Office is refused
+  by name and by content.
+- **Max file size: 25 MB — BUILT**, overridable per installation by
+  `MAX_UPLOAD_MB` (Ahmad, 7 Oct; was "50MB default, configurable per tenant
+  plan"). Files are buffered in memory, which is why the default is lower.
+  Per-plan caps are not built.
+- **The organisation's storage limit — BUILT**: `maxStorageGb`, counted live
+  from AccreditMe-cloud files not yet purged, under a per-organisation lock;
+  the tenant admins are told once at 90%.
+- **Nothing is uploaded until a tenant admin confirms where files go** — BUILT
+  (`STORAGE_NOT_CONFIRMED`).
+- **A deleted file is kept 30 days in a recycle bin**, then purged by a daily
+  job — BUILT.
+- **Signed URLs only — BUILT**: a 15-minute pre-signed URL (S3/MinIO) or a
+  15-minute token URL on the API (local folder). Storage keys never reach a
+  client. Uploads go THROUGH the API (multipart), so there is no upload URL.
+- **ClamAV virus scan — NOT BUILT. ACC-178 (High)**, because legacy Office
+  files are allowed and can carry macros.
+- **Rate limiting on upload — the global per-user limit only** (ACC-129: 600
+  requests a minute per signed-in user). There is no upload-specific tier.
 
 ### Security Headers (Helmet.js in main.ts)
 - Content-Security-Policy
@@ -1205,7 +1225,9 @@ has always actually been — not as a description of the product:
 > 2026-10-01: there is no `data-retention` processor, no archival state, no
 > expiry sweep and no deletion certificate anywhere in `backend/src`. The four
 > real BullMQ processors are `email-delivery`, `setup-health`, `sla-monitor` and
-> `workflow-actions`. Nothing below is enforced by code today.
+> `workflow-actions`. Nothing below is enforced by code today. (ACC-177 added a
+> fifth, `storage-purge` — it purges deleted FILES after their 30 days in the
+> recycle bin; it is not this policy, which covers records.)
 
 Configured per tenant with system minimums that cannot be reduced.
 
@@ -1406,6 +1428,7 @@ data-retention      Nightly check for records approaching retention expiry
 sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
                     recompute cached org-unit vacancy and stage-reachability flags
 setup-health        Hourly — reconcile Setup health conditions (ACC-82)
+storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177)
 notification-digest Daily digest emails for digest-mode users
 data-export         Tenant data export packages (async, notified when ready)
 report-scheduler    Scheduled automated report generation and email delivery
@@ -2978,6 +3001,92 @@ change). The decisions — Ahmad's, 6 October — briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-177)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 16. The plan and Ahmad's
+answers (7 Oct): `backend/Plans/step-177-file-storage.md`. The decisions,
+briefly:
+
+- **ONE PLACE BUILDS A STORAGE PROVIDER: `StorageResolverService`.** Nothing
+  injects or constructs a provider; a module attaching files uses
+  `StoredFileService` (prepare → put → recordInTx, or discard). S3 is
+  AccreditMe's own bucket from platform env only — no default region, a missing
+  value is "File storage isn't set up yet". MinIO is the customer's endpoint,
+  path-style. A local folder exists only where `LOCAL_STORAGE_BASE` is set, and
+  a tenant's root is confined under it.
+- **A CUSTOMER'S ENDPOINT IS CHECKED AT CONNECT TIME, ON EVERY CONNECTION**
+  (Ahmad). HTTPS on public addresses only, unless
+  `STORAGE_ALLOW_PRIVATE_ENDPOINTS=true` (Tier 2/3). The guard is the socket's
+  own `lookup`, so the address it approves is the one the connection uses — a
+  DNS change after the settings were saved cannot slip past it. Proved live: a
+  MinIO endpoint named `localhost` passes configuration and is refused at the
+  first write.
+- **NOTHING IS UPLOADED UNTIL A TENANT ADMIN CONFIRMS WHERE FILES GO**
+  (Ahmad, 7 Oct). Every organisation starts on AccreditMe cloud, unconfirmed;
+  uploads refuse `STORAGE_NOT_CONFIRMED` ("File storage isn't set up yet.
+  Ask your administrator.") before anything else is checked.
+  `POST /tenant/storage/confirm` confirms once — MinIO and a local folder
+  only after a passing connection test — stamping `storageConfirmedAt/ById`.
+- **AFTER THAT, WHERE FILES LIVE IS ACCREDITME'S TO CHANGE, NOT THE TENANT'S.**
+  `PATCH /tenant/storage` refuses another provider, MinIO endpoint, region or
+  bucket, or local root with 403 `STORAGE_CHANGE_BY_PLATFORM`; only new keys
+  for the SAME MinIO location are accepted, after a passing test. A tenant
+  ASKS (`POST /tenant/storage/change-request`, every platform admin told in
+  both languages), and the switch is done outside the system until ACC-182's
+  screens exist. A tenant is never shown AccreditMe's own region, bucket or
+  endpoint. Each file remembers where it was written, so a switch moves no
+  file; moving them is ACC-180.
+- **KEYS ARE BUILT BY THE SERVER ONLY**:
+  `{organizationId}/{module}/{recordId}/{random}-{asciiName}`. The original
+  name — Arabic included — is kept for display and download (RFC 5987
+  `filename*`). multer must be given `defParamCharset: 'utf8'`, or every Arabic
+  file name arrives as latin1 mojibake.
+- **TYPE FROM CONTENT AS WELL AS NAME; 25 MB; THE STORAGE LIMIT COUNTED LIVE.**
+  The allow-list and the in-house sniffer are `file-content.ts`. **Only
+  AccreditMe-cloud files count toward `maxStorageGb` — deleted ones too,
+  until purged**: a customer's MinIO or folder is theirs to size, and a deleted
+  file's bytes are still stored. The quota is checked again inside the
+  recording transaction under a per-organisation advisory lock, so two uploads
+  cannot both take the last megabyte.
+- **AT 90%, THE TENANT ADMINS ARE TOLD ONCE**: `storageWarnedAt` is stamped by
+  the one call that moves it from null, and cleared when usage falls below 90%
+  (after a purge), so the next crossing tells them again. Setup health shows
+  "File storage almost full" for as long as it is true (`STORAGE_ALMOST_FULL`)
+  — the bell holds the event, Setup health the condition (ACC-82).
+- **DOWNLOADS: PERMISSION FIRST, THEN A 15-MINUTE LINK.** A pre-signed URL, or
+  for a local folder a token URL on the API that is the whole entitlement for
+  fifteen minutes — the local equivalent of a pre-signed URL. No audit row for
+  a download (ACC-101's reasoning for reads); a log line.
+- **DELETING A FILE IS A 30-DAY SOFT DELETE, FOR EVERY RECORD TYPE** (Ahmad,
+  7 Oct): hidden at once, audited, bytes KEPT. A tenant admin's recycle bin
+  (`/tenant/recycle-bin`) lists, restores — to its record, even a closed one;
+  refused if the record is gone — and purges 1 to 100 files all or nothing. A
+  daily worker on its own queue purges anything deleted more than 30 days ago.
+  A deleted file can never be viewed or downloaded. Deleted links and record
+  references are soft-deleted too but hold no file, so they are not in the bin.
+- **FILE EVIDENCE IS `ATTACHMENT`, LABELLED "FILE"**, with the same rule as a
+  link: an active assignee, task open or on hold. Evidence is soft-deleted by
+  its uploader while the task is open. **Every evidence count excludes deleted
+  evidence.** Evidence on a closed task is read-only.
+- **SECRETS ARE WRITE-ONLY.** `GET /tenant/storage` and `GET /tenant/config`
+  answer "set" or null. **`GET /tenant/email-config` still returns its secrets
+  in clear**, deliberately left: the email settings screen fills a JSON editor
+  from it and saves the whole object back, so masking it would save the word
+  "set" over the stored secrets. That needs the screen changed first — ACC-181
+  (lane A, High).
+- **Not built, each with a ticket:** virus scanning (ACC-178, High — legacy
+  Office files can carry macros), the orphan-object reconciler (ACC-179),
+  moving files between locations (ACC-180), the platform admin storage screens
+  (ACC-182), an upload-specific rate limit (ACC-129's global per-user limit
+  applies). The storage settings, confirm,
+  request-a-change and recycle bin screens are lane A's, from the design
+  thread's drawings.
+- **`STORAGE_ALMOST_FULL` must not exist as a row on a shared database before
+  the deploy** (ACC-173's rule for enum values): the deployed client does not
+  know it. No organisation is near 90% today, so none is opened.
+
+---
+
 ## Key Architecture Decisions (ACC-167)
 
 Full mechanism: SYSTEM-REFERENCE.md Section 3.9 (pools), 2.5.2 (the engine and
@@ -3766,14 +3875,13 @@ complete, not just the currently-in-review ones.
   answerable rather than blocking, which is why it is written down here rather
   than rediscovered each time it is asked.
 
-  **Known, and NOT fixed by this correction:**
-  `s3-storage.provider.ts:18` reads `process.env['AWS_REGION'] ?? 'me-south-1'`
-  — a hardcoded Bahrain fallback in code. Both `.env.example` templates now
-  leave the region blank, but that line still supplies Bahrain to anything that
-  constructs the provider. It is harmless today (nothing injects
-  `STORAGE_PROVIDER`) and is the same "default chosen by nobody" shape the
-  templates were just cleared of. Remove it when S3 is actually provisioned and
-  a region is chosen.
+  **FIXED (ACC-177):** `s3-storage.provider.ts` read
+  `process.env['AWS_REGION'] ?? 'me-south-1'` — a hardcoded Bahrain fallback
+  chosen by nobody. That provider is deleted; its replacement takes its settings
+  from `StorageResolverService`, and a missing region or bucket is the refusal
+  "File storage isn't set up yet", never a default. **The bucket's region is
+  decided (Ahmad, 7 Oct): `eu-central-1` for now**, beside the database, both
+  moving to the Gulf before the first real customer.
   **This geography is also, measurably, why local development feels slow**
   (ACC-60) — a workflow transition is ~240ms of application work, but takes
   6–11 seconds from a Middle East client against the Frankfurt database,
@@ -3906,10 +4014,20 @@ BETTER_AUTH_SECRET=
 JWT_SECRET=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
-# Region deliberately blank: S3 is not provisioned and no region has been
-# chosen. A placeholder here becomes a real region picked by nobody.
+# AccreditMe's own bucket (ACC-177). Region decided: eu-central-1 for now.
+# Left blank here: S3 is not provisioned, and a placeholder would become a
+# setting nobody chose. All four blank = "File storage isn't set up yet".
 AWS_REGION=
 AWS_S3_BUCKET=
+# Optional: an S3-compatible endpoint instead of AWS (local testing, Tier 2/3).
+AWS_S3_ENDPOINT=
+AWS_S3_FORCE_PATH_STYLE=
+# Optional: offer the local-folder provider, confined under this folder.
+LOCAL_STORAGE_BASE=
+# Tier 2/3 only: let a customer's MinIO sit on a private network (and http).
+STORAGE_ALLOW_PRIVATE_ENDPOINTS=
+# Per-file upload cap in MB; 25 when unset.
+MAX_UPLOAD_MB=
 ANTHROPIC_API_KEY=
 RESEND_API_KEY=
 STRIPE_SECRET_KEY=
@@ -3992,9 +4110,12 @@ Section 10.11.
 These are wired and ready for all subsequent steps to import:
 
 - `TenantModule` — import this in every foundation and functional module
-  to get `TenantService`, `AuditLogService`, and all three provider tokens
+  to get `TenantService`, `AuditLogService`, and the AI and auth provider tokens
 - `AuditLogService` — call `log()` on every create/update/delete mutation
-- `STORAGE_PROVIDER` (Symbol) — inject for file operations (S3 default)
+- File storage — import `FileStorageModule` and use `StoredFileService`
+  (ACC-177). There is no `STORAGE_PROVIDER` to inject any more: a provider is
+  built per organisation, or per stored file, by `StorageResolverService`, and
+  nothing else constructs one.
 - `AI_PROVIDER` (Symbol) — inject for AI completions (Anthropic default)
 - `AUTH_PROVIDER` (Symbol) — inject for token validation (BetterAuth default)
 - `TenantGuard` + `PermissionGuard` — apply `@UseGuards(TenantGuard, PermissionGuard)` at class level on every controller

@@ -21,6 +21,8 @@ import {
 import { TaskEditDialogComponent } from '../../../tasks/components/task-edit-dialog/task-edit-dialog.component';
 import { TaskCancelDialogComponent } from '../../../tasks/components/task-cancel-dialog/task-cancel-dialog.component';
 import { TaskReopenDialogComponent } from '../../../tasks/components/task-reopen-dialog/task-reopen-dialog.component';
+import { TaskAddEvidenceDialogComponent } from '../../../tasks/components/task-add-evidence-dialog/task-add-evidence-dialog.component';
+import { TaskEvidenceDialogComponent } from '../../../tasks/components/task-evidence-dialog/task-evidence-dialog.component';
 import { WorkflowStageIndicatorComponent } from '../../../workflow/components/workflow-stage-indicator/workflow-stage-indicator.component';
 import {
   CommitteeService,
@@ -49,6 +51,9 @@ import { CommitteeFormComponent } from '../committee-form/committee-form.compone
 import { CommitteeMemberFormComponent } from '../committee-member-form/committee-member-form.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 
+/** ACC-174/177 — the task-row dialogs this page opens, one at a time. */
+type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
+
 @Component({
   selector: 'app-committee-detail',
   standalone: true,
@@ -69,6 +74,8 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
     TaskEditDialogComponent,
     TaskCancelDialogComponent,
     TaskReopenDialogComponent,
+    TaskAddEvidenceDialogComponent,
+    TaskEvidenceDialogComponent,
     WorkflowStageIndicatorComponent,
     CommitteeFormComponent,
     CommitteeMemberFormComponent,
@@ -451,6 +458,25 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                         (activated)="openTaskAction(task, 'reopen')"
                       />
                     }
+                    <!-- ACC-177 — evidence, here as on My tasks: Add evidence
+                         for someone on the task while it is open (self-scoped,
+                         no permission, like Complete below), and the evidence
+                         itself wherever there is some. The server decides who
+                         may see it; anyone who can see this record can. -->
+                    @if (canAddEvidence(task)) {
+                      <am-icon-button
+                        icon="pi pi-paperclip"
+                        [label]="'task.evidence.addNamed' | translate: { title: task.title }"
+                        (activated)="openTaskAction(task, 'addEvidence')"
+                      />
+                    }
+                    @if (task.evidenceCount > 0) {
+                      <am-icon-button
+                        icon="pi pi-folder-open"
+                        [label]="'task.evidence.viewNamed' | translate: { title: task.title }"
+                        (activated)="openTaskAction(task, 'evidence')"
+                      />
+                    }
                     <!-- Shown on rows the caller is actually assigned to, and
                          on no others. NOT permission-gated: completing a task
                          is self-scoped, so POST /tasks/:id/complete carries no
@@ -459,9 +485,8 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
                          people entitled to use it: whoever the engine assigned
                          the task to, whatever role they hold. -->
                     <!-- ACC-163 — disabled while evidence is required and none
-                         has been added; the server refuses that too. Adding
-                         the evidence happens on My tasks, where the assignee
-                         works. -->
+                         has been added; the server refuses that too. ACC-177 —
+                         Add evidence sits beside it on this row as well. -->
                     @if (canComplete(task)) {
                       <am-icon-button
                         icon="pi pi-check"
@@ -657,6 +682,18 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
       (visibleChange)="closeTaskAction($event)"
       [task]="taskActionTarget()"
       (reopened)="loadTasks()"
+    />
+    <app-task-add-evidence-dialog
+      [visible]="taskAction() === 'addEvidence'"
+      (visibleChange)="closeTaskAction($event)"
+      [task]="taskActionTarget()"
+      (added)="loadTasks()"
+    />
+    <app-task-evidence-dialog
+      [visible]="taskAction() === 'evidence'"
+      (visibleChange)="closeTaskAction($event)"
+      [task]="taskActionTarget()"
+      (changed)="loadTasks()"
     />
 
     <ng-template #memberFormTpl>
@@ -1000,6 +1037,15 @@ export class CommitteeDetailComponent implements OnInit {
     return !!me && task.assignees.some((a) => a.userId === me);
   }
 
+  // ACC-177 — the same rule as adding a link always had: an active assignee,
+  // on a task that is not closed (a held task included). Self-scoped; the
+  // server refuses anyone else.
+  canAddEvidence(task: ITaskWithAssigneesDto): boolean {
+    if (!isTaskOpen(task)) return false;
+    const me = this.authService.currentUser()?.id;
+    return !!me && task.assignees.some((a) => a.userId === me);
+  }
+
   // ACC-163 — evidence is required and none has been added.
   needsEvidence(task: ITaskWithAssigneesDto): boolean {
     return task.requiresEvidence && task.evidenceCount === 0;
@@ -1067,10 +1113,10 @@ export class CommitteeDetailComponent implements OnInit {
       : this.translate.instant('task.cancelTask.line', { reason: task.cancelledReason });
   }
 
-  readonly taskAction = signal<'edit' | 'cancel' | 'reopen' | null>(null);
+  readonly taskAction = signal<TaskRowAction | null>(null);
   readonly taskActionTarget = signal<ITaskWithAssigneesDto | null>(null);
 
-  openTaskAction(task: ITaskWithAssigneesDto, action: 'edit' | 'cancel' | 'reopen'): void {
+  openTaskAction(task: ITaskWithAssigneesDto, action: TaskRowAction): void {
     this.taskActionTarget.set(task);
     this.taskAction.set(action);
   }

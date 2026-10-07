@@ -33,6 +33,9 @@ import type {
 // "90 days" cannot disagree.
 export const OPEN_ENDED_ACTING_DAYS = 90;
 
+// ACC-177 — the same 90% the one-time notice uses (STORAGE_WARNING_RATIO).
+export const STORAGE_ALMOST_FULL_RATIO = 0.9;
+
 export interface DetectedCondition {
   objectId: string;
   severity: SetupConditionSeverity;
@@ -99,6 +102,8 @@ export class SetupConditionDetectors {
       this.tasksWithoutOwner(organizationId),
     ACTING_HEAD_OPEN_ENDED: (organizationId) =>
       this.openEndedActingHeads(organizationId),
+    STORAGE_ALMOST_FULL: (organizationId) =>
+      this.storageAlmostFull(organizationId),
   };
 
   // Vacant (no head position holder) ACTIVE units. Severity follows coverage:
@@ -334,6 +339,43 @@ export class SetupConditionDetectors {
    * that unit, and a unit has at most one current acting head (assignActingHead
    * refuses a second), so one row per unit per pass.
    */
+  /**
+   * ACC-177 — AccreditMe-cloud storage at 90% or more of maxStorageGb. Counted
+   * the way the quota counts (StoredFileService.cloudUsageBytes): S3 files not
+   * yet purged, deleted ones included — their bytes are still stored. Read
+   * straight from StoredFile, like every detector here, so this module adds no
+   * dependency edge. One row per organisation (objectId is the organisation);
+   * it clears itself on the next pass after a purge brings usage under 90%.
+   * The bell's one-time notice is the other half (StoredFileService).
+   */
+  async storageAlmostFull(organizationId: string): Promise<DetectedCondition[]> {
+    const org = await this.prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { maxStorageGb: true },
+    });
+    if (!org || org.maxStorageGb <= 0) return [];
+    const total = await this.prisma.storedFile.aggregate({
+      where: { organizationId, provider: 'S3', purgedAt: null },
+      _sum: { sizeBytes: true },
+    });
+    const usedBytes = total._sum.sizeBytes ?? 0;
+    const limitBytes = org.maxStorageGb * 1024 ** 3;
+    if (usedBytes < limitBytes * STORAGE_ALMOST_FULL_RATIO) return [];
+    return [
+      {
+        objectId: organizationId,
+        // AT_RISK: nothing is blocked until the limit itself is reached.
+        severity: 'AT_RISK' as const,
+        openedAt: null,
+        subject: {
+          usedBytes,
+          limitBytes,
+          percent: Math.floor((usedBytes / limitBytes) * 100),
+        },
+      },
+    ];
+  }
+
   async openEndedActingHeads(
     organizationId: string,
   ): Promise<DetectedCondition[]> {

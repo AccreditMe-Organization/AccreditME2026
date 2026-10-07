@@ -58,6 +58,7 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       'ORG_UNIT_WITHOUT_HEAD',
       'ORG_UNIT_WITHOUT_TYPE',
       'STAGE_WITHOUT_ASSIGNEE',
+      'STORAGE_ALMOST_FULL',
       'TASK_WITHOUT_OWNER',
     ]);
   });
@@ -535,4 +536,43 @@ describe('SetupConditionDetectors (ACC-82)', () => {
     });
   });
 
+});
+
+// ACC-177 — "Storage almost full": AccreditMe-cloud usage at 90% or more,
+// counted the way the quota counts (S3, not yet purged, deleted included).
+describe('SetupConditionDetectors — storageAlmostFull (ACC-177)', () => {
+  const GIB = 1024 ** 3;
+  const prisma = {
+    organization: { findFirst: jest.fn() },
+    storedFile: { aggregate: jest.fn() },
+  };
+  const detectors = new SetupConditionDetectors(prisma as unknown as PrismaService);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.organization.findFirst.mockResolvedValue({ maxStorageGb: 10 });
+  });
+
+  it('opens one condition, on the organisation, at 90% or more', async () => {
+    prisma.storedFile.aggregate.mockResolvedValue({ _sum: { sizeBytes: 9 * GIB } });
+    expect(await detectors.storageAlmostFull(ORG_A)).toEqual([
+      { objectId: ORG_A, severity: 'AT_RISK', openedAt: null, subject: { usedBytes: 9 * GIB, limitBytes: 10 * GIB, percent: 90 } },
+    ]);
+    expect(prisma.storedFile.aggregate).toHaveBeenCalledWith({
+      where: { organizationId: ORG_A, provider: 'S3', purgedAt: null },
+      _sum: { sizeBytes: true },
+    });
+  });
+
+  it('opens nothing below 90%, so the condition clears on the next pass after a purge', async () => {
+    prisma.storedFile.aggregate.mockResolvedValue({ _sum: { sizeBytes: 9 * GIB - 1 } });
+    expect(await detectors.storageAlmostFull(ORG_A)).toEqual([]);
+  });
+
+  itEnforcesTenantIsolation('storageAlmostFull counts only the organisation\'s own files', async () => {
+    prisma.storedFile.aggregate.mockResolvedValue({ _sum: { sizeBytes: 0 } });
+    await detectors.storageAlmostFull(ORG_B);
+    expect(prisma.organization.findFirst).toHaveBeenCalledWith({ where: { id: ORG_B }, select: { maxStorageGb: true } });
+    expect(prisma.storedFile.aggregate).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }));
+  });
 });

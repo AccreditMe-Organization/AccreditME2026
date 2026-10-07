@@ -94,11 +94,16 @@ for (const [file, source] of cleaned) {
   if (!HOSTS_DIALOG.test(source)) continue;
   dialogsSeen += 1;
 
-  // The host's own fields, plus those of every component it renders.
+  // The host's own fields, plus those of every component it renders —
+  // EXCEPT a component that hosts its own <app-edit-dialog>. That is a
+  // separate dialog, scanned on its own as a host in this same loop; counting
+  // its fields here as well charged them to every page that opens it
+  // (ACC-177: a page opening the two-field Add evidence dialog beside its own
+  // form was reported as one six-field dialog).
   const group = new Set([file]);
   for (const m of source.matchAll(/<(app-[a-z0-9-]+)\b/g)) {
     const target = selectorFile.get(m[1]);
-    if (target) group.add(target);
+    if (target && !HOSTS_DIALOG.test(cleaned.get(target) ?? '')) group.add(target);
   }
 
   let fields = 0;

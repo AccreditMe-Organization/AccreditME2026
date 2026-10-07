@@ -14,6 +14,7 @@ import { WorkflowModule } from './foundation/workflow/workflow.module';
 import { NotificationModule } from './foundation/notification/notification.module';
 import { OrgPositionModule } from './foundation/org-position/org-position.module';
 import { TaskModule } from './foundation/task/task.module';
+import { FileStorageModule } from './foundation/file-storage/file-storage.module';
 import { CommitteesModule } from './foundation/committees/committees.module';
 import { AuthModule } from './foundation/auth/auth.module';
 import { UserModule } from './foundation/user/user.module';
@@ -45,6 +46,7 @@ import { throttlerOptions } from './common/throttle/throttle.config';
     NotificationModule,
     OrgPositionModule,
     TaskModule,
+    FileStorageModule,
     CommitteesModule,
     AuthModule,
     UserModule,

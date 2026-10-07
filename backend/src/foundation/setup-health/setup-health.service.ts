@@ -30,6 +30,7 @@ export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
   'ACTING_HEAD_OPEN_ENDED',
+  'STORAGE_ALMOST_FULL',
 ];
 
 // §13.3. Per type, because it follows from what each detector can read: units
@@ -49,6 +50,8 @@ const AGE_BASIS: Record<ActiveSetupConditionType, SetupConditionAgeBasis> = {
   // validFrom + 90 days — the day it became this condition, not the day the
   // appointment began.
   ACTING_HEAD_OPEN_ENDED: 'OBJECT',
+  // FIRST_DETECTED: usage carries no timestamp for crossing 90%.
+  STORAGE_ALMOST_FULL: 'FIRST_DETECTED',
 };
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = {

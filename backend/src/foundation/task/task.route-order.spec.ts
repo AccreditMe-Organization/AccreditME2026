@@ -23,6 +23,7 @@ import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
+import { TaskEvidenceService } from './task-evidence.service';
 
 describe('Task routes — static paths are not swallowed by :id (ACC-167)', () => {
   let app: INestApplication<App>;
@@ -47,6 +48,13 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     resume: jest.fn().mockResolvedValue({}),
     awaitingDecision: jest.fn().mockResolvedValue([]),
   };
+  // ACC-177
+  const evidence = {
+    addFile: jest.fn().mockResolvedValue({ id: 'ev-1' }),
+    list: jest.fn().mockResolvedValue({ items: [], canAdd: false }),
+    download: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '' }),
+    remove: jest.fn().mockResolvedValue(undefined),
+  };
   const assignment = {
     listUnits: jest.fn().mockResolvedValue([]),
     listPositions: jest.fn().mockResolvedValue([]),
@@ -62,6 +70,7 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
         { provide: TaskService, useValue: taskService },
         { provide: TaskAssignmentService, useValue: assignment },
         { provide: TaskRequestService, useValue: requests },
+        { provide: TaskEvidenceService, useValue: evidence },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -163,5 +172,79 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     const edit = await request(app.getHttpServer()).patch('/tasks/task-1').send({ title: 'Renamed' });
     expect(edit.status).toBe(200);
     expect(taskService.update).toHaveBeenCalledTimes(1);
+  });
+
+  // ACC-177 — the evidence routes reach their own handlers, with no route
+  // permission (this caller holds none); a path swallowed by ':id' would be a
+  // 403 naming tasks:view.
+  it('GET /tasks/:id/evidence and its download reach their handlers with no route permission', async () => {
+    const list = await request(app.getHttpServer()).get('/tasks/task-1/evidence');
+    expect(list.status).toBe(200);
+    expect(evidence.list).toHaveBeenCalledWith('task-1', 'org-a', { id: 'user-1', permissions: [] });
+
+    const download = await request(app.getHttpServer()).get('/tasks/task-1/evidence/ev-1/download');
+    expect(download.status).toBe(200);
+    expect(evidence.download).toHaveBeenCalledTimes(1);
+    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /tasks/:id/evidence/:evidenceId reaches its handler and answers 204', async () => {
+    const res = await request(app.getHttpServer()).delete('/tasks/task-1/evidence/ev-1');
+    expect(res.status).toBe(204);
+    expect(evidence.remove).toHaveBeenCalledWith('task-1', 'ev-1', 'org-a', 'user-1');
+  });
+
+  // ACC-177 — the upload transport, over real multipart, through the real
+  // interceptor. The service is mocked; what is under test is what reaches it.
+  describe('POST /tasks/:id/evidence/file', () => {
+    const originalCap = process.env['MAX_UPLOAD_MB'];
+    afterEach(() => {
+      if (originalCap === undefined) delete process.env['MAX_UPLOAD_MB'];
+      else process.env['MAX_UPLOAD_MB'] = originalCap;
+    });
+
+    it('hands the service the file with its Arabic name intact', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/tasks/task-1/evidence/file')
+        .attach('file', Buffer.from('%PDF-1.7 test'), { filename: 'محضر الاجتماع.pdf', contentType: 'application/pdf' });
+
+      expect({ status: res.status, body: res.body }).toEqual(expect.objectContaining({ status: 201 }));
+      const [taskId, file, tenant, user] = evidence.addFile.mock.calls[0] as [string, { originalname: string; buffer: Buffer }, string, string];
+      expect([taskId, tenant, user]).toEqual(['task-1', 'org-a', 'user-1']);
+      expect(file.originalname).toBe('محضر الاجتماع.pdf');
+      expect(file.buffer.toString()).toBe('%PDF-1.7 test');
+    });
+
+    it('refuses a file over the cap with FILE_TOO_LARGE and the cap, before the service runs', async () => {
+      process.env['MAX_UPLOAD_MB'] = '0.001'; // 1048 bytes
+      const res = await request(app.getHttpServer())
+        .post('/tasks/task-1/evidence/file')
+        .attach('file', Buffer.alloc(2_000, 0x41), { filename: 'big.txt', contentType: 'text/plain' });
+
+      expect(res.status).toBe(413);
+      expect(res.body).toEqual(expect.objectContaining({ code: 'FILE_TOO_LARGE', maxBytes: 1048 }));
+      expect(evidence.addFile).not.toHaveBeenCalled();
+    });
+
+    it('refuses a second file, or an extra field', async () => {
+      const twoFiles = await request(app.getHttpServer())
+        .post('/tasks/task-1/evidence/file')
+        .attach('file', Buffer.from('a'), 'a.txt')
+        .attach('file', Buffer.from('b'), 'b.txt');
+      expect(twoFiles.status).toBe(400);
+
+      const extraField = await request(app.getHttpServer())
+        .post('/tasks/task-1/evidence/file')
+        .field('path', '../../etc/passwd')
+        .attach('file', Buffer.from('a'), 'a.txt');
+      expect(extraField.status).toBe(400);
+      expect(evidence.addFile).not.toHaveBeenCalled();
+    });
+
+    it('a request with no file reaches the service with none, which refuses it', async () => {
+      const res = await request(app.getHttpServer()).post('/tasks/task-1/evidence/file').send({});
+      expect(res.status).toBe(201); // the mocked service accepted; the real one answers FILE_MISSING
+      expect(evidence.addFile.mock.calls[0]![1]).toBeUndefined();
+    });
   });
 });

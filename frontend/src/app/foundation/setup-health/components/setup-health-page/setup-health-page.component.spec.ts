@@ -339,3 +339,66 @@ describe('SetupHealthPageComponent (ACC-82)', () => {
     ]);
   });
 });
+
+// ACC-177 — "File storage almost full": AccreditMe-cloud usage at 90% or more.
+// No Fix: the recycle bin screen is lane A's; the row says what to do.
+describe('SetupHealthPageComponent — storage almost full (ACC-177)', () => {
+  const GIB = 1024 ** 3;
+  const storage: SetupConditionDto = {
+    id: 'storage',
+    type: 'STORAGE_ALMOST_FULL',
+    severity: 'AT_RISK',
+    objectId: 'org-a',
+    subject: { usedBytes: 9.2 * GIB, limitBytes: 10 * GIB, percent: 92 },
+    openedAt: new Date().toISOString(),
+    ageBasis: 'FIRST_DETECTED',
+    lastSeenAt: new Date().toISOString(),
+    clearedAt: null,
+  };
+
+  function render(arabic: boolean): SetupHealthPageComponent {
+    TestBed.configureTestingModule({
+      imports: [SetupHealthPageComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
+        { provide: LanguageService, useValue: { isArabic: () => arabic } },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use(arabic ? 'ar' : 'en');
+    const fixture = TestBed.createComponent(SetupHealthPageComponent);
+    fixture.detectChanges();
+    TestBed.inject(HttpTestingController)
+      .expectOne(`${environment.apiUrl}/setup-health`)
+      .flush({ open: [storage], recentlyCleared: [], freshness: [{ type: 'STORAGE_ALMOST_FULL', status: 'CURRENT', computedAt: new Date().toISOString() }] });
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('shows the condition with how full it is, what to do, and no Fix', () => {
+    const page = render(false);
+    const group = page.groups().find((g) => g.type === 'STORAGE_ALMOST_FULL')!;
+    expect(group.label).toBe('File storage almost full');
+    const row = group.rows[0]!;
+    expect(row.objectName).toBe('File storage');
+    expect(row.consequence).toBe(
+      '92% of 10 GB is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin.',
+    );
+    expect(row.hint).toBe('Purge deleted files from the recycle bin, or ask AccreditMe for more storage.');
+    expect(row.fix).toBeNull();
+    expect(row.fixNeeds).toBeNull();
+  });
+
+  it('reads in Arabic, with Latin digits', () => {
+    const row = render(true).groups().find((g) => g.type === 'STORAGE_ALMOST_FULL')!.rows[0]!;
+    expect(row.objectName).toBe('تخزين الملفات');
+    expect(row.consequence).toContain('استُخدم 92٪ من 10 غيغابايت');
+  });
+});

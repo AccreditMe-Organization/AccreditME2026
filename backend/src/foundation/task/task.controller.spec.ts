@@ -4,6 +4,7 @@ import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
+import { TaskEvidenceService } from './task-evidence.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -94,6 +95,14 @@ describe('TaskController', () => {
     listCommitteeMembers: jest.Mock;
   };
 
+  // ACC-177 — file evidence, the evidence list, downloads and deletes.
+  const evidence = {
+    addFile: jest.fn().mockResolvedValue({ id: 'evidence-2' }),
+    list: jest.fn().mockResolvedValue({ items: [], canAdd: true }),
+    download: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '2026-10-07T10:15:00.000Z' }),
+    remove: jest.fn().mockResolvedValue(undefined),
+  };
+
   const requests = {
     create: jest.fn(),
     withdraw: jest.fn(),
@@ -139,6 +148,7 @@ describe('TaskController', () => {
         { provide: TaskService, useValue: service },
         { provide: TaskAssignmentService, useValue: assignment },
         { provide: TaskRequestService, useValue: requests },
+        { provide: TaskEvidenceService, useValue: evidence },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -314,6 +324,31 @@ describe('TaskController', () => {
 
     expect(service.addEvidence).toHaveBeenCalledWith('task-1', dto, TENANT_ID, USER_ID);
     expect(result).toEqual({ id: 'evidence-1' });
+  });
+
+  // ACC-177 — the evidence routes carry no route permission: who may is
+  // decided from the task row, exactly as addEvidence() is.
+  it.each(['addFileEvidence', 'listEvidence', 'downloadEvidence', 'removeEvidence'] as const)(
+    '%s requires NO route permission — the service decides from the task',
+    (method) => {
+      const required = new Reflector().get<string[] | undefined>(PERMISSIONS_KEY, TaskController.prototype[method]);
+      expect(required).toBeUndefined();
+    },
+  );
+
+  it('the evidence routes delegate with the tenant and the caller', async () => {
+    const file = { originalname: 'minutes.pdf', mimetype: 'application/pdf', size: 4, buffer: Buffer.from('%PDF') };
+    await controller.addFileEvidence('task-1', file, TENANT_ID, USER_ID);
+    expect(evidence.addFile).toHaveBeenCalledWith('task-1', file, TENANT_ID, USER_ID);
+
+    await controller.listEvidence('task-1', TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
+    expect(evidence.list).toHaveBeenCalledWith('task-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
+
+    await controller.downloadEvidence('task-1', 'ev-1', TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
+    expect(evidence.download).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
+
+    await controller.removeEvidence('task-1', 'ev-1', TENANT_ID, USER_ID);
+    expect(evidence.remove).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, USER_ID);
   });
 
   it('getUnassigned delegates to the service with the current tenant', async () => {

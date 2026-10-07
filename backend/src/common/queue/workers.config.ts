@@ -50,7 +50,7 @@
 export const RUN_WORKERS_ENV = 'RUN_WORKERS';
 
 /** The queues a worker process consumes, named in the startup log. */
-export const WORKER_QUEUES = ['sla-monitor', 'setup-health', 'workflow-actions', 'email-delivery'];
+export const WORKER_QUEUES = ['sla-monitor', 'setup-health', 'workflow-actions', 'email-delivery', 'storage-purge'];
 
 /**
  * Only the exact string `true` enables workers. Anything else — unset, empty,
