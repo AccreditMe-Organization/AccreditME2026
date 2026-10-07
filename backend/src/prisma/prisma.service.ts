@@ -68,6 +68,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get task() { return this._client.task; }
   get taskAssignee() { return this._client.taskAssignee; }
   get taskEvidence() { return this._client.taskEvidence; }
+  get storedFile() { return this._client.storedFile; }
   get taskRequest() { return this._client.taskRequest; }
   get notification() { return this._client.notification; }
   get committee() { return this._client.committee; }
