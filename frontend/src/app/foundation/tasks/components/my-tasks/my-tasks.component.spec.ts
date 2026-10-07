@@ -191,12 +191,12 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
 
   afterEach(() => http.verify());
 
-  it('shows PENDING as "Assigned" and offers Start, Add link, Reject and Complete', () => {
+  it('shows PENDING as "Assigned" and offers Start, Add evidence, Reject and Complete', () => {
     const { el } = render([task({ dueAt: FUTURE })]);
 
     expect(statusCell(el)).toBe('Assigned');
     expect(button(el, 'Start “Submit terms of reference”')).not.toBeNull();
-    expect(button(el, 'Add link evidence to “Submit terms of reference”')).not.toBeNull();
+    expect(button(el, 'Add evidence to “Submit terms of reference”')).not.toBeNull();
     expect(button(el, 'Reject “Submit terms of reference”')).not.toBeNull();
     expect(button(el, 'Complete “Submit terms of reference”')).not.toBeNull();
   });
@@ -509,7 +509,7 @@ describe('MyTasksComponent — requests and holds (ACC-173)', () => {
     expect(el.textContent).toContain('On hold until 10 Jan 2099');
     expect(el.textContent).toContain('On hold');
     expect(button(el, `Resume “${T}” now`)).not.toBeNull();
-    expect(button(el, `Add link evidence to “${T}”`)).not.toBeNull();
+    expect(button(el, `Add evidence to “${T}”`)).not.toBeNull();
     for (const label of [`Start “${T}”`, `Complete “${T}”`, `Reject “${T}”`, `Request more time on “${T}”`]) {
       expect(button(el, label)).toBeNull();
     }
