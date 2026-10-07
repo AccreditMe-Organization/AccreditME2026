@@ -762,11 +762,12 @@
       "downloadNamed": "Download “{{name}}”",
       "removeNamed": "Remove “{{name}}”",
       "removeTitle": "Remove this evidence?",
-      "removeMessage": "“{{name}}” will no longer count as evidence for this task. The record that it was added stays.",
+      "removeMessage": "“{{name}}” will no longer count as evidence for this task. A link or a reference can't be restored.",
       "removeConfirm": "Remove",
       "keep": "Keep",
       "note": "Note",
-      "loadError": "The evidence couldn't be loaded."
+      "loadError": "The evidence couldn't be loaded.",
+      "removeMessageFile": "“{{name}}” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days."
     }
   },
   "auth": {
@@ -1068,7 +1069,8 @@
       "ORG_UNIT_WITHOUT_HEAD": "Org unit without a head",
       "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
-      "TASK_WITHOUT_OWNER": "Task with no actionable owner"
+      "TASK_WITHOUT_OWNER": "Task with no actionable owner",
+      "STORAGE_ALMOST_FULL": "File storage almost full"
     },
     "context": {
       "template": "Workflow: {{name}}"
@@ -1077,10 +1079,12 @@
       "unitCovered": "No head. Work routed to its head escalates to a parent unit or an acting head in the meantime.",
       "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
-      "task": "No one is assigned, so it is in no one’s task list."
+      "task": "No one is assigned, so it is in no one’s task list.",
+      "storage": "{{percent}}% of {{limit}} is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin."
     },
     "hint": {
-      "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it."
+      "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.",
+      "STORAGE_ALMOST_FULL": "Purge deleted files from the recycle bin, or ask AccreditMe for more storage."
     },
     "age": {
       "openToday": "Opened in the last 24 hours",
@@ -1112,7 +1116,8 @@
       "at": "Cleared {{date}}",
       "none": "Nothing has cleared in the last 7 days.",
       "note": "Shown so you can see a fix landed, and so a surveyor can see when a gap closed. Each entry drops off after 7 days."
-    }
+    },
+    "storageObject": "File storage"
   },
   "format": {
     "lessThanMinute": "less than a minute",
@@ -1299,13 +1304,18 @@
       "STORAGE_ENDPOINT_NOT_ALLOWED": "The storage address must be a public HTTPS address.",
       "STORAGE_UNAVAILABLE": "File storage couldn't be reached. Try again.",
       "STORAGE_QUOTA_EXCEEDED": "Your organization's file storage is full.",
-      "STORAGE_LOCATION_IN_USE": "Files are stored at this location. Changing it would make them unreadable.",
       "STORAGE_SETTINGS_INCOMPLETE": "Fill in every setting this storage option needs.",
       "FILE_MISSING": "Choose a file to upload.",
       "FILE_EMPTY": "The file is empty.",
       "FILE_TOO_LARGE": "Larger than {{size}}, the upload limit.",
       "FILE_TYPE_NOT_ALLOWED": "This type of file can't be uploaded.",
-      "FILE_UNAVAILABLE": "This file is no longer available from where it was stored."
-    }
+      "FILE_UNAVAILABLE": "This file is no longer available from where it was stored.",
+      "STORAGE_NOT_CONFIRMED": "File storage isn't set up yet. Ask your administrator.",
+      "STORAGE_ALREADY_CONFIRMED": "Where files are stored has already been confirmed.",
+      "STORAGE_CHANGE_BY_PLATFORM": "Changing where files are stored is done by AccreditMe. Contact support.",
+      "STORAGE_TEST_FAILED": "The storage connection test did not pass.",
+      "FILE_RECORD_GONE": "The record this file came from no longer exists, so it can't be restored."
+    },
+    "sizeGb": "{{size}} GB"
   }
 }
