@@ -735,6 +735,38 @@
       "errorAfterLimit": "Choose a date at or before the SLA limit.",
       "errorTime": "Enter a time.",
       "confirm": "Reopen"
+    },
+    "evidence": {
+      "title": "Evidence",
+      "requiredTag": "required",
+      "add": "Add evidence",
+      "addTitle": "Add evidence",
+      "addNamed": "Add evidence to “{{title}}”",
+      "viewNamed": "Evidence on “{{title}}”",
+      "contextRequired": "{{title}} · evidence required",
+      "kind": "Kind",
+      "kindLink": "Link",
+      "kindFile": "File",
+      "dropAria": "Choose files to upload",
+      "dropLead": "Drop files here, or",
+      "browse": "browse",
+      "limits": "PDF, Word, Excel, PowerPoint, CSV, text or images · up to {{size}} each · {{atATime}}",
+      "chosenFiles": "Chosen files",
+      "removeChosen": "Remove “{{name}}”",
+      "uploading": "Uploading {{percent}}%",
+      "addedState": "Added",
+      "addFile": "Add file",
+      "none": "None yet",
+      "noneRequired": "Required · none yet",
+      "readOnly": "This task is closed, so its evidence can no longer change.",
+      "downloadNamed": "Download “{{name}}”",
+      "removeNamed": "Remove “{{name}}”",
+      "removeTitle": "Remove this evidence?",
+      "removeMessage": "“{{name}}” will no longer count as evidence for this task. The record that it was added stays.",
+      "removeConfirm": "Remove",
+      "keep": "Keep",
+      "note": "Note",
+      "loadError": "The evidence couldn't be loaded."
     }
   },
   "auth": {
@@ -1123,6 +1155,18 @@
       "assignPool": {
         "one": "Goes to a pool of {{count}} — they pick it up.",
         "other": "Goes to a pool of {{count}} — whoever picks it up first takes it."
+      },
+      "evidenceAddFiles": {
+        "one": "Add {{count}} file",
+        "other": "Add {{count}} files"
+      },
+      "evidenceAtATime": {
+        "one": "one at a time",
+        "other": "up to {{count}} at a time"
+      },
+      "evidenceTooMany": {
+        "one": "One file at a time",
+        "other": "Up to {{count}} files at a time"
       }
     },
     "user": {
@@ -1245,5 +1289,23 @@
     "willBeGranted": "+ will be granted",
     "willBeRemoved": "− will be removed",
     "lastAdministratorLocked": "The organization’s only active administrator. Give this role to someone else first, then you can remove it here."
+  },
+  "files": {
+    "sizeKb": "{{size}} KB",
+    "sizeMb": "{{size}} MB",
+    "refusal": {
+      "STORAGE_NOT_CONFIGURED": "File storage isn't set up yet. Ask your administrator.",
+      "STORAGE_PROVIDER_NOT_ALLOWED": "This storage option isn't available on this installation.",
+      "STORAGE_ENDPOINT_NOT_ALLOWED": "The storage address must be a public HTTPS address.",
+      "STORAGE_UNAVAILABLE": "File storage couldn't be reached. Try again.",
+      "STORAGE_QUOTA_EXCEEDED": "Your organization's file storage is full.",
+      "STORAGE_LOCATION_IN_USE": "Files are stored at this location. Changing it would make them unreadable.",
+      "STORAGE_SETTINGS_INCOMPLETE": "Fill in every setting this storage option needs.",
+      "FILE_MISSING": "Choose a file to upload.",
+      "FILE_EMPTY": "The file is empty.",
+      "FILE_TOO_LARGE": "Larger than {{size}}, the upload limit.",
+      "FILE_TYPE_NOT_ALLOWED": "This type of file can't be uploaded.",
+      "FILE_UNAVAILABLE": "This file is no longer available from where it was stored."
+    }
   }
 }
