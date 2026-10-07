@@ -300,7 +300,7 @@ export class TaskService {
       },
       orderBy: { dueAt: 'asc' },
       include: {
-        _count: { select: { evidence: true } },
+        _count: { select: { evidence: { where: { deletedAt: null } } } },
         ...POOL_LABEL_INCLUDE,
         // ACC-167 — the caller's own row, to say whether it came from a pick.
         assignees: { where: { userId, removedAt: null }, select: { pickedAt: true } },
@@ -349,7 +349,7 @@ export class TaskService {
     const rows = await this.prisma.task.findMany({
       where: { ...waitingInPoolWhere(organizationId), AND: [{ OR: pools }] },
       orderBy: { dueAt: 'asc' },
-      include: { _count: { select: { evidence: true } }, ...POOL_LABEL_INCLUDE, ...CREATOR_STATUS_INCLUDE },
+      include: { _count: { select: { evidence: { where: { deletedAt: null } } } }, ...POOL_LABEL_INCLUDE, ...CREATOR_STATUS_INCLUDE },
     });
     const viewer = { id: userId, permissions: viewerPermissions };
     const covered = await this.coveredCreators(viewer, organizationId);
@@ -412,7 +412,7 @@ export class TaskService {
         // ACC-163 — who rejected it, for the record's task list, and how much
         // evidence it holds, so Complete can be disabled before it is refused.
         rejectedBy: { select: { id: true, name: true } },
-        _count: { select: { evidence: true } },
+        _count: { select: { evidence: { where: { deletedAt: null } } } },
         // ACC-167 — the pool the task is in, so the record can say who it is
         // waiting for until somebody picks it up.
         ...POOL_LABEL_INCLUDE,
@@ -478,7 +478,8 @@ export class TaskService {
   async getById(id: string, organizationId: string): Promise<ITask> {
     const task = await this.prisma.task.findFirst({
       where: { id, organizationId },
-      include: { assignees: true, evidence: true },
+      // ACC-177 — a deleted piece of evidence stays as the record, not as evidence.
+      include: { assignees: true, evidence: { where: { deletedAt: null } } },
     });
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -537,7 +538,7 @@ export class TaskService {
       const existing = await this.lockOpenForActiveAssignee(tx, id, userId, organizationId, 'be completed');
 
       if (existing.requiresEvidence) {
-        const evidenceCount = await tx.taskEvidence.count({ where: { taskId: id, organizationId } });
+        const evidenceCount = await tx.taskEvidence.count({ where: { taskId: id, organizationId, deletedAt: null } });
         if (evidenceCount === 0) {
           throw new ConflictException('Evidence is required before this task can be completed');
         }
@@ -1812,7 +1813,11 @@ export class TaskService {
   // ACC-173 — an ON_HOLD task refuses every assignee action except adding
   // evidence (`allowOnHold`), with one sentence that says what to do: the
   // caller is an active assignee, so naming the hold discloses nothing.
-  private async lockOpenForActiveAssignee(
+  //
+  // ACC-177 — not private: TaskEvidenceService (file evidence, list, delete)
+  // calls this same copy rather than writing a second rule for who counts as
+  // an assignee.
+  async lockOpenForActiveAssignee(
     tx: TaskTx,
     id: string,
     userId: string,
@@ -1897,7 +1902,9 @@ export class TaskService {
    * decided on 6 October replaces it with "Manage tasks" per record type; that
    * swap is a change to the one line below.
    */
-  private async mayManage(
+  // ACC-177 — not private: TaskEvidenceService reads it for who may see a
+  // task's evidence. Still the one copy of the rule.
+  async mayManage(
     task: { createdById: string; createdBy?: { status: string } | null },
     viewer: TaskViewer,
     organizationId: string,

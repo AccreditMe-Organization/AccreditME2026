@@ -9,6 +9,8 @@ import { TaskAssignmentService } from './task-assignment.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskSlaService } from './task-sla.service';
+import { TaskEvidenceService } from './task-evidence.service';
+import { FileStorageModule } from '../file-storage/file-storage.module';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -27,6 +29,8 @@ import { TaskSlaService } from './task-sla.service';
     WorkingCalendarModule,
     NotificationModule,
     forwardRef(() => TenantModule),
+    // ACC-177 — file evidence stores through StoredFileService.
+    FileStorageModule,
   ],
   controllers: [TaskController],
   // ACC-167 — TaskAssignmentService serves this module's picker endpoints
@@ -37,7 +41,8 @@ import { TaskSlaService } from './task-sla.service';
   // request, reassign and the picker gate. TaskRequestService is exported for
   // the SLA monitor's resume sweep.
   // ACC-174 — TaskSlaService is the one home of the SLA limit rule.
-  providers: [TaskService, TaskAssignmentService, TaskAuthorityService, TaskRequestService, TaskSlaService],
+  // ACC-177 — TaskEvidenceService: file evidence, the evidence list, downloads, deletes.
+  providers: [TaskService, TaskAssignmentService, TaskAuthorityService, TaskRequestService, TaskSlaService, TaskEvidenceService],
   exports: [TaskService, TaskRequestService],
 })
 export class TaskModule {}

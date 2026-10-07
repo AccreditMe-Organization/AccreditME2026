@@ -1,4 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -34,7 +48,10 @@ import {
 import { ITask } from './interfaces/task.interface';
 import { IMyTaskListItem, ITaskListItem } from './interfaces/task-list-item.interface';
 import { ITaskWithAssignees } from './interfaces/task-with-assignees.interface';
-import { ITaskEvidence } from './interfaces/task-evidence.interface';
+import { ITaskEvidence, ITaskEvidenceList, ITaskEvidenceView } from './interfaces/task-evidence.interface';
+import { TaskEvidenceService } from './task-evidence.service';
+import { SingleFileUploadInterceptor } from '../file-storage/single-file-upload.interceptor';
+import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
 
 @Controller('tasks')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -43,6 +60,7 @@ export class TaskController {
     private readonly taskService: TaskService,
     private readonly assignment: TaskAssignmentService,
     private readonly requests: TaskRequestService,
+    private readonly evidence: TaskEvidenceService,
   ) {}
 
   // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
@@ -474,6 +492,56 @@ export class TaskController {
     @CurrentUser() userId: string,
   ): Promise<ITaskEvidence> {
     return this.taskService.addEvidence(id, dto, tenantId, userId);
+  }
+
+  // ── ACC-177 — file evidence, the evidence list, downloads and deletes ────
+  //
+  // None is permission-gated, for the reason addEvidence() above states: each
+  // is decided from the task row in TaskEvidenceService — an active assignee
+  // adds, and deletes their own; anyone on the task, managing it, or able to
+  // see its record lists and downloads. Everyone else gets the identical 404.
+
+  @Post(':id/evidence/file')
+  @UseInterceptors(SingleFileUploadInterceptor)
+  addFileEvidence(
+    @Param('id') id: string,
+    @UploadedFile() file: IUploadedFile | undefined,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<ITaskEvidenceView> {
+    return this.evidence.addFile(id, file, tenantId, userId);
+  }
+
+  @Get(':id/evidence')
+  listEvidence(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<ITaskEvidenceList> {
+    return this.evidence.list(id, tenantId, viewer(userId, actorPermissions));
+  }
+
+  @Get(':id/evidence/:evidenceId/download')
+  downloadEvidence(
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IFileDownload> {
+    return this.evidence.download(id, evidenceId, tenantId, viewer(userId, actorPermissions));
+  }
+
+  @Delete(':id/evidence/:evidenceId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  removeEvidence(
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+  ): Promise<void> {
+    return this.evidence.remove(id, evidenceId, tenantId, userId);
   }
 }
 
