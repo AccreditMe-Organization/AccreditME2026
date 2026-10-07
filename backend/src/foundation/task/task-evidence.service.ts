@@ -33,9 +33,12 @@ const EVIDENCE_INCLUDE = {
  *                  closed task is the record of what proved the work and
  *                  cannot be removed.
  *
- * A deleted piece of evidence is soft-deleted, and a file's bytes are removed
- * (the StoredFile row stays, soft-deleted, as the record). Every evidence
- * count in the product excludes deleted rows.
+ * A deleted piece of evidence is soft-deleted and hidden at once. A FILE goes
+ * to the recycle bin for 30 days with its bytes kept (Ahmad, 7 Oct): a tenant
+ * admin can restore it — which brings this evidence row back too — or purge
+ * it, and the daily job purges it after 30 days. A deleted link or record
+ * reference holds no file and cannot be restored. Every evidence count in the
+ * product excludes deleted rows.
  */
 @Injectable()
 export class TaskEvidenceService {
@@ -63,6 +66,8 @@ export class TaskEvidenceService {
       }),
     );
 
+    // Storage must have been confirmed, then the file judged — before any
+    // byte is stored.
     const prepared = await this.storedFiles.prepare(organizationId, { type: 'TASK', id: taskId, module: 'tasks' }, file);
     await this.storedFiles.put(prepared);
 
@@ -104,6 +109,9 @@ export class TaskEvidenceService {
         },
       },
     });
+
+    // After commit: the 90% storage warning, for a file on AccreditMe cloud.
+    await this.storedFiles.afterUpload(prepared);
 
     const evidence = await this.prisma.taskEvidence.findFirstOrThrow({
       where: { id: evidenceId, organizationId },
@@ -170,15 +178,15 @@ export class TaskEvidenceService {
       return evidence;
     });
 
-    // The bytes go after commit; the rows already say the file is gone.
-    if (removed.storedFile) await this.storedFiles.removeBytes(removed.storedFile);
-
     await this.auditLog.log({
       action: 'DELETE',
       objectType: 'TaskEvidence',
       objectId: removed.id,
       actorId,
       tenantId: organizationId,
+      // A file is recoverable from the recycle bin for 30 days; a link or a
+      // reference is not.
+      metadata: { recoverable: removed.storedFile !== null },
       before: {
         taskId,
         type: removed.type,
