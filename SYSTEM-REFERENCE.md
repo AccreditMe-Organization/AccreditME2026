@@ -8057,7 +8057,8 @@ deploy** (ACC-173's enum rule).
 
 Virus scanning (ACC-178), the orphan-object reconciler (ACC-179), moving files
 between locations (ACC-180), the email settings screen's secrets (ACC-181),
-the platform admin storage screens (ACC-182), rate limiting (ACC-129),
+the platform admin storage screens (ACC-182), an upload-specific rate limit
+(ACC-129's global per-user limit applies),
 per-plan upload caps, and the tenant storage, confirm, request-a-change and
 recycle bin screens (lane A). **No bucket exists**: until one does — and until
 each organisation confirms — production refuses every upload.

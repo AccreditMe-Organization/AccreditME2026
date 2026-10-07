@@ -1106,8 +1106,10 @@ GET  /health                      not limited — the only exemption
   replica counts alone and every limit silently multiplies by the replica count.
 - **Not covered:** Better Auth's own rate limiter only runs for requests through
   its HTTP handler, and we call `auth.api.*` server-side — so this guard is the
-  only limit. File-upload and AI limits do not exist because neither feature
-  does; the tiers this section once listed were never implemented.
+  only limit. File upload now exists (ACC-177) and is covered by the global
+  per-user limit; there is no upload-specific tier. AI limits do not exist
+  because the feature does not; the tiers this section once listed were never
+  implemented.
 
 ### Account Lockout — REAL SINCE ACC-120 SLICE 9b, AND NOT THE SAME CONTROL
 
@@ -1175,8 +1177,8 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
   client. Uploads go THROUGH the API (multipart), so there is no upload URL.
 - **ClamAV virus scan — NOT BUILT. ACC-178 (High)**, because legacy Office
   files are allowed and can carry macros.
-- **Rate limiting on upload — NOT BUILT**, with the rest of rate limiting
-  (ACC-129).
+- **Rate limiting on upload — the global per-user limit only** (ACC-129: 600
+  requests a minute per signed-in user). There is no upload-specific tier.
 
 ### Security Headers (Helmet.js in main.ts)
 - Content-Security-Policy
@@ -3065,7 +3067,8 @@ briefly:
 - **Not built, each with a ticket:** virus scanning (ACC-178, High — legacy
   Office files can carry macros), the orphan-object reconciler (ACC-179),
   moving files between locations (ACC-180), the platform admin storage screens
-  (ACC-182), rate limiting (ACC-129). The storage settings, confirm,
+  (ACC-182), an upload-specific rate limit (ACC-129's global per-user limit
+  applies). The storage settings, confirm,
   request-a-change and recycle bin screens are lane A's, from the design
   thread's drawings.
 - **`STORAGE_ALMOST_FULL` must not exist as a row on a shared database before
