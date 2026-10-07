@@ -11,6 +11,8 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { LANDING_ROUTE } from '../../../../core/navigation/landing-route';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
+import { TenantHostService } from '../../../../core/tenant/tenant-host';
+import { NoOrganisationAddressComponent } from '../no-organisation-address/no-organisation-address.component';
 
 @Component({
   selector: 'app-login',
@@ -23,8 +25,14 @@ import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitati
     PasswordModule,
     ButtonModule,
     MessageModule,
+    NoOrganisationAddressComponent,
   ],
   template: `
+    <!-- ACC-139 — the organisation is the address. One that names none gets a
+         note saying where to go, and no form. -->
+    @if (!organizationSlug) {
+      <app-no-organisation-address titleKey="auth.login" />
+    } @else {
     <div class="flex items-center justify-center min-h-screen p-6">
       <div class="flex flex-col gap-6 w-full max-w-sm">
         <h1 class="text-xl font-semibold text-center">{{ 'auth.login' | translate }}</h1>
@@ -55,13 +63,6 @@ import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitati
 
         @if (!mfaRequired()) {
           <form [formGroup]="loginForm" (ngSubmit)="onSubmitLogin()" class="flex flex-col gap-4">
-            <div class="flex flex-col gap-1">
-              <label for="organizationSlug" class="text-sm font-medium">
-                {{ 'auth.organization' | translate }}
-              </label>
-              <input pInputText id="organizationSlug" formControlName="organizationSlug" />
-            </div>
-
             <div class="flex flex-col gap-1">
               <label for="email" class="text-sm font-medium">{{ 'auth.email' | translate }}</label>
               <input pInputText id="email" type="email" formControlName="email" />
@@ -106,6 +107,7 @@ import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitati
         }
       </div>
     </div>
+    }
   `,
 })
 export class LoginComponent {
@@ -114,6 +116,9 @@ export class LoginComponent {
   private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+
+  /** ACC-139 — the organisation this address names, or null for none. */
+  protected readonly organizationSlug = inject(TenantHostService).slug;
 
   /** Set when the idle rule ended the last session (IdleService). */
   protected readonly signedOutForIdle =
@@ -140,7 +145,6 @@ export class LoginComponent {
   readonly mfaRequired = signal(false);
 
   readonly loginForm = this.fb.group({
-    organizationSlug: ['', [Validators.required]],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required]],
   });
@@ -177,8 +181,8 @@ export class LoginComponent {
     this.submitting.set(true);
     this.error.set(null);
 
-    const { organizationSlug, email, password } = this.loginForm.getRawValue();
-    this.authService.login(organizationSlug!, email!, password!).subscribe({
+    const { email, password } = this.loginForm.getRawValue();
+    this.authService.login(email!, password!).subscribe({
       next: (result) => {
         this.submitting.set(false);
         if (result.mfaRequired) {
