@@ -3,7 +3,13 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { AuthService, InvitationOrganization, MeResponse } from './auth.service';
+import { TenantHostService } from '../tenant/tenant-host';
+import {
+  AuthService,
+  InvitationOrganization,
+  MeResponse,
+  NO_ORGANISATION_IN_ADDRESS,
+} from './auth.service';
 import { LanguageService } from './language.service';
 
 // ACC-94 (D2) — the display context (tenant time zone, Hijri preference) that
@@ -77,6 +83,7 @@ describe('AuthService — display preferences (ACC-94)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: LanguageService, useValue: { use: () => of(null) } },
+        { provide: TenantHostService, useValue: { slug: 'acme' } },
       ],
     });
     service = TestBed.inject(AuthService);
@@ -98,7 +105,7 @@ describe('AuthService — display preferences (ACC-94)', () => {
 
   it('a fresh login asks /auth/me once and applies its display context', () => {
     let finished = false;
-    service.login('acme', 'a@example.com', 'pw').subscribe(() => (finished = true));
+    service.login('a@example.com', 'pw').subscribe(() => (finished = true));
 
     httpMock.expectOne(LOGIN_URL).flush({ success: true, user: { id: 'user-1', email: 'a@example.com', name: 'A User' }, language: 'ar' });
     expect(finished).toBe(false);
@@ -111,7 +118,7 @@ describe('AuthService — display preferences (ACC-94)', () => {
 
   it('a failed /auth/me after a successful login does not fail the login', () => {
     let result: unknown;
-    service.login('acme', 'a@example.com', 'pw').subscribe((r) => (result = r));
+    service.login('a@example.com', 'pw').subscribe((r) => (result = r));
 
     httpMock.expectOne(LOGIN_URL).flush({ success: true, user: { id: 'user-1', email: 'a@example.com', name: 'A User' }, language: 'en' });
     httpMock.expectOne(ME_URL).flush('boom', { status: 500, statusText: 'Server Error' });
@@ -122,7 +129,7 @@ describe('AuthService — display preferences (ACC-94)', () => {
   });
 
   it('an MFA challenge does not ask /auth/me (there is no session yet)', () => {
-    service.login('acme', 'a@example.com', 'pw').subscribe();
+    service.login('a@example.com', 'pw').subscribe();
     httpMock.expectOne(LOGIN_URL).flush({ mfaRequired: true });
     httpMock.expectNone(ME_URL);
     expect(service.displayPreferences()).toBeNull();
@@ -159,5 +166,49 @@ describe('AuthService — display preferences (ACC-94)', () => {
 
     expect(service.isAuthenticated()).toBe(true);
     expect(service.displayPreferences()).not.toBeNull();
+  });
+});
+
+// ACC-139 — the organisation is the address, never an argument.
+describe('AuthService — the organisation comes from the address (ACC-139)', () => {
+  let httpMock: HttpTestingController;
+
+  function serviceAt(slug: string | null): AuthService {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: LanguageService, useValue: { use: () => of(null) } },
+        { provide: TenantHostService, useValue: { slug } },
+      ],
+    });
+    httpMock = TestBed.inject(HttpTestingController);
+    return TestBed.inject(AuthService);
+  }
+
+  afterEach(() => httpMock.verify());
+
+  it("sends the address's organisation with a sign-in", () => {
+    serviceAt('al-nakheel').login('a@example.com', 'pw').subscribe();
+    const req = httpMock.expectOne(`${environment.apiUrl}/auth/login`);
+    expect(req.request.body).toEqual({ organizationSlug: 'al-nakheel', email: 'a@example.com', password: 'pw' });
+    req.flush({ mfaRequired: true });
+  });
+
+  it("sends the address's organisation with a password reset", () => {
+    serviceAt('al-manara').forgotPassword('a@example.com').subscribe();
+    const req = httpMock.expectOne(`${environment.apiUrl}/auth/forgot-password`);
+    expect(req.request.body).toEqual({ organizationSlug: 'al-manara', email: 'a@example.com' });
+    req.flush(null);
+  });
+
+  it('sends nothing when the address names no organisation', () => {
+    const service = serviceAt(null);
+    const errors: string[] = [];
+    service.login('a@example.com', 'pw').subscribe({ error: (e: Error) => errors.push(e.message) });
+    service.forgotPassword('a@example.com').subscribe({ error: (e: Error) => errors.push(e.message) });
+    httpMock.expectNone(() => true);
+    expect(errors).toEqual([NO_ORGANISATION_IN_ADDRESS, NO_ORGANISATION_IN_ADDRESS]);
   });
 });

@@ -9,8 +9,9 @@
 
 import { Injectable, Injector, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, map, of, switchMap, tap } from 'rxjs';
+import { Observable, catchError, map, of, switchMap, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { TenantHostService } from '../tenant/tenant-host';
 import { SessionRenewalService } from './session-renewal.service';
 import { LanguageService } from './language.service';
 
@@ -64,11 +65,21 @@ export interface MfaSetupResult {
   backupCodes: string[];
 }
 
+/**
+ * ACC-139 — sign-in and password reset refuse, without a request, when the
+ * address names no organisation. The screens never get here (they show a note
+ * instead of a form); this is the backstop, so nothing ever posts an empty slug.
+ */
+export const NO_ORGANISATION_IN_ADDRESS = 'This address names no organisation.';
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/auth`;
   private readonly sessionRenewalService = inject(SessionRenewalService);
+  // ACC-139 — the organisation for sign-in and password reset is the address
+  // the page was opened at. Reads only DOCUMENT, so it is safe to inject here.
+  private readonly tenantHost = inject(TenantHostService);
 
   // Resolved lazily via Injector, NOT injected as a constructor-time field
   // (ACC-19) — AuthService is the first thing provideAppInitializer
@@ -101,7 +112,9 @@ export class AuthService {
     return this._currentUser() !== null;
   }
 
-  login(organizationSlug: string, email: string, password: string): Observable<LoginResult> {
+  login(email: string, password: string): Observable<LoginResult> {
+    const organizationSlug = this.tenantHost.slug;
+    if (!organizationSlug) return throwError(() => new Error(NO_ORGANISATION_IN_ADDRESS));
     return this.http
       .post<LoginResult>(`${this.baseUrl}/login`, { organizationSlug, email, password })
       .pipe(switchMap((result) => this.applyLoginResult(result)));
@@ -131,7 +144,9 @@ export class AuthService {
     return this.http.post<void>(`${this.baseUrl}/accept-invitation`, { token, password });
   }
 
-  forgotPassword(organizationSlug: string, email: string): Observable<void> {
+  forgotPassword(email: string): Observable<void> {
+    const organizationSlug = this.tenantHost.slug;
+    if (!organizationSlug) return throwError(() => new Error(NO_ORGANISATION_IN_ADDRESS));
     return this.http.post<void>(`${this.baseUrl}/forgot-password`, { organizationSlug, email });
   }
 
