@@ -372,6 +372,7 @@ model Organization {
   orgPositions           OrgPosition[]
   tasks                  Task[]
   taskEvidence           TaskEvidence[]
+  storedFiles            StoredFile[]
   taskRequests           TaskRequest[]
   notifications          Notification[]
   setupConditions        SetupCondition[]
@@ -507,9 +508,12 @@ model User {
   tasksReopened                   Task[]                     @relation("TaskReopenedBy")
   taskAssignments                 TaskAssignee[]             @relation("TaskAssigneeUser")
   taskAssignmentsMade             TaskAssignee[]             @relation("TaskAssigneeAssignedBy")
-  taskEvidenceUploaded            TaskEvidence[]
-  taskRequestsMade                TaskRequest[]   @relation("TaskRequestRequestedBy")
-  taskRequestsDecided             TaskRequest[]   @relation("TaskRequestDecidedBy")
+  taskEvidenceUploaded            TaskEvidence[]             @relation("TaskEvidenceUploadedBy")
+  taskEvidenceDeleted             TaskEvidence[]             @relation("TaskEvidenceDeletedBy")
+  storedFilesUploaded             StoredFile[]               @relation("StoredFileUploadedBy")
+  storedFilesDeleted              StoredFile[]               @relation("StoredFileDeletedBy")
+  taskRequestsMade                TaskRequest[]              @relation("TaskRequestRequestedBy")
+  taskRequestsDecided             TaskRequest[]              @relation("TaskRequestDecidedBy")
   notifications                   Notification[]
   committeeMembers                CommitteeMember[]
   committeeMembershipEvents       CommitteeMembershipEvent[]
@@ -1496,12 +1500,69 @@ model TaskEvidence {
   uploadedById   String
   uploadedAt     DateTime             @default(now())
 
+  // ACC-177 — file evidence (type ATTACHMENT, labelled "File") points at its
+  // StoredFile; the legacy s3Key/fileName/fileSize/mimeType columns above stay
+  // unused and are dropped by a later contracting migration.
+  storedFileId String?   @unique
+  // ACC-177 — evidence is soft-deleted, by its uploader while the task is open
+  // or on hold. Every evidence count excludes a deleted row.
+  deletedAt    DateTime?
+  deletedById  String?
+
   organization Organization @relation(fields: [organizationId], references: [id])
   task         Task         @relation(fields: [taskId], references: [id])
-  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  uploadedBy   User         @relation("TaskEvidenceUploadedBy", fields: [uploadedById], references: [id])
+  storedFile   StoredFile?  @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
+  deletedBy    User?        @relation("TaskEvidenceDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([taskId])
+}
+
+// ---------------------------------------------------------------------------
+// File storage (ACC-177)
+// ---------------------------------------------------------------------------
+
+// Which record a stored file belongs to. Meetings and documents add values
+// here when they reuse file storage.
+enum StoredFileOwnerType {
+  TASK
+}
+
+// One uploaded file. Each row remembers the provider and location it was
+// written to — bucket and endpoint for S3/MinIO, rootPath for a local folder —
+// so switching an organisation's provider affects new uploads only.
+//
+// sizeBytes of the live rows (deletedAt null) is the organisation's usage,
+// counted live against Organization.maxStorageGb; nothing caches it.
+// A delete removes the bytes and keeps this row, soft-deleted, as the record.
+model StoredFile {
+  id             String              @id @default(cuid())
+  organizationId String
+  provider       StorageProvider
+  bucket         String?
+  endpoint       String?
+  rootPath       String?
+  storageKey     String
+  originalName   String
+  mimeType       String
+  sizeBytes      Int
+  sha256         String              @db.Char(64)
+  ownerType      StoredFileOwnerType
+  ownerId        String
+  uploadedById   String
+  uploadedAt     DateTime            @default(now())
+  deletedAt      DateTime?
+  deletedById    String?
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  uploadedBy   User          @relation("StoredFileUploadedBy", fields: [uploadedById], references: [id])
+  deletedBy    User?         @relation("StoredFileDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  taskEvidence TaskEvidence?
+
+  @@unique([organizationId, storageKey])
+  @@index([organizationId, deletedAt])
+  @@index([ownerType, ownerId])
 }
 
 // ---------------------------------------------------------------------------
