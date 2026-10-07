@@ -130,6 +130,12 @@ const ALLOWLIST = new Map([
     'Clears the chosen due date inside the form. Form state, not a saved change.',
   ],
   [
+    'foundation/tasks/components/task-add-evidence-dialog/task-add-evidence-dialog.component.ts#pi-times',
+    'Takes a chosen file off the upload list before anything is sent (ACC-177). ' +
+      'Local state only; removing evidence already added is the gated trash ' +
+      'button in the evidence list, offered only where the server says canDelete.',
+  ],
+  [
     'layout/impersonation-banner/impersonation-banner.component.ts#pi-times',
     'Ends an impersonation session. Reachable only while impersonating, which ' +
       'PlatformGuard already established; there is no permission that could ' +
