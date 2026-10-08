@@ -4,6 +4,7 @@ import { provideRouter } from '@angular/router';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { DataListColumn, DataListComponent } from './data-list.component';
 import { clientSideSource } from './data-list.source';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 
 /**
  * ACC-120 — column headings must sit over their own data.
@@ -115,6 +116,16 @@ class HostComponent {
 
 describe('DataListComponent — header/row column alignment (ACC-120)', () => {
   let fixture: ComponentFixture<HostComponent>;
+
+  // ACC-184 — LEFT TO RIGHT IS THE PREMISE OF EVERY OFFSET BELOW, so it is set
+  // here rather than assumed. CI failed this file once with the offsets in
+  // mirror order (593 against 369) because an earlier spec in that random order
+  // had left <html dir="rtl">. Setting it in this spec's own beforeEach means
+  // no order can do that again; the helper puts back what was there after.
+  preserveDocumentLanguage();
+  beforeEach(() => {
+    document.documentElement.dir = 'ltr';
+  });
 
   function render(suffix?: string): void {
     TestBed.resetTestingModule();
