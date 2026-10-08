@@ -31,6 +31,8 @@ export const SETUP_CONDITION_TYPES: ActiveSetupConditionType[] = [
   'TASK_WITHOUT_OWNER',
   'ACTING_HEAD_OPEN_ENDED',
   'STORAGE_ALMOST_FULL',
+  'STORAGE_ACCESS_WITHDRAWN',
+  'STORAGE_SECRET_EXPIRING',
 ];
 
 // §13.3. Per type, because it follows from what each detector can read: units
@@ -52,6 +54,10 @@ const AGE_BASIS: Record<ActiveSetupConditionType, SetupConditionAgeBasis> = {
   ACTING_HEAD_OPEN_ENDED: 'OBJECT',
   // FIRST_DETECTED: usage carries no timestamp for crossing 90%.
   STORAGE_ALMOST_FULL: 'FIRST_DETECTED',
+  // OBJECT: Organization.storageAccessLostAt, stamped when access was lost.
+  STORAGE_ACCESS_WITHDRAWN: 'OBJECT',
+  // FIRST_DETECTED: the window opens on a date, with no stamp of its own.
+  STORAGE_SECRET_EXPIRING: 'FIRST_DETECTED',
 };
 
 const SEVERITY_RANK: Record<SetupConditionSeverity, number> = {
