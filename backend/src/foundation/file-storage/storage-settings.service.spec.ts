@@ -242,7 +242,7 @@ describe('StorageSettingsService (ACC-177)', () => {
       process.env['LOCAL_STORAGE_BASE'] = base;
       org('S3', null);
       const result = await service.test('org-a', { provider: 'LOCAL_FILESYSTEM', local: { rootPath: 'probe-root' } });
-      expect(result).toEqual({ ok: true, provider: 'LOCAL_FILESYSTEM', passed: ['configure', 'write', 'read', 'verify', 'delete'], failedStep: null, code: null, message: null });
+      expect(result).toEqual({ ok: true, provider: 'LOCAL_FILESYSTEM', passed: ['configure', 'write', 'read', 'verify', 'delete'], failedStep: null, code: null, message: null, sharepoint: null });
       expect(prisma.organization.update).not.toHaveBeenCalled();
       expect(prisma.organization.updateMany).not.toHaveBeenCalled();
     });
