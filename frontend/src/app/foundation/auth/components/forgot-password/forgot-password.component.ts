@@ -1,93 +1,51 @@
-import { Component, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
-import { InputTextModule } from 'primeng/inputtext';
-import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { AuthService } from '../../../../core/services/auth.service';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
+import { AuthLayoutComponent } from '../auth-layout/auth-layout.component';
 import { NoOrganisationAddressComponent } from '../no-organisation-address/no-organisation-address.component';
 
+/**
+ * Forgot password — ACC-120 slice 9d, on the shared auth layout.
+ *
+ * IT SENDS NOTHING, ON PURPOSE (CC-62, answer 1). Password reset is not served:
+ * the reset email Better Auth would queue carries a relative link to a handler
+ * this API never mounts, and there is no reset screen. So the page used to tell
+ * every visitor "check your inbox" for a link that could not work, and sent real
+ * people that email. It now says plainly that reset by email isn't available,
+ * and points at the administrator. The backend endpoint is unchanged; the reset
+ * flow is its own ticket, after slice 9.
+ *
+ * The route and the "Forgot password?" link on Sign in stay, so the question
+ * still has an answer where people look for it.
+ */
 @Component({
   selector: 'app-forgot-password',
   standalone: true,
-  imports: [
-    ReactiveFormsModule,
-    RouterLink,
-    TranslatePipe,
-    InputTextModule,
-    ButtonModule,
-    MessageModule,
-    NoOrganisationAddressComponent,
-  ],
+  imports: [RouterLink, TranslatePipe, MessageModule, AuthLayoutComponent, NoOrganisationAddressComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <!-- ACC-139 — the organisation is the address; see LoginComponent. -->
     @if (!organizationSlug) {
-      <app-no-organisation-address titleKey="auth.forgotPassword" />
+      <app-no-organisation-address titleKey="auth.forgotPasswordTitle" />
     } @else {
-    <div class="flex items-center justify-center min-h-screen p-6">
-      <div class="flex flex-col gap-6 w-full max-w-sm">
-        <h1 class="text-xl font-semibold text-center">{{ 'auth.forgotPassword' | translate }}</h1>
-
-        @if (submitted()) {
-          <p-message severity="info" [text]="'auth.forgotPasswordSent' | translate" />
-        } @else {
-          <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
-            <div class="flex flex-col gap-1">
-              <label for="email" class="text-sm font-medium">{{ 'auth.email' | translate }}</label>
-              <input pInputText id="email" type="email" formControlName="email" />
-            </div>
-
-            <p-button
-              [label]="'auth.forgotPassword' | translate"
-              type="submit"
-              [loading]="submitting()"
-              styleClass="w-full"
-            />
-          </form>
-        }
-
-        <a routerLink="/login" class="text-sm text-center underline">{{ 'auth.login' | translate }}</a>
-      </div>
-    </div>
+      <app-auth-layout>
+        <h1 class="text-heading font-semibold">{{ 'auth.forgotPasswordTitle' | translate }}</h1>
+        <p-message
+          data-testid="forgot-password-note"
+          severity="info"
+          [attr.role]="'status'"
+          [text]="'auth.forgotPasswordUnavailable' | translate"
+        />
+        <a routerLink="/login" class="text-sm underline self-start">
+          {{ 'auth.signIn.backToSignIn' | translate }}
+        </a>
+      </app-auth-layout>
     }
   `,
 })
 export class ForgotPasswordComponent {
-  private readonly fb = inject(FormBuilder);
-  private readonly authService = inject(AuthService);
-
   /** ACC-139 — the organisation this address names, or null for none. */
   protected readonly organizationSlug = inject(TenantHostService).slug;
-
-  readonly submitting = signal(false);
-  readonly submitted = signal(false);
-
-  readonly form = this.fb.group({
-    email: ['', [Validators.required, Validators.email]],
-  });
-
-  onSubmit(): void {
-    if (this.form.invalid) {
-      this.form.markAllAsTouched();
-      return;
-    }
-    this.submitting.set(true);
-
-    const { email } = this.form.getRawValue();
-    // Always shows the same success state regardless of outcome — the
-    // backend deliberately never reveals whether the org/email exists
-    // (enumeration protection), so the UI shouldn't either.
-    this.authService.forgotPassword(email!).subscribe({
-      next: () => {
-        this.submitting.set(false);
-        this.submitted.set(true);
-      },
-      error: () => {
-        this.submitting.set(false);
-        this.submitted.set(true);
-      },
-    });
-  }
 }

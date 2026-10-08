@@ -941,6 +941,38 @@ logs.
 | `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
 | `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
 
+**What Sign in shows for each (ACC-120 slice 9d).** One sentence per code, in
+the one message slot above the button (`foundation/auth/components/login/
+sign-in-refusal.ts`, a pure function with a spec per branch):
+
+- `INVALID_CREDENTIALS` gets the neutral "Email or password is incorrect".
+- `ACCOUNT_LOCKED` and `RATE_LIMITED` say when to try again. The time is the
+  formatting layer's `relative()` from `lockedUntil` or `retryAfterSeconds`,
+  rounded up to whole minutes, minimum 1. A missing or malformed time gives
+  "Try again later".
+- `ACCOUNT_INACTIVE` and `ORGANIZATION_UNAVAILABLE` each get their own neutral
+  sentence.
+- `MFA_INVALID` sits on the code field, plus "N attempts left for this sign-in"
+  at 1–2.
+- `MFA_EXPIRED` says reload and sign in again; there is no "Start again" yet.
+- Status 0 or 5xx says the API didn't respond, and never reads as a wrong
+  password.
+- Anything else gets a generic sentence.
+
+**The password step's lock sentence says each attempt extends the lock; the
+MFA step's does not**, because they are different locks. A password attempt
+made while locked is recorded as a failure, so it moves the lock
+(`login-attempt.service.ts`). Better Auth's MFA lock is checked BEFORE a code is
+verified or counted (`assertTwoFactorNotLocked()`, two-factor
+`totp/index.mjs:137`), so a code tried while locked does not move
+`twoFactor.lockedUntil`.
+
+**Forgot password sends nothing** (slice 9d). Reset is not served: the email
+Better Auth would queue carries a relative link (`baseURL` is unset, ACC-148)
+to a handler this API never mounts, and there is no reset screen. So the page
+says reset by email isn't available and points at the administrator. The
+endpoint `POST /auth/forgot-password` is unchanged and nothing calls it.
+
 **KNOWN AND ACCEPTED LIMITATION — sign-in reveals whether an ORGANISATION
 exists.** Accepted for now. **ACC-129 made guessing slower, not closed:**
 sign-in is limited to 60 a minute per address (§15.12), deliberately generous

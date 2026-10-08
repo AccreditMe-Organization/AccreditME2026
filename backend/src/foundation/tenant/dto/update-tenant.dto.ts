@@ -77,8 +77,15 @@ export class UpdateTenantDto {
   @IsOptional()
   aiProvider?: 'ANTHROPIC' | 'AZURE_OPENAI' | 'OPENAI' | 'OLLAMA';
 
-  // S3 key — uploaded separately via the existing signed-upload flow, this
-  // field only ever receives the resulting key, never a raw file (ACC-13).
+  // The organisation's logo, as a plain string. Nothing uploads a logo and
+  // nothing shows one: there is no logo upload (ACC-177's file storage does not
+  // cover it), Organization profile stopped sending this field when its S3-key
+  // box was removed, and every place a logo would appear shows the monogram.
+  // Whatever a caller sends here is saved as is (any string up to 500
+  // characters) and returned as is by GET /tenant — it is not checked against
+  // a stored file and is not turned into a signed URL.
+  // Corrected 2026-10-08: this used to describe a "signed-upload flow" that
+  // has never existed.
   @IsString()
   @IsOptional()
   @MaxLength(500)

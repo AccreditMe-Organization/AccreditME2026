@@ -1,19 +1,38 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, ElementRef, computed, inject, signal } from '@angular/core';
 import { Location } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
-import { PasswordModule } from 'primeng/password';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { AuthService } from '../../../../core/services/auth.service';
 import { LANDING_ROUTE } from '../../../../core/navigation/landing-route';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { FormatService } from '../../../../core/formatting/format.service';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { NoOrganisationAddressComponent } from '../no-organisation-address/no-organisation-address.component';
+import { AuthLayoutComponent } from '../auth-layout/auth-layout.component';
+import { FieldComponent } from '../../../../shared/components/field/field.component';
+import { focusFirstInvalid } from '../../../../shared/components/field/reveal-errors';
+import { PasswordInputComponent } from '../../../../shared/components/password-input/password-input.component';
+import { SIGN_IN_REFUSAL_KEYS, SignInRefusal, describeSignInRefusal } from './sign-in-refusal';
 
+/**
+ * Sign in — ACC-120 slice 9d, Template 7 · third screen, on the auth layout
+ * Accept invitation uses (slice 9e).
+ *
+ * The organisation is the address (ACC-139): there is no organisation field,
+ * and an address that names none shows the note instead of a form.
+ *
+ * EACH REFUSAL HAS ITS OWN SENTENCE (sign-in-refusal.ts), in the one message
+ * slot above Sign in, replacing the last. A wrong MFA code is the exception:
+ * it sits on the code field, which stays filled.
+ *
+ * THE MFA STEP IS RESTYLED, NOT CHANGED: the same form, the same request, and
+ * no "Start again" (CC-62, answer 3).
+ */
 @Component({
   selector: 'app-login',
   standalone: true,
@@ -22,10 +41,12 @@ import { NoOrganisationAddressComponent } from '../no-organisation-address/no-or
     RouterLink,
     TranslatePipe,
     InputTextModule,
-    PasswordModule,
     ButtonModule,
     MessageModule,
     NoOrganisationAddressComponent,
+    AuthLayoutComponent,
+    FieldComponent,
+    PasswordInputComponent,
   ],
   template: `
     <!-- ACC-139 — the organisation is the address. One that names none gets a
@@ -33,9 +54,8 @@ import { NoOrganisationAddressComponent } from '../no-organisation-address/no-or
     @if (!organizationSlug) {
       <app-no-organisation-address titleKey="auth.login" />
     } @else {
-    <div class="flex items-center justify-center min-h-screen p-6">
-      <div class="flex flex-col gap-6 w-full max-w-sm">
-        <h1 class="text-xl font-semibold text-center">{{ 'auth.login' | translate }}</h1>
+      <app-auth-layout>
+        <h1 class="text-heading font-semibold">{{ 'auth.login' | translate }}</h1>
 
         <!-- ACC-122 — why they are looking at this page. Without it, an idle
              sign-out is indistinguishable from the session simply breaking,
@@ -57,56 +77,103 @@ import { NoOrganisationAddressComponent } from '../no-organisation-address/no-or
           />
         }
 
-        @if (error()) {
-          <p-message severity="error" [text]="error()! | translate" />
-        }
-
         @if (!mfaRequired()) {
-          <form [formGroup]="loginForm" (ngSubmit)="onSubmitLogin()" class="flex flex-col gap-4">
-            <div class="flex flex-col gap-1">
-              <label for="email" class="text-sm font-medium">{{ 'auth.email' | translate }}</label>
-              <input pInputText id="email" type="email" formControlName="email" />
-            </div>
+          <form
+            [formGroup]="loginForm"
+            (ngSubmit)="onSubmitLogin()"
+            novalidate
+            class="flex flex-col gap-4"
+          >
+            <am-field
+              [label]="'auth.email' | translate"
+              inputId="email"
+              [control]="loginForm.controls.email"
+              [errorMessages]="emailErrors"
+            >
+              <input
+                pInputText
+                id="email"
+                type="email"
+                formControlName="email"
+                autocomplete="username"
+                class="w-full"
+              />
+            </am-field>
 
-            <div class="flex flex-col gap-1">
-              <label for="password" class="text-sm font-medium">{{ 'auth.password' | translate }}</label>
-              <p-password
+            <am-field
+              [label]="'auth.password' | translate"
+              inputId="password"
+              [control]="loginForm.controls.password"
+              [errorMessages]="passwordErrors"
+            >
+              <am-password-input
                 inputId="password"
                 formControlName="password"
-                [feedback]="false"
-                [toggleMask]="true"
-                styleClass="w-full"
+                autocomplete="current-password"
               />
-            </div>
+            </am-field>
+
+            <a routerLink="/forgot-password" class="text-sm underline self-start">
+              {{ 'auth.forgotPassword' | translate }}
+            </a>
+
+            @if (slotMessage(); as message) {
+              <p-message
+                data-testid="sign-in-message"
+                [severity]="message.look"
+                [text]="message.text"
+              />
+            }
 
             <p-button
-              [label]="'auth.login' | translate"
               type="submit"
+              [label]="'auth.login' | translate"
               [loading]="submitting()"
               styleClass="w-full"
             />
-
-            <a routerLink="/forgot-password" class="text-sm text-center underline">
-              {{ 'auth.forgotPassword' | translate }}
-            </a>
           </form>
         } @else {
-          <form [formGroup]="mfaForm" (ngSubmit)="onSubmitMfa()" class="flex flex-col gap-4">
-            <div class="flex flex-col gap-1">
-              <label for="code" class="text-sm font-medium">{{ 'auth.mfaCode' | translate }}</label>
-              <input pInputText id="code" formControlName="code" maxlength="6" />
-            </div>
+          <form
+            [formGroup]="mfaForm"
+            (ngSubmit)="onSubmitMfa()"
+            novalidate
+            class="flex flex-col gap-4"
+          >
+            <am-field
+              [label]="'auth.mfaCode' | translate"
+              inputId="code"
+              [control]="mfaForm.controls.code"
+              [hint]="'auth.signIn.mfaHint' | translate"
+              [errorMessages]="codeErrors"
+            >
+              <input
+                pInputText
+                id="code"
+                formControlName="code"
+                maxlength="6"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                class="w-full"
+              />
+            </am-field>
+
+            @if (slotMessage(); as message) {
+              <p-message
+                data-testid="sign-in-message"
+                [severity]="message.look"
+                [text]="message.text"
+              />
+            }
 
             <p-button
-              [label]="'auth.login' | translate"
               type="submit"
+              [label]="'auth.login' | translate"
               [loading]="submitting()"
               styleClass="w-full"
             />
           </form>
         }
-      </div>
-    </div>
+      </app-auth-layout>
     }
   `,
 })
@@ -116,6 +183,9 @@ export class LoginComponent {
   private readonly navigationAccessService = inject(NavigationAccessService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** ACC-139 — the organisation this address names, or null for none. */
   protected readonly organizationSlug = inject(TenantHostService).slug;
@@ -141,8 +211,9 @@ export class LoginComponent {
   private readonly location = inject(Location);
 
   readonly submitting = signal(false);
-  readonly error = signal<string | null>(null);
   readonly mfaRequired = signal(false);
+  /** The last refusal, or null. A new submit clears it. */
+  readonly refusal = signal<SignInRefusal | null>(null);
 
   readonly loginForm = this.fb.group({
     email: ['', [Validators.required, Validators.email]],
@@ -151,6 +222,35 @@ export class LoginComponent {
 
   readonly mfaForm = this.fb.group({
     code: ['', [Validators.required, Validators.minLength(6), Validators.maxLength(6)]],
+  });
+
+  protected readonly emailErrors = {
+    required: 'auth.signIn.emailRequired',
+    email: 'auth.signIn.emailInvalid',
+  };
+  protected readonly passwordErrors = { required: 'auth.signIn.passwordRequired' };
+  protected readonly codeErrors = {
+    required: 'auth.signIn.codeRequired',
+    minlength: 'auth.signIn.codeRequired',
+    maxlength: 'auth.signIn.codeRequired',
+    mfaInvalid: SIGN_IN_REFUSAL_KEYS.mfaInvalid,
+  };
+
+  /**
+   * What the message slot says. A computed over the refusal, the language and
+   * the formatting layer, so "in 14 minutes" follows a language switch. A wrong
+   * MFA code puts its sentence on the field instead, and the slot carries only
+   * the attempts left, at 1 or 2.
+   */
+  protected readonly slotMessage = computed(() => {
+    const refusal = this.refusal();
+    if (!refusal) return null;
+    if (refusal.onCodeField) {
+      if (refusal.attemptsLeft === null) return null;
+      return { look: 'warn' as const, text: this.format.count('auth.mfaAttemptsLeft', refusal.attemptsLeft) };
+    }
+    const when = refusal.until ? this.format.relative(refusal.until, refusal.at) : '';
+    return { look: refusal.look, text: this.translate.instant(refusal.key, { when }) as string };
   });
 
   constructor() {
@@ -175,11 +275,12 @@ export class LoginComponent {
 
   onSubmitLogin(): void {
     if (this.loginForm.invalid) {
-      this.loginForm.markAllAsTouched();
+      // am-field reveals the errors on submit; focus goes to the first one.
+      focusFirstInvalid(this.loginForm, this.host);
       return;
     }
     this.submitting.set(true);
-    this.error.set(null);
+    this.refusal.set(null);
 
     const { email, password } = this.loginForm.getRawValue();
     this.authService.login(email!, password!).subscribe({
@@ -191,20 +292,20 @@ export class LoginComponent {
         }
         this.redirectAfterLogin();
       },
-      error: () => {
+      error: (err: unknown) => {
         this.submitting.set(false);
-        this.error.set('auth.errorInvalidCredentials');
+        this.refusal.set(describeSignInRefusal(err, 'password'));
       },
     });
   }
 
   onSubmitMfa(): void {
     if (this.mfaForm.invalid) {
-      this.mfaForm.markAllAsTouched();
+      focusFirstInvalid(this.mfaForm, this.host);
       return;
     }
     this.submitting.set(true);
-    this.error.set(null);
+    this.refusal.set(null);
 
     const { code } = this.mfaForm.getRawValue();
     this.authService.verifyMfa(code!).subscribe({
@@ -212,9 +313,17 @@ export class LoginComponent {
         this.submitting.set(false);
         this.redirectAfterLogin();
       },
-      error: () => {
+      error: (err: unknown) => {
         this.submitting.set(false);
-        this.error.set('auth.errorMfaRequired');
+        const refusal = describeSignInRefusal(err, 'mfa');
+        this.refusal.set(refusal);
+        if (refusal.onCodeField) {
+          // On the field, which stays filled: retyping replaces the code.
+          const control = this.mfaForm.controls.code;
+          control.setErrors({ mfaInvalid: true });
+          control.markAsTouched();
+          focusFirstInvalid(this.mfaForm, this.host);
+        }
       },
     });
   }
