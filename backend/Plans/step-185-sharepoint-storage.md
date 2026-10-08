@@ -577,12 +577,20 @@ The questions as asked, kept for the reasoning:
 - [x] Ahmad's answers recorded here (8 Oct: Q1–Q6 as recommended)
 
 **Stage 1 — the setup half (no migration):**
-- [ ] Token client and cache
-- [ ] SharePoint settings fields, with the secret write-only
-- [ ] Test, with a plain reason per step
-- [ ] Q6: only Confirm writes `storageProvider`, with the spec on database writes
-- [ ] `draftProvider`
-- [ ] Specs
+- [x] Token client and cache — plain `fetch`, no MSAL
+- [x] SharePoint settings fields, with the secret write-only
+- [x] Test, with a plain reason per step
+- [x] Q6: only Confirm writes `storageProvider`, with the spec on database
+      writes; mutation-tested (a draft writing it fails 4 specs)
+- [x] `draftProvider`
+- [x] Specs:
+  - backend 114 suites / 2,650 tests; isolation 161; `check:worker-gate` 0;
+  - the log spy is mutation-tested: logging the candidate fails it
+- [x] Smoke test against the real Microsoft, saving nothing:
+  - an unknown tenant gives `SHAREPOINT_TENANT_NOT_FOUND`;
+  - a real tenant with an unknown client gives `SHAREPOINT_CLIENT_NOT_FOUND`;
+  - a site off SharePoint stops at `configure`;
+  - al-manara stays `S3`, with config null
 
 **STOP 1 — live Test on al-manara, never confirmed:**
 - [ ] Ahmad follows the guide on a fresh app and enters the values through a
