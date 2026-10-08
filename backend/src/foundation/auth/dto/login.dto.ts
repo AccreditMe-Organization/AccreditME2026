@@ -4,8 +4,13 @@ import { normaliseEmail } from '../../../common/utils/normalise-email.transform'
 
 // organizationSlug resolves the tenant BEFORE authentication succeeds — there
 // is no JWT yet at login time for TenantGuard to read organizationId from.
-// The Angular login page resolves this from the subdomain in production, or
-// a configured value in local dev — see auth.service.ts's resolveOrganizationId().
+// Nobody types it (ACC-139): the Angular login page takes it from the address
+// the person opened — the one label in front of the base domain,
+// al-nakheel.accreditme.app in production and al-nakheel.localhost:4200
+// locally (frontend core/tenant/tenant-host.ts). A host with no such label
+// shows a note instead of a form, so the request is never sent without one.
+// An unknown slug is answered exactly like a wrong password — see
+// auth.service.ts's resolveOrganizationId().
 export class LoginDto {
   @IsString()
   @IsNotEmpty()

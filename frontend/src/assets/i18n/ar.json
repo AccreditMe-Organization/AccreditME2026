@@ -773,7 +773,7 @@
   "auth": {
     "login": "تسجيل الدخول",
     "logout": "تسجيل الخروج",
-    "organization": "المنظمة",
+    "openOrganisationAddress": "لتسجيل الدخول، افتح عنوان مؤسستك، مثل yourorg.accreditme.app.",
     "email": "البريد الإلكتروني",
     "password": "كلمة المرور",
     "mfaCode": "رمز التحقق",

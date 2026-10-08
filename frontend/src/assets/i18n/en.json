@@ -773,7 +773,7 @@
   "auth": {
     "login": "Log In",
     "logout": "Sign Out",
-    "organization": "Organization",
+    "openOrganisationAddress": "Open your organisation's address to sign in, for example yourorg.accreditme.app.",
     "email": "Email",
     "password": "Password",
     "mfaCode": "Verification Code",

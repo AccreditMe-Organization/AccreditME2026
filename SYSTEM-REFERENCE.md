@@ -7654,7 +7654,14 @@ that is true of what the authoring file DECLARES. The practical rule:
   replicas — belongs in the file.** Editing it in the dashboard produces a
   change the next apply silently reverts, with no record of what was intended.
 
-### 15.10 CORS: one exact origin, and the preview-deployment decision (ACC-128)
+### 15.10 CORS: FRONTEND_URL and each tenant's own origin, and the preview-deployment decision (ACC-128, ACC-139)
+
+> **ACC-139 WIDENED THIS — read the last subsection first.** Until ACC-139 the
+> origin was one exact string, and most of what follows explains why that was
+> right. Every tenant now signs in at its own `https://{slug}.accreditme.app`,
+> so the origin is a function allowing `FRONTEND_URL` **and** those hosts. What
+> is said below about refusals, the 200, the cookie policy and preview
+> deployments all still holds.
 
 `FRONTEND_URL` is the **one** browser origin allowed to send credentialed
 requests, and **the API refuses to start without it**. There is no safe default:
@@ -7716,6 +7723,43 @@ its own `FRONTEND_URL`.
 and set on Railway while the live variable was missing: exactly inverted. It is
 now deleted from the dashboard and undeclared in `.railway/railway.ts`.
 
+#### ACC-139 — every tenant's own origin is reflected, and nothing else is
+
+`buildCorsOptions(frontendOrigin, baseDomain)` passes a FUNCTION origin
+(`isAllowedOrigin()`) that allows exactly two things:
+
+- `FRONTEND_URL`, compared exactly, as before; and
+- `https://{label}.{APP_BASE_DOMAIN}` — https, **one** DNS label, **no port**.
+
+Anything else gets `callback(null, false)`: **no** `Access-Control-Allow-Origin`
+header at all, and the handler still answers 200 — the browser blocks, for the
+reasons above. (Before ACC-139 a refused origin got the *configured* string in
+the header; now it gets none. Both are blocked by the browser; neither reflects
+the caller.)
+
+**This reflects, and that is NOT the reflection ACC-128 refused.** Because
+`credentials: true` forbids `*`, an allowed origin must be echoed back. ACC-128's
+criterion was "refused rather than reflected", and the danger it names is
+reflecting ANY origin — the requester choosing what is echoed. Here only a host
+under a registrable domain **we own** is echoed, and nobody else can create one.
+That is precisely the inverse of `*.vercel.app`, which stays refused: it is a
+public namespace where anyone can create a host.
+
+**No tenant lookup.** Refusing `notatenant.accreditme.app` would be tidiness,
+not security, and would cost a database query on every preflight.
+
+The spec asserts, through a real Nest app: reflected — `https://acme.accreditme.app`
+and `FRONTEND_URL`; not reflected — `https://acme.accreditme.evil`,
+`https://accreditme.app.evil.com`, `https://evilaccreditme.app`,
+`http://acme.accreditme.app`, the apex `https://accreditme.app`,
+`https://a.b.accreditme.app`, `https://acme.accreditme.app:8443`, a punycode
+label, and a near miss of `FRONTEND_URL`. Mutated to drop the https check, the
+`http://` case goes red.
+
+**Locally CORS is not involved at all**: the dev server proxies `/api`
+(`frontend/proxy.conf.js`), so a page on `al-nakheel.localhost:4200` calls the API
+on its own origin (§15.13).
+
 **Both variables are declared in `.railway/railway.ts`'s `env` block, by hand.**
 That block is not decoration: a variable the authoring file does not declare can
 be removed by the next `railway config apply`, and `FRONTEND_URL` is the one
@@ -7760,7 +7804,7 @@ correct one to write.
 | variable | required | rule |
 | -- | -- | -- |
 | `APP_BASE_DOMAIN` | **yes, everywhere** | a bare host — no scheme, path or port; the boot refuses anything else |
-| `APP_LINK_ORIGIN` | no — development only | a **loopback** origin (`http://localhost:4200`); when set, links are `{origin}{path}` with no slug |
+| `APP_LINK_ORIGIN` | no — development only | exactly `http(s)://localhost[:port]`; when set, links are `{scheme}://{slug}.localhost[:port]{path}` (ACC-139) |
 
 **The override is loopback-only, and that is keyed off the VALUE, not the
 environment**, because the environment cannot answer the question: Railway runs
@@ -7769,10 +7813,15 @@ deployed service therefore can only ever point at localhost — visibly broken �
 never send every tenant's invitation to an arbitrary host. The boot logs a
 warning whenever it is set.
 
-**It drops the slug, deliberately, until ACC-139.** `http://{slug}.localhost:4200`
-opens in Chrome, but CORS allows exactly `FRONTEND_URL`, so the page would load
-and every API call from it would fail — an invitation that opens and cannot be
-accepted.
+**Since ACC-139 a local link carries the slug**: `http://al-nakheel.localhost:4200/…`.
+It must — the organisation is now read from the address, so a link without it
+would open the "open your organisation's address" note. It works because the dev
+server proxies `/api` (§15.13). `127.0.0.1` and `[::1]` are refused at boot, since
+no subdomain can go in front of them; a value that already carries a subdomain is
+refused too, because the slug comes from the tenant. (Until ACC-139 the override
+dropped the slug, because CORS allowed exactly `FRONTEND_URL`.) The email
+renderer links such a URL only with exactly one label in front of `localhost`, on
+the override's own scheme and port.
 
 **The boot check is `validateBootConfig()`** (`common/config/boot.config.ts`),
 called first in `main.ts`, before `NestFactory.create()` — so a missing value
@@ -7894,6 +7943,64 @@ answer for more than one is in CLAUDE.md (Redis, after ACC-143).
 controllers, and the tenant-isolation suite is service-level. Nothing is
 disabled to achieve that. `test/app.e2e-spec.ts` is the scaffold's "Hello
 World", is not run by CI, and is untouched.
+
+### 15.13 The organisation comes from the address (ACC-139)
+
+**Nobody types the organisation any more.** Every organisation signs in at its
+own address — `al-nakheel.accreditme.app` in production,
+`al-nakheel.localhost:4200` locally — and the sign-in and password-reset screens
+read it from there. The request body still carries `organizationSlug`; only its
+source moved, so the backend's `resolveOrganizationId()` is unchanged.
+
+**The rule** (`frontend/src/app/core/tenant/tenant-host.ts`): the slug is the ONE
+label in front of `environment.baseDomain` (`localhost` in development,
+`accreditme.app` in production — `angular.json`'s production `fileReplacements`
+make `environment.prod.ts` live). It must be a DNS label and not an
+infrastructure label. Read once; the address cannot change without a page load.
+
+| host | slug |
+| -- | -- |
+| `al-nakheel.localhost`, `Al-Nakheel.LOCALHOST` | `al-nakheel` |
+| `platform.localhost`, `platform.accreditme.app` | `platform` — the platform admin's sign-in host |
+| `localhost`, `accreditme.app`, `127.0.0.1` | none |
+| `a.b.localhost`, `www.…`, `api.…`, `-x.…`, `xn--….…` | none |
+
+**A host that names no organisation shows the sign-in frame with a note and no
+form** ("Open your organisation's address to sign in, for example
+yourorg.accreditme.app."). **An unknown slug gets the ordinary form and then the
+neutral `INVALID_CREDENTIALS`** — there is no lookup, so an organisation that
+does not exist is indistinguishable from a wrong password.
+
+**Used ONLY by Sign in and Forgot password.** After sign-in the session's own
+organisation is the authority and nothing compares it with the address. That is
+what lets a platform administrator signed in at `platform.localhost:4200`
+impersonate a tenant and end it: every navigation in that flow is a relative
+path on the same host, and the cookies are host-only. Do not add a comparison.
+
+**Reserved slugs, two lists** (`backend/src/common/tenant/reserved-slugs.ts`):
+`INFRASTRUCTURE_LABELS` (www, api, mail, status, …) are never a tenant and never a
+sign-in host; `PLATFORM_SIGN_IN_LABELS` (`platform`) is not creatable but is a
+valid sign-in host. `CreateTenantDto` refuses both and requires a DNS label (no
+leading or trailing hyphen, no `xn--`). The frontend keeps a copy of the
+infrastructure list; **`npm run check:reserved-slugs` fails CI when the two
+differ**, naming each stray label.
+
+**Locally, the dev server proxies `/api`** (`frontend/proxy.conf.js`, target
+`API_PROXY_TARGET ?? 'http://localhost:3000'`), and `environment.ts`'s `apiUrl`
+is the relative `/api/v1`. That is required, not convenient: the session cookies
+are `SameSite=Strict`, and `al-nakheel.localhost` and `localhost` are different
+sites, so a page on a tenant subdomain calling `localhost:3000` directly would
+never send them. Through the proxy every call is same-origin, and the cookies
+are host-only per subdomain. The refresh cookie's path, `/api/v1/auth/refresh`,
+is unchanged, so it still matches.
+
+**A second checkout** running its own backend on 3001 starts its frontend with
+`$env:API_PROXY_TARGET='http://localhost:3001'; npx ng serve --port 4201` and
+opens `http://al-manara.localhost:4201/login`.
+
+**Production's `apiUrl` is a placeholder** (`environment.prod.ts`): where the API
+is served in production is ACC-130 / ACC-148's decision, and nothing here can be
+verified end to end until ACC-130's wildcard DNS and certificate exist.
 
 ## 16. File Storage — Per Organisation, and File Evidence (ACC-177)
 

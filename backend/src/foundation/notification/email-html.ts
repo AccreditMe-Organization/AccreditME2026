@@ -58,6 +58,21 @@ const URL_IN_TEXT = /https?:\/\/[^\s<>"']+/g;
 // and Arabic (the Arabic comma and semicolon).
 const TRAILING_PUNCTUATION = /[.,;:!?)\u060C\u061B]+$/;
 
+// ACC-139 — local links are built as {scheme}://{slug}.localhost[:port]
+// (buildTenantUrl), so the development origin matches with exactly one label in
+// front of `localhost`, on the same scheme and port. Bare localhost and any
+// other port stay plain text.
+const ONE_LABEL_LOCALHOST = /^[a-z0-9-]+\.localhost$/;
+
+function isLocalTenantUrl(url: URL, devOrigin: string): boolean {
+  const dev = new URL(devOrigin);
+  return (
+    url.protocol === dev.protocol &&
+    url.port === dev.port &&
+    ONE_LABEL_LOCALHOST.test(url.hostname)
+  );
+}
+
 function isProductUrl(raw: string, links: AppLinkConfig): boolean {
   let url: URL;
   try {
@@ -65,7 +80,7 @@ function isProductUrl(raw: string, links: AppLinkConfig): boolean {
   } catch {
     return false;
   }
-  if (links.devOrigin && url.origin === links.devOrigin) return true;
+  if (links.devOrigin && isLocalTenantUrl(url, links.devOrigin)) return true;
   if (url.protocol !== 'https:') return false;
   return (
     url.hostname === links.baseDomain ||

@@ -1468,10 +1468,31 @@ was silently dropped when Step 9 was built; this line exists so the
 ACC-40 concepts don't suffer the same fate.
 
 ### Subdomain Routing
-- Each tenant gets {slug}.accreditme.com
+- Each tenant gets `{slug}.accreditme.app` (Ahmad, 2026-09-28 — `.app`, not
+  `.com`)
+- **The address IS the organisation (ACC-139).** Sign in and Forgot password
+  read the slug from the host and no longer ask for it: the ONE label in front
+  of the base domain (`frontend/src/app/core/tenant/tenant-host.ts`). A host
+  that names none — the apex, `www`, two labels — shows a note and no form; an
+  unknown slug gets the form and then the neutral `INVALID_CREDENTIALS`. After
+  sign-in nothing compares the host with the session, which is what lets a
+  platform admin impersonate from `platform.…` — do not add a comparison.
+- **The platform organisation signs in at `platform.accreditme.app`**
+  (`platform.localhost:4200` locally).
+- **Reserved names**: a slug must be a DNS label and not an infrastructure label
+  (www, api, mail, status, …) or `platform` —
+  `backend/src/common/tenant/reserved-slugs.ts` is the list, and
+  `npm run check:reserved-slugs` keeps the frontend's copy equal to it.
+- **Locally: `http://{slug}.localhost:4200`** (e.g. `al-nakheel.localhost:4200`).
+  The dev server proxies `/api`, which is required: the cookies are
+  `SameSite=Strict` and `{slug}.localhost` is a different site from `localhost`.
+  Emailed links follow (`APP_LINK_ORIGIN` → `http://{slug}.localhost:4200/…`).
+- CORS reflects exactly `FRONTEND_URL` and `https://{one label}.{APP_BASE_DOMAIN}`
+  — a namespace we own, unlike `*.vercel.app` (SYSTEM-REFERENCE §15.10)
 - Subdomain chosen during onboarding — validated unique
 - Cannot be changed after first non-admin user logs in
-- Wildcard SSL via Let's Encrypt (automatic on Railway)
+- Wildcard DNS and certificate: ACC-130. Until it ships, no tenant address
+  resolves in production, and ACC-139 is verifiable only locally
 
 ### User Types — Key Distinction
 ```
