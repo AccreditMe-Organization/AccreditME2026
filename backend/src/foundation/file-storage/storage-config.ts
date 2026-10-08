@@ -23,31 +23,95 @@ export interface ILocalFolderConfig {
   rootPath: string;
 }
 
+/**
+ * ACC-185 — the customer's own SharePoint app and library. The client secret
+ * lives here, encrypted with everything else, and is WRITE-ONLY: GET answers
+ * "set". The site and library are entered either as a URL and a name, or as
+ * the two ids from the customer guide's PowerShell output (Ahmad, Q2).
+ */
+export interface ISharePointConfig {
+  /** A GUID, or a domain such as contoso.onmicrosoft.com. */
+  tenant: string;
+  clientId: string;
+  clientSecret: string;
+  siteUrl: string;
+  libraryName: string;
+  siteId: string;
+  listId: string;
+  /** YYYY-MM-DD, optional — for the 30-day reminder. */
+  secretExpiresOn: string;
+}
+
+/** The kinds a tenant can CHOOSE; the Prisma enum gains SHAREPOINT in stage 3. */
+export type StorageChoice = 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM' | 'SHAREPOINT';
+
 export interface IStorageConfig {
   minio?: Partial<IMinioConfig>;
   local?: Partial<ILocalFolderConfig>;
+  sharepoint?: Partial<ISharePointConfig>;
+  /**
+   * ACC-185 (Q6) — the option a tenant admin is setting up, before
+   * confirmation. Only Confirm writes Organization.storageProvider, for every
+   * option; until then this is how a screen knows which one was chosen.
+   */
+  draftProvider?: StorageChoice;
 }
+
+const CHOICES: readonly StorageChoice[] = ['S3', 'MINIO', 'LOCAL_FILESYSTEM', 'SHAREPOINT'];
 
 export function readStorageConfig(encrypted: string | null): IStorageConfig {
   if (!encrypted) return {};
   const parsed = JSON.parse(decryptTenantConfig(encrypted, getEncryptionKey())) as unknown;
   if (!parsed || typeof parsed !== 'object') return {};
-  const { minio, local } = parsed as IStorageConfig;
+  const { minio, local, sharepoint, draftProvider } = parsed as IStorageConfig;
   return {
     ...(minio && typeof minio === 'object' ? { minio } : {}),
     ...(local && typeof local === 'object' ? { local } : {}),
+    ...(sharepoint && typeof sharepoint === 'object' ? { sharepoint } : {}),
+    ...(draftProvider && CHOICES.includes(draftProvider) ? { draftProvider } : {}),
   };
 }
 
 /**
  * The encrypted column value, or NULL when there is nothing to keep — an
- * organisation on AccreditMe cloud with no MinIO or local settings stores no
- * config at all, exactly as before it confirmed (found in ACC-177's live run:
- * confirming AccreditMe cloud wrote an encrypted "{}").
+ * organisation on AccreditMe cloud with no other settings stores no config at
+ * all, exactly as before it confirmed (found in ACC-177's live run: confirming
+ * AccreditMe cloud wrote an encrypted "{}"). A draft of AccreditMe cloud is
+ * the default, so on its own it is nothing to keep either.
  */
 export function writeStorageConfig(config: IStorageConfig): string | null {
-  if (!config.minio && !config.local) return null;
-  return encryptTenantConfig(config as Record<string, unknown>, getEncryptionKey());
+  const draftProvider = config.draftProvider && config.draftProvider !== 'S3' ? config.draftProvider : undefined;
+  const kept: IStorageConfig = {
+    ...(config.minio ? { minio: config.minio } : {}),
+    ...(config.local ? { local: config.local } : {}),
+    ...(config.sharepoint ? { sharepoint: config.sharepoint } : {}),
+    ...(draftProvider ? { draftProvider } : {}),
+  };
+  if (Object.keys(kept).length === 0) return null;
+  return encryptTenantConfig(kept as Record<string, unknown>, getEncryptionKey());
+}
+
+/**
+ * The SharePoint settings a connection needs: the app's three values, and
+ * either the site URL and library name or the site and library ids. Null when
+ * anything required is missing.
+ */
+export function completeSharePoint(config: IStorageConfig): Required<Pick<ISharePointConfig, 'tenant' | 'clientId' | 'clientSecret'>> &
+  Partial<Pick<ISharePointConfig, 'siteUrl' | 'libraryName' | 'siteId' | 'listId'>> | null {
+  const s = config.sharepoint;
+  if (!s?.tenant || !s.clientId || !s.clientSecret) return null;
+  const byIds = Boolean(s.siteId && s.listId);
+  const byName = Boolean(s.siteUrl && s.libraryName);
+  if (!byIds && !byName) return null;
+  return {
+    tenant: s.tenant,
+    clientId: s.clientId,
+    clientSecret: s.clientSecret,
+    ...(s.siteUrl ? { siteUrl: s.siteUrl } : {}),
+    ...(s.libraryName ? { libraryName: s.libraryName } : {}),
+    ...(s.siteId ? { siteId: s.siteId } : {}),
+    ...(s.listId ? { listId: s.listId } : {}),
+  };
 }
 
 /** A MinIO block with every field set, or null. */

@@ -12,6 +12,7 @@ import { StoredFileService } from './stored-file.service';
 import { StorageSettingsService } from './storage-settings.service';
 import { StorageSettingsController } from './storage-settings.controller';
 import { FilesController } from './files.controller';
+import { SharePointConnector } from '../../providers/storage/sharepoint/sharepoint-connector';
 
 // ACC-177 — file storage per organisation. Modules that attach files import
 // this and use StoredFileService; nothing outside it builds a provider
@@ -24,6 +25,8 @@ import { FilesController } from './files.controller';
   imports: [PrismaModule, QueueModule],
   controllers: [StorageSettingsController, RecycleBinController, FilesController],
   providers: [
+    // ACC-185 — one instance, so its in-memory token cache is shared.
+    { provide: SharePointConnector, useFactory: () => new SharePointConnector() },
     StorageResolverService,
     StoredFileService,
     StorageSettingsService,

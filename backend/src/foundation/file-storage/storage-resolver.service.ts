@@ -1,14 +1,27 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { isAbsolute, resolve, sep } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageProvider } from '../../providers/storage/storage.provider';
 import { S3CompatibleStorageProvider } from '../../providers/storage/s3-compatible-storage.provider';
 import { LocalFilesystemStorageProvider } from '../../providers/storage/local-filesystem-storage.provider';
 import { PrivateEndpointRefusedError } from '../../providers/storage/endpoint-guard';
-import { completeMinio, IMinioConfig, IStorageConfig, readStorageConfig } from './storage-config';
+import {
+  ISharePointLocation,
+  SharePointConnectStep,
+  SharePointConnector,
+} from '../../providers/storage/sharepoint/sharepoint-connector';
+import { parseSiteUrl, SiteUrlRefusedError } from '../../providers/storage/sharepoint/sharepoint-locator';
+import { SharePointStorageProvider } from '../../providers/storage/sharepoint/sharepoint-storage.provider';
+import { completeMinio, completeSharePoint, IMinioConfig, IStorageConfig, readStorageConfig, StorageChoice } from './storage-config';
 import { allowPrivateEndpoints, localStorageBase, platformS3Settings } from './storage-platform-env';
 import { StorageRefusalException } from './storage-refusal';
 
+/**
+ * The kinds Organization.storageProvider and StoredFile.provider can hold
+ * TODAY. SharePoint is a StorageChoice a tenant can set up and test, and joins
+ * this type with the stage-3 migration that adds it to the database enum —
+ * until then TypeScript itself stops anything writing it.
+ */
 export type StorageProviderKind = 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';
 
 /** Where a file lives. Written onto every StoredFile row. */
@@ -47,7 +60,12 @@ export interface IStoredFileLocation {
  */
 @Injectable()
 export class StorageResolverService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // ACC-185 — the customer's SharePoint, through their own app. One shared
+    // instance holds the in-memory token cache; specs pass a fake.
+    @Optional() private readonly sharePoint: SharePointConnector = new SharePointConnector(),
+  ) {}
 
   async forUpload(organizationId: string): Promise<IResolvedStorage> {
     const org = await this.prisma.organization.findFirst({
@@ -114,9 +132,37 @@ export class StorageResolverService {
     }
   }
 
-  /** Which providers this installation offers a tenant. */
-  offeredProviders(): StorageProviderKind[] {
-    return ['S3', 'MINIO', ...(localStorageBase() ? (['LOCAL_FILESYSTEM'] as const) : [])];
+  /**
+   * Which options this installation offers a tenant. SharePoint needs nothing
+   * from the platform — the customer brings their own app — so it is always
+   * offered.
+   */
+  offeredProviders(): StorageChoice[] {
+    return ['S3', 'MINIO', ...(localStorageBase() ? (['LOCAL_FILESYSTEM'] as const) : []), 'SHAREPOINT'];
+  }
+
+  /**
+   * ACC-185 — the customer's SharePoint library: sign in as their app, find
+   * the site and the library, and return a provider for it, reporting each
+   * step as it passes so a connection test can name the one that failed.
+   */
+  async connectSharePoint(
+    config: IStorageConfig,
+    onStep?: (step: SharePointConnectStep) => void,
+  ): Promise<{ provider: SharePointStorageProvider; location: ISharePointLocation }> {
+    const settings = completeSharePoint(config);
+    if (!settings) throw new StorageRefusalException('STORAGE_SETTINGS_INCOMPLETE');
+    return this.sharePoint.connect(settings, onStep);
+  }
+
+  /** The site address must be https on a .sharepoint.com host (Q3). */
+  assertSharePointSiteAllowed(siteUrl: string): void {
+    try {
+      parseSiteUrl(siteUrl);
+    } catch (error) {
+      if (error instanceof SiteUrlRefusedError) throw new StorageRefusalException('SHAREPOINT_SITE_URL_INVALID');
+      throw error;
+    }
   }
 
   /**

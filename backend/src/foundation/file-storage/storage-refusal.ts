@@ -25,7 +25,16 @@ export type StorageRefusalCode =
   | 'FILE_TOO_LARGE'
   | 'FILE_TYPE_NOT_ALLOWED'
   | 'FILE_UNAVAILABLE'
-  | 'FILE_RECORD_GONE';
+  | 'FILE_RECORD_GONE'
+  // ACC-185 — a SharePoint connection test's plain reasons, one per failure.
+  | 'SHAREPOINT_SITE_URL_INVALID'
+  | 'SHAREPOINT_TENANT_NOT_FOUND'
+  | 'SHAREPOINT_CLIENT_NOT_FOUND'
+  | 'SHAREPOINT_SECRET_INVALID'
+  | 'SHAREPOINT_APP_DISABLED'
+  | 'SHAREPOINT_SITE_NOT_FOUND'
+  | 'SHAREPOINT_LIBRARY_NOT_FOUND'
+  | 'SHAREPOINT_NO_WRITE_ACCESS';
 
 const STATUS: Readonly<Record<StorageRefusalCode, HttpStatus>> = {
   STORAGE_NOT_CONFIRMED: HttpStatus.CONFLICT,
@@ -44,6 +53,14 @@ const STATUS: Readonly<Record<StorageRefusalCode, HttpStatus>> = {
   FILE_TYPE_NOT_ALLOWED: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
   FILE_UNAVAILABLE: HttpStatus.CONFLICT,
   FILE_RECORD_GONE: HttpStatus.CONFLICT,
+  SHAREPOINT_SITE_URL_INVALID: HttpStatus.BAD_REQUEST,
+  SHAREPOINT_TENANT_NOT_FOUND: HttpStatus.BAD_REQUEST,
+  SHAREPOINT_CLIENT_NOT_FOUND: HttpStatus.BAD_REQUEST,
+  SHAREPOINT_SECRET_INVALID: HttpStatus.BAD_REQUEST,
+  SHAREPOINT_APP_DISABLED: HttpStatus.BAD_REQUEST,
+  SHAREPOINT_SITE_NOT_FOUND: HttpStatus.BAD_REQUEST,
+  SHAREPOINT_LIBRARY_NOT_FOUND: HttpStatus.BAD_REQUEST,
+  SHAREPOINT_NO_WRITE_ACCESS: HttpStatus.BAD_REQUEST,
 };
 
 /** ONE message per code, and the only place a refusal's wording is written. */
@@ -64,6 +81,14 @@ export const STORAGE_REFUSAL_MESSAGES: Readonly<Record<StorageRefusalCode, strin
   FILE_TYPE_NOT_ALLOWED: "This type of file can't be uploaded",
   FILE_UNAVAILABLE: 'This file is no longer available from its storage location',
   FILE_RECORD_GONE: 'The record this file came from no longer exists, so it cannot be restored',
+  SHAREPOINT_SITE_URL_INVALID: "Enter the SharePoint site's address, starting https:// and on a .sharepoint.com host",
+  SHAREPOINT_TENANT_NOT_FOUND: "Microsoft doesn't recognise this tenant ID",
+  SHAREPOINT_CLIENT_NOT_FOUND: "Wrong tenant or client ID: this app isn't registered in that tenant",
+  SHAREPOINT_SECRET_INVALID: 'The client secret is invalid or has expired',
+  SHAREPOINT_APP_DISABLED: 'The app is disabled in your Microsoft tenant',
+  SHAREPOINT_SITE_NOT_FOUND: 'Site not found, or the app has no access to it',
+  SHAREPOINT_LIBRARY_NOT_FOUND: 'Library not found on this site, or the app has no access to it',
+  SHAREPOINT_NO_WRITE_ACCESS: "The app can see the library but can't add files to it. Give it write access",
 };
 
 export interface StorageRefusalDetails {

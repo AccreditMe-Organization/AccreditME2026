@@ -4,7 +4,12 @@ import { Readable } from 'stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { StorageProvider } from '../../providers/storage/storage.provider';
-import { completeMinio, IStorageConfig, readStorageConfig, writeStorageConfig } from './storage-config';
+import { GraphError } from '../../providers/storage/sharepoint/graph-client';
+import { MicrosoftSignInError } from '../../providers/storage/sharepoint/microsoft-identity';
+import { ISharePointLocation, SharePointStepError } from '../../providers/storage/sharepoint/sharepoint-connector';
+import { NotFoundInSharePointError, SiteUrlRefusedError } from '../../providers/storage/sharepoint/sharepoint-locator';
+import { completeMinio, completeSharePoint, IStorageConfig, readStorageConfig, StorageChoice, writeStorageConfig } from './storage-config';
+import { StorageRefusalCode } from './storage-refusal';
 import { maxUploadBytes } from './storage-platform-env';
 import { StorageRefusalException } from './storage-refusal';
 import { isPrivateEndpointRefusal, StoredFileService } from './stored-file.service';
@@ -14,6 +19,9 @@ import { StorageChangeRequestDto, TestStorageSettingsDto, UpdateStorageSettingsD
 import { IStorageSettings, IStorageTestResult, StorageTestStep } from './interfaces/storage-settings.interface';
 
 const STEP_TIMEOUT_MS = 10_000;
+// A SharePoint step may wait out Microsoft's throttling (up to 20 s across
+// 3 attempts) on top of the request itself.
+const SHAREPOINT_STEP_TIMEOUT_MS = 60_000;
 
 type SettingsOrg = {
   storageProvider: StorageProviderKind;
@@ -42,6 +50,11 @@ type SettingsOrg = {
  * SECRETS ARE WRITE-ONLY, and ACCREDITME'S OWN SETTINGS ARE NEVER SHOWN: for
  * AccreditMe cloud a tenant sees only the provider, never its region, bucket
  * or endpoint.
+ *
+ * ONLY CONFIRM WRITES Organization.storageProvider (ACC-185, Ahmad's Q6), for
+ * every option. A draft records the option being set up as `draftProvider`
+ * inside the config, and a test writes nothing at all. SharePoint is tested
+ * here, but confirmed only once the database enum carries it (ACC-185 stage 3).
  */
 @Injectable()
 export class StorageSettingsService {
@@ -74,6 +87,19 @@ export class StorageSettingsService {
         secretAccessKey: config.minio?.secretAccessKey ? 'set' : null,
       },
       local: { rootPath: config.local?.rootPath ?? null },
+      // The customer's own tenant, site and library may be shown to them; the
+      // secret only as "set".
+      sharepoint: {
+        tenant: config.sharepoint?.tenant ?? null,
+        clientId: config.sharepoint?.clientId ?? null,
+        clientSecret: config.sharepoint?.clientSecret ? 'set' : null,
+        siteUrl: config.sharepoint?.siteUrl ?? null,
+        libraryName: config.sharepoint?.libraryName ?? null,
+        siteId: config.sharepoint?.siteId ?? null,
+        listId: config.sharepoint?.listId ?? null,
+        secretExpiresOn: config.sharepoint?.secretExpiresOn ?? null,
+      },
+      draftProvider: org.storageConfirmedAt ? null : (config.draftProvider ?? null),
       usage: {
         // AccreditMe cloud only — the only storage that counts toward the limit.
         usedBytes: await this.storedFiles.cloudUsageBytes(this.prisma, organizationId),
@@ -90,19 +116,25 @@ export class StorageSettingsService {
   async confirm(organizationId: string, dto: UpdateStorageSettingsDto, actorId: string): Promise<IStorageSettings> {
     const org = await this.loadOrg(organizationId);
     if (org.storageConfirmedAt) throw new StorageRefusalException('STORAGE_ALREADY_CONFIRMED');
+    // ACC-185 stage 1: SharePoint can be saved and tested, not yet confirmed —
+    // the database enum gains SHAREPOINT with stage 3's migration, and a
+    // confirmed SHAREPOINT row on the shared database would break the
+    // deployed code's reads of that organisation (ACC-173's rule).
+    if (dto.provider === 'SHAREPOINT') throw new StorageRefusalException('STORAGE_PROVIDER_NOT_ALLOWED');
+    const provider: StorageProviderKind = dto.provider;
     const stored = readStorageConfig(org.storageConfig);
     const next = this.merge(stored, dto);
-    this.assertUsable(dto.provider, next);
-    if (dto.provider !== 'S3') await this.assertTestPasses(organizationId, dto.provider, next);
+    this.assertUsable(provider, next);
+    if (provider !== 'S3') await this.assertTestPasses(organizationId, provider, next);
 
     const now = new Date();
     // Guarded on storageConfirmedAt still being null, so two admins confirming
-    // at once cannot both win.
+    // at once cannot both win. The ONE place storageProvider is written.
     const saved = await this.prisma.organization.updateMany({
       where: { id: organizationId, storageConfirmedAt: null },
       data: {
-        storageProvider: dto.provider,
-        storageConfig: writeStorageConfig(next),
+        storageProvider: provider,
+        storageConfig: writeStorageConfig({ ...next, draftProvider: undefined }),
         storageConfirmedAt: now,
         storageConfirmedById: actorId,
       },
@@ -116,34 +148,41 @@ export class StorageSettingsService {
       actorId,
       tenantId: organizationId,
       before: { storageProvider: org.storageProvider, storageConfirmedAt: null },
-      after: { storageProvider: dto.provider, storageConfirmedAt: now.toISOString() },
+      after: { storageProvider: provider, storageConfirmedAt: now.toISOString() },
       metadata: { event: 'storage_confirmed', changedFields: changedFields(stored, next) },
     });
     return this.get(organizationId);
   }
 
   /**
-   * Before confirmation: saves a draft (it unlocks nothing). After: only new
-   * keys for the same MinIO endpoint and bucket, after a passing test —
-   * anything else is AccreditMe's to change.
+   * Before confirmation: saves a draft (it unlocks nothing), recording the
+   * option being set up as `draftProvider`. After: only new keys for the same
+   * MinIO endpoint and bucket, after a passing test — anything else is
+   * AccreditMe's to change.
+   *
+   * NEVER writes Organization.storageProvider (Q6): a draft only names its
+   * option, and once confirmed the provider cannot change here at all.
    */
   async update(organizationId: string, dto: UpdateStorageSettingsDto, actorId: string): Promise<IStorageSettings> {
     const org = await this.loadOrg(organizationId);
     const stored = readStorageConfig(org.storageConfig);
-    const next = this.merge(stored, dto);
+    const merged = this.merge(stored, dto);
 
+    let next: IStorageConfig;
     if (org.storageConfirmedAt) {
-      this.assertOnlyKeysChange(org.storageProvider, stored, dto.provider, next);
-      if (changedFields(stored, next).length > 0) {
-        await this.assertTestPasses(organizationId, dto.provider, next);
+      this.assertOnlyKeysChange(org.storageProvider, stored, dto.provider, merged);
+      if (changedFields(stored, merged).length > 0) {
+        await this.assertTestPasses(organizationId, dto.provider, merged);
       }
+      next = merged;
     } else {
-      this.assertUsable(dto.provider, next);
+      this.assertUsable(dto.provider, merged);
+      next = { ...merged, draftProvider: dto.provider };
     }
 
     await this.prisma.organization.update({
       where: { id: organizationId },
-      data: { storageProvider: dto.provider, storageConfig: writeStorageConfig(next) },
+      data: { storageConfig: writeStorageConfig(next) },
     });
     await this.auditLog.log({
       action: 'UPDATE',
@@ -151,8 +190,10 @@ export class StorageSettingsService {
       objectId: organizationId,
       actorId,
       tenantId: organizationId,
-      before: { storageProvider: org.storageProvider },
-      after: { storageProvider: dto.provider },
+      before: org.storageConfirmedAt
+        ? { storageProvider: org.storageProvider }
+        : { draftProvider: stored.draftProvider ?? null },
+      after: org.storageConfirmedAt ? { storageProvider: org.storageProvider } : { draftProvider: dto.provider },
       metadata: {
         event: org.storageConfirmedAt ? 'storage_keys_replaced' : 'storage_settings_updated',
         changedFields: changedFields(stored, next),
@@ -192,36 +233,60 @@ export class StorageSettingsService {
   /**
    * Writes a probe object, reads it back, compares it, deletes it — against
    * the candidate settings if any were sent, the stored ones otherwise.
-   * SAVES NOTHING. Reports the first step that failed.
+   * SAVES NOTHING, and writes nothing to the organisation (Q6). Reports the
+   * first step that failed.
+   *
+   * Which option is tested: the one named, else the confirmed provider, else
+   * the draft being set up.
    */
   async test(organizationId: string, dto: TestStorageSettingsDto = {}): Promise<IStorageTestResult> {
     const org = await this.loadOrg(organizationId);
     const stored = readStorageConfig(org.storageConfig);
-    return this.runTest(organizationId, dto.provider ?? org.storageProvider, this.merge(stored, dto));
+    const provider: StorageChoice =
+      dto.provider ?? (org.storageConfirmedAt ? org.storageProvider : (stored.draftProvider ?? org.storageProvider));
+    return this.runTest(organizationId, provider, this.merge(stored, dto));
   }
 
-  private async runTest(organizationId: string, provider: StorageProviderKind, candidate: IStorageConfig): Promise<IStorageTestResult> {
+  private async runTest(organizationId: string, provider: StorageChoice, candidate: IStorageConfig): Promise<IStorageTestResult> {
     const passed: StorageTestStep[] = [];
+    let sharepoint: ISharePointLocation | null = null;
     const fail = (step: StorageTestStep, error: unknown): IStorageTestResult => {
-      const refusal = this.asRefusal(error, step);
+      const refusal = this.asRefusal(error, step, provider);
       const body = refusal.getResponse() as { code: string; message: string };
-      return { ok: false, provider, passed, failedStep: step, code: body.code, message: body.message };
+      return { ok: false, provider, passed, failedStep: step, code: body.code, message: body.message, sharepoint: sharepointView(sharepoint) };
     };
 
     let target: StorageProvider;
+    let timeoutMs = STEP_TIMEOUT_MS;
     try {
       this.assertUsable(provider, candidate);
-      target = this.resolver.forCandidate(provider, candidate).provider;
+      if (provider !== 'SHAREPOINT') target = this.resolver.forCandidate(provider, candidate).provider;
       passed.push('configure');
     } catch (error) {
       return fail('configure', error);
+    }
+
+    if (provider === 'SHAREPOINT') {
+      // token → site → library, each reported as it passes.
+      timeoutMs = SHAREPOINT_STEP_TIMEOUT_MS;
+      try {
+        const connected = await withTimeout(
+          this.resolver.connectSharePoint(candidate, (step) => passed.push(step)),
+          timeoutMs,
+        );
+        target = connected.provider;
+        sharepoint = connected.location;
+      } catch (error) {
+        const step: StorageTestStep = error instanceof SharePointStepError ? error.step : nextSharePointStep(passed);
+        return fail(step, error);
+      }
     }
 
     const key = `${organizationId}/_probe/${randomBytes(12).toString('hex')}.txt`;
     const probe = Buffer.from(`AccreditMe storage check ${randomBytes(16).toString('hex')}\n`, 'utf8');
 
     try {
-      await withTimeout(target.put(key, probe, 'text/plain'));
+      await withTimeout(target!.put(key, probe, 'text/plain'), timeoutMs);
       passed.push('write');
     } catch (error) {
       return fail('write', error);
@@ -229,15 +294,15 @@ export class StorageSettingsService {
 
     let readBack: Buffer;
     try {
-      readBack = await withTimeout(target.getStream(key).then(readAll));
+      readBack = await withTimeout(target!.getStream(key).then(readAll), timeoutMs);
       passed.push('read');
     } catch (error) {
-      await this.bestEffortDelete(target, key);
+      await this.bestEffortDelete(target!, key);
       return fail('read', error);
     }
 
     if (sha256(readBack) !== sha256(probe)) {
-      await this.bestEffortDelete(target, key);
+      await this.bestEffortDelete(target!, key);
       return {
         ok: false,
         provider,
@@ -245,21 +310,22 @@ export class StorageSettingsService {
         failedStep: 'verify',
         code: 'STORAGE_UNAVAILABLE',
         message: 'The file read back did not match the file written',
+        sharepoint: sharepointView(sharepoint),
       };
     }
     passed.push('verify');
 
     try {
-      await withTimeout(target.delete(key));
+      await withTimeout(target!.delete(key), timeoutMs);
       passed.push('delete');
     } catch (error) {
       return fail('delete', error);
     }
 
-    return { ok: true, provider, passed, failedStep: null, code: null, message: null };
+    return { ok: true, provider, passed, failedStep: null, code: null, message: null, sharepoint: sharepointView(sharepoint) };
   }
 
-  private async assertTestPasses(organizationId: string, provider: StorageProviderKind, candidate: IStorageConfig): Promise<void> {
+  private async assertTestPasses(organizationId: string, provider: StorageChoice, candidate: IStorageConfig): Promise<void> {
     const result = await this.runTest(organizationId, provider, candidate);
     if (!result.ok) {
       throw new StorageRefusalException('STORAGE_TEST_FAILED', {
@@ -275,7 +341,7 @@ export class StorageSettingsService {
   private assertOnlyKeysChange(
     storedProvider: StorageProviderKind,
     stored: IStorageConfig,
-    nextProvider: StorageProviderKind,
+    nextProvider: StorageChoice,
     next: IStorageConfig,
   ): void {
     const keys = new Set(['minio.accessKeyId', 'minio.secretAccessKey']);
@@ -295,17 +361,21 @@ export class StorageSettingsService {
       Object.fromEntries(Object.entries(value ?? {}).filter(([, v]) => v !== undefined && v !== '')) as Partial<T>;
     const minio = { ...stored.minio, ...defined(dto.minio) };
     const local = { ...stored.local, ...defined(dto.local) };
+    const sharepoint = { ...stored.sharepoint, ...defined(dto.sharepoint) };
     return {
       ...(Object.keys(minio).length ? { minio } : {}),
       ...(Object.keys(local).length ? { local } : {}),
+      ...(Object.keys(sharepoint).length ? { sharepoint } : {}),
+      ...(stored.draftProvider ? { draftProvider: stored.draftProvider } : {}),
     };
   }
 
   // The chosen provider must be usable as configured. S3 needs nothing from
   // the tenant (it is AccreditMe's bucket); MinIO needs every field and an
   // allowed endpoint; Local needs this installation to offer it and a root
-  // inside its base.
-  private assertUsable(provider: StorageProviderKind, config: IStorageConfig): void {
+  // inside its base; SharePoint needs the app's three values and either the
+  // site URL and library name or the two ids, with a .sharepoint.com site.
+  private assertUsable(provider: StorageChoice, config: IStorageConfig): void {
     if (provider === 'MINIO') {
       const minio = completeMinio(config);
       if (!minio) throw new StorageRefusalException('STORAGE_SETTINGS_INCOMPLETE');
@@ -318,18 +388,28 @@ export class StorageSettingsService {
       if (!config.local?.rootPath) throw new StorageRefusalException('STORAGE_SETTINGS_INCOMPLETE');
       this.resolver.localRoot(config.local.rootPath);
     }
-    // A MinIO endpoint stored but not selected is still checked, so nothing
+    if (provider === 'SHAREPOINT' && !completeSharePoint(config)) {
+      throw new StorageRefusalException('STORAGE_SETTINGS_INCOMPLETE');
+    }
+    // Settings stored but not selected are still checked, so nothing
     // disallowed is ever saved.
     if (provider !== 'MINIO' && config.minio?.endpoint) {
       this.resolver.assertMinioEndpointAllowed(config.minio.endpoint);
     }
+    if (config.sharepoint?.siteUrl) this.resolver.assertSharePointSiteAllowed(config.sharepoint.siteUrl);
   }
 
-  private asRefusal(error: unknown, step: StorageTestStep): StorageRefusalException {
+  private asRefusal(error: unknown, step: StorageTestStep, provider: StorageChoice): StorageRefusalException {
     if (error instanceof StorageRefusalException) return error;
     if (isPrivateEndpointRefusal(error)) return new StorageRefusalException('STORAGE_ENDPOINT_NOT_ALLOWED');
-    // The provider's own words go to the log only — they can name a host.
-    this.logger.warn(`Storage test failed at ${step}: ${(error as Error)?.name ?? 'Error'} ${(error as Error)?.message ?? ''}`);
+    // The provider's own words go to the log only — they can name a host. Our
+    // SharePoint errors carry a status, a Graph code and AADSTS numbers, never
+    // a secret, a token or a request body.
+    this.logger.warn(`Storage test failed at ${step}: ${describe(error)}`);
+    if (provider === 'SHAREPOINT') {
+      const code = sharePointRefusal(error, step);
+      if (code) return new StorageRefusalException(code);
+    }
     return new StorageRefusalException('STORAGE_UNAVAILABLE');
   }
 
@@ -359,10 +439,11 @@ export class StorageSettingsService {
   }
 }
 
-// The field names that differ, secrets included BY NAME only.
+// The field names that differ, secrets included BY NAME only. draftProvider is
+// not a setting, so it never counts as a change.
 function changedFields(before: IStorageConfig, after: IStorageConfig): string[] {
   const names: string[] = [];
-  for (const block of ['minio', 'local'] as const) {
+  for (const block of ['minio', 'local', 'sharepoint'] as const) {
     const a = (before[block] ?? {}) as Record<string, unknown>;
     const b = (after[block] ?? {}) as Record<string, unknown>;
     for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
@@ -382,10 +463,73 @@ async function readAll(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function withTimeout<T>(work: Promise<T>): Promise<T> {
+function withTimeout<T>(work: Promise<T>, ms: number = STEP_TIMEOUT_MS): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('The storage did not answer in time')), STEP_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error('The storage did not answer in time')), ms);
   });
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** The first SharePoint connection step not yet passed — for a timeout. */
+function nextSharePointStep(passed: StorageTestStep[]): StorageTestStep {
+  return (['token', 'site', 'library'] as const).find((s) => !passed.includes(s)) ?? 'library';
+}
+
+/**
+ * ACC-185 — one plain reason per SharePoint failure, by step. Undefined means
+ * "not something the customer can fix": Microsoft or the network failed, and
+ * the generic STORAGE_UNAVAILABLE is the honest answer.
+ */
+function sharePointRefusal(error: unknown, step: StorageTestStep): StorageRefusalCode | undefined {
+  const cause = error instanceof SharePointStepError ? error.cause : error;
+  if (cause instanceof SiteUrlRefusedError) return 'SHAREPOINT_SITE_URL_INVALID';
+  if (cause instanceof MicrosoftSignInError) {
+    switch (cause.reason) {
+      case 'TENANT_NOT_FOUND':
+        return 'SHAREPOINT_TENANT_NOT_FOUND';
+      case 'CLIENT_NOT_FOUND':
+        return 'SHAREPOINT_CLIENT_NOT_FOUND';
+      case 'SECRET_INVALID':
+        return 'SHAREPOINT_SECRET_INVALID';
+      case 'APP_DISABLED':
+        return 'SHAREPOINT_APP_DISABLED';
+      default:
+        return undefined;
+    }
+  }
+  if (cause instanceof NotFoundInSharePointError) {
+    return cause.what === 'site' ? 'SHAREPOINT_SITE_NOT_FOUND' : 'SHAREPOINT_LIBRARY_NOT_FOUND';
+  }
+  if (cause instanceof GraphError) {
+    const denied = cause.status === 401 || cause.status === 403;
+    const missing = cause.status === 404 || cause.status === 400;
+    if (step === 'site' && (denied || missing)) return 'SHAREPOINT_SITE_NOT_FOUND';
+    if (step === 'library' && (denied || missing)) return 'SHAREPOINT_LIBRARY_NOT_FOUND';
+    if (step === 'write' && denied) return 'SHAREPOINT_NO_WRITE_ACCESS';
+    if (step === 'write' && cause.status === 404) return 'SHAREPOINT_LIBRARY_NOT_FOUND';
+  }
+  return undefined;
+}
+
+/** For the log: a name and a message our own errors keep free of secrets. */
+function describe(error: unknown): string {
+  if (error instanceof SharePointStepError) return `${error.step}: ${describe(error.cause)}`;
+  return `${(error as Error)?.name ?? 'Error'} ${(error as Error)?.message ?? ''}`.trim();
+}
+
+/** What a test found in the customer's SharePoint — theirs, so shown to them. */
+function sharepointView(location: ISharePointLocation | null): IStorageTestResult['sharepoint'] {
+  if (!location) return null;
+  return {
+    tenantId: location.tenantId,
+    siteId: location.siteId,
+    siteName: location.siteName,
+    siteWebUrl: location.siteWebUrl,
+    listId: location.listId,
+    driveId: location.driveId,
+    libraryName: location.libraryName,
+    libraryWebUrl: location.libraryWebUrl,
+    resolvedBy: location.resolvedBy,
+  };
 }

@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/mapped-types';
 import { Type } from 'class-transformer';
-import { IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { IsIn, IsISO8601, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
 
 // ACC-177 — the tenant admin's storage settings. Secrets (both keys) are
 // WRITE-ONLY: sent to change them, omitted to keep the stored ones, and never
@@ -9,7 +9,67 @@ import { IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength, MinLength, Valid
 // The same body is what POST /tenant/storage/test takes as a candidate: it is
 // tested, merged with the stored secrets, and saved nowhere.
 
-export const STORAGE_PROVIDER_VALUES = ['S3', 'MINIO', 'LOCAL_FILESYSTEM'] as const;
+export const STORAGE_PROVIDER_VALUES = ['S3', 'MINIO', 'LOCAL_FILESYSTEM', 'SHAREPOINT'] as const;
+
+const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+// ACC-185 — the customer's own SharePoint app and one library, entered by the
+// tenant admin from the customer guide (docs/customer/sharepoint-storage-setup.md).
+// The client secret is WRITE-ONLY like the MinIO secret: send it to set or
+// replace it, omit it to keep the stored one; GET answers "set".
+export class SharePointSettingsDto {
+  // A GUID, or a domain — Microsoft's token endpoint takes either.
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  @Matches(/^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+)$/, {
+    message: 'tenant must be a tenant ID or a domain such as contoso.onmicrosoft.com',
+  })
+  tenant?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(GUID, { message: 'clientId must be the Application (client) ID' })
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(512)
+  clientSecret?: string;
+
+  // Checked properly (https, a .sharepoint.com host) when used; this only
+  // bounds it.
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  siteUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  libraryName?: string;
+
+  // The fallback inputs (Q2), from the guide's PowerShell output. A site id is
+  // "{host},{site-collection guid},{web guid}".
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9.-]+,[0-9a-fA-F-]{36},[0-9a-fA-F-]{36}$/, { message: 'siteId must be the Site ID from the setup guide' })
+  siteId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(GUID, { message: 'listId must be the Library ID from the setup guide' })
+  listId?: string;
+
+  @IsOptional()
+  @IsString()
+  // The shape, then a real calendar day (strict ISO 8601 refuses 2026-02-31).
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'secretExpiresOn must be a date, YYYY-MM-DD' })
+  @IsISO8601({ strict: true }, { message: 'secretExpiresOn must be a real date' })
+  secretExpiresOn?: string;
+}
 
 export class MinioSettingsDto {
   // http is accepted here and refused by the resolver unless the installation
@@ -69,6 +129,11 @@ export class UpdateStorageSettingsDto {
   @ValidateNested()
   @Type(() => LocalFolderSettingsDto)
   local?: LocalFolderSettingsDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SharePointSettingsDto)
+  sharepoint?: SharePointSettingsDto;
 }
 
 // POST /tenant/storage/test — every field optional: an empty body tests the
