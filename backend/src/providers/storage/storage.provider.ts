@@ -18,10 +18,20 @@ export interface SignedDownloadOptions {
   mimeType: string;
 }
 
+/**
+ * ACC-185 — what a provider may report about a file it stored. SharePoint
+ * returns the Graph item id, which the StoredFile keeps; S3, MinIO and a local
+ * folder address files by key alone and return nothing.
+ */
+export interface IPutResult {
+  externalId: string | null;
+}
+
 export interface StorageProvider {
-  put(key: string, body: Buffer, mimeType: string): Promise<void>;
-  getStream(key: string): Promise<Readable>;
-  delete(key: string): Promise<void>;
+  put(key: string, body: Buffer, mimeType: string): Promise<void | IPutResult>;
+  /** `externalId` is what put() reported, where the provider uses one. */
+  getStream(key: string, externalId?: string | null): Promise<Readable>;
+  delete(key: string, externalId?: string | null): Promise<void>;
   /**
    * A pre-signed download URL (S3 and MinIO). A local folder has none: its
    * files are streamed through the API behind a short-lived token instead.
