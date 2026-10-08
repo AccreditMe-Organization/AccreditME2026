@@ -24,6 +24,8 @@ export interface FakeMicrosoftOptions {
   listStatus?: number;
   /** Status for the drive of a list. */
   driveStatus?: number;
+  /** Status for reading the drive itself (the hourly probe). */
+  probeStatus?: number;
   /** Status for uploads; throttling answers carry Retry-After. */
   writeStatuses?: number[];
   retryAfter?: string;
@@ -109,6 +111,13 @@ export function fakeMicrosoft(options: FakeMicrosoftOptions = {}) {
       const status = options.listStatus ?? 200;
       if (status !== 200) return graphError(status, status === 404 ? 'itemNotFound' : 'accessDenied');
       return json(200, { id: FAKE_LIST_ID, displayName: 'AccreditMe Files', webUrl: 'https://contoso.sharepoint.com/sites/Quality/AccreditMe%20Files', drive: { id: FAKE_DRIVE_ID } });
+    }
+
+    // The drive itself — the hourly probe's one small read.
+    if (/^\/drives\/[^/]+$/.test(path) && method === 'GET') {
+      const status = options.probeStatus ?? 200;
+      if (status !== 200) return graphError(status, status === 404 ? 'itemNotFound' : 'accessDenied');
+      return json(200, { id: FAKE_DRIVE_ID });
     }
 
     // Files in the drive, by path (root:/a/b:) or by item id.

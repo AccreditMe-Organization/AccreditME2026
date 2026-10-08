@@ -47,7 +47,12 @@ async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
 describe('StorageSettingsService — SharePoint, and only Confirm writes the provider (ACC-185)', () => {
   const prisma = {
     organization: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn() },
+    // ACC-185 — GET counts SharePoint files not yet purged.
+    storedFile: { count: jest.fn().mockResolvedValue(0) },
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    $transaction: jest.fn(),
   };
+  prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(prisma));
   const storedFiles = { cloudUsageBytes: jest.fn().mockResolvedValue(0) };
   const auditLog = { log: jest.fn().mockResolvedValue(undefined) };
   const notices = { storageChangeRequested: jest.fn().mockResolvedValue(undefined) };
@@ -76,6 +81,8 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
       storageConfirmedBy: confirmed ? { id: 'admin-1', name: 'Hessa' } : null,
       storageChangeRequestedAt: null,
       storageChangeRequestedBy: null,
+      storageAccessLostAt: null,
+      storageAccessLostReason: null,
     });
   /** Every `data` object the organisation was written with, by any method. */
   const organisationWrites = (): Array<Record<string, unknown>> =>
@@ -138,10 +145,24 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
       expect(readStorageConfig(writes[0]!['storageConfig'] as string).draftProvider).toBeUndefined();
     });
 
-    it('SharePoint cannot be confirmed until the database knows it (stage 3) — and nothing is written', async () => {
+    it('Confirm writes SHAREPOINT and records what the passing test found as the location', async () => {
       const { service } = serviceWith();
       org('S3', { sharepoint: SHAREPOINT, draftProvider: 'SHAREPOINT' });
-      expect(await codeOf(service.confirm('org-a', { provider: 'SHAREPOINT' }, 'admin-1'))).toBe('STORAGE_PROVIDER_NOT_ALLOWED');
+      await service.confirm('org-a', { provider: 'SHAREPOINT' }, 'admin-1');
+      const writes = organisationWrites();
+      expect(writes).toHaveLength(1);
+      expect(writes[0]).toEqual(expect.objectContaining({ storageProvider: 'SHAREPOINT', storageConfirmedById: 'admin-1', storageAccessLostAt: null }));
+      const saved = readStorageConfig(writes[0]!['storageConfig'] as string);
+      expect(saved.draftProvider).toBeUndefined();
+      expect(saved.sharepoint?.resolved).toEqual(
+        expect.objectContaining({ tenantId: FAKE_TENANT_ID, siteId: FAKE_SITE_ID, listId: FAKE_LIST_ID, driveId: FAKE_DRIVE_ID }),
+      );
+    });
+
+    it('Confirm refuses SharePoint whose test fails — and nothing is written', async () => {
+      const { service } = serviceWith({ tokenErrorCodes: [7000215] });
+      org('S3', { sharepoint: SHAREPOINT, draftProvider: 'SHAREPOINT' });
+      expect(await codeOf(service.confirm('org-a', { provider: 'SHAREPOINT' }, 'admin-1'))).toBe('STORAGE_TEST_FAILED');
       expect(organisationWrites()).toEqual([]);
     });
 
@@ -174,6 +195,14 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
         siteId: null,
         listId: null,
         secretExpiresOn: '2027-04-30',
+        tenantId: null,
+        siteName: null,
+        siteWebUrl: null,
+        libraryWebUrl: null,
+        accessLostAt: null,
+        accessLostReason: null,
+        filesStored: 0,
+        disconnectAllowed: true,
       });
       expect(JSON.stringify(settings)).not.toContain(SECRET);
     });
@@ -342,6 +371,140 @@ describe('StorageSettingsService — SharePoint, and only Confirm writes the pro
     expect(prisma.organization.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'org-b' } }));
     const tokenCall = ms.calls.find((c) => c.url.endsWith('/oauth2/v2.0/token'))!;
     expect(new URLSearchParams(tokenCall.body!).get('client_id')).toBe('22222222-2222-2222-2222-222222222222');
+  });
+
+  describe('after Confirm — the tenant, site and library are locked; credentials are not', () => {
+    const RESOLVED = {
+      tenantId: FAKE_TENANT_ID,
+      siteId: FAKE_SITE_ID,
+      siteName: 'Quality',
+      siteWebUrl: null,
+      listId: FAKE_LIST_ID,
+      driveId: FAKE_DRIVE_ID,
+      libraryName: 'AccreditMe Files',
+      libraryWebUrl: null,
+      resolvedAt: '2026-10-08T00:00:00.000Z',
+    };
+    const confirmed = (over: Record<string, unknown> = {}) =>
+      org('SHAREPOINT', { sharepoint: { ...SHAREPOINT, secretExpiresOn: '2027-06-04', resolved: RESOLVED, ...over } }, true);
+
+    it('replaces the secret after a passing test against the SAME library — and ends a withdrawal', async () => {
+      const { service } = serviceWith();
+      confirmed();
+      await service.update('org-a', { provider: 'SHAREPOINT', sharepoint: { clientSecret: 'a-brand-new-secret' } }, 'admin-1');
+      const writes = organisationWrites();
+      expect(writes).toHaveLength(1);
+      expect(writes[0]).toEqual(expect.objectContaining({ storageAccessLostAt: null, storageAccessLostReason: null }));
+      expect(writes[0]).not.toHaveProperty('storageProvider');
+      const saved = readStorageConfig(writes[0]!['storageConfig'] as string);
+      expect(saved.sharepoint).toEqual(expect.objectContaining({ clientSecret: 'a-brand-new-secret', resolved: RESOLVED }));
+      expect(auditLog.log.mock.calls[0]![0]).toEqual(
+        expect.objectContaining({ metadata: expect.objectContaining({ event: 'storage_keys_replaced', changedFields: ['sharepoint.clientSecret'] }) }),
+      );
+    });
+
+    it('refuses a secret that passes the test but reaches ANOTHER library — that is another location', async () => {
+      const { service } = serviceWith({ lists: [{ id: 'other-list', displayName: 'AccreditMe Files', template: 'documentLibrary', driveId: 'b!other-drive' }] });
+      confirmed();
+      expect(await codeOf(service.update('org-a', { provider: 'SHAREPOINT', sharepoint: { clientSecret: 'a-brand-new-secret' } }, 'admin-1'))).toBe(
+        'STORAGE_CHANGE_BY_PLATFORM',
+      );
+      expect(organisationWrites()).toEqual([]);
+    });
+
+    it('refuses a secret that fails the test, and keeps the old one', async () => {
+      const { service } = serviceWith({ tokenErrorCodes: [7000215] });
+      confirmed();
+      expect(await codeOf(service.update('org-a', { provider: 'SHAREPOINT', sharepoint: { clientSecret: 'wrong-secret-value' } }, 'admin-1'))).toBe(
+        'STORAGE_TEST_FAILED',
+      );
+      expect(organisationWrites()).toEqual([]);
+    });
+
+    it.each([
+      [{ tenant: 'fabrikam.onmicrosoft.com' }],
+      [{ siteUrl: 'https://contoso.sharepoint.com/sites/Other' }],
+      [{ libraryName: 'Another Library' }],
+      [{ siteId: FAKE_SITE_ID, listId: '00000000-0000-0000-0000-000000000009' }],
+    ])('refuses changing %p — AccreditMe changes the location', async (change) => {
+      const { ms, service } = serviceWith();
+      confirmed();
+      expect(await codeOf(service.update('org-a', { provider: 'SHAREPOINT', sharepoint: change }, 'admin-1'))).toBe('STORAGE_CHANGE_BY_PLATFORM');
+      expect(ms.calls).toEqual([]);
+      expect(organisationWrites()).toEqual([]);
+    });
+
+    it('a new expiry date alone needs no test, and re-arms the 30-day warning', async () => {
+      const { ms, service } = serviceWith();
+      confirmed();
+      await service.update('org-a', { provider: 'SHAREPOINT', sharepoint: { secretExpiresOn: '2028-06-04' } }, 'admin-1');
+      expect(ms.calls).toEqual([]);
+      expect(organisationWrites()[0]).toEqual(expect.objectContaining({ storageSecretWarnedAt: null }));
+      expect(organisationWrites()[0]).not.toHaveProperty('storageAccessLostAt');
+    });
+
+    it('GET shows what Confirm recorded and whether Disconnect would be accepted', async () => {
+      const { service } = serviceWith();
+      confirmed();
+      prisma.storedFile.count.mockResolvedValueOnce(3);
+      const settings = await service.get('org-a');
+      expect(settings.sharepoint).toEqual(
+        expect.objectContaining({ tenantId: FAKE_TENANT_ID, siteName: 'Quality', filesStored: 3, disconnectAllowed: false }),
+      );
+      expect(prisma.storedFile.count).toHaveBeenCalledWith({ where: { organizationId: 'org-a', provider: 'SHAREPOINT', purgedAt: null } });
+    });
+  });
+
+  describe('Disconnect', () => {
+    it('before confirmation, clears the SharePoint draft', async () => {
+      const { service } = serviceWith();
+      org('S3', { sharepoint: SHAREPOINT, draftProvider: 'SHAREPOINT', minio: { endpoint: 'https://minio.example.com' } });
+      await service.disconnect('org-a', 'admin-1');
+      const saved = readStorageConfig(organisationWrites()[0]!['storageConfig'] as string);
+      expect(saved.sharepoint).toBeUndefined();
+      expect(saved.draftProvider).toBeUndefined();
+      expect(saved.minio).toEqual({ endpoint: 'https://minio.example.com' });
+      expect(organisationWrites()[0]).not.toHaveProperty('storageProvider');
+    });
+
+    it('after confirmation, refuses while any SharePoint file is stored there — live or in the recycle bin', async () => {
+      const { service } = serviceWith();
+      org('SHAREPOINT', { sharepoint: SHAREPOINT }, true);
+      prisma.storedFile.count.mockResolvedValue(2);
+      const error = (await service.disconnect('org-a', 'admin-1').catch((e: unknown) => e)) as StorageRefusalException;
+      expect(error.code).toBe('STORAGE_LOCKED_BY_FILES');
+      expect(error.getResponse()).toEqual(expect.objectContaining({ filesStored: 2 }));
+      expect(prisma.storedFile.count).toHaveBeenCalledWith({ where: { organizationId: 'org-a', provider: 'SHAREPOINT', purgedAt: null } });
+      expect(organisationWrites()).toEqual([]);
+      prisma.storedFile.count.mockResolvedValue(0);
+    });
+
+    it('after confirmation with nothing stored there, returns to unconfirmed AccreditMe cloud — under the upload lock, audited', async () => {
+      const { service } = serviceWith();
+      org('SHAREPOINT', { sharepoint: SHAREPOINT }, true);
+      await service.disconnect('org-a', 'admin-1');
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(prisma.organization.updateMany).toHaveBeenCalledWith({
+        where: { id: 'org-a', storageProvider: 'SHAREPOINT', storageConfirmedAt: { not: null } },
+        data: expect.objectContaining({ storageProvider: 'S3', storageConfirmedAt: null, storageConfirmedById: null, storageConfig: null }),
+      });
+      expect(auditLog.log).toHaveBeenCalledWith(expect.objectContaining({ metadata: { event: 'storage_disconnected' } }));
+    });
+
+    it('is not how a confirmed MinIO or AccreditMe cloud location is left', async () => {
+      const { service } = serviceWith();
+      org('MINIO', { minio: MINIO }, true);
+      expect(await codeOf(service.disconnect('org-a', 'admin-1'))).toBe('STORAGE_CHANGE_BY_PLATFORM');
+      expect(organisationWrites()).toEqual([]);
+    });
+  });
+
+  itEnforcesTenantIsolation("Disconnect counts and switches the caller's own organisation only", async () => {
+    const { service } = serviceWith();
+    org('SHAREPOINT', { sharepoint: SHAREPOINT }, true);
+    await service.disconnect('org-b', 'admin-1');
+    expect(prisma.storedFile.count).toHaveBeenCalledWith({ where: { organizationId: 'org-b', provider: 'SHAREPOINT', purgedAt: null } });
+    expect(prisma.organization.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'org-b' }) }));
   });
 
   itEnforcesTenantIsolation("a SharePoint draft is written to the caller's own organisation only", async () => {
