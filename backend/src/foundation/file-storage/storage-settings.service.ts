@@ -14,11 +14,21 @@ import { maxUploadBytes } from './storage-platform-env';
 import { StorageRefusalException } from './storage-refusal';
 import { isPrivateEndpointRefusal, StoredFileService } from './stored-file.service';
 import { StorageProviderKind, StorageResolverService } from './storage-resolver.service';
-import { StorageNoticesService } from './storage-notices.service';
+import { SharePointAccessLostReason, StorageNoticesService } from './storage-notices.service';
 import { StorageChangeRequestDto, TestStorageSettingsDto, UpdateStorageSettingsDto } from './dto/update-storage-settings.dto';
 import { IStorageSettings, IStorageTestResult, StorageTestStep } from './interfaces/storage-settings.interface';
 
 const STEP_TIMEOUT_MS = 10_000;
+
+/** What a tenant may still change once a location is confirmed — credentials only. */
+const REPLACEABLE_AFTER_CONFIRM: Readonly<Record<StorageProviderKind, ReadonlySet<string>>> = {
+  S3: new Set(),
+  LOCAL_FILESYSTEM: new Set(),
+  MINIO: new Set(['minio.accessKeyId', 'minio.secretAccessKey']),
+  SHAREPOINT: new Set(['sharepoint.clientId', 'sharepoint.clientSecret', 'sharepoint.secretExpiresOn']),
+};
+/** Changing only these is a note, not a credential: no connection test. */
+const EXPIRY_FIELDS: ReadonlySet<string> = new Set(['sharepoint.secretExpiresOn']);
 // A SharePoint step may wait out Microsoft's throttling (up to 20 s across
 // 3 attempts) on top of the request itself.
 const SHAREPOINT_STEP_TIMEOUT_MS = 60_000;
@@ -31,6 +41,8 @@ type SettingsOrg = {
   storageConfirmedBy: { id: string; name: string } | null;
   storageChangeRequestedAt: Date | null;
   storageChangeRequestedBy: { id: string; name: string } | null;
+  storageAccessLostAt: Date | null;
+  storageAccessLostReason: string | null;
 };
 
 /**
@@ -71,6 +83,11 @@ export class StorageSettingsService {
   async get(organizationId: string): Promise<IStorageSettings> {
     const org = await this.loadOrg(organizationId);
     const config = readStorageConfig(org.storageConfig);
+    const resolved = config.sharepoint?.resolved;
+    // SharePoint files not yet purged — live or in the recycle bin.
+    const filesStored = await this.prisma.storedFile.count({
+      where: { organizationId, provider: 'SHAREPOINT', purgedAt: null },
+    });
     return {
       provider: org.storageProvider,
       offeredProviders: this.resolver.offeredProviders(),
@@ -98,6 +115,19 @@ export class StorageSettingsService {
         siteId: config.sharepoint?.siteId ?? null,
         listId: config.sharepoint?.listId ?? null,
         secretExpiresOn: config.sharepoint?.secretExpiresOn ?? null,
+        // What Confirm recorded — the location from then on.
+        tenantId: resolved?.tenantId ?? null,
+        siteName: resolved?.siteName ?? null,
+        siteWebUrl: resolved?.siteWebUrl ?? null,
+        libraryWebUrl: resolved?.libraryWebUrl ?? null,
+        accessLostAt: org.storageAccessLostAt,
+        accessLostReason: (org.storageAccessLostReason as SharePointAccessLostReason | null) ?? null,
+        filesStored,
+        // Before confirmation: whenever there is a SharePoint draft to clear.
+        // After: only on SharePoint, and only with nothing stored there.
+        disconnectAllowed: org.storageConfirmedAt
+          ? org.storageProvider === 'SHAREPOINT' && filesStored === 0
+          : Boolean(config.sharepoint) || config.draftProvider === 'SHAREPOINT',
       },
       draftProvider: org.storageConfirmedAt ? null : (config.draftProvider ?? null),
       usage: {
@@ -116,20 +146,24 @@ export class StorageSettingsService {
   async confirm(organizationId: string, dto: UpdateStorageSettingsDto, actorId: string): Promise<IStorageSettings> {
     const org = await this.loadOrg(organizationId);
     if (org.storageConfirmedAt) throw new StorageRefusalException('STORAGE_ALREADY_CONFIRMED');
-    // ACC-185 stage 1: SharePoint can be saved and tested, not yet confirmed —
-    // the database enum gains SHAREPOINT with stage 3's migration, and a
-    // confirmed SHAREPOINT row on the shared database would break the
-    // deployed code's reads of that organisation (ACC-173's rule).
-    if (dto.provider === 'SHAREPOINT') throw new StorageRefusalException('STORAGE_PROVIDER_NOT_ALLOWED');
     const provider: StorageProviderKind = dto.provider;
     const stored = readStorageConfig(org.storageConfig);
-    const next = this.merge(stored, dto);
+    let next = this.merge(stored, dto);
     this.assertUsable(provider, next);
-    if (provider !== 'S3') await this.assertTestPasses(organizationId, provider, next);
+    if (provider !== 'S3') {
+      const result = await this.assertTestPasses(organizationId, provider, next);
+      // ACC-185 — what the passing test found BECOMES the location: every
+      // upload, download and purge uses these ids from now on, and a replaced
+      // secret must reach exactly this tenant, site and library.
+      if (provider === 'SHAREPOINT' && result.sharepoint) {
+        next = { ...next, sharepoint: { ...next.sharepoint, resolved: { ...result.sharepoint, resolvedAt: new Date().toISOString() } } };
+      }
+    }
 
     const now = new Date();
     // Guarded on storageConfirmedAt still being null, so two admins confirming
-    // at once cannot both win. The ONE place storageProvider is written.
+    // at once cannot both win. The ONE place a provider is chosen (Q6);
+    // Disconnect is the only other writer, and only returns it to the default.
     const saved = await this.prisma.organization.updateMany({
       where: { id: organizationId, storageConfirmedAt: null },
       data: {
@@ -137,6 +171,9 @@ export class StorageSettingsService {
         storageConfig: writeStorageConfig({ ...next, draftProvider: undefined }),
         storageConfirmedAt: now,
         storageConfirmedById: actorId,
+        storageAccessLostAt: null,
+        storageAccessLostReason: null,
+        storageSecretWarnedAt: null,
       },
     });
     if (saved.count !== 1) throw new StorageRefusalException('STORAGE_ALREADY_CONFIRMED');
@@ -169,11 +206,26 @@ export class StorageSettingsService {
     const merged = this.merge(stored, dto);
 
     let next: IStorageConfig;
+    // ACC-185 — what a confirmed SharePoint save also resets.
+    const extra: { storageAccessLostAt?: null; storageAccessLostReason?: null; storageSecretWarnedAt?: null } = {};
     if (org.storageConfirmedAt) {
       this.assertOnlyKeysChange(org.storageProvider, stored, dto.provider, merged);
-      if (changedFields(stored, merged).length > 0) {
-        await this.assertTestPasses(organizationId, dto.provider, merged);
+      const changed = changedFields(stored, merged);
+      // Credentials changed: they must pass the test — and for SharePoint reach
+      // the SAME tenant, site and library Confirm recorded. A new expiry date
+      // alone is a note, not a credential, and needs no test.
+      if (changed.some((field) => !EXPIRY_FIELDS.has(field))) {
+        const result = await this.assertTestPasses(organizationId, dto.provider, merged);
+        if (org.storageProvider === 'SHAREPOINT') {
+          this.assertSameSharePointLocation(stored, result);
+          // A secret that works again ends a withdrawal at once; the hourly
+          // probe would have, an hour later.
+          extra.storageAccessLostAt = null;
+          extra.storageAccessLostReason = null;
+        }
       }
+      // A new expiry date re-arms the 30-day warning for it.
+      if (changed.includes('sharepoint.secretExpiresOn')) extra.storageSecretWarnedAt = null;
       next = merged;
     } else {
       this.assertUsable(dto.provider, merged);
@@ -182,7 +234,7 @@ export class StorageSettingsService {
 
     await this.prisma.organization.update({
       where: { id: organizationId },
-      data: { storageConfig: writeStorageConfig(next) },
+      data: { storageConfig: writeStorageConfig(next), ...extra },
     });
     await this.auditLog.log({
       action: 'UPDATE',
@@ -227,6 +279,95 @@ export class StorageSettingsService {
     });
     // After the change is committed; a failed notice is logged inside.
     await this.notices.storageChangeRequested(organizationId, actorId, now, message);
+    return this.get(organizationId);
+  }
+
+  /**
+   * ACC-185 — Disconnect SharePoint (Ahmad, 8 Oct; Q5: SharePoint only here).
+   *
+   *   - Before confirmation: clears the SharePoint draft.
+   *   - After confirmation: only while NO SharePoint file is stored there,
+   *     live or in the recycle bin (anything not yet purged) — otherwise
+   *     STORAGE_LOCKED_BY_FILES. It returns the organisation to UNCONFIRMED
+   *     AccreditMe cloud, so uploads are refused until someone confirms again.
+   *
+   * The count and the switch run in one transaction under the same
+   * per-organisation lock an upload records under (StoredFileService
+   * .recordInTx), so an upload landing meanwhile is either counted here or
+   * refused there — never stranded on a location the organisation left.
+   *
+   * The app registration and its grant live in the customer's tenant;
+   * AccreditMe cannot remove them, and the guide says how.
+   */
+  async disconnect(organizationId: string, actorId: string): Promise<IStorageSettings> {
+    const org = await this.loadOrg(organizationId);
+    const stored = readStorageConfig(org.storageConfig);
+    const without: IStorageConfig = {
+      ...stored,
+      sharepoint: undefined,
+      draftProvider: stored.draftProvider === 'SHAREPOINT' ? undefined : stored.draftProvider,
+    };
+
+    if (!org.storageConfirmedAt) {
+      if (!stored.sharepoint && stored.draftProvider !== 'SHAREPOINT') return this.get(organizationId);
+      await this.prisma.organization.update({
+        where: { id: organizationId },
+        data: { storageConfig: writeStorageConfig(without) },
+      });
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: 'Organization',
+        objectId: organizationId,
+        actorId,
+        tenantId: organizationId,
+        before: { draftProvider: stored.draftProvider ?? null },
+        after: { draftProvider: without.draftProvider ?? null },
+        metadata: { event: 'storage_sharepoint_draft_cleared' },
+      });
+      return this.get(organizationId);
+    }
+
+    if (org.storageProvider !== 'SHAREPOINT') throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
+    const location = stored.sharepoint?.resolved ?? null;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`stored-file-quota:${organizationId}`}))::text`;
+      const filesStored = await tx.storedFile.count({
+        where: { organizationId, provider: 'SHAREPOINT', purgedAt: null },
+      });
+      if (filesStored > 0) throw new StorageRefusalException('STORAGE_LOCKED_BY_FILES', { filesStored });
+      const switched = await tx.organization.updateMany({
+        where: { id: organizationId, storageProvider: 'SHAREPOINT', storageConfirmedAt: { not: null } },
+        data: {
+          storageProvider: 'S3',
+          storageConfirmedAt: null,
+          storageConfirmedById: null,
+          storageConfig: writeStorageConfig({ ...without, draftProvider: undefined }),
+          storageAccessLostAt: null,
+          storageAccessLostReason: null,
+          storageSecretWarnedAt: null,
+        },
+      });
+      if (switched.count !== 1) throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
+    });
+
+    await this.auditLog.log({
+      action: 'UPDATE',
+      objectType: 'Organization',
+      objectId: organizationId,
+      actorId,
+      tenantId: organizationId,
+      before: {
+        storageProvider: 'SHAREPOINT',
+        storageConfirmedAt: org.storageConfirmedAt.toISOString(),
+        tenantId: location?.tenantId ?? null,
+        siteId: location?.siteId ?? null,
+        listId: location?.listId ?? null,
+        libraryName: location?.libraryName ?? null,
+      },
+      after: { storageProvider: 'S3', storageConfirmedAt: null },
+      metadata: { event: 'storage_disconnected' },
+    });
     return this.get(organizationId);
   }
 
@@ -325,7 +466,7 @@ export class StorageSettingsService {
     return { ok: true, provider, passed, failedStep: null, code: null, message: null, sharepoint: sharepointView(sharepoint) };
   }
 
-  private async assertTestPasses(organizationId: string, provider: StorageChoice, candidate: IStorageConfig): Promise<void> {
+  private async assertTestPasses(organizationId: string, provider: StorageChoice, candidate: IStorageConfig): Promise<IStorageTestResult> {
     const result = await this.runTest(organizationId, provider, candidate);
     if (!result.ok) {
       throw new StorageRefusalException('STORAGE_TEST_FAILED', {
@@ -333,23 +474,44 @@ export class StorageSettingsService {
         cause: result.code ?? undefined,
       });
     }
+    return result;
   }
 
   // Once confirmed, the location belongs to AccreditMe: the same provider,
   // and for MinIO the same endpoint, region and bucket; for a local folder
-  // the same root. Only the two MinIO keys may differ.
+  // the same root; for SharePoint the same tenant, site and library. Only the
+  // credentials may differ — MinIO's two keys; SharePoint's client ID and
+  // secret, and the secret's expiry date — as with a key rotation.
   private assertOnlyKeysChange(
     storedProvider: StorageProviderKind,
     stored: IStorageConfig,
     nextProvider: StorageChoice,
     next: IStorageConfig,
   ): void {
-    const keys = new Set(['minio.accessKeyId', 'minio.secretAccessKey']);
     const changed = changedFields(stored, next);
-    if (nextProvider !== storedProvider || changed.some((field) => !keys.has(field))) {
+    const replaceable = REPLACEABLE_AFTER_CONFIRM[storedProvider];
+    if (nextProvider !== storedProvider || changed.some((field) => !replaceable.has(field))) {
       throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
     }
-    if (changed.length > 0 && storedProvider !== 'MINIO') {
+  }
+
+  /**
+   * ACC-185 — a replaced SharePoint client ID or secret passed the test; it
+   * must also have reached exactly the tenant, site and library Confirm
+   * recorded. Another library is another location, which is AccreditMe's to
+   * change.
+   */
+  private assertSameSharePointLocation(stored: IStorageConfig, result: IStorageTestResult): void {
+    const was = stored.sharepoint?.resolved;
+    const now = result.sharepoint;
+    if (
+      !was ||
+      !now ||
+      was.tenantId !== now.tenantId ||
+      was.siteId !== now.siteId ||
+      was.listId !== now.listId ||
+      was.driveId !== now.driveId
+    ) {
       throw new StorageRefusalException('STORAGE_CHANGE_BY_PLATFORM');
     }
   }
@@ -432,6 +594,8 @@ export class StorageSettingsService {
         storageConfirmedBy: { select: { id: true, name: true } },
         storageChangeRequestedAt: true,
         storageChangeRequestedBy: { select: { id: true, name: true } },
+        storageAccessLostAt: true,
+        storageAccessLostReason: true,
       },
     });
     if (!org) throw new NotFoundException('Tenant not found');

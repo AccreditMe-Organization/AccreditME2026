@@ -41,6 +41,18 @@ export interface IStorageSettings {
     siteId: string | null;
     listId: string | null;
     secretExpiresOn: string | null;
+    /** What Confirm recorded: the customer's tenant GUID, site and library. */
+    tenantId: string | null;
+    siteName: string | null;
+    siteWebUrl: string | null;
+    libraryWebUrl: string | null;
+    /** Set while Microsoft access is withdrawn (the hourly probe sets and clears it). */
+    accessLostAt: Date | null;
+    accessLostReason: 'SECRET_INVALID' | 'CONSENT_REVOKED' | 'GRANT_REMOVED' | 'LIBRARY_GONE' | null;
+    /** SharePoint files not yet purged — live or in the recycle bin. */
+    filesStored: number;
+    /** Whether POST /tenant/storage/disconnect would be accepted now. */
+    disconnectAllowed: boolean;
   };
   /** AccreditMe cloud only — deleted files count until purged. */
   usage: { usedBytes: number; maxStorageGb: number };
