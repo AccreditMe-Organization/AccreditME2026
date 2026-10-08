@@ -771,17 +771,13 @@
     }
   },
   "auth": {
-    "login": "Log In",
-    "logout": "Sign Out",
+    "login": "Sign in",
+    "logout": "Sign out",
     "openOrganisationAddress": "Open your organisation's address to sign in, for example yourorg.accreditme.app.",
     "email": "Email",
     "password": "Password",
     "mfaCode": "Verification Code",
     "forgotPassword": "Forgot password?",
-    "forgotPasswordSent": "If this email exists in our system, check your inbox for a password reset link.",
-    "loginFailed": "Invalid credentials",
-    "errorInvalidCredentials": "Invalid organization, email, or password.",
-    "errorMfaRequired": "Invalid or expired verification code.",
     "invitation": {
       "title": "Accept your invitation",
       "join": "Join {{organization}}",
@@ -802,6 +798,31 @@
       "lookupFailed": "We couldn't load this invitation. Check your connection and try again.",
       "slow": "This is taking longer than usual.",
       "acceptedNotice": "Your password is set. Sign in to continue."
+    },
+    "forgotPasswordTitle": "Forgot password",
+    "forgotPasswordUnavailable": "Password reset by email isn't available yet. Ask your organisation's administrator for help signing in.",
+    "signIn": {
+      "backToSignIn": "Back to sign in",
+      "emailRequired": "Enter your email.",
+      "emailInvalid": "Enter a valid email address.",
+      "passwordRequired": "Enter your password.",
+      "codeRequired": "Enter the 6-digit code.",
+      "mfaHint": "The 6-digit code from your authenticator app.",
+      "errors": {
+        "invalidCredentials": "Email or password is incorrect. Check both and try again.",
+        "locked": "This account is locked after too many unsuccessful attempts. You can try again {{when}}. Each attempt before then extends the lock.",
+        "lockedNoTime": "This account is locked after too many unsuccessful attempts. Try again later. Each attempt before the lock lifts extends it.",
+        "mfaLocked": "This account is locked after too many unsuccessful attempts. You can try again {{when}}.",
+        "mfaLockedNoTime": "This account is locked after too many unsuccessful attempts. Try again later.",
+        "inactive": "This account isn't active. Your password was correct, but the account has been deactivated or not yet activated. Your administrator can restore it.",
+        "organizationUnavailable": "Your organisation's access to AccreditMe isn't available right now. Contact your administrator.",
+        "rateLimited": "Too many sign-in attempts from this network. Try again {{when}}.",
+        "rateLimitedNoTime": "Too many sign-in attempts from this network. Try again later.",
+        "mfaInvalid": "That code didn't work. Enter the code showing in your app now.",
+        "mfaExpired": "This sign-in timed out. Reload the page and sign in again.",
+        "unreachable": "AccreditMe didn't respond, so your sign-in didn't go through. Try again in a moment.",
+        "generic": "Something went wrong. Try again."
+      }
     }
   },
   "user": {
@@ -817,7 +838,7 @@
     "manager": "Manager",
     "actingOrgUnit": "Acting For Unit",
     "actingOrgUnitUntil": "Until",
-    "lastLogin": "Last Login",
+    "lastLogin": "Last sign-in",
     "outOfOffice": "Out of Office",
     "outOfOfficeFrom": "From",
     "outOfOfficeTo": "To",
@@ -925,7 +946,7 @@
     "adminEmail": "Admin Email",
     "suspend": "Suspend",
     "reactivate": "Reactivate",
-    "suspendConfirm": "Suspend {{name}}? Its users will be unable to log in until reactivated.",
+    "suspendConfirm": "Suspend {{name}}? Its users will be unable to sign in until reactivated.",
     "noTenants": "No tenants found.",
     "errorLoad": "Failed to load data.",
     "errorAction": "Failed to complete action.",
@@ -1218,6 +1239,12 @@
       "partialSave": {
         "one": "{{saved}} of {{count}} change saved. Save again to retry the rest.",
         "other": "{{saved}} of {{count}} changes saved. Save again to retry the rest."
+      }
+    },
+    "auth": {
+      "mfaAttemptsLeft": {
+        "one": "1 attempt left for this sign-in.",
+        "other": "{{count}} attempts left for this sign-in."
       }
     }
   },
