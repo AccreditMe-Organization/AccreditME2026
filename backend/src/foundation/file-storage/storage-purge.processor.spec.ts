@@ -1,14 +1,20 @@
 import { Job, Queue } from 'bullmq';
 import { StoragePurgeProcessor, STORAGE_PURGE_INTERVAL_MS } from './storage-purge.processor';
 import { RecycleBinService } from './recycle-bin.service';
+import { SharePointAccessService } from './sharepoint-access.service';
 
 // ACC-177 — the daily purge job: it schedules itself once a day and runs
 // RecycleBinService.purgeExpired(); a failing organisation fails the job so it
 // shows as failed, after every other organisation has run.
 describe('StoragePurgeProcessor (ACC-177)', () => {
   const recycleBin = { purgeExpired: jest.fn() };
+  const sharePointAccess = { warnExpiringSecrets: jest.fn().mockResolvedValue({ warned: 0 }), probeAll: jest.fn() };
   const queue = { add: jest.fn().mockResolvedValue(undefined) };
-  const processor = new StoragePurgeProcessor(recycleBin as unknown as RecycleBinService, queue as unknown as Queue);
+  const processor = new StoragePurgeProcessor(
+    recycleBin as unknown as RecycleBinService,
+    sharePointAccess as unknown as SharePointAccessService,
+    queue as unknown as Queue,
+  );
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -19,13 +25,13 @@ describe('StoragePurgeProcessor (ACC-177)', () => {
   });
 
   it('purges expired files', async () => {
-    recycleBin.purgeExpired.mockResolvedValue({ purged: 3, failedOrganizations: [] });
+    recycleBin.purgeExpired.mockResolvedValue({ purged: 3, failedOrganizations: [], deferredOrganizations: [] });
     await expect(processor.process({} as Job)).resolves.toBeUndefined();
     expect(recycleBin.purgeExpired).toHaveBeenCalledTimes(1);
   });
 
   it('fails the job, naming the organisations, when any failed', async () => {
-    recycleBin.purgeExpired.mockResolvedValue({ purged: 1, failedOrganizations: ['org-a'] });
+    recycleBin.purgeExpired.mockResolvedValue({ purged: 1, failedOrganizations: ['org-a'], deferredOrganizations: [] });
     await expect(processor.process({} as Job)).rejects.toThrow('org-a');
   });
 });

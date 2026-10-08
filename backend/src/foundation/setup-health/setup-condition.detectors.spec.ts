@@ -58,7 +58,9 @@ describe('SetupConditionDetectors (ACC-82)', () => {
       'ORG_UNIT_WITHOUT_HEAD',
       'ORG_UNIT_WITHOUT_TYPE',
       'STAGE_WITHOUT_ASSIGNEE',
+      'STORAGE_ACCESS_WITHDRAWN',
       'STORAGE_ALMOST_FULL',
+      'STORAGE_SECRET_EXPIRING',
       'TASK_WITHOUT_OWNER',
     ]);
   });

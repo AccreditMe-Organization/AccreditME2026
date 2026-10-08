@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { RecycleBinService, RECYCLE_BIN_DAYS } from './recycle-bin.service';
 import { StoredFileService } from './stored-file.service';
+import { SharePointAccessService } from './sharepoint-access.service';
 import { StorageRefusalException } from './storage-refusal';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -39,10 +40,13 @@ describe('RecycleBinService (ACC-177)', () => {
   (prisma as unknown as Record<string, unknown>)['$transaction'] = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
   const storedFiles = { removeBytes: jest.fn().mockResolvedValue(undefined), reviewWarning: jest.fn().mockResolvedValue(undefined) };
   const auditLog = { log: jest.fn().mockResolvedValue(undefined) };
+  // ACC-185 — only a SharePoint purge asks; these files are S3.
+  const sharePointAccess = { assertReachable: jest.fn().mockResolvedValue(undefined) };
   const service = new RecycleBinService(
     prisma as unknown as PrismaService,
     storedFiles as unknown as StoredFileService,
     auditLog as unknown as AuditLogService,
+    sharePointAccess as unknown as SharePointAccessService,
   );
 
   beforeEach(() => {
@@ -148,7 +152,7 @@ describe('RecycleBinService (ACC-177)', () => {
         ])
         .mockResolvedValueOnce([file('old-a')])
         .mockResolvedValueOnce([file('old-b', { organizationId: 'org-b' })]);
-      expect(await service.purgeExpired(NOW)).toEqual({ purged: 2, failedOrganizations: [] });
+      expect(await service.purgeExpired(NOW)).toEqual({ purged: 2, failedOrganizations: [], deferredOrganizations: [] });
 
       // Deleted (deletedAt set) before the cutoff and unpurged — a RESTORED file
       // has deletedAt null and is never selected.
@@ -168,12 +172,12 @@ describe('RecycleBinService (ACC-177)', () => {
         ])
         .mockRejectedValueOnce(new Error('boom'))
         .mockResolvedValueOnce([file('y', { organizationId: 'org-b' })]);
-      expect(await service.purgeExpired(NOW)).toEqual({ purged: 1, failedOrganizations: ['org-a'] });
+      expect(await service.purgeExpired(NOW)).toEqual({ purged: 1, failedOrganizations: ['org-a'], deferredOrganizations: [] });
     });
 
     it('nothing expired, nothing done', async () => {
       prisma.storedFile.findMany.mockResolvedValueOnce([]);
-      expect(await service.purgeExpired(NOW)).toEqual({ purged: 0, failedOrganizations: [] });
+      expect(await service.purgeExpired(NOW)).toEqual({ purged: 0, failedOrganizations: [], deferredOrganizations: [] });
       expect(prisma.storedFile.updateMany).not.toHaveBeenCalled();
     });
   });

@@ -223,6 +223,8 @@ describe('SetupConditionReconciler (ACC-82)', () => {
       TASK_WITHOUT_OWNER: jest.fn().mockResolvedValue([]),
       ACTING_HEAD_OPEN_ENDED: jest.fn().mockResolvedValue([]),
       STORAGE_ALMOST_FULL: jest.fn().mockResolvedValue([]),
+      STORAGE_ACCESS_WITHDRAWN: jest.fn().mockResolvedValue([]),
+      STORAGE_SECRET_EXPIRING: jest.fn().mockResolvedValue([]),
     };
     reconciler = new SetupConditionReconciler(
       db.prisma as unknown as PrismaService,
@@ -512,6 +514,8 @@ describe('SetupConditionReconciler (ACC-82)', () => {
         ['TASK_WITHOUT_OWNER', 'SUCCEEDED'],
         ['ACTING_HEAD_OPEN_ENDED', 'SUCCEEDED'],
         ['STORAGE_ALMOST_FULL', 'SUCCEEDED'],
+        ['STORAGE_ACCESS_WITHDRAWN', 'SUCCEEDED'],
+        ['STORAGE_SECRET_EXPIRING', 'SUCCEEDED'],
       ]);
       expect(db.rows()).toEqual([
         expect.objectContaining({ objectId: 'task-1' }),
@@ -559,8 +563,9 @@ describe('SetupConditionReconciler (ACC-82)', () => {
         tenants: 2,
         failed: [{ organizationId: ORG_B, type: 'TASK_WITHOUT_OWNER' }],
       });
-      expect(byType.ORG_UNIT_WITHOUT_HEAD).toHaveBeenCalledWith(ORG_A);
-      expect(byType.ORG_UNIT_WITHOUT_HEAD).toHaveBeenCalledWith(ORG_B);
+      // ACC-185 — with the reconciliation's own clock.
+      expect(byType.ORG_UNIT_WITHOUT_HEAD).toHaveBeenCalledWith(ORG_A, T1);
+      expect(byType.ORG_UNIT_WITHOUT_HEAD).toHaveBeenCalledWith(ORG_B, T1);
     });
   });
 

@@ -81,4 +81,12 @@ describe('UpdateTenantDto — nameAr (ACC-120)', () => {
   it('refuses a property it does not declare, which is the strict pipeline working', () => {
     expect(errorsOn({ country: 'SA' })).toEqual(['country']);
   });
+
+  // ACC-185 (Q6) — only POST /tenant/storage/confirm chooses where files go.
+  // This DTO used to accept storageProvider and the service wrote it straight
+  // to the organisation, past the connection test and the post-confirmation
+  // lock. It is refused now, for every value.
+  it.each(['S3', 'MINIO', 'LOCAL_FILESYSTEM', 'SHAREPOINT'])('refuses storageProvider %p — only Confirm sets it', (value) => {
+    expect(errorsOn({ storageProvider: value })).toEqual(['storageProvider']);
+  });
 });
