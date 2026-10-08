@@ -4333,6 +4333,42 @@ RTL mode enabled when Arabic active" is accurate in outcome, but there
 is no explicit "enable PrimeNG RTL" call anywhere — it's a side effect
 of the `dir` attribute, not a distinct wiring step.
 
+#### 9.1.1 In specs — the effect writes state no TestBed resets (ACC-184)
+
+`<html dir>` and `<html lang>` live outside Angular, so `TestBed` never
+puts them back. Any spec that switches the REAL `LanguageService` to
+Arabic — or sets `dir` itself — leaves the whole document right to left
+for every spec after it. Under one random order in twenty that mirrored
+`DataListComponent`'s alignment spec (CI run 37668128910, offsets 593
+against 369) and made Railway skip the ACC-177 deploy. It had been
+patched file by file at least five times before.
+
+- **The rule:** a `describe` whose specs change either attribute calls
+  `preserveDocumentLanguage()` (`frontend/src/testing/document-language.ts`)
+  as its FIRST statement. It records both attributes before each spec and,
+  after it, tears the TestBed down and then restores the recorded values.
+  - **Teardown first:** `translate.use()` resolves asynchronously, so the
+    effect can otherwise fire after the reset and write `rtl` back during a
+    later spec.
+  - **First in the describe:** Jasmine runs `afterEach` hooks in reverse
+    declaration order, so the spec's own `httpMock.verify()` still sees a
+    live TestBed.
+- **The guard:** `frontend/src/testing/document-language.guard.spec.ts` has
+  top-level hooks, so it wraps every spec in the suite. It fails a spec that
+  leaves the EFFECTIVE direction or language changed (no `dir` counts as
+  `ltr`, no `lang` as `en`) and restores the page either way. A change that
+  is only the attribute's form (absent against `ltr`) is restored silently,
+  because creating `LanguageService` in English writes `ltr` and that
+  changes nothing measurable.
+- **A spec that measures layout states its own direction** rather than
+  inheriting one. The alignment spec sets `dir="ltr"` in its own
+  `beforeEach`.
+- **To reproduce an order-dependent failure:** `JASMINE_SEED=<seed>` (ACC-127)
+  replays the order only on the same platform. The shuffle runs over spec
+  files in bundle order, which differs between Windows and the Linux runner,
+  so CI's seed may not replay locally. Narrow the run with `--include` to the
+  suspect pair and search seeds instead.
+
 ### 9.2 Resolution Chain — Backend and Frontend, Precisely
 
 **Backend** (`AuthService.resolveLanguage()`,
