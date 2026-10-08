@@ -592,10 +592,29 @@ The questions as asked, kept for the reasoning:
   - a site off SharePoint stops at `configure`;
   - al-manara stays `S3`, with config null
 
-**STOP 1 — live Test on al-manara, never confirmed:**
-- [ ] Ahmad follows the guide on a fresh app and enters the values through a
-      prompting script
-- [ ] Report items (a)–(f)
+**STOP 1 — live Test on al-manara, never confirmed (8 Oct):**
+- [x] Ahmad followed the guide on his test tenant, with his own site and library
+      names, and entered the values through the prompting script (draft saved
+      18:23 UTC; the audit names the fields only).
+- [x] (a) **The site URL and library name resolve** under the guide's library
+      grant. So do the Site ID and Library ID. The ids are an alternative input,
+      not a requirement.
+- [x] (b) Both ways passed all eight steps: configure → token → site → library →
+      write → read → verify → delete. The site's name was readable as well.
+- [x] (c) The path upload to `AccreditMe/_probe/…` succeeded in a library
+      without that folder, so a path PUT creates folders. The delete passed, so
+      the probe went to the SharePoint recycle bin. Ahmad to confirm both
+      visually.
+- [ ] (d) **DEFERRED** — revoking and re-granting needs Ahmad's Office 365 admin,
+      available in two days. It runs in the post-deploy live run, or earlier if
+      the admin is available.
+- [x] (e) al-manara's `storageProvider` was `S3` before, after Ahmad's run, and
+      after two re-runs; it stayed unconfirmed.
+- [x] (f) Guide fix: `New-`, `Get-` and `Remove-MgSiteListPermission` exist only
+      in the beta module, so every one is now an `Invoke-MgGraphRequest` call
+      against v1.0 (POST, GET, DELETE `.../permissions/{id}`). The guide now
+      also explains the `Sites.FullControl.All` sign-in and its admin consent,
+      and shows where the Permission ID comes from.
 
 **Stage 3 — after Ahmad says continue:**
 - [ ] Migration (local first, then the shared database)
