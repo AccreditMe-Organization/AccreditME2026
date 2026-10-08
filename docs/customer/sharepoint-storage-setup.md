@@ -89,13 +89,27 @@ Replace in every example:
 
 ### Option A — PowerShell (Microsoft Graph PowerShell)
 
-Run these as a SharePoint Administrator, or as an owner of the site:
+Run these as a SharePoint Administrator, or as an owner of the site.
+
+**About the sign-in.** `Connect-MgGraph -Scopes "Sites.FullControl.All"` signs
+you in to Microsoft's own *Microsoft Graph Command Line Tools* app — not to the
+AccreditMe app — and creating a library grant needs that permission.
+`Sites.FullControl.All` requires admin consent, so the account you sign in with
+either has it already or is asked for it. If you are not an administrator, ask
+a Privileged Role Administrator or Global Administrator to approve
+*Microsoft Graph Command Line Tools* for `Sites.FullControl.All` first. This
+permission belongs to your PowerShell session only and is never given to the
+AccreditMe app.
+
+**Why `Invoke-MgGraphRequest`.** The named cmdlets for library permissions are
+only in the *beta* module. The commands below call Microsoft Graph's v1.0
+endpoints directly, and work with the standard module.
 
 ```powershell
 # One-time: install the module if you don't have it.
 Install-Module Microsoft.Graph.Sites -Scope CurrentUser
 
-# Sign in. The scope is needed only for this session, to create the grant.
+# Sign in, for this session only (see above).
 Connect-MgGraph -Scopes "Sites.FullControl.All"
 
 # 1. Find the site and the library.
@@ -116,12 +130,27 @@ $params = @{
     }
   }
 }
-New-MgSiteListPermission -SiteId $site.Id -ListId $list.Id -BodyParameter $params
+$grant = Invoke-MgGraphRequest -Method POST `
+  -Uri "https://graph.microsoft.com/v1.0/sites/$($site.Id)/lists/$($list.Id)/permissions" `
+  -Body ($params | ConvertTo-Json -Depth 5) -ContentType "application/json"
+
+# Keep this too: it is what you remove if you ever withdraw access.
+"Permission ID: $($grant.id)   Roles: $($grant.roles -join ', ')"
 
 Disconnect-MgGraph
 ```
 
-The last command returns the new permission, with `roles` showing `write`.
+The grant prints its **Permission ID** and `Roles: write`.
+
+**To see the grant again later** (for example to find its Permission ID), sign
+in the same way, find `$site` and `$list` as in step 1, then:
+
+```powershell
+$grants = Invoke-MgGraphRequest -Method GET `
+  -Uri "https://graph.microsoft.com/v1.0/sites/$($site.Id)/lists/$($list.Id)/permissions"
+$grants.value | Where-Object { $_.grantedToV2.application.id -eq "<APPLICATION-CLIENT-ID>" } |
+  ForEach-Object { "Permission ID: $($_.id)   Roles: $($_.roles -join ', ')" }
+```
 
 ### Option B — Graph Explorer, in the browser
 
@@ -149,12 +178,18 @@ The last command returns the new permission, with `roles` showing `write`.
    }
    ```
 
-   A `201 Created` response means it worked.
+   A `201 Created` response means it worked. Its `id` is the grant's
+   **Permission ID**.
+6. To see the grant again later:
+   `GET https://graph.microsoft.com/v1.0/sites/{Site ID}/lists/{Library ID}/permissions`.
+   AccreditMe's grant is the entry whose `grantedToV2.application.id` is your
+   Application (client) ID; its `id` is the Permission ID.
 
 ### Alternative: a site grant with `Sites.Selected`
 
 Only if you chose `Sites.Selected` in Step 2. Run as a **SharePoint
-Administrator**, which Microsoft requires for site grants:
+Administrator**, which Microsoft requires for site grants, signed in as
+described in Option A:
 
 ```powershell
 Connect-MgGraph -Scopes "Sites.FullControl.All"
@@ -163,7 +198,10 @@ $params = @{
   roles = @("write")
   grantedToIdentities = @(@{ application = @{ id = "<APPLICATION-CLIENT-ID>"; displayName = "AccreditMe storage" } })
 }
-New-MgSitePermission -SiteId $site.Id -BodyParameter $params
+$grant = Invoke-MgGraphRequest -Method POST `
+  -Uri "https://graph.microsoft.com/v1.0/sites/$($site.Id)/permissions" `
+  -Body ($params | ConvertTo-Json -Depth 5) -ContentType "application/json"
+"Permission ID: $($grant.id)   Roles: $($grant.roles -join ', ')"
 Disconnect-MgGraph
 ```
 
@@ -268,10 +306,17 @@ its administrators. Replacing the secret puts everything back; nothing is lost.
 
 You can do this at any time, in any of these ways:
 
-- **Remove the library grant:** list the grants with
-  `Get-MgSiteListPermission -SiteId $site.Id -ListId $list.Id`, then remove
-  AccreditMe's with
-  `Remove-MgSiteListPermission -SiteId $site.Id -ListId $list.Id -PermissionId <id>`.
+- **Remove the library grant.** Sign in and find `$site` and `$list` as in
+  Step 3, Option A. Find the grant's **Permission ID** as shown there under
+  *To see the grant again later*, then:
+
+  ```powershell
+  Invoke-MgGraphRequest -Method DELETE `
+    -Uri "https://graph.microsoft.com/v1.0/sites/$($site.Id)/lists/$($list.Id)/permissions/<PERMISSION-ID>"
+  ```
+
+  For a site grant, the address is `.../sites/$($site.Id)/permissions/<PERMISSION-ID>`.
+  In Graph Explorer, send the same `DELETE` to the same address.
 - **Remove the admin consent:** Entra admin center → **Enterprise apps** → your
   app → **Permissions**.
 - **Delete the client secret, or the whole app registration.**
