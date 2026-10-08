@@ -42,6 +42,7 @@ import { LookupValueListComponent } from '../../foundation/lookup/components/loo
 import { UserRoleAssignmentComponent } from '../../foundation/roles/components/user-role-assignment/user-role-assignment.component';
 import { RoleFormComponent } from '../../foundation/roles/components/role-form/role-form.component';
 import { LookupValueFormComponent } from '../../foundation/lookup/components/lookup-value-form/lookup-value-form.component';
+import { preserveDocumentLanguage } from '../../../testing/document-language';
 
 // ACC-160 — EVERY SWEPT SCREEN, WITH A RECORD THAT HAS NO ARABIC NAME.
 //
@@ -108,18 +109,11 @@ function configure(): void {
   });
 }
 
-// The CC-8 order: tear the module down BEFORE resetting <html>, or a pending
-// LanguageService effect rewrites dir="rtl" after the reset and leaks into
-// every later spec.
-function teardown(): void {
-  TestBed.resetTestingModule();
-  document.documentElement.removeAttribute('dir');
-  document.documentElement.removeAttribute('lang');
-}
-
 describe('swept screens fall back to the English name (ACC-160)', () => {
+  // ACC-184 — every case runs an Arabic session through the real
+  // LanguageService; tear down, then put <html> back as it was.
+  preserveDocumentLanguage();
   beforeEach(configure);
-  afterEach(teardown);
 
   // The guard every case below relies on: the session really is Arabic.
   it('runs in an Arabic session', () => {
@@ -380,8 +374,9 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
 // hard-code theirs rather than deriving it (am-field derives its own, so the
 // two lookup forms needed only the validator).
 describe('every form accepts an empty Arabic name (ACC-160)', () => {
+  // ACC-184 — the same Arabic session as above; same restore.
+  preserveDocumentLanguage();
   beforeEach(configure);
-  afterEach(teardown);
 
   type FormGroupLike = {
     controls: Record<string, { setValue(v: string): void; valid: boolean; hasError(e: string): boolean }>;

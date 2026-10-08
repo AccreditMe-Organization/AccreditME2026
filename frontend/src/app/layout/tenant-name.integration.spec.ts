@@ -17,6 +17,7 @@ import { NavigationAccessService } from '../core/services/navigation-access.serv
 import { LanguageService } from '../core/services/language.service';
 import { DocumentTitleService } from '../core/services/document-title.service';
 import { AuthService } from '../core/services/auth.service';
+import { preserveDocumentLanguage } from '../../testing/document-language';
 
 // ACC-161 — THE TENANT NAME, OVER THE REAL CHAIN.
 //
@@ -51,6 +52,10 @@ const routes: Routes = [
 ];
 
 describe('tenant name across the shell, real chain (ACC-161)', () => {
+  // ACC-184 — the Arabic session runs the real LanguageService; tear down, then
+  // put <html> back as it was.
+  preserveDocumentLanguage();
+
   let http: HttpTestingController;
 
   beforeEach(() => {
@@ -70,14 +75,6 @@ describe('tenant name across the shell, real chain (ACC-161)', () => {
       ],
     });
     http = TestBed.inject(HttpTestingController);
-  });
-
-  // The CC-8 order: tear down BEFORE resetting <html>, or LanguageService's
-  // pending effect rewrites dir="rtl" afterwards and leaks into later specs.
-  afterEach(() => {
-    TestBed.resetTestingModule();
-    document.documentElement.removeAttribute('dir');
-    document.documentElement.removeAttribute('lang');
   });
 
   async function render(nameAr: string | null) {

@@ -17,6 +17,7 @@ import {
   createAssignGroup,
   toAssignTarget,
 } from './task-assignee-picker.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-167 — the shared assignment picker. What is proven here: the outcome
 // line states the server's rule for the current choice, a change empties
@@ -48,6 +49,10 @@ class HostComponent {
 }
 
 describe('TaskAssigneePickerComponent (ACC-167)', () => {
+  // ACC-184 — Arabic specs here switch the real LanguageService, which turns
+  // <html> right to left; put it back so no later spec runs mirrored.
+  preserveDocumentLanguage();
+
   let http: HttpTestingController;
 
   function setup(

@@ -8,6 +8,7 @@ import { environment } from '../../../../../environments/environment';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { provideFormatTesting } from '../../../../core/formatting/testing';
 import { CalendarConfigComponent } from './calendar-config.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 /**
  * ACC-120 slice 1 — the Template 5 behaviours that are structural rather than
@@ -94,10 +95,12 @@ async function settle(
 }
 
 describe('CalendarConfigComponent (ACC-120 slice 1)', () => {
+  // The direction is global, so a spec that sets it must put it back or every
+  // later spec inherits an RTL document. ACC-184 — declared first so it runs
+  // last, after verify() below has used the live TestBed.
+  preserveDocumentLanguage();
+
   afterEach(() => {
-    // The direction is global, so a spec that sets it must put it back or every
-    // later spec inherits an RTL document.
-    document.documentElement.dir = 'ltr';
     TestBed.inject(HttpTestingController).verify();
   });
 

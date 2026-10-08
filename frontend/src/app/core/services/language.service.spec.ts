@@ -1,9 +1,15 @@
 import { TestBed } from '@angular/core/testing';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { LanguageService } from './language.service';
+import { preserveDocumentLanguage } from '../../../testing/document-language';
 
 describe('LanguageService', () => {
   let service: LanguageService;
+
+  // ACC-184 — two specs here end in Arabic, right to left. The beforeEach below
+  // clears <html> so each spec starts from a known state; this puts back what
+  // was there before it, so neither leaks into the rest of the suite.
+  preserveDocumentLanguage();
 
   beforeEach(() => {
     document.documentElement.removeAttribute('dir');

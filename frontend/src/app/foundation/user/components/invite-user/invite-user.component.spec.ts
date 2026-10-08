@@ -13,6 +13,7 @@ import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } 
 import { environment } from '../../../../../environments/environment';
 import { InviteUserComponent } from './invite-user.component';
 import { LanguageService } from '../../../../core/services/language.service';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 
 const ACTIVE_POSITION: IOrgPositionDto = {
@@ -181,6 +182,10 @@ describe('InviteUserComponent (ACC-46 Section 2.3)', () => {
 // the label the picker actually RENDERS, switches language with the same
 // position selected, and requires the rendered label to change.
 describe('InviteUserComponent position picker label (ACC-160)', () => {
+  // ACC-184 — the language switch below runs the real LanguageService. Declared
+  // first so it runs last: verify() below, then teardown, then <html> put back.
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<InviteUserComponent>;
   let httpMock: HttpTestingController;
 
@@ -208,14 +213,7 @@ describe('InviteUserComponent position picker label (ACC-160)', () => {
     fixture.detectChanges();
   });
 
-  // The CC-8 order: tear down BEFORE resetting <html>, or LanguageService's
-  // pending effect rewrites dir="rtl" afterwards and leaks into later specs.
-  afterEach(() => {
-    httpMock.verify();
-    TestBed.resetTestingModule();
-    document.documentElement.removeAttribute('dir');
-    document.documentElement.removeAttribute('lang');
-  });
+  afterEach(() => httpMock.verify());
 
   const select = (id: string): void => {
     fixture.componentInstance.form.controls.positionId.setValue(id);

@@ -7,6 +7,7 @@ import {
 import { environment } from '../../../environments/environment';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
 import { LanguageService } from './language.service';
+import { preserveDocumentLanguage } from '../../../testing/document-language';
 import {
   ModuleAccessLevel,
   NavigationAccessService,
@@ -276,6 +277,10 @@ describe('NavigationAccessService', () => {
 // computed over the stored pair and the language. These tests switch the
 // language on a service that loaded ONCE, and require the name to follow.
 describe('NavigationAccessService tenant name (ACC-161)', () => {
+  // ACC-184 — the Arabic case switches the real LanguageService. Declared first
+  // so it runs last: verify() below, then teardown, then <html> put back.
+  preserveDocumentLanguage();
+
   let service: NavigationAccessService;
   let httpMock: HttpTestingController;
   const PERMISSIONS_URL = `${environment.apiUrl}/roles/my-permissions`;
@@ -294,14 +299,7 @@ describe('NavigationAccessService tenant name (ACC-161)', () => {
     httpMock = TestBed.inject(HttpTestingController);
   });
 
-  // The CC-8 order: tear down BEFORE resetting <html>, or LanguageService's
-  // pending effect rewrites dir="rtl" afterwards and leaks into later specs.
-  afterEach(() => {
-    httpMock.verify();
-    TestBed.resetTestingModule();
-    document.documentElement.removeAttribute('dir');
-    document.documentElement.removeAttribute('lang');
-  });
+  afterEach(() => httpMock.verify());
 
   const load = (nameAr: string | null): void => {
     service.loadAccess().subscribe();
