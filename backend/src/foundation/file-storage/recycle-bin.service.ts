@@ -4,6 +4,7 @@ import { AuditLogService } from '../../common/services/audit-log.service';
 import { StoredFileService } from './stored-file.service';
 import { StorageRefusalException } from './storage-refusal';
 import { IRecycleBinItem } from './interfaces/recycle-bin.interface';
+import { SharePointAccessService } from './sharepoint-access.service';
 
 /** How long a deleted file waits in the bin before the daily job purges it. */
 export const RECYCLE_BIN_DAYS = 30;
@@ -41,6 +42,7 @@ export class RecycleBinService {
     private readonly prisma: PrismaService,
     private readonly storedFiles: StoredFileService,
     private readonly auditLog: AuditLogService,
+    private readonly sharePointAccess: SharePointAccessService,
   ) {}
 
   async list(organizationId: string, now: Date = new Date()): Promise<IRecycleBinItem[]> {
@@ -120,6 +122,20 @@ export class RecycleBinService {
    */
   async purge(organizationId: string, fileIds: readonly string[], actorId: string | null): Promise<{ purged: number }> {
     const ids = [...new Set(fileIds)];
+
+    // ACC-185 — a SharePoint purge needs the library reachable BEFORE anything
+    // is marked purged: if access was withdrawn, the whole request is refused
+    // and every row stays unpurged, to be tried again (the daily job, tomorrow).
+    // Marking first and failing after would record as purged a file still in
+    // the customer's library.
+    const providers = await this.prisma.storedFile.findMany({
+      where: { id: { in: ids }, organizationId, deletedAt: { not: null }, purgedAt: null },
+      select: { provider: true },
+    });
+    if (providers.some((f) => f.provider === 'SHAREPOINT')) {
+      await this.sharePointAccess.assertReachable(organizationId);
+    }
+
     const files = await this.prisma.$transaction(async (tx) => {
       const found = await tx.storedFile.findMany({
         where: { id: { in: ids }, organizationId, deletedAt: { not: null }, purgedAt: null },
@@ -161,7 +177,9 @@ export class RecycleBinService {
    * yet purged, per organisation, in batches. A failing organisation is logged
    * and the rest still run.
    */
-  async purgeExpired(now: Date = new Date()): Promise<{ purged: number; failedOrganizations: string[] }> {
+  async purgeExpired(
+    now: Date = new Date(),
+  ): Promise<{ purged: number; failedOrganizations: string[]; deferredOrganizations: string[] }> {
     const cutoff = new Date(now.getTime() - RECYCLE_BIN_DAYS * DAY_MS);
     const expired = await this.prisma.storedFile.findMany({
       where: { deletedAt: { not: null, lt: cutoff }, purgedAt: null },
@@ -172,16 +190,25 @@ export class RecycleBinService {
 
     let purged = 0;
     const failedOrganizations: string[] = [];
+    const deferredOrganizations: string[] = [];
     for (const [organizationId, ids] of byOrg) {
       try {
         for (let i = 0; i < ids.length; i += PURGE_MAX_FILES) {
           purged += (await this.purge(organizationId, ids.slice(i, i + PURGE_MAX_FILES), null)).purged;
         }
       } catch (error) {
+        // ACC-185 — the customer's SharePoint cannot be reached: nothing was
+        // marked purged, so the files simply wait for tomorrow's run. Deferred,
+        // not failed — the withdrawn-access notice and Setup health already say so.
+        if (error instanceof StorageRefusalException && (error.code === 'STORAGE_ACCESS_WITHDRAWN' || error.code === 'STORAGE_UNAVAILABLE')) {
+          deferredOrganizations.push(organizationId);
+          this.logger.warn(`Expired-file purge deferred for org ${organizationId}: ${error.code}`);
+          continue;
+        }
         failedOrganizations.push(organizationId);
         this.logger.error(`Expired-file purge failed for org ${organizationId}: ${(error as Error).message}`);
       }
     }
-    return { purged, failedOrganizations };
+    return { purged, failedOrganizations, deferredOrganizations };
   }
 }
