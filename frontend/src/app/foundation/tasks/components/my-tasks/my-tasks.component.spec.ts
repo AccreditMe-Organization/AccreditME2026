@@ -18,6 +18,7 @@ import {
 } from '../../services/task.service';
 import { AuthService } from '../../../../core/services/auth.service';
 import { MyTasksComponent } from './my-tasks.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 // ACC-94 — DEFECT 3. The due date rendered through Angular's DatePipe with no
 // locale registered: US order ("9/16/26, 12:30 AM" reads as 9 June to half the
@@ -83,6 +84,10 @@ const task = (overrides: Partial<IMyTaskListItemDto>): IMyTaskListItemDto => ({
 });
 
 describe('MyTasksComponent — due dates (ACC-94)', () => {
+  // ACC-184 — Arabic specs here switch the real LanguageService, which turns
+  // <html> right to left; put it back so no later spec runs mirrored.
+  preserveDocumentLanguage();
+
   function render(options: { zone: string; language: 'en' | 'ar'; tasks: IMyTaskListItemDto[] }): HTMLElement {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
@@ -142,6 +147,10 @@ describe('MyTasksComponent — due dates (ACC-94)', () => {
 
 // ACC-163 — the assignee's actions, the overdue flag and the evidence rule.
 describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
+  // ACC-184 — Arabic specs here switch the real LanguageService, which turns
+  // <html> right to left; put it back so no later spec runs mirrored.
+  preserveDocumentLanguage();
+
   const API = `${environment.apiUrl}/tasks`;
   const PAST = '2026-01-01T09:00:00.000Z';
   const FUTURE = '2099-01-01T09:00:00.000Z';
@@ -304,6 +313,10 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
 
 // ACC-167 — Available to pick up, Pick, and Release.
 describe('MyTasksComponent — pools (ACC-167)', () => {
+  // ACC-184 — Arabic specs here switch the real LanguageService, which turns
+  // <html> right to left; put it back so no later spec runs mirrored.
+  preserveDocumentLanguage();
+
   const API = `${environment.apiUrl}/tasks`;
   const FUTURE = '2099-01-01T09:00:00.000Z';
   const POOL: TaskPoolDto = {
@@ -422,6 +435,10 @@ describe('MyTasksComponent — pools (ACC-167)', () => {
 
 // ACC-173 — requests for more time and holds.
 describe('MyTasksComponent — requests and holds (ACC-173)', () => {
+  // ACC-184 — Arabic specs here switch the real LanguageService, which turns
+  // <html> right to left; put it back so no later spec runs mirrored.
+  preserveDocumentLanguage();
+
   const API = `${environment.apiUrl}/tasks`;
   const FUTURE = '2099-01-01T09:00:00.000Z';
   const ME = 'user-me';
@@ -573,6 +590,10 @@ describe('MyTasksComponent — requests and holds (ACC-173)', () => {
 
 // ACC-174 — the creator's own actions: canManage says WHO, the status WHICH.
 describe('MyTasksComponent — edit, cancel and reopen (ACC-174)', () => {
+  // ACC-184 — Arabic specs here switch the real LanguageService, which turns
+  // <html> right to left; put it back so no later spec runs mirrored.
+  preserveDocumentLanguage();
+
   const API = `${environment.apiUrl}/tasks`;
   const FUTURE = '2099-01-01T09:00:00.000Z';
   const T = 'Submit terms of reference';

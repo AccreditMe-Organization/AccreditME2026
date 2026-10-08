@@ -9,6 +9,7 @@ import { AccreditMePreset } from '../../../../core/theme/accreditme-preset';
 import { IOrgUnitHeadStatus } from '../../services/org-unit-head.service';
 import { SetActingHeadDialogComponent } from './set-acting-head-dialog.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
+import { preserveDocumentLanguage } from '../../../../../testing/document-language';
 
 const dialogOf = (f: ComponentFixture<HostComponent>): SetActingHeadDialogComponent =>
   f.debugElement.children[0].children[0].componentInstance as SetActingHeadDialogComponent;
@@ -132,9 +133,9 @@ const body = (f: ComponentFixture<HostComponent>): HTMLElement | null =>
   document.querySelector('.am-dialog__body');
 
 describe('SetActingHeadDialogComponent — the body does not scroll sideways (ACC-120)', () => {
-  afterEach(() => {
-    document.documentElement.dir = 'ltr';
-  });
+  // ACC-184 — setup() sets <html dir> for the rtl cases; put back whatever was
+  // there, rather than forcing ltr over an absent attribute.
+  preserveDocumentLanguage();
 
   for (const dir of ['ltr', 'rtl'] as const) {
     it(`has no horizontal overflow in ${dir}`, () => {

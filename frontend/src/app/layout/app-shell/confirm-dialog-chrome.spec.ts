@@ -6,6 +6,7 @@ import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { LanguageService } from '../../core/services/language.service';
 import { ConfirmDialogCloseLabel } from '../../shared/directives/confirm-dialog-close-label.directive';
+import { preserveDocumentLanguage } from '../../../testing/document-language';
 
 /**
  * ACC-83 — the parts of a confirmation PrimeNG renders ITSELF.
@@ -55,6 +56,15 @@ class HostComponent {
 }
 
 describe('the global confirmation dialog — chrome PrimeNG renders itself (ACC-83)', () => {
+  // THE DIRECTION, which is the part that bit. This spec constructs the REAL
+  // LanguageService — the service is what sets PrimeNG's button translations —
+  // and the same effect writes <html dir>. Rendering the Arabic case once left
+  // the whole document RTL for every later spec, and DataListComponent's
+  // alignment spec failed with its offsets REVERSED in a file this one does not
+  // touch. ACC-184 — the helper tears the injector down first (so a late effect
+  // cannot write rtl back) and then puts <html> back as it was.
+  preserveDocumentLanguage();
+
   let fixture: ComponentFixture<HostComponent>;
 
   function render(lang: 'en' | 'ar'): void {
@@ -93,31 +103,6 @@ describe('the global confirmation dialog — chrome PrimeNG renders itself (ACC-
 
   afterEach(() => {
     document.querySelectorAll('.p-confirmdialog, .p-dialog-mask').forEach((n) => n.remove());
-
-    // TEAR THE INJECTOR DOWN BEFORE RESTORING THE DIRECTION, and the order is
-    // the whole fix.
-    //
-    // Resetting dir alone was not enough and the suite went red again:
-    // translate.use() resolves asynchronously, so LanguageService's effect can
-    // fire AFTER this hook has run — during a later spec — and write rtl back.
-    // Destroying the TestBed injector destroys the effect with it, so there is
-    // nothing left to fire.
-    TestBed.resetTestingModule();
-
-    // AND THE DIRECTION, which is the part that bit.
-    //
-    // This spec constructs the REAL LanguageService — that is the point of it,
-    // since the service is what sets PrimeNG's button translations — and the
-    // same effect writes document.documentElement.dir. No TestBed resets that:
-    // it is global state outside Angular entirely.
-    //
-    // Rendering the Arabic case therefore left the whole document RTL for every
-    // spec that ran afterwards, and DataListComponent's alignment spec measures
-    // column offsets left-to-right. It failed with the offsets REVERSED, in a
-    // file this one does not touch, as soon as an unrelated new spec changed
-    // the execution order. Restored here rather than in the file that noticed.
-    document.documentElement.dir = 'ltr';
-    document.documentElement.lang = 'en';
   });
 
   // NON-VACUITY FIRST: if no dialog rendered, every assertion below passes for

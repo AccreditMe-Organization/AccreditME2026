@@ -16,6 +16,7 @@ import {
   provideTranslateService,
 } from '@ngx-translate/core';
 import { LanguageService } from './language.service';
+import { preserveDocumentLanguage } from '../../../testing/document-language';
 
 class FakeDictionaryLoader extends TranslateLoader {
   private readonly dictionaries: Record<string, Record<string, string>> = {
@@ -36,6 +37,9 @@ class FakeDictionaryLoader extends TranslateLoader {
 class TranslatedGreetingHostComponent {}
 
 describe('LanguageService — rendered consequence of use() (ACC-19 Section 7)', () => {
+  // ACC-184 — the spec below ends right to left by design; put <html> back.
+  preserveDocumentLanguage();
+
   beforeEach(() => {
     document.documentElement.removeAttribute('dir');
     document.documentElement.removeAttribute('lang');
