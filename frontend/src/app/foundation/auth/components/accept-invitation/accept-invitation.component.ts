@@ -16,6 +16,7 @@ import { Subscription } from 'rxjs';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
 import { AuthService, InvitationOrganization } from '../../../../core/services/auth.service';
+import { refusalCode } from '../../../../core/http/refusal';
 import { LanguageService } from '../../../../core/services/language.service';
 import {
   REQUEST_TIMEOUT_MS,
@@ -320,14 +321,4 @@ export class AcceptInvitationComponent {
     control.markAsTouched();
     focusFirstInvalid(this.form, this.host);
   }
-}
-
-/** The stable `code` an AccreditMe refusal carries in its body, if any. */
-function refusalCode(err: unknown): string | null {
-  if (!(err instanceof HttpErrorResponse)) return null;
-  const body: unknown = err.error;
-  if (body && typeof body === 'object' && 'code' in body && typeof body.code === 'string') {
-    return body.code;
-  }
-  return null;
 }
