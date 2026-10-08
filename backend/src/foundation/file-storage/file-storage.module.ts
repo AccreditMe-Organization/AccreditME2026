@@ -11,6 +11,7 @@ import { StorageResolverService } from './storage-resolver.service';
 import { StoredFileService } from './stored-file.service';
 import { StorageSettingsService } from './storage-settings.service';
 import { StorageSettingsController } from './storage-settings.controller';
+import { SharePointAccessService } from './sharepoint-access.service';
 import { FilesController } from './files.controller';
 import { SharePointConnector } from '../../providers/storage/sharepoint/sharepoint-connector';
 
@@ -31,6 +32,7 @@ import { SharePointConnector } from '../../providers/storage/sharepoint/sharepoi
     StoredFileService,
     StorageSettingsService,
     StorageNoticesService,
+    SharePointAccessService,
     RecycleBinService,
     AuditLogService,
     // The daily purge both consumes its queue and schedules its own repeat, so
