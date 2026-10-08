@@ -7,6 +7,7 @@ import { ALLOWED_EXTENSIONS } from './file-content';
 import { readDownloadToken } from './download-token';
 import { maxUploadBytes } from './storage-platform-env';
 import { StorageResolverService } from './storage-resolver.service';
+import { SharePointAccessService } from './sharepoint-access.service';
 
 /**
  * ACC-177 — the two file routes that belong to no module.
@@ -14,7 +15,9 @@ import { StorageResolverService } from './storage-resolver.service';
  * GET /files/upload-limits — what the upload screen shows before anyone picks a
  *   file: the size cap and the allowed types. Any signed-in user.
  *
- * GET /files/stream/:token — a LOCAL-FOLDER file's download. Deliberately has
+ * GET /files/stream/:token — a LOCAL-FOLDER or SHAREPOINT file's download
+ *   (ACC-185: SharePoint streams through here, so the saved name is ours and the
+ *   entitlement stays AccreditMe's). Deliberately has
  *   NO session guard: the token IS the entitlement (download-token.ts), minted
  *   only after the owning module's permission check, bound to one file in one
  *   organisation, valid fifteen minutes — the local equivalent of an S3
@@ -28,6 +31,7 @@ export class FilesController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly resolver: StorageResolverService,
+    private readonly sharePointAccess: SharePointAccessService,
   ) {}
 
   @Get('upload-limits')
@@ -41,7 +45,7 @@ export class FilesController {
     const claim = readDownloadToken(token);
     const file = claim
       ? await this.prisma.storedFile.findFirst({
-          where: { id: claim.fileId, organizationId: claim.organizationId, deletedAt: null, provider: 'LOCAL_FILESYSTEM' },
+          where: { id: claim.fileId, organizationId: claim.organizationId, deletedAt: null, provider: { in: ['LOCAL_FILESYSTEM', 'SHAREPOINT'] } },
         })
       : null;
     if (!file) throw new NotFoundException('File not found');
@@ -49,9 +53,13 @@ export class FilesController {
     const provider = await this.resolver.forFile(file);
     let body: NodeJS.ReadableStream;
     try {
-      body = await provider.getStream(file.storageKey);
+      body = await provider.getStream(file.storageKey, file.msItemId);
     } catch (error) {
-      this.logger.error(`Local file ${file.id} in org ${file.organizationId} could not be read: ${(error as Error).message}`);
+      // ACC-185 — SharePoint access withdrawn: stamped once, refused with its
+      // own code. Anything else stays the same 404 as before.
+      const refusal = await this.sharePointAccess.refusalFor(file.organizationId, error, 'file');
+      if (refusal && refusal.code === 'STORAGE_ACCESS_WITHDRAWN') throw refusal;
+      this.logger.error(`File ${file.id} (${file.provider}) in org ${file.organizationId} could not be read: ${(error as Error).message}`);
       throw new NotFoundException('File not found');
     }
 

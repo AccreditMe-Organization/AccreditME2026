@@ -12,17 +12,28 @@ import {
 } from '../../providers/storage/sharepoint/sharepoint-connector';
 import { parseSiteUrl, SiteUrlRefusedError } from '../../providers/storage/sharepoint/sharepoint-locator';
 import { SharePointStorageProvider } from '../../providers/storage/sharepoint/sharepoint-storage.provider';
-import { completeMinio, completeSharePoint, IMinioConfig, IStorageConfig, readStorageConfig, StorageChoice } from './storage-config';
+import {
+  completeMinio,
+  completeSharePoint,
+  IMinioConfig,
+  ISharePointResolved,
+  IStorageConfig,
+  readStorageConfig,
+  StorageChoice,
+} from './storage-config';
+import { IAppCredentials } from '../../providers/storage/sharepoint/microsoft-identity';
+
+function credentialsOf(sharePoint: { tenant: string; clientId: string; clientSecret: string }): IAppCredentials {
+  return { tenant: sharePoint.tenant, clientId: sharePoint.clientId, clientSecret: sharePoint.clientSecret };
+}
 import { allowPrivateEndpoints, localStorageBase, platformS3Settings } from './storage-platform-env';
 import { StorageRefusalException } from './storage-refusal';
 
-/**
- * The kinds Organization.storageProvider and StoredFile.provider can hold
- * TODAY. SharePoint is a StorageChoice a tenant can set up and test, and joins
- * this type with the stage-3 migration that adds it to the database enum —
- * until then TypeScript itself stops anything writing it.
- */
-export type StorageProviderKind = 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';
+/** The kinds Organization.storageProvider and StoredFile.provider hold. */
+export type StorageProviderKind = 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM' | 'SHAREPOINT';
+
+/** The kinds built from settings alone, with no lookup (SharePoint needs one). */
+export type DirectProviderKind = Exclude<StorageProviderKind, 'SHAREPOINT'>;
 
 /** Where a file lives. Written onto every StoredFile row. */
 export interface IStorageLocation {
@@ -30,6 +41,9 @@ export interface IStorageLocation {
   bucket: string | null;
   endpoint: string | null;
   rootPath: string | null;
+  /** ACC-185 — SharePoint only: the site and library (drive) written to. */
+  msSiteId?: string | null;
+  msDriveId?: string | null;
 }
 
 export interface IResolvedStorage {
@@ -44,6 +58,9 @@ export interface IStoredFileLocation {
   bucket: string | null;
   endpoint: string | null;
   rootPath: string | null;
+  /** ACC-185 — SharePoint only: the library the file was written to, and its item. */
+  msDriveId?: string | null;
+  msItemId?: string | null;
 }
 
 /**
@@ -73,11 +90,30 @@ export class StorageResolverService {
       select: { storageProvider: true, storageConfig: true },
     });
     if (!org) throw new StorageRefusalException('STORAGE_NOT_CONFIGURED');
-    return this.forCandidate(org.storageProvider, readStorageConfig(org.storageConfig));
+    const config = readStorageConfig(org.storageConfig);
+    if (org.storageProvider === 'SHAREPOINT') {
+      const { credentials, resolved } = this.confirmedSharePoint(config);
+      return {
+        provider: this.sharePoint.providerFor(credentials, resolved.driveId),
+        location: {
+          provider: 'SHAREPOINT',
+          bucket: null,
+          endpoint: null,
+          rootPath: null,
+          msSiteId: resolved.siteId,
+          msDriveId: resolved.driveId,
+        },
+      };
+    }
+    return this.forCandidate(org.storageProvider, config);
   }
 
-  /** Builds the provider for a provider choice and configuration. Saves nothing. */
-  forCandidate(provider: StorageProviderKind, config: IStorageConfig): IResolvedStorage {
+  /**
+   * Builds the provider for a provider choice and configuration. Saves
+   * nothing. SharePoint is not built here — it needs a lookup first
+   * (connectSharePoint) or the ids Confirm recorded (forUpload, forFile).
+   */
+  forCandidate(provider: DirectProviderKind, config: IStorageConfig): IResolvedStorage {
     switch (provider) {
       case 'S3':
         return this.platformS3();
@@ -129,7 +165,43 @@ export class StorageResolverService {
         }
         return new LocalFilesystemStorageProvider(this.localRoot(file.rootPath));
       }
+      case 'SHAREPOINT': {
+        // The file's own library must still be the organisation's library —
+        // the same rule as MinIO's endpoint and bucket. Moving files between
+        // libraries is ACC-180; until then a file elsewhere is unavailable.
+        const config = await this.configOf(file.organizationId);
+        const sharePoint = completeSharePoint(config);
+        const resolved = config.sharepoint?.resolved;
+        if (!sharePoint || !resolved || !file.msDriveId || resolved.driveId !== file.msDriveId) {
+          throw new StorageRefusalException('FILE_UNAVAILABLE');
+        }
+        return this.sharePoint.providerFor(credentialsOf(sharePoint), resolved.driveId);
+      }
     }
+  }
+
+  /**
+   * ACC-185 — the confirmed SharePoint location: the app's credentials and the
+   * ids Confirm recorded. Refuses when either is missing, which a confirmed
+   * organisation should never be.
+   */
+  confirmedSharePoint(config: IStorageConfig): { credentials: IAppCredentials; resolved: ISharePointResolved } {
+    const sharePoint = completeSharePoint(config);
+    const resolved = config.sharepoint?.resolved;
+    if (!sharePoint || !resolved?.driveId) throw new StorageRefusalException('STORAGE_NOT_CONFIGURED');
+    return { credentials: credentialsOf(sharePoint), resolved };
+  }
+
+  /** Can the confirmed library still be reached? Throws what an upload would. */
+  async probeSharePoint(config: IStorageConfig): Promise<void> {
+    const { credentials, resolved } = this.confirmedSharePoint(config);
+    await this.sharePoint.probe(credentials, resolved.driveId);
+  }
+
+  /** After Microsoft refused a token, so the next attempt asks again. */
+  forgetSharePointToken(config: IStorageConfig): void {
+    const sharePoint = completeSharePoint(config);
+    if (sharePoint) this.sharePoint.forget(credentialsOf(sharePoint));
   }
 
   /**

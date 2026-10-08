@@ -58,6 +58,33 @@ export class SharePointConnector {
     this.locator = new SharePointLocator(graph);
   }
 
+  /**
+   * A provider for a library already found — Confirm recorded its drive id —
+   * with no lookup. The token is fetched (and cached) on first use.
+   */
+  providerFor(credentials: IAppCredentials, driveId: string): SharePointStorageProvider {
+    return new SharePointStorageProvider({
+      graph: this.graph,
+      token: () => this.identity.appToken(credentials),
+      driveId,
+    });
+  }
+
+  /**
+   * Can the app still reach this library? One token request and one small
+   * read of the drive. Throws exactly what an upload would: a
+   * MicrosoftSignInError or a GraphError.
+   */
+  async probe(credentials: IAppCredentials, driveId: string): Promise<void> {
+    const token = await this.identity.appToken(credentials);
+    await this.graph.send({ method: 'GET', path: `/drives/${encodeURIComponent(driveId)}?$select=id`, token, purpose: 'probe' });
+  }
+
+  /** Drops a cached token after Microsoft refused it, so the next try asks again. */
+  forget(credentials: IAppCredentials): void {
+    this.identity.forget(credentials);
+  }
+
   /** Which way the site and library will be found: ids win when both are set. */
   static usesIds(settings: ISharePointSettings): boolean {
     return Boolean(settings.siteId && settings.listId);

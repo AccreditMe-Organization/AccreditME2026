@@ -40,9 +40,28 @@ export interface ISharePointConfig {
   listId: string;
   /** YYYY-MM-DD, optional — for the 30-day reminder. */
   secretExpiresOn: string;
+  /**
+   * What a passing test found, recorded by Confirm. From then on it IS the
+   * location: every upload, download and purge uses these ids without looking
+   * the site up again, and a replaced secret must reach exactly this tenant,
+   * site and library.
+   */
+  resolved: ISharePointResolved;
 }
 
-/** The kinds a tenant can CHOOSE; the Prisma enum gains SHAREPOINT in stage 3. */
+export interface ISharePointResolved {
+  tenantId: string;
+  siteId: string;
+  siteName: string | null;
+  siteWebUrl: string | null;
+  listId: string;
+  driveId: string;
+  libraryName: string;
+  libraryWebUrl: string | null;
+  resolvedAt: string;
+}
+
+/** The options a tenant can choose — the same four the database enum holds. */
 export type StorageChoice = 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM' | 'SHAREPOINT';
 
 export interface IStorageConfig {
