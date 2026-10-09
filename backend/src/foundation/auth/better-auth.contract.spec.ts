@@ -214,4 +214,55 @@ describe('Better Auth contract (ACC-120 slice 9b)', () => {
       expect(verifiedChallengeIdentifier(sign('other'), 's3cret')).toBeNull();
     });
   });
+
+  // ACC-148 — why a forged Host cannot influence a URL Better Auth builds. Each
+  // fact is read off the INSTALLED source, so an upgrade that changes one fails
+  // here by name. Verified on the deployed API too (8 Oct): Railway's edge
+  // answers a forged Host with its own 404 before the app sees it.
+  describe('no auth URL is derived from a request (ACC-148)', () => {
+    it('derives an origin from a request only inside its HTTP handler, which this API never mounts', () => {
+      const base = source(`${BETTER_AUTH}/auth/base.mjs`);
+      expect(base).toContain(
+        'const baseURL = getBaseURL(void 0, basePath, request, void 0, ctx.options.advanced?.trustedProxyHeaders);',
+      );
+      expect(base).toContain('handler: async (request) => {');
+      // Nothing here mounts it: no toNodeHandler, no auth.handler anywhere.
+      const service = readFileSync(join(__dirname, 'auth.service.ts'), 'utf8');
+      expect(service).not.toMatch(/toNodeHandler|auth\.handler\(/);
+    });
+
+    it('resolves a STRING baseURL once at start-up, from configuration alone', () => {
+      const context = source(`${BETTER_AUTH}/context/create-context.mjs`);
+      expect(context).toContain(
+        'const baseURL = isDynamicConfig ? void 0 : getBaseURL(typeof options.baseURL === "string" ? options.baseURL : void 0, options.basePath);',
+      );
+      // A direct auth.api call re-resolves the origin only for an OBJECT
+      // (dynamic) baseURL; ours is a string (better-auth.config.spec.ts).
+      const endpoints = source(`${BETTER_AUTH}/api/to-auth-endpoints.mjs`);
+      expect(endpoints).toContain(
+        'const authContext = isDynamicBaseURLConfig(rawContext.options.baseURL) ? await resolveDynamicContext(rawContext, context) : rawContext;',
+      );
+    });
+
+    it('builds the reset link from that configured base URL', () => {
+      const password = source(`${BETTER_AUTH}/api/routes/password.mjs`);
+      expect(password).toContain(
+        'const url = `${ctx.context.baseURL}/reset-password/${verificationToken}?callbackURL=${callbackURL}`;',
+      );
+    });
+
+    it('our auth.api calls carry at most a cookie — never a request, a Host or an X-Forwarded-Host', () => {
+      const service = readFileSync(join(__dirname, 'auth.service.ts'), 'utf8');
+      const headerArgs =
+        service.match(/headers:\s*new Headers\(\{[^}]*\}\)/g) ?? [];
+      // Non-vacuity guard: the calls that do pass headers were found.
+      expect(headerArgs.length).toBeGreaterThanOrEqual(4);
+      for (const arg of headerArgs) {
+        expect(arg).toMatch(/^headers:\s*new Headers\(\{\s*cookie:/);
+        expect(arg).not.toMatch(/host/i);
+      }
+      expect(service).not.toMatch(/auth\.api\.\w+\(\{[^)]*\brequest\s*:/);
+      expect(service).not.toMatch(/['"]x-forwarded-host['"]/i);
+    });
+  });
 });

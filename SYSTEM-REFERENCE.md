@@ -967,11 +967,19 @@ verified or counted (`assertTwoFactorNotLocked()`, two-factor
 `totp/index.mjs:137`), so a code tried while locked does not move
 `twoFactor.lockedUntil`.
 
-**Forgot password sends nothing** (slice 9d). Reset is not served: the email
-Better Auth would queue carries a relative link (`baseURL` is unset, ACC-148)
-to a handler this API never mounts, and there is no reset screen. So the page
-says reset by email isn't available and points at the administrator. The
-endpoint `POST /auth/forgot-password` is unchanged and nothing calls it.
+**Forgot password sends nothing** (slice 9d, then CC-64). Reset is not served:
+the email Better Auth would queue carried a link to its own handler, which this
+API never mounts, and there is no reset screen. So the page says reset by email
+isn't available and points at the administrator, and since ACC-186/148 the
+endpoint `POST /auth/forgot-password` does nothing either: same route, rate
+limits and neutral 200, no `requestPasswordReset`, no `AuthVerification` row, no
+notification. `sendResetPassword` stays in the Better Auth config, unreachable,
+for the self-service reset ticket — which must build its link with
+`buildTenantUrl()`, not send Better Auth's `data.url`.
+
+**The MFA challenge cookie is `__Secure-better-auth.two_factor`** since
+ACC-186 (`advanced.useSecureCookies: true`); `two-factor-challenge.ts` reads both
+names, and `cancelMfa()` clears both.
 
 **KNOWN AND ACCEPTED LIMITATION — sign-in reveals whether an ORGANISATION
 exists.** Accepted for now. **ACC-129 made guessing slower, not closed:**
@@ -8035,6 +8043,59 @@ opens `http://al-manara.localhost:4201/login`.
 **Production's `apiUrl` is a placeholder** (`environment.prod.ts`): where the API
 is served in production is ACC-130 / ACC-148's decision, and nothing here can be
 verified end to end until ACC-130's wildcard DNS and certificate exist.
+
+### 15.14 Session cookies are always Secure, and Better Auth's base URL is the API's own (ACC-186, ACC-148)
+
+**Every session cookie is `Secure`, `httpOnly` and `sameSite: 'strict'`,
+whatever `NODE_ENV` says.** The setters used `secure: NODE_ENV === 'production'`,
+and Railway runs `NODE_ENV=development` — the Dockerfile's `production` is
+overridden by the service variable (`railway.ts` declares it with `preserve()`)
+— so the deployed API sent `access_token`, `refresh_token` and the impersonation
+`access_token` without `Secure`. `common/config/session-cookies.ts` now owns the
+options, and the two setters (`setSessionCookies()`, `setAccessTokenCookie()`)
+and both clearers (`clearSessionCookies()`, `cancelMfa()`) read them, so a clear
+always carries what its set did — a browser refuses to let a non-Secure
+Set-Cookie replace a Secure one, so a clear that drifts can fail to sign anyone
+out. Better Auth's own cookies follow (`advanced.useSecureCookies: true`).
+
+Local http still works because browsers treat `localhost` and `*.localhost` as
+potentially trustworthy and keep Secure cookies there; that is checked by hand in
+Chrome rather than assumed. The planned fallback, only if a dev browser refuses,
+is an explicit `SESSION_COOKIE_SECURE` flag defaulting to true. On the wire on
+the deployed API this is checked at the ACC-130 cutover: there are no sign-ins
+on the deployed API until then.
+
+**Better Auth's `baseURL` is `API_ORIGIN`**, required at boot
+(`resolveApiOrigin()`, same throw-rather-than-default rule as
+`resolveFrontendOrigin()`): exactly an origin, https, or http for `localhost`
+only. `https://accreditme2026-production.up.railway.app` today,
+`https://api.accreditme.app` after ACC-130. ONE value, because Better Auth's base
+URL is where Better Auth lives and the API is one host for every tenant; every
+link a tenant clicks is built by `buildTenantUrl()` from configuration. It is a
+STRING, which Better Auth resolves once at start-up — an object (`allowedHosts`)
+would make it re-resolve per request. The "Base URL is not set" boot warning is
+gone. `appName` is "AccreditMe", so authenticator apps no longer say "Better
+Auth".
+
+**ACC-148's feared exposure was verified absent (8 Oct), for three independent
+reasons** — a forged `Host` could not have pointed a reset link at an attacker:
+
+1. Better Auth derives an origin from a request only inside its HTTP handler
+   (`dist/auth/base.mjs`), which this API never mounts; every call is a direct
+   `auth.api.*`, passing at most a `cookie` header; a static `baseURL` is never
+   re-resolved on a direct call (`dist/api/to-auth-endpoints.mjs`). With
+   `baseURL` unset, `ctx.baseURL` was `""`, so the one link Better Auth builds,
+   the reset link, came out relative.
+2. Railway's edge answers a forged `Host` with its own `404 Application not
+   found` (`x-railway-fallback: true`); the app never sees it.
+3. Our own code builds no URL from the request.
+
+`better-auth.contract.spec.ts` pins (1) against the installed source, including
+that our `auth.api` calls carry no request, `host` or `x-forwarded-host`.
+
+**`API_ORIGIN` was set on Railway BEFORE the code requiring it merged**
+(9 Oct), the same expand-then-contract order `FRONTEND_URL` needed: the boot now
+refuses to start without it, and a deploy whose boot fails is not promoted.
 
 ## 16. File Storage — Per Organisation, and File Evidence (ACC-177, SharePoint ACC-185)
 

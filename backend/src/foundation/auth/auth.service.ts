@@ -65,6 +65,15 @@ import {
   twoFactorLockedUntil,
 } from './two-factor-challenge';
 import { isOrganizationOpen } from '../../common/tenant/organization-status';
+import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+  accessTokenClearOptions,
+  accessTokenCookieOptions,
+  refreshTokenClearOptions,
+  refreshTokenCookieOptions,
+  twoFactorCookieClearOptions,
+} from '../../common/config/session-cookies';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -234,31 +243,26 @@ export class AuthService {
     return rawToken;
   }
 
+  // ACC-186 — always Secure, never keyed off NODE_ENV, and the options come
+  // from one place so a clear always matches its set (session-cookies.ts).
   private setSessionCookies(res: ExpressResponse, accessToken: string, refreshToken: string): void {
-    const isProd = process.env['NODE_ENV'] === 'production';
-
-    res.cookie('access_token', accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: ACCESS_TOKEN_TTL_SECONDS * 1000,
-      path: '/',
-    });
-
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
-      // Scoped narrowly — the browser only ever sends this cookie back on
-      // the one endpoint that needs it, per Section 12 Discussion 4.
-      path: '/api/v1/auth/refresh',
-    });
+    res.cookie(
+      ACCESS_TOKEN_COOKIE,
+      accessToken,
+      accessTokenCookieOptions(ACCESS_TOKEN_TTL_SECONDS * 1000),
+    );
+    // Scoped narrowly — the browser only ever sends this cookie back on the
+    // one endpoint that needs it, per Section 12 Discussion 4.
+    res.cookie(
+      REFRESH_TOKEN_COOKIE,
+      refreshToken,
+      refreshTokenCookieOptions(REFRESH_TOKEN_TTL_SECONDS * 1000),
+    );
   }
 
   private clearSessionCookies(res: ExpressResponse): void {
-    res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/api/v1/auth/refresh' });
+    res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenClearOptions());
+    res.clearCookie(REFRESH_TOKEN_COOKIE, refreshTokenClearOptions());
   }
 
   // Shared tail for both the no-MFA login path and the post-verifyMfa path —
@@ -599,12 +603,7 @@ export class AuthService {
     const identifier = challengeIdentifierFromRequest(req.headers.cookie);
     if (identifier) await clearChallenge(this.prisma, identifier);
     for (const name of TWO_FACTOR_COOKIE_NAMES) {
-      res.clearCookie(name, {
-        path: '/',
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: name.startsWith('__Secure-'),
-      });
+      res.clearCookie(name, twoFactorCookieClearOptions());
     }
     return { success: true };
   }
@@ -916,25 +915,28 @@ export class AuthService {
     });
   }
 
+  /**
+   * PASSWORD RESET IS NOT SERVED, so this does nothing (CC-64, ACC-186/148).
+   *
+   * It used to call Better Auth's requestPasswordReset, which created a token
+   * (an AuthVerification row) and queued an email whose link pointed at
+   * Better Auth's own handler — never mounted here — so the link could not
+   * work, and was sent to real people. The route, its rate limits and its
+   * neutral 200 stay, identical for a real and an unknown address, so nothing
+   * about an account can be learned from it; nothing is written and nothing is
+   * sent. The Forgot password screen no longer calls it either (slice 9d).
+   *
+   * The self-service password-reset ticket (not yet filed; it comes after
+   * ACC-120 slice 9) builds the real flow: a token, a link from
+   * buildTenantUrl() to a reset screen, and this method calling
+   * requestPasswordReset again. better-auth.config.ts keeps sendResetPassword
+   * for it, unreachable until then.
+   */
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
-    // Never reveal whether the organization or the email exists within it —
-    // resolve silently and no-op on failure rather than throwing.
-    let organizationId: string;
-    try {
-      organizationId = await this.resolveOrganizationId(dto.organizationSlug);
-    } catch {
-      return;
-    }
-
-    const namespacedEmail = AuthService.namespacedEmail(organizationId, dto.email);
-
-    try {
-      await this.auth.api.requestPasswordReset({ body: { email: namespacedEmail } });
-    } catch {
-      // Better Auth already responds identically whether or not the email
-      // exists (see requestPasswordReset's own timing-attack mitigation) —
-      // swallow anything else so this endpoint never leaks existence either.
-    }
+    // The body is still validated by its DTO and still keys the per-email rate
+    // limit (LimitResetsPerEmail); it is simply not acted on.
+    void dto;
+    return Promise.resolve();
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {

@@ -41,6 +41,7 @@ import { haveIBeenPwned } from 'better-auth/plugins/haveibeenpwned';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationService } from '../../foundation/notification/notification.service';
+import { resolveApiOrigin } from '../../common/config/api-origin.config';
 
 export function createBetterAuthInstance(
   prisma: PrismaService,
@@ -54,6 +55,18 @@ export function createBetterAuthInstance(
 
     secret: process.env['BETTER_AUTH_SECRET'],
 
+    // ACC-148 — the API's own origin, from server-owned configuration
+    // (API_ORIGIN, required and validated at boot by validateBootConfig(), so
+    // this cannot throw here). A STRING, so Better Auth takes its static path:
+    // a direct auth.api call never re-resolves its origin from a request, and
+    // the "Base URL is not set" boot warning has nothing to say. Tenant-facing
+    // links are never built by Better Auth — buildTenantUrl() builds them.
+    baseURL: resolveApiOrigin(),
+
+    // The name authenticator apps show beside the account, instead of
+    // Better Auth's default "Better Auth".
+    appName: 'AccreditMe',
+
     emailAndPassword: {
       enabled: true,
       password: {
@@ -61,6 +74,12 @@ export function createBetterAuthInstance(
         verify: ({ hash, password }: { hash: string; password: string }) =>
           argon2.verify(hash, password),
       },
+      // UNREACHABLE TODAY (CC-64): AuthService.forgotPassword() no longer calls
+      // requestPasswordReset, so nothing reaches this. It is kept, unchanged,
+      // for the self-service password-reset ticket — which must build the link
+      // with buildTenantUrl() rather than send data.url, Better Auth's own
+      // handler URL, which this API does not mount.
+      //
       // Required — Better Auth's /request-password-reset throws
       // RESET_PASSWORD_DISABLED without this callback configured. data.user
       // here is Better Auth's own AuthUser row (namespaced email); resolve
@@ -95,6 +114,12 @@ export function createBetterAuthInstance(
       // Prisma's own @default(cuid()) generates every id — defer to it
       // rather than Better Auth's own default id scheme.
       database: { generateId: false },
+      // ACC-186 — Better Auth's own cookies (the two-factor challenge we relay
+      // to the browser) are Secure and __Secure- prefixed whatever NODE_ENV
+      // says. Left unset, it decided from baseURL's scheme, then NODE_ENV —
+      // and Railway runs NODE_ENV=development. Our own cookies follow the same
+      // rule (common/config/session-cookies.ts).
+      useSecureCookies: true,
     },
 
     plugins: [

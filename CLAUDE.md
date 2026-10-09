@@ -1219,6 +1219,24 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
   configuration anywhere; a user may hold unlimited concurrent sessions.
 - **Absolute session length — NOT BUILT.** A continuously active user is never
   forced to re-authenticate. That is ACC-126, open.
+- **Session cookies are ALWAYS `Secure` (ACC-186)** — `httpOnly`, `sameSite:
+  'strict'`, and never keyed off `NODE_ENV`. Railway runs `NODE_ENV=development`,
+  so the old `secure: NODE_ENV === 'production'` sent them without `Secure`.
+  `common/config/session-cookies.ts` is the ONE place the options live; every
+  setter AND clearer reads it, so a clear always matches its set. Better Auth's
+  own cookies follow suit (`advanced.useSecureCookies: true`), so the MFA
+  challenge cookie is `__Secure-better-auth.two_factor`. Local http works
+  because browsers treat `*.localhost` as trustworthy; if a dev browser ever
+  refuses, the fallback is an explicit `SESSION_COOKIE_SECURE` flag defaulting
+  to true — never NODE_ENV again.
+- **Better Auth's base URL is `API_ORIGIN` (ACC-148)**, required at boot and
+  validated by `resolveApiOrigin()`: the API's own origin, one for every tenant.
+  Better Auth never builds a tenant-facing link — `buildTenantUrl()` does. Its
+  HTTP handler is not mounted and every call is a direct `auth.api.*`, so no auth
+  URL is derived from a request (verified, SYSTEM-REFERENCE §15.14).
+- **Forgot password sends nothing.** `POST /auth/forgot-password` keeps its route,
+  rate limits and neutral 200, but no longer calls `requestPasswordReset`: no
+  token, no email. Password reset is its own ticket, after ACC-120 slice 9.
 
 ### Audit Trail
 - AuditLog table: actor, timestamp, action, objectType, objectId, before, after, tenantId, ip
@@ -4121,6 +4139,8 @@ STORAGE_ALLOW_PRIVATE_ENDPOINTS=
 # Per-file upload cap in MB; 25 when unset.
 MAX_UPLOAD_MB=
 ANTHROPIC_API_KEY=
+# The API's own origin — Better Auth's base URL. REQUIRED at boot (ACC-148).
+API_ORIGIN=http://localhost:3000
 RESEND_API_KEY=
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=

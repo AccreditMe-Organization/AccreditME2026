@@ -481,8 +481,20 @@ describe('AuthService', () => {
       expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: { revokedAt: expect.any(Date) } }),
       );
-      expect(res.clearCookie).toHaveBeenCalledWith('access_token', { path: '/' });
-      expect(res.clearCookie).toHaveBeenCalledWith('refresh_token', { path: '/api/v1/auth/refresh' });
+      // ACC-186 — the clear carries the set's attributes, Secure included, so
+      // the browser lets it replace the cookie it set.
+      expect(res.clearCookie).toHaveBeenCalledWith('access_token', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        path: '/',
+      });
+      expect(res.clearCookie).toHaveBeenCalledWith('refresh_token', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'strict',
+        path: '/api/v1/auth/refresh',
+      });
     });
 
     it('does not throw when no refresh_token cookie is present', async () => {
@@ -874,24 +886,42 @@ describe('AuthService', () => {
     });
   });
 
+  // CC-64 — password reset is not served, so nothing is requested: no token,
+  // no AuthVerification row, no notification, no email. The answer is the
+  // same for a real and an unknown address.
   describe('forgotPassword', () => {
-    it('calls Better Auth requestPasswordReset with the namespaced email when the org resolves', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
-
-      await service.forgotPassword({ organizationSlug: 'acme', email: 'a@example.com' });
-
-      expect(mockAuthApi.requestPasswordReset).toHaveBeenCalledWith({
-        body: { email: `a+${ORG_A}@example.com` },
+    it('requests nothing and sends nothing, for a real account', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({
+        id: ORG_A,
+        slug: 'acme',
       });
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        status: 'ACTIVE',
+      });
+
+      await expect(
+        service.forgotPassword({
+          organizationSlug: 'acme',
+          email: 'a@example.com',
+        }),
+      ).resolves.toBeUndefined();
+      expect(mockAuthApi.requestPasswordReset).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
     });
 
-    it('does not throw and does not call Better Auth when the org does not resolve', async () => {
+    it('answers an unknown organisation and address exactly the same way', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.forgotPassword({ organizationSlug: 'nope', email: 'a@example.com' }),
+        service.forgotPassword({
+          organizationSlug: 'nope',
+          email: 'nobody@example.com',
+        }),
       ).resolves.toBeUndefined();
       expect(mockAuthApi.requestPasswordReset).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
     });
   });
 
@@ -1254,6 +1284,135 @@ describe('AuthService', () => {
           data: expect.objectContaining({ tokenVersion: 4 }),
         }),
       );
+    });
+  });
+
+  // ACC-186 — every cookie this service sets or clears is Secure, whatever
+  // NODE_ENV says. NODE_ENV is 'development' here, which is what Railway runs:
+  // the old `secure: NODE_ENV === 'production'` fails every assertion below.
+  describe('session cookies are always Secure (ACC-186)', () => {
+    const savedNodeEnv = process.env['NODE_ENV'];
+    beforeEach(() => {
+      process.env['NODE_ENV'] = 'development';
+    });
+    afterEach(() => {
+      process.env['NODE_ENV'] = savedNodeEnv;
+    });
+
+    const optionsOf = (
+      mock: jest.Mock,
+      name: string,
+    ): Record<string, unknown> => {
+      const call = mock.mock.calls.find((c) => c[0] === name);
+      expect([name, call]).not.toEqual([name, undefined]);
+      return call![call!.length - 1] as Record<string, unknown>;
+    };
+
+    it('sign-in sets both cookies Secure, httpOnly and strict, each on its own path', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({
+        id: ORG_A,
+        slug: 'acme',
+      });
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ user: { id: 'authuser-1' } }),
+      );
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        status: 'ACTIVE',
+        tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
+      });
+      const res = fakeExpressRes();
+
+      await service.login(
+        { organizationSlug: 'acme', email: 'a@example.com', password: 'pw' },
+        fakeExpressReq(),
+        res,
+      );
+
+      expect(optionsOf(res.cookie, 'access_token')).toEqual(
+        expect.objectContaining({
+          httpOnly: true,
+          secure: true,
+          sameSite: 'strict',
+          path: '/',
+        }),
+      );
+      expect(optionsOf(res.cookie, 'refresh_token')).toEqual(
+        expect.objectContaining({
+          httpOnly: true,
+          secure: true,
+          sameSite: 'strict',
+          path: '/api/v1/auth/refresh',
+        }),
+      );
+    });
+
+    it('a clear carries exactly what its set did, apart from the lifetime', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({
+        id: ORG_A,
+        slug: 'acme',
+      });
+      mockAuthApi.signInEmail.mockResolvedValue(
+        fakeResponse({ user: { id: 'authuser-1' } }),
+      );
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        email: 'a@example.com',
+        name: 'A User',
+        status: 'ACTIVE',
+        tokenVersion: 1,
+        organization: { status: 'ACTIVE' },
+      });
+      const signIn = fakeExpressRes();
+      await service.login(
+        { organizationSlug: 'acme', email: 'a@example.com', password: 'pw' },
+        fakeExpressReq(),
+        signIn,
+      );
+      const signOut = fakeExpressRes();
+      await service.logout(
+        fakeExpressReq({ cookies: { refresh_token: 'raw' } }),
+        signOut,
+      );
+
+      for (const name of ['access_token', 'refresh_token']) {
+        const { maxAge, ...setWithoutLifetime } = optionsOf(
+          signIn.cookie,
+          name,
+        );
+        // Non-vacuity guard: the set really carried a lifetime, and the clear
+        // matches everything else it carried.
+        expect([name, typeof maxAge]).toEqual([name, 'number']);
+        expect([name, optionsOf(signOut.clearCookie, name)]).toEqual([
+          name,
+          setWithoutLifetime,
+        ]);
+      }
+    });
+
+    it('cancelling MFA clears both challenge cookie names Secure', async () => {
+      const res = fakeExpressRes();
+      await service.cancelMfa(fakeExpressReq(), res);
+      const cleared = (res.clearCookie as jest.Mock).mock.calls.map((c) => [
+        c[0],
+        c[1],
+      ]);
+      // Non-vacuity guard: both names, the plain and the __Secure- one.
+      expect(cleared.map(([name]) => name)).toEqual([
+        'better-auth.two_factor',
+        '__Secure-better-auth.two_factor',
+      ]);
+      for (const [name, options] of cleared) {
+        expect([name, options]).toEqual([
+          name,
+          expect.objectContaining({ secure: true, httpOnly: true, path: '/' }),
+        ]);
+      }
     });
   });
 });
