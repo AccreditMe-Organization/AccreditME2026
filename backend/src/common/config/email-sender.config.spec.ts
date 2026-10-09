@@ -1,14 +1,27 @@
-import { PLATFORM_SENDER_MISSING, resolvePlatformSender } from './email-sender.config';
+import {
+  PLATFORM_SENDER_MISSING,
+  resolvePlatformSender,
+} from './email-sender.config';
 
 // ACC-130 — the platform's sender address: RESEND_FROM_EMAIL or nothing.
 describe('resolvePlatformSender (ACC-130)', () => {
   it('returns the configured sender, trimmed', () => {
-    expect(resolvePlatformSender({ RESEND_FROM_EMAIL: 'noreply@accreditme.app' })).toBe('noreply@accreditme.app');
-    expect(resolvePlatformSender({ RESEND_FROM_EMAIL: '  noreply@accreditme.app  ' })).toBe('noreply@accreditme.app');
+    expect(
+      resolvePlatformSender({ RESEND_FROM_EMAIL: 'noreply@accreditme.app' }),
+    ).toBe('noreply@accreditme.app');
+    expect(
+      resolvePlatformSender({
+        RESEND_FROM_EMAIL: '  noreply@accreditme.app  ',
+      }),
+    ).toBe('noreply@accreditme.app');
   });
 
   it('returns null when it is unset or blank — never a guessed address', () => {
-    for (const env of [{}, { RESEND_FROM_EMAIL: '' }, { RESEND_FROM_EMAIL: '   ' }]) {
+    for (const env of [
+      {},
+      { RESEND_FROM_EMAIL: '' },
+      { RESEND_FROM_EMAIL: '   ' },
+    ]) {
       expect(resolvePlatformSender(env)).toBeNull();
     }
   });

@@ -34,7 +34,9 @@ export const PLATFORM_SENDER_MISSING =
  * Trimmed, because a variable set to whitespace in a dashboard is the same
  * mistake as one not set at all.
  */
-export function resolvePlatformSender(env: NodeJS.ProcessEnv = process.env): string | null {
+export function resolvePlatformSender(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
   const value = env['RESEND_FROM_EMAIL']?.trim();
   return value ? value : null;
 }

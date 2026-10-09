@@ -20,7 +20,9 @@ export const PLATFORM_ADMIN_EMAIL_MISSING =
   'mailbox you own.';
 
 /** The address, trimmed, or a thrown error. */
-export function resolvePlatformAdminEmail(env: NodeJS.ProcessEnv = process.env): string {
+export function resolvePlatformAdminEmail(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const value = env['PLATFORM_ADMIN_EMAIL']?.trim();
   if (!value) throw new Error(PLATFORM_ADMIN_EMAIL_MISSING);
   return value;
