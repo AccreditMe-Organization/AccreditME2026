@@ -25,12 +25,15 @@ import { UpdateWorkflowTransitionDto } from './dto/update-workflow-transition.dt
 import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transition-action.dto';
 import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
+import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { WorkflowRefusalException } from './workflow-refusal';
 
 @Injectable()
 export class WorkflowTemplateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
+    private readonly stageTasks: StageTaskDefinitionService,
   ) {}
 
   // ── Seed ─────────────────────────────────────────────────────────────────────
@@ -134,6 +137,7 @@ export class WorkflowTemplateService {
           triggerRoleId: resolveRoleId(seedTransition.triggerRoleKey) ?? null,
           validatorConfig: this.toJson(seedTransition.validatorConfig),
           isApprovalPath: seedTransition.isApprovalPath ?? false,
+          kind: seedTransition.kind ?? 'ADVANCE',
         };
 
         const transition = existingTransition
@@ -203,14 +207,19 @@ export class WorkflowTemplateService {
       },
     });
 
+    // ACC-190 — what entering each stage creates, for the stage header line.
+    const stageTasks = await this.stageTasks.summaryForStages(stages.map((s) => s.id), organizationId);
+
     return {
       ...this.mapTemplate(template),
-      stages: stages.map((s) =>
-        this.mapStage(
+      stages: stages.map((s) => ({
+        ...this.mapStage(
           s,
           s.transitionsFrom.map((t) => this.mapTransition(t, t.actions.map((a) => this.mapTransitionAction(a)))),
         ),
-      ),
+        taskDefinitionCount: stageTasks.get(s.id)?.taskDefinitionCount ?? 0,
+        longestTaskHours: stageTasks.get(s.id)?.longestTaskHours ?? null,
+      })),
     };
   }
 
@@ -409,6 +418,18 @@ export class WorkflowTemplateService {
       await this.validateAssigneeOrgUnitId(dto.assigneeOrgUnitId, organizationId);
     }
 
+    // ACC-190 — the stage-deadline rule from the stage's side: a deadline
+    // shorter than the longest task defined on it is refused. And a stage that
+    // creates tasks cannot become final: a final stage completes the record the
+    // moment it arrives, so its tasks could hold nothing.
+    if (dto.slaWorkingHours !== undefined) {
+      await this.stageTasks.assertStageDeadlineFits(id, dto.slaWorkingHours ?? null, organizationId);
+    }
+    if (dto.isFinal === true && !stage.isFinal) {
+      const defined = await this.prisma.workflowStageTaskDefinition.count({ where: { stageId: id, organizationId } });
+      if (defined > 0) throw new WorkflowRefusalException('STAGE_TASK_ON_FINAL_STAGE', { taskDefinitionCount: defined });
+    }
+
     const updated = await this.prisma.workflowStage.update({
       where: { id },
       data: {
@@ -511,6 +532,7 @@ export class WorkflowTemplateService {
     if (fromStage.workflowTemplateId !== toStage.workflowTemplateId) {
       throw new ConflictException('A transition must connect two stages of the same template');
     }
+    this.assertNoRetiredValidator(dto.validatorConfig);
 
     const transition = await this.prisma.workflowTransition.create({
       data: {
@@ -523,6 +545,7 @@ export class WorkflowTemplateService {
         triggerUserId: dto.triggerUserId ?? null,
         triggerRoleId: dto.triggerRoleId ?? null,
         validatorConfig: this.toJson(dto.validatorConfig),
+        ...(dto.kind !== undefined && { kind: dto.kind }),
       },
     });
 
@@ -555,6 +578,7 @@ export class WorkflowTemplateService {
       where: { id, fromStage: { workflowTemplate: { organizationId } } },
     });
     if (!transition) throw new NotFoundException('Workflow transition not found');
+    this.assertNoRetiredValidator(dto.validatorConfig);
 
     const updated = await this.prisma.workflowTransition.update({
       where: { id },
@@ -567,6 +591,7 @@ export class WorkflowTemplateService {
         ...(dto.triggerRoleId !== undefined && { triggerRoleId: dto.triggerRoleId }),
         ...(dto.validatorConfig !== undefined && { validatorConfig: this.toJson(dto.validatorConfig) }),
         ...(dto.isApprovalPath !== undefined && { isApprovalPath: dto.isApprovalPath }),
+        ...(dto.kind !== undefined && { kind: dto.kind }),
       },
     });
 
@@ -585,6 +610,7 @@ export class WorkflowTemplateService {
         triggerRoleId: transition.triggerRoleId,
         validatorConfig: transition.validatorConfig,
         isApprovalPath: transition.isApprovalPath,
+        kind: transition.kind,
       },
       after: {
         labelEn: updated.labelEn,
@@ -595,6 +621,7 @@ export class WorkflowTemplateService {
         triggerRoleId: updated.triggerRoleId,
         validatorConfig: updated.validatorConfig,
         isApprovalPath: updated.isApprovalPath,
+        kind: updated.kind,
       },
     });
 
@@ -641,6 +668,7 @@ export class WorkflowTemplateService {
       where: { id: transitionId, fromStage: { workflowTemplate: { organizationId } } },
     });
     if (!transition) throw new NotFoundException('Workflow transition not found');
+    if (dto.actionType === 'CREATE_TASK') throw new WorkflowRefusalException('ACTION_TYPE_RETIRED');
 
     const action = await this.prisma.workflowTransitionAction.create({
       data: {
@@ -674,6 +702,7 @@ export class WorkflowTemplateService {
       where: { id, workflowTransition: { fromStage: { workflowTemplate: { organizationId } } } },
     });
     if (!action) throw new NotFoundException('Workflow transition action not found');
+    if (dto.actionType === 'CREATE_TASK') throw new WorkflowRefusalException('ACTION_TYPE_RETIRED');
 
     const updated = await this.prisma.workflowTransitionAction.update({
       where: { id },
@@ -724,6 +753,14 @@ export class WorkflowTemplateService {
   // used by LookupService for attributeSchema/attributes.
   private toJson(value: unknown): Prisma.InputJsonValue | undefined {
     return value === undefined || value === null ? undefined : (value as Prisma.InputJsonValue);
+  }
+
+  // ACC-190 — the task gate replaced this validator: a stage's mandatory tasks
+  // hold every ADVANCE out of it without opting in.
+  private assertNoRetiredValidator(config: Record<string, unknown> | undefined): void {
+    if (config && 'allPreviousStageTasksComplete' in config) {
+      throw new WorkflowRefusalException('VALIDATOR_RETIRED');
+    }
   }
 
   // Re-validates a client-supplied assigneeUserId belongs to this org before
@@ -904,6 +941,7 @@ export class WorkflowTemplateService {
       triggerRoleId: transition.triggerRoleId,
       validatorConfig: transition.validatorConfig as Record<string, unknown> | null,
       isApprovalPath: transition.isApprovalPath,
+      kind: transition.kind,
       ...(actions !== undefined && { actions }),
     };
   }

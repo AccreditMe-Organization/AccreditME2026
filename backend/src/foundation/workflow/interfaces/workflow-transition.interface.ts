@@ -10,6 +10,7 @@ export interface IWorkflowTransition {
   triggerRoleId: string | null;
   validatorConfig: Record<string, unknown> | null;
   isApprovalPath: boolean;
+  kind: string; // WorkflowTransitionKind — ACC-190
   actions?: IWorkflowTransitionAction[];
 }
 
@@ -35,10 +36,10 @@ export interface IWorkflowTransition {
 export interface ValidatorConfig {
   // Checked against this stage's own WorkflowApproval rows.
   minApprovals?: number;
-  // ACC-65 — checked against Task rows carrying this instance and stage.
-  // Was deferred alongside the two above under one shared "needs a snapshot"
-  // comment; that reason never applied to it (SYSTEM-REFERENCE.md §2.10).
-  allPreviousStageTasksComplete?: boolean;
+  // ACC-190 — `allPreviousStageTasksComplete` (ACC-65) is RETIRED: a stage's
+  // mandatory tasks now hold every ADVANCE transition out of it, on the
+  // approval path too, without opting in. Saving it is refused
+  // (VALIDATOR_RETIRED); a stored one is ignored with a warning log.
 }
 
 // ACC-55 — why a transition's requiredPermission may not do what the
