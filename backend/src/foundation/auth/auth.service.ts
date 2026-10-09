@@ -65,6 +65,15 @@ import {
   twoFactorLockedUntil,
 } from './two-factor-challenge';
 import { isOrganizationOpen } from '../../common/tenant/organization-status';
+import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+  accessTokenClearOptions,
+  accessTokenCookieOptions,
+  refreshTokenClearOptions,
+  refreshTokenCookieOptions,
+  twoFactorCookieClearOptions,
+} from '../../common/config/session-cookies';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -234,31 +243,26 @@ export class AuthService {
     return rawToken;
   }
 
+  // ACC-186 — always Secure, never keyed off NODE_ENV, and the options come
+  // from one place so a clear always matches its set (session-cookies.ts).
   private setSessionCookies(res: ExpressResponse, accessToken: string, refreshToken: string): void {
-    const isProd = process.env['NODE_ENV'] === 'production';
-
-    res.cookie('access_token', accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: ACCESS_TOKEN_TTL_SECONDS * 1000,
-      path: '/',
-    });
-
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: 'strict',
-      maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
-      // Scoped narrowly — the browser only ever sends this cookie back on
-      // the one endpoint that needs it, per Section 12 Discussion 4.
-      path: '/api/v1/auth/refresh',
-    });
+    res.cookie(
+      ACCESS_TOKEN_COOKIE,
+      accessToken,
+      accessTokenCookieOptions(ACCESS_TOKEN_TTL_SECONDS * 1000),
+    );
+    // Scoped narrowly — the browser only ever sends this cookie back on the
+    // one endpoint that needs it, per Section 12 Discussion 4.
+    res.cookie(
+      REFRESH_TOKEN_COOKIE,
+      refreshToken,
+      refreshTokenCookieOptions(REFRESH_TOKEN_TTL_SECONDS * 1000),
+    );
   }
 
   private clearSessionCookies(res: ExpressResponse): void {
-    res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/api/v1/auth/refresh' });
+    res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenClearOptions());
+    res.clearCookie(REFRESH_TOKEN_COOKIE, refreshTokenClearOptions());
   }
 
   // Shared tail for both the no-MFA login path and the post-verifyMfa path —
@@ -599,12 +603,7 @@ export class AuthService {
     const identifier = challengeIdentifierFromRequest(req.headers.cookie);
     if (identifier) await clearChallenge(this.prisma, identifier);
     for (const name of TWO_FACTOR_COOKIE_NAMES) {
-      res.clearCookie(name, {
-        path: '/',
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: name.startsWith('__Secure-'),
-      });
+      res.clearCookie(name, twoFactorCookieClearOptions());
     }
     return { success: true };
   }

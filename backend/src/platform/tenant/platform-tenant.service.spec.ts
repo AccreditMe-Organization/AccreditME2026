@@ -267,7 +267,17 @@ describe('PlatformTenantService', () => {
 
       await service.startImpersonation(TENANT_ID, 'user-1', ACTOR_ID, PLATFORM_ORG_ID, res);
 
-      expect(res.cookie).toHaveBeenCalledWith('access_token', expect.any(String), expect.any(Object));
+      // ACC-186 — Secure whatever NODE_ENV says ('test' here, never 'production').
+      expect(res.cookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.any(String),
+        expect.objectContaining({
+          httpOnly: true,
+          secure: true,
+          sameSite: 'strict',
+          path: '/',
+        }),
+      );
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({ tenantId: PLATFORM_ORG_ID, actorId: ACTOR_ID, action: 'IMPERSONATE_START' }),
       );
@@ -290,7 +300,17 @@ describe('PlatformTenantService', () => {
 
       await service.endImpersonation(req, res);
 
-      expect(res.cookie).toHaveBeenCalledWith('access_token', expect.any(String), expect.any(Object));
+      // ACC-186 — Secure whatever NODE_ENV says ('test' here, never 'production').
+      expect(res.cookie).toHaveBeenCalledWith(
+        'access_token',
+        expect.any(String),
+        expect.objectContaining({
+          httpOnly: true,
+          secure: true,
+          sameSite: 'strict',
+          path: '/',
+        }),
+      );
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({
           tenantId: PLATFORM_ORG_ID, actorId: ACTOR_ID, action: 'IMPERSONATE_END',

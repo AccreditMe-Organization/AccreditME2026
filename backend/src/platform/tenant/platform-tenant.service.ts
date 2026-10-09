@@ -21,6 +21,10 @@ import { UpdateTenantModulesDto } from './dto/update-tenant-modules.dto';
 import { AllocateAiCreditsDto } from './dto/allocate-ai-credits.dto';
 import { IPlatformTenantDetail, IPlatformTenantSummary } from './interfaces/platform-tenant.interface';
 import { isOrganizationOpen } from '../../common/tenant/organization-status';
+import {
+  ACCESS_TOKEN_COOKIE,
+  accessTokenCookieOptions,
+} from '../../common/config/session-cookies';
 
 interface OrgSettings {
   modules?: Record<string, boolean>;
@@ -366,14 +370,13 @@ export class PlatformTenantService {
     });
   }
 
+  // ACC-186 — the same options sign-in uses, from the one place they live.
   private setAccessTokenCookie(res: ExpressResponse, token: string): void {
-    res.cookie('access_token', token, {
-      httpOnly: true,
-      secure: process.env['NODE_ENV'] === 'production',
-      sameSite: 'strict',
-      maxAge: ACCESS_TOKEN_TTL_SECONDS * 1000,
-      path: '/',
-    });
+    res.cookie(
+      ACCESS_TOKEN_COOKIE,
+      token,
+      accessTokenCookieOptions(ACCESS_TOKEN_TTL_SECONDS * 1000),
+    );
   }
 
   private async assertTenantExists(id: string) {
