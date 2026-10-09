@@ -18,6 +18,7 @@
     "check:field-control": "node scripts/check-field-control.mjs",
     "check:confirm-translated": "node scripts/check-confirm-translated.mjs",
     "check:reserved-slugs": "node scripts/check-reserved-slugs.mjs",
+    "check:vercel-config": "node scripts/check-vercel-config.mjs",
     "verify:built-index": "node scripts/verify-built-index.mjs"
   },
   "engines": {
