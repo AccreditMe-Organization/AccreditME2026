@@ -8098,6 +8098,106 @@ that our `auth.api` calls carry no request, `host` or `x-forwarded-host`.
 (9 Oct), the same expand-then-contract order `FRONTEND_URL` needed: the boot now
 refuses to start without it, and a deploy whose boot fails is not promoted.
 
+### 15.15 Online: where each address is served (ACC-130)
+
+> **Written with the code PR, before the switch-over.** The Railway values and
+> the DNS records below were MEASURED on 9 Oct. The Vercel and nameserver rows
+> describe the shape the runbook (`backend/Plans/step-130-go-online.md`, Part 2)
+> puts in place; each is confirmed there by its own step, and this section is
+> re-stated as measured after step 8.
+
+| Address | Served by | What it is |
+|---|---|---|
+| `{slug}.accreditme.app` | Vercel (`*.accreditme.app`, wildcard certificate) | the app, for one organisation (ACC-139) |
+| `platform.accreditme.app` | Vercel, the same wildcard | the platform organisation's sign-in |
+| `accreditme.app` | Vercel | the "Open your organisation's address" note; a marketing page can come later |
+| `www.accreditme.app` | Vercel, a 308 redirect to the apex | load-bearing for CORS: `www` never becomes a second origin |
+| `api.accreditme.app` | Railway, a DIRECT CNAME — no proxy | the API (`/api/v1`) |
+| `accreditme2026-production.up.railway.app` | Railway | the generated host, kept as a fallback until ~7 days after go-live (runbook step 10) |
+
+**DNS.** GoDaddy stays the registrar; the zone moves to Vercel's nameservers,
+because Vercel issues the wildcard certificate only for a zone it serves. The
+records that carry over unchanged, as the public lookup showed them on 9 Oct:
+apex MX `0 inbound-smtp.eu-west-1.amazonaws.com`; `send` CNAME
+`send.forge.rmta.net` (Resend's sending subdomain); `resend._domainkey` TXT (the
+DKIM key); `_dmarc` TXT `v=DMARC1; p=quarantine; adkim=r; aspf=r; …`. There is no
+CAA record and no apex TXT. GoDaddy's apex A records (its Website Builder page),
+its `www` CNAME and `_domainconnect` do not carry over.
+
+**HTTPS is always forced, for everyone.** `.app` is on the browsers' HSTS
+preload list as a whole TLD, so no browser will make a plain-HTTP request to any
+`*.accreditme.app` host — including local testing against the real hostname.
+Even GoDaddy's placeholder page sent `max-age=63072000; includeSubDomains;
+preload`. Local development is unaffected: it runs on `*.localhost`.
+
+**The API is not proxied, so `trust proxy` stays 2** (§15.12). The frontend calls
+`https://api.accreditme.app/api/v1` directly (`environment.prod.ts`); no Vercel
+rewrite points at the API, and `check:vercel-config` fails one that does. A
+proxy — a Vercel rewrite, or Cloudflare in proxied mode — would add a hop and
+must move the count to 3.
+
+**The cookies still need nothing.** `{slug}.accreditme.app` and
+`api.accreditme.app` are the SAME SITE (`accreditme.app`), so the host-only,
+`SameSite=Strict`, `Secure` cookies (§15.14) are sent on the app's credentialed
+calls. CORS already admits every tenant origin (§15.10). Both are confirmed as
+results at runbook step 8, not assumed.
+
+**The frontend's headers** (`frontend/vercel.json`, pinned by
+`check:vercel-config`):
+
+- **CSP, Report-Only for now** (enforced once step 8 shows no reports):
+  `script-src 'self'` — nothing else; `style-src 'self' 'unsafe-inline'`,
+  because PrimeNG and Angular's emulated encapsulation insert `<style>`
+  elements at runtime and a static host cannot hand out nonces;
+  `connect-src 'self' https://api.accreditme.app`, which the scan keeps equal to
+  `environment.prod.ts`; `frame-ancestors 'none'`, `object-src 'none'`.
+- **Critical-CSS inlining is off** (`optimization.styles.inlineCritical: false`
+  in the production configuration). It wrote
+  `<link … media="print" onload="this.media='all'">` into the built page; an
+  inline handler that `script-src 'self'` blocks, leaving the stylesheet on
+  `media="print"` and the app unstyled. `npm run verify:built-index`, a CI step
+  right after the build, fails a built page with any inline handler or inline
+  script.
+- HSTS, `nosniff`, `X-Frame-Options: DENY`, `strict-origin-when-cross-origin`,
+  a closed `Permissions-Policy`, COOP and CORP `same-origin`. Hashed JS, CSS and
+  `media/` files are cached for a year; `index.html` and `assets/i18n` keep
+  Vercel's revalidate default.
+
+**Only `dev` builds on Vercel.** `ignoreCommand` skips every other branch, so
+there are no preview deployments. A preview could never sign in anyway: its
+`*.vercel.app` host is not under `accreditme.app`, so the app shows the "Open
+your organisation's address" note and CORS refuses its session check (§15.10).
+The project's Production Branch is `dev`, matching Railway's source branch — the
+repository's default branch is `main`, so this is set by hand after import.
+
+**Two Railway traps, measured 9 Oct:**
+
+1. **A custom domain cannot be registered from `.railway/railway.ts`.** The SDK's
+   `domains: [...]` option is refused by `config plan`: *"Custom-domain
+   registration is not supported by Railway configuration. Add
+   api.accreditme.app in the dashboard, then run railway config pull."* Adding
+   it to `serviceDomains` produced an IDENTICAL plan, and
+   `networking.customDomains` is dropped by the SDK's `normalizeNetworking()`.
+   So the domain is registered with `railway domain api.accreditme.app --port
+   3000`, and a plan afterwards says whether the file must then declare it.
+2. **Six `AWS_*` variables existed on Railway and nowhere in the file**, so
+   `config plan` read `6 to destroy` — any apply would have deleted them. They
+   are declared with `preserve()`, and the plan reads
+   `0 to add, 1 to change, 0 to destroy` (the change is §15.4's round-trip).
+
+**Running `railway config plan` on Windows.** `railway/iac` checks the CLI
+version by executing `process.env._ || "railway"`. Under Git Bash `_` is a path
+Node cannot execute, and in PowerShell `railway` is a `.ps1`/`.cmd` shim
+`execFileSync` cannot run, so both fail with *"requires Railway CLI 5.42.1 or
+newer"* on CLI 5.59.0. Point `_` at the native binary and run that:
+`$env:_ = "$env:APPDATA\npm\node_modules\@railway\cli\bin\railway.exe"`.
+
+**No fallback addresses on a domain we do not own.** `accreditme.com` is listed
+for sale. The email processor's fallback sender and the demo seed's fallback
+platform-admin address were both on it; both are gone
+(`resolvePlatformSender()` → the job fails with a named error;
+`resolvePlatformAdminEmail()` → the seed refuses to run).
+
 ## 16. File Storage — Per Organisation, and File Evidence (ACC-177, SharePoint ACC-185)
 
 Plan and Ahmad's answers (7 Oct, two rounds): `backend/Plans/step-177-file-storage.md`
