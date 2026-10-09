@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -13,10 +14,10 @@ import { DelegationLabelService } from '../../common/services/delegation-label.s
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { NotificationService } from '../notification/notification.service';
-import { TaskService } from '../task/task.service';
+import { ITask } from '../task/interfaces/task.interface';
+import { PreparedTask, StageExitCancellation, TaskService } from '../task/task.service';
 import { taskStatusTitle } from '../task/task-status-label';
-import type { ResolvedPlacement } from '../task/task-assignment.service';
-import { PoolPlacement, resolvePoolMemberIds } from '../task/task-pool';
+import { lockWorkflowInstance } from '../task/stage-deadline';
 import { RoleService } from '../roles/role.service';
 import { OrganizationService } from '../organization/organization.service';
 import {
@@ -33,6 +34,22 @@ import { ValidatorConfig } from './interfaces/workflow-transition.interface';
 import { IWorkflowStageHistory } from './interfaces/workflow-stage-history.interface';
 import { TriggerTransitionDto } from './dto/trigger-transition.dto';
 import { SubmitApprovalDto } from './dto/submit-approval.dto';
+import { PreparedStageEntryTasks, StageTaskDefinitionService } from './stage-task-definition.service';
+import { WorkflowRefusalException } from './workflow-refusal';
+
+// The client inside this.prisma.$transaction(async (tx) => …) — read off
+// PrismaService, whose extended client has its own transaction type.
+type EngineTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
+
+// ACC-190 — a stage change is ONE transaction: the gate, the old entry's exit,
+// its open tasks cancelled, the new entry and its tasks, the instance moved.
+// Every read that can happen first does (StageTaskDefinitionService.
+// prepareEntryTasks), so the transaction holds only writes and the gate. The
+// limit is still raised above Prisma's 5 s default: ACC-60 measured a
+// transition at 6–11 s from a Middle East client against the Frankfurt
+// database, and a stage change that times out half-way would be refused whole
+// rather than half-applied — the right failure, but not one to invite.
+const STAGE_CHANGE_TX = { maxWait: 10_000, timeout: 20_000 } as const;
 
 // This is THE WorkflowService CLAUDE.md refers to in "Route ALL state
 // transitions through WorkflowService" — every future functional module calls
@@ -52,6 +69,8 @@ import { SubmitApprovalDto } from './dto/submit-approval.dto';
 // functional module actually configures one.
 @Injectable()
 export class WorkflowService {
+  private readonly logger = new Logger(WorkflowService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLog: AuditLogService,
@@ -71,6 +90,8 @@ export class WorkflowService {
     // 2.5 section confirms.
     private readonly organizationService: OrganizationService,
     @InjectQueue('workflow-actions') private readonly workflowActionsQueue: Queue,
+    // ACC-190 — the tasks a stage creates when a record enters it.
+    private readonly stageTaskDefinitions: StageTaskDefinitionService,
   ) {}
 
   // ── Instance lifecycle ───────────────────────────────────────────────────────
@@ -98,22 +119,39 @@ export class WorkflowService {
       throw new NotFoundException('Workflow template has no initial stage configured');
     }
 
-    const instance = await this.prisma.workflowInstance.create({
-      data: {
-        organizationId,
-        workflowTemplateId: template.id,
-        objectType: template.objectType,
-        objectId,
-        status: 'IN_PROGRESS',
-        currentStageId: initialStage.id,
-      },
-    });
+    // ACC-190 — entering the initial stage is a stage entry like any other: its
+    // task definitions become tasks. Everything readable is read first; the
+    // instance, its first entry and those tasks are written together.
+    const enteredAt = new Date();
+    const slaDueAt = await this.computeSlaDueAt(initialStage, organizationId, enteredAt);
+    const entryTasks = await this.stageTaskDefinitions.prepareEntryTasks(
+      initialStage,
+      { objectType: template.objectType, objectId },
+      this.mapObjectTypeToTaskSourceType(template.objectType),
+      enteredAt,
+      organizationId,
+    );
 
-    const slaDueAt = await this.computeSlaDueAt(initialStage, organizationId);
+    const { instance, initialInstanceStage, createdTasks } = await this.prisma.$transaction(async (tx) => {
+      const instance = await tx.workflowInstance.create({
+        data: {
+          organizationId,
+          workflowTemplateId: template.id,
+          objectType: template.objectType,
+          objectId,
+          status: 'IN_PROGRESS',
+          currentStageId: initialStage.id,
+        },
+      });
+      const initialInstanceStage = await tx.workflowInstanceStage.create({
+        data: { workflowInstanceId: instance.id, stageId: initialStage.id, enteredAt, slaDueAt, actorId },
+      });
+      const createdTasks = await this.insertEntryTasks(tx, entryTasks, instance.id, initialInstanceStage.id, organizationId, actorId);
+      return { instance, initialInstanceStage, createdTasks };
+    }, STAGE_CHANGE_TX);
 
-    const initialInstanceStage = await this.prisma.workflowInstanceStage.create({
-      data: { workflowInstanceId: instance.id, stageId: initialStage.id, slaDueAt, actorId },
-    });
+    // After commit: the notices and audit rows of the tasks just created.
+    await this.announceEntryTasks(createdTasks, organizationId, actorId);
 
     // No WorkflowTransitionAction fires on stage entry (actions fire on
     // transitions, per the seed data design) — so the initial stage's
@@ -134,7 +172,7 @@ export class WorkflowService {
       after: { objectType: instance.objectType, objectId: instance.objectId, currentStageId: initialStage.id },
     });
 
-    return this.mapInstance(instance);
+    return this.mapInstance(instance, entryTasks.warnings);
   }
 
   async getInstanceById(id: string, organizationId: string): Promise<IWorkflowInstance> {
@@ -470,6 +508,23 @@ export class WorkflowService {
 
     await this.checkValidatorConfig(transition, currentInstanceStage, organizationId);
 
+    // ACC-190 — the gate, early: an ADVANCE this request would actually fire is
+    // refused while a mandatory task of this entry is open. On a multi-approver
+    // stage that is only the DECIDING vote, refused before it is recorded
+    // (Ahmad, 9 Oct, J) — a vote that cannot take effect is not stored.
+    // performTransition() checks again under the instance lock; that check is
+    // the authoritative one.
+    if (transition.kind === 'ADVANCE') {
+      const fires =
+        fromStage.approvalMode === 'SINGLE' ||
+        !transition.isApprovalPath ||
+        (await this.isApprovalThresholdMet(fromStage, currentInstanceStage, organizationId, instance, {
+          approverId: actorId,
+          approved: true,
+        }));
+      if (fires) await this.assertMandatoryTasksDone(this.prisma, currentInstanceStage.id, organizationId);
+    }
+
     if (fromStage.approvalMode === 'SINGLE') {
       return this.performTransition(
         instance,
@@ -595,6 +650,10 @@ export class WorkflowService {
       throw new ForbiddenException('You are not an eligible approver for this stage');
     }
 
+    // ACC-190 (Ahmad, 9 Oct, J) — the approval path is gated too, and a deciding
+    // vote is refused BEFORE it is recorded.
+    await this.assertDecidingVoteMayAdvance(stage, instanceStage, organizationId, instance, actorId, dto.decision);
+
     // ACC-40 Section 2.6.3 — stamped on both branches, same reasoning as
     // triggerTransition()'s own upsert: a re-submitted approval always
     // reflects the actor's CURRENT delegation status.
@@ -697,15 +756,48 @@ export class WorkflowService {
     );
   }
 
+  // ACC-190 — the approval path's gate. Which transition this decision would
+  // fire, whether it would fire NOW (the threshold, counting this vote), and,
+  // if it is an ADVANCE, whether this entry's mandatory tasks are done.
+  private async assertDecidingVoteMayAdvance(
+    stage: PrismaWorkflowStage,
+    instanceStage: PrismaWorkflowInstanceStage,
+    organizationId: string,
+    instance: PrismaWorkflowInstance,
+    actorId: string,
+    decision: SubmitApprovalDto['decision'],
+  ): Promise<void> {
+    if (decision === 'ABSTAINED') return;
+    const approved = decision === 'APPROVED' || decision === 'APPROVED_WITH_COMMENTS';
+    // A return fires at once; an approval only when this vote completes the
+    // threshold — asked first, so a vote that decides nothing costs no lookup.
+    const fires = !approved || (await this.isApprovalThresholdMet(stage, instanceStage, organizationId, instance, { approverId: actorId, approved }));
+    if (!fires) return;
+    const transition = await this.prisma.workflowTransition.findFirst({
+      where: { fromStageId: stage.id, isApprovalPath: approved },
+      select: { kind: true },
+    });
+    if (transition?.kind === 'ADVANCE') await this.assertMandatoryTasksDone(this.prisma, instanceStage.id, organizationId);
+  }
+
+  // `assumedVote` counts a vote not yet recorded, replacing any earlier one by
+  // the same approver — how ACC-190 asks "would this vote decide it?".
   private async isApprovalThresholdMet(
     fromStage: PrismaWorkflowStage,
     currentInstanceStage: PrismaWorkflowInstanceStage,
     organizationId: string,
     instance: PrismaWorkflowInstance,
+    assumedVote?: { approverId: string; approved: boolean },
   ): Promise<boolean> {
-    const approvals = await this.prisma.workflowApproval.findMany({
+    const recorded = await this.prisma.workflowApproval.findMany({
       where: { workflowInstanceStageId: currentInstanceStage.id },
     });
+    const approvals = assumedVote
+      ? [
+          ...recorded.filter((a) => a.approverId !== assumedVote.approverId),
+          { approverId: assumedVote.approverId, decision: assumedVote.approved ? 'APPROVED' : 'RETURNED' },
+        ]
+      : recorded;
     const approvedCount = approvals.filter(
       (a) => a.decision === 'APPROVED' || a.decision === 'APPROVED_WITH_COMMENTS',
     ).length;
@@ -752,72 +844,88 @@ export class WorkflowService {
     const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
     if (!toStage) throw new NotFoundException('Target stage not found');
 
-    await this.prisma.workflowInstanceStage.update({
-      where: { id: currentInstanceStage.id },
-      data: { exitedAt: new Date(), outcome, ...(comment !== undefined && { comment }) },
-    });
-
-    // ACC-68 — the stage has just been left, so its open tasks are now work
-    // the object has moved away from. Cancel them.
-    //
-    // DIRECTION-AGNOSTIC, deliberately. Stage `order` was considered as a way
-    // to tell a backward transition from a forward one and rejected: order is
-    // display-only by design, and real lifecycles are not linear enough for it
-    // to be reliable. Direction turns out not to matter — on a GATED forward
-    // transition the task is already COMPLETED (that is what the ACC-65 gate
-    // just enforced), so there is nothing open to cancel; on an UNGATED one
-    // the object has moved on regardless. The bug this fixes was found on
-    // exactly that second case: Terms Review → Formation via "Revise Terms",
-    // which left a PENDING task assigned to someone, gating nothing.
-    //
-    // Without this, re-entering the stage stacks a second CREATE_TASK on top
-    // of the first, so both must be completed to make one gated advancement —
-    // and every further round trip adds another.
-    //
-    // Runs BEFORE fireTransitionActions() below, which is what creates the
-    // NEXT stage's task. That ordering also makes a self-transition behave:
-    // the old task is cancelled first, then the new one is created, rather
-    // than the new one being cancelled by its own transition.
-    await this.taskService.cancelForStage(
-      instance.id,
-      currentInstanceStage.stageId,
-      organizationId,
-      actorId,
-      'STAGE_EXIT',
-    );
-
-    const slaDueAt = await this.computeSlaDueAt(toStage, organizationId);
+    // ACC-190 — every read first: the new entry's clock, who is acting for
+    // whom, and the tasks the destination stage creates (a snapshot of its
+    // definitions, placed and timed from `enteredAt`).
+    const enteredAt = new Date();
+    const slaDueAt = await this.computeSlaDueAt(toStage, organizationId, enteredAt);
     const delegationStamp = await this.resolveDelegationStamp(actorId, fromStage, instance, organizationId);
+    const entryTasks = await this.stageTaskDefinitions.prepareEntryTasks(
+      toStage,
+      instance,
+      this.mapObjectTypeToTaskSourceType(instance.objectType),
+      enteredAt,
+      organizationId,
+    );
+    const exitScope = {
+      workflowInstanceId: instance.id,
+      stageId: currentInstanceStage.stageId,
+      workflowInstanceStageId: currentInstanceStage.id,
+    };
 
-    const newInstanceStage = await this.prisma.workflowInstanceStage.create({
-      data: {
-        workflowInstanceId: instance.id,
-        stageId: toStage.id,
-        slaDueAt,
-        actorId,
-        delegationReason: delegationStamp?.delegationReason ?? null,
-        delegationContextId: delegationStamp?.delegationContextId ?? null,
-      },
-    });
+    // ACC-190 — the stage change itself, all or nothing, under the instance's
+    // row lock (the engine's first). Two people pressing at once can no longer
+    // both pass the "open entry" read and close the same row twice.
+    const { newInstanceStage, updatedInstance, cancellation, createdTasks } = await this.prisma.$transaction(async (tx) => {
+      await lockWorkflowInstance(tx, instance.id, organizationId);
+      const stillOpen = await tx.workflowInstanceStage.findFirst({
+        where: { id: currentInstanceStage.id, workflowInstanceId: instance.id, exitedAt: null },
+        select: { id: true },
+      });
+      if (!stillOpen) throw new ConflictException('This record has already moved on. Reload it and try again');
+
+      // The gate, authoritative: under the lock, nothing can reopen a task
+      // between this check and the move.
+      if (transition.kind === 'ADVANCE') {
+        await this.assertMandatoryTasksDone(tx, currentInstanceStage.id, organizationId);
+      }
+
+      await tx.workflowInstanceStage.update({
+        where: { id: currentInstanceStage.id },
+        data: { exitedAt: enteredAt, outcome, ...(comment !== undefined && { comment }) },
+      });
+
+      // ACC-68, ACC-190 — the entry just left takes its open tasks with it.
+      // After an ADVANCE the gate has closed every mandatory one, so these are
+      // optional (cancelled silently, Ahmad 9 Oct G); a RETURN or EXIT takes
+      // the whole entry's open work. Before the new entry's tasks are created,
+      // so a self-transition cancels the old ones and then creates fresh ones.
+      const cancellation = await this.taskService.cancelStageExitTasksInTx(tx, exitScope, organizationId);
+
+      const newInstanceStage = await tx.workflowInstanceStage.create({
+        data: {
+          workflowInstanceId: instance.id,
+          stageId: toStage.id,
+          enteredAt,
+          slaDueAt,
+          actorId,
+          delegationReason: delegationStamp?.delegationReason ?? null,
+          delegationContextId: delegationStamp?.delegationContextId ?? null,
+        },
+      });
+
+      // The person who moved the record in is every new task's creator.
+      const createdTasks = await this.insertEntryTasks(tx, entryTasks, instance.id, newInstanceStage.id, organizationId, actorId);
+
+      const updatedInstance = await tx.workflowInstance.update({
+        where: { id: instance.id },
+        data: {
+          currentStageId: toStage.id,
+          status: toStage.isFinal ? 'COMPLETED' : 'IN_PROGRESS',
+        },
+      });
+      return { newInstanceStage, updatedInstance, cancellation, createdTasks };
+    }, STAGE_CHANGE_TX);
+
+    // ── After commit: audit rows, notices, actions. ──
+    await this.taskService.auditStageExitCancellation(cancellation, exitScope, organizationId, actorId);
+    await this.announceEntryTasks(createdTasks, organizationId, actorId);
 
     // ACC-28 Section 2.5 — same check as startInstance(), for the stage this
     // transition just landed on.
     await this.checkAndFlagUnassignedStage(toStage, newInstanceStage.id, instance, organizationId);
 
-    const updatedInstance = await this.prisma.workflowInstance.update({
-      where: { id: instance.id },
-      data: {
-        currentStageId: toStage.id,
-        status: toStage.isFinal ? 'COMPLETED' : 'IN_PROGRESS',
-      },
-    });
-
-    const unassignedTaskWarnings = await this.fireTransitionActions(
-      transition,
-      updatedInstance,
-      organizationId,
-      actorId,
-    );
+    await this.fireTransitionActions(transition, updatedInstance, organizationId, actorId);
 
     await this.auditLog.log({
       tenantId: organizationId,
@@ -829,32 +937,89 @@ export class WorkflowService {
       after: { currentStageId: toStage.id, status: updatedInstance.status },
     });
 
-    return this.mapInstance(updatedInstance, unassignedTaskWarnings);
+    // ACC-34's actor-facing warnings now come from the entry's tasks: one line
+    // per task created with nobody to act on it, or into an empty pool.
+    return this.mapInstance(updatedInstance, entryTasks.warnings);
+  }
+
+  // ── Internal: stage entry tasks (ACC-190) ───────────────────────────────────
+
+  // The prepared tasks of an entry, inserted inside the stage-change
+  // transaction with the instance and entry they belong to.
+  private async insertEntryTasks(
+    tx: EngineTx,
+    entryTasks: PreparedStageEntryTasks,
+    workflowInstanceId: string,
+    workflowInstanceStageId: string,
+    organizationId: string,
+    actorId: string,
+  ): Promise<{ task: ITask; prepared: PreparedTask }[]> {
+    const created: { task: ITask; prepared: PreparedTask }[] = [];
+    for (const prepared of entryTasks.tasks) {
+      const task = await this.taskService.insertPrepared(
+        tx,
+        { ...prepared, data: { ...prepared.data, workflowInstanceId, workflowInstanceStageId } },
+        organizationId,
+        actorId,
+      );
+      created.push({ task, prepared });
+    }
+    return created;
+  }
+
+  // After commit: each created task's audit row and notices.
+  private async announceEntryTasks(
+    created: { task: ITask; prepared: PreparedTask }[],
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    for (const { task, prepared } of created) {
+      await this.taskService.announceCreated(task, prepared, organizationId, actorId);
+    }
+  }
+
+  // ACC-190 — THE GATE. An ADVANCE out of an entry is refused while any of the
+  // entry's MANDATORY tasks is open. "Open" is ACC-65's predicate, kept
+  // identical to the stage-exit cancel's: everything but COMPLETED and
+  // CANCELLED, so UNASSIGNED, REJECTED and ON_HOLD all hold the step. Optional
+  // tasks and manual tasks attached to the stage never do. Completing the
+  // tasks never moves the record: a person still presses the transition.
+  private async assertMandatoryTasksDone(
+    client: Pick<EngineTx, 'task'>,
+    workflowInstanceStageId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const open = await client.task.findMany({
+      where: {
+        organizationId,
+        workflowInstanceStageId,
+        isMandatory: true,
+        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+      },
+      select: { id: true, title: true, titleAr: true, status: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (open.length === 0) return;
+    throw new WorkflowRefusalException('STAGE_TASKS_OPEN', {
+      tasks: open.map((t) => ({ ...t, statusLabel: taskStatusTitle(t.status) })),
+    });
   }
 
   // ── Internal: transition actions ─────────────────────────────────────────────
 
-  // Returns one warning message per CREATE_TASK action that resolved zero
-  // eligible assignees — [] when nothing warrants a warning, never null, so
-  // callers never need a null-check. Threaded through performTransition()
-  // into the actor-facing IWorkflowInstance.unassignedTaskWarnings (ACC-34)
-  // — array-shaped deliberately: WorkflowTransitionAction rows are
-  // tenant-editable, and nothing prevents a tenant from configuring more
-  // than one CREATE_TASK action on a single transition (unexercised by any
-  // seeded transition today, confirmed by inspection of workflow.seed.ts,
-  // but not guaranteed to stay that way).
+  // Transition actions run after the stage change commits. None of them
+  // creates a task any more (ACC-190 retired CREATE_TASK), so none produces
+  // the actor-facing warnings — those come from the entry's tasks.
   private async fireTransitionActions(
     transition: PrismaWorkflowTransition,
     instance: PrismaWorkflowInstance,
     organizationId: string,
     actorId: string,
-  ): Promise<string[]> {
+  ): Promise<void> {
     const actions = await this.prisma.workflowTransitionAction.findMany({
       where: { workflowTransitionId: transition.id },
       orderBy: { order: 'asc' },
     });
-
-    const unassignedTaskWarnings: string[] = [];
 
     for (const action of actions) {
       // LOG_AUDIT always fires — isEnabled is ignored for this type, per CLAUDE.md.
@@ -880,17 +1045,18 @@ export class WorkflowService {
       }
 
       let responseSummary: string;
-      let status: 'SUCCESS' | 'SUCCESS_UNASSIGNED' = 'SUCCESS';
+      let status: 'SUCCESS' | 'FAILED' = 'SUCCESS';
       switch (action.actionType) {
-        case 'CREATE_TASK': {
-          const result = await this.executeCreateTask(transition, instance, organizationId, actorId);
-          responseSummary = result.responseSummary;
-          if (result.isUnassigned) {
-            status = 'SUCCESS_UNASSIGNED';
-            unassignedTaskWarnings.push(result.responseSummary);
-          }
+        case 'CREATE_TASK':
+          // ACC-190 — RETIRED. A stage's task definitions create its tasks when a
+          // record enters it; this action created one generic task per
+          // transition. Adding one is refused (ACTION_TYPE_RETIRED) and the
+          // backfill removes the seeded ones; one left over is skipped, and
+          // logged so it can be found.
+          this.logger.warn(`Transition ${transition.id} still has a retired CREATE_TASK action (${action.id}); skipped`);
+          responseSummary = 'Retired — tasks now come from the stage task definitions (ACC-190)';
+          status = 'FAILED';
           break;
-        }
         case 'SEND_NOTIFICATION':
           responseSummary = await this.executeSendNotification(transition, instance, organizationId);
           break;
@@ -917,167 +1083,6 @@ export class WorkflowService {
         },
       });
     }
-
-    return unassignedTaskWarnings;
-  }
-
-  // Resolves a human-readable label for "which object does this instance
-  // represent" — COMMITTEE resolves the real committee name via
-  // instance.objectId (always populated, unlike stage.committeeId which is
-  // a different, frequently-unset field used for COMMITTEE-assigneeStrategy
-  // pool resolution). Other object types fall back to the generic
-  // objectType string until those modules exist to resolve against —
-  // matches the precedent already established for every other partial-
-  // resolution case in this codebase (ACC-34).
-  private async resolveObjectSubjectLabel(
-    instance: PrismaWorkflowInstance,
-    organizationId: string,
-  ): Promise<string> {
-    if (instance.objectType === 'COMMITTEE') {
-      const committee = await this.prisma.committee.findFirst({
-        where: { id: instance.objectId, organizationId },
-        select: { nameEn: true },
-      });
-      if (committee) return committee.nameEn;
-    }
-    return instance.objectType;
-  }
-
-  // ACC-34 — isUnassigned distinguishes "task genuinely created but with no
-  // eligible assignee" from every other outcome (including the early
-  // "Skipped" returns below, where no Task row was ever created at all) —
-  // callers use it both to pick WorkflowActionLogStatus and to decide
-  // whether this action's responseSummary belongs in the actor-facing
-  // warnings array.
-  private async executeCreateTask(
-    transition: PrismaWorkflowTransition,
-    instance: PrismaWorkflowInstance,
-    organizationId: string,
-    actorId: string,
-  ): Promise<{ responseSummary: string; isUnassigned: boolean }> {
-    const toStage = await this.prisma.workflowStage.findFirst({ where: { id: transition.toStageId } });
-    if (!toStage) return { responseSummary: 'Skipped — target stage not found', isUnassigned: false };
-
-    // Every current WorkflowObjectType now has a TaskSourceType mapping
-    // (see mapObjectTypeToTaskSourceType below) — the null-fallback here
-    // only matters for a future WorkflowObjectType addition (e.g.
-    // ACCREDITATION_ROUND, GAP — see CLAUDE.md's Additions Schedule) that
-    // hasn't been wired into the mapping yet, skipped gracefully rather
-    // than writing an invalid enum value to the database.
-    const sourceType = this.mapObjectTypeToTaskSourceType(instance.objectType);
-    if (!sourceType) {
-      return {
-        responseSummary: `Skipped — no TaskSourceType mapping for ${instance.objectType}`,
-        isUnassigned: false,
-      };
-    }
-
-    // ACC-167 (decision 10) — a POSITION_FIXED stage, or a COMMITTEE stage
-    // narrowed to a member role, creates a POOL task: assigned to the position
-    // in its unit (or the role on its committee), with nobody on it until a
-    // member picks it up. A single-holder position still goes straight to its
-    // holder. Every other strategy is unchanged — including ROLE, which stays
-    // until stage task definitions replace CREATE_TASK.
-    //
-    // Approvals and transition gating never read task rows (resolveApproverPool,
-    // the ASSIGNEE_POOL trigger), so this changes who does the WORK, never who
-    // may approve or move the record.
-    const stagePool = await this.resolveStagePool(toStage, organizationId);
-
-    // Full resolved assigneeIds array passed through — fixes the original
-    // bug where only assigneeIds[0] was ever used, silently dropping every
-    // other assignee for PARALLEL/COMMITTEE stages.
-    const assigneeIds = stagePool?.pooled ? [] : await this.resolveAssignee(toStage, instance, organizationId);
-    const placement: ResolvedPlacement | undefined = stagePool
-      ? { ...stagePool, directUserIds: assigneeIds }
-      : undefined;
-    const subjectLabel = await this.resolveObjectSubjectLabel(instance, organizationId);
-
-    // ACC-40 Section 2.6.3 — computed once, per assignee, at exactly the
-    // moment resolveAssignee() (already OOO-aware) has full, fresh
-    // knowledge of why each resolved user was included — the exact moment
-    // the plan calls for, not re-derived later at Task.complete() time.
-    // Only delegated assignees get an entry; a direct, undelegated
-    // assignee simply has none.
-    const assigneeDelegations = (
-      await Promise.all(
-        assigneeIds.map(async (userId) => {
-          const stamp = await this.resolveDelegationStamp(userId, toStage, instance, organizationId);
-          return stamp ? { userId, ...stamp } : null;
-        }),
-      )
-    ).filter((d): d is NonNullable<typeof d> => d !== null);
-
-    // ACC-46 Section 2.7.f — reuses this same private computeSlaDueAt(),
-    // the exact computation already feeding WorkflowInstanceStage.slaDueAt,
-    // rather than duplicating the WorkingCalendarService.calculateDeadline()
-    // call a second time. Returns null when toStage.slaWorkingHours is
-    // unset, so dueDate stays undefined and the task falls through to
-    // TaskService's own existing priority-based default — zero behavior
-    // change for any stage that hasn't configured an SLA.
-    const dueAt = await this.computeSlaDueAt(toStage, organizationId);
-
-    const task = await this.taskService.create(
-      {
-        title: `${transition.labelEn} — ${subjectLabel}`,
-        sourceType,
-        sourceId: instance.objectId,
-        sourceStageId: toStage.id,
-        workflowInstanceId: instance.id,
-        assigneeUserIds: assigneeIds,
-        assigneeDelegations,
-        priority: 'MEDIUM', // TODO(future step): derive from source object urgency, not a fixed default
-        dueDate: dueAt?.toISOString(),
-      },
-      organizationId,
-      actorId,
-      placement,
-      // ACC-174 (C1) — the stage's SLA is the engine's date, not a person's:
-      // when it runs past the priority limit, the limit is raised to it rather
-      // than the task refused. Temporary until stage task definitions (CF-07).
-      'engine',
-    );
-
-    // A pool nobody is in right now is still a pool — it resolves at read time —
-    // but the actor is told, the way an unassigned task is.
-    if (stagePool?.pooled) {
-      const members = await resolvePoolMemberIds(this.prisma, stagePool.target, organizationId);
-      return members.length > 0
-        ? { responseSummary: `Task created for a pool of ${members.length} current member(s)`, isUnassigned: false }
-        : { responseSummary: 'Task created for a pool nobody is in yet — no one can pick it up', isUnassigned: true };
-    }
-
-    return assigneeIds.length > 0
-      ? { responseSummary: `Task created for ${assigneeIds.length} assignee(s)`, isUnassigned: false }
-      : { responseSummary: `Task created as ${task.status} — no eligible assignee`, isUnassigned: true };
-  }
-
-  // ACC-167 — the pool a stage's task belongs to, or null for every strategy
-  // that names people. `pooled` is false for a single-holder position: its
-  // task goes straight to the holder but still remembers the pool. A
-  // committee role has no single-holder flag, so it always pools.
-  private async resolveStagePool(
-    stage: PrismaWorkflowStage,
-    organizationId: string,
-  ): Promise<PoolPlacement | null> {
-    if (stage.assigneeStrategy === 'POSITION_FIXED' && stage.assigneePositionId && stage.assigneeOrgUnitId) {
-      const position = await this.prisma.orgPosition.findFirst({
-        where: { id: stage.assigneePositionId, organizationId },
-        select: { isSingleAssignee: true },
-      });
-      if (!position) return null;
-      return {
-        target: { kind: 'POSITION', orgUnitId: stage.assigneeOrgUnitId, positionId: stage.assigneePositionId },
-        pooled: !position.isSingleAssignee,
-      };
-    }
-    if (stage.assigneeStrategy === 'COMMITTEE' && stage.committeeId && stage.assigneeCommitteeRoleValueId) {
-      return {
-        target: { kind: 'COMMITTEE_ROLE', committeeId: stage.committeeId, roleValueId: stage.assigneeCommitteeRoleValueId },
-        pooled: true,
-      };
-    }
-    return null;
   }
 
   // WorkflowObjectType → TaskSourceType. DOCUMENT_REQUEST/CHANGE_REQUEST map
@@ -1169,10 +1174,16 @@ export class WorkflowService {
     // engine never sees, so both genuinely need the caller-supplied object
     // snapshot TriggerTransitionDto does not carry. Still correctly deferred.
     //
-    // The two checks below need no snapshot — each is answerable from data
-    // the engine already owns. allPreviousStageTasksComplete was previously
-    // grouped with the snapshot-dependent two and deferred by association;
-    // that reason never applied to it (ACC-65, SYSTEM-REFERENCE.md §2.10).
+    // minApprovals needs no snapshot — it is answerable from data the engine
+    // already owns.
+    //
+    // ACC-190 — allPreviousStageTasksComplete (ACC-65) is RETIRED: the stage's
+    // mandatory tasks hold every ADVANCE without opting in, on the approval
+    // path too, which this validator never reached. Saving it is refused
+    // (VALIDATOR_RETIRED); one left in stored config is ignored, and said so.
+    if ((config as Record<string, unknown>)['allPreviousStageTasksComplete'] !== undefined) {
+      this.logger.warn(`Transition ${transition.id} still carries the retired allPreviousStageTasksComplete validator; ignored`);
+    }
     if (config.minApprovals) {
       const approvedCount = await this.prisma.workflowApproval.count({
         where: {
@@ -1186,82 +1197,6 @@ export class WorkflowService {
         );
       }
     }
-
-    if (config.allPreviousStageTasksComplete) {
-      await this.assertStageTasksComplete(currentInstanceStage, organizationId);
-    }
-  }
-
-  // ACC-65 — blocks a transition while the stage being LEFT still has
-  // outstanding tasks. The missing half of the workflow/task seam: without
-  // it a user completes a task and separately presses a transition, with
-  // nothing connecting the two and nothing stopping them advancing with the
-  // task still open.
-  //
-  // Three scoping decisions, each made deliberately rather than falling out
-  // of the where clause:
-  //
-  // 1. WHICH STAGE. Task.sourceStageId holds the stage a task was created
-  //    FOR, which executeCreateTask() sets to the transition's DESTINATION
-  //    (`sourceStageId: toStage.id`). So the tasks belonging to the stage we
-  //    are now leaving are those stamped with currentInstanceStage.stageId.
-  //    The field name says "source" while holding a destination — that is
-  //    pre-existing and not changed here, but it is why this reads the
-  //    from-stage and not transition.toStageId.
-  //
-  // 2. WHICH STATUSES COUNT AS OUTSTANDING. COMPLETED is done. CANCELLED is
-  //    void — a cancelled task must not block, so the naive
-  //    `{ not: 'COMPLETED' }` would be wrong. Everything else blocks,
-  //    INCLUDING UNASSIGNED, and that is the deliberate part:
-  //
-  //      sweepOverdueTasks() uses notIn ['COMPLETED','CANCELLED','UNASSIGNED']
-  //      because nobody can be nagged about a task with no assignee. This
-  //      check deliberately DIFFERS by one value. An unassigned task is real
-  //      work that definitely is not done; letting it pass would fail open in
-  //      exactly the case the gate exists for. The resulting block is
-  //      recoverable by design and by three separate existing paths —
-  //      TaskService.reassign() flips UNASSIGNED to PENDING, ACC-34's
-  //      Unassigned Tasks view surfaces them under tasks:manage, and
-  //      ACC-51/52's sweep re-resolves and assigns them automatically. It is
-  //      a stall with an exit, not a deadlock.
-  //
-  // 3. WHETHER MANUAL TASKS COUNT. They do. CreateTaskDto accepts
-  //    sourceStageId and workflowInstanceId, so a user with tasks:create can
-  //    attach a task to this stage, and it will block. That is intended: the
-  //    question this gate answers is "is this stage's work done", not "is
-  //    this stage's ENGINE-GENERATED work done". Excluding manual tasks would
-  //    need a provenance field that does not exist, and would silently ignore
-  //    work a Quality Manager deliberately attached to the stage.
-  private async assertStageTasksComplete(
-    currentInstanceStage: PrismaWorkflowInstanceStage,
-    organizationId: string,
-  ): Promise<void> {
-    const outstanding = await this.prisma.task.findMany({
-      where: {
-        organizationId,
-        // Both, not just the stage: without workflowInstanceId a task from a
-        // DIFFERENT object sitting at the same template stage would block
-        // this instance — an intermittent bug that would be painful to trace.
-        workflowInstanceId: currentInstanceStage.workflowInstanceId,
-        sourceStageId: currentInstanceStage.stageId,
-        status: { notIn: ['COMPLETED', 'CANCELLED'] },
-      },
-      select: { title: true, status: true },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    if (outstanding.length === 0) return;
-
-    // Names what is outstanding rather than throwing a generic conflict —
-    // the actor's next action is to go and complete those specific tasks,
-    // and "a task is incomplete" does not tell them which.
-    // ACC-173 — the status as words ("On hold", "In progress"), never the raw
-    // enum. An on-hold task is open, so it holds the stage like any other.
-    const summary = outstanding.map((t) => `"${t.title}" (${taskStatusTitle(t.status)})`).join(', ');
-    throw new ConflictException(
-      `This stage has ${outstanding.length} incomplete task(s) that must be completed before ` +
-        `this transition can fire: ${summary}`,
-    );
   }
 
   // ── Internal: assignee resolution ────────────────────────────────────────────
@@ -1826,13 +1761,17 @@ export class WorkflowService {
     return this.applyOutOfOfficeRouting(rawPool, organizationId);
   }
 
+  // ACC-190 — counted from the entry's own `enteredAt`, the same instant its
+  // tasks' SLA starts, so the stage deadline and the task due dates share one
+  // clock (the stage-deadline rule compares them in working hours from here).
   private async computeSlaDueAt(
     stage: PrismaWorkflowStage,
     organizationId: string,
+    from: Date,
   ): Promise<Date | null> {
     if (!stage.slaWorkingHours) return null;
     const deadline = await this.workingCalendar.calculateDeadline(
-      DateTime.now(),
+      DateTime.fromJSDate(from),
       stage.slaWorkingHours,
       organizationId,
     );
