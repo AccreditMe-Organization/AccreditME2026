@@ -3,6 +3,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 // ACC-167 — plain functions over a Prisma client: importing them pulls in no
 // Nest module, so this module still imports only Prisma and the queue.
 import { findEmptyPoolTasks } from '../task/task-pool';
+// ACC-185 — a plain function too: reads the encrypted storage config.
+import { readStorageConfig } from '../file-storage/storage-config';
 // Type-only: the generated client is replaced by a stub under Jest
 // (package.json moduleNameMapper), so its enum OBJECTS do not exist at test
 // runtime. String literals typed by the enum — the same convention as
@@ -36,6 +38,10 @@ export const OPEN_ENDED_ACTING_DAYS = 90;
 // ACC-177 — the same 90% the one-time notice uses (STORAGE_WARNING_RATIO).
 export const STORAGE_ALMOST_FULL_RATIO = 0.9;
 
+/** ACC-185 — how many days before the SharePoint secret expires the condition opens. */
+export const SECRET_EXPIRY_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export interface DetectedCondition {
   objectId: string;
   severity: SetupConditionSeverity;
@@ -48,8 +54,11 @@ export interface DetectedCondition {
   subject: Prisma.InputJsonObject;
 }
 
+// `now` is the reconciliation's own clock (ACC-185: the secret-expiry
+// window), so a pass judges every type against one instant.
 export type SetupConditionDetector = (
   organizationId: string,
+  now?: Date,
 ) => Promise<DetectedCondition[]>;
 
 // Types that exist in the enum but are NOT detected, reconciled or reported.
@@ -104,6 +113,10 @@ export class SetupConditionDetectors {
       this.openEndedActingHeads(organizationId),
     STORAGE_ALMOST_FULL: (organizationId) =>
       this.storageAlmostFull(organizationId),
+    STORAGE_ACCESS_WITHDRAWN: (organizationId) =>
+      this.storageAccessWithdrawn(organizationId),
+    STORAGE_SECRET_EXPIRING: (organizationId, now) =>
+      this.storageSecretExpiring(organizationId, now),
   };
 
   // Vacant (no head position holder) ACTIVE units. Severity follows coverage:
@@ -372,6 +385,57 @@ export class SetupConditionDetectors {
           limitBytes,
           percent: Math.floor((usedBytes / limitBytes) * 100),
         },
+      },
+    ];
+  }
+
+  /**
+   * ACC-185 — the organisation's SharePoint can no longer be reached. Reads the
+   * flag the hourly probe maintains (SharePointAccessService.probe, the single
+   * recomputer); it opens on the probe's first failing pass and closes on the
+   * first pass after access works again. BLOCKS_WORK: uploads and downloads of
+   * files stored there are refused until it is fixed.
+   */
+  async storageAccessWithdrawn(organizationId: string): Promise<DetectedCondition[]> {
+    const org = await this.prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { storageProvider: true, storageAccessLostAt: true, storageAccessLostReason: true },
+    });
+    if (!org || org.storageProvider !== 'SHAREPOINT' || !org.storageAccessLostAt) return [];
+    return [
+      {
+        objectId: organizationId,
+        severity: 'BLOCKS_WORK' as const,
+        openedAt: org.storageAccessLostAt,
+        subject: { reason: org.storageAccessLostReason },
+      },
+    ];
+  }
+
+  /**
+   * ACC-185 — the SharePoint client secret expires within
+   * SECRET_EXPIRY_DAYS days, by the date the tenant admin entered. Open from
+   * then until the date changes (a replaced secret) or passes — after which the
+   * probe finds the secret invalid and STORAGE_ACCESS_WITHDRAWN takes over. No
+   * date entered, no condition: the expiry cannot be known.
+   */
+  async storageSecretExpiring(organizationId: string, now: Date = new Date()): Promise<DetectedCondition[]> {
+    const org = await this.prisma.organization.findFirst({
+      where: { id: organizationId },
+      select: { storageProvider: true, storageConfirmedAt: true, storageConfig: true },
+    });
+    if (!org || org.storageProvider !== 'SHAREPOINT' || !org.storageConfirmedAt) return [];
+    const expiresOn = readStorageConfig(org.storageConfig).sharepoint?.secretExpiresOn;
+    if (!expiresOn) return [];
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const daysLeft = Math.round((Date.parse(`${expiresOn}T00:00:00Z`) - today) / DAY_MS);
+    if (Number.isNaN(daysLeft) || daysLeft < 0 || daysLeft > SECRET_EXPIRY_DAYS) return [];
+    return [
+      {
+        objectId: organizationId,
+        severity: 'AT_RISK' as const,
+        openedAt: null,
+        subject: { expiresOn, daysLeft },
       },
     ];
   }

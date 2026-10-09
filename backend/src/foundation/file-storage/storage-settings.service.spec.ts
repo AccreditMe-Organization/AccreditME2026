@@ -34,6 +34,8 @@ async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
 describe('StorageSettingsService (ACC-177)', () => {
   const prisma = {
     organization: { findFirst: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn() },
+    // ACC-185 — GET counts SharePoint files not yet purged.
+    storedFile: { count: jest.fn().mockResolvedValue(0) },
   };
   const storedFiles = { cloudUsageBytes: jest.fn().mockResolvedValue(1234) };
   const auditLog = { log: jest.fn().mockResolvedValue(undefined) };
@@ -242,7 +244,7 @@ describe('StorageSettingsService (ACC-177)', () => {
       process.env['LOCAL_STORAGE_BASE'] = base;
       org('S3', null);
       const result = await service.test('org-a', { provider: 'LOCAL_FILESYSTEM', local: { rootPath: 'probe-root' } });
-      expect(result).toEqual({ ok: true, provider: 'LOCAL_FILESYSTEM', passed: ['configure', 'write', 'read', 'verify', 'delete'], failedStep: null, code: null, message: null });
+      expect(result).toEqual({ ok: true, provider: 'LOCAL_FILESYSTEM', passed: ['configure', 'write', 'read', 'verify', 'delete'], failedStep: null, code: null, message: null, sharepoint: null });
       expect(prisma.organization.update).not.toHaveBeenCalled();
       expect(prisma.organization.updateMany).not.toHaveBeenCalled();
     });

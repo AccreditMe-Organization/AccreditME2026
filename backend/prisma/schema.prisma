@@ -26,6 +26,8 @@ enum StorageProvider {
   S3
   MINIO
   LOCAL_FILESYSTEM
+  // ACC-185 — the customer's own SharePoint library, through their own app.
+  SHAREPOINT
 }
 
 enum AiProvider {
@@ -255,6 +257,11 @@ enum SetupConditionType {
   ACTING_HEAD_OPEN_ENDED
   // ACC-177 — AccreditMe-cloud storage at 90% or more of maxStorageGb.
   STORAGE_ALMOST_FULL
+  // ACC-185 — the customer's SharePoint can no longer be reached (an invalid
+  // or expired secret, consent revoked, grant removed, library gone).
+  STORAGE_ACCESS_WITHDRAWN
+  // ACC-185 — the SharePoint client secret expires within 30 days.
+  STORAGE_SECRET_EXPIRING
 }
 
 // No HYGIENE tier yet: the only hygiene condition (stale invitations) was
@@ -348,6 +355,15 @@ model Organization {
   // Set when AccreditMe-cloud usage reached 90% and the tenant admins were
   // told; cleared when it drops below 90%, so the next crossing tells them again.
   storageWarnedAt            DateTime?
+  // ACC-185 — SharePoint access withdrawn: stamped by the one call that moves it
+  // from null (that call sends the single notice), set and cleared by the hourly
+  // probe, cleared by a passing secret save. Reason: SECRET_INVALID,
+  // CONSENT_REVOKED, GRANT_REMOVED or LIBRARY_GONE.
+  storageAccessLostAt        DateTime?
+  storageAccessLostReason    String?
+  // ACC-185 — the tenant admins were told the SharePoint secret expires within
+  // 30 days; cleared when the expiry date changes, so a new secret warns again.
+  storageSecretWarnedAt      DateTime?
 
   // Encrypted provider config (JSON blob, encrypted at rest)
   authConfig    String?
@@ -1578,6 +1594,12 @@ model StoredFile {
   purgedAt       DateTime?
   restoredAt     DateTime?
   restoredById   String?
+  // ACC-185 — a SharePoint file's Graph ids: the site and drive (library) it
+  // was written to, and its item, so a file renamed or moved in SharePoint is
+  // still found. Null for every other provider.
+  msSiteId       String?
+  msDriveId      String?
+  msItemId       String?
 
   organization Organization  @relation(fields: [organizationId], references: [id])
   uploadedBy   User          @relation("StoredFileUploadedBy", fields: [uploadedById], references: [id])

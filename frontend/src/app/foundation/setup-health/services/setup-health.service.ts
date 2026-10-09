@@ -14,7 +14,11 @@ export type SetupConditionType =
   | 'STAGE_WITHOUT_ASSIGNEE'
   | 'TASK_WITHOUT_OWNER'
   // ACC-177 — AccreditMe-cloud storage at 90% or more of the organisation's limit.
-  | 'STORAGE_ALMOST_FULL';
+  | 'STORAGE_ALMOST_FULL'
+  // ACC-185 — the organisation's SharePoint can no longer be reached.
+  | 'STORAGE_ACCESS_WITHDRAWN'
+  // ACC-185 — the SharePoint client secret expires within 30 days.
+  | 'STORAGE_SECRET_EXPIRING';
 
 export type SetupConditionSeverity = 'BLOCKS_WORK' | 'AT_RISK';
 
@@ -40,6 +44,10 @@ export interface SetupConditionSubject {
   usedBytes?: number;
   limitBytes?: number;
   percent?: number;
+  // ACC-185 — STORAGE_ACCESS_WITHDRAWN: why; STORAGE_SECRET_EXPIRING: when.
+  reason?: 'SECRET_INVALID' | 'CONSENT_REVOKED' | 'GRANT_REMOVED' | 'LIBRARY_GONE' | null;
+  expiresOn?: string;
+  daysLeft?: number;
 }
 
 export interface SetupConditionDto {

@@ -129,7 +129,8 @@ describe('StorageResolverService (ACC-177)', () => {
 
   describe('Local folder', () => {
     it('is not offered unless LOCAL_STORAGE_BASE is set', () => {
-      expect(resolver.offeredProviders()).toEqual(['S3', 'MINIO']);
+      // ACC-185 — SharePoint needs nothing from the platform, so it is always offered.
+      expect(resolver.offeredProviders()).toEqual(['S3', 'MINIO', 'SHAREPOINT']);
       expect(codeOf(() => resolver.forCandidate('LOCAL_FILESYSTEM', { local: { rootPath: 'org' } }))).toBe(
         'STORAGE_PROVIDER_NOT_ALLOWED',
       );

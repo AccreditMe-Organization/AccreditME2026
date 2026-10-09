@@ -57,6 +57,16 @@ export class StorageSettingsController {
     return this.settings.requestChange(tenantId, dto, userId);
   }
 
+  // ACC-185 — Disconnect SharePoint: before confirmation it clears the draft;
+  // after, only with no SharePoint file stored there (STORAGE_LOCKED_BY_FILES),
+  // returning the organisation to unconfirmed AccreditMe cloud.
+  @Post('disconnect')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  disconnect(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IStorageSettings> {
+    return this.settings.disconnect(tenantId, userId);
+  }
+
   // A check, not a create: 200 either way, the result says which step failed.
   @Post('test')
   @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)

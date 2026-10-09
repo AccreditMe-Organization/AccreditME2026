@@ -1091,7 +1091,9 @@
       "ORG_UNIT_WITHOUT_TYPE": "Org unit without a type",
       "STAGE_WITHOUT_ASSIGNEE": "Workflow stage with no resolvable assignee",
       "TASK_WITHOUT_OWNER": "Task with no actionable owner",
-      "STORAGE_ALMOST_FULL": "File storage almost full"
+      "STORAGE_ALMOST_FULL": "File storage almost full",
+      "STORAGE_ACCESS_WITHDRAWN": "SharePoint storage can't be reached",
+      "STORAGE_SECRET_EXPIRING": "SharePoint client secret expires soon"
     },
     "context": {
       "template": "Workflow: {{name}}"
@@ -1101,11 +1103,21 @@
       "unitUncovered": "No head, and no one covers it by escalation. Approvals and escalations routed to its head have nowhere to go.",
       "unitUntyped": "No type is set, so the unit cannot be grouped or filtered by type in the structure or the chart.",
       "task": "No one is assigned, so it is in no one’s task list.",
-      "storage": "{{percent}}% of {{limit}} is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin."
+      "storage": "{{percent}}% of {{limit}} is used. Uploads stop at the limit; deleted files count until they are purged from the recycle bin.",
+      "sharePointWithdrawn": {
+        "SECRET_INVALID": "The client secret is invalid or has expired. Uploads and downloads of files stored in SharePoint are paused.",
+        "CONSENT_REVOKED": "The app's permission was removed in your Microsoft tenant, or the app was disabled or deleted. Uploads and downloads of files stored in SharePoint are paused.",
+        "GRANT_REMOVED": "The app no longer has access to the library. Uploads and downloads of files stored in SharePoint are paused.",
+        "LIBRARY_GONE": "The library no longer exists. Uploads and downloads of files stored in SharePoint are paused.",
+        "UNKNOWN": "Uploads and downloads of files stored in SharePoint are paused."
+      },
+      "sharePointSecretExpiring": "The client secret expires on {{date}}. After that, uploads and downloads of files stored in SharePoint pause."
     },
     "hint": {
       "STAGE_WITHOUT_ASSIGNEE": "The cause is not recorded: check the stage’s assignee, and the trigger on each transition out of it.",
-      "STORAGE_ALMOST_FULL": "Purge deleted files from the recycle bin, or ask AccreditMe for more storage."
+      "STORAGE_ALMOST_FULL": "Purge deleted files from the recycle bin, or ask AccreditMe for more storage.",
+      "STORAGE_ACCESS_WITHDRAWN": "Ask your Microsoft administrator to restore the app's access, or enter a new client secret under Replace secret. Files stored there are safe.",
+      "STORAGE_SECRET_EXPIRING": "Ask your Microsoft administrator for a new client secret and enter it under Replace secret before then."
     },
     "age": {
       "openToday": "Opened in the last 24 hours",
@@ -1138,7 +1150,8 @@
       "none": "Nothing has cleared in the last 7 days.",
       "note": "Shown so you can see a fix landed, and so a surveyor can see when a gap closed. Each entry drops off after 7 days."
     },
-    "storageObject": "File storage"
+    "storageObject": "File storage",
+    "sharePointObject": "SharePoint storage"
   },
   "format": {
     "lessThanMinute": "less than a minute",

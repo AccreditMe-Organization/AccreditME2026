@@ -360,6 +360,8 @@ describe('SetupHealthService (ACC-82)', () => {
         'TASK_WITHOUT_OWNER',
         'ACTING_HEAD_OPEN_ENDED',
         'STORAGE_ALMOST_FULL',
+        'STORAGE_ACCESS_WITHDRAWN',
+        'STORAGE_SECRET_EXPIRING',
       ]);
     });
 

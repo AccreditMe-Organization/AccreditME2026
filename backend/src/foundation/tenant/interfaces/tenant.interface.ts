@@ -12,7 +12,7 @@ export interface ITenant {
   timezone: string;
   language: string;
   authProvider: 'LOCAL' | 'AZURE_AD' | 'GOOGLE';
-  storageProvider: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';
+  storageProvider: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM' | 'SHAREPOINT';
   aiProvider: 'ANTHROPIC' | 'AZURE_OPENAI' | 'OPENAI' | 'OLLAMA';
   plan: 'STARTER' | 'PROFESSIONAL' | 'ENTERPRISE';
   status: 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CANCELLED' | 'OFFBOARDING';
@@ -68,7 +68,7 @@ export interface ITenantEntitlements {
 
 export interface ITenantConfig {
   authProvider: 'LOCAL' | 'AZURE_AD' | 'GOOGLE';
-  storageProvider: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';
+  storageProvider: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM' | 'SHAREPOINT';
   aiProvider: 'ANTHROPIC' | 'AZURE_OPENAI' | 'OPENAI' | 'OLLAMA';
   // ACC-177 — masked: 'set' when a config is stored, never its contents.
   authConfig: 'set' | null;

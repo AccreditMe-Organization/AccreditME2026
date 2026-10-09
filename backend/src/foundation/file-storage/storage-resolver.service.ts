@@ -1,15 +1,39 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { isAbsolute, resolve, sep } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageProvider } from '../../providers/storage/storage.provider';
 import { S3CompatibleStorageProvider } from '../../providers/storage/s3-compatible-storage.provider';
 import { LocalFilesystemStorageProvider } from '../../providers/storage/local-filesystem-storage.provider';
 import { PrivateEndpointRefusedError } from '../../providers/storage/endpoint-guard';
-import { completeMinio, IMinioConfig, IStorageConfig, readStorageConfig } from './storage-config';
+import {
+  ISharePointLocation,
+  SharePointConnectStep,
+  SharePointConnector,
+} from '../../providers/storage/sharepoint/sharepoint-connector';
+import { parseSiteUrl, SiteUrlRefusedError } from '../../providers/storage/sharepoint/sharepoint-locator';
+import { SharePointStorageProvider } from '../../providers/storage/sharepoint/sharepoint-storage.provider';
+import {
+  completeMinio,
+  completeSharePoint,
+  IMinioConfig,
+  ISharePointResolved,
+  IStorageConfig,
+  readStorageConfig,
+  StorageChoice,
+} from './storage-config';
+import { IAppCredentials } from '../../providers/storage/sharepoint/microsoft-identity';
+
+function credentialsOf(sharePoint: { tenant: string; clientId: string; clientSecret: string }): IAppCredentials {
+  return { tenant: sharePoint.tenant, clientId: sharePoint.clientId, clientSecret: sharePoint.clientSecret };
+}
 import { allowPrivateEndpoints, localStorageBase, platformS3Settings } from './storage-platform-env';
 import { StorageRefusalException } from './storage-refusal';
 
-export type StorageProviderKind = 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';
+/** The kinds Organization.storageProvider and StoredFile.provider hold. */
+export type StorageProviderKind = 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM' | 'SHAREPOINT';
+
+/** The kinds built from settings alone, with no lookup (SharePoint needs one). */
+export type DirectProviderKind = Exclude<StorageProviderKind, 'SHAREPOINT'>;
 
 /** Where a file lives. Written onto every StoredFile row. */
 export interface IStorageLocation {
@@ -17,6 +41,9 @@ export interface IStorageLocation {
   bucket: string | null;
   endpoint: string | null;
   rootPath: string | null;
+  /** ACC-185 — SharePoint only: the site and library (drive) written to. */
+  msSiteId?: string | null;
+  msDriveId?: string | null;
 }
 
 export interface IResolvedStorage {
@@ -31,6 +58,9 @@ export interface IStoredFileLocation {
   bucket: string | null;
   endpoint: string | null;
   rootPath: string | null;
+  /** ACC-185 — SharePoint only: the library the file was written to, and its item. */
+  msDriveId?: string | null;
+  msItemId?: string | null;
 }
 
 /**
@@ -47,7 +77,12 @@ export interface IStoredFileLocation {
  */
 @Injectable()
 export class StorageResolverService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // ACC-185 — the customer's SharePoint, through their own app. One shared
+    // instance holds the in-memory token cache; specs pass a fake.
+    @Optional() private readonly sharePoint: SharePointConnector = new SharePointConnector(),
+  ) {}
 
   async forUpload(organizationId: string): Promise<IResolvedStorage> {
     const org = await this.prisma.organization.findFirst({
@@ -55,11 +90,30 @@ export class StorageResolverService {
       select: { storageProvider: true, storageConfig: true },
     });
     if (!org) throw new StorageRefusalException('STORAGE_NOT_CONFIGURED');
-    return this.forCandidate(org.storageProvider, readStorageConfig(org.storageConfig));
+    const config = readStorageConfig(org.storageConfig);
+    if (org.storageProvider === 'SHAREPOINT') {
+      const { credentials, resolved } = this.confirmedSharePoint(config);
+      return {
+        provider: this.sharePoint.providerFor(credentials, resolved.driveId),
+        location: {
+          provider: 'SHAREPOINT',
+          bucket: null,
+          endpoint: null,
+          rootPath: null,
+          msSiteId: resolved.siteId,
+          msDriveId: resolved.driveId,
+        },
+      };
+    }
+    return this.forCandidate(org.storageProvider, config);
   }
 
-  /** Builds the provider for a provider choice and configuration. Saves nothing. */
-  forCandidate(provider: StorageProviderKind, config: IStorageConfig): IResolvedStorage {
+  /**
+   * Builds the provider for a provider choice and configuration. Saves
+   * nothing. SharePoint is not built here — it needs a lookup first
+   * (connectSharePoint) or the ids Confirm recorded (forUpload, forFile).
+   */
+  forCandidate(provider: DirectProviderKind, config: IStorageConfig): IResolvedStorage {
     switch (provider) {
       case 'S3':
         return this.platformS3();
@@ -111,12 +165,76 @@ export class StorageResolverService {
         }
         return new LocalFilesystemStorageProvider(this.localRoot(file.rootPath));
       }
+      case 'SHAREPOINT': {
+        // The file's own library must still be the organisation's library —
+        // the same rule as MinIO's endpoint and bucket. Moving files between
+        // libraries is ACC-180; until then a file elsewhere is unavailable.
+        const config = await this.configOf(file.organizationId);
+        const sharePoint = completeSharePoint(config);
+        const resolved = config.sharepoint?.resolved;
+        if (!sharePoint || !resolved || !file.msDriveId || resolved.driveId !== file.msDriveId) {
+          throw new StorageRefusalException('FILE_UNAVAILABLE');
+        }
+        return this.sharePoint.providerFor(credentialsOf(sharePoint), resolved.driveId);
+      }
     }
   }
 
-  /** Which providers this installation offers a tenant. */
-  offeredProviders(): StorageProviderKind[] {
-    return ['S3', 'MINIO', ...(localStorageBase() ? (['LOCAL_FILESYSTEM'] as const) : [])];
+  /**
+   * ACC-185 — the confirmed SharePoint location: the app's credentials and the
+   * ids Confirm recorded. Refuses when either is missing, which a confirmed
+   * organisation should never be.
+   */
+  confirmedSharePoint(config: IStorageConfig): { credentials: IAppCredentials; resolved: ISharePointResolved } {
+    const sharePoint = completeSharePoint(config);
+    const resolved = config.sharepoint?.resolved;
+    if (!sharePoint || !resolved?.driveId) throw new StorageRefusalException('STORAGE_NOT_CONFIGURED');
+    return { credentials: credentialsOf(sharePoint), resolved };
+  }
+
+  /** Can the confirmed library still be reached? Throws what an upload would. */
+  async probeSharePoint(config: IStorageConfig): Promise<void> {
+    const { credentials, resolved } = this.confirmedSharePoint(config);
+    await this.sharePoint.probe(credentials, resolved.driveId);
+  }
+
+  /** After Microsoft refused a token, so the next attempt asks again. */
+  forgetSharePointToken(config: IStorageConfig): void {
+    const sharePoint = completeSharePoint(config);
+    if (sharePoint) this.sharePoint.forget(credentialsOf(sharePoint));
+  }
+
+  /**
+   * Which options this installation offers a tenant. SharePoint needs nothing
+   * from the platform — the customer brings their own app — so it is always
+   * offered.
+   */
+  offeredProviders(): StorageChoice[] {
+    return ['S3', 'MINIO', ...(localStorageBase() ? (['LOCAL_FILESYSTEM'] as const) : []), 'SHAREPOINT'];
+  }
+
+  /**
+   * ACC-185 — the customer's SharePoint library: sign in as their app, find
+   * the site and the library, and return a provider for it, reporting each
+   * step as it passes so a connection test can name the one that failed.
+   */
+  async connectSharePoint(
+    config: IStorageConfig,
+    onStep?: (step: SharePointConnectStep) => void,
+  ): Promise<{ provider: SharePointStorageProvider; location: ISharePointLocation }> {
+    const settings = completeSharePoint(config);
+    if (!settings) throw new StorageRefusalException('STORAGE_SETTINGS_INCOMPLETE');
+    return this.sharePoint.connect(settings, onStep);
+  }
+
+  /** The site address must be https on a .sharepoint.com host (Q3). */
+  assertSharePointSiteAllowed(siteUrl: string): void {
+    try {
+      parseSiteUrl(siteUrl);
+    } catch (error) {
+      if (error instanceof SiteUrlRefusedError) throw new StorageRefusalException('SHAREPOINT_SITE_URL_INVALID');
+      throw error;
+    }
   }
 
   /**

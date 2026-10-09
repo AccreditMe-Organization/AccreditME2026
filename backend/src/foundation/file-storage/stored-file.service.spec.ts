@@ -2,6 +2,7 @@ import { StoredFileService } from './stored-file.service';
 import { StorageRefusalException } from './storage-refusal';
 import { StorageResolverService } from './storage-resolver.service';
 import { StorageNoticesService } from './storage-notices.service';
+import { SharePointAccessService } from './sharepoint-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
 import { readDownloadToken } from './download-token';
@@ -44,10 +45,13 @@ describe('StoredFileService (ACC-177)', () => {
     $queryRaw: jest.fn().mockResolvedValue([]),
   };
   const notices = { storageAlmostFull: jest.fn().mockResolvedValue(undefined) };
+  // ACC-185 — S3/MinIO/local failures are never a SharePoint withdrawal.
+  const sharePointAccess = { refusalFor: jest.fn().mockResolvedValue(null) };
   const service = new StoredFileService(
     prisma as unknown as PrismaService,
     resolver as unknown as StorageResolverService,
     notices as unknown as StorageNoticesService,
+    sharePointAccess as unknown as SharePointAccessService,
   );
   const savedCap = process.env['MAX_UPLOAD_MB'];
   const savedKey = process.env['ENCRYPTION_KEY'];
@@ -199,7 +203,7 @@ describe('StoredFileService (ACC-177)', () => {
     const prepared = await service.prepare('org-a', OWNER, PDF);
     provider.delete.mockRejectedValueOnce(new Error('gone'));
     await expect(service.discard(prepared)).resolves.toBeUndefined();
-    expect(provider.delete).toHaveBeenCalledWith(prepared.storageKey);
+    expect(provider.delete).toHaveBeenCalledWith(prepared.storageKey, null);
   });
 
   describe('openDownload', () => {

@@ -613,6 +613,9 @@ Option 1: AWS S3 (default) — AccreditMe's own bucket, eu-central-1 for now;
         not provisioned yet, see Infrastructure
 Option 2: MinIO on customer infrastructure (on-premises S3-compatible)
 Option 3: Local filesystem / NAS mount (legacy on-premises)
+Option 4: The customer's own SharePoint document library (ACC-185) — prepared
+        by the customer's IT like MinIO (their app, their grant on one
+        library); see Key Architecture Decisions (ACC-185)
 ```
 All built against the StorageProvider interface (ACC-177). Zero application
 code changes when switching providers — only tenant configuration changes, and
@@ -1434,7 +1437,10 @@ data-retention      Nightly check for records approaching retention expiry
 sla-monitor         Every 15 minutes — check SLA breaches, trigger escalations,
                     recompute cached org-unit vacancy and stage-reachability flags
 setup-health        Hourly — reconcile Setup health conditions (ACC-82)
-storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177)
+storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177),
+                    and the 30-day SharePoint secret warning (ACC-185);
+                    hourly — probe each confirmed SharePoint library, setting
+                    and clearing "access withdrawn" (ACC-185)
 notification-digest Daily digest emails for digest-mode users
 data-export         Tenant data export packages (async, notified when ready)
 report-scheduler    Scheduled automated report generation and email delivery
@@ -3111,6 +3117,65 @@ briefly:
 - **`STORAGE_ALMOST_FULL` must not exist as a row on a shared database before
   the deploy** (ACC-173's rule for enum values): the deployed client does not
   know it. No organisation is near 90% today, so none is opened.
+
+---
+
+## Key Architecture Decisions (ACC-185)
+
+Full mechanism detail: SYSTEM-REFERENCE.md Section 16.14. The plan, Ahmad's
+answers (8 Oct, Q1–Q6) and the live STOP 1 results:
+`backend/Plans/step-185-sharepoint-storage.md`. The customer guide:
+`docs/customer/sharepoint-storage-setup.md`. The decisions, briefly:
+
+- **SHAREPOINT WORKS LIKE MINIO: THE CUSTOMER PREPARES EVERYTHING.** Their IT
+  registers a single-tenant app in their own Entra tenant, gives it application
+  access to ONE library (recommended `Lists.SelectedOperations.Selected` + a
+  `write` grant on the library; `Sites.Selected` + a site grant also
+  accepted), and creates a client secret. The tenant admin enters tenant, client
+  ID, secret, site URL, library name and an optional expiry date. **AccreditMe
+  has no Entra app of its own** — no consent flow, callback, state token,
+  delegated sign-in or held token. That design was drafted first and dropped
+  (Ahmad, 8 Oct); do not reintroduce it.
+- **Tokens by plain `fetch`, no MSAL.** With a client secret the
+  client-credentials request is one form POST. The in-memory cache is keyed by
+  tenant, client AND a hash of the secret. A domain is resolved to the tenant
+  GUID through Microsoft's OpenID metadata; the token itself is never read.
+- **ONLY CONFIRM CHOOSES A PROVIDER (Q6), for every option.** A draft save
+  records `draftProvider` in the config and never writes
+  `Organization.storageProvider`; Test writes nothing. Disconnect is the only
+  other writer, and only returns it to the default. `PATCH /tenant`'s
+  `storageProvider` field was REMOVED in the same change — it wrote the
+  provider straight to the organisation, past the connection test and the
+  post-confirmation lock, and is now a 400.
+- **After Confirm, the tenant, site and library are locked; credentials are
+  not.** A new client ID or secret must pass the test AND reach the same tenant
+  GUID, site, list and drive Confirm recorded, else
+  `STORAGE_CHANGE_BY_PLATFORM`. A new expiry date alone needs no test.
+- **Disconnect (SharePoint only, Q5):** before Confirm it clears the draft;
+  after, only with no SharePoint file not yet purged (live or in the recycle
+  bin) — else `STORAGE_LOCKED_BY_FILES` — and it returns the organisation to
+  UNCONFIRMED AccreditMe cloud, audited. The count and the switch take the same
+  per-organisation lock an upload records under.
+- **An invalid or expired secret IS withdrawn access.** So are consent revoked,
+  the grant removed and the library gone. Uploads and downloads are refused
+  `STORAGE_ACCESS_WITHDRAWN`, decided live from the failing call; the stamp
+  is set once, with one notice. **The hourly probe is the flag's single
+  scheduled recomputer** (ACC-82's rule): it sets it and clears it. Setup
+  health shows `STORAGE_ACCESS_WITHDRAWN` while it is set.
+- **The secret's expiry:** tenant admins are told once, 30 days before, by the
+  daily job; Setup health `STORAGE_SECRET_EXPIRING` is open from then until
+  the date changes or passes.
+- **Purge lands in the customer's SharePoint RECYCLE BIN** (Graph's delete),
+  not oblivion, and the guide says so. A purge that includes SharePoint files
+  checks the library is reachable BEFORE marking anything purged; while access
+  is withdrawn every row stays unpurged, and the daily job DEFERS that
+  organisation rather than failing.
+- **SharePoint files never count toward AccreditMe's quota**; downloads stream
+  through `files/stream/:token` (Graph's download URL cannot set our file
+  name).
+- **No `SHAREPOINT` row, and no row of either new Setup health condition, may
+  exist on a shared database before the deploy** (ACC-173's enum rule). Confirm
+  on al-manara waits for the post-deploy live run.
 
 ---
 

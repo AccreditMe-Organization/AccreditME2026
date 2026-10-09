@@ -109,7 +109,7 @@ export class SetupConditionReconciler {
         update: { lastAttemptedAt: now },
       });
 
-      const detected = await this.detectors.byType[type](organizationId);
+      const detected = await this.detectors.byType[type](organizationId, now);
       const counts = await this.apply(organizationId, type, detected, now);
 
       await this.prisma.setupConditionRun.update({

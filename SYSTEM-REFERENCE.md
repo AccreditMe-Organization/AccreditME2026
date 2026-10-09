@@ -7076,6 +7076,8 @@ opening creates no bell entry; the rail badge is the signal.
 | `STAGE_WITHOUT_ASSIGNEE` | `WorkflowStage.id` (aggregated) | `BLOCKS_WORK` | earliest open `WorkflowInstanceStage.unassignedAt` | `/workflows/:templateId/stages?stage=<id>` — the stage list with that stage expanded |
 | `TASK_WITHOUT_OWNER` | `Task.id` | `BLOCKS_WORK` | first detection | `/tasks/unassigned?reassign=<id>` — that task's reassign dialog |
 | `STORAGE_ALMOST_FULL` (ACC-177) | the organisation | `AT_RISK` | first detection | **no Fix yet** — the recycle bin screen is lane A's; the row's hint says to purge deleted files or ask AccreditMe for more storage. Section 16.12 |
+| `STORAGE_ACCESS_WITHDRAWN` (ACC-185) | the organisation | `BLOCKS_WORK` | `Organization.storageAccessLostAt` | **no Fix yet** — the hint says to ask the Microsoft admin to restore access or enter a new secret. Set and cleared by the hourly probe. Section 16.14 |
+| `STORAGE_SECRET_EXPIRING` (ACC-185) | the organisation | `AT_RISK` | first detection | **no Fix yet** — open from 30 days before the entered expiry date until it changes or passes. Section 16.14 |
 | ~~`POSITION_WITHOUT_ROLE`~~ | — | — | — | **deferred**, see below |
 
 The Fix link's parameter is read once by the destination and removed from
@@ -8034,7 +8036,7 @@ opens `http://al-manara.localhost:4201/login`.
 is served in production is ACC-130 / ACC-148's decision, and nothing here can be
 verified end to end until ACC-130's wildcard DNS and certificate exist.
 
-## 16. File Storage — Per Organisation, and File Evidence (ACC-177)
+## 16. File Storage — Per Organisation, and File Evidence (ACC-177, SharePoint ACC-185)
 
 Plan and Ahmad's answers (7 Oct, two rounds): `backend/Plans/step-177-file-storage.md`
 (§11 and §14). Decisions: CLAUDE.md, Key Architecture Decisions (ACC-177).
@@ -8044,10 +8046,11 @@ Plan and Ahmad's answers (7 Oct, two rounds): `backend/Plans/step-177-file-stora
 ```prisma
 model StoredFile {
   id, organizationId
-  provider       StorageProvider        // S3 | MINIO | LOCAL_FILESYSTEM — where it was WRITTEN
+  provider       StorageProvider        // S3 | MINIO | LOCAL_FILESYSTEM | SHAREPOINT — where it was WRITTEN
   bucket         String?                // S3 / MinIO
   endpoint       String?                // MinIO (or the platform's S3-compatible endpoint)
   rootPath       String?                // local folder, relative to LOCAL_STORAGE_BASE
+  msSiteId, msDriveId, msItemId         // SharePoint (ACC-185): its site, library and item
   storageKey     String                 // server-built; never sent to a client
   originalName   String                 // display / download name, Arabic kept
   mimeType       String                 // decided by the server from content
@@ -8068,16 +8071,21 @@ model Organization {
   storageConfirmedAt, storageConfirmedById           // uploads refused until set
   storageChangeRequestedAt, storageChangeRequestedById
   storageWarnedAt                                    // the 90% notice was sent
+  storageAccessLostAt, storageAccessLostReason       // ACC-185: SharePoint withdrawn
+  storageSecretWarnedAt                              // ACC-185: the 30-day notice was sent
 }
 ```
 
 `TaskEvidence` gained `storedFileId` (unique, RESTRICT), `deletedAt` and
 `deletedById`; its legacy `s3Key` / `fileName` / `fileSize` / `mimeType`
 columns are unused (a later contracting migration drops them).
-`SetupConditionType` gained `STORAGE_ALMOST_FULL`.
+`SetupConditionType` gained `STORAGE_ALMOST_FULL`, and with ACC-185
+`STORAGE_ACCESS_WITHDRAWN` and `STORAGE_SECRET_EXPIRING`; `StorageProvider` gained
+`SHAREPOINT`.
 
 Migrations, both additive: `20261007034532_acc177_stored_file` and
-`20261007050540_acc177_storage_confirmation_recycle_bin`.
+`20261007050540_acc177_storage_confirmation_recycle_bin`; ACC-185's
+`20261008183440_acc185_sharepoint_storage`, also additive.
 
 ### 16.2 Who builds a provider — `StorageResolverService`
 
@@ -8100,6 +8108,9 @@ env-reading `S3StorageProvider` are deleted.
   `storageConfig.local.rootPath` is relative and must resolve inside it.
   `LocalFilesystemStorageProvider` refuses any key that is not
   `[A-Za-z0-9._-]` segments, or that resolves outside its root.
+- **SharePoint** (ACC-185) — the customer's own app and one library; built by
+  `connectSharePoint()` for a test, and from the ids Confirm recorded for
+  `forUpload` / `forFile`. Section 16.14.
 - `storageConfig` is NULL when there is nothing to keep (AccreditMe cloud) —
   `writeStorageConfig()` never stores an encrypted empty object.
 
@@ -8150,11 +8161,13 @@ A crash between 2 and 3 leaves an object no row names — ACC-179.
 Permission first (the owning module decides), then `openDownload()` — which
 refuses a DELETED file itself (`FILE_UNAVAILABLE`), whatever the caller
 checked: a deleted file can never be viewed or downloaded. A 15-minute
-pre-signed URL carrying the original name and type, or, for a local folder,
+pre-signed URL carrying the original name and type, or, for a local folder or
+SharePoint (ACC-185, by its item id),
 `files/stream/{token}` — an HMAC token (HKDF from `ENCRYPTION_KEY`) naming one
 file in one organisation for fifteen minutes. `GET /files/stream/:token` has NO
 session guard: the token is the entitlement. A bad, expired or forged token, a
-deleted file and a non-local file are all the same 404. The response carries
+deleted file and a file on any other provider are all the same 404 — except
+SharePoint access withdrawn, which is 409 `STORAGE_ACCESS_WITHDRAWN`. The response carries
 `Content-Disposition` (RFC 5987), `nosniff` and `no-store`.
 
 **Verified live against SeaweedFS (7 Oct)**: the pre-signed URL returned the
@@ -8180,9 +8193,10 @@ found". `complete()`'s evidence check, the three list counts and
 |---|---|
 | `GET /tenant/storage` | provider, offered providers, `confirmed` / `confirmedAt` / `confirmedBy`, `changeRequestedAt` / `changeRequestedBy`, the tenant's own MinIO/local settings with secrets "set" or null, AccreditMe-cloud usage. **Never AccreditMe's region, bucket or endpoint.** |
 | `POST /tenant/storage/confirm` | ONCE (`STORAGE_ALREADY_CONFIRMED` after, including the loser of a race). AccreditMe cloud: no test. MinIO / local folder: the connection test must pass (`STORAGE_TEST_FAILED`, naming the step). Stamps who and when; audited. |
-| `PATCH /tenant/storage` | Before confirmation: a draft, which unlocks nothing. After: only new keys for the SAME MinIO endpoint, region and bucket, after a passing test; anything else is 403 `STORAGE_CHANGE_BY_PLATFORM`. Audited by field NAME. |
+| `PATCH /tenant/storage` | Before confirmation: a draft, which unlocks nothing and records the option as `draftProvider` — **it never writes `storageProvider`** (ACC-185, Q6; only Confirm does). After: only new keys for the SAME MinIO endpoint, region and bucket, after a passing test; anything else is 403 `STORAGE_CHANGE_BY_PLATFORM` (SharePoint: 16.14). Audited by field NAME. |
 | `POST /tenant/storage/change-request` | Only once confirmed. Optional message ≤ 1,000. Stamps who and when (a repeat moves the date), audits the message, and after commit tells every ACTIVE `PLATFORM_ADMIN` of the platform organisation in-app, EN/AR. The switch itself: ACC-182. |
-| `POST /tenant/storage/test` | Candidate or stored settings; probe written, read back, compared, deleted; reports `configure \| write \| read \| verify \| delete`; saves nothing. |
+| `POST /tenant/storage/test` | Candidate or stored settings; probe written, read back, compared, deleted; reports `configure \| write \| read \| verify \| delete` (SharePoint adds `token \| site \| library` after `configure`); saves nothing and writes nothing to the organisation. |
+| `POST /tenant/storage/disconnect` | ACC-185, SharePoint only (16.14). |
 
 `GET /tenant/config` reports each provider config as "set" or null.
 **`GET /tenant/email-config` is still unmasked** — ACC-181. All the screens are
@@ -8197,6 +8211,12 @@ lane A's.
 `STORAGE_QUOTA_EXCEEDED` 409, `STORAGE_SETTINGS_INCOMPLETE` 400,
 `FILE_MISSING` 400, `FILE_EMPTY` 400, `FILE_TOO_LARGE` 413 (+ `maxBytes`),
 `FILE_TYPE_NOT_ALLOWED` 415, `FILE_UNAVAILABLE` 409, `FILE_RECORD_GONE` 409.
+ACC-185: `STORAGE_ACCESS_WITHDRAWN` 409, `STORAGE_LOCKED_BY_FILES` 409 (+
+`filesStored`), and the connection test's reasons, all 400:
+`SHAREPOINT_SITE_URL_INVALID`, `SHAREPOINT_TENANT_NOT_FOUND`,
+`SHAREPOINT_CLIENT_NOT_FOUND`, `SHAREPOINT_SECRET_INVALID`,
+`SHAREPOINT_APP_DISABLED`, `SHAREPOINT_SITE_NOT_FOUND`,
+`SHAREPOINT_LIBRARY_NOT_FOUND`, `SHAREPOINT_NO_WRITE_ACCESS`.
 One English message per code (`storage-refusal.ts`); the frontend's words are
 `files.refusal.*` in both languages (`FilesService.refusal()`). A provider's
 own error text is logged, never returned — it can name a host or bucket.
@@ -8216,7 +8236,9 @@ own error text is logged, never returned — it can name a host or bucket.
   own layer.
 - Opened from My tasks and the committee task list: "Add evidence" (active
   assignee, open task) and "Evidence" (any task with some).
-- Setup health lists "File storage almost full" (16.12).
+- Setup health lists "File storage almost full" (16.12), and "SharePoint
+  storage can't be reached" / "SharePoint client secret expires soon" (16.14),
+  none of them with a Fix until lane A's screens exist.
 - `FilesService` — limits, opening a download (navigation, not a popup),
   sizes, refusal codes.
 
@@ -8224,7 +8246,8 @@ own error text is logged, never returned — it can name a host or bucket.
 
 `cloudUsageBytes()` = the `sizeBytes` of every `provider = 'S3'` file with
 `purgedAt` null — **deleted files included**, because their bytes are still
-stored. A customer's MinIO or local folder counts toward nothing. Purged files
+stored. A customer's MinIO, local folder or SharePoint library counts toward
+nothing. Purged files
 stop counting. The same count drives the upload refusal
 (`STORAGE_QUOTA_EXCEEDED`), the 90% notice and the Setup health condition.
 
@@ -8241,7 +8264,9 @@ registered only behind `workersEnabled()` (ACC-92), repeating every 24 hours —
 calls `purgeExpired()`: every file deleted more than 30 days ago and not yet
 purged, per organisation, in batches of 100, audited with no actor and
 `by: daily_job_after_30_days`. A restored file has `deletedAt` null and is
-never selected. One failing organisation fails the job after the rest ran.
+never selected. One failing organisation fails the job after the rest ran; one whose
+SharePoint cannot be reached is DEFERRED, not failed (16.14). The same queue
+carries the hourly SharePoint probe and the daily 30-day secret warning.
 **Verify it locally by calling `purgeExpired()` in-process, never by
 enqueueing** — the Redis queue is shared.
 
@@ -8272,9 +8297,131 @@ deploy** (ACC-173's enum rule).
 ### 16.13 Not built
 
 Virus scanning (ACC-178), the orphan-object reconciler (ACC-179), moving files
-between locations (ACC-180), the email settings screen's secrets (ACC-181),
+between locations, SharePoint included (ACC-180), the email settings screen's
+secrets (ACC-181),
 the platform admin storage screens (ACC-182), an upload-specific rate limit
 (ACC-129's global per-user limit applies),
 per-plan upload caps, and the tenant storage, confirm, request-a-change and
-recycle bin screens (lane A). **No bucket exists**: until one does — and until
+recycle bin screens, and SharePoint's settings, Replace secret and Disconnect
+(lane A). **No bucket exists**: until one does — and until
 each organisation confirms — production refuses every upload.
+
+### 16.14 SharePoint — the customer's own library (ACC-185)
+
+Plan, Ahmad's answers (8 Oct, Q1–Q6) and the STOP 1 live results:
+`backend/Plans/step-185-sharepoint-storage.md`. The customer guide:
+`docs/customer/sharepoint-storage-setup.md`.
+
+**The model: SharePoint works like MinIO.** The customer's IT registers a
+single-tenant app in THEIR Entra tenant, gives it application access to ONE
+library, and creates a client secret; the tenant admin enters the values.
+**AccreditMe has no Entra app of its own** — no consent flow, callback, state
+token or delegated sign-in exists anywhere in this codebase.
+
+- **Recommended permission:** application `Lists.SelectedOperations.Selected` +
+  a `write` grant on the library (`POST /sites/{s}/lists/{l}/permissions`).
+  `Sites.Selected` + a site grant is also accepted. A library grant breaks
+  that library's permission inheritance (Microsoft's own note), so the guide
+  recommends a library used only by AccreditMe.
+- **What the admin enters** (`PATCH /tenant/storage`, `sharepoint` block):
+  tenant (GUID or domain), client ID, client secret (write-only, encrypted with
+  the rest of `storageConfig`, shown as `"set"`), site URL and library name —
+  or the Site ID and Library ID from the guide's PowerShell output (Q2; ids win
+  when both are set) — and an optional secret expiry date.
+- **The site URL is parsed, never fetched:** `https://` on a `*.sharepoint.com`
+  host only (Q3); AccreditMe only ever calls `login.microsoftonline.com` and
+  `graph.microsoft.com`.
+- **Settled live (STOP 1, Ahmad's tenant, 8 Oct):** with only the guide's
+  library grant, the site URL and library name DO resolve to ids, and so do the
+  ids; every Test step passed both ways; a path upload creates the
+  `AccreditMe/_probe` folders. Revoking and re-granting is still to run (in the
+  post-deploy live run).
+
+**Tokens — `MicrosoftIdentity` (`providers/storage/sharepoint/`).** The
+client-credentials request with a secret is one form POST, so there is no
+MSAL. Tokens are cached in memory, keyed by tenant, client AND a hash of the
+secret, so a replaced secret never reuses the old one's token, and two
+organisations sharing a Microsoft tenant never share one. A domain is resolved
+to the tenant GUID through Microsoft's published OpenID metadata — the token is
+never read. AADSTS codes are classified (`TENANT_NOT_FOUND`, `CLIENT_NOT_FOUND`,
+`SECRET_INVALID`, `APP_DISABLED`, else `UNAVAILABLE`); an error never carries
+the secret, the request body or Microsoft's own description.
+
+**Graph — `GraphClient`.** On 429 or 503: wait `Retry-After` (seconds or an
+HTTP date; exponential backoff without one), at most 3 attempts and 20 seconds
+of waiting, then a `GraphError` with `retryAfterSeconds`. Nothing else is
+retried. Errors carry the status and Graph's error code, never the message,
+the token or the `Authorization` header.
+
+**The provider — `SharePointStorageProvider`.**
+- Upload: one simple PUT by path (Graph's limit is 250 MB; ours is 25 MB),
+  `AccreditMe/{module}/{recordId}/{random}-{name}` (the key's
+  `{organizationId}/` dropped), `conflictBehavior=fail`. It returns the item
+  id, recorded as `StoredFile.msItemId` with `msSiteId` and `msDriveId`.
+- Read and delete by item id, so a file renamed or moved inside SharePoint is
+  still found.
+- No `signedDownloadUrl`: downloads stream through `files/stream/:token`, so
+  the saved name and the entitlement stay AccreditMe's.
+- **Delete moves the item to the customer's SharePoint RECYCLE BIN** — their
+  retention, not AccreditMe, decides when it is really gone.
+
+**The resolver.** `connectSharePoint()` (token → site → library, reporting
+each step) is for a Test. Once confirmed, `forUpload` / `forFile` build the
+provider straight from the ids Confirm recorded (`storageConfig.sharepoint
+.resolved`) — no lookup per file; `forFile` refuses `FILE_UNAVAILABLE` for a
+file whose `msDriveId` is not the organisation's library.
+
+**Test, Confirm, replace, Disconnect.**
+- Test steps: `configure → token → site → library → write → read → verify →
+  delete`, each failure a plain reason (`SHAREPOINT_*` codes, 16.8). Saves
+  nothing; the result includes what was found (the customer's own tenant,
+  site and library).
+- Confirm records what the passing test found as the location and writes
+  `SHAREPOINT` — the one place a provider is chosen (Q6).
+- After Confirm only the client ID, client secret and expiry date change. A
+  new ID or secret must pass the test AND reach the SAME tenant GUID, site,
+  list and drive, else `STORAGE_CHANGE_BY_PLATFORM`; a passing replacement
+  clears a withdrawal. A new expiry date alone needs no test and re-arms the
+  warning.
+- `POST /tenant/storage/disconnect` (SharePoint only, Q5): before Confirm it
+  clears the draft; after, only with NO SharePoint file not yet purged (live or
+  in the recycle bin — else `STORAGE_LOCKED_BY_FILES` with `filesStored`), and
+  it returns the organisation to unconfirmed AccreditMe cloud, audited
+  (`storage_disconnected`). The count and the switch run under the same
+  per-organisation advisory lock an upload records under; an upload that
+  prepared before a Disconnect is refused at record time
+  (`assertStillSharePoint`) and its bytes discarded.
+
+**Withdrawn access — `SharePointAccessService`.**
+- `classifyAccessLoss()`: an invalid or expired secret → `SECRET_INVALID`;
+  unknown client, disabled app, unknown tenant, Graph 401 → `CONSENT_REVOKED`;
+  Graph 403 → `GRANT_REMOVED`; a 404 on the LIBRARY → `LIBRARY_GONE`. A 404 on
+  one FILE is that file only (`FILE_UNAVAILABLE`); 5xx, throttling and network
+  failures are `STORAGE_UNAVAILABLE`, never a withdrawal.
+- Uploads and downloads are refused `STORAGE_ACCESS_WITHDRAWN` (409), decided
+  LIVE from the failing call.
+- `storageAccessLostAt/Reason` are stamped by the one `updateMany` that moves
+  them from null — and only that call sends the single EN/AR notice to the
+  tenant admins.
+- **The single scheduled recomputer is the hourly probe** (a second repeating
+  job, `probe-sharepoint`, on the `storage-purge` queue): one token request and
+  one `GET /drives/{id}` per confirmed SharePoint organisation; it sets the
+  flag on a withdrawal and CLEARS it when access works again. A check that
+  could not run never clears it.
+- Setup health `STORAGE_ACCESS_WITHDRAWN` (`BLOCKS_WORK`, opened at
+  `storageAccessLostAt`) reads that flag.
+
+**The secret's expiry.** If the date is set, the tenant admins are told ONCE,
+30 days before, by the daily job (`warnExpiringSecrets()`, stamped
+`storageSecretWarnedAt`, cleared whenever the date changes). Setup health
+`STORAGE_SECRET_EXPIRING` (`AT_RISK`) is open from 30 days before until the
+date changes or passes — after which the probe finds the secret invalid and
+`STORAGE_ACCESS_WITHDRAWN` takes over.
+
+**Purge.** A purge that includes SharePoint files checks the library is
+reachable BEFORE anything is marked purged; withdrawn access refuses the whole
+request and every row stays unpurged. The daily job reports such an
+organisation as DEFERRED, not failed, and tries again the next day.
+
+**No `SHAREPOINT` row, and no row of either new condition, may exist on a
+shared database before the deploy** (ACC-173's enum rule).

@@ -69,9 +69,12 @@ export class UpdateTenantDto {
   @IsOptional()
   authProvider?: 'LOCAL' | 'AZURE_AD' | 'GOOGLE';
 
-  @IsIn(['S3', 'MINIO', 'LOCAL_FILESYSTEM'])
-  @IsOptional()
-  storageProvider?: 'S3' | 'MINIO' | 'LOCAL_FILESYSTEM';
+  // ACC-185 (Q6) — storageProvider is NOT settable here. Only
+  // POST /tenant/storage/confirm writes it, and after confirmation the location
+  // is AccreditMe's to change. This field used to be accepted and written
+  // straight to the organisation, which let a tenant admin switch where files
+  // go without the connection test or the post-confirmation lock; with
+  // forbidNonWhitelisted, sending it is now a 400 rather than a silent switch.
 
   @IsIn(['ANTHROPIC', 'AZURE_OPENAI', 'OPENAI', 'OLLAMA'])
   @IsOptional()

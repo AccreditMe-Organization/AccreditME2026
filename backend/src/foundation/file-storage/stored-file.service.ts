@@ -10,6 +10,8 @@ import { StorageRefusalException } from './storage-refusal';
 import { DOWNLOAD_TTL_SECONDS, issueDownloadToken } from './download-token';
 import { StorageNoticesService } from './storage-notices.service';
 import { IFileDownload, IStoredFileSummary, IUploadedFile } from './interfaces/stored-file.interface';
+import { SharePointAccessService } from './sharepoint-access.service';
+import { readStorageConfig } from './storage-config';
 
 // A Prisma transaction client, as handed to a $transaction callback.
 export type StoredFileTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
@@ -34,6 +36,11 @@ export interface IPreparedUpload {
   sizeBytes: number;
   sha256: string;
   body: Buffer;
+  /**
+   * ACC-185 — what put() reported back: SharePoint's item id, recorded on
+   * the StoredFile so the file is found even if renamed or moved there.
+   */
+  externalId: string | null;
 }
 
 const GIB = 1024 ** 3;
@@ -77,6 +84,7 @@ export class StoredFileService {
     private readonly prisma: PrismaService,
     private readonly resolver: StorageResolverService,
     private readonly notices: StorageNoticesService,
+    private readonly sharePointAccess: SharePointAccessService,
   ) {}
 
   async prepare(organizationId: string, owner: IStoredFileOwner, file: IUploadedFile | undefined): Promise<IPreparedUpload> {
@@ -113,24 +121,33 @@ export class StoredFileService {
       sizeBytes: file.buffer.length,
       sha256: createHash('sha256').update(file.buffer).digest('hex'),
       body: file.buffer,
+      externalId: null,
     };
   }
 
   async put(prepared: IPreparedUpload): Promise<void> {
     try {
-      await prepared.provider.put(prepared.storageKey, prepared.body, prepared.mimeType);
+      const result = await prepared.provider.put(prepared.storageKey, prepared.body, prepared.mimeType);
+      prepared.externalId = result?.externalId ?? null;
     } catch (error) {
-      throw this.providerFailure(error, 'write');
+      throw await this.providerFailure(error, 'write', prepared.organizationId, 'library');
     }
   }
 
   /** Inside the caller's transaction: the authoritative quota check, then the row. */
   async recordInTx(tx: StoredFileTx, prepared: IPreparedUpload, uploadedById: string) {
-    if (prepared.location.provider === 'S3') {
+    if (prepared.location.provider === 'S3' || prepared.location.provider === 'SHAREPOINT') {
       // One lock per organisation for the duration of this transaction, so the
-      // sum below and the insert after it are one step.
+      // check below and the insert after it are one step — against a racing
+      // upload (the quota) and, for SharePoint, a racing Disconnect, which
+      // takes the same lock (StorageSettingsService.disconnect).
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`stored-file-quota:${prepared.organizationId}`}))::text`;
+    }
+    if (prepared.location.provider === 'S3') {
       await this.assertWithinQuota(tx, prepared.organizationId, prepared.sizeBytes);
+    }
+    if (prepared.location.provider === 'SHAREPOINT') {
+      await this.assertStillSharePoint(tx, prepared.organizationId, prepared.location.msDriveId ?? null);
     }
     return tx.storedFile.create({
       data: {
@@ -139,6 +156,9 @@ export class StoredFileService {
         bucket: prepared.location.bucket,
         endpoint: prepared.location.endpoint,
         rootPath: prepared.location.rootPath,
+        msSiteId: prepared.location.msSiteId ?? null,
+        msDriveId: prepared.location.msDriveId ?? null,
+        msItemId: prepared.externalId,
         storageKey: prepared.storageKey,
         originalName: prepared.originalName,
         mimeType: prepared.mimeType,
@@ -189,7 +209,7 @@ export class StoredFileService {
   /** Undo put() after the record was refused. Never throws; a failure is logged. */
   async discard(prepared: IPreparedUpload): Promise<void> {
     try {
-      await prepared.provider.delete(prepared.storageKey);
+      await prepared.provider.delete(prepared.storageKey, prepared.externalId);
     } catch (error) {
       this.logger.error(
         `Could not remove an unrecorded upload in org ${prepared.organizationId} (${prepared.location.provider}, key ${prepared.storageKey}): ${(error as Error).message}`,
@@ -230,7 +250,7 @@ export class StoredFileService {
         });
         return { url, viaApi: false, expiresAt: new Date(Date.now() + DOWNLOAD_TTL_SECONDS * 1000).toISOString() };
       } catch (error) {
-        throw this.providerFailure(error, 'sign');
+        throw await this.providerFailure(error, 'sign', file.organizationId, 'file');
       }
     }
     const { token, expiresAt } = issueDownloadToken(file.id, file.organizationId);
@@ -256,9 +276,13 @@ export class StoredFileService {
    * reconciler's to find (ACC-179).
    */
   async removeBytes(file: IStoredFileLocation & { storageKey: string }): Promise<void> {
+    // SharePoint (ACC-185): the purge checked the library is reachable before
+    // marking anything purged (RecycleBinService.purge), and this DELETE moves
+    // the item to the customer's SharePoint recycle bin — their retention then
+    // decides when it is really gone.
     try {
       const provider = await this.resolver.forFile(file);
-      await provider.delete(file.storageKey);
+      await provider.delete(file.storageKey, file.msItemId ?? null);
     } catch (error) {
       this.logger.error(
         `Could not remove the bytes of a purged file in org ${file.organizationId} (${file.provider}, key ${file.storageKey}): ${(error as Error).message}`,
@@ -295,11 +319,39 @@ export class StoredFileService {
 
   // A provider's own error, reduced to a refusal a person can act on. The
   // provider's message goes to the log only: it can name a bucket or host.
-  private providerFailure(error: unknown, step: string): StorageRefusalException {
+  // ACC-185 — a SharePoint failure that means access was WITHDRAWN is stamped
+  // once (one notice) and refused STORAGE_ACCESS_WITHDRAWN, decided live from
+  // this failing call; a file gone inside SharePoint is FILE_UNAVAILABLE.
+  private async providerFailure(
+    error: unknown,
+    step: string,
+    organizationId: string,
+    scope: 'library' | 'file',
+  ): Promise<StorageRefusalException> {
     if (error instanceof StorageRefusalException) return error;
     if (isPrivateEndpointRefusal(error)) return new StorageRefusalException('STORAGE_ENDPOINT_NOT_ALLOWED');
+    const sharePoint = await this.sharePointAccess.refusalFor(organizationId, error, scope);
+    if (sharePoint) return sharePoint;
     this.logger.error(`Storage ${step} failed: ${(error as Error)?.name ?? 'Error'} ${(error as Error)?.message ?? ''}`);
     return new StorageRefusalException('STORAGE_UNAVAILABLE');
+  }
+
+  /**
+   * ACC-185 — under the organisation lock: the organisation is still on
+   * SharePoint, confirmed, and on the library the upload went to. A Disconnect
+   * that landed after prepare() makes this refuse, and the caller discards the
+   * bytes — so no file is ever recorded against a location the organisation
+   * no longer has.
+   */
+  private async assertStillSharePoint(tx: StoredFileTx, organizationId: string, driveId: string | null): Promise<void> {
+    const org = await tx.organization.findFirst({
+      where: { id: organizationId },
+      select: { storageProvider: true, storageConfirmedAt: true, storageConfig: true },
+    });
+    const current = org ? readStorageConfig(org.storageConfig).sharepoint?.resolved?.driveId : undefined;
+    if (!org?.storageConfirmedAt || org.storageProvider !== 'SHAREPOINT' || !driveId || current !== driveId) {
+      throw new StorageRefusalException('STORAGE_NOT_CONFIRMED');
+    }
   }
 }
 

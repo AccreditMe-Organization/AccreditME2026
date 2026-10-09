@@ -40,6 +40,8 @@ const TYPE_ORDER: SetupConditionType[] = [
   'ORG_UNIT_WITHOUT_TYPE',
   'STAGE_WITHOUT_ASSIGNEE',
   'TASK_WITHOUT_OWNER',
+  'STORAGE_ACCESS_WITHDRAWN',
+  'STORAGE_SECRET_EXPIRING',
   'STORAGE_ALMOST_FULL',
 ];
 
@@ -95,6 +97,11 @@ function fixTargetFor(condition: SetupConditionDto): FixTarget | null {
     case 'STORAGE_ALMOST_FULL':
       // ACC-177 — no Fix yet: the recycle bin screen, where deleted files are
       // purged, is lane A's and not built. The row's hint says what to do.
+      return null;
+    case 'STORAGE_ACCESS_WITHDRAWN':
+    case 'STORAGE_SECRET_EXPIRING':
+      // ACC-185 — no Fix yet: the storage settings screen (Replace secret) is
+      // lane A's and not built. The row's hint says what to do.
       return null;
   }
 }
@@ -485,7 +492,10 @@ export class SetupHealthPageComponent implements OnInit {
       // trigger, and the condition does not record which (§13.2) — so the row
       // says to check both rather than implying one.
       hint:
-        condition.type === 'STAGE_WITHOUT_ASSIGNEE' || condition.type === 'STORAGE_ALMOST_FULL'
+        condition.type === 'STAGE_WITHOUT_ASSIGNEE' ||
+        condition.type === 'STORAGE_ALMOST_FULL' ||
+        condition.type === 'STORAGE_ACCESS_WITHDRAWN' ||
+        condition.type === 'STORAGE_SECRET_EXPIRING'
           ? this.translate.instant(`setupHealth.hint.${condition.type}`)
           : null,
       age: this.age(condition),
@@ -507,6 +517,9 @@ export class SetupHealthPageComponent implements OnInit {
     const s = condition.subject;
     if (condition.type === 'TASK_WITHOUT_OWNER') return s.title ?? '—';
     if (condition.type === 'STORAGE_ALMOST_FULL') return this.translate.instant('setupHealth.storageObject');
+    if (condition.type === 'STORAGE_ACCESS_WITHDRAWN' || condition.type === 'STORAGE_SECRET_EXPIRING') {
+      return this.translate.instant('setupHealth.sharePointObject');
+    }
     return (this.languageService.isArabic() && s.nameAr) || s.nameEn || '—';
   }
 
@@ -535,6 +548,10 @@ export class SetupHealthPageComponent implements OnInit {
           percent: this.format.number(s.percent ?? 0),
           limit: this.files.size(s.limitBytes ?? 0),
         });
+      case 'STORAGE_ACCESS_WITHDRAWN':
+        return t(`sharePointWithdrawn.${s.reason ?? 'UNKNOWN'}`);
+      case 'STORAGE_SECRET_EXPIRING':
+        return t('sharePointSecretExpiring', { date: this.format.date(s.expiresOn ?? null) });
     }
   }
 
