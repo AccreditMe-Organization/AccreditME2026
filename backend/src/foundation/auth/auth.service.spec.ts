@@ -886,24 +886,42 @@ describe('AuthService', () => {
     });
   });
 
+  // CC-64 — password reset is not served, so nothing is requested: no token,
+  // no AuthVerification row, no notification, no email. The answer is the
+  // same for a real and an unknown address.
   describe('forgotPassword', () => {
-    it('calls Better Auth requestPasswordReset with the namespaced email when the org resolves', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({ id: ORG_A, slug: 'acme' });
-
-      await service.forgotPassword({ organizationSlug: 'acme', email: 'a@example.com' });
-
-      expect(mockAuthApi.requestPasswordReset).toHaveBeenCalledWith({
-        body: { email: `a+${ORG_A}@example.com` },
+    it('requests nothing and sends nothing, for a real account', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({
+        id: ORG_A,
+        slug: 'acme',
       });
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        status: 'ACTIVE',
+      });
+
+      await expect(
+        service.forgotPassword({
+          organizationSlug: 'acme',
+          email: 'a@example.com',
+        }),
+      ).resolves.toBeUndefined();
+      expect(mockAuthApi.requestPasswordReset).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
     });
 
-    it('does not throw and does not call Better Auth when the org does not resolve', async () => {
+    it('answers an unknown organisation and address exactly the same way', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue(null);
 
       await expect(
-        service.forgotPassword({ organizationSlug: 'nope', email: 'a@example.com' }),
+        service.forgotPassword({
+          organizationSlug: 'nope',
+          email: 'nobody@example.com',
+        }),
       ).resolves.toBeUndefined();
       expect(mockAuthApi.requestPasswordReset).not.toHaveBeenCalled();
+      expect(mockNotification.create).not.toHaveBeenCalled();
     });
   });
 
