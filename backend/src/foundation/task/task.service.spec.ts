@@ -1604,6 +1604,8 @@ describe('TaskService', () => {
             workflowInstanceId: INSTANCE_ID,
             sourceStageId: STAGE_ID,
             status: 'UNASSIGNED',
+            // ACC-190 — a stage-definition task has its own target; never recovered here.
+            stageTaskDefinitionId: null,
           },
         }),
       );
@@ -1779,6 +1781,7 @@ describe('TaskService', () => {
           workflowInstanceId: INSTANCE_ID,
           sourceStageId: STAGE_ID,
           status: 'UNASSIGNED',
+          stageTaskDefinitionId: null, // ACC-190
         },
       });
     });
@@ -1804,10 +1807,14 @@ describe('TaskService', () => {
     );
   });
 
-  // ACC-68 — TaskStatus.CANCELLED had no producer before these two methods.
-  describe('cancelForStage', () => {
+  // ACC-68 — TaskStatus.CANCELLED had no producer before these. ACC-190 — the
+  // stage-exit cancel runs INSIDE the engine's stage-change transaction and is
+  // keyed by the stage ENTRY; its audit rows are written after commit.
+  describe('cancelStageExitTasksInTx / auditStageExitCancellation', () => {
     const INSTANCE_ID = 'wf-instance-1';
     const STAGE_ID = 'stage-1';
+    const ENTRY_ID = 'entry-1';
+    const SCOPE = { workflowInstanceId: INSTANCE_ID, stageId: STAGE_ID, workflowInstanceStageId: ENTRY_ID };
 
     const openTask = (id: string, status = 'PENDING') => ({
       ...BASE_TASK,
@@ -1815,24 +1822,28 @@ describe('TaskService', () => {
       status,
       workflowInstanceId: INSTANCE_ID,
       sourceStageId: STAGE_ID,
+      workflowInstanceStageId: ENTRY_ID,
     });
+    const cancelInTx = () => service.cancelStageExitTasksInTx(mockPrisma as never, SCOPE, ORG_A);
 
-    it('cancels every open task for the stage and returns the count', async () => {
+    it('cancels every open task of the entry, on the client it is given', async () => {
       mockPrisma.task.findMany.mockResolvedValue([openTask('t-1'), openTask('t-2', 'IN_PROGRESS')]);
 
-      const cancelled = await service.cancelForStage(INSTANCE_ID, STAGE_ID, ORG_A, ACTOR, 'STAGE_EXIT');
+      const result = await cancelInTx();
 
-      expect(cancelled).toBe(2);
+      expect(result.open.map((t) => t.id)).toEqual(['t-1', 't-2']);
       expect(mockPrisma.task.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['t-1', 't-2'] }, organizationId: ORG_A },
         data: { status: 'CANCELLED', heldAt: null, onHoldUntil: null, heldFromStatus: null },
       });
+      // Inside the caller's transaction: it opens none of its own.
+      expect((mockPrisma as unknown as Record<string, jest.Mock>)['$transaction']).not.toHaveBeenCalled();
     });
 
-    it('treats COMPLETED and CANCELLED as not open — matching the ACC-65 gate exactly', async () => {
+    it('treats COMPLETED and CANCELLED as not open — matching the gate exactly', async () => {
       mockPrisma.task.findMany.mockResolvedValue([]);
 
-      await service.cancelForStage(INSTANCE_ID, STAGE_ID, ORG_A, ACTOR, 'STAGE_EXIT');
+      await cancelInTx();
 
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1841,25 +1852,34 @@ describe('TaskService', () => {
       );
     });
 
-    it('scopes to the instance as well as the stage, so another object at the same stage is untouched', async () => {
+    it("matches the ENTRY's own tasks, and tasks with no entry by the old instance + stage pair", async () => {
       mockPrisma.task.findMany.mockResolvedValue([]);
 
-      await service.cancelForStage(INSTANCE_ID, STAGE_ID, ORG_A, ACTOR, 'STAGE_EXIT');
+      await cancelInTx();
 
+      // A record that left the stage and came back is a NEW entry: the old
+      // entry's tasks are matched by its id, never by the template stage, and
+      // legacy tasks (CREATE_TASK's, manual ones attached to the stage) keep
+      // the pair they always had.
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            workflowInstanceId: INSTANCE_ID,
-            sourceStageId: STAGE_ID,
+            OR: [
+              { workflowInstanceStageId: ENTRY_ID },
+              { workflowInstanceStageId: null, workflowInstanceId: INSTANCE_ID, sourceStageId: STAGE_ID },
+            ],
           }),
         }),
       );
     });
 
-    it('writes nothing and skips audit when no open task exists', async () => {
+    it('writes nothing and audits nothing when no open task exists', async () => {
       mockPrisma.task.findMany.mockResolvedValue([]);
 
-      expect(await service.cancelForStage(INSTANCE_ID, STAGE_ID, ORG_A, ACTOR, 'STAGE_EXIT')).toBe(0);
+      const result = await cancelInTx();
+      await service.auditStageExitCancellation(result, SCOPE, ORG_A, ACTOR);
+
+      expect(result.open).toEqual([]);
       expect(mockPrisma.task.updateMany).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
@@ -1867,17 +1887,19 @@ describe('TaskService', () => {
     it('leaves assignees attached, so the task stays visible in the assignee list', async () => {
       mockPrisma.task.findMany.mockResolvedValue([openTask('t-1')]);
 
-      await service.cancelForStage(INSTANCE_ID, STAGE_ID, ORG_A, ACTOR, 'STAGE_EXIT');
+      await cancelInTx();
 
       // complete() detaches the other assignees; cancellation deliberately
       // must not, or getMyTasks()'s removedAt: null filter would hide it.
       expect(mockPrisma.taskAssignee.updateMany).not.toHaveBeenCalled();
     });
 
-    it('audits once per task, naming the reason', async () => {
+    it('audits once per task after commit, naming the reason and the entry', async () => {
       mockPrisma.task.findMany.mockResolvedValue([openTask('t-1'), openTask('t-2')]);
 
-      await service.cancelForStage(INSTANCE_ID, STAGE_ID, ORG_A, ACTOR, 'STAGE_EXIT');
+      const result = await cancelInTx();
+      expect(mockAuditLog.log).not.toHaveBeenCalled(); // nothing written inside the transaction
+      await service.auditStageExitCancellation(result, SCOPE, ORG_A, ACTOR);
 
       expect(mockAuditLog.log).toHaveBeenCalledTimes(2);
       expect(mockAuditLog.log).toHaveBeenCalledWith(
@@ -1885,19 +1907,20 @@ describe('TaskService', () => {
           objectType: 'Task',
           objectId: 't-1',
           tenantId: ORG_A,
-          metadata: expect.objectContaining({ reason: 'STAGE_EXIT' }),
+          metadata: expect.objectContaining({ reason: 'STAGE_EXIT', workflowInstanceStageId: ENTRY_ID }),
         }),
       );
     });
 
     itEnforcesTenantIsolation(
-      'open stage tasks in cancelForStage',
+      'open stage-entry tasks in cancelStageExitTasksInTx',
       async () => {
         mockPrisma.task.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
           Promise.resolve(where.organizationId === ORG_A ? [openTask('t-1')] : []),
         );
 
-        expect(await service.cancelForStage(INSTANCE_ID, STAGE_ID, ORG_B, ACTOR, 'STAGE_EXIT')).toBe(0);
+        const result = await service.cancelStageExitTasksInTx(mockPrisma as never, SCOPE, ORG_B);
+        expect(result.open).toEqual([]);
         expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
           expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
         );
