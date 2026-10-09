@@ -19,6 +19,9 @@
     "check:confirm-translated": "node scripts/check-confirm-translated.mjs",
     "check:reserved-slugs": "node scripts/check-reserved-slugs.mjs"
   },
+  "engines": {
+    "node": "22.x"
+  },
   "private": true,
   "dependencies": {
     "@angular/animations": "^21.0.0",
