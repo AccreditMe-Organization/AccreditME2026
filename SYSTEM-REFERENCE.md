@@ -1187,6 +1187,11 @@ Workflow Engine). Every field/enum below cited against
 
 ### 2.1 Models (Core Shape)
 
+> **ACC-190:** `WorkflowTransition` gains `kind` (`ADVANCE` default, `RETURN`,
+> `EXIT`); a new `WorkflowStageTaskDefinition` table hangs off `WorkflowStage`;
+> `Task` gains `workflowInstanceStageId`, `stageTaskDefinitionId`, `isMandatory`
+> and `titleAr`. Shapes and rules: §2.15. The listing below predates them.
+
 ```prisma
 model WorkflowTemplate {
   id             String             @id @default(cuid())
@@ -1355,6 +1360,11 @@ seed data.
 
 ### 2.3 Instance Lifecycle
 
+> **ACC-190:** `startInstance()` now enters the initial stage like any other
+> stage: the instance, its first `WorkflowInstanceStage` and the stage's
+> definition tasks are written in ONE transaction (§2.15), and the tasks are
+> announced after it commits.
+
 - **`startInstance(objectType, objectId, organizationId, actorId, templateId?)`**
   — resolves the tenant's default active `WorkflowTemplate` for the
   object type (or a specific `templateId`), finds the template's
@@ -1376,6 +1386,14 @@ seed data.
   cycles each start a fresh instance).
 
 ### 2.4 `triggerTransition()` — Full Gating Trace (`workflow.service.ts:176–293`)
+
+> **ACC-190 — two steps added to this trace.** (1) After the validator check,
+> an `ADVANCE` this request would actually fire (always on a SINGLE stage; on a
+> multi-approver stage only when this vote completes the threshold) is refused
+> with `STAGE_TASKS_OPEN` while a mandatory task of the current entry is open —
+> before any vote is recorded. (2) `performTransition()` is one transaction
+> under the instance's row lock, re-checking the gate there (authoritative).
+> `submitApproval()` runs the same deciding-vote check. §2.15.
 
 In order, exactly as executed:
 
@@ -1657,6 +1675,14 @@ different `ROLE_BASED`/`SPECIFIC_USER` `triggerCondition` gaps.
 
 ### 2.9 Transition Actions — `fireTransitionActions()` (`workflow.service.ts:485–550`)
 
+> **ACC-190 — `CREATE_TASK` is RETIRED.** `executeCreateTask()` is deleted; a
+> stored `CREATE_TASK` action is skipped, logged at warn, and recorded in
+> `WorkflowActionLog` as `FAILED` "Retired". Adding one is refused
+> (`ACTION_TYPE_RETIRED`). Actions now run after the stage-change transaction
+> commits and no longer produce `unassignedTaskWarnings` — those come from the
+> entry's definition tasks (§2.15). The per-action table below is history for
+> `CREATE_TASK`.
+
 Fires in `order` after a successful transition. Per `actionType`:
 
 - **`WEBHOOK`** — enqueued to BullMQ (`workflow-actions` queue) and
@@ -1754,6 +1780,13 @@ precisely because this validator is buildable from data that already
 exists.
 
 #### 2.10.1 `allPreviousStageTasksComplete` — enforcement (ACC-65)
+
+> **RETIRED (ACC-190).** Replaced by the stage gate (§2.15): a stage's
+> MANDATORY tasks hold every `ADVANCE` without opting in, on the approval path
+> too, keyed by the stage ENTRY. Saving this validator is refused
+> (`VALIDATOR_RETIRED`); one left in stored config is ignored with a warning.
+> `assertStageTasksComplete()` is deleted. Kept below as the record of ACC-65's
+> reasoning — its "open" predicate is the one the gate kept.
 
 `assertStageTasksComplete()` blocks a transition while the stage being
 **left** still has outstanding tasks. Three scoping decisions were made
@@ -2042,6 +2075,93 @@ on each visit are resolved by `DelegationLabelService` (3.8).
 
 ---
 
+### 2.15 Stage task definitions, the gate, and the stage deadline (ACC-190, CF-07)
+
+Files: `stage-task-definition.service.ts` (CRUD, the deadline rule, entry
+preparation), `stage-task-record-routes.ts` (the record's unit / committee),
+`stage-deadline-rule.ts` (the tenant-SLA side), `workflow-refusal.ts` (codes),
+`task/stage-deadline.ts` (the instance lock and the run-time deadline move),
+`workflow.service.ts` (`startInstance`, `performTransition`, the gate). Plan
+and Ahmad's answers: `backend/Plans/step-190-stage-task-definitions.md`.
+
+**Model.** `WorkflowStageTaskDefinition`: `organizationId`, `stageId`
+(cascade), `order`, `titleEn`, `titleAr?`, `description?`, `isMandatory`,
+`requiresEvidence`, `priority`, `assignKind`
+(`POSITION | RECORD_UNIT_POSITION | COMMITTEE_ROLE | RECORD_COMMITTEE_ROLE` —
+no ROLE), `orgUnitId?`, `positionId?`, `userId?` (POSITION only), `committeeId?`
+(COMMITTEE_ROLE only), `committeeRoleValueId?`, plain `createdById` /
+`updatedById`. `Task.workflowInstanceStageId` (the ENTRY), `stageTaskDefinitionId`
+(SetNull), `isMandatory`, `titleAr`. `WorkflowTransition.kind`.
+
+**API** (`workflow-templates`): `GET|POST stages/:stageId/task-definitions`,
+`POST stages/:stageId/task-definitions/order`, `PATCH|DELETE
+task-definitions/:id`. Read `workflows:view`, write `workflows:manage`. Saves
+return `{ definition, warning }`, warning `POSITION_HAS_NO_HOLDER | POOL_EMPTY |
+null` (ACC-55 contract). Every write audited with full before/after. The
+template read adds `taskDefinitionCount` and `longestTaskHours` per stage.
+Refusals (`{ statusCode, message, error, code, …details }`):
+`STAGE_TASK_ROUTE_INCOMPLETE`, `STAGE_TASK_ROUTE_NOT_AVAILABLE`,
+`STAGE_TASK_{UNIT,POSITION,COMMITTEE,ROLE}_NOT_FOUND` (404, tenant-scoped),
+`STAGE_TASK_USER_NOT_IN_POSITION`, `STAGE_TASK_ON_FINAL_STAGE` (also refuses
+making a stage with definitions final), `STAGE_TASK_ORDER_MISMATCH`,
+`STAGE_TASK_DUE_AFTER_STAGE_DEADLINE`, `STAGE_DEADLINE_BEFORE_TASKS`,
+`TASK_SLA_EXCEEDS_STAGE_DEADLINES`, `STAGE_TASKS_OPEN`, `ACTION_TYPE_RETIRED`,
+`VALIDATOR_RETIRED`.
+
+**Placement at entry** (`prepareEntryTasks`, the manual-task rules of §3.9): a
+chosen person still in the position → that person; otherwise a single-holder
+position → its holder (none → UNASSIGNED, target kept); a multi-holder position
+and every committee role → a pool. A chosen person who has left the position
+falls back to the position. "The record's unit / committee" come from
+`RECORD_ROUTES` (COMMITTEE: its `orgUnitId` / itself; MEETING: its committee's
+unit / its committee), which fails closed. No walk to a parent unit. A route
+whose unit or position has been deactivated still creates the task: a stage
+entry never fails over a definition. No out-of-office routing (the manual
+route never had it). Unassigned tasks and empty pools become the actor's
+`unassignedTaskWarnings` and Setup health's "Task with no actionable owner".
+
+**One transaction per stage change.** Read first (outside): `enteredAt`, the
+stage deadline from it, delegation, the prepared tasks (placement, SLA windows
+from `enteredAt`, pool clocks). Inside, under `SELECT … FOR UPDATE` on the
+instance: re-read the open entry (409 if gone), the gate if `ADVANCE`, close the
+entry (`exitedAt = enteredAt`), `cancelStageExitTasksInTx`, create the new
+entry, insert the tasks (creator = the mover; `workflowInstanceId` and
+`workflowInstanceStageId` set here), move the instance. After commit: the
+cancellations' audit rows, each task's audit and notices, unassigned-stage
+flagging, transition actions, the instance audit row. Timeout 20 s (ACC-60).
+
+**The gate.** `ADVANCE` refused while any task with this
+`workflowInstanceStageId`, `isMandatory`, status not COMPLETED/CANCELLED
+exists; the 409 lists `{ id, title, titleAr, status, statusLabel }`. RETURN and
+EXIT are never gated. Manual tasks attached to a stage never gate.
+
+**Leaving an entry** cancels every open task of it (by entry id) and every open
+task with no entry that matches the old instance + stage pair; holds end and
+pending requests are cancelled; silent, audit rows only.
+
+**The deadline rule.** Stage `slaWorkingHours` ≥ `taskSla[priority].dueAfterHours`
+of every definition on it, refused from the definition, the stage and the
+tenant-SLA side; no deadline = nothing to break. Run time: `TaskRequestService.
+approve()` (extension and hold) locks the instance before the task and calls
+`moveStageDeadlineForTaskInTx`: a MANDATORY task's new due date past its OPEN
+entry's `slaDueAt` moves the deadline out (clearing `slaBreached` and
+`escalatedRuleIndexes` when it lands in the future), audited
+`stage_deadline_extended` on `WorkflowInstanceStage`.
+
+**Other task rules.** Cancel by hand: optional definition task allowed,
+mandatory refused, other workflow tasks refused as before. Reopen: a definition
+task only while its own entry is open and the workflow runs.
+`recoverUnassignedStageTasks` never touches definition tasks.
+
+**Seed and backfill.** The seed has no `CREATE_TASK`, 14 `RETURN` and 8 `EXIT`
+transitions, and no definitions. `backfill-acc190-stage-tasks.ts` (dry run,
+then `--execute`, after the deploy) deletes seeded `CREATE_TASK` actions with
+their `WorkflowActionLog` rows, sets seeded kinds, reports what it cannot match,
+refuses customer tenants, never writes Task, and writes one audit row per
+tenant.
+
+---
+
 ## 3. Task System
 
 `backend/src/foundation/task/task.service.ts` +
@@ -2049,6 +2169,12 @@ on each visit are resolved by `DelegationLabelService` (3.8).
 firing — a structural quirk explained in 3.4).
 
 ### 3.1 Models
+
+> **ACC-190:** `Task` gains `workflowInstanceStageId` (the stage ENTRY a
+> definition task belongs to), `stageTaskDefinitionId` (provenance, SetNull),
+> `isMandatory` (snapshot) and `titleAr` (snapshot), plus indexes
+> `[workflowInstanceStageId, status]` and `[workflowInstanceId, sourceStageId]`.
+> §2.15.
 
 ```prisma
 model Task {
@@ -2168,6 +2294,14 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 `COMMITTEE`**, the exact enum gap already documented in Section 2.9.
 
 ### 3.2 `TaskService` Methods — Exact Behavior
+
+> **ACC-190 changes to the methods below.** `create()` is the person's path only
+> (the `origin` parameter and its engine branch are gone) and is built from
+> `insertPrepared()` + `announceCreated()`, which the engine also uses with
+> `prepareStageEntryTask()`. `cancelForStage()` is replaced by
+> `cancelStageExitTasksInTx()` + `auditStageExitCancellation()` (keyed by entry,
+> inside the engine's transaction). `cancel()` allows an optional definition
+> task; `reopen()` checks a definition task's entry. §2.15.
 
 - **`create()`** — computes `dueAt` via `computeSlaDueAt()` (3.3) unless
   an explicit `dueDate` is given (`dueDateOverridden: true` in that
@@ -2899,6 +3033,11 @@ a committee task) states the server's outcome before Save. My tasks gains
 
 ### 3.10 More time and holds — requests the creator decides (ACC-173)
 
+> **ACC-190:** an approved extension or hold on a MANDATORY stage-definition
+> task now moves its open entry's deadline out when the new due date passes it
+> (the stage SLA was never shifted before). The approval locks the instance
+> before the task. §2.15.
+
 An assignee asks for more time (`EXTENSION`, a new due date) or for the task to
 be put on hold (`ON_HOLD`, until a date). The creator — or whoever currently
 acts for them — approves or declines. Files: `task-request.service.ts`,
@@ -3030,6 +3169,12 @@ on the task's row; deciding happens in My tasks only.
 - The creator's own edit and cancel are ACC-174 (3.11).
 
 ### 3.11 The SLA limit, and edit, cancel and reopen by the creator (ACC-174)
+
+> **ACC-190:** the "engine-created task whose stage sets a longer SLA raises
+> the limit" rule below is GONE with `CREATE_TASK`. A definition task's window
+> is its priority SLA from the stage entry, with no extension; the stage
+> deadline is made to fit it (§2.15). Optional definition tasks may now be
+> cancelled by hand.
 
 Files: `task-sla.service.ts` (the limit), `task.service.ts` (`update`,
 `cancel`, `reopen`, `mayManage`), `tenant/task-sla-settings.ts`,
@@ -7077,6 +7222,11 @@ modelled as an event. **Neither surface repeats the other.** A condition
 opening creates no bell entry; the rail badge is the signal.
 
 ### 13.2 Condition types shipped, and what was deferred or excluded
+
+> **ACC-190:** a stage-definition task whose position in "the record's unit" is
+> vacant is created UNASSIGNED with its target, and appears under
+> `TASK_WITHOUT_OWNER` like any unassigned task — never passed up to a parent
+> unit. A definition task in an empty pool appears there too. No new type.
 
 | Type (`SetupConditionType`) | Object keyed by | Severity | Opened at | Fix opens |
 | -- | -- | -- | -- | -- |
