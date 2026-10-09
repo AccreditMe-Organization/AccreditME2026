@@ -11,6 +11,7 @@ import { RolesModule } from '../roles/roles.module';
 import { WorkflowTemplateController } from './workflow-template.controller';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowTemplateService } from './workflow-template.service';
+import { StageTaskDefinitionService } from './stage-task-definition.service';
 import { WorkflowService } from './workflow.service';
 import { WorkflowActionProcessor } from './workflow-action.processor';
 import { SlaMonitorProcessor } from './sla-monitor.processor';
@@ -71,6 +72,7 @@ import { workersEnabled } from '../../common/queue/workers.config';
   providers: [
     WorkflowTemplateService,
     WorkflowService,
+    StageTaskDefinitionService,
     ...(workersEnabled() ? [WorkflowActionProcessor, SlaMonitorProcessor] : []),
   ],
   exports: [WorkflowTemplateService, WorkflowService],
