@@ -707,7 +707,9 @@ Per-tenant config in Organization.emailConfig (encrypted JSON):
 ```
 
 Platform default: ResendEmailProvider with AccreditMe platform key.
-From: noreply@accreditme.com
+From: `RESEND_FROM_EMAIL` — `noreply@accreditme.app` on Railway, the domain
+Resend has verified. No fallback (ACC-130): unset, the email job fails with a
+named error and sends nothing (`common/config/email-sender.config.ts`).
 
 Build sequence:
 ```
@@ -3313,11 +3315,13 @@ the holder rule), 13.2 (the Setup health extension). The decisions, briefly:
   `metadata` is null on those rows) — real, and confirmed in ACC-94's
   browser pass, but it is evidence on ACC-99, not a gap to close, since
   the feature is going away.
-- **Resend email domain (`accreditme.com`) is not verified** in the
-  Resend dashboard — invitation/notification emails will not actually
-  deliver until this is configured. Infrastructure task, not a code
-  fix, needs doing before any real customer relies on email-based
-  flows.
+- **RESOLVED (ACC-130)** — was: *"Resend email domain (`accreditme.com`) is
+  not verified."* The sending domain is `accreditme.app`: Resend's DKIM
+  record (`resend._domainkey`) and `send` record are on it, and Railway's
+  `RESEND_FROM_EMAIL` is `noreply@accreditme.app`, so the two match.
+  `accreditme.com` was never ours — it is listed for sale — and the code's
+  fallback to it is gone. Resend's dashboard showing `accreditme.app` as
+  Verified is checked again after the DNS move (ACC-130 runbook step 6).
 - **`angular-component` skill's templates are stale against current
   project conventions** — `@if` not `*ngIf`, standalone `TranslatePipe`
   imports, `EditDialogComponent`/`OverlaySelectComponent` not
@@ -4148,7 +4152,7 @@ REDIS_URL=
 SENTRY_DSN=
 ENCRYPTION_KEY=
 PLATFORM_ADMIN_EMAIL=
-APP_BASE_DOMAIN=accreditme.com
+APP_BASE_DOMAIN=accreditme.app
 ```
 
 ---

@@ -132,12 +132,20 @@ describe('AuthController', () => {
   });
 
   it('getMe resolves impersonatedBy via AuthService.getPublicUserById when the session is impersonated', async () => {
-    service.getPublicUserById.mockResolvedValue({ id: 'platform-admin-1', email: 'admin@accreditme.com', name: 'Platform Admin' });
+    service.getPublicUserById.mockResolvedValue({
+      id: 'platform-admin-1',
+      email: 'admin@example.test',
+      name: 'Platform Admin',
+    });
 
     const result = await controller.getMe('user-1', 'org-1', 'platform-admin-1');
 
     expect(service.getPublicUserById).toHaveBeenCalledWith('platform-admin-1');
-    expect(result.impersonatedBy).toEqual({ id: 'platform-admin-1', email: 'admin@accreditme.com', name: 'Platform Admin' });
+    expect(result.impersonatedBy).toEqual({
+      id: 'platform-admin-1',
+      email: 'admin@example.test',
+      name: 'Platform Admin',
+    });
     expect(result.language).toBe('en');
   });
 

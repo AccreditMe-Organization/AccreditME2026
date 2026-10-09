@@ -60,14 +60,16 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
 import { SYSTEM_ROLE_SEED } from '../src/foundation/roles/role.seed';
 import { ALL_PERMISSIONS } from '../src/foundation/roles/permission.seed';
+import { resolvePlatformAdminEmail } from '../src/common/config/platform-admin-email.config';
 
 // ACC-13 — the one Organization row PlatformGuard expects to find with
 // isPlatformOrg: true. Reuses the same PLATFORM_ADMIN_EMAIL env var already
 // documented in .env.example/CLAUDE.md (previously unused by any code path).
 const PLATFORM_ORG_SLUG = 'platform';
 const PLATFORM_ORG_NAME = 'AccreditMe Platform';
-const PLATFORM_ADMIN_EMAIL =
-  process.env['PLATFORM_ADMIN_EMAIL'] ?? 'admin@accreditme.com';
+// ACC-130 — no fallback: it was admin@accreditme.com, a domain that is not
+// ours. Unset or blank refuses the run (platform-admin-email.config.ts).
+const PLATFORM_ADMIN_EMAIL = resolvePlatformAdminEmail();
 // Hardcoded, dev-only — never used in production. Real users always set
 // their own password via the invitation/accept-invitation flow (Step 9).
 const PLATFORM_ADMIN_PASSWORD = 'Platform@123456';

@@ -1,9 +1,11 @@
 export const environment = {
   production: true,
-  // PLACEHOLDER — where the API is served in production is not decided yet
-  // (ACC-130, ACC-148). Same-origin '/api/v1' is a guess, not a decision;
-  // replace it when those tickets settle it.
-  apiUrl: '/api/v1',
+  // ACC-130 — the API is served at api.accreditme.app, a direct CNAME to
+  // Railway (no proxy). Absolute, because the app itself is on Vercel. It is
+  // the same SITE as every {slug}.accreditme.app, which is what lets the
+  // SameSite=Strict session cookies travel with these calls. vercel.json's
+  // CSP connect-src names this origin; check:vercel-config keeps them equal.
+  apiUrl: 'https://api.accreditme.app/api/v1',
   // Every organisation signs in at {slug}.accreditme.app (ACC-139).
   baseDomain: 'accreditme.app',
 };
