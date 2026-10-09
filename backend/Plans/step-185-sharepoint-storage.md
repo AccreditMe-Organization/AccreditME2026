@@ -642,3 +642,13 @@ The questions as asked, kept for the reasoning:
 - [x] Rebased onto dev `08029ab` (ACC-120 sign-in), no conflicts.
 
 **STOP 2 — full checks, then a report** (Ahmad runs `/ready-to-pr` himself)
+- [x] Reported 9 Oct. Checks re-run by `/ready-to-pr` on `40bbab9` over dev
+      `08029ab`:
+  - backend TypeScript 0; 119 suites / 2,735 tests; isolation 165;
+  - frontend TypeScript (app and spec) 0; `ng build` succeeds; 1,286 tests
+    (seed 82887);
+  - 12 `check:*` scans, every one exit 0.
+
+**After the merge and deploy — the live run on al-manara:**
+- [ ] Confirm, upload, download, withdraw, rotate the secret, purge.
+- [ ] (d) revoke and re-grant (above).
