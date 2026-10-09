@@ -128,6 +128,22 @@ export default defineRailway(() => {
     // rendered file unedited could have removed it, and that failure is
     // invisible: the container keeps running and serving perfectly while
     // nothing can reach it. No failed deployment, no restart, no log line.
+    //
+    // CUSTOM DOMAINS CANNOT BE REGISTERED FROM THIS FILE (ACC-130, measured
+    // 9 Oct on CLI 5.59.0). The SDK's `domains: [...]` option is refused by
+    // `config plan` outright: "Custom-domain registration is not supported by
+    // Railway configuration. Add api.accreditme.app in the dashboard, then run
+    // railway config pull." And the two places that look as if they would
+    // take one do nothing at all: `api.accreditme.app` added to serviceDomains
+    // below produced an IDENTICAL plan, and `networking.customDomains` is
+    // dropped by the SDK's normalizeNetworking(). So api.accreditme.app is
+    // registered with `railway domain api.accreditme.app --port 3000`, and a
+    // plan afterwards says whether this file must then declare it. Do not
+    // "fix" this by adding it here: the plan would stay silent, and a value
+    // the plan is silent about has not been verified (§15.3).
+    //
+    // The generated host below stays as the fallback until about 7 days after
+    // go-live (ACC-130 runbook step 10), then goes in its own change.
     networking: {
       privateNetworkEndpoint: "accreditme2026",
       serviceDomains: { "accreditme2026-production.up.railway.app": { port: 3000 } },
@@ -159,6 +175,16 @@ export default defineRailway(() => {
       // drop it.
       API_ORIGIN: preserve(),
       APP_BASE_DOMAIN: preserve(),
+      // ACC-130 — set in the dashboard for AccreditMe's own S3 bucket (ACC-177)
+      // and, until this block, declared NOWHERE: `config plan` on 9 Oct read
+      // "6 to destroy", one per key. Any apply would have deleted them. The
+      // values are the dashboard's; preserve() only keeps the keys.
+      AWS_ACCESS_KEY_ID: preserve(),
+      AWS_REGION: preserve(),
+      AWS_S3_BUCKET: preserve(),
+      AWS_S3_ENDPOINT: preserve(),
+      AWS_S3_FORCE_PATH_STYLE: preserve(),
+      AWS_SECRET_ACCESS_KEY: preserve(),
       BETTER_AUTH_SECRET: preserve(),
       // CORS_ORIGIN is gone, not merely undeclared: it was a placeholder the
       // code never read, and FRONTEND_URL replaces it. Removed from this block
