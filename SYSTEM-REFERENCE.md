@@ -7884,7 +7884,8 @@ emailed.
 **Railway.** `APP_BASE_DOMAIN` was already declared with `preserve()` in
 `.railway/railway.ts` and already set, so this needed no authoring-file change
 and no set-before-merge step: the boot check passes on the existing value. Its
-value moves from `accreditme.com` to `accreditme.app` as a dashboard change.
+value moved from `accreditme.com` to `accreditme.app` as a dashboard change —
+done: Railway holds `accreditme.app` (read 9 Oct, ACC-130).
 `APP_LINK_ORIGIN` must never be set there.
 
 ### 15.12 Rate limiting, and the client address (ACC-129)
