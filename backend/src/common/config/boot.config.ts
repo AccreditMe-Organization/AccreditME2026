@@ -1,5 +1,6 @@
 import { resolveFrontendOrigin } from './cors.config';
 import { AppLinkConfig, resolveAppLinkConfig } from './app-url.config';
+import { resolveApiOrigin } from './api-origin.config';
 
 /**
  * Everything the API must have before it starts, checked in one place — ACC-158.
@@ -24,6 +25,8 @@ export interface BootConfig {
   frontendOrigin: string;
   /** Where emailed links point (ACC-158). */
   appLinks: AppLinkConfig;
+  /** The API's own origin — Better Auth's base URL (ACC-148). */
+  apiOrigin: string;
 }
 
 export function validateBootConfig(
@@ -32,5 +35,6 @@ export function validateBootConfig(
   return {
     frontendOrigin: resolveFrontendOrigin(env),
     appLinks: resolveAppLinkConfig(env),
+    apiOrigin: resolveApiOrigin(env),
   };
 }

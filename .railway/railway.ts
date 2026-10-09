@@ -153,6 +153,11 @@ export default defineRailway(() => {
     // perfectly while nothing can reach it.
     env: {
       ANTHROPIC_API_KEY: preserve(),
+      // ACC-148 — the API's own origin, Better Auth's base URL. The API REFUSES
+      // TO BOOT without it (validateBootConfig), so it is set on Railway BEFORE
+      // the code that requires it merges, and declared here so an apply cannot
+      // drop it.
+      API_ORIGIN: preserve(),
       APP_BASE_DOMAIN: preserve(),
       BETTER_AUTH_SECRET: preserve(),
       // CORS_ORIGIN is gone, not merely undeclared: it was a placeholder the
