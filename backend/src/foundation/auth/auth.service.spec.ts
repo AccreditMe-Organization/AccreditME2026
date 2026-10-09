@@ -1381,10 +1381,13 @@ describe('AuthService', () => {
       );
 
       for (const name of ['access_token', 'refresh_token']) {
-        const { maxAge: _maxAge, ...setWithoutLifetime } = optionsOf(
+        const { maxAge, ...setWithoutLifetime } = optionsOf(
           signIn.cookie,
           name,
         );
+        // Non-vacuity guard: the set really carried a lifetime, and the clear
+        // matches everything else it carried.
+        expect([name, typeof maxAge]).toEqual([name, 'number']);
         expect([name, optionsOf(signOut.clearCookie, name)]).toEqual([
           name,
           setWithoutLifetime,
