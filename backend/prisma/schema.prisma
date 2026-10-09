@@ -123,6 +123,26 @@ enum WorkflowActionType {
   WEBHOOK
 }
 
+// ACC-190 — what a transition does to the stage it leaves. ADVANCE (the default,
+// so an unclassified transition is gated) is refused while a mandatory task of
+// the current stage entry is open; RETURN (send back for rework) and EXIT (end
+// the record early: reject, cancel, withdraw) are never gated. Stage `order` is
+// display-only and cannot tell these apart.
+enum WorkflowTransitionKind {
+  ADVANCE
+  RETURN
+  EXIT
+}
+
+// ACC-190 — where a stage's task definition sends its task. ROLE is not a value:
+// a task goes to where the work sits (ACC-167), never to every role holder.
+enum StageTaskAssignKind {
+  POSITION              // a fixed unit + position, optionally one person in it
+  RECORD_UNIT_POSITION  // the record's own unit + a position
+  COMMITTEE_ROLE        // a fixed committee + a member role
+  RECORD_COMMITTEE_ROLE // the record's committee + a member role
+}
+
 enum WorkflowApprovalDecision {
   PENDING
   APPROVED
@@ -417,6 +437,7 @@ model Organization {
   userTransferEvents     UserTransferEvent[] // ACC-46 Section 2.6.f
   orgUnitHeadAssignments OrgUnitHeadAssignment[]
 
+  workflowStageTaskDefinitions WorkflowStageTaskDefinition[] // ACC-190
   @@index([slug])
   @@index([status])
   @@index([isPlatformOrg])
@@ -580,6 +601,7 @@ model User {
   userTransferEventsAsReplacement UserTransferEvent[]        @relation("UserTransferEventReplacement")
   userTransferEventsAsNewManager  UserTransferEvent[]        @relation("UserTransferEventNewManager")
 
+  stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionUser") // ACC-190
   @@unique([organizationId, email])
   @@index([organizationId])
   @@index([email])
@@ -737,6 +759,7 @@ model LookupValue {
   orgUnits     OrgUnit[]      @relation("OrgUnitType") // ACC-137
   poolTasks    Task[]         @relation("TaskAssignedCommitteeRole") // ACC-167
 
+  stageTaskDefinitionRoles WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommitteeRole") // ACC-190
   @@unique([categoryId, key, organizationId])
   @@index([organizationId])
   @@index([categoryId])
@@ -891,6 +914,7 @@ model OrgUnit {
   committees                      Committee[]
   poolTasks                       Task[]                  @relation("TaskAssignedOrgUnit") // ACC-167
 
+  stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionOrgUnit") // ACC-190
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([parentId])
@@ -1116,6 +1140,7 @@ model OrgPosition {
   workflowStages  WorkflowStage[]
   poolTasks       Task[]                  @relation("TaskAssignedPosition") // ACC-167
 
+  stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionPosition") // ACC-190
   @@unique([organizationId, nameEn])
   @@index([organizationId])
   @@index([roleId])
@@ -1199,6 +1224,7 @@ model WorkflowStage {
   assigneePosition OrgPosition?            @relation(fields: [assigneePositionId], references: [id])
   assigneeOrgUnit  OrgUnit?                @relation("WorkflowStageAssigneeOrgUnit", fields: [assigneeOrgUnitId], references: [id])
 
+  taskDefinitions  WorkflowStageTaskDefinition[] // ACC-190
   @@index([workflowTemplateId])
 }
 
@@ -1214,6 +1240,7 @@ model WorkflowTransition {
   triggerRoleId      String?
   validatorConfig    Json?
   isApprovalPath     Boolean                  @default(false)
+  kind               WorkflowTransitionKind   @default(ADVANCE) // ACC-190
 
   fromStage WorkflowStage              @relation("TransitionFrom", fields: [fromStageId], references: [id])
   toStage   WorkflowStage              @relation("TransitionTo", fields: [toStageId], references: [id])
@@ -1271,6 +1298,7 @@ model WorkflowInstanceStage {
   stage            WorkflowStage      @relation(fields: [stageId], references: [id])
   approvals        WorkflowApproval[]
 
+  tasks            Task[] // ACC-190 — the tasks this stage entry created
   @@index([workflowInstanceId])
   @@index([stageId])
   @@index([slaDueAt])
@@ -1423,6 +1451,16 @@ model Task {
   reopenedReason               String?
   reopenedAt                   DateTime?
   reopenedById                 String?
+  // ACC-190 — a task created from a stage task definition when its record
+  // ENTERED a stage. workflowInstanceStageId is that entry: the gate, the
+  // stage-exit cancel, reopen and the stage-deadline move key on it, never on
+  // the template stage (a record that left and came back is a new entry).
+  // isMandatory and titleAr are snapshots of the definition; editing or
+  // deleting the definition never changes a task already created.
+  workflowInstanceStageId      String?
+  stageTaskDefinitionId        String?
+  isMandatory                  Boolean        @default(false)
+  titleAr                      String?
   createdAt                    DateTime       @default(now())
   updatedAt                    DateTime       @updatedAt
 
@@ -1439,6 +1477,8 @@ model Task {
   assignees                  TaskAssignee[]
   evidence                   TaskEvidence[]
   requests                   TaskRequest[]
+  workflowInstanceStage      WorkflowInstanceStage?       @relation(fields: [workflowInstanceStageId], references: [id])
+  stageTaskDefinition        WorkflowStageTaskDefinition? @relation(fields: [stageTaskDefinitionId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([status])
@@ -1451,6 +1491,52 @@ model Task {
   @@index([assignedCommitteeId, assignedCommitteeRoleValueId])
   @@index([poolEscalateAt])
   @@index([onHoldUntil])
+  // ACC-190 — the gate (one entry's open tasks) and the legacy stage queries,
+  // which filtered on this pair with no index.
+  @@index([workflowInstanceStageId, status])
+  @@index([workflowInstanceId, sourceStageId])
+}
+
+// ACC-190 (CF-07) — a task a workflow stage creates every time a record ENTERS
+// it, configured per tenant. The Task is a snapshot (title, priority, mandatory,
+// evidence, target); later edits affect future entries only. Assignment is the
+// manual-task route (ACC-167): unit -> position -> optional person, or a
+// committee role; the record's own unit or committee may stand in for the fixed
+// one. createdById/updatedById are plain ids, kept for display; the audit trail
+// carries the history.
+model WorkflowStageTaskDefinition {
+  id                   String              @id @default(cuid())
+  organizationId       String
+  stageId              String
+  order                Int
+  titleEn              String
+  titleAr              String?
+  description          String?
+  isMandatory          Boolean
+  requiresEvidence     Boolean             @default(false)
+  priority             TaskPriority
+  assignKind           StageTaskAssignKind
+  orgUnitId            String?
+  positionId           String?
+  userId               String?
+  committeeId          String?
+  committeeRoleValueId String?
+  createdById          String
+  updatedById          String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  organization       Organization  @relation(fields: [organizationId], references: [id])
+  stage              WorkflowStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  orgUnit            OrgUnit?      @relation("StageTaskDefinitionOrgUnit", fields: [orgUnitId], references: [id], onDelete: Restrict)
+  position           OrgPosition?  @relation("StageTaskDefinitionPosition", fields: [positionId], references: [id], onDelete: Restrict)
+  user               User?         @relation("StageTaskDefinitionUser", fields: [userId], references: [id], onDelete: Restrict)
+  committee          Committee?    @relation("StageTaskDefinitionCommittee", fields: [committeeId], references: [id], onDelete: Restrict)
+  committeeRoleValue LookupValue?  @relation("StageTaskDefinitionCommitteeRole", fields: [committeeRoleValueId], references: [id], onDelete: Restrict)
+  tasks              Task[]
+
+  @@index([organizationId])
+  @@index([stageId, order])
 }
 
 // ACC-173 — the person doing a task asks for more time (EXTENSION, with a new
@@ -1763,6 +1849,7 @@ model Committee {
   meetings             Meeting[]
   poolTasks            Task[]                     @relation("TaskAssignedCommittee") // ACC-167
 
+  stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommittee") // ACC-190
   @@index([organizationId])
   @@index([orgUnitId]) // ACC-135
   @@index([parentCommitteeId])
