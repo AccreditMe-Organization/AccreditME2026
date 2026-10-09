@@ -17,7 +17,8 @@
     "check:action-gating:selftest": "node scripts/check-action-gating.selftest.mjs",
     "check:field-control": "node scripts/check-field-control.mjs",
     "check:confirm-translated": "node scripts/check-confirm-translated.mjs",
-    "check:reserved-slugs": "node scripts/check-reserved-slugs.mjs"
+    "check:reserved-slugs": "node scripts/check-reserved-slugs.mjs",
+    "verify:built-index": "node scripts/verify-built-index.mjs"
   },
   "engines": {
     "node": "22.x"
