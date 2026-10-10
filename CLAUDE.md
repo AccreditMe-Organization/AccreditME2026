@@ -1226,7 +1226,12 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
 - Forced logout on role change or account suspension
 - Idle timeout: 30 minutes, with a 2-minute warning (ACC-122). It calls
   `POST /auth/logout`, so it ends the server session rather than only clearing
-  the browser's.
+  the browser's. **True only since ACC-203**: before it, sign-out sat behind
+  `TenantGuard` (a 401 once the access cookie had expired) and the refresh
+  cookie's path never reached `/logout`, so no sign-out revoked anything and the
+  next visit signed the person straight back in. `/auth/logout` is now public
+  and idempotent, and the refresh cookie's path is `/api/v1/auth`
+  (SYSTEM-REFERENCE §15.14).
 - **Max concurrent sessions — NOT BUILT.** This line previously claimed "5 per
   user (configurable per tenant)". There is no field, no counter and no
   configuration anywhere; a user may hold unlimited concurrent sessions.
