@@ -17,6 +17,7 @@
  * - Image decoders (JBIG2, JPEG 2000, colour profiles) come from our own
  *   origin; if wasm is refused, pdf.js uses their plain-JS fallbacks.
  */
+import { Injectable } from '@angular/core';
 import type * as PdfJs from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export type PdfJsModule = typeof PdfJs;
@@ -40,6 +41,17 @@ export function loadPdfJs(): Promise<PdfJsModule> {
       throw error;
     });
   return loading;
+}
+
+/**
+ * The loader as a service, so the PDF view asks for pdf.js through injection
+ * and a spec can hand it a stub instead of loading the real library.
+ */
+@Injectable({ providedIn: 'root' })
+export class PdfJsLoader {
+  load(): Promise<PdfJsModule> {
+    return loadPdfJs();
+  }
 }
 
 /** The options every PDF is opened with — in one place, so a spec can pin them. */

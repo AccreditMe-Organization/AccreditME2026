@@ -4,13 +4,15 @@
  * byte-order mark, and rows of different lengths kept as they are. In-house,
  * like ACC-177's content sniffer: one table does not justify a dependency.
  *
- * It stops after `maxRows` rows, so a 25 MB file is never parsed whole, and
- * says whether anything was left. Cells are plain strings; the viewer binds
- * them as text, never as HTML.
+ * It KEEPS at most `maxRows` rows, so a 25 MB file never becomes millions of
+ * strings, and COUNTS every record, so the viewer can say "500 of 2,140".
+ * Cells are plain strings; the viewer binds them as text, never as HTML.
  */
 export interface IParsedCsv {
   rows: string[][];
-  /** True when rows were left unread after `maxRows`. */
+  /** Every record in the file, kept or not. */
+  totalRows: number;
+  /** True when records were left out after `maxRows`. */
   truncated: boolean;
 }
 
@@ -20,14 +22,26 @@ export function parseCsv(text: string, maxRows: number): IParsedCsv {
   let field = '';
   let inQuotes = false;
   let fieldStarted = false;
+  let rowHasContent = false;
+  let total = 0;
   let i = text.charCodeAt(0) === 0xfeff ? 1 : 0;
 
-  const endRow = (): void => {
-    row.push(field);
-    rows.push(row);
-    row = [];
+  const keeping = (): boolean => rows.length < maxRows;
+  const endField = (): void => {
+    if (keeping()) row.push(field);
     field = '';
     fieldStarted = false;
+  };
+  const endRow = (): void => {
+    endField();
+    total++;
+    if (keeping()) rows.push(row);
+    row = [];
+    rowHasContent = false;
+  };
+  const append = (c: string): void => {
+    if (keeping()) field += c;
+    rowHasContent = true;
   };
 
   while (i < text.length) {
@@ -35,7 +49,7 @@ export function parseCsv(text: string, maxRows: number): IParsedCsv {
     if (inQuotes) {
       if (c === '"') {
         if (text[i + 1] === '"') {
-          field += '"';
+          append('"');
           i += 2;
           continue;
         }
@@ -43,33 +57,32 @@ export function parseCsv(text: string, maxRows: number): IParsedCsv {
         i++;
         continue;
       }
-      field += c;
+      append(c);
       i++;
       continue;
     }
     if (c === '"' && !fieldStarted) {
       inQuotes = true;
       fieldStarted = true;
+      rowHasContent = true;
       i++;
       continue;
     }
     if (c === ',') {
-      row.push(field);
-      field = '';
-      fieldStarted = false;
+      endField();
+      rowHasContent = true;
       i++;
       continue;
     }
     if (c === '\r' || c === '\n') {
       endRow();
       i += c === '\r' && text[i + 1] === '\n' ? 2 : 1;
-      if (rows.length >= maxRows) return { rows, truncated: /\S/.test(text.slice(i)) };
       continue;
     }
-    field += c;
+    append(c);
     fieldStarted = true;
     i++;
   }
-  if (fieldStarted || field !== '' || row.length > 0) endRow();
-  return { rows, truncated: false };
+  if (rowHasContent || fieldStarted) endRow();
+  return { rows, totalRows: total, truncated: total > rows.length };
 }
