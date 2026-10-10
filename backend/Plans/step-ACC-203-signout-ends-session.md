@@ -172,7 +172,7 @@ No migration. No change to the deployed API until the PR merges.
 
 ## Verification results (10 Oct 2026)
 
-**Checks.** Backend: 127 suites, 2,874 tests; tenant isolation 171; typecheck
+**Checks.** Backend: 127 suites, 2,875 tests; tenant isolation 172 (one new: the shared identity query never proves another tenant's user, red when its organizationId is dropped); typecheck
 and build clean. Frontend: 1,290 tests (i18n parity 18), typecheck (app and
 specs) and production build clean, `verify:built-index` ok. All 13 discovered
 `check:*` scans exit 0. No lint message on any added line of production code;
