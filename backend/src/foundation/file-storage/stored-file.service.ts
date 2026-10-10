@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StorageProvider } from '../../providers/storage/storage.provider';
-import { judgeFileContent } from './file-content';
+import { judgeFileContent, PREVIEWABLE_MIME_TYPES } from './file-content';
 import { buildStorageKey, displayFileName, keySafeName } from './stored-file-names';
 import { IStorageLocation, IStoredFileLocation, StorageResolverService } from './storage-resolver.service';
 import { maxUploadBytes } from './storage-platform-env';
@@ -228,6 +228,23 @@ export class StoredFileService {
       _sum: { sizeBytes: true },
     });
     return total._sum.sizeBytes ?? 0;
+  }
+
+  /**
+   * ACC-189 — a VIEW for a file the CALLER HAS ALREADY BEEN ENTITLED TO, by
+   * exactly the check its download uses. The same URL a download gets: the
+   * response stays an attachment, because the in-app viewer fetches the bytes
+   * and renders them itself; nothing is ever served inline. A deleted file is
+   * refused first, then a type the viewer does not render
+   * (`PREVIEW_NOT_AVAILABLE`). Every host (task evidence today, meetings and
+   * documents later) mints its views here, so the type rule lives once.
+   */
+  async openView(
+    file: IStoredFileLocation & { id: string; storageKey: string; originalName: string; mimeType: string; deletedAt: Date | null },
+  ): Promise<IFileDownload> {
+    if (file.deletedAt) throw new StorageRefusalException('FILE_UNAVAILABLE');
+    if (!PREVIEWABLE_MIME_TYPES.has(file.mimeType)) throw new StorageRefusalException('PREVIEW_NOT_AVAILABLE');
+    return this.openDownload(file);
   }
 
   /**
