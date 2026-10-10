@@ -484,8 +484,8 @@ under its own ticket. Until then (c), which Phase 1 already is.
       subdomains and localhost
 - [x] Plan written
 - [x] Ahmad's answers to D1–D5
-- [ ] Design drawing copied into `frontend/design-reference/` — accepted in
-      review; the file is not on the branch yet
+- [x] Design drawing on the branch (`AccreditMe File Viewer.dc.html`) and
+      built to.
 - [x] Backend: `GET /tasks/:id/evidence/:evidenceId/view`, the download's
       entitlement and 404 (`fileForViewer()`, shared); `StoredFileService.openView()`;
       `PREVIEWABLE_MIME_TYPES`; 409 `PREVIEW_NOT_AVAILABLE`; "viewed" log line.
@@ -500,11 +500,53 @@ under its own ticket. Until then (c), which Phase 1 already is.
       credentials on storage, mutation-tested), the CSV reader, the text
       decoder, the lazy pdf.js loader, the type mapping.
 - [x] `docs/customer/minio-storage-viewing.md` (D3).
-- [ ] `am-drawer`, the viewer, its renderers and states, task evidence wiring
-      — after the drawing is on the branch.
-- [ ] Live proof (§9), then Progress closed.
+- [x] `am-drawer` (`shared/components/drawer/`): PrimeNG Drawer through its
+      headless template; side from the language (PrimeNG's `position` is
+      physical); mask never closes it; page behind `inert`; Escape for the top
+      layer only; 60% / 720px / full screen below 900px, as tokens; Expand and
+      Restore; the body is a Tab stop.
+- [x] The viewer (`FileViewerService`, `FileViewerComponent`) and renderers
+      (PDF, image, text, CSV, state panel); every state in en and ar; one file
+      at a time; task evidence opens it from the name and an eye button.
+- [x] CSP in `vercel.json` (still report-only): the storage host the app
+      uses (`https://qekkwubibeclwektybxf.storage.supabase.co`, read from a
+      live mint, origin only), `worker-src 'self' blob:`, `script-src 'self'
+      'wasm-unsafe-eval'`. `check:vercel-config` now requires exactly that
+      `script-src`.
+- [x] Live proof, al-manara (SharePoint), on 3001/4201: the image on the
+      cancelled "SharePoint screen test" task, NOT purged — en and ar,
+      1280/929/390 px, keyboard only (open with Enter, `+`/`0`, Tab trapped,
+      Escape closes only the viewer, focus back on the file name).
+- [x] Live proof, al-nakheel — BROWSER SIDE ONLY: the local backend has no
+      platform S3 settings (`STORAGE_NOT_CONFIGURED`), so uploads were refused
+      and nothing was stored. The real ACC-177 PDF showed "couldn't open"
+      (correct for that). The seven test files (3-page Arabic PDF with images,
+      png, gif, webp, Arabic txt with `<script>`, 2,000-row csv, docx) were
+      served to the browser from a simulated storage host: every renderer and
+      the no-preview panel worked, and no storage request carried a cookie.
+- [ ] Live proof, al-nakheel against real AccreditMe cloud: needs the local
+      `AWS_*` settings (`acc189-local-storage-env.ps1`, hidden input), then
+      upload, view, delete and purge the extra files.
 
-**Where the build differs from the plan so far:**
+**Where the build differs from the plan and the drawing:**
+- **No text selection in PDFs (D4)** although the drawing's Q5 says text is
+  selectable in PDF and TXT: D4 is the later decision. TXT and CSV text is
+  selectable.
+- **The large-PDF footer says only what is true here**: "{n} pages · Each
+  page renders as you reach it" (from 10 pages). The drawing's "Large file:
+  never loaded whole" is not true of this build — the bytes are fetched whole
+  (§8); only rendering is lazy.
+- **A size reads in the reader's language** ("199 كيلوبايت") as everywhere
+  else in the app, not "199 KB" as the drawing's Arabic shows; type and size
+  are separate direction-isolated runs so the mix reads correctly.
+- **The MinIO-blocked state (D3) is not drawn**; it uses the panel pattern
+  (warning tone, Download offered).
+- **`task.evidence.viewNamed` was already the task row's "Evidence on …"
+  label**; the file row's View is `task.evidence.viewFileNamed` (caught in the
+  live proof, after briefly overwriting the original).
+- **PDF pages are observed against the drawer body, not the viewport**: the
+  body's clipping would otherwise cut every page below the fold before the
+  look-ahead applied (found in the live proof; spec added, mutation-tested).
 - **pdf.js 6 has no `isEvalSupported` option**: it has no eval or
   `new Function` path at all (checked in the shipped build). "Eval off" holds
   by construction. Its PDF scripting needs `pdf.sandbox` and a QuickJS wasm,
