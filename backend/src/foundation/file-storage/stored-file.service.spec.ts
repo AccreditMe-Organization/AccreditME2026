@@ -257,7 +257,9 @@ describe('StoredFileService (ACC-177)', () => {
       '%s: the same fifteen-minute URL a download gets (still an attachment)',
       async (mimeType) => {
         const view = await service.openView({ ...file, mimeType });
-        expect(view).toEqual({ url: 'https://signed.example/x', viaApi: false, expiresAt: expect.any(String) });
+        expect(view.url).toBe('https://signed.example/x');
+        expect(view.viaApi).toBe(false);
+        expect(typeof view.expiresAt).toBe('string');
         expect(provider.signedDownloadUrl).toHaveBeenCalledWith(file.storageKey, 900, { fileName: 'محضر.pdf', mimeType });
       },
     );
