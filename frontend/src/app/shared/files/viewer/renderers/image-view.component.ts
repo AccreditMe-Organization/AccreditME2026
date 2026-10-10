@@ -48,9 +48,13 @@ export type ImageZoom = number | 'fit';
         box-sizing: border-box;
         overflow: auto;
         display: grid;
+        /* A definite track, so the image's max-block-size: 100% resolves and
+           Fit fits the height as well as the width. */
+        grid-template-rows: minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr);
         place-items: center;
         padding: var(--am-space-16);
-        background: repeating-conic-gradient(var(--am-skeleton-base) 0% 25%, var(--am-skeleton-shimmer) 0% 50%) 0 0 / 20px 20px;
+        background: repeating-conic-gradient(var(--am-skeleton-base) 0% 25%, var(--am-skeleton-shimmer) 0% 50%) 0 0 / var(--am-space-20) var(--am-space-20);
       }
       .am-fimg__img {
         display: block;
