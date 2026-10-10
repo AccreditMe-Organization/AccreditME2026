@@ -221,6 +221,23 @@ describe('authInterceptor (ACC-24, ACC-122)', () => {
     httpMock.expectOne(`${environment.apiUrl}/auth/login`).flush({}, unauthorized);
   });
 
+  // ACC-203 — a refused sign-out must never be renewed and replayed: renewing
+  // would mint a fresh session in the middle of ending one. httpMock.verify()
+  // in afterEach fails on any request this did not expect, so no refresh and
+  // no second logout went out.
+  it('does NOT renew or retry a 401 from /auth/logout', (done) => {
+    http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
+      error: (err: { status: number }) => {
+        expect(err.status).toBe(401);
+        httpMock.expectNone(REFRESH_URL);
+        httpMock.expectNone(`${environment.apiUrl}/auth/logout`);
+        done();
+      },
+    });
+
+    httpMock.expectOne(`${environment.apiUrl}/auth/logout`).flush({}, unauthorized);
+  });
+
   it('does NOT navigate on a 401 from /auth/logout — the caller already is', (done) => {
     http.post(`${environment.apiUrl}/auth/logout`, {}).subscribe({
       error: () => {

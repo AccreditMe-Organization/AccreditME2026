@@ -21,9 +21,10 @@ import { DisableMfaDto } from './dto/disable-mfa.dto';
 
 // Every endpoint here is deliberately pre-authentication or self-service —
 // no @UseGuards(TenantGuard, PermissionGuard) at class level, unlike every
-// other controller in this codebase (see step-09 plan, Commit 3). /logout is
-// the one exception, guarded individually, since it needs the caller's
-// identity for the audit log entry.
+// other controller in this codebase (see step-09 plan, Commit 3). The
+// self-service routes (/me and the MFA routes) are guarded individually.
+// /logout is NOT guarded any more (ACC-203): it must work after the access
+// cookie has expired, and finds the caller's identity for the audit log itself.
 //
 // Zero business logic here — AuthService does everything, per CLAUDE.md's
 // NestJS Conventions.
@@ -103,8 +104,13 @@ export class AuthController {
     return this.authService.refresh(req, res);
   }
 
+  // ACC-203 — PUBLIC on purpose. Behind TenantGuard, a sign-out after an idle
+  // wait (frozen tab, slept laptop) arrived with the 15-minute access cookie
+  // already gone, got a 401, and revoked nothing — so the next visit renewed
+  // the session. It now always answers 200 and revokes whatever refresh token
+  // the browser presents (AuthService.logout()). Still rate-limited: with no
+  // valid session the global guard counts it per address (ACC-129).
   @Post('logout')
-  @UseGuards(TenantGuard)
   @HttpCode(HttpStatus.OK)
   logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.authService.logout(req, res);

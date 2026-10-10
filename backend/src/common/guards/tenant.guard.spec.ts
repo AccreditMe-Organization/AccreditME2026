@@ -1,6 +1,6 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { createHmac } from 'crypto';
-import { TenantGuard } from './tenant.guard';
+import { TenantGuard, verifySessionIdentity } from './tenant.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PermissionResolver } from '../services/permission-resolver.interface';
 
@@ -166,5 +166,214 @@ describe('TenantGuard', () => {
     const tampered = `${parts[0]}.${parts[1]}.tamperedsignature`;
     const ctx = buildContext({ cookies: { access_token: tampered } });
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+  });
+});
+
+// ACC-203 — the identity a valid access token proves, shared by TenantGuard and
+// sign-out. Sign-out must trust exactly what the guard trusts, no more.
+describe('verifySessionIdentity (ACC-203)', () => {
+  let prisma: { user: { findFirst: jest.Mock } };
+  const token = (claims: Record<string, unknown> = {}) =>
+    signJwt({
+      sub: 'user-a',
+      organizationId: 'org-a',
+      tokenVersion: 3,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      ...claims,
+    });
+  const req = (accessToken?: string) => ({
+    headers: {},
+    cookies: accessToken ? { access_token: accessToken } : {},
+  });
+
+  beforeEach(() => {
+    process.env['JWT_SECRET'] = JWT_SECRET;
+    prisma = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue({
+          tokenVersion: 3,
+          organization: { status: 'ACTIVE' },
+        }),
+      },
+    };
+  });
+
+  it('returns who a valid token proves the caller is, from one query scoped to its organisation', async () => {
+    await expect(
+      verifySessionIdentity(req(token()), prisma as unknown as PrismaService),
+    ).resolves.toEqual({
+      ok: true,
+      identity: {
+        userId: 'user-a',
+        organizationId: 'org-a',
+        organizationStatus: 'ACTIVE',
+      },
+    });
+    expect(prisma.user.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findFirst.mock.calls[0][0].where).toEqual({
+      id: 'user-a',
+      organizationId: 'org-a',
+    });
+  });
+
+  // The CI tenant-isolation gate selects tests by this exact name. The mock is
+  // a two-row table that honours BOTH keys of the where clause, as Prisma does,
+  // so a query that dropped organizationId would find org-b's row and the
+  // identity would be proved — this fails on behaviour, not only on shape.
+  it('should NOT return records belonging to a different tenant', async () => {
+    const rows = [
+      {
+        id: 'user-a',
+        organizationId: 'org-b',
+        tokenVersion: 3,
+        organization: { status: 'ACTIVE' },
+      },
+    ];
+    prisma.user.findFirst.mockImplementation(
+      ({ where }: { where: { id?: string; organizationId?: string } }) =>
+        Promise.resolve(
+          rows.find(
+            (r) =>
+              (where.id === undefined || r.id === where.id) &&
+              (where.organizationId === undefined ||
+                r.organizationId === where.organizationId),
+          ) ?? null,
+        ),
+    );
+    // The token claims org-a; the only user with that id lives in org-b.
+    await expect(
+      verifySessionIdentity(req(token()), prisma as unknown as PrismaService),
+    ).resolves.toEqual({ ok: false, refusal: 'revoked' });
+    // Non-vacuity guard: the same token with org-b's claim IS proved, so the
+    // refusal above came from the organisation, not from a broken mock.
+    await expect(
+      verifySessionIdentity(
+        req(token({ organizationId: 'org-b' })),
+        prisma as unknown as PrismaService,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ ok: true }));
+  });
+
+  it('carries impersonatedBy when the token has it', async () => {
+    const result = await verifySessionIdentity(
+      req(token({ impersonatedBy: 'platform-admin-1' })),
+      prisma as unknown as PrismaService,
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        identity: expect.objectContaining({
+          impersonatedBy: 'platform-admin-1',
+        }),
+      }),
+    );
+  });
+
+  it('still proves identity for a closed organisation — refusing it is the guard’s business, not this helper’s', async () => {
+    prisma.user.findFirst.mockResolvedValue({
+      tokenVersion: 3,
+      organization: { status: 'SUSPENDED' },
+    });
+    const result = await verifySessionIdentity(
+      req(token()),
+      prisma as unknown as PrismaService,
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        identity: expect.objectContaining({ organizationStatus: 'SUSPENDED' }),
+      }),
+    );
+  });
+
+  it('refuses, naming why, every token the guard would refuse', async () => {
+    const parts = token().split('.');
+    const cases: Array<[string, () => Promise<unknown>, string]> = [
+      [
+        'no token',
+        () => verifySessionIdentity(req(), prisma as unknown as PrismaService),
+        'missing',
+      ],
+      [
+        'bad signature',
+        () =>
+          verifySessionIdentity(
+            req(`${parts[0]}.${parts[1]}.forged`),
+            prisma as unknown as PrismaService,
+          ),
+        'invalid',
+      ],
+      [
+        'expired',
+        () =>
+          verifySessionIdentity(
+            req(token({ exp: Math.floor(Date.now() / 1000) - 10 })),
+            prisma as unknown as PrismaService,
+          ),
+        'invalid',
+      ],
+      [
+        'no organisation claim',
+        () =>
+          verifySessionIdentity(
+            req(token({ organizationId: '' })),
+            prisma as unknown as PrismaService,
+          ),
+        'claims',
+      ],
+    ];
+    for (const [label, run, refusal] of cases) {
+      expect([label, await run()]).toEqual([label, { ok: false, refusal }]);
+    }
+
+    prisma.user.findFirst.mockResolvedValue({
+      tokenVersion: 4,
+      organization: { status: 'ACTIVE' },
+    });
+    expect(
+      await verifySessionIdentity(
+        req(token()),
+        prisma as unknown as PrismaService,
+      ),
+    ).toEqual({ ok: false, refusal: 'revoked' });
+    prisma.user.findFirst.mockResolvedValue(null);
+    expect(
+      await verifySessionIdentity(
+        req(token()),
+        prisma as unknown as PrismaService,
+      ),
+    ).toEqual({ ok: false, refusal: 'revoked' });
+
+    delete process.env['JWT_SECRET'];
+    expect(
+      await verifySessionIdentity(
+        req(token()),
+        prisma as unknown as PrismaService,
+      ),
+    ).toEqual({ ok: false, refusal: 'not_configured' });
+  });
+
+  it('TenantGuard keeps its own refusal message for each reason', async () => {
+    const guard = new TenantGuard(
+      { getUserPermissions: jest.fn().mockResolvedValue([]) },
+      prisma as unknown as PrismaService,
+    );
+    const ctx = (accessToken?: string) =>
+      ({
+        switchToHttp: () => ({ getRequest: () => req(accessToken) }),
+      }) as unknown as ExecutionContext;
+    await expect(guard.canActivate(ctx())).rejects.toThrow(
+      'Missing bearer token',
+    );
+    await expect(guard.canActivate(ctx('a.b.c'))).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    prisma.user.findFirst.mockResolvedValue({
+      tokenVersion: 9,
+      organization: { status: 'ACTIVE' },
+    });
+    await expect(guard.canActivate(ctx(token()))).rejects.toThrow(
+      'Session has been revoked',
+    );
   });
 });

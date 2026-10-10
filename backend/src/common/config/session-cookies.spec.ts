@@ -1,7 +1,9 @@
 import {
+  LEGACY_REFRESH_TOKEN_COOKIE_PATH,
   REFRESH_TOKEN_COOKIE_PATH,
   accessTokenClearOptions,
   accessTokenCookieOptions,
+  legacyRefreshTokenClearOptions,
   refreshTokenClearOptions,
   refreshTokenCookieOptions,
   twoFactorCookieClearOptions,
@@ -22,6 +24,7 @@ describe('session cookie options (ACC-186)', () => {
         refreshTokenCookieOptions(1000),
         accessTokenClearOptions(),
         refreshTokenClearOptions(),
+        legacyRefreshTokenClearOptions(),
       ]) {
         expect([nodeEnv, options]).toEqual([
           nodeEnv,
@@ -35,12 +38,28 @@ describe('session cookie options (ACC-186)', () => {
     }
   });
 
-  it('scopes the refresh token to the one endpoint that reads it', () => {
-    expect(REFRESH_TOKEN_COOKIE_PATH).toBe('/api/v1/auth/refresh');
+  // ACC-203 — the refresh cookie must reach sign-out as well as refresh, or
+  // no sign-out can revoke the session.
+  it('scopes the refresh token to the auth routes, which both refresh and sign-out sit under', () => {
+    expect(REFRESH_TOKEN_COOKIE_PATH).toBe('/api/v1/auth');
     expect(refreshTokenCookieOptions(1000).path).toBe(
       REFRESH_TOKEN_COOKIE_PATH,
     );
+    for (const route of ['/api/v1/auth/refresh', '/api/v1/auth/logout']) {
+      expect([
+        route,
+        route.startsWith(`${REFRESH_TOKEN_COOKIE_PATH}/`),
+      ]).toEqual([route, true]);
+    }
     expect(accessTokenCookieOptions(1000).path).toBe('/');
+  });
+
+  it('clears the pre-ACC-203 path during the change-over, with the same attributes', () => {
+    expect(LEGACY_REFRESH_TOKEN_COOKIE_PATH).toBe('/api/v1/auth/refresh');
+    expect(legacyRefreshTokenClearOptions()).toEqual({
+      ...refreshTokenClearOptions(),
+      path: LEGACY_REFRESH_TOKEN_COOKIE_PATH,
+    });
   });
 
   it('clears with exactly what it set, apart from the lifetime', () => {

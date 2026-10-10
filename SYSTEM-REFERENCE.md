@@ -381,10 +381,11 @@ assumed): `working-calendar`, `task`, `organization`, `org-position`,
 **Three deliberate exceptions**, all confirmed and code-commented:
 
 - **`AuthController`** — no class-level `@UseGuards()` at all (every
-  endpoint is pre-authentication or self-service); `/auth/me` and
-  `/auth/logout` etc. apply `@UseGuards(TenantGuard)` individually,
-  never `PermissionGuard` (there is no meaningful permission to require
-  before a user has even established a session).
+  endpoint is pre-authentication or self-service); `/auth/me` and the
+  MFA routes apply `@UseGuards(TenantGuard)` individually, never
+  `PermissionGuard` (there is no meaningful permission to require
+  before a user has even established a session). **`/auth/logout` is
+  public since ACC-203** — see §15.14.
 - **`NotificationController`** — `@UseGuards(TenantGuard)` only, no
   `PermissionGuard`, no `@Permissions()` anywhere in the file. Every
   query is self-scoped to the caller's own `userId` — there is nothing
@@ -902,6 +903,17 @@ ran out. The reason travels with it, so every tab gives the same account.
 **Sign-out calls `POST /auth/logout`**, not just `clearSession()` — the refresh
 token is a database row with a 7-day life, and forgetting it client-side would
 leave the session alive on the server while telling the user otherwise.
+
+**Until ACC-203 that call never revoked anything**, for two reasons that added
+up: the route sat behind `TenantGuard`, so an idle sign-out from a frozen tab or
+a slept laptop (access cookie already expired) was a 401; and the refresh
+cookie's path was `/api/v1/auth/refresh`, so it was never sent to `/logout`
+anyway. The next visit renewed the session and the person was back in without a
+password — reproduced three times on `al-nakheel.accreditme.app`. Sign-out is
+now public and revokes the presented refresh token (§15.14). `signOut()` still
+clears locally when the call fails, because a network failure must not strand
+anyone in a session they have been told is over, and `/auth/logout` stays in
+the interceptor's `NO_RENEWAL_PATHS`, so a refused sign-out is never renewed.
 
 **The warning dialog** is built on `EditDialogComponent` (so Escape resolves
 through `LayerStackService`) with `role="alertdialog"` — a `role` input added
@@ -8227,6 +8239,48 @@ STRING, which Better Auth resolves once at start-up — an object (`allowedHosts
 would make it re-resolve per request. The "Base URL is not set" boot warning is
 gone. `appName` is "AccreditMe", so authenticator apps no longer say "Better
 Auth".
+
+#### Sign-out ends the server session, even after an idle wait (ACC-203)
+
+**`POST /auth/logout` is public, idempotent, and always answers
+`200 { success: true }`**, with or without cookies. It:
+
+1. revokes the refresh token the browser presented, if any, with ONE atomic
+   `updateManyAndReturn` on `{ tokenHash, revokedAt: null }` — so it returns only
+   the row this call revoked, and two simultaneous sign-outs cannot both audit
+   it;
+2. clears both cookies (and the pre-ACC-203 refresh path, below);
+3. audits `LOGOUT` as the person a valid access token names — valid exactly as
+   `TenantGuard` means it, through the shared `verifySessionIdentity()`
+   (`tenant.guard.ts`), which the guard itself calls — or else as the owner of
+   the row just revoked. Neither means nothing was signed out: no audit entry,
+   still a 200. A forged, expired or stale (`tokenVersion`) access token is
+   never trusted for the audit.
+
+It is still rate-limited: with no valid session the global guard counts it per
+address (§15.12). `verifySessionIdentity()` deliberately leaves out the
+closed-organisation refusal, so signing out of a closed organisation works.
+
+**The refresh cookie's path is `/api/v1/auth`** (was `/api/v1/auth/refresh`),
+so the browser sends it to both routes that read it: refresh and sign-out. The
+other auth routes receive it too; none reads it, nothing logs cookies, and it
+stays httpOnly, Secure, `SameSite=Strict` and host-only. Moving both routes under
+a narrower shared path was considered and not taken: a breaking route change for
+little gain, since a cookie's Path is not a security boundary (RFC 6265 §8.6).
+
+**The change-over clears the old path on every SET as well as every clear.** A
+browser that signed in before the deploy keeps its `/api/v1/auth/refresh` cookie.
+After its first refresh it would hold two cookies that both match `/refresh`,
+the browser sends the longer path FIRST, `cookie-parser` keeps the first value —
+the old, already-rotated token — and the next refresh would sign the person out.
+Clearing the old path in `setSessionCookies()` as well as
+`clearSessionCookies()` removes it on the first refresh or sign-in after the
+deploy. **Both clears are removable once 7 days (the refresh-token life) have
+passed since ACC-203 deployed** (dated comments beside each). One harmless gap: a
+browser with only an old-path cookie that signs out before its first refresh
+does not send it to `/logout`, so its row is not revoked — but the clear deletes
+the cookie, nothing can present that token again, and the row expires within 7
+days.
 
 **ACC-148's feared exposure was verified absent (8 Oct), for three independent
 reasons** — a forged `Host` could not have pointed a reset link at an attacker:
