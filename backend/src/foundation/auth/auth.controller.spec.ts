@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { UserService } from '../user/user.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 
 // AuthController imports the real AuthService module for its DI token even
 // though useValue below swaps the implementation — that real file's own
@@ -169,6 +170,16 @@ describe('AuthController', () => {
   it('logout delegates to AuthService.logout', async () => {
     await controller.logout(req, res);
     expect(service.logout).toHaveBeenCalledWith(req, res);
+  });
+
+  // ACC-203 — sign-out must work after the access cookie has expired, so the
+  // route carries no guard. Read from the same metadata Nest reads.
+  it('logout is public: no guard on the route', () => {
+    const guardsOn = (method: object): unknown[] =>
+      (Reflect.getMetadata(GUARDS_METADATA, method) as unknown[] | undefined) ?? [];
+    // Non-vacuity guard: the metadata is readable this way — /me is guarded.
+    expect(guardsOn(AuthController.prototype.getMe)).toContain(TenantGuard);
+    expect(guardsOn(AuthController.prototype.logout)).toEqual([]);
   });
 
   it('acceptInvitation delegates to AuthService.acceptInvitation', async () => {
