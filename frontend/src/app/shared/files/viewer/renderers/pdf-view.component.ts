@@ -3,6 +3,8 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -116,6 +118,7 @@ type RenderTask = ReturnType<Awaited<ReturnType<PdfDocument['getPage']>>['render
 export class FilePdfViewComponent {
   protected readonly format = inject(FormatService);
   private readonly loader = inject(PdfJsLoader);
+  private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly bytes = input.required<ArrayBuffer>();
@@ -197,7 +200,9 @@ export class FilePdfViewComponent {
         Array.from({ length: doc.numPages }, (_, i) => ({ n: i + 1, width: first.width, height: first.height, rendered: false })),
       );
       this.opened.emit({ pageCount: doc.numPages });
-      queueMicrotask(() => this.observe());
+      // The page placeholders exist only once Angular has drawn them: observe
+      // after the next render, never before (a microtask is too early).
+      afterNextRender({ read: () => this.observe() }, { injector: this.injector });
     } catch (error) {
       if (!this.destroyed) this.failed.emit(error);
     }
@@ -208,6 +213,10 @@ export class FilePdfViewComponent {
     const view = root.ownerDocument.defaultView;
     if (!view || this.destroyed) return;
 
+    // The SCROLL CONTAINER is the observers' root: measured against the
+    // viewport, the body's clipping would cut every page below the fold before
+    // the look-ahead margin applied, and nothing beyond the first screen would
+    // ever be prepared.
     const scroller = root.closest('.am-drawer__body') ?? root.parentElement;
     if (scroller && 'ResizeObserver' in view) {
       this.resizeObserver = new ResizeObserver(() =>
@@ -229,13 +238,13 @@ export class FilePdfViewComponent {
           }
         }
       },
-      { rootMargin: '100% 0px' },
+      { root: scroller, rootMargin: '100% 0px' },
     );
     const far = new IntersectionObserver(
       (entries) => {
         for (const e of entries) if (!e.isIntersecting) this.release(pageOf(e));
       },
-      { rootMargin: '400% 0px' },
+      { root: scroller, rootMargin: '400% 0px' },
     );
     const visible = new IntersectionObserver(
       (entries) => {
@@ -245,7 +254,7 @@ export class FilePdfViewComponent {
         for (const [n, ratio] of this.ratios) if (ratio > bestRatio || (ratio === bestRatio && n < best)) [best, bestRatio] = [n, ratio];
         if (best) this.currentPage.emit(best);
       },
-      { threshold: [0, 0.25, 0.5, 0.75, 1] },
+      { root: scroller, threshold: [0, 0.25, 0.5, 0.75, 1] },
     );
     this.observers = [nearby, far, visible];
     for (const el of Array.from(root.querySelectorAll('.am-fpdf__page'))) {
