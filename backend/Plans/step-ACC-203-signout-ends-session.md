@@ -169,3 +169,46 @@ sign-out, and why.
    No cookie values, tokens or passwords are printed.
 
 No migration. No change to the deployed API until the PR merges.
+
+## Verification results (10 Oct 2026)
+
+**Checks.** Backend: 127 suites, 2,874 tests; tenant isolation 171; typecheck
+and build clean. Frontend: 1,290 tests (i18n parity 18), typecheck (app and
+specs) and production build clean, `verify:built-index` ok. All 13 discovered
+`check:*` scans exit 0. No lint message on any added line of production code;
+the remaining ones on added spec lines come from the auth spec's existing
+`any`-typed mocks and `expect.objectContaining`, the idiom those files already
+use.
+
+**Mutations, each watched going red and then restored:** the cookie path
+reverted (3 red); the guard helper without its tokenVersion check (3); the
+revoke dropped (4); the old-path clear dropped on sign-out (2) and on set (1);
+audit unconditionally (3); the row's identity first (1); the row ignored (2);
+TenantGuard put back on logout (1); IdleService resolving only on success (2);
+logout removed from `NO_RENEWAL_PATHS` (2).
+
+**Browser, local only** (`http://al-nakheel.localhost:4200` against the local
+API), as `yasser.alamri@alnakheel-hospital.test`:
+
+- Sign-in: `refresh_token` at path `/api/v1/auth`, `access_token` at `/`, both
+  host-only, httpOnly, Secure, Strict.
+- **The frozen tab.** IdleService reads `am.session.lastActivity` only when it
+  starts, so writing an older value into a running tab does not fire the rule.
+  A woken frozen tab is "the clock jumped and no timer ran", which Playwright's
+  clock reproduces exactly: install the fake clock, reload, delete
+  `access_token` only, write `am.session.lastActivity` 31 minutes back as asked,
+  then jump the system time 31 minutes without running any timer. Result: ONE
+  request, `POST /api/v1/auth/logout` → 200 (no refresh attempted); landed on
+  `/login?returnUrl=%2Fhome&reason=idle`; no session cookie left. The row's
+  `revokedAt` was set, and the `LOGOUT` audit entry names Yasser (identity from
+  the revoked row — there was no access cookie).
+- **The address again:** `GET /auth/me` → 401, the one renewal
+  `POST /auth/refresh` → 401, and the sign-in page.
+- **A normal manual sign-out**, driven over HTTP through the dev server's proxy
+  with a cookie jar that honours each cookie's Path as a browser does (signing
+  the browser in again would have echoed the seed password a second time):
+  sign-in 200 (setting the new path and clearing the old); `/auth/me` 200; both
+  cookies sent to `/auth/logout` → 200, all three cleared; replaying the
+  signed-out refresh token → 401 "Invalid or expired refresh token"; `/auth/me`
+  → 401. The row was revoked and audited.
+
