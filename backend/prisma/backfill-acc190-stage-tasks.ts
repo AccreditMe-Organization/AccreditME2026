@@ -44,6 +44,13 @@ const SCRIPT_NAME = 'backfill-acc190-stage-tasks';
 const TICKET = 'ACC-190';
 const FIXTURE_SLUGS = new Set([HOSPITAL_FIXTURE.slug, UNIVERSITY_FIXTURE.slug]);
 
+// One tenant's transaction is the re-plan plus about fifty writes, each a round
+// trip to the database. Prisma's default 5-second timeout is not enough from a
+// client far from it: on 10 Oct al-nakheel's ran 5.3 seconds and rolled back
+// (al-manara, one write fewer, fitted). Same shape as the engine's
+// STAGE_CHANGE_TX, with room for the whole tenant.
+const BACKFILL_TX = { maxWait: 10_000, timeout: 120_000 } as const;
+
 // The 26 transitions the seed gave a CREATE_TASK action until ACC-190, as
 // [objectType, fromStageKey, toStageKey]. The seed no longer carries them, so
 // they are listed here; the stage NAMES are read from the seed.
@@ -351,7 +358,7 @@ async function main(): Promise<void> {
             },
           },
         });
-      });
+      }, BACKFILL_TX);
       console.log(`  ${plan.slug}: deleted ${plan.deleteActions.length} action(s), ${plan.deleteActions.reduce((n, a) => n + a.logs.length, 0)} log row(s); set ${plan.setKinds.length} kind(s); 1 audit row.`);
     }
     console.log('\nDone.\n');
