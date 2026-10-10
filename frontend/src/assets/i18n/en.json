@@ -1354,7 +1354,9 @@
       "STORAGE_ALREADY_CONFIRMED": "Where files are stored has already been confirmed.",
       "STORAGE_CHANGE_BY_PLATFORM": "Changing where files are stored is done by AccreditMe. Contact support.",
       "STORAGE_TEST_FAILED": "The storage connection test did not pass.",
-      "FILE_RECORD_GONE": "The record this file came from no longer exists, so it can't be restored."
+      "FILE_RECORD_GONE": "The record this file came from no longer exists, so it can't be restored.",
+      "STORAGE_ACCESS_WITHDRAWN": "Your organization's SharePoint storage can't be reached: access was withdrawn or its client secret is no longer valid. Ask your administrator.",
+      "PREVIEW_NOT_AVAILABLE": "This type of file can't be previewed yet. Download it instead."
     },
     "sizeGb": "{{size}} GB"
   }
