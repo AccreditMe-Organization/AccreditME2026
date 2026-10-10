@@ -676,6 +676,12 @@ Everything in English and Arabic, right to left, and keyboard reachable.
       §13.2; module-designs.md.
 - [ ] After the deploy: backfill dry run (report, then STOP), execute on
       Ahmad's go, then the live proof (§10).
+  - Deployed 10 Oct (`5f775d3`, Railway `cedf7638`); dry run as planned.
+  - First `--execute`: al-manara done (26 actions, 22 kinds, 1 audit row);
+    al-nakheel's transaction passed Prisma's default 5-second timeout
+    (5.3 s) and rolled back whole — confirmed by a fresh dry run. Fixed on
+    `fix/ACC-190-backfill-timeout` (`BACKFILL_TX`, 120 s); al-nakheel is
+    re-run after that deploys.
 
 **Where the build differs from the plan:**
 - Stage tasks get no out-of-office routing: they follow the manual route,
