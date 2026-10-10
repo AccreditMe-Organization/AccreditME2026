@@ -8,6 +8,7 @@ import { RoleService } from '../roles/role.service';
 import { WorkflowTemplateService } from '../workflow/workflow-template.service';
 import { OrgPositionService } from '../org-position/org-position.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { WorkflowRefusalException } from '../workflow/workflow-refusal';
 
 // Valid 64-char hex string → 32 bytes, satisfies constructor guard
 const MOCK_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -55,6 +56,8 @@ describe('TenantService', () => {
     // root unit it creates.
     lookupCategory: { findFirst: jest.Mock };
     lookupValue: { findFirst: jest.Mock };
+    // ACC-190 — updateTaskSla() checks the stage-deadline rule.
+    workflowStageTaskDefinition: { findMany: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
   let lookupService: { seedSystemData: jest.Mock };
@@ -84,6 +87,7 @@ describe('TenantService', () => {
       planModule: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      workflowStageTaskDefinition: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     auditLog     = { log: jest.fn().mockResolvedValue(undefined) };
@@ -664,6 +668,53 @@ describe('TenantService', () => {
       expect(prisma.organization.update).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'org-a' } }),
       );
+    });
+
+    // ACC-190 — the stage-deadline rule's third side: raising a priority's
+    // hours must not make a stage end before a task defined on it is due.
+    describe('the stage-deadline rule', () => {
+      const definition = (priority: string, stageHours: number) => ({
+        priority,
+        stage: { id: `stage-${priority}`, nameEn: 'Terms Review', slaWorkingHours: stageHours, workflowTemplate: { nameEn: 'Committee lifecycle' } },
+      });
+
+      it('refuses with TASK_SLA_EXCEEDS_STAGE_DEADLINES, naming the stage, and writes nothing', async () => {
+        prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, settings: null });
+        // A HIGH task on a 16-hour stage; CUSTOM_SLA asks for HIGH > 16.
+        prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', CUSTOM_SLA.HIGH.dueAfterHours - 1)]);
+
+        const error = await service.updateTaskSla('org-a', CUSTOM_SLA, 'user-1').catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(WorkflowRefusalException);
+        const body = (error as WorkflowRefusalException).getResponse() as { code: string; stages: { stageName: string; longestTaskHours: number }[] };
+        expect(body.code).toBe('TASK_SLA_EXCEEDS_STAGE_DEADLINES');
+        expect(body.stages).toEqual([
+          expect.objectContaining({ stageName: 'Terms Review', templateName: 'Committee lifecycle', longestTaskHours: CUSTOM_SLA.HIGH.dueAfterHours }),
+        ]);
+        expect(prisma.organization.update).not.toHaveBeenCalled();
+      });
+
+      it('accepts hours that still fit every stage', async () => {
+        prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, settings: null });
+        prisma.organization.update.mockResolvedValue({ ...ORG_A });
+        prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', CUSTOM_SLA.HIGH.dueAfterHours)]);
+
+        await service.updateTaskSla('org-a', CUSTOM_SLA, 'user-1');
+
+        expect(prisma.organization.update).toHaveBeenCalled();
+      });
+
+      itEnforcesTenantIsolation('stage deadlines checked by updateTaskSla', async () => {
+        prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, settings: null });
+        prisma.organization.update.mockResolvedValue({ ...ORG_A });
+
+        await service.updateTaskSla('org-a', CUSTOM_SLA, 'user-1');
+
+        // Only this tenant's definitions, and only stages that HAVE a deadline.
+        expect(prisma.workflowStageTaskDefinition.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { organizationId: 'org-a', stage: { slaWorkingHours: { not: null } } } }),
+        );
+      });
     });
   });
   // ── ACC-79: entitlements ─────────────────────────────────────────────────

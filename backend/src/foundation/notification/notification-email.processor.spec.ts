@@ -2,6 +2,7 @@ import { Job } from 'bullmq';
 import { NotificationEmailProcessor } from './notification-email.processor';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { PLATFORM_SENDER_MISSING } from '../../common/config/email-sender.config';
 
 // The processor constructs its Resend client in a field initializer, so the
 // module is mocked rather than the instance. `mockSend` is hoisted with it.
@@ -47,10 +48,12 @@ describe('NotificationEmailProcessor (ACC-158)', () => {
   const savedEnv = {
     APP_BASE_DOMAIN: process.env['APP_BASE_DOMAIN'],
     APP_LINK_ORIGIN: process.env['APP_LINK_ORIGIN'],
+    RESEND_FROM_EMAIL: process.env['RESEND_FROM_EMAIL'],
   };
   beforeAll(() => {
     process.env['APP_BASE_DOMAIN'] = 'accreditme.app';
     delete process.env['APP_LINK_ORIGIN'];
+    process.env['RESEND_FROM_EMAIL'] = 'noreply@accreditme.app';
   });
   afterAll(() => {
     for (const [key, value] of Object.entries(savedEnv)) {
@@ -178,6 +181,23 @@ describe('NotificationEmailProcessor (ACC-158)', () => {
     expect(prisma.notification.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'n-1', organizationId: ORG_B } }),
     );
+  });
+
+  // ACC-130 — the sender is RESEND_FROM_EMAIL and nothing else.
+  it('sends from RESEND_FROM_EMAIL', async () => {
+    await run('n-1', ORG_A);
+    expect(sentEmail().from).toBe('noreply@accreditme.app');
+  });
+
+  it('refuses to send without RESEND_FROM_EMAIL, rather than guess a sender, and does not stamp sentAt', async () => {
+    delete process.env['RESEND_FROM_EMAIL'];
+    try {
+      await expect(run('n-1', ORG_A)).rejects.toThrow(PLATFORM_SENDER_MISSING);
+      expect(mockSend).not.toHaveBeenCalled();
+      expect(prisma.notification.updateMany).not.toHaveBeenCalled();
+    } finally {
+      process.env['RESEND_FROM_EMAIL'] = 'noreply@accreditme.app';
+    }
   });
 
   it('rethrows a Resend API error so BullMQ retries, and does not stamp sentAt', async () => {

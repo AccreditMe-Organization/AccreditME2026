@@ -5,6 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { WorkflowRefusalException } from './workflow-refusal';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -93,6 +95,8 @@ const mockPrisma = {
     update: jest.fn(),
     updateMany: jest.fn(),
   },
+  // ACC-190 — updateStage() refuses to make a stage that creates tasks final.
+  workflowStageTaskDefinition: { count: jest.fn() },
   workflowStage: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
@@ -148,6 +152,12 @@ const mockPrisma = {
 };
 
 const mockAuditLog = { log: jest.fn() };
+// ACC-190 — what each stage creates on entry (the template read's summary),
+// and the stage-deadline rule from the stage's side.
+const mockStageTasks = {
+  summaryForStages: jest.fn().mockResolvedValue(new Map()),
+  assertStageDeadlineFits: jest.fn().mockResolvedValue(undefined),
+};
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -175,6 +185,7 @@ describe('WorkflowTemplateService', () => {
         WorkflowTemplateService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAuditLog },
+        { provide: StageTaskDefinitionService, useValue: mockStageTasks },
       ],
     }).compile();
 
@@ -301,6 +312,20 @@ describe('WorkflowTemplateService', () => {
       (sum, w) => sum + w.transitions.reduce((s, t) => s + t.actions.length, 0),
       0,
     );
+
+    // ACC-190 — every transition is written with its kind, and no CREATE_TASK.
+    it('writes each seeded transition with its kind, and creates no CREATE_TASK action', async () => {
+      installFakeStore();
+
+      await service.seedDefaultWorkflows(ORG_A);
+
+      const created = mockPrisma.workflowTransition.create.mock.calls.map(([arg]: [{ data: { kind: string } }]) => arg.data.kind);
+      expect(created.filter((k: string) => k === 'RETURN')).toHaveLength(14);
+      expect(created.filter((k: string) => k === 'EXIT')).toHaveLength(8);
+      expect(created.every((k: string) => ['ADVANCE', 'RETURN', 'EXIT'].includes(k))).toBe(true);
+      const actionTypes = mockPrisma.workflowTransitionAction.create.mock.calls.map(([arg]: [{ data: { actionType: string } }]) => arg.data.actionType);
+      expect(actionTypes).not.toContain('CREATE_TASK');
+    });
 
     it('creates all 8 templates with correct stages, transitions, and actions for a fresh org', async () => {
       installFakeStore();
@@ -1370,7 +1395,7 @@ describe('WorkflowTemplateService', () => {
 
       await service.addTransitionAction(
         'transition-1',
-        { actionType: 'CREATE_TASK', order: 10 } as never,
+        { actionType: 'SEND_NOTIFICATION', order: 10 } as never,
         ORG_A,
         ACTOR,
       );
@@ -1386,7 +1411,7 @@ describe('WorkflowTemplateService', () => {
       await expect(
         service.addTransitionAction(
           'transition-1',
-          { actionType: 'CREATE_TASK', order: 10 } as never,
+          { actionType: 'SEND_NOTIFICATION', order: 10 } as never,
           ORG_B,
           ACTOR,
         ),
@@ -1399,7 +1424,7 @@ describe('WorkflowTemplateService', () => {
 
       await service.addTransitionAction(
         'transition-1',
-        { actionType: 'CREATE_TASK', order: 10 } as never,
+        { actionType: 'SEND_NOTIFICATION', order: 10 } as never,
         ORG_A,
         ACTOR,
       );
@@ -1541,6 +1566,120 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTemplate.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
       );
+    });
+  });
+
+  // ── ACC-190 — stage task definitions, the transition kind, retirements ──────
+  describe('ACC-190', () => {
+    it('refuses a CREATE_TASK action with ACTION_TYPE_RETIRED, on add and on change, writing nothing', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowTransitionAction.findFirst.mockResolvedValue(BASE_ACTION);
+
+      for (const call of [
+        () => service.addTransitionAction('transition-1', { actionType: 'CREATE_TASK', order: 10 } as never, ORG_A, ACTOR),
+        () => service.updateTransitionAction('action-1', { actionType: 'CREATE_TASK' } as never, ORG_A, ACTOR),
+      ]) {
+        const error = await call().catch((e: unknown) => e);
+        expect((error as WorkflowRefusalException).code).toBe('ACTION_TYPE_RETIRED');
+      }
+      expect(mockPrisma.workflowTransitionAction.create).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowTransitionAction.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses the retired allPreviousStageTasksComplete validator with VALIDATOR_RETIRED — even set to false', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      const error = await service
+        .updateTransition('transition-1', { validatorConfig: { allPreviousStageTasksComplete: false } } as never, ORG_A, ACTOR)
+        .catch((e: unknown) => e);
+      expect((error as WorkflowRefusalException).code).toBe('VALIDATOR_RETIRED');
+      expect(mockPrisma.workflowTransition.update).not.toHaveBeenCalled();
+    });
+
+    it('saves a transition kind, and audits it before and after', async () => {
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue({ ...BASE_TRANSITION, kind: 'ADVANCE' });
+      mockPrisma.workflowTransition.update.mockResolvedValue({ ...BASE_TRANSITION, kind: 'RETURN' });
+
+      const result = await service.updateTransition('transition-1', { kind: 'RETURN' } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.workflowTransition.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ kind: 'RETURN' }) }),
+      );
+      expect(result.transition.kind).toBe('RETURN');
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({ before: expect.objectContaining({ kind: 'ADVANCE' }), after: expect.objectContaining({ kind: 'RETURN' }) }),
+      );
+    });
+
+    it("checks the stage-deadline rule when a stage's SLA changes — and only then", async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockPrisma.workflowStage.update.mockResolvedValue(BASE_STAGE);
+
+      await service.updateStage('stage-1', { slaWorkingHours: 8 } as never, ORG_A, ACTOR);
+      expect(mockStageTasks.assertStageDeadlineFits).toHaveBeenCalledWith('stage-1', 8, ORG_A);
+
+      mockStageTasks.assertStageDeadlineFits.mockClear();
+      await service.updateStage('stage-1', { nameEn: 'Renamed' } as never, ORG_A, ACTOR);
+      expect(mockStageTasks.assertStageDeadlineFits).not.toHaveBeenCalled();
+    });
+
+    it('lets the rule refuse a stage SLA shorter than its tasks, before anything is written', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockStageTasks.assertStageDeadlineFits.mockRejectedValueOnce(new WorkflowRefusalException('STAGE_DEADLINE_BEFORE_TASKS'));
+
+      await expect(service.updateStage('stage-1', { slaWorkingHours: 4 } as never, ORG_A, ACTOR)).rejects.toThrow(WorkflowRefusalException);
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to make a stage that creates tasks final (STAGE_TASK_ON_FINAL_STAGE)', async () => {
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(BASE_STAGE);
+      mockPrisma.workflowStageTaskDefinition.count.mockResolvedValue(2);
+
+      const error = await service.updateStage('stage-1', { isFinal: true } as never, ORG_A, ACTOR).catch((e: unknown) => e);
+
+      expect((error as WorkflowRefusalException).code).toBe('STAGE_TASK_ON_FINAL_STAGE');
+      expect(mockPrisma.workflowStageTaskDefinition.count).toHaveBeenCalledWith({ where: { stageId: 'stage-1', organizationId: ORG_A } });
+      expect(mockPrisma.workflowStage.update).not.toHaveBeenCalled();
+    });
+
+    it("adds each stage's task summary to the template read", async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([{ ...BASE_STAGE, transitionsFrom: [] }, { ...BASE_STAGE, id: 'stage-2', transitionsFrom: [] }]);
+      mockStageTasks.summaryForStages.mockResolvedValueOnce(new Map([['stage-1', { taskDefinitionCount: 2, longestTaskHours: 16 }]]));
+
+      const template = await service.getTemplateById('template-1', ORG_A);
+
+      expect(mockStageTasks.summaryForStages).toHaveBeenCalledWith(['stage-1', 'stage-2'], ORG_A);
+      expect(template.stages?.[0]).toEqual(expect.objectContaining({ taskDefinitionCount: 2, longestTaskHours: 16 }));
+      expect(template.stages?.[1]).toEqual(expect.objectContaining({ taskDefinitionCount: 0, longestTaskHours: null }));
+    });
+  });
+
+  // The seed ships no CREATE_TASK, and every seeded transition that is not an
+  // advance says so — stage order cannot tell them apart (ACC-190).
+  describe('ACC-190 seed', () => {
+    const transitions = SYSTEM_WORKFLOW_SEED.flatMap((w) => w.transitions.map((t) => ({ ...t, objectType: w.objectType })));
+
+    it('has no CREATE_TASK action anywhere', () => {
+      expect(transitions.flatMap((t) => t.actions.map((a) => a.actionType as string))).not.toContain('CREATE_TASK');
+    });
+
+    it('marks 14 returns and 8 exits, and leaves every other transition an ADVANCE', () => {
+      const kinds = transitions.map((t) => t.kind ?? 'ADVANCE');
+      expect(kinds.filter((k) => k === 'RETURN')).toHaveLength(14);
+      expect(kinds.filter((k) => k === 'EXIT')).toHaveLength(8);
+      expect(kinds.filter((k) => k === 'ADVANCE')).toHaveLength(transitions.length - 22);
+    });
+
+    it.each([
+      ['COMMITTEE', 'terms_review', 'formation', 'RETURN'],
+      ['DOCUMENT', 'publish_approval', 'drafting', 'RETURN'],
+      ['DOCUMENT_REQUEST', 'unit_manager_review', 'rejected', 'EXIT'],
+      ['INCIDENT', 'reported', 'cancelled', 'EXIT'],
+      // Order cannot be trusted: Reactivate goes to a LOWER order and is an advance.
+      ['COMMITTEE', 'suspended', 'active', 'ADVANCE'],
+    ])('%s %s → %s is %s', (objectType, from, to, kind) => {
+      const t = transitions.find((x) => x.objectType === objectType && x.fromStageKey === from && x.toStageKey === to);
+      expect(t?.kind ?? 'ADVANCE').toBe(kind);
     });
   });
 });

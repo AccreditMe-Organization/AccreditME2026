@@ -13,6 +13,8 @@ import { TaskService } from '../task/task.service';
 import { RoleService } from '../roles/role.service';
 import { OrganizationService } from '../organization/organization.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { WorkflowRefusalException } from './workflow-refusal';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -135,6 +137,7 @@ const BASE_TRANSITION = {
   triggerRoleId: null as string | null,
   validatorConfig: null as unknown,
   isApprovalPath: false,
+  kind: 'ADVANCE' as 'ADVANCE' | 'RETURN' | 'EXIT',
 };
 
 const BASE_APPROVAL = {
@@ -199,21 +202,32 @@ const mockPrisma = {
   // ACC-76 — findMany added for DelegationLabelService; getStageHistory()
   // also diffs visits against the template via workflowStage.findMany.
   orgUnit: { findFirst: jest.fn(), findMany: jest.fn() },
-  // ACC-167 — resolveStagePool() reads whether a POSITION_FIXED stage's
-  // position is single-holder.
   orgPosition: { findFirst: jest.fn() },
+  // ACC-190 — a stage change is one transaction under the instance's row lock.
+  $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
 };
+// The transaction runs its callback against this same mock, so every existing
+// expectation on mockPrisma still sees the writes.
+mockPrisma.$transaction.mockImplementation((fn: (tx: typeof mockPrisma) => unknown) => fn(mockPrisma));
 
 const mockAuditLog = { log: jest.fn() };
 const mockWorkingCalendar = { calculateDeadline: jest.fn() };
 const mockNotificationService = { create: jest.fn() };
-// ACC-68 — performTransition() cancels the stage it is leaving; cancelInstance()
-// cancels the whole instance.
+// ACC-68 — performTransition() cancels the entry it is leaving; cancelInstance()
+// cancels the whole instance. ACC-190 — the entry's cancel runs inside the
+// stage-change transaction and is audited after it; the new entry's tasks are
+// inserted inside it and announced after.
 const mockTaskService = {
-  create: jest.fn(),
-  cancelForStage: jest.fn(),
+  cancelStageExitTasksInTx: jest.fn(),
+  auditStageExitCancellation: jest.fn(),
+  insertPrepared: jest.fn(),
+  announceCreated: jest.fn(),
   cancelForInstance: jest.fn(),
 };
+// ACC-190 — what entering a stage creates. Defaults to nothing, so every test
+// that does not care about stage tasks is unaffected.
+const mockStageTaskDefinitions = { prepareEntryTasks: jest.fn() };
 const mockRoleService = { getUserPermissions: jest.fn() };
 const mockOrganizationService = { resolveActingHeadForOrgUnit: jest.fn() };
 const mockQueue = { add: jest.fn() };
@@ -269,7 +283,11 @@ describe('WorkflowService', () => {
         where.id.in.map((id) => ({ id, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null })),
       ),
     );
-    mockTaskService.create.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
+    mockTaskService.cancelStageExitTasksInTx.mockResolvedValue({ open: [], cancelledRequests: [] });
+    mockTaskService.insertPrepared.mockImplementation((_tx: unknown, prepared: { data: Record<string, unknown> }) =>
+      Promise.resolve({ id: `task-${String(prepared.data['stageTaskDefinitionId'])}`, ...prepared.data }),
+    );
+    mockStageTaskDefinitions.prepareEntryTasks.mockResolvedValue({ tasks: [], warnings: [] });
     // ACC-40 Section 2.6.3 — defaults for the two new delegation-stamp
     // resolvers: no real holder found (user.count: 0) and no OrgUnit found
     // (orgUnit.findFirst: null) — resolveActingHeadOrgUnitIdForUser() falls
@@ -306,6 +324,7 @@ describe('WorkflowService', () => {
         { provide: RoleService, useValue: mockRoleService },
         { provide: OrganizationService, useValue: mockOrganizationService },
         { provide: getQueueToken('workflow-actions'), useValue: mockQueue },
+        { provide: StageTaskDefinitionService, useValue: mockStageTaskDefinitions },
       ],
     }).compile();
 
@@ -784,7 +803,7 @@ describe('WorkflowService', () => {
       await service.cancelInstance('instance-1', ORG_A, ACTOR, 'abandoned');
 
       expect(mockTaskService.cancelForInstance).toHaveBeenCalledWith('instance-1', ORG_A, ACTOR);
-      expect(mockTaskService.cancelForStage).not.toHaveBeenCalled();
+      expect(mockTaskService.cancelStageExitTasksInTx).not.toHaveBeenCalled();
     });
 
     it('throws ConflictException if already CANCELLED', async () => {
@@ -877,14 +896,14 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
       mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'LOG_AUDIT', order: 10, isEnabled: true },
       ]);
       mockPrisma.userRole.findMany.mockResolvedValue([]);
 
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
 
       expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ actionType: 'CREATE_TASK', status: 'SUCCESS' }) }),
+        expect.objectContaining({ data: expect.objectContaining({ actionType: 'LOG_AUDIT', status: 'SUCCESS' }) }),
       );
     });
 
@@ -892,7 +911,9 @@ describe('WorkflowService', () => {
     // live verification. A committee took the ungated "Revise Terms" transition
     // out of Terms Review and its open task stayed PENDING, gating nothing;
     // re-entering the stage then stacked a second task on the first.
-    it('cancels the open tasks of the stage being LEFT, using the from-stage id', async () => {
+    // ACC-190 — the cancel is keyed by the ENTRY being left, inside the
+    // stage-change transaction.
+    it('cancels the open tasks of the ENTRY being left, inside the transaction', async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
       mockStagesById({
@@ -906,23 +927,40 @@ describe('WorkflowService', () => {
 
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
 
-      // The FROM stage — Task.sourceStageId holds the stage a task was created
-      // FOR, so the tasks belonging to the stage being left carry the
-      // from-stage id, never transition.toStageId.
-      expect(mockTaskService.cancelForStage).toHaveBeenCalledWith(
-        'instance-1',
-        BASE_INSTANCE_STAGE.stageId,
+      // The FROM entry — its own tasks by its id, and legacy tasks by the
+      // from-stage id (Task.sourceStageId holds the stage a task was created
+      // FOR), never transition.toStageId.
+      const scope = {
+        workflowInstanceId: 'instance-1',
+        stageId: BASE_INSTANCE_STAGE.stageId,
+        workflowInstanceStageId: BASE_INSTANCE_STAGE.id,
+      };
+      expect(mockTaskService.cancelStageExitTasksInTx).toHaveBeenCalledWith(mockPrisma, scope, ORG_A);
+      expect(mockTaskService.auditStageExitCancellation).toHaveBeenCalledWith(
+        { open: [], cancelledRequests: [] },
+        scope,
         ORG_A,
         ACTOR,
-        'STAGE_EXIT',
       );
     });
 
-    // Regression test for the bug fixed in Step 8 (ACC-11): executeCreateTask()
-    // used to only ever pass assigneeIds[0] to the task-creation call, silently
-    // dropping every other resolved assignee for multi-approver (ROLE-resolved
-    // to multiple holders, PARALLEL/COMMITTEE) stages.
-    it('passes the FULL resolved assigneeIds array to TaskService.create(), not just the first', async () => {
+    // ── Assignee resolution, through SEND_NOTIFICATION ───────────────────────
+    // ACC-190 — these pinned resolveAssigneeRaw()'s strategies through
+    // CREATE_TASK, which is retired. The strategies still decide who a
+    // SEND_NOTIFICATION reaches (and who may approve), so they are pinned here
+    // through the action that still uses them.
+    const notifyAction = [
+      { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
+    ];
+    const notifiedUserIds = () =>
+      (mockNotificationService.create.mock.calls as [{ userId: string; titleEn: string }, string][])
+        .filter(([n]) => n.titleEn === BASE_TRANSITION.labelEn)
+        .map(([n]) => n.userId);
+
+    // Regression test for the bug fixed in Step 8 (ACC-11): only the first
+    // resolved assignee was ever used, silently dropping the rest of a
+    // multi-approver (ROLE-resolved to several holders) stage.
+    it('reaches the FULL resolved assignee list, not just the first', async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
       mockStagesById({
@@ -931,11 +969,7 @@ describe('WorkflowService', () => {
       });
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-      ]);
-      // PARALLEL_STAGE resolves via ROLE with approvalMode PARALLEL — every
-      // holder is returned, not just the first (that's exactly the bug).
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue(notifyAction);
       mockPrisma.userRole.findMany.mockResolvedValue([
         { userId: 'holder-1' },
         { userId: 'holder-2' },
@@ -944,267 +978,12 @@ describe('WorkflowService', () => {
 
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
 
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['holder-1', 'holder-2', 'holder-3'] }),
-        ORG_A,
-        ACTOR,
-        undefined,
-        'engine',
-      );
+      expect(notifiedUserIds()).toEqual(['holder-1', 'holder-2', 'holder-3']);
     });
 
-    // ACC-46 Section 2.7.f — workflow-created tasks now honor
-    // stage.slaWorkingHours for dueDate, reusing the exact same private
-    // computeSlaDueAt() already feeding WorkflowInstanceStage.slaDueAt
-    // (see the 'startInstance' describe block's own equivalent test above)
-    // rather than duplicating WorkingCalendarService.calculateDeadline().
-    describe('CREATE_TASK dueDate — honors stage.slaWorkingHours (ACC-46 Section 2.7.f)', () => {
-      it('passes a computed dueDate to TaskService.create() when the target stage has slaWorkingHours configured', async () => {
-        const stageWithSla = { ...TARGET_STAGE, slaWorkingHours: 16 };
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': stageWithSla });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([]);
-        const deadline = DateTime.fromJSDate(new Date('2026-02-01T00:00:00Z'));
-        mockWorkingCalendar.calculateDeadline.mockResolvedValue(deadline);
-
-        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockWorkingCalendar.calculateDeadline).toHaveBeenCalledWith(expect.any(DateTime), 16, ORG_A);
-        expect(mockTaskService.create).toHaveBeenCalledWith(
-          expect.objectContaining({ dueDate: deadline.toJSDate().toISOString() }),
-          ORG_A,
-          ACTOR,
-          undefined,
-          'engine',
-        );
-      });
-
-      // Regression guard for the plan's own stated requirement: "zero
-      // behavior change for any stage that hasn't configured an SLA" —
-      // TARGET_STAGE's own slaWorkingHours is null by default (see its
-      // fixture above), so every pre-existing CREATE_TASK test already
-      // exercises this path implicitly; this test asserts it directly.
-      it('leaves dueDate undefined when the target stage has no slaWorkingHours configured', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([]);
-
-        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockWorkingCalendar.calculateDeadline).not.toHaveBeenCalled();
-        expect(mockTaskService.create).toHaveBeenCalledWith(
-          expect.objectContaining({ dueDate: undefined }),
-          ORG_A,
-          ACTOR,
-          undefined,
-          'engine',
-        );
-      });
-    });
-
-    // ACC-34 — executeCreateTask()'s title previously read
-    // `${transition.labelEn} — ${instance.objectType}` (e.g. "Submit for
-    // Approval — COMMITTEE"), with no name resolution at all.
-    describe('CREATE_TASK title — committee-name resolution (ACC-34)', () => {
-      it('resolves the real committee name into the task title for a COMMITTEE-type instance', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(COMMITTEE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(
-          makeInstance({ objectType: 'COMMITTEE', objectId: COMMITTEE_INSTANCE.objectId, currentStageId: 'stage-target' }),
-        );
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([]);
-        mockPrisma.committee.findFirst.mockResolvedValue({ nameEn: 'Quality Committee' });
-
-        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith({
-          where: { id: COMMITTEE_INSTANCE.objectId, organizationId: ORG_A },
-          select: { nameEn: true },
-        });
-        expect(mockTaskService.create).toHaveBeenCalledWith(
-          expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — Quality Committee` }),
-          ORG_A,
-          ACTOR,
-          undefined,
-          'engine',
-        );
-      });
-
-      it('falls back to the generic objectType format for a non-COMMITTEE instance (unchanged behavior)', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([]);
-
-        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
-        expect(mockTaskService.create).toHaveBeenCalledWith(
-          expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — ${BASE_INSTANCE.objectType}` }),
-          ORG_A,
-          ACTOR,
-          undefined,
-          'engine',
-        );
-      });
-
-      // MANDATORY — tenant isolation for resolveObjectSubjectLabel()'s new
-      // committee.findFirst() query.
-      it('should NOT return records belonging to a different tenant', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(COMMITTEE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(
-          makeInstance({ objectType: 'COMMITTEE', objectId: COMMITTEE_INSTANCE.objectId, currentStageId: 'stage-target' }),
-        );
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([]);
-        // Mock branches on organizationId exactly like a real Postgres query
-        // would — the committee genuinely only resolves for ORG_A.
-        mockPrisma.committee.findFirst.mockImplementation(
-          ({ where }: { where: { organizationId: string } }) =>
-            Promise.resolve(where.organizationId === ORG_A ? { nameEn: 'Quality Committee' } : null),
-        );
-
-        await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockTaskService.create).toHaveBeenCalledWith(
-          expect.objectContaining({ title: `${BASE_TRANSITION.labelEn} — Quality Committee` }),
-          ORG_A,
-          ACTOR,
-          undefined,
-          'engine',
-        );
-      });
-    });
-
-    // ACC-34 item 3 — fireTransitionActions() now returns unassignedTaskWarnings
-    // (array-shaped, threaded through to IWorkflowInstance) and sets
-    // WorkflowActionLogStatus.SUCCESS_UNASSIGNED instead of SUCCESS when a
-    // CREATE_TASK action resolves zero eligible assignees.
-    describe('unassignedTaskWarnings / SUCCESS_UNASSIGNED (ACC-34 item 3)', () => {
-      const ROLE_TARGET_STAGE = { ...TARGET_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-x' };
-
-      it('logs SUCCESS_UNASSIGNED and returns one warning when CREATE_TASK resolves zero eligible assignees', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': ROLE_TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([]); // nobody holds role-x
-
-        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            data: expect.objectContaining({ actionType: 'CREATE_TASK', status: 'SUCCESS_UNASSIGNED' }),
-          }),
-        );
-        expect(result.unassignedTaskWarnings).toHaveLength(1);
-        expect(result.unassignedTaskWarnings[0]).toContain('no eligible assignee');
-      });
-
-      it('logs SUCCESS and returns no warnings when CREATE_TASK resolves eligible assignees', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': ROLE_TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
-
-        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            data: expect.objectContaining({ actionType: 'CREATE_TASK', status: 'SUCCESS' }),
-          }),
-        );
-        expect(result.unassignedTaskWarnings).toEqual([]);
-      });
-
-      // Proves the array genuinely collects one entry per action rather than
-      // one overwriting another — the concrete risk flagged during planning
-      // (WorkflowTransitionAction rows are tenant-editable; nothing prevents
-      // two CREATE_TASK actions on one transition, even though no seeded
-      // transition does this today).
-      it('collects a distinct warning entry for each of multiple CREATE_TASK actions on one transition', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': ROLE_TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-          { id: 'action-2', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 20, isEnabled: true },
-        ]);
-        mockPrisma.userRole.findMany.mockResolvedValue([]); // nobody holds role-x — both actions unassigned
-
-        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(result.unassignedTaskWarnings).toHaveLength(2);
-        expect(mockTaskService.create).toHaveBeenCalledTimes(2);
-        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledTimes(2);
-      });
-
-      it('leaves every other action type logging SUCCESS, unaffected by the new CREATE_TASK branch', async () => {
-        mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-        mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-        mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
-        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-        mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-        mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-          { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'SEND_NOTIFICATION', order: 10, isEnabled: true },
-        ]);
-        mockPrisma.role.findFirst.mockResolvedValue(null);
-
-        const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-        expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            data: expect.objectContaining({ actionType: 'SEND_NOTIFICATION', status: 'SUCCESS' }),
-          }),
-        );
-        expect(result.unassignedTaskWarnings).toEqual([]);
-      });
-    });
-
-    // ACC-22, closing the ACC-17 deferred gap: resolveAssigneeRaw()'s
-    // COMMITTEE case previously read `prisma.committeeMember.findMany({
-    // where: { committeeId, leftAt: null } })` with no organizationId
-    // filter -- first-ever test coverage of this branch, proving both the
-    // happy path and the org-scoping fix (isActive + organizationId).
-    it("resolves the CREATE_TASK assignees to a COMMITTEE stage's active, org-scoped members", async () => {
+    // ACC-22, closing the ACC-17 deferred gap: the COMMITTEE case is org-scoped
+    // and reads active members only.
+    it("resolves a COMMITTEE stage to its active, org-scoped members", async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
       mockStagesById({
@@ -1213,9 +992,7 @@ describe('WorkflowService', () => {
       });
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-      ]);
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue(notifyAction);
       mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'member-1' }, { userId: 'member-2' }]);
 
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
@@ -1223,20 +1000,12 @@ describe('WorkflowService', () => {
       expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
         where: { committeeId: 'committee-a', organizationId: ORG_A, isActive: true },
       });
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['member-1', 'member-2'] }),
-        ORG_A,
-        ACTOR,
-        undefined,
-        'engine',
-      );
+      expect(notifiedUserIds()).toEqual(['member-1', 'member-2']);
     });
 
-    // ACC-28 — assigneeCommitteeRoleValueId narrows the COMMITTEE case to a
-    // specific committee_member_role. Unset (the test above) preserves the
-    // pre-ACC-28 "every active member" behavior; this proves the filter is
-    // actually applied to the Prisma query when set.
-    it("narrows a COMMITTEE stage's CREATE_TASK assignees to a specific committee_member_role when assigneeCommitteeRoleValueId is set", async () => {
+    // ACC-28 — assigneeCommitteeRoleValueId narrows the COMMITTEE case to one
+    // committee_member_role.
+    it("narrows a COMMITTEE stage to a specific committee_member_role when assigneeCommitteeRoleValueId is set", async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
       mockStagesById({
@@ -1250,39 +1019,15 @@ describe('WorkflowService', () => {
       });
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-      ]);
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue(notifyAction);
       mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'chairman-user' }]);
 
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
 
-      // ACC-167 (decision 10) — a role-narrowed COMMITTEE stage creates a POOL
-      // task on that role: nobody is assigned until a member picks it up. A
-      // committee role has no single-holder shortcut, so even one member pools.
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: [] }),
-        ORG_A,
-        ACTOR,
-        {
-          target: { kind: 'COMMITTEE_ROLE', committeeId: 'committee-a', roleValueId: 'lookup-chairman-id' },
-          pooled: true,
-          directUserIds: [],
-        },
-        'engine',
-      );
-      // The pool is only COUNTED, for the action log — with the role filter,
-      // org-scoped, and active users only.
       expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith({
-        where: {
-          organizationId: ORG_A,
-          committeeId: 'committee-a',
-          roleValueId: 'lookup-chairman-id',
-          isActive: true,
-          user: { status: 'ACTIVE' },
-        },
-        select: { userId: true },
+        where: { committeeId: 'committee-a', organizationId: ORG_A, isActive: true, roleValueId: 'lookup-chairman-id' },
       });
+      expect(notifiedUserIds()).toEqual(['chairman-user']);
     });
 
     // ACC-54 — POSITION_FIXED: whoever holds a specific position in a
@@ -1297,16 +1042,12 @@ describe('WorkflowService', () => {
 
     // resolveAssignee() calls prisma.user.findMany TWICE for this strategy:
     // once for the holder lookup, then again inside applyOutOfOfficeRouting()
-    // with `id: { in: [...] }` over whatever the first call resolved. A
-    // blanket mockResolvedValue would answer both identically and silently
-    // re-expand a pool SINGLE mode had just narrowed — so this honors the id
-    // filter, exactly as the OOO-aware tests elsewhere in this file do.
+    // with `id: { in: [...] }` over whatever the first call resolved — so this
+    // honors the id filter (see the mocking rule at the top of the file).
     const mockPositionHolders = (holders: { id: string }[]) => {
       mockPrisma.user.findMany.mockImplementation(
         ({ where }: { where: { id?: { in: string[] }; organizationId: string } }) =>
-          Promise.resolve(
-            where.id?.in ? holders.filter((h) => where.id!.in.includes(h.id)) : holders,
-          ),
+          Promise.resolve(where.id?.in ? holders.filter((h) => where.id!.in.includes(h.id)) : holders),
       );
     };
 
@@ -1316,135 +1057,49 @@ describe('WorkflowService', () => {
       mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': stage });
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-      ]);
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue(notifyAction);
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
     };
 
-    // ACC-167 — a SINGLE-HOLDER position still goes straight to its holder,
-    // and the task remembers the pool (so a departure can return it there).
-    it("assigns a single-holder POSITION_FIXED stage's task straight to the ACTIVE holder in that unit", async () => {
-      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: true });
+    it('resolves a POSITION_FIXED stage to the ACTIVE holder in that unit', async () => {
       mockPositionHolders([{ id: 'holder-1' }]);
 
       await runPositionFixedTransition(positionFixedStage());
 
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith({
-        where: {
-          organizationId: ORG_A,
-          positionId: 'position-a',
-          primaryOrgUnitId: 'unit-a',
-          status: 'ACTIVE',
-        },
+        where: { organizationId: ORG_A, positionId: 'position-a', primaryOrgUnitId: 'unit-a', status: 'ACTIVE' },
         select: { id: true },
       });
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
-        ORG_A,
-        ACTOR,
-        {
-          target: { kind: 'POSITION', orgUnitId: 'unit-a', positionId: 'position-a' },
-          pooled: false,
-          directUserIds: ['holder-1'],
-        },
-        'engine',
-      );
+      expect(notifiedUserIds()).toEqual(['holder-1']);
     });
 
-    // The property that lets POSITION_FIXED inherit ACC-28's unassigned-stage
-    // detection and ACC-51/52's task recovery for free: an unresolvable pool
-    // must come back EMPTY, never throw. Pinned explicitly rather than
-    // assumed — a throw here would abort the transition and, via the sweep,
-    // take down every other step in that cycle.
-    it('returns an empty pool rather than throwing when no one holds a single-holder position in that unit', async () => {
-      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: true });
+    // An unresolvable pool must come back EMPTY, never throw: a throw here
+    // would abort the transition and, via the sweep, every other step in it.
+    it('resolves to nobody, rather than throwing, when no one holds the position in that unit', async () => {
       mockPrisma.user.findMany.mockResolvedValue([]);
-
       await expect(runPositionFixedTransition(positionFixedStage())).resolves.not.toThrow();
-
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: [] }),
-        ORG_A,
-        ACTOR,
-        expect.objectContaining({ pooled: false, directUserIds: [] }),
-        'engine',
-      );
+      expect(notifiedUserIds()).toEqual([]);
     });
 
     it.each([
       ['position', { assigneePositionId: null }],
       ['org unit', { assigneeOrgUnitId: null }],
       ['both fields', { assigneePositionId: null, assigneeOrgUnitId: null }],
-    ])(
-      'returns an empty pool rather than throwing when the stage is missing its %s',
-      async (_label, overrides) => {
-        await expect(runPositionFixedTransition(positionFixedStage(overrides))).resolves.not.toThrow();
-
-        // Short-circuits before querying at all — no point asking the
-        // database who holds an unspecified position.
-        expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
-        expect(mockTaskService.create).toHaveBeenCalledWith(
-          expect.objectContaining({ assigneeUserIds: [] }),
-          ORG_A,
-          ACTOR,
-          undefined,
-          'engine',
-        );
-      },
-    );
-
-    // ACC-167 (decision 10) — a multi-holder position makes a POOL task, under
-    // every approval mode. Before, SINGLE mode handed the task to holderIds[0]
-    // — whichever holder the database returned first — and the other modes
-    // gave every holder a row, the first to complete closing it for all.
-    it.each(['SINGLE', 'PARALLEL'])(
-      'creates a pool task for a multi-holder POSITION_FIXED stage under %s approval mode — nobody assigned',
-      async (approvalMode) => {
-        mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: false });
-        mockPositionHolders([{ id: 'holder-1' }, { id: 'holder-2' }]);
-
-        await runPositionFixedTransition(positionFixedStage({ approvalMode }));
-
-        expect(mockTaskService.create).toHaveBeenCalledWith(
-          expect.objectContaining({ assigneeUserIds: [] }),
-          ORG_A,
-          ACTOR,
-          {
-            target: { kind: 'POSITION', orgUnitId: 'unit-a', positionId: 'position-a' },
-            pooled: true,
-            directUserIds: [],
-          },
-          'engine',
-        );
-        expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith({
-          where: { id: 'position-a', organizationId: ORG_A },
-          select: { isSingleAssignee: true },
-        });
-      },
-    );
-
-    // The pool is counted for the action log; an empty one is reported to the
-    // actor the way an unassigned task is.
-    it('reports a pool nobody is in yet as a warning, not an error', async () => {
-      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: false });
-      mockPrisma.user.findMany.mockResolvedValue([]);
-
-      await expect(runPositionFixedTransition(positionFixedStage())).resolves.not.toThrow();
-
-      expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            responseSummary: 'Task created for a pool nobody is in yet — no one can pick it up',
-          }),
-        }),
-      );
+    ])('resolves to nobody, without querying, when the stage is missing its %s', async (_label, overrides) => {
+      await expect(runPositionFixedTransition(positionFixedStage(overrides))).resolves.not.toThrow();
+      expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
+      expect(notifiedUserIds()).toEqual([]);
     });
 
     itEnforcesTenantIsolation('POSITION_FIXED resolves holders only within the requested tenant', async () => {
-      mockPrisma.orgPosition.findFirst.mockResolvedValue({ isSingleAssignee: true });
-      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
-        Promise.resolve(where.organizationId === ORG_A ? [{ id: 'holder-1' }] : [{ id: 'leaked-holder' }]),
+      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { organizationId: string; id?: { in: string[] } } }) =>
+        Promise.resolve(
+          where.id?.in
+            ? where.id.in.map((id) => ({ id, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null }))
+            : where.organizationId === ORG_A
+              ? [{ id: 'holder-1' }]
+              : [{ id: 'leaked-holder' }],
+        ),
       );
 
       await runPositionFixedTransition(positionFixedStage());
@@ -1452,19 +1107,10 @@ describe('WorkflowService', () => {
       expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
       );
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['holder-1'] }),
-        ORG_A,
-        ACTOR,
-        expect.objectContaining({ pooled: false, directUserIds: ['holder-1'] }),
-        'engine',
-      );
-      expect(mockPrisma.orgPosition.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'position-a', organizationId: ORG_A } }),
-      );
+      expect(notifiedUserIds()).toEqual(['holder-1']);
     });
 
-    it('routes an out-of-office assignee to their acting user before task creation', async () => {
+    it('routes an out-of-office assignee to their acting user', async () => {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
       mockStagesById({
@@ -1473,11 +1119,8 @@ describe('WorkflowService', () => {
       });
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-      ]);
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue(notifyAction);
       mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'holder-1' }]);
-
       const now = new Date();
       mockPrisma.user.findMany.mockResolvedValueOnce([
         {
@@ -1490,24 +1133,36 @@ describe('WorkflowService', () => {
 
       await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
 
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeUserIds: ['acting-user-1'] }),
-        ORG_A,
-        ACTOR,
-        undefined,
-        'engine',
-      );
-      expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'holder-1' }),
-        ORG_A,
-      );
-      expect(mockNotificationService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'acting-user-1' }),
-        ORG_A,
-      );
+      expect(notifiedUserIds()).toEqual(['acting-user-1']);
       expect(mockAuditLog.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'DELEGATE', objectType: 'User', objectId: 'holder-1' }),
       );
+    });
+
+    // ── CREATE_TASK, retired (ACC-190) ───────────────────────────────────────
+    it('skips a CREATE_TASK action left in stored config, logging it FAILED as retired — and creates no task', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockStagesById({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE });
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
+        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
+      ]);
+
+      const result = await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.workflowActionLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            actionType: 'CREATE_TASK',
+            status: 'FAILED',
+            responseSummary: expect.stringContaining('Retired'),
+          }),
+        }),
+      );
+      expect(mockTaskService.insertPrepared).not.toHaveBeenCalled();
+      expect(result.unassignedTaskWarnings).toEqual([]);
     });
   });
 
@@ -1989,11 +1644,13 @@ describe('WorkflowService', () => {
     });
   });
 
-  // ── triggerTransition — allPreviousStageTasksComplete (ACC-65) ───────────────
+  // ── The stage gate (ACC-190) ────────────────────────────────────────────────
+  // An ADVANCE out of an entry is refused while any MANDATORY task of that
+  // entry is open. RETURN and EXIT never are. It replaced ACC-65's opt-in
+  // allPreviousStageTasksComplete validator, which no transition used and the
+  // approval path skipped.
 
-  describe('triggerTransition — allPreviousStageTasksComplete', () => {
-    const GATED = { validatorConfig: { allPreviousStageTasksComplete: true } };
-
+  describe('the stage gate (ACC-190)', () => {
     function arrangeTransition(overrides: Record<string, unknown> = {}) {
       mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
       mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
@@ -2001,139 +1658,342 @@ describe('WorkflowService', () => {
       );
       mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition(overrides));
       mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-      mockPrisma.workflowInstance.update.mockResolvedValue(
-        makeInstance({ currentStageId: 'stage-target' }),
-      );
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
     }
+    const trigger = () => service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+    const openMandatory = [
+      { id: 'task-a', title: 'Check the terms', titleAr: 'مراجعة الشروط', status: 'PENDING' },
+      { id: 'task-b', title: 'Collect signatures', titleAr: null, status: 'ON_HOLD' },
+    ];
 
-    it('blocks the transition while the stage has an incomplete task', async () => {
-      arrangeTransition(GATED);
-      mockPrisma.task.findMany.mockResolvedValue([{ title: 'Draft the terms', status: 'PENDING' }]);
+    it('refuses an ADVANCE with STAGE_TASKS_OPEN, naming each open mandatory task, before anything is written', async () => {
+      arrangeTransition();
+      mockPrisma.task.findMany.mockResolvedValue(openMandatory);
 
-      await expect(
-        service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
-      ).rejects.toThrow(ConflictException);
+      const error = await trigger().catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(WorkflowRefusalException);
+      const body = (error as WorkflowRefusalException).getResponse() as { code: string; statusCode: number; tasks: unknown[] };
+      expect(body.statusCode).toBe(409);
+      expect(body.code).toBe('STAGE_TASKS_OPEN');
+      // In words, never the raw enum (ACC-173).
+      expect(body.tasks).toEqual([
+        expect.objectContaining({ id: 'task-a', title: 'Check the terms', statusLabel: 'Assigned' }),
+        expect.objectContaining({ id: 'task-b', title: 'Collect signatures', statusLabel: 'On hold' }),
+      ]);
+      expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      expect(mockTaskService.cancelStageExitTasksInTx).not.toHaveBeenCalled();
     });
 
-    it('names the outstanding tasks in the error rather than throwing generically', async () => {
-      arrangeTransition(GATED);
-      mockPrisma.task.findMany.mockResolvedValue([
-        { title: 'Draft the terms', status: 'PENDING' },
-        { title: 'Collect signatures', status: 'OVERDUE' },
-      ]);
+    it("counts only the CURRENT entry's MANDATORY, open tasks — scoped to the tenant", async () => {
+      arrangeTransition();
 
-      // The actor's next action is to complete those specific tasks — an
-      // error that does not name them cannot be acted on. ACC-173: each in
-      // words, never the raw enum (a legacy OVERDUE row is an Assigned task).
-      await expect(
-        service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []),
-      ).rejects.toThrow('"Draft the terms" (Assigned), "Collect signatures" (Assigned)');
-    });
+      await trigger();
 
-    // ACC-173 — an on-hold task is open, so it holds the stage, and the message
-    // says "On hold", not ON_HOLD or on_hold.
-    it('names an on-hold task as "On hold" — never the raw status', async () => {
-      arrangeTransition(GATED);
-      mockPrisma.task.findMany.mockResolvedValue([
-        { title: 'Collect signatures', status: 'ON_HOLD' },
-        { title: 'Draft the terms', status: 'IN_PROGRESS' },
-      ]);
-
-      const error = await service
-        .triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, [])
-        .catch((e: unknown) => e);
-
-      expect(error).toBeInstanceOf(ConflictException);
-      expect((error as ConflictException).message).toBe(
-        'This stage has 2 incomplete task(s) that must be completed before this transition can fire: ' +
-          '"Collect signatures" (On hold), "Draft the terms" (In progress)',
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            organizationId: ORG_A,
+            workflowInstanceStageId: BASE_INSTANCE_STAGE.id,
+            isMandatory: true,
+            status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          },
+        }),
       );
-      expect((error as ConflictException).message).not.toMatch(/ON_HOLD|on_hold|IN_PROGRESS/);
     });
 
-    it('allows the transition once the stage has no outstanding tasks', async () => {
-      arrangeTransition(GATED);
+    it('lets the ADVANCE through once no mandatory task is open', async () => {
+      arrangeTransition();
       mockPrisma.task.findMany.mockResolvedValue([]);
 
-      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+      await trigger();
 
       expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
     });
 
-    it('does not query tasks at all when the validator is not configured', async () => {
-      arrangeTransition(); // BASE_TRANSITION — validatorConfig null
-      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+    it.each(['RETURN', 'EXIT'] as const)('never gates a %s transition — it passes with mandatory tasks open, and cancels them', async (kind) => {
+      arrangeTransition({ kind });
+      mockPrisma.task.findMany.mockResolvedValue(openMandatory);
+
+      await trigger();
+
       expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
-    });
-
-    it('does not query tasks when the flag is present but false', async () => {
-      arrangeTransition({ validatorConfig: { allPreviousStageTasksComplete: false } });
-      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-      expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
-    });
-
-    it('scopes to this instance AND the stage being left, not the destination', async () => {
-      arrangeTransition(GATED);
-      mockPrisma.task.findMany.mockResolvedValue([]);
-
-      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-      // stage-single is the FROM stage. Task.sourceStageId holds the stage a
-      // task was created FOR (executeCreateTask stamps the destination), so
-      // the tasks belonging to the stage being left carry the from-stage id.
-      // Without workflowInstanceId, a task from another object at the same
-      // template stage would block this instance.
-      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            workflowInstanceId: 'instance-1',
-            sourceStageId: 'stage-single',
-          }),
-        }),
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
+      expect(mockTaskService.cancelStageExitTasksInTx).toHaveBeenCalledWith(
+        mockPrisma,
+        expect.objectContaining({ workflowInstanceStageId: BASE_INSTANCE_STAGE.id }),
+        ORG_A,
       );
-      const call = mockPrisma.task.findMany.mock.calls[0][0] as { where: { sourceStageId: string } };
-      expect(call.where.sourceStageId).not.toBe('stage-target');
     });
 
-    it('treats COMPLETED and CANCELLED as not outstanding, but blocks on UNASSIGNED', async () => {
-      arrangeTransition(GATED);
-      mockPrisma.task.findMany.mockResolvedValue([]);
+    // The early check passes, then a task reopens before the lock is taken:
+    // the check under the lock is the one that counts.
+    it('re-checks under the instance lock, and that check is authoritative', async () => {
+      arrangeTransition();
+      mockPrisma.task.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce(openMandatory);
 
-      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+      const error = await trigger().catch((e: unknown) => e);
 
-      // Deliberately one value different from sweepOverdueTasks(), which also
-      // excludes UNASSIGNED because nobody can be nagged about it. Here an
-      // unassigned task is real work that is not done, so it must block — and
-      // the block is recoverable via reassign()/ACC-34's view/ACC-51 recovery.
-      const call = mockPrisma.task.findMany.mock.calls[0][0] as {
-        where: { status: { notIn: string[] } };
-      };
-      expect(call.where.status.notIn).toEqual(['COMPLETED', 'CANCELLED']);
-      expect(call.where.status.notIn).not.toContain('UNASSIGNED');
+      expect((error as WorkflowRefusalException).code).toBe('STAGE_TASKS_OPEN');
+      expect(mockPrisma.$queryRaw).toHaveBeenCalled(); // the lock was taken first
+      expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
     });
 
-    itEnforcesTenantIsolation('outstanding stage tasks in allPreviousStageTasksComplete', async () => {
-      arrangeTransition(GATED);
-      // ORG_B has the outstanding task; ORG_A does not. Correct scoping means
-      // ORG_A advances rather than inheriting another tenant's blocker.
-      mockPrisma.task.findMany.mockImplementation(
-        ({ where }: { where: { organizationId: string } }) =>
-          Promise.resolve(
-            where.organizationId === ORG_B ? [{ title: 'Other tenant task', status: 'PENDING' }] : [],
-          ),
+    it('refuses a transition whose entry was closed by someone else meanwhile, writing nothing', async () => {
+      arrangeTransition();
+      // The caller's read (by stage) found the entry open; the re-read under
+      // the lock (by the entry's own id) finds it gone.
+      mockPrisma.workflowInstanceStage.findFirst.mockImplementation(({ where }: { where: { id?: string } }) =>
+        Promise.resolve(where.id ? null : BASE_INSTANCE_STAGE),
       );
 
-      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+      await expect(trigger()).rejects.toThrow(ConflictException);
+      expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+    });
+
+    // A vote that cannot take effect is not stored (Ahmad, 9 Oct, J).
+    describe('on a multi-approver stage', () => {
+      function arrangeParallel(holders: string[], recorded: { approverId: string; decision: string }[]) {
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ currentStageId: 'stage-parallel' }));
+        mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+          Promise.resolve({ 'stage-parallel': PARALLEL_STAGE, 'stage-target': TARGET_STAGE }[where.id] ?? null),
+        );
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+          makeTransition({ id: 'approve-transition', fromStageId: 'stage-parallel', toStageId: 'stage-target', isApprovalPath: true }),
+        );
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(makeInstanceStage({ stageId: 'stage-parallel' }));
+        mockPrisma.userRole.findMany.mockResolvedValue(holders.map((userId) => ({ userId })));
+        mockPrisma.workflowApproval.findMany.mockResolvedValue(recorded.map((r) => makeApproval(r)));
+      }
+      const vote = () => service.triggerTransition('instance-1', { transitionId: 'approve-transition' }, ORG_A, ACTOR, []);
+
+      it('refuses the DECIDING vote before it is recorded', async () => {
+        // ALL of two: the other holder approved, so this vote decides it.
+        arrangeParallel([ACTOR, 'user-2'], [{ approverId: 'user-2', decision: 'APPROVED' }]);
+        mockPrisma.task.findMany.mockResolvedValue(openMandatory);
+
+        const error = await vote().catch((e: unknown) => e);
+
+        expect((error as WorkflowRefusalException).code).toBe('STAGE_TASKS_OPEN');
+        expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      });
+
+      // The approval path never ran a validator before ACC-190, so it was the
+      // way round any task check. It is gated now, on the deciding vote.
+      it('gates submitApproval too: the deciding approval is refused before it is recorded', async () => {
+        arrangeParallel([ACTOR, 'user-2'], [{ approverId: 'user-2', decision: 'APPROVED' }]);
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(makeInstanceStage({ stageId: 'stage-parallel' }));
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue({ kind: 'ADVANCE' });
+        mockPrisma.task.findMany.mockResolvedValue(openMandatory);
+
+        const error = await service.submitApproval('instance-stage-1', { decision: 'APPROVED' }, ORG_A, ACTOR).catch((e: unknown) => e);
+
+        expect((error as WorkflowRefusalException).code).toBe('STAGE_TASKS_OPEN');
+        expect(mockPrisma.workflowApproval.upsert).not.toHaveBeenCalled();
+      });
+
+      it('lets submitApproval record a RETURN vote with mandatory tasks open', async () => {
+        arrangeParallel([ACTOR, 'user-2'], []);
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(makeInstanceStage({ stageId: 'stage-parallel' }));
+        mockPrisma.workflowTransition.findFirst.mockResolvedValue(makeTransition({ isApprovalPath: false, kind: 'RETURN' }));
+        mockPrisma.task.findMany.mockResolvedValue(openMandatory);
+        mockPrisma.workflowApproval.upsert.mockResolvedValue(makeApproval({ decision: 'RETURNED' }));
+
+        await service.submitApproval('instance-stage-1', { decision: 'RETURNED' }, ORG_A, ACTOR);
+
+        expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+      });
+
+      it('records a vote that does not decide it, whatever the tasks', async () => {
+        arrangeParallel([ACTOR, 'user-2'], []);
+        mockPrisma.task.findMany.mockResolvedValue(openMandatory);
+
+        await vote();
+
+        expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.workflowApproval.upsert).toHaveBeenCalled();
+        expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
+      });
+    });
+
+    itEnforcesTenantIsolation('open mandatory tasks counted by the stage gate', async () => {
+      arrangeTransition();
+      mockPrisma.task.findMany.mockImplementation(({ where }: { where: { organizationId: string } }) =>
+        Promise.resolve(where.organizationId === ORG_A ? openMandatory : []),
+      );
+
+      // A tenant whose own entry has no open mandatory task is never held by
+      // another tenant's tasks.
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(makeInstance({ organizationId: ORG_B }));
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_B, ACTOR, []);
 
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_A }) }),
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
       );
       expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
     });
   });
 
-  // ── triggerTransition — validatorConfig ───────────────────────────────────────
+  // ── Stage entry creates the stage's tasks (ACC-190) ─────────────────────────
+
+  describe('stage entry tasks (ACC-190)', () => {
+    const prepared = (definitionId: string, isMandatory = true) => ({
+      data: { title: `Task ${definitionId}`, stageTaskDefinitionId: definitionId, isMandatory, status: 'PENDING' },
+      eligibleAssigneeIds: ['holder-1'],
+      delegations: new Map(),
+      pooled: false,
+    });
+
+    function arrange() {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(COMMITTEE_INSTANCE);
+      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ 'stage-single': SINGLE_STAGE, 'stage-target': { ...TARGET_STAGE, slaWorkingHours: 40 } }[where.id] ?? null),
+      );
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstanceStage.create.mockResolvedValue({ ...BASE_INSTANCE_STAGE, id: 'entry-new', stageId: 'stage-target' });
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockWorkingCalendar.calculateDeadline.mockResolvedValue(DateTime.fromJSDate(new Date('2026-11-01T08:00:00Z')));
+      mockStagesTasks([prepared('def-1'), prepared('def-2', false)], ['"Task def-2" went to a pool nobody is in yet']);
+    }
+    function mockStagesTasks(tasks: unknown[], warnings: string[] = []) {
+      mockStageTaskDefinitions.prepareEntryTasks.mockResolvedValue({ tasks, warnings });
+    }
+    const trigger = () => service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+    it('prepares the destination stage\'s tasks from ONE entry instant, which the new entry and its deadline share', async () => {
+      arrange();
+      await trigger();
+
+      const [stage, record, sourceType, enteredAt, org] = mockStageTaskDefinitions.prepareEntryTasks.mock.calls[0] as [
+        { id: string },
+        { objectId: string },
+        string,
+        Date,
+        string,
+      ];
+      expect(stage.id).toBe('stage-target');
+      expect(record.objectId).toBe(COMMITTEE_INSTANCE.objectId);
+      expect(sourceType).toBe('COMMITTEE');
+      expect(org).toBe(ORG_A);
+      expect(mockPrisma.workflowInstanceStage.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ stageId: 'stage-target', enteredAt }) }),
+      );
+      // The old entry closes at the same instant the new one opens.
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ exitedAt: enteredAt }) }),
+      );
+      // The stage deadline is counted from the entry, not from "now" later.
+      const [from, hours] = mockWorkingCalendar.calculateDeadline.mock.calls[0] as [DateTime, number];
+      expect(from.toJSDate()).toEqual(enteredAt);
+      expect(hours).toBe(40);
+    });
+
+    it('inserts each task inside the transaction, on the new entry, created by the mover', async () => {
+      arrange();
+      await trigger();
+
+      expect(mockTaskService.insertPrepared).toHaveBeenCalledTimes(2);
+      for (const [client, task, org, actor] of mockTaskService.insertPrepared.mock.calls as [unknown, { data: Record<string, unknown> }, string, string][]) {
+        expect(client).toBe(mockPrisma); // the transaction client
+        expect(task.data).toEqual(
+          expect.objectContaining({ workflowInstanceId: COMMITTEE_INSTANCE.id, workflowInstanceStageId: 'entry-new' }),
+        );
+        expect(org).toBe(ORG_A);
+        expect(actor).toBe(ACTOR);
+      }
+    });
+
+    it('prepares (every read) BEFORE the transaction, and announces AFTER it commits', async () => {
+      arrange();
+      await trigger();
+
+      const order = (m: jest.Mock) => m.mock.invocationCallOrder[0] ?? 0;
+      const tx = mockPrisma.$transaction as jest.Mock;
+      expect(order(mockStageTaskDefinitions.prepareEntryTasks)).toBeLessThan(order(tx));
+      expect(mockTaskService.announceCreated).toHaveBeenCalledTimes(2);
+      expect(order(mockTaskService.announceCreated)).toBeGreaterThan(order(mockTaskService.insertPrepared));
+      // No notice, no audit row, from inside the transaction.
+      expect(mockTaskService.auditStageExitCancellation.mock.invocationCallOrder[0]).toBeGreaterThan(
+        order(mockPrisma.workflowInstance.update),
+      );
+    });
+
+    it('cancels the old entry before creating the new one, so a self-transition starts fresh', async () => {
+      arrange();
+      await trigger();
+
+      const order = (m: jest.Mock) => m.mock.invocationCallOrder[0] ?? 0;
+      expect(order(mockTaskService.cancelStageExitTasksInTx)).toBeLessThan(order(mockPrisma.workflowInstanceStage.create));
+      expect(order(mockPrisma.workflowInstanceStage.create)).toBeLessThan(order(mockTaskService.insertPrepared));
+    });
+
+    it("passes the entry's task warnings to the actor (ACC-34)", async () => {
+      arrange();
+      const result = await trigger();
+      expect(result.unassignedTaskWarnings).toEqual(['"Task def-2" went to a pool nobody is in yet']);
+    });
+
+    it('a failure while creating the tasks rolls the whole stage change back — and announces nothing', async () => {
+      arrange();
+      mockTaskService.insertPrepared.mockRejectedValueOnce(new Error('insert failed'));
+
+      await expect(trigger()).rejects.toThrow('insert failed');
+      // The transaction never resolved, so nothing after commit ran.
+      expect(mockTaskService.announceCreated).not.toHaveBeenCalled();
+      expect(mockTaskService.auditStageExitCancellation).not.toHaveBeenCalled();
+      expect(mockPrisma.workflowTransitionAction.findMany).not.toHaveBeenCalled();
+    });
+
+    it("startInstance creates the INITIAL stage's tasks too, on its first entry", async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findFirst.mockResolvedValue(SINGLE_STAGE);
+      mockPrisma.workflowInstance.create.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowInstanceStage.create.mockResolvedValue({ ...BASE_INSTANCE_STAGE, id: 'entry-first' });
+      mockStagesTasks([prepared('def-1')]);
+
+      await service.startInstance('DOCUMENT', 'doc-1', ORG_A, ACTOR);
+
+      expect(mockStageTaskDefinitions.prepareEntryTasks).toHaveBeenCalledWith(
+        SINGLE_STAGE,
+        { objectType: BASE_TEMPLATE.objectType, objectId: 'doc-1' },
+        'DOCUMENT',
+        expect.any(Date),
+        ORG_A,
+      );
+      expect(mockTaskService.insertPrepared).toHaveBeenCalledWith(
+        mockPrisma,
+        expect.objectContaining({ data: expect.objectContaining({ workflowInstanceId: BASE_INSTANCE.id, workflowInstanceStageId: 'entry-first' }) }),
+        ORG_A,
+        ACTOR,
+      );
+      expect(mockTaskService.announceCreated).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── allPreviousStageTasksComplete — retired (ACC-190) ───────────────────────
+
+  describe('allPreviousStageTasksComplete — retired', () => {
+    it('is ignored when still stored: a RETURN carrying it passes with tasks open', async () => {
+      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
+      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ 'stage-single': SINGLE_STAGE, 'stage-target': TARGET_STAGE }[where.id] ?? null),
+      );
+      mockPrisma.workflowTransition.findFirst.mockResolvedValue(
+        makeTransition({ kind: 'RETURN', validatorConfig: { allPreviousStageTasksComplete: true } }),
+      );
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
+      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
+      mockPrisma.task.findMany.mockResolvedValue([{ id: 't', title: 'Open', titleAr: null, status: 'PENDING' }]);
+
+      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+
+      expect(mockPrisma.workflowInstance.update).toHaveBeenCalled();
+    });
+  });
 
   describe('triggerTransition — validatorConfig', () => {
     it('throws ConflictException when minApprovals has not yet been reached', async () => {
@@ -3034,64 +2894,11 @@ describe('WorkflowService', () => {
       );
     });
 
-    // Commit 4's own scope: proves the chain all the way from a real
-    // CREATE_TASK transition action through executeCreateTask()'s
-    // per-assignee resolveDelegationStamp() call to the exact dto passed
-    // into TaskService.create() — task.service.spec.ts's own "delegation
-    // stamping" tests separately prove that dto correctly becomes a
-    // stamped TaskAssignee row, so together the two specs cover the full
-    // path with no unverified link in between.
-    it('produces a correctly-stamped assigneeDelegations entry via a real CREATE_TASK transition action, end to end from executeCreateTask() into TaskService.create()', async () => {
-      const roleTargetStage = { ...TARGET_STAGE, assigneeStrategy: 'ROLE', assigneeRoleId: 'role-qm' };
-      mockPrisma.workflowInstance.findFirst.mockResolvedValue(BASE_INSTANCE);
-      mockPrisma.workflowTransition.findFirst.mockResolvedValue(BASE_TRANSITION);
-      mockPrisma.workflowStage.findFirst.mockImplementation(({ where }: { where: { id: string } }) =>
-        Promise.resolve(({ 'stage-single': SINGLE_STAGE, 'stage-target': roleTargetStage } as Record<string, unknown>)[where.id] ?? null),
-      );
-      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(BASE_INSTANCE_STAGE);
-      mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
-      mockPrisma.workflowTransitionAction.findMany.mockResolvedValue([
-        { id: 'action-1', workflowTransitionId: 'transition-1', actionType: 'CREATE_TASK', order: 10, isEnabled: true },
-      ]);
-      mockPrisma.userRole.findMany.mockResolvedValue([{ userId: 'absent-user' }]);
-      // Raw ROLE pool resolves to 'absent-user' — applyOutOfOfficeRouting()
-      // substitutes it to ACTOR before executeCreateTask() ever sees the
-      // resolved assigneeIds, so the task's real assignee is ACTOR, not
-      // 'absent-user'.
-      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { id: { in: string[] } } }) =>
-        Promise.resolve(
-          where.id.in.map((id) =>
-            id === 'absent-user'
-              ? {
-                  id,
-                  outOfOfficeFrom: new Date(Date.now() - 86400000),
-                  outOfOfficeTo: new Date(Date.now() + 86400000),
-                  actingUserId: ACTOR,
-                }
-              : { id, outOfOfficeFrom: null, outOfOfficeTo: null, actingUserId: null },
-          ),
-        ),
-      );
-      // resolveOutOfOfficeCoverageForUser()'s own query, run against the
-      // RAW pool (['absent-user']) inside resolveDelegationStamp() —
-      // independent of the substitution above.
-      mockPrisma.user.findFirst.mockResolvedValue({ id: 'absent-user' });
-
-      await service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
-
-      expect(mockTaskService.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          assigneeUserIds: [ACTOR],
-          assigneeDelegations: [
-            { userId: ACTOR, delegationReason: 'OUT_OF_OFFICE_COVERAGE', delegationContextId: 'absent-user' },
-          ],
-        }),
-        ORG_A,
-        ACTOR,
-        undefined,
-        'engine',
-      );
-    });
+    // ACC-190 — the end-to-end delegation stamp through CREATE_TASK into
+    // TaskService.create() is gone with CREATE_TASK: a stage task comes from a
+    // definition and follows the manual-task route, which applies no
+    // out-of-office routing (SYSTEM-REFERENCE §3.5). The stamps on stage entries
+    // and approvals are pinned above.
   });
 
   // ── ACC-28 Section 2.5 — unassigned-stage detection ────────────────────────
