@@ -216,6 +216,44 @@ describe('verifySessionIdentity (ACC-203)', () => {
     });
   });
 
+  // The CI tenant-isolation gate selects tests by this exact name. The mock is
+  // a two-row table that honours BOTH keys of the where clause, as Prisma does,
+  // so a query that dropped organizationId would find org-b's row and the
+  // identity would be proved — this fails on behaviour, not only on shape.
+  it('should NOT return records belonging to a different tenant', async () => {
+    const rows = [
+      {
+        id: 'user-a',
+        organizationId: 'org-b',
+        tokenVersion: 3,
+        organization: { status: 'ACTIVE' },
+      },
+    ];
+    prisma.user.findFirst.mockImplementation(
+      ({ where }: { where: { id?: string; organizationId?: string } }) =>
+        Promise.resolve(
+          rows.find(
+            (r) =>
+              (where.id === undefined || r.id === where.id) &&
+              (where.organizationId === undefined ||
+                r.organizationId === where.organizationId),
+          ) ?? null,
+        ),
+    );
+    // The token claims org-a; the only user with that id lives in org-b.
+    await expect(
+      verifySessionIdentity(req(token()), prisma as unknown as PrismaService),
+    ).resolves.toEqual({ ok: false, refusal: 'revoked' });
+    // Non-vacuity guard: the same token with org-b's claim IS proved, so the
+    // refusal above came from the organisation, not from a broken mock.
+    await expect(
+      verifySessionIdentity(
+        req(token({ organizationId: 'org-b' })),
+        prisma as unknown as PrismaService,
+      ),
+    ).resolves.toEqual(expect.objectContaining({ ok: true }));
+  });
+
   it('carries impersonatedBy when the token has it', async () => {
     const result = await verifySessionIdentity(
       req(token({ impersonatedBy: 'platform-admin-1' })),
