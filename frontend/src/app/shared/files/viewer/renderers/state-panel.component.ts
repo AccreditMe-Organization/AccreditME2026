@@ -30,7 +30,8 @@ export type StatePanelTone = 'muted' | 'danger' | 'warn';
         @if (fileLine(); as line) {
           <span class="am-fstate__file">
             <span [attr.dir]="line.dir" class="am-isolate">{{ line.name }}</span> ·
-            <span dir="ltr" class="am-isolate">{{ line.meta }}</span>
+            <span dir="ltr" class="am-isolate">{{ line.type }}</span> ·
+            <span dir="auto" class="am-isolate">{{ line.size }}</span>
           </span>
         }
         <span class="am-fstate__body">{{ body() }}</span>
@@ -179,8 +180,8 @@ export class FileStatePanelComponent {
   readonly role = input<'region' | 'alert'>('alert');
   readonly title = input.required<string>();
   readonly body = input.required<string>();
-  /** The no-preview panel names the file: "name · Word · 1.2 MB". */
-  readonly fileLine = input<{ name: string; dir: 'ltr' | 'rtl'; meta: string } | null>(null);
+  /** The no-preview panel names the file: "name · Word · 1.2 MB" — three runs, each its own direction. */
+  readonly fileLine = input<{ name: string; dir: 'ltr' | 'rtl'; type: string; size: string } | null>(null);
   readonly primaryLabel = input<string | null>(null);
   readonly primaryIcon = input<string | null>(null);
   readonly secondaryLabel = input<string | null>(null);

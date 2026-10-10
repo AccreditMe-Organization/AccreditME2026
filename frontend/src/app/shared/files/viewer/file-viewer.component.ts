@@ -97,14 +97,24 @@ interface IPanel {
       <div amDrawerHeader class="am-fview__head">
         <span class="am-fview__badge" aria-hidden="true">{{ type().badge }}</span>
         <span class="am-fview__id">
-          <span class="am-fview__name" [attr.title]="file().name">
+          <!-- The NAME's direction orders its two halves; against the interface's
+               direction it still hugs the badge (justify to the far end). -->
+          <span
+            class="am-fview__name"
+            [class.am-fview__name--against]="nameDir() !== (language.isRtl() ? 'rtl' : 'ltr')"
+            [attr.dir]="nameDir()"
+            [attr.title]="file().name"
+          >
             <span class="am-fview__name-head" [attr.dir]="nameDir()">{{ name().head }}</span>
             @if (name().tail) {
               <span class="am-fview__name-tail" [attr.dir]="nameDir()">{{ name().tail }}</span>
             }
           </span>
+          <!-- Type and size are separate runs: a size carries an Arabic unit in
+               an Arabic session, and one LTR run would scramble it. -->
           <span class="am-fview__meta">
-            <span dir="ltr" class="am-fview__isolate">{{ meta() }}</span> ·
+            <span dir="ltr" class="am-fview__isolate">{{ type().label }}</span> ·
+            <span dir="auto" class="am-fview__isolate">{{ size() }}</span> ·
             {{ request().context.key | translate: request().context.params }}
           </span>
         </span>
@@ -247,7 +257,7 @@ interface IPanel {
               [role]="p.role"
               [title]="p.title"
               [body]="p.body"
-              [fileLine]="p.fileLine ? { name: file().name, dir: nameDir(), meta: meta() } : null"
+              [fileLine]="p.fileLine ? { name: file().name, dir: nameDir(), type: type().label, size: size() } : null"
               [primaryLabel]="actionLabel(p.primary)"
               [primaryIcon]="p.primary === 'download' ? 'pi pi-download' : null"
               [secondaryLabel]="actionLabel(p.secondary)"
@@ -306,16 +316,20 @@ interface IPanel {
         font-size: var(--am-type-body-size);
         font-weight: 600;
       }
+      .am-fview__name--against {
+        justify-content: flex-end;
+      }
       .am-fview__name-head {
         min-inline-size: 0;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: nowrap;
+        /* pre, not nowrap: a space where the name is cut must survive. */
+        white-space: pre;
         unicode-bidi: isolate;
       }
       .am-fview__name-tail {
         flex: none;
-        white-space: nowrap;
+        white-space: pre;
         unicode-bidi: isolate;
       }
       .am-fview__meta {
@@ -480,7 +494,7 @@ export class FileViewerComponent {
   readonly type = computed(() => fileTypeOf(this.file().mimeType));
   readonly name = computed(() => splitName(this.file().name));
   readonly nameDir = computed(() => textDirection(this.file().name));
-  readonly meta = computed(() => `${this.type().label} · ${this.filesService.size(this.file().sizeBytes)}`);
+  readonly size = computed(() => this.filesService.size(this.file().sizeBytes));
   readonly position = computed(() => `${this.format.number(this.index() + 1)} / ${this.format.number(this.files().length)}`);
 
   readonly problem = computed(() => {
