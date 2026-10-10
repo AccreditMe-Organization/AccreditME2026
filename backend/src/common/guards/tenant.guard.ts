@@ -113,11 +113,7 @@ export function verifyJwt(token: string, secret: string): JwtPayload {
 
 /** Why a request's access token does not prove who is calling. */
 export type SessionIdentityRefusal =
-  | 'missing'
-  | 'not_configured'
-  | 'invalid'
-  | 'claims'
-  | 'revoked';
+  'missing' | 'not_configured' | 'invalid' | 'claims' | 'revoked';
 
 /** Who a valid access token proves the caller is. */
 export interface SessionIdentity {

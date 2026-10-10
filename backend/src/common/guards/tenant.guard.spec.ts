@@ -224,7 +224,9 @@ describe('verifySessionIdentity (ACC-203)', () => {
     expect(result).toEqual(
       expect.objectContaining({
         ok: true,
-        identity: expect.objectContaining({ impersonatedBy: 'platform-admin-1' }),
+        identity: expect.objectContaining({
+          impersonatedBy: 'platform-admin-1',
+        }),
       }),
     );
   });
@@ -234,31 +236,83 @@ describe('verifySessionIdentity (ACC-203)', () => {
       tokenVersion: 3,
       organization: { status: 'SUSPENDED' },
     });
-    const result = await verifySessionIdentity(req(token()), prisma as unknown as PrismaService);
+    const result = await verifySessionIdentity(
+      req(token()),
+      prisma as unknown as PrismaService,
+    );
     expect(result).toEqual(
-      expect.objectContaining({ ok: true, identity: expect.objectContaining({ organizationStatus: 'SUSPENDED' }) }),
+      expect.objectContaining({
+        ok: true,
+        identity: expect.objectContaining({ organizationStatus: 'SUSPENDED' }),
+      }),
     );
   });
 
   it('refuses, naming why, every token the guard would refuse', async () => {
     const parts = token().split('.');
     const cases: Array<[string, () => Promise<unknown>, string]> = [
-      ['no token', () => verifySessionIdentity(req(), prisma as unknown as PrismaService), 'missing'],
-      ['bad signature', () => verifySessionIdentity(req(`${parts[0]}.${parts[1]}.forged`), prisma as unknown as PrismaService), 'invalid'],
-      ['expired', () => verifySessionIdentity(req(token({ exp: Math.floor(Date.now() / 1000) - 10 })), prisma as unknown as PrismaService), 'invalid'],
-      ['no organisation claim', () => verifySessionIdentity(req(token({ organizationId: '' })), prisma as unknown as PrismaService), 'claims'],
+      [
+        'no token',
+        () => verifySessionIdentity(req(), prisma as unknown as PrismaService),
+        'missing',
+      ],
+      [
+        'bad signature',
+        () =>
+          verifySessionIdentity(
+            req(`${parts[0]}.${parts[1]}.forged`),
+            prisma as unknown as PrismaService,
+          ),
+        'invalid',
+      ],
+      [
+        'expired',
+        () =>
+          verifySessionIdentity(
+            req(token({ exp: Math.floor(Date.now() / 1000) - 10 })),
+            prisma as unknown as PrismaService,
+          ),
+        'invalid',
+      ],
+      [
+        'no organisation claim',
+        () =>
+          verifySessionIdentity(
+            req(token({ organizationId: '' })),
+            prisma as unknown as PrismaService,
+          ),
+        'claims',
+      ],
     ];
     for (const [label, run, refusal] of cases) {
       expect([label, await run()]).toEqual([label, { ok: false, refusal }]);
     }
 
-    prisma.user.findFirst.mockResolvedValue({ tokenVersion: 4, organization: { status: 'ACTIVE' } });
-    expect(await verifySessionIdentity(req(token()), prisma as unknown as PrismaService)).toEqual({ ok: false, refusal: 'revoked' });
+    prisma.user.findFirst.mockResolvedValue({
+      tokenVersion: 4,
+      organization: { status: 'ACTIVE' },
+    });
+    expect(
+      await verifySessionIdentity(
+        req(token()),
+        prisma as unknown as PrismaService,
+      ),
+    ).toEqual({ ok: false, refusal: 'revoked' });
     prisma.user.findFirst.mockResolvedValue(null);
-    expect(await verifySessionIdentity(req(token()), prisma as unknown as PrismaService)).toEqual({ ok: false, refusal: 'revoked' });
+    expect(
+      await verifySessionIdentity(
+        req(token()),
+        prisma as unknown as PrismaService,
+      ),
+    ).toEqual({ ok: false, refusal: 'revoked' });
 
     delete process.env['JWT_SECRET'];
-    expect(await verifySessionIdentity(req(token()), prisma as unknown as PrismaService)).toEqual({ ok: false, refusal: 'not_configured' });
+    expect(
+      await verifySessionIdentity(
+        req(token()),
+        prisma as unknown as PrismaService,
+      ),
+    ).toEqual({ ok: false, refusal: 'not_configured' });
   });
 
   it('TenantGuard keeps its own refusal message for each reason', async () => {
@@ -267,10 +321,21 @@ describe('verifySessionIdentity (ACC-203)', () => {
       prisma as unknown as PrismaService,
     );
     const ctx = (accessToken?: string) =>
-      ({ switchToHttp: () => ({ getRequest: () => req(accessToken) }) }) as unknown as ExecutionContext;
-    await expect(guard.canActivate(ctx())).rejects.toThrow('Missing bearer token');
-    await expect(guard.canActivate(ctx('a.b.c'))).rejects.toThrow('Invalid or expired token');
-    prisma.user.findFirst.mockResolvedValue({ tokenVersion: 9, organization: { status: 'ACTIVE' } });
-    await expect(guard.canActivate(ctx(token()))).rejects.toThrow('Session has been revoked');
+      ({
+        switchToHttp: () => ({ getRequest: () => req(accessToken) }),
+      }) as unknown as ExecutionContext;
+    await expect(guard.canActivate(ctx())).rejects.toThrow(
+      'Missing bearer token',
+    );
+    await expect(guard.canActivate(ctx('a.b.c'))).rejects.toThrow(
+      'Invalid or expired token',
+    );
+    prisma.user.findFirst.mockResolvedValue({
+      tokenVersion: 9,
+      organization: { status: 'ACTIVE' },
+    });
+    await expect(guard.canActivate(ctx(token()))).rejects.toThrow(
+      'Session has been revoked',
+    );
   });
 });

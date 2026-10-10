@@ -777,7 +777,10 @@ export class AuthService {
 
     const session = await verifySessionIdentity(req, this.prisma);
     const actor = session.ok
-      ? { userId: session.identity.userId, organizationId: session.identity.organizationId }
+      ? {
+          userId: session.identity.userId,
+          organizationId: session.identity.organizationId,
+        }
       : revoked;
     if (actor) {
       await this.auditLog.log({

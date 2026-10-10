@@ -46,7 +46,10 @@ describe('session cookie options (ACC-186)', () => {
       REFRESH_TOKEN_COOKIE_PATH,
     );
     for (const route of ['/api/v1/auth/refresh', '/api/v1/auth/logout']) {
-      expect([route, route.startsWith(`${REFRESH_TOKEN_COOKIE_PATH}/`)]).toEqual([route, true]);
+      expect([
+        route,
+        route.startsWith(`${REFRESH_TOKEN_COOKIE_PATH}/`),
+      ]).toEqual([route, true]);
     }
     expect(accessTokenCookieOptions(1000).path).toBe('/');
   });

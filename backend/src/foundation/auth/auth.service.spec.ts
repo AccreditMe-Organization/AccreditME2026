@@ -480,7 +480,8 @@ describe('AuthService', () => {
   describe('logout (ACC-203)', () => {
     // Signed exactly as AuthService mints them, with the spec's JWT_SECRET.
     const accessToken = (claims: Record<string, unknown> = {}) => {
-      const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+      const b64 = (o: unknown) =>
+        Buffer.from(JSON.stringify(o)).toString('base64url');
       const head = b64({ alg: 'HS256', typ: 'JWT' });
       const body = b64({
         sub: 'user-access',
@@ -489,7 +490,9 @@ describe('AuthService', () => {
         exp: Math.floor(Date.now() / 1000) + 600,
         ...claims,
       });
-      const sig = createHmac('sha256', 'test-jwt-secret').update(`${head}.${body}`).digest('base64url');
+      const sig = createHmac('sha256', 'test-jwt-secret')
+        .update(`${head}.${body}`)
+        .digest('base64url');
       return `${head}.${body}.${sig}`;
     };
     const rowOwner = { userId: 'user-row', organizationId: ORG_B };
@@ -510,7 +513,9 @@ describe('AuthService', () => {
       expect(result).toEqual({ success: true });
       expect(mockPrisma.refreshToken.updateManyAndReturn).toHaveBeenCalledWith({
         where: {
-          tokenHash: createHash('sha256').update('raw-token-value').digest('hex'),
+          tokenHash: createHash('sha256')
+            .update('raw-token-value')
+            .digest('hex'),
           revokedAt: null,
         },
         data: { revokedAt: expect.any(Date) },
@@ -530,24 +535,42 @@ describe('AuthService', () => {
         path: '/api/v1/auth',
       });
       // The change-over clear: a cookie left at the pre-ACC-203 path goes too.
-      expect(clearedPaths(res, 'refresh_token')).toEqual(['/api/v1/auth', '/api/v1/auth/refresh']);
+      expect(clearedPaths(res, 'refresh_token')).toEqual([
+        '/api/v1/auth',
+        '/api/v1/auth/refresh',
+      ]);
     });
 
     it('with no cookies at all: 200, nothing revoked, no audit entry, no throw', async () => {
       const res = fakeExpressRes();
-      await expect(service.logout(fakeExpressReq(), res)).resolves.toEqual({ success: true });
-      expect(mockPrisma.refreshToken.updateManyAndReturn).not.toHaveBeenCalled();
+      await expect(service.logout(fakeExpressReq(), res)).resolves.toEqual({
+        success: true,
+      });
+      expect(
+        mockPrisma.refreshToken.updateManyAndReturn,
+      ).not.toHaveBeenCalled();
       expect(mockAuditLog.log).not.toHaveBeenCalled();
       // Still clears: whatever the browser holds goes, including the old path.
-      expect(clearedPaths(res, 'refresh_token')).toEqual(['/api/v1/auth', '/api/v1/auth/refresh']);
+      expect(clearedPaths(res, 'refresh_token')).toEqual([
+        '/api/v1/auth',
+        '/api/v1/auth/refresh',
+      ]);
     });
 
     it('with a valid access cookie: the audit names the person the token proves, even when a row was revoked too', async () => {
       mockPrisma.refreshToken.updateManyAndReturn.mockResolvedValue([rowOwner]);
-      mockPrisma.user.findFirst.mockResolvedValue({ tokenVersion: 2, organization: { status: 'ACTIVE' } });
+      mockPrisma.user.findFirst.mockResolvedValue({
+        tokenVersion: 2,
+        organization: { status: 'ACTIVE' },
+      });
 
       await service.logout(
-        fakeExpressReq({ cookies: { access_token: accessToken(), refresh_token: 'raw-token-value' } }),
+        fakeExpressReq({
+          cookies: {
+            access_token: accessToken(),
+            refresh_token: 'raw-token-value',
+          },
+        }),
         fakeExpressRes(),
       );
 
@@ -572,7 +595,12 @@ describe('AuthService', () => {
 
       expect(mockAuditLog.log).toHaveBeenCalledTimes(1);
       expect(mockAuditLog.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'LOGOUT', actorId: 'user-row', tenantId: ORG_B, objectId: 'user-row' }),
+        expect.objectContaining({
+          action: 'LOGOUT',
+          actorId: 'user-row',
+          tenantId: ORG_B,
+          objectId: 'user-row',
+        }),
       );
     });
 
@@ -581,22 +609,32 @@ describe('AuthService', () => {
       const forged = `${accessToken().split('.').slice(0, 2).join('.')}.forged`;
       const expired = accessToken({ exp: Math.floor(Date.now() / 1000) - 10 });
       const stale = accessToken(); // tokenVersion 2, but the user is now at 3
-      mockPrisma.user.findFirst.mockResolvedValue({ tokenVersion: 3, organization: { status: 'ACTIVE' } });
+      mockPrisma.user.findFirst.mockResolvedValue({
+        tokenVersion: 3,
+        organization: { status: 'ACTIVE' },
+      });
 
       for (const token of [forged, expired, stale]) {
         mockAuditLog.log.mockClear();
         await service.logout(
-          fakeExpressReq({ cookies: { access_token: token, refresh_token: 'raw-token-value' } }),
+          fakeExpressReq({
+            cookies: { access_token: token, refresh_token: 'raw-token-value' },
+          }),
           fakeExpressRes(),
         );
-        expect(mockAuditLog.log).toHaveBeenCalledWith(expect.objectContaining({ actorId: 'user-row' }));
+        expect(mockAuditLog.log).toHaveBeenCalledWith(
+          expect.objectContaining({ actorId: 'user-row' }),
+        );
       }
     });
 
     it('a second sign-out with the same refresh token is a no-op: 200, nothing to revoke, no second audit entry', async () => {
       mockPrisma.refreshToken.updateManyAndReturn.mockResolvedValue([]);
       await expect(
-        service.logout(fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } }), fakeExpressRes()),
+        service.logout(
+          fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } }),
+          fakeExpressRes(),
+        ),
       ).resolves.toEqual({ success: true });
       expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
@@ -614,14 +652,24 @@ describe('AuthService', () => {
         expiresAt: new Date(Date.now() + 86_400_000),
       };
       mockPrisma.refreshToken.updateManyAndReturn.mockImplementation(
-        async ({ where, data }: { where: { tokenHash: string; revokedAt: null }; data: { revokedAt: Date } }) => {
-          if (where.tokenHash !== row.tokenHash || row.revokedAt !== null) return [];
+        ({
+          where,
+          data,
+        }: {
+          where: { tokenHash: string; revokedAt: null };
+          data: { revokedAt: Date };
+        }) => {
+          if (where.tokenHash !== row.tokenHash || row.revokedAt !== null)
+            return Promise.resolve([]);
           row.revokedAt = data.revokedAt;
-          return [{ userId: row.userId, organizationId: row.organizationId }];
+          return Promise.resolve([
+            { userId: row.userId, organizationId: row.organizationId },
+          ]);
         },
       );
       mockPrisma.refreshToken.findFirst.mockImplementation(
-        async ({ where }: { where: { tokenHash: string } }) => (where.tokenHash === row.tokenHash ? row : null),
+        ({ where }: { where: { tokenHash: string } }) =>
+          Promise.resolve(where.tokenHash === row.tokenHash ? row : null),
       );
       const cookies = { refresh_token: 'raw-token-value' };
 
@@ -629,9 +677,9 @@ describe('AuthService', () => {
       // Non-vacuity guard: the sign-out really revoked the row.
       expect(row.revokedAt).toBeInstanceOf(Date);
 
-      await expect(service.refresh(fakeExpressReq({ cookies }), fakeExpressRes())).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(
+        service.refresh(fakeExpressReq({ cookies }), fakeExpressRes()),
+      ).rejects.toThrow(UnauthorizedException);
       expect(mockPrisma.refreshToken.update).not.toHaveBeenCalled();
     });
   });
@@ -658,7 +706,10 @@ describe('AuthService', () => {
       });
       const res = fakeExpressRes();
 
-      await service.refresh(fakeExpressReq({ cookies: { refresh_token: 'raw' } }), res);
+      await service.refresh(
+        fakeExpressReq({ cookies: { refresh_token: 'raw' } }),
+        res,
+      );
 
       expect(res.cookie).toHaveBeenCalledWith(
         'refresh_token',
@@ -667,9 +718,17 @@ describe('AuthService', () => {
       );
       expect(res.clearCookie).toHaveBeenCalledWith(
         'refresh_token',
-        expect.objectContaining({ path: '/api/v1/auth/refresh', secure: true, httpOnly: true, sameSite: 'strict' }),
+        expect.objectContaining({
+          path: '/api/v1/auth/refresh',
+          secure: true,
+          httpOnly: true,
+          sameSite: 'strict',
+        }),
       );
-      expect(res.clearCookie).not.toHaveBeenCalledWith('refresh_token', expect.objectContaining({ path: '/api/v1/auth' }));
+      expect(res.clearCookie).not.toHaveBeenCalledWith(
+        'refresh_token',
+        expect.objectContaining({ path: '/api/v1/auth' }),
+      );
     });
   });
 

@@ -176,10 +176,14 @@ describe('AuthController', () => {
   // route carries no guard. Read from the same metadata Nest reads.
   it('logout is public: no guard on the route', () => {
     const guardsOn = (method: object): unknown[] =>
-      (Reflect.getMetadata(GUARDS_METADATA, method) as unknown[] | undefined) ?? [];
+      (Reflect.getMetadata(GUARDS_METADATA, method) as unknown[] | undefined) ??
+      [];
     // Non-vacuity guard: the metadata is readable this way — /me is guarded.
-    expect(guardsOn(AuthController.prototype.getMe)).toContain(TenantGuard);
-    expect(guardsOn(AuthController.prototype.logout)).toEqual([]);
+    const route = (name: 'getMe' | 'logout'): object =>
+      Object.getOwnPropertyDescriptor(AuthController.prototype, name)
+        ?.value as object;
+    expect(guardsOn(route('getMe'))).toContain(TenantGuard);
+    expect(guardsOn(route('logout'))).toEqual([]);
   });
 
   it('acceptInvitation delegates to AuthService.acceptInvitation', async () => {
