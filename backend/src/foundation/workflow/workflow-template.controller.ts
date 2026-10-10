@@ -31,6 +31,13 @@ import {
   IWorkflowTransitionAction,
   IWorkflowTransitionWriteResult,
 } from './interfaces/workflow-transition.interface';
+import { StageTaskDefinitionService } from './stage-task-definition.service';
+import {
+  CreateStageTaskDefinitionDto,
+  ReorderStageTaskDefinitionsDto,
+  UpdateStageTaskDefinitionDto,
+} from './dto/stage-task-definition.dto';
+import { IStageTaskDefinition, IStageTaskDefinitionSaved } from './interfaces/stage-task-definition.interface';
 
 // Route order is deliberate: static segments (transitions, stages) are
 // declared before the dynamic '/:id' routes below them — Nest matches routes
@@ -39,7 +46,10 @@ import {
 @Controller('workflow-templates')
 @UseGuards(TenantGuard, PermissionGuard)
 export class WorkflowTemplateController {
-  constructor(private readonly workflowTemplateService: WorkflowTemplateService) {}
+  constructor(
+    private readonly workflowTemplateService: WorkflowTemplateService,
+    private readonly stageTaskDefinitions: StageTaskDefinitionService,
+  ) {}
 
   // ── Templates (list/create) ──────────────────────────────────────────────────
 
@@ -155,6 +165,63 @@ export class WorkflowTemplateController {
     @CurrentUser() actorId: string,
   ): Promise<void> {
     return this.workflowTemplateService.removeStage(stageId, tenantId, actorId);
+  }
+
+  // ── Stage task definitions (ACC-190) ─────────────────────────────────────────
+  // The same people who edit stages and transitions (Ahmad, 9 Oct, F).
+
+  @Get('stages/:stageId/task-definitions')
+  @Permissions(WORKFLOWS_PERMISSIONS.VIEW)
+  listStageTaskDefinitions(
+    @Param('stageId') stageId: string,
+    @CurrentTenant() tenantId: string,
+  ): Promise<IStageTaskDefinition[]> {
+    return this.stageTaskDefinitions.list(stageId, tenantId);
+  }
+
+  @Post('stages/:stageId/task-definitions')
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  createStageTaskDefinition(
+    @Param('stageId') stageId: string,
+    @Body() dto: CreateStageTaskDefinitionDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<IStageTaskDefinitionSaved> {
+    return this.stageTaskDefinitions.create(stageId, dto, tenantId, actorId);
+  }
+
+  @Post('stages/:stageId/task-definitions/order')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  reorderStageTaskDefinitions(
+    @Param('stageId') stageId: string,
+    @Body() dto: ReorderStageTaskDefinitionsDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<IStageTaskDefinition[]> {
+    return this.stageTaskDefinitions.reorder(stageId, dto.ids, tenantId, actorId);
+  }
+
+  @Patch('task-definitions/:id')
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  updateStageTaskDefinition(
+    @Param('id') id: string,
+    @Body() dto: UpdateStageTaskDefinitionDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<IStageTaskDefinitionSaved> {
+    return this.stageTaskDefinitions.update(id, dto, tenantId, actorId);
+  }
+
+  @Delete('task-definitions/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
+  removeStageTaskDefinition(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() actorId: string,
+  ): Promise<void> {
+    return this.stageTaskDefinitions.remove(id, tenantId, actorId);
   }
 
   // ── Templates (single, by id) ─────────────────────────────────────────────────

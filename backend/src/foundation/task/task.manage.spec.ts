@@ -97,6 +97,8 @@ const mockPrisma = {
   taskAssignee: { updateMany: jest.fn() },
   taskRequest: { findMany: jest.fn(), updateMany: jest.fn() },
   workflowInstance: { findFirst: jest.fn() },
+  // ACC-190 — reopen checks a stage-definition task's ENTRY is still open.
+  workflowInstanceStage: { findFirst: jest.fn() },
   user: { findMany: jest.fn(), findFirst: jest.fn() },
   committeeMember: { findMany: jest.fn() },
   $queryRaw: jest.fn(),
@@ -217,26 +219,73 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
       expect((error as BadRequestException).message).toBe('The due date must be in the future');
     });
 
-    it("raises the limit to the engine's stage date instead of refusing it (C1), recorded in slaExtendedTo", async () => {
-      const stageDate = hoursFromNow(240);
-      await service.create(
-        dto({ priority: 'MEDIUM', dueDate: stageDate.toISOString(), sourceStageId: 's1', workflowInstanceId: 'i1' }),
-        ORG_A,
-        CREATOR,
-        undefined,
-        'engine',
-      );
-      const { data } = mockPrisma.task.create.mock.calls[0][0] as { data: Record<string, Date> };
-      expect(data['dueAt']).toEqual(stageDate);
-      expect(data['slaLimitAt']).toEqual(stageDate);
-      expect(data['slaExtendedTo']).toEqual(stageDate);
+    // ACC-190 — ACC-174's interim engine path (a stage SLA raising the limit
+    // through slaExtendedTo) is gone with CREATE_TASK. A stage task comes from a
+    // definition, and its window is its OWN priority SLA counted from the stage
+    // ENTRY: the stage's deadline is made to fit it, never the other way round.
+    const stageDraft = (over: Record<string, unknown> = {}) => ({
+      title: 'Check the terms',
+      titleAr: 'مراجعة الشروط',
+      description: null,
+      priority: 'HIGH' as const,
+      requiresEvidence: true,
+      isMandatory: true,
+      sourceType: 'COMMITTEE' as const,
+      sourceId: 'committee-1',
+      sourceStageId: 'stage-1',
+      stageTaskDefinitionId: 'definition-1',
+      placement: null,
+      ...over,
     });
 
-    it("leaves the limit alone when the engine's stage date is inside it", async () => {
-      await service.create(dto({ dueDate: hoursFromNow(5).toISOString() }), ORG_A, CREATOR, undefined, 'engine');
-      const { data } = mockPrisma.task.create.mock.calls[0][0] as { data: Record<string, Date | null> };
-      expect(data['slaExtendedTo']).toBeNull();
-      expect(data['slaLimitAt']).toEqual(plusHours(data['slaStartAt']!, 16));
+    it('counts a stage-entry task from the ENTRY, with its priority window and no extension', async () => {
+      const enteredAt = hoursFromNow(-3);
+      const prepared = await service.prepareStageEntryTask(stageDraft(), enteredAt, ORG_A);
+      expect(prepared.data.slaStartAt).toEqual(enteredAt);
+      expect(prepared.data.dueAt).toEqual(plusHours(enteredAt, 16)); // HIGH
+      expect(prepared.data.slaLimitAt).toEqual(prepared.data.dueAt);
+      expect(prepared.data.slaExtendedTo).toBeNull();
+      expect(prepared.data.dueDateOverridden).toBe(false);
+    });
+
+    it('snapshots the definition: title in both languages, mandatory, evidence, priority', async () => {
+      const prepared = await service.prepareStageEntryTask(stageDraft(), hoursFromNow(0), ORG_A);
+      expect(prepared.data).toEqual(
+        expect.objectContaining({
+          title: 'Check the terms',
+          titleAr: 'مراجعة الشروط',
+          isMandatory: true,
+          requiresEvidence: true,
+          priority: 'HIGH',
+          stageTaskDefinitionId: 'definition-1',
+          sourceStageId: 'stage-1',
+        }),
+      );
+      // Set at insert, inside the engine's transaction — never here.
+      expect(prepared.data).not.toHaveProperty('workflowInstanceStageId');
+      expect(prepared.data).not.toHaveProperty('workflowInstanceId');
+    });
+
+    it('a route that found nobody on the record is an UNASSIGNED task with no target', async () => {
+      const prepared = await service.prepareStageEntryTask(stageDraft({ placement: null }), hoursFromNow(0), ORG_A);
+      expect(prepared.data.status).toBe('UNASSIGNED');
+      expect(prepared.data.assignedPositionId).toBeNull();
+      expect(prepared.data.assignedCommitteeId).toBeNull();
+      expect(prepared.pooled).toBe(false);
+    });
+
+    it('a pooled placement keeps its target and starts the pick-up clock at the entry', async () => {
+      const enteredAt = hoursFromNow(-1);
+      const prepared = await service.prepareStageEntryTask(
+        stageDraft({
+          placement: { target: { kind: 'POSITION', orgUnitId: 'unit-1', positionId: 'pos-1' }, pooled: true, directUserIds: [] },
+        }),
+        enteredAt,
+        ORG_A,
+      );
+      expect(prepared.data.status).toBe('PENDING');
+      expect(prepared.data).toEqual(expect.objectContaining({ assignedOrgUnitId: 'unit-1', assignedPositionId: 'pos-1', pooledAt: enteredAt }));
+      expect(prepared.pooled).toBe(true);
     });
   });
 
@@ -465,6 +514,27 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
       expect(await captureError(service.cancel('task-1', { reason: 'x' }, outsider, ORG_A))).toBeInstanceOf(NotFoundException);
     });
 
+    // ACC-190 (Ahmad, 9 Oct, K) — a stage definition's OPTIONAL task never
+    // holds its step, so whoever manages it may cancel it; a MANDATORY one is
+    // what the step waits for, and never may.
+    const definitionTask = (isMandatory: boolean) =>
+      task({ sourceStageId: 's1', workflowInstanceId: 'i1', workflowInstanceStageId: 'entry-1', stageTaskDefinitionId: 'def-1', isMandatory });
+
+    it('cancels an OPTIONAL stage-definition task', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(definitionTask(false));
+      await expect(service.cancel('task-1', { reason: 'Not needed this round' }, creator, ORG_A)).resolves.toBeDefined();
+      expect(mockPrisma.task.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: 'CANCELLED', cancelledReason: 'Not needed this round' }) }),
+      );
+    });
+
+    it('refuses a MANDATORY stage-definition task (409), and writes nothing', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(definitionTask(true));
+      const error = await captureError(service.cancel('task-1', { reason: 'x' }, creator, ORG_A));
+      expect((error as ConflictException).message).toBe('This task is required for its workflow step and cannot be cancelled');
+      expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
     it.each([['COMPLETED', 'A completed task cannot be cancelled'], ['CANCELLED', 'A cancelled task cannot be cancelled']])(
       'refuses a %s task (409)',
       async (status, message) => {
@@ -612,6 +682,41 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
       const error = await captureError(service.reopen('task-1', { reason: 'x' }, creator, ORG_A));
       expect((error as ConflictException).message).toBe('The workflow has moved past this step');
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+
+    // ACC-190 — for a stage-definition task, "still in that step" means the
+    // same ENTRY: a record that left and came back has fresh tasks of its own.
+    describe('a stage-definition task', () => {
+      const definitionTask = () =>
+        completed({ sourceStageId: 's1', workflowInstanceId: 'i1', workflowInstanceStageId: 'entry-1', stageTaskDefinitionId: 'def-1', isMandatory: true });
+
+      it('reopens while its entry is open and the workflow runs — checked on the entry, in the tenant', async () => {
+        mockPrisma.task.findFirst.mockResolvedValue(definitionTask());
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue({ id: 'entry-1' });
+
+        await expect(service.reopen('task-1', { reason: 'Evidence is wrong' }, creator, ORG_A)).resolves.toBeDefined();
+        expect(mockPrisma.workflowInstanceStage.findFirst).toHaveBeenCalledWith({
+          where: {
+            id: 'entry-1',
+            exitedAt: null,
+            workflowInstance: { organizationId: ORG_A, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+          },
+          select: { id: true },
+        });
+        // Never the template-stage comparison, which a re-entry would pass.
+        expect(mockPrisma.workflowInstance.findFirst).not.toHaveBeenCalled();
+      });
+
+      it('refuses once its entry has been left — even if the record is back in the same stage (409)', async () => {
+        mockPrisma.task.findFirst.mockResolvedValue(definitionTask());
+        mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue(null);
+        // The record is back in s1 on a NEW entry: the old check would pass.
+        mockPrisma.workflowInstance.findFirst.mockResolvedValue({ status: 'IN_PROGRESS', currentStageId: 's1' });
+
+        const error = await captureError(service.reopen('task-1', { reason: 'x' }, creator, ORG_A));
+        expect((error as ConflictException).message).toBe('The workflow has moved past this step');
+        expect(mockPrisma.task.update).not.toHaveBeenCalled();
+      });
     });
 
     itEnforcesTenantIsolation('reopen', async () => {

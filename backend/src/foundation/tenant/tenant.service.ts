@@ -30,6 +30,8 @@ import {
 } from './interfaces/tenant.interface';
 import { ModuleAccessLevel, resolveModuleEntitlements } from './module-entitlements';
 import { DEFAULT_TASK_SLA_SETTINGS, taskSlaFromSettings } from './task-sla-settings';
+import { stageDeadlineConflicts } from '../workflow/stage-deadline-rule';
+import { WorkflowRefusalException } from '../workflow/workflow-refusal';
 
 // ACC-46 Section 2.7.d — replaces TaskService's own old
 // DEFAULT_TASK_SLA_HOURS/FALLBACK_SLA_HOURS pair (a flat hours-per-priority
@@ -319,6 +321,13 @@ export class TenantService {
     if (!org) throw new NotFoundException('Tenant not found');
 
     const settings = (org.settings as Record<string, unknown> | null) ?? {};
+
+    // ACC-190 — raising a priority's hours must not make any workflow stage end
+    // before a task defined on it is due.
+    const conflicts = await stageDeadlineConflicts(this.prisma, id, (priority) => dto[priority].dueAfterHours);
+    if (conflicts.length > 0) {
+      throw new WorkflowRefusalException('TASK_SLA_EXCEEDS_STAGE_DEADLINES', { stages: conflicts });
+    }
 
     await this.prisma.organization.update({
       where: { id },
