@@ -493,7 +493,7 @@ describe('AuthService', () => {
         httpOnly: true,
         secure: true,
         sameSite: 'strict',
-        path: '/api/v1/auth/refresh',
+        path: '/api/v1/auth',
       });
     });
 
@@ -1346,7 +1346,7 @@ describe('AuthService', () => {
           httpOnly: true,
           secure: true,
           sameSite: 'strict',
-          path: '/api/v1/auth/refresh',
+          path: '/api/v1/auth',
         }),
       );
     });
