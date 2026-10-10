@@ -524,9 +524,14 @@ under its own ticket. Until then (c), which Phase 1 already is.
       png, gif, webp, Arabic txt with `<script>`, 2,000-row csv, docx) were
       served to the browser from a simulated storage host: every renderer and
       the no-preview panel worked, and no storage request carried a cookie.
-- [ ] Live proof, al-nakheel against real AccreditMe cloud: needs the local
-      `AWS_*` settings (`acc189-local-storage-env.ps1`, hidden input), then
-      upload, view, delete and purge the extra files.
+- [ ] **Post-deploy check, by Ahmad: al-nakheel on real AccreditMe cloud.**
+      Platform S3 keys open every bucket, so they stay on Railway only and
+      this leg is not run locally (decided 10 Oct). After the deploy Ahmad
+      uploads and views files on the live app himself: a PDF, an image, a
+      text file, a CSV past 500 rows and a Word file, in English and Arabic.
+      What that proves beyond the simulated run: Supabase answering CORS for
+      the live app's origin, the storage GET going out without cookies, and
+      the CSP (report-only) reporting no violation for the storage host.
 
 **Where the build differs from the plan and the drawing:**
 - **No text selection in PDFs (D4)** although the drawing's Q5 says text is
