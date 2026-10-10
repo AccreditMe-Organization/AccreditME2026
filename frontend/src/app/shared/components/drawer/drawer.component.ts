@@ -111,7 +111,8 @@ export const DRAWER_FULL_SCREEN_BELOW_PX = 900;
             </button>
           </div>
           <ng-content select="[amDrawerToolbar]" />
-          <div class="am-drawer__body"><ng-content /></div>
+          <!-- A Tab stop, so Page Up / Page Down scroll the content from the keyboard (the drawing). -->
+          <div class="am-drawer__body" tabindex="0" data-am-drawer-body><ng-content /></div>
           <ng-content select="[amDrawerFooter]" />
         </div>
       </ng-template>
@@ -189,6 +190,10 @@ export const DRAWER_FULL_SCREEN_BELOW_PX = 900;
       .am-drawer__button:focus-visible {
         outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
         outline-offset: var(--am-focus-ring-offset);
+      }
+      .am-drawer__body:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: calc(-1 * var(--am-focus-ring-width));
       }
       .am-drawer__body {
         flex: 1 1 auto;
