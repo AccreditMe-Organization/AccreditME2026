@@ -26,6 +26,8 @@ export type StorageRefusalCode =
   | 'FILE_TYPE_NOT_ALLOWED'
   | 'FILE_UNAVAILABLE'
   | 'FILE_RECORD_GONE'
+  // ACC-189 — a view minted for a type the viewer does not render yet.
+  | 'PREVIEW_NOT_AVAILABLE'
   // ACC-185 — the customer's SharePoint can no longer be reached, and
   // Disconnect refused while files are stored there.
   | 'STORAGE_ACCESS_WITHDRAWN'
@@ -57,6 +59,7 @@ const STATUS: Readonly<Record<StorageRefusalCode, HttpStatus>> = {
   FILE_TYPE_NOT_ALLOWED: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
   FILE_UNAVAILABLE: HttpStatus.CONFLICT,
   FILE_RECORD_GONE: HttpStatus.CONFLICT,
+  PREVIEW_NOT_AVAILABLE: HttpStatus.CONFLICT,
   STORAGE_ACCESS_WITHDRAWN: HttpStatus.CONFLICT,
   STORAGE_LOCKED_BY_FILES: HttpStatus.CONFLICT,
   SHAREPOINT_SITE_URL_INVALID: HttpStatus.BAD_REQUEST,
@@ -87,6 +90,7 @@ export const STORAGE_REFUSAL_MESSAGES: Readonly<Record<StorageRefusalCode, strin
   FILE_TYPE_NOT_ALLOWED: "This type of file can't be uploaded",
   FILE_UNAVAILABLE: 'This file is no longer available from its storage location',
   FILE_RECORD_GONE: 'The record this file came from no longer exists, so it cannot be restored',
+  PREVIEW_NOT_AVAILABLE: "This type of file can't be previewed yet. Download it instead.",
   STORAGE_ACCESS_WITHDRAWN:
     "Your organization's SharePoint storage can't be reached: Microsoft access was withdrawn or the client secret is no longer valid. Ask your administrator.",
   STORAGE_LOCKED_BY_FILES:

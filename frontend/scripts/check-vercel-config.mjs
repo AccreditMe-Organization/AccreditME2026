@@ -11,8 +11,11 @@
 //      in the authentication path.
 //   3. The CSP's connect-src names the API origin environment.prod.ts calls,
 //      so changing one without the other is caught here rather than by a
-//      blocked request in a browser. script-src stays 'self' alone, which is
-//      what verify:built-index checks the built page against.
+//      blocked request in a browser. script-src is 'self' plus exactly one
+//      addition, 'wasm-unsafe-eval' (ACC-189: pdf.js's image decoders are
+//      wasm; it compiles WebAssembly and allows NO JavaScript eval and NO
+//      inline script). Anything else fails — verify:built-index checks the
+//      built page has no inline script for the same reason.
 //   4. The security headers are present on every path.
 //   5. Only dev builds (previews are off): ignoreCommand skips any other branch.
 //   6. The output directory is where angular.json builds to, and the Node
@@ -91,8 +94,8 @@ if (!csp) {
     fail('3 csp', `connect-src (${connect.join(' ')}) does not include the API origin ${apiOrigin}`);
   }
   const script = directive('script-src');
-  if (!script || script.join(' ') !== "'self'") {
-    fail('3 csp', `script-src must be exactly 'self', found ${script ? script.join(' ') : 'nothing'}`);
+  if (!script || script.join(' ') !== "'self' 'wasm-unsafe-eval'") {
+    fail('3 csp', `script-src must be exactly 'self' 'wasm-unsafe-eval', found ${script ? script.join(' ') : 'nothing'}`);
   }
 }
 

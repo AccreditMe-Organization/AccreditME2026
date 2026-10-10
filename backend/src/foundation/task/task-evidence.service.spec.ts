@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskService } from './task.service';
 import { StoredFileService } from '../file-storage/stored-file.service';
@@ -87,6 +87,7 @@ describe('TaskEvidenceService (ACC-177)', () => {
     recordInTx: jest.fn().mockResolvedValue({ id: 'file-1' }),
     discard: jest.fn().mockResolvedValue(undefined),
     openDownload: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: 'x' }),
+    openView: jest.fn().mockResolvedValue({ url: 'https://signed-view', viaApi: false, expiresAt: 'x' }),
     softDeleteInTx: jest.fn().mockResolvedValue({}),
     removeBytes: jest.fn().mockResolvedValue(undefined),
     afterUpload: jest.fn().mockResolvedValue(undefined),
@@ -246,6 +247,62 @@ describe('TaskEvidenceService (ACC-177)', () => {
       await expect(service.download('task-1', 'ev-1', 'org-b', viewer(ASSIGNEE))).rejects.toThrow('Task not found');
       expect(prisma.task.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'task-1', organizationId: 'org-b' } }));
       expect(storedFiles.openDownload).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('view (ACC-189)', () => {
+    it("mints a view through openView, with exactly the download's lookup", async () => {
+      await expect(service.openView('task-1', 'ev-1', ORG, viewer(ASSIGNEE))).resolves.toEqual(expect.objectContaining({ url: 'https://signed-view' }));
+      expect(prisma.taskEvidence.findFirst).toHaveBeenCalledWith({
+        where: { id: 'ev-1', taskId: 'task-1', organizationId: ORG, deletedAt: null, type: 'ATTACHMENT' },
+        include: { storedFile: true },
+      });
+      expect(storedFiles.openView).toHaveBeenCalledWith(STORED);
+      expect(storedFiles.openDownload).not.toHaveBeenCalled();
+    });
+
+    it('whoever may download may view: the same rule admits a tasks:view holder who is not on the task', async () => {
+      visibility.assertCanViewOrNotFound.mockResolvedValue(undefined);
+      const download = await service.download('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']));
+      const view = await service.openView('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']));
+      expect(download.url).toBe('https://signed');
+      expect(view.url).toBe('https://signed-view');
+    });
+
+    it('refuses anyone who may not download with the IDENTICAL 404, before looking at the evidence', async () => {
+      const downloadError = await service.download('task-1', 'ev-1', ORG, viewer(OTHER)).catch((e: unknown) => e);
+      const viewError = await service.openView('task-1', 'ev-1', ORG, viewer(OTHER)).catch((e: unknown) => e);
+      expect(viewError).toBeInstanceOf(NotFoundException);
+      expect((viewError as NotFoundException).getResponse()).toEqual((downloadError as NotFoundException).getResponse());
+      expect(prisma.taskEvidence.findFirst).not.toHaveBeenCalled();
+      expect(storedFiles.openView).not.toHaveBeenCalled();
+    });
+
+    it('a link, a deleted file, or another task\'s evidence is "Evidence not found", as for a download', async () => {
+      prisma.taskEvidence.findFirst.mockResolvedValue(null);
+      await expect(service.openView('task-1', 'ev-x', ORG, viewer(ASSIGNEE))).rejects.toThrow('Evidence not found');
+      prisma.taskEvidence.findFirst.mockResolvedValue({ ...EVIDENCE, storedFile: { ...STORED, deletedAt: new Date() } });
+      await expect(service.openView('task-1', 'ev-1', ORG, viewer(ASSIGNEE))).rejects.toThrow('Evidence not found');
+      expect(storedFiles.openView).not.toHaveBeenCalled();
+    });
+
+    it('writes a "viewed" log line (downloads say "opened") and NO audit row', async () => {
+      const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      await service.openView('task-1', 'ev-1', ORG, viewer(ASSIGNEE));
+      await service.download('task-1', 'ev-1', ORG, viewer(ASSIGNEE));
+      expect(log.mock.calls.map((c) => String(c[0]))).toEqual([
+        `File file-1 on task task-1 in org ${ORG} viewed by ${ASSIGNEE}`,
+        `File file-1 on task task-1 in org ${ORG} opened by ${ASSIGNEE}`,
+      ]);
+      expect(auditLog.log).not.toHaveBeenCalled();
+      log.mockRestore();
+    });
+
+    itEnforcesTenantIsolation("view never reaches another organisation's task or file", async () => {
+      prisma.task.findFirst.mockResolvedValue(null);
+      await expect(service.openView('task-1', 'ev-1', 'org-b', viewer(ASSIGNEE))).rejects.toThrow('Task not found');
+      expect(prisma.task.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'task-1', organizationId: 'org-b' } }));
+      expect(storedFiles.openView).not.toHaveBeenCalled();
     });
   });
 

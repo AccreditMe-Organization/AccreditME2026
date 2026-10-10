@@ -43,6 +43,7 @@
     "@primeuix/themes": "^2.0.3",
     "@tailwindcss/postcss": "^4.3.3",
     "chart.js": "^4.5.1",
+    "pdfjs-dist": "6.4.299",
     "postcss": "^8.5.25",
     "primeicons": "^7.0.0",
     "primeng": "^21.1.9",

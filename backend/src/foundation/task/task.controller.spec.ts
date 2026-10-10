@@ -104,6 +104,7 @@ describe('TaskController', () => {
     addFile: jest.fn().mockResolvedValue({ id: 'evidence-2' }),
     list: jest.fn().mockResolvedValue({ items: [], canAdd: true }),
     download: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '2026-10-07T10:15:00.000Z' }),
+    openView: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '2026-10-07T10:15:00.000Z' }),
     remove: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -332,7 +333,7 @@ describe('TaskController', () => {
 
   // ACC-177 — the evidence routes carry no route permission: who may is
   // decided from the task row, exactly as addEvidence() is.
-  it.each(['addFileEvidence', 'listEvidence', 'downloadEvidence', 'removeEvidence'] as const)(
+  it.each(['addFileEvidence', 'listEvidence', 'downloadEvidence', 'viewEvidence', 'removeEvidence'] as const)(
     '%s requires NO route permission — the service decides from the task',
     (method) => {
       const required = new Reflector().get<string[] | undefined>(PERMISSIONS_KEY, TaskController.prototype[method]);
@@ -350,6 +351,10 @@ describe('TaskController', () => {
 
     await controller.downloadEvidence('task-1', 'ev-1', TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
     expect(evidence.download).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
+
+    // ACC-189 — the viewer's mint takes exactly what the download takes.
+    await controller.viewEvidence('task-1', 'ev-1', TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
+    expect(evidence.openView).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
 
     await controller.removeEvidence('task-1', 'ev-1', TENANT_ID, USER_ID);
     expect(evidence.remove).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, USER_ID);

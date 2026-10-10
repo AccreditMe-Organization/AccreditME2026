@@ -239,6 +239,54 @@ describe('StoredFileService (ACC-177)', () => {
     });
   });
 
+  describe('openView (ACC-189)', () => {
+    const file = {
+      id: 'file-1',
+      organizationId: 'org-a',
+      provider: 'S3' as const,
+      bucket: 'accreditme-files',
+      endpoint: null,
+      rootPath: null,
+      storageKey: 'org-a/tasks/task1/x-file.pdf',
+      originalName: 'محضر.pdf',
+      mimeType: 'application/pdf',
+      deletedAt: null,
+    };
+
+    it.each(['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'text/plain', 'text/csv'])(
+      '%s: the same fifteen-minute URL a download gets (still an attachment)',
+      async (mimeType) => {
+        const view = await service.openView({ ...file, mimeType });
+        expect(view.url).toBe('https://signed.example/x');
+        expect(view.viaApi).toBe(false);
+        expect(typeof view.expiresAt).toBe('string');
+        expect(provider.signedDownloadUrl).toHaveBeenCalledWith(file.storageKey, 900, { fileName: 'محضر.pdf', mimeType });
+      },
+    );
+
+    it.each([
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/msword',
+      'application/vnd.ms-excel',
+      'application/vnd.ms-powerpoint',
+      'image/heic',
+      'image/heif',
+    ])('%s: 409 PREVIEW_NOT_AVAILABLE, and nothing is signed', async (mimeType) => {
+      const r = await refusal(service.openView({ ...file, mimeType }));
+      expect(r?.code).toBe('PREVIEW_NOT_AVAILABLE');
+      expect(r?.body['statusCode']).toBe(409);
+      expect(provider.signedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('a deleted file is refused before its type is looked at', async () => {
+      const r = await refusal(service.openView({ ...file, mimeType: 'image/heic', deletedAt: new Date() }));
+      expect(r?.code).toBe('FILE_UNAVAILABLE');
+      expect(provider.signedDownloadUrl).not.toHaveBeenCalled();
+    });
+  });
+
   it('a delete hides the file and keeps its bytes — it is in the recycle bin', async () => {
     await service.softDeleteInTx(prisma as never, 'file-1', 'org-a', 'user-1');
     expect(prisma.storedFile.update).toHaveBeenCalledWith({

@@ -136,6 +136,17 @@ const ALLOWLIST = new Map([
       'button in the evidence list, offered only where the server says canDelete.',
   ],
   [
+    'shared/components/drawer/drawer.component.ts#pi-times',
+    "The drawer's own ✕ (ACC-189). Closing a drawer changes nothing; like the " +
+      "dialog's ✕ it is the exit that must always be available.",
+  ],
+  [
+    'foundation/tasks/components/task-evidence-list/task-evidence-list.component.ts#pi-eye',
+    'View, opening the in-app file viewer (ACC-189). A read, not a write: it is ' +
+      'offered on exactly the rows Download is, and its mint enforces the same ' +
+      'entitlement and identical 404 as the download (TaskEvidenceService.openView).',
+  ],
+  [
     'layout/impersonation-banner/impersonation-banner.component.ts#pi-times',
     'Ends an impersonation session. Reachable only while impersonating, which ' +
       'PlatformGuard already established; there is no permission that could ' +

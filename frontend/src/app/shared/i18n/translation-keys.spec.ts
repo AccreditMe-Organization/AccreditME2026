@@ -192,6 +192,13 @@ describe('translation keys (ACC-78)', () => {
     const NUMBER_ONLY: Record<string, string> = {
       'list.panelRange': '"1–25 of 120" — a range, no noun',
       'workflow.stageIndicator.revisited': '"×3" — a multiplier sign, no noun',
+      // ACC-189 — positions in the file viewer: "n of N", no noun after the total.
+      'files.viewer.previousNamed': '"Previous file · 1 of 5" — a position, no noun after the total',
+      'files.viewer.nextNamed': '"Next file · 3 of 5" — a position, no noun after the total',
+      'files.viewer.moved': '"File 2 of 5, <name>" — a position, no noun after the total',
+      'files.viewer.pdf.of': '"of 12" beside the page field — a position, no noun',
+      'files.viewer.pdf.pageAria': '"Page 3 of 12" — a position, no noun after the total',
+      'files.viewer.csv.cut': '"the first 500 rows of 2,140" — the noun is in {{rows}}, a plural object; the total takes none',
     };
 
     // Time quantities never become plural objects: they go through the layer's

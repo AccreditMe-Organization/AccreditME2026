@@ -674,7 +674,7 @@ Everything in English and Arabic, right to left, and keyboard reachable.
       stale `Committee.orgUnitId` line, Key Architecture Decisions ACC-190),
       SYSTEM-REFERENCE §2.1/2.3/2.4/2.9/2.10.1, new §2.15, §3.1/3.2/3.10/3.11,
       §13.2; module-designs.md.
-- [ ] After the deploy: backfill dry run (report, then STOP), execute on
+- [x] After the deploy: backfill dry run (report, then STOP), execute on
       Ahmad's go, then the live proof (§10).
   - Deployed 10 Oct (`5f775d3`, Railway `cedf7638`); dry run as planned.
   - First `--execute`: al-manara done (26 actions, 22 kinds, 1 audit row);
@@ -682,6 +682,11 @@ Everything in English and Arabic, right to left, and keyboard reachable.
     (5.3 s) and rolled back whole — confirmed by a fresh dry run. Fixed on
     `fix/ACC-190-backfill-timeout` (`BACKFILL_TX`, 120 s); al-nakheel is
     re-run after that deploys.
+  - Re-run 10 Oct after `0d76047` deployed: al-nakheel 26 actions, 1 log row,
+    22 kinds, 1 audit row; a later dry run has nothing to change. Live proof
+    §10 passed all nine steps on the Quality & Patient Safety Committee, left
+    Active (mandatory task routed to the Q&PS Director, since the committee's
+    own unit has no Quality Officer); both definitions deleted.
 
 **Where the build differs from the plan:**
 - Stage tasks get no out-of-office routing: they follow the manual route,
