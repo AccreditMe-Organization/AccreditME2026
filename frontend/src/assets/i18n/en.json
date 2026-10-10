@@ -742,7 +742,7 @@
       "add": "Add evidence",
       "addTitle": "Add evidence",
       "addNamed": "Add evidence to “{{title}}”",
-      "viewNamed": "View “{{name}}”",
+      "viewNamed": "Evidence on “{{title}}”",
       "contextRequired": "{{title}} · evidence required",
       "kind": "Kind",
       "kindLink": "Link",
@@ -767,7 +767,8 @@
       "keep": "Keep",
       "note": "Note",
       "loadError": "The evidence couldn't be loaded.",
-      "removeMessageFile": "“{{name}}” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days."
+      "removeMessageFile": "“{{name}}” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days.",
+      "viewFileNamed": "View “{{name}}”"
     }
   },
   "auth": {

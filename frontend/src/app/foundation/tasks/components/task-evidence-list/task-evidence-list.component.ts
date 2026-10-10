@@ -82,7 +82,7 @@ import { ITaskEvidenceDto, ITaskEvidenceListDto, TaskService } from '../../servi
               @if (item.file) {
                 <am-icon-button
                   icon="pi pi-eye"
-                  [label]="'task.evidence.viewNamed' | translate: { name: item.file.name }"
+                  [label]="'task.evidence.viewFileNamed' | translate: { name: item.file.name }"
                   (activated)="view(item)"
                 />
                 <am-icon-button
