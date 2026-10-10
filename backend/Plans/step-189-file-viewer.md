@@ -1,9 +1,11 @@
 # Step 189 — File viewer for attachments (ACC-189)
 
-**Status: PLAN ONLY.**
-- No UI is built before the design drawing is accepted and copied into
-  `frontend/design-reference/` on this branch.
-- Branch: `feature/ACC-189-file-viewer`, from `origin/dev` at `b9d76d3`.
+**Status: APPROVED, BUILDING (10 Oct).** D1–D5 answered (§10); the drawing
+was accepted in the design review and is built to once it is copied into
+`frontend/design-reference/` on this branch — where it and this plan differ,
+the drawing wins on anything visual.
+- Branch: `feature/ACC-189-file-viewer`, from `origin/dev` at `b9d76d3`,
+  with `origin/dev` merged in on 10 Oct.
 
 **Ahmad's rule:** every attachment anywhere in the app can be viewed inside the
 app, not only downloaded.
@@ -221,15 +223,27 @@ export interface IFileViewerRequest {
 FileViewerService.open(request): void   // one viewer at a time
 ```
 
-- **`FileViewerComponent`:**
-  - A large modal dialog, full screen below the small breakpoint, appended to
-    the body.
+- **`FileViewerComponent`, in a DRAWER (settled by the drawing; was a dialog):**
+  - ONE shared `am-drawer` on PrimeNG Drawer, so later screens reuse it.
+  - It opens from the END side: right in English, left in Arabic. The side is
+    set from the language explicitly; PrimeNG is not trusted to flip it.
+  - Modal: the page behind is dimmed and inert; clicking the mask does NOT
+    close it.
+  - 60% of the window wide, 720px minimum, with a fixed header and footer.
+  - Expand switches to full screen and becomes Restore. Below 900px it is
+    always full screen and Expand is hidden.
   - Registered with **`LayerStackService`**, so **Esc closes only the top
     layer**. The viewer can open from the evidence dialog on My tasks, which
     is itself a layer.
-  - The header has the file name (`dir="auto"`), the type and size, Download
-    and Close.
-  - The footer or sides have Previous and Next, with "File 2 of 5".
+  - The header has the file name (`dir="auto"`), the type and size, and a
+    "From …" line the opening list passes in ("From a task's evidence").
+  - Previous and Next walk the list it was opened from, "n / total" counting
+    files only (links are not passed; no-preview files are).
+  - Focus returns to the row of the file LAST SHOWN, not the one first opened.
+  - No deep link: the URL does not change.
+  - Download is always offered, except in the deleted and SharePoint-withdrawn
+    states.
+  - The viewer keeps the version it opened until it is closed.
   - The look comes from the drawing.
 - **Renderers:** one small component per kind (`pdf`, `image`, `text`, `csv`,
   `unsupported`), chosen by the type mapping above.
@@ -450,12 +464,59 @@ under its own ticket. Until then (c), which Phase 1 already is.
 | D4 | PDF text selection and search | Not in Phase 1 (canvas only); a later ask. |
 | D5 | pdfjs-dist, Apache-2.0, legacy build, lazy-loaded | Accept. |
 
+**Answers (Ahmad, 10 Oct):**
+- **D1:** a log line only ("viewed"), like downloads. No audit row, no
+  customer-visible access trail.
+- **D2:** Word, Excel, PowerPoint, legacy Office and HEIC are download only
+  for now ("No preview for this type yet"). Previews are ACC-192.
+- **D3:** a MinIO that blocks cross-origin requests shows "This file can't be
+  previewed from your organization's storage" with Download, and the CORS
+  setting goes in the customer docs. MinIO views are NEVER streamed through
+  the API.
+- **D4:** no text selection or search in PDFs in this version.
+- **D5:** pdfjs-dist, Apache-2.0, legacy build, loaded only the first time a
+  PDF is opened. Eval off, PDF scripting out.
+
 ## 11. Progress
 
 - [x] Ticket ACC-189 and branch
 - [x] Q1 measured: Supabase answers CORS (`*`, no credentials) for tenant
       subdomains and localhost
 - [x] Plan written
-- [ ] Ahmad's answers to D1–D5
-- [ ] Design drawing accepted and copied into `frontend/design-reference/`
-- [ ] Build (after both)
+- [x] Ahmad's answers to D1–D5
+- [ ] Design drawing copied into `frontend/design-reference/` — accepted in
+      review; the file is not on the branch yet
+- [x] Backend: `GET /tasks/:id/evidence/:evidenceId/view`, the download's
+      entitlement and 404 (`fileForViewer()`, shared); `StoredFileService.openView()`;
+      `PREVIEWABLE_MIME_TYPES`; 409 `PREVIEW_NOT_AVAILABLE`; "viewed" log line.
+  - The evidence method is `openView()`: `TaskEvidenceService` already has a
+    private `view()` that maps list rows.
+- [x] `files.refusal.STORAGE_ACCESS_WITHDRAWN` and `PREVIEW_NOT_AVAILABLE` in
+      en and ar, and in `REFUSAL_CODES`.
+- [x] `pdfjs-dist@6.4.299`, lockfile written on Linux. Assets copied by
+      `angular.json`: the worker, `cmaps`, `standard_fonts`, `iccs`, and the
+      image-decoder wasm WITHOUT `quickjs-eval.*`.
+- [x] Non-visual frontend: the viewer contract, `FileBytesService` (no
+      credentials on storage, mutation-tested), the CSV reader, the text
+      decoder, the lazy pdf.js loader, the type mapping.
+- [x] `docs/customer/minio-storage-viewing.md` (D3).
+- [ ] `am-drawer`, the viewer, its renderers and states, task evidence wiring
+      — after the drawing is on the branch.
+- [ ] Live proof (§9), then Progress closed.
+
+**Where the build differs from the plan so far:**
+- **pdf.js 6 has no `isEvalSupported` option**: it has no eval or
+  `new Function` path at all (checked in the shipped build). "Eval off" holds
+  by construction. Its PDF scripting needs `pdf.sandbox` and a QuickJS wasm,
+  neither shipped.
+- **pdf.js 6 decodes JBIG2, JPEG 2000 and ICC profiles with wasm**, with
+  plain-JS fallbacks. Both are shipped from our origin, so scanned PDFs render
+  even if a future CSP refuses wasm.
+- **The API is no longer same-origin with the app in production** (ACC-130:
+  the app on Vercel, the API on `api.accreditme.app`). Stream URLs are fetched
+  cross-origin without credentials; the API's CORS reflects the app's origin,
+  so this works.
+- **Vercel's CSP (report-only today) has `connect-src 'self'
+  https://api.accreditme.app`.** Once enforced, it blocks the viewer's fetch
+  of a Supabase pre-signed URL and of any customer MinIO. It needs the
+  Supabase storage host before it is enforced.
