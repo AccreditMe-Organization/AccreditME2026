@@ -79,6 +79,17 @@ describe('FilePdfViewComponent (ACC-189)', () => {
     expect(fixture.nativeElement.querySelector('.am-fpdf')!.getAttribute('dir')).toBe('ltr');
   });
 
+  it('pages near the view are PAINTED, not left "Loading page n…"', async () => {
+    await setup();
+    for (let i = 0; i < 20 && fixture.nativeElement.querySelector('.am-fpdf__pending'); i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      fixture.detectChanges();
+    }
+    const first = fixture.nativeElement.querySelector('.am-fpdf__page') as HTMLElement;
+    expect(first.querySelector('.am-fpdf__pending')).toBeNull();
+    expect((first.querySelector('canvas') as HTMLCanvasElement).width).toBeGreaterThan(0);
+  });
+
   it('a zoom level is a percentage of the printed size: 150% is 1.5 × the CSS size of a point', async () => {
     await setup();
     let percent = 0;

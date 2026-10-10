@@ -7,6 +7,7 @@ import { Drawer } from 'primeng/drawer';
 import en from '../../../../assets/i18n/en.json';
 import ar from '../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 import { LayerStackService } from '../../overlay/layer-stack.service';
 import { DrawerComponent } from './drawer.component';
 
@@ -54,12 +55,9 @@ describe('DrawerComponent (ACC-189)', () => {
   const frame = (): HTMLElement => document.body.querySelector('.am-drawer__frame') as HTMLElement;
   const drawer = (): Drawer => fixture.debugElement.query(By.directive(Drawer)).componentInstance as Drawer;
 
-  afterEach(() => {
-    fixture?.destroy();
-    page?.remove();
-    TestBed.inject(TranslateService).use('en');
-    document.documentElement.dir = 'ltr';
-  });
+  // Puts <html dir/lang> back and resets the TestBed (ACC-184).
+  preserveDocumentLanguage();
+  afterEach(() => page?.remove());
 
   it('opens from the END side: right in English, left in Arabic — set by us, not left to PrimeNG', async () => {
     await setup('en');

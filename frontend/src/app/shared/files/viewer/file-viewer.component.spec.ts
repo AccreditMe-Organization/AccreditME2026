@@ -6,6 +6,7 @@ import { Observable, Subscriber, of } from 'rxjs';
 import en from '../../../../assets/i18n/en.json';
 import ar from '../../../../assets/i18n/ar.json';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../core/formatting/testing';
+import { preserveDocumentLanguage } from '../../../../testing/document-language';
 import { LayerStackService } from '../../overlay/layer-stack.service';
 import { FileBytesEvent, FileBytesService } from './file-bytes.service';
 import { FileViewerComponent } from './file-viewer.component';
@@ -90,7 +91,7 @@ describe('FileViewerComponent (ACC-189)', () => {
 
   /** The drawer's frame is appended to the body by PrimeNG. */
   const frame = (): HTMLElement => document.body.querySelector('.am-drawer__frame') as HTMLElement;
-  const text = (): string => frame().textContent ?? '';
+  const text = (): string => (frame().textContent ?? '').replace(/\s+/g, ' ');
   const render = async () => {
     fixture.detectChanges();
     await fixture.whenStable();
@@ -98,11 +99,9 @@ describe('FileViewerComponent (ACC-189)', () => {
   };
   const key = (k: string) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
 
-  afterEach(() => {
-    fixture?.destroy();
-    TestBed.inject(TranslateService).use('en');
-    document.documentElement.dir = 'ltr';
-  });
+  // Arabic specs here switch the document's direction; this puts it back and
+  // resets the TestBed, which destroys the fixture (ACC-184).
+  preserveDocumentLanguage();
 
   it('opens at the file it was asked for, named in full, with "2 / 3" and where it came from', async () => {
     open([PDF, IMG, TXT], 1);
