@@ -767,7 +767,8 @@
       "keep": "Keep",
       "note": "Note",
       "loadError": "The evidence couldn't be loaded.",
-      "removeMessageFile": "“{{name}}” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days."
+      "removeMessageFile": "“{{name}}” will no longer count as evidence for this task. Your administrator can restore it from the recycle bin for 30 days.",
+      "viewFileNamed": "View “{{name}}”"
     }
   },
   "auth": {
@@ -1259,6 +1260,20 @@
         "one": "1 attempt left for this sign-in.",
         "other": "{{count}} attempts left for this sign-in."
       }
+    },
+    "files": {
+      "lines": {
+        "one": "{{count}} line",
+        "other": "{{count}} lines"
+      },
+      "rows": {
+        "one": "{{count}} row",
+        "other": "{{count}} rows"
+      },
+      "pages": {
+        "one": "{{count}} page",
+        "other": "{{count}} pages"
+      }
     }
   },
   "datePicker": {
@@ -1354,8 +1369,78 @@
       "STORAGE_ALREADY_CONFIRMED": "Where files are stored has already been confirmed.",
       "STORAGE_CHANGE_BY_PLATFORM": "Changing where files are stored is done by AccreditMe. Contact support.",
       "STORAGE_TEST_FAILED": "The storage connection test did not pass.",
-      "FILE_RECORD_GONE": "The record this file came from no longer exists, so it can't be restored."
+      "FILE_RECORD_GONE": "The record this file came from no longer exists, so it can't be restored.",
+      "STORAGE_ACCESS_WITHDRAWN": "Your organization's SharePoint storage can't be reached: access was withdrawn or its client secret is no longer valid. Ask your administrator.",
+      "PREVIEW_NOT_AVAILABLE": "This type of file can't be previewed yet. Download it instead."
     },
-    "sizeGb": "{{size}} GB"
+    "sizeGb": "{{size}} GB",
+    "viewer": {
+      "close": "Close viewer",
+      "download": "Download",
+      "previousNamed": "Previous file · {{n}} of {{total}}",
+      "nextNamed": "Next file · {{n}} of {{total}}",
+      "moved": "File {{n}} of {{total}}, {{name}}",
+      "loading": "Opening the file…",
+      "retry": "Try again",
+      "fit": "Fit",
+      "fitWidth": "Fit width",
+      "fitPage": "Fit page",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "zoomLevel": "Zoom level {{level}}",
+      "pdf": {
+        "toolbar": "PDF controls",
+        "page": "Page",
+        "of": "of {{total}}",
+        "pageAria": "Page {{page}} of {{total}}",
+        "loadingPage": "Loading page {{page}}…",
+        "lazy": "Each page renders as you reach it"
+      },
+      "image": {
+        "toolbar": "Image controls",
+        "dragHint": "Drag to move the image"
+      },
+      "text": {
+        "footer": "{{lines}} · plain text",
+        "direction": "Each line takes its own direction",
+        "cut": "Showing the first 1 MB. Download to see all."
+      },
+      "csv": {
+        "cut": "Showing the first {{rows}} of {{total}}. Download to see all.",
+        "footerCut": "{{shown}} of {{rows}}",
+        "header": "First row is the header"
+      },
+      "noPreview": {
+        "title": "No preview for this type yet",
+        "office": "{{type}} files can't be shown inside AccreditMe yet. Download it to open it on your computer.",
+        "photo": "{{type}} photos can't be shown inside AccreditMe yet. Download it to open it on your computer.",
+        "other": "This type of file can't be shown inside AccreditMe yet. Download it to open it on your computer."
+      },
+      "failed": {
+        "title": "We couldn't open this file",
+        "body": "We couldn't open this file. Try again or download it."
+      },
+      "deleted": {
+        "title": "This file was deleted",
+        "body": "This file was deleted. It is no longer available."
+      },
+      "withdrawn": {
+        "title": "SharePoint can't be reached",
+        "body": "AccreditMe can no longer reach your SharePoint library. Ask your administrator to connect it again."
+      },
+      "storageBlocked": {
+        "title": "This file can't be previewed from your organization's storage",
+        "body": "Your organization's storage doesn't let the browser show it here. Download it to open it on your computer."
+      },
+      "from": {
+        "taskEvidence": "From a task's evidence"
+      }
+    }
+  },
+  "drawer": {
+    "expand": "Expand",
+    "expandLabel": "Expand to full screen",
+    "restore": "Restore",
+    "restoreLabel": "Restore to normal width"
   }
 }

@@ -82,6 +82,8 @@ describe('FilesController (ACC-177)', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/pdf');
+    // ACC-189: the viewer reads the bytes itself; nothing is ever served inline.
+    expect(res.headers['content-disposition']).toMatch(/^attachment;/);
     expect(res.headers['content-disposition']).toContain(`filename*=UTF-8''${encodeURIComponent('محضر الاجتماع')}.pdf`);
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(res.headers['x-content-type-options']).toBe('nosniff');

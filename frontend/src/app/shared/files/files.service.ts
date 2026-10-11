@@ -38,6 +38,10 @@ const REFUSAL_CODES = new Set([
   'FILE_TYPE_NOT_ALLOWED',
   'FILE_UNAVAILABLE',
   'FILE_RECORD_GONE',
+  // ACC-189 — ACC-185 shipped the SharePoint withdrawal backend only, so it
+  // showed the server's English; and the viewer's type refusal.
+  'STORAGE_ACCESS_WITHDRAWN',
+  'PREVIEW_NOT_AVAILABLE',
 ]);
 
 /**

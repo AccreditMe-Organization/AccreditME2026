@@ -40,6 +40,22 @@ export const ALLOWED_TYPES: Readonly<Record<string, IAllowedType>> = {
   heif: { mimeType: 'image/heif', family: 'heic' },
 };
 
+/**
+ * ACC-189 — the stored MIME types the in-app viewer renders. The stored type
+ * is the server's (judged from content), so this is the one list that decides
+ * whether a view may be minted. Office files and HEIC stay download only until
+ * ACC-192.
+ */
+export const PREVIEWABLE_MIME_TYPES: ReadonlySet<string> = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'text/plain',
+  'text/csv',
+]);
+
 /** The extensions, for the "allowed types" line the upload screen shows. */
 export const ALLOWED_EXTENSIONS: readonly string[] = Object.keys(ALLOWED_TYPES);
 

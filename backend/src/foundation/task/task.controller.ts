@@ -533,6 +533,20 @@ export class TaskController {
     return this.evidence.download(id, evidenceId, tenantId, viewer(userId, actorPermissions));
   }
 
+  // ACC-189 — the in-app viewer's mint: exactly the download's entitlement
+  // (checked in the service), and 409 PREVIEW_NOT_AVAILABLE for a type the
+  // viewer does not render.
+  @Get(':id/evidence/:evidenceId/view')
+  viewEvidence(
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IFileDownload> {
+    return this.evidence.openView(id, evidenceId, tenantId, viewer(userId, actorPermissions));
+  }
+
   @Delete(':id/evidence/:evidenceId')
   @HttpCode(HttpStatus.NO_CONTENT)
   removeEvidence(

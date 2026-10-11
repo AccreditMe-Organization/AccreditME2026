@@ -6488,6 +6488,52 @@ success and danger chip pairs `check:contrast` asserts, and
 preset. **Known, not changed:** Aura's warning message is about 2.85:1; info
 measures 4.75:1.
 
+### 10.17 `am-drawer` and the File Viewer (ACC-189)
+
+**`am-drawer`** (`shared/components/drawer/`) is the app's one drawer, on
+PrimeNG Drawer through its HEADLESS template, so the frame, buttons and
+semantics are ours. Its rules, each pinned by spec:
+
+- **From the END side**: right in English, left in Arabic. PrimeNG's
+  `position` is PHYSICAL, so the side is computed from `LanguageService`.
+- **Modal**: the mask dims the page and never closes the drawer
+  (`dismissible` off); every other child of `<body>` is made `inert` while it
+  is open, and only what the drawer made inert is released.
+- **Escape closes only the top layer** (`LayerStackService`), in one press.
+  PrimeNG's own Escape is off.
+- **Size**: `--am-drawer-width` (60vw), `--am-drawer-min-width` (720px), full
+  screen below 900px (a constant in the component: a media query cannot read a
+  custom property). Expand / Restore; it opens at normal width each time.
+- `role="dialog"`, `aria-modal`, named by the FULL name of what it shows;
+  focus goes to the dialog on open; the body is a Tab stop. Where focus goes
+  on close is the host's call.
+- Slots `[amDrawerHeader]`, `[amDrawerToolbar]`, body, `[amDrawerFooter]`;
+  slot buttons use `am-drawer__button` (`--text`, `--on`).
+
+**The file viewer** (`shared/files/viewer/`) opens through
+`FileViewerService.open({ files, startIndex, context, access, download,
+closed })` — never placed in a template, one at a time, closed on any
+navigation, no deep link. A host passes only FILES (links are not), its view
+mint as `access`, its download, and a `closed(lastShown)` callback for focus
+return. Renderers: PDF (pdf.js 6 legacy, lazy-loaded; pages render as they
+near the view, observed against the drawer body; no text layer, D4), image
+(fit by default, zoom steps, drag to pan), text (lines with `dir="auto"`, 1 MB
+cap), CSV (header row sticky, 500 data rows, every row counted), and a state
+panel for no preview, couldn't open, deleted, SharePoint withdrawn and MinIO
+blocked. Download is offered in every state except deleted and withdrawn. One
+file is held at a time: moving on or closing aborts the fetch, revokes the
+object URL and drops the bytes.
+
+pdf.js ships from our origin (`angular.json` assets): the worker, `cmaps`,
+`standard_fonts`, `iccs`, and the image-decoder wasm WITHOUT `quickjs-eval.*`
+(it has no eval path of its own, and PDF scripting is not shipped). The CSP
+(`vercel.json`, report-only) names the platform storage host in `connect-src`,
+`worker-src 'self' blob:`, and `'wasm-unsafe-eval'` in `script-src`.
+
+**Consumers today**: task evidence (`TaskEvidenceListComponent` — the file
+name and an eye button open it). Meeting attachments and Document Management
+plug in the same way.
+
 ---
 
 ## 11. Known Cross-Cutting Gaps
@@ -8539,6 +8585,30 @@ SharePoint access withdrawn, which is 409 `STORAGE_ACCESS_WITHDRAWN`. The respon
 **Verified live against SeaweedFS (7 Oct)**: the pre-signed URL returned the
 same bytes (SHA-256 equal) with
 `filename*=UTF-8''%D9%85%D8%AD%D8%B6%D8%B1%20…pdf`.
+
+### 16.5.1 View (ACC-189)
+
+`GET /tasks/:id/evidence/:evidenceId/view` mints the link the in-app viewer
+fetches. **Exactly the download's entitlement**: `TaskEvidenceService.openView()`
+and `download()` share one lookup (`fileForViewer()`), so the same caller gets
+the same identical 404. `StoredFileService.openView()` then refuses a deleted
+file first (`FILE_UNAVAILABLE`), then any type outside `PREVIEWABLE_MIME_TYPES`
+(`file-content.ts`: pdf, png, jpeg, gif, webp, txt, csv) with 409
+`PREVIEW_NOT_AVAILABLE`, and otherwise returns **the same URL a download
+gets**. Nothing is ever served inline: the response stays `attachment` +
+`nosniff`, and the browser never opens the URL — the viewer fetches the bytes
+and draws them itself. A view is a read: a log line ("viewed"; downloads say
+"opened"), no audit row (D1). Office files and HEIC stay download only until
+ACC-192. Meetings and documents mint their views through the same
+`openView()`.
+
+**The storage fetch never carries credentials** (`FileBytesService`, an
+`HttpClient` on `HttpBackend`, so no interceptor runs): Supabase answers a
+pre-signed GET with `Access-Control-Allow-Origin: *`, which a browser rejects
+for a credentialed request. A customer's MinIO that refuses the cross-origin
+fetch shows "can't be previewed from your organization's storage", with
+Download, and is never streamed through the API (D3;
+`docs/customer/minio-storage-viewing.md`).
 
 ### 16.6 File evidence (`TaskEvidenceService`)
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // ACC-130 — the BUILT index.html must run under the app's Content-Security-
-// Policy, whose script-src is 'self' only (frontend/vercel.json).
+// Policy, whose script-src allows no inline script: 'self' plus only
+// 'wasm-unsafe-eval' for pdf.js's decoders (frontend/vercel.json, ACC-189).
 //
 // Angular's critical-CSS inlining wrote
 //   <link rel="stylesheet" href="styles-….css" media="print" onload="this.media='all'">

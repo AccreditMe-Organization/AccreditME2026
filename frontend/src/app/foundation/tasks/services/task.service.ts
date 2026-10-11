@@ -512,6 +512,11 @@ export class TaskService {
     return this.http.get<IFileDownloadDto>(`${this.base}/${taskId}/evidence/${evidenceId}/download`);
   }
 
+  /** ACC-189 — the in-app viewer's mint: the download's entitlement, 409 for a type it does not render. */
+  viewEvidence(taskId: string, evidenceId: string): Observable<IFileDownloadDto> {
+    return this.http.get<IFileDownloadDto>(`${this.base}/${taskId}/evidence/${evidenceId}/view`);
+  }
+
   removeEvidence(taskId: string, evidenceId: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/${taskId}/evidence/${evidenceId}`);
   }

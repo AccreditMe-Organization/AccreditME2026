@@ -137,6 +137,26 @@ export class TaskEvidenceService {
   }
 
   async download(taskId: string, evidenceId: string, organizationId: string, viewer: TaskViewer): Promise<IFileDownload> {
+    const file = await this.fileForViewer(taskId, evidenceId, organizationId, viewer);
+    // A read, so a log line and not an audit row (ACC-101's reasoning).
+    this.logger.log(`File ${file.id} on task ${taskId} in org ${organizationId} opened by ${viewer.id}`);
+    return this.storedFiles.openDownload(file);
+  }
+
+  /**
+   * ACC-189 — the in-app viewer's mint. EXACTLY the download's entitlement and
+   * the same identical 404, so a file is viewable wherever it is downloadable;
+   * only the type rule (`openView`) and the log line's verb differ. A read:
+   * a log line, no audit row (Ahmad, 10 Oct, D1).
+   */
+  async openView(taskId: string, evidenceId: string, organizationId: string, viewer: TaskViewer): Promise<IFileDownload> {
+    const file = await this.fileForViewer(taskId, evidenceId, organizationId, viewer);
+    this.logger.log(`File ${file.id} on task ${taskId} in org ${organizationId} viewed by ${viewer.id}`);
+    return this.storedFiles.openView(file);
+  }
+
+  /** The one entitlement and lookup behind both download and view. */
+  private async fileForViewer(taskId: string, evidenceId: string, organizationId: string, viewer: TaskViewer) {
     await this.assertCanSeeEvidence(taskId, organizationId, viewer);
     const evidence = await this.prisma.taskEvidence.findFirst({
       where: { id: evidenceId, taskId, organizationId, deletedAt: null, type: 'ATTACHMENT' },
@@ -144,10 +164,7 @@ export class TaskEvidenceService {
     });
     const file = evidence?.storedFile;
     if (!file || file.deletedAt) throw new NotFoundException('Evidence not found');
-
-    // A read, so a log line and not an audit row (ACC-101's reasoning).
-    this.logger.log(`File ${file.id} on task ${taskId} in org ${organizationId} opened by ${viewer.id}`);
-    return this.storedFiles.openDownload(file);
+    return file;
   }
 
   async remove(taskId: string, evidenceId: string, organizationId: string, actorId: string): Promise<void> {

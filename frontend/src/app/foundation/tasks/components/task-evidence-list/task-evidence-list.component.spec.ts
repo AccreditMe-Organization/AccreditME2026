@@ -11,6 +11,8 @@ import ar from '../../../../../assets/i18n/ar.json';
 import { environment } from '../../../../../environments/environment';
 import { loadTranslationsForTest, provideFormatTesting } from '../../../../core/formatting/testing';
 import { FilesService } from '../../../../shared/files/files.service';
+import { FileViewerService } from '../../../../shared/files/viewer/file-viewer.service';
+import { IFileViewerRequest } from '../../../../shared/files/viewer/file-viewer.model';
 import { ITaskEvidenceDto, ITaskEvidenceListDto } from '../../services/task.service';
 import { TaskEvidenceListComponent } from './task-evidence-list.component';
 
@@ -169,5 +171,93 @@ describe('TaskEvidenceListComponent (ACC-177)', () => {
     expect(text).toContain('الأدلة');
     expect(text).toContain('2.4 ميغابايت');
     expect(text).toContain('إضافة دليل');
+  });
+});
+
+describe('TaskEvidenceListComponent — the file viewer (ACC-189)', () => {
+  const SECOND_FILE: ITaskEvidenceDto = {
+    ...FILE_ROW,
+    id: 'ev-3',
+    file: { id: 'file-3', name: 'Ward photo.jpg', mimeType: 'image/jpeg', sizeBytes: 3_100_000, uploadedAt: '2026-10-07T09:00:00Z' },
+  };
+  let http: HttpTestingController;
+  let viewer: { open: jasmine.Spy };
+
+  function setup(list: ITaskEvidenceListDto) {
+    viewer = { open: jasmine.createSpy('open') };
+    TestBed.configureTestingModule({
+      imports: [HostComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        ConfirmationService,
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        { provide: FileViewerService, useValue: viewer },
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use('en');
+    spyOn(TestBed.inject(FilesService), 'open');
+    http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(HostComponent);
+    fixture.detectChanges();
+    http.expectOne(API).flush(list);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  afterEach(() => http.verify());
+
+  const request = (): IFileViewerRequest => viewer.open.calls.mostRecent().args[0] as IFileViewerRequest;
+
+  it('a FILE row gets a View button and a name that opens the viewer; a link row gets neither', () => {
+    const fixture = setup({ items: [FILE_ROW, LINK_ROW], canAdd: true, closed: false });
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector(`[aria-label="View “${FILE_ROW.file!.name}”"]`)).not.toBeNull();
+    expect(el.querySelectorAll('[data-am-evidence-file]').length).toBe(1);
+    expect(el.querySelector('[data-am-evidence-file="ev-1"]')!.textContent!.trim()).toBe(FILE_ROW.file!.name);
+    // Download and Delete are unchanged; the link still opens in a new tab.
+    expect(el.querySelector(`[aria-label="Download “${FILE_ROW.file!.name}”"]`)).not.toBeNull();
+    expect(el.querySelector('a[target="_blank"]')!.getAttribute('href')).toBe(LINK_ROW.url);
+  });
+
+  it("opens over the list's FILES only, at the one clicked, with the task-evidence context", () => {
+    const fixture = setup({ items: [FILE_ROW, LINK_ROW, SECOND_FILE], canAdd: true, closed: false });
+    (fixture.nativeElement.querySelector('[data-am-evidence-file="ev-3"]') as HTMLElement).click();
+
+    const r = request();
+    expect(r.files.map((f) => f.id)).toEqual(['ev-1', 'ev-3']);
+    expect(r.startIndex).toBe(1);
+    expect(r.files[1]).toEqual({ id: 'ev-3', name: 'Ward photo.jpg', mimeType: 'image/jpeg', sizeBytes: 3_100_000 });
+    expect(r.context).toEqual({ key: 'files.viewer.from.taskEvidence' });
+  });
+
+  it('the eye button opens the same viewer at its own file', () => {
+    const fixture = setup({ items: [FILE_ROW, SECOND_FILE], canAdd: true, closed: false });
+    const eye = fixture.debugElement.queryAll(By.css('am-icon-button')).find((b) => b.componentInstance.label() === 'View “Ward photo.jpg”')!;
+    eye.componentInstance.activated.emit(new MouseEvent('click'));
+    expect(request().startIndex).toBe(1);
+  });
+
+  it("the viewer mints through the VIEW route, and downloads through the list's own download", () => {
+    const fixture = setup({ items: [FILE_ROW], canAdd: true, closed: false });
+    (fixture.nativeElement.querySelector('[data-am-evidence-file="ev-1"]') as HTMLElement).click();
+    const r = request();
+
+    r.access(r.files[0]!).subscribe();
+    http.expectOne(`${API}/ev-1/view`).flush({ url: 'files/stream/t', viaApi: true });
+
+    r.download(r.files[0]!);
+    http.expectOne(`${API}/ev-1/download`).flush({ url: 'files/stream/t', viaApi: true });
+    expect(TestBed.inject(FilesService).open).toHaveBeenCalled();
+  });
+
+  it('on close, focus returns to the name of the file LAST SHOWN, not the one first opened', () => {
+    const fixture = setup({ items: [FILE_ROW, SECOND_FILE], canAdd: true, closed: false });
+    (fixture.nativeElement.querySelector('[data-am-evidence-file="ev-1"]') as HTMLElement).click();
+    request().closed!({ id: 'ev-3', name: 'Ward photo.jpg', mimeType: 'image/jpeg', sizeBytes: 1 });
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('[data-am-evidence-file="ev-3"]'));
   });
 });
