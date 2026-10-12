@@ -1,0 +1,509 @@
+/*
+ * The website's one stylesheet (ACC-213). External only: the CSP allows
+ * `style-src 'self'`, so there are no <style> tags and no style="" attributes
+ * anywhere, and `npm run verify` fails a built page that has one.
+ *
+ * Layout uses LOGICAL properties (inline-start/end, block-start/end), so the
+ * Arabic pages mirror from `dir="rtl"` alone, with no second stylesheet.
+ */
+@import './fonts.css';
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--am-font-family);
+  color: var(--w-text);
+  background: var(--w-white);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-size: var(--am-type-body-size);
+  line-height: var(--am-type-body-line);
+}
+
+img {
+  max-inline-size: 100%;
+  block-size: auto;
+}
+
+a {
+  color: var(--w-ink-steel);
+}
+
+a:hover {
+  color: var(--w-ink-steel-strong);
+}
+
+:focus-visible {
+  outline: 2px solid var(--w-focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: var(--am-space-16);
+  inset-block-start: -100px;
+  padding: var(--am-space-8) var(--am-space-12);
+  background: var(--w-white);
+  border-radius: var(--am-radius-button);
+  z-index: 10;
+}
+
+.skip-link:focus {
+  inset-block-start: var(--am-space-8);
+}
+
+.container {
+  inline-size: 100%;
+  max-inline-size: 1180px;
+  margin-inline: auto;
+  padding-inline: var(--am-space-16);
+}
+
+@media (min-width: 900px) {
+  .container {
+    padding-inline: var(--am-space-40);
+  }
+}
+
+/* ── DRAFT marker ─────────────────────────────────────────────────────── */
+.draft {
+  display: inline-block;
+  font-size: var(--am-type-micro-size);
+  line-height: var(--am-type-micro-line);
+  font-weight: var(--am-type-micro-weight);
+  letter-spacing: var(--am-type-micro-tracking);
+  text-transform: var(--am-type-micro-transform);
+  color: var(--w-charcoal);
+  background: var(--w-tint-lime);
+  border: 1px dashed var(--w-ink-lime);
+  border-radius: var(--am-radius-pill);
+  padding: 0 var(--am-space-8);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+.site-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 5;
+  background: var(--w-white);
+  border-block-end: 1px solid var(--w-border);
+}
+
+.site-header__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--am-space-12) var(--am-space-24);
+  padding-block: var(--am-space-12);
+}
+
+.site-header__logo img {
+  display: block;
+  inline-size: 168px;
+}
+
+.site-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--am-space-4) var(--am-space-16);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-nav a {
+  color: var(--w-text);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.site-nav a:hover {
+  color: var(--w-ink-steel-strong);
+  text-decoration: underline;
+}
+
+.site-header__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--am-space-12);
+}
+
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 36px;
+  padding-inline: var(--am-space-12);
+  border: 1px solid var(--w-border);
+  border-radius: var(--am-radius-button);
+  color: var(--w-text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* ── Sign in box ─────────────────────────────────────────────────────── */
+.sign-in {
+  margin: 0;
+}
+
+.sign-in__label {
+  display: block;
+  font-size: var(--am-type-meta-size);
+  line-height: var(--am-type-meta-line);
+  font-weight: 600;
+}
+
+.sign-in__row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--am-space-8);
+  margin-block-start: var(--am-space-4);
+}
+
+.sign-in__field {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--w-control-border);
+  border-radius: var(--am-radius-control);
+  background: var(--w-white);
+}
+
+.sign-in__field:focus-within {
+  outline: 2px solid var(--w-focus);
+  outline-offset: 1px;
+}
+
+.sign-in__field input {
+  inline-size: 11rem;
+  min-block-size: 36px;
+  border: 0;
+  padding-inline: var(--am-space-8);
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+.sign-in__field input:focus {
+  outline: none;
+}
+
+.sign-in__suffix {
+  padding-inline-end: var(--am-space-8);
+  color: var(--w-text-muted);
+  font-size: var(--am-type-value-size);
+}
+
+.sign-in__help,
+.sign-in__error {
+  margin: var(--am-space-4) 0 0;
+  max-inline-size: 22rem;
+  font-size: var(--am-type-meta-size);
+  line-height: var(--am-type-meta-line);
+}
+
+.sign-in__help {
+  color: var(--w-text-muted);
+}
+
+.sign-in__error {
+  color: var(--w-error);
+  font-weight: 500;
+}
+
+.sign-in__error:empty {
+  display: none;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 36px;
+  padding-inline: var(--am-space-16);
+  border: 1px solid var(--w-charcoal);
+  border-radius: var(--am-radius-button);
+  background: var(--w-charcoal);
+  color: var(--w-white);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--w-ink-steel-strong);
+  border-color: var(--w-ink-steel-strong);
+  color: var(--w-white);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button--on-charcoal {
+  background: var(--w-white);
+  border-color: var(--w-white);
+  color: var(--w-charcoal);
+}
+
+.button--on-charcoal:hover {
+  background: var(--w-tint-sky);
+  border-color: var(--w-tint-sky);
+  color: var(--w-charcoal);
+}
+
+/* ── Bands: the design's backgrounds, in outline ─────────────────────── */
+.band {
+  padding-block: var(--am-space-40);
+}
+
+@media (min-width: 900px) {
+  .band {
+    padding-block: 72px;
+  }
+}
+
+.band--hero {
+  background:
+    radial-gradient(ellipse 60% 70% at 92% 30%, rgba(123, 200, 230, 0.3), rgba(123, 200, 230, 0) 70%),
+    linear-gradient(180deg, var(--w-white), var(--w-tint-sky));
+}
+
+[dir='rtl'] .band--hero {
+  background:
+    radial-gradient(ellipse 60% 70% at 8% 30%, rgba(123, 200, 230, 0.3), rgba(123, 200, 230, 0) 70%),
+    linear-gradient(180deg, var(--w-white), var(--w-tint-sky));
+}
+
+.band--tint-grey {
+  background: var(--w-tint-grey);
+}
+
+.band--tint-sky {
+  background: var(--w-tint-sky);
+}
+
+.band--white {
+  background: var(--w-white);
+}
+
+.band--charcoal {
+  background: var(--w-charcoal);
+  color: var(--w-on-charcoal);
+}
+
+.band--charcoal .section__note,
+.band--charcoal .field__hint,
+.band--charcoal .demo-form__soon {
+  color: var(--w-on-charcoal-muted);
+}
+
+.band--charcoal a {
+  color: var(--w-on-charcoal);
+}
+
+/* Two sections side by side in one band (AI that assists, Security and data). */
+.band__pair {
+  display: grid;
+  gap: var(--am-space-32);
+}
+
+@media (min-width: 900px) {
+  .band__pair {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.section__title {
+  margin: var(--am-space-8) 0 0;
+  font-size: var(--am-type-record-size);
+  line-height: var(--am-type-record-line);
+  font-weight: var(--am-type-record-weight);
+  letter-spacing: var(--am-type-record-tracking);
+}
+
+.section__note {
+  margin: var(--am-space-8) 0 0;
+  max-inline-size: 42rem;
+  color: var(--w-text-muted);
+}
+
+.section__placeholder {
+  margin-block-start: var(--am-space-20);
+  padding: var(--am-space-24);
+  border: 1px dashed var(--w-ink-steel);
+  border-radius: var(--am-radius-card);
+  color: var(--w-text-muted);
+}
+
+.band--charcoal .section__placeholder {
+  border-color: var(--w-on-charcoal-muted);
+  color: var(--w-on-charcoal-muted);
+}
+
+/* ── Demo form ───────────────────────────────────────────────────────── */
+.demo-form {
+  margin-block-start: var(--am-space-24);
+  max-inline-size: 640px;
+}
+
+.demo-form__title {
+  margin: 0;
+  font-size: var(--am-type-heading-size);
+  line-height: var(--am-type-heading-line);
+  font-weight: var(--am-type-heading-weight);
+}
+
+.demo-form__grid {
+  display: grid;
+  gap: var(--am-space-12) var(--am-space-16);
+  margin-block-start: var(--am-space-12);
+}
+
+@media (min-width: 640px) {
+  .demo-form__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .field--wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.field label {
+  display: block;
+  font-size: var(--am-type-meta-size);
+  line-height: var(--am-type-meta-line);
+  font-weight: 600;
+}
+
+.field input,
+.field textarea {
+  display: block;
+  inline-size: 100%;
+  margin-block-start: var(--am-space-4);
+  min-block-size: 36px;
+  padding: var(--am-space-6) var(--am-space-8);
+  border: 1px solid var(--w-control-border);
+  border-radius: var(--am-radius-control);
+  background: var(--w-white);
+  color: var(--w-text);
+  font: inherit;
+}
+
+.field textarea {
+  min-block-size: 96px;
+  resize: vertical;
+}
+
+.field__hint {
+  font-weight: 400;
+  color: var(--w-text-muted);
+}
+
+.field__error {
+  margin: var(--am-space-4) 0 0;
+  font-size: var(--am-type-meta-size);
+  line-height: var(--am-type-meta-line);
+  color: var(--w-error);
+  font-weight: 500;
+}
+
+.band--charcoal .field__error {
+  color: var(--w-error-on-charcoal);
+}
+
+.field__error:empty {
+  display: none;
+}
+
+.demo-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--am-space-12);
+  margin-block-start: var(--am-space-16);
+}
+
+.demo-form__soon {
+  margin: 0;
+  font-size: var(--am-type-meta-size);
+  line-height: var(--am-type-meta-line);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────── */
+.site-footer {
+  padding-block: var(--am-space-40) var(--am-space-24);
+  background: var(--w-charcoal);
+  color: var(--w-on-charcoal-muted);
+}
+
+.site-footer a {
+  color: var(--w-on-charcoal);
+}
+
+.site-footer__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--am-space-24);
+}
+
+.site-footer__logo img {
+  display: block;
+  inline-size: 168px;
+}
+
+.site-footer__heading {
+  margin: 0 0 var(--am-space-8);
+  font-size: var(--am-type-heading-size);
+  line-height: var(--am-type-heading-line);
+  color: var(--w-on-charcoal);
+}
+
+.site-footer ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer__copyright {
+  margin: var(--am-space-24) 0 0;
+  font-size: var(--am-type-meta-size);
+}
+
+/* ── Simple pages (privacy, terms, 404) ──────────────────────────────── */
+.page {
+  padding-block: var(--am-space-40);
+}
+
+.page h1 {
+  margin: var(--am-space-8) 0 0;
+  font-size: var(--am-type-record-size);
+  line-height: var(--am-type-record-line);
+  font-weight: var(--am-type-record-weight);
+}
+
+.page p {
+  max-inline-size: 42rem;
+}
