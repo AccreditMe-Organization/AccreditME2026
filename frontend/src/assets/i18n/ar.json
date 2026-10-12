@@ -37,7 +37,8 @@
     "view": "عرض",
     "yes": "نعم",
     "notActiveYet": "غير مُفعَّل بعد",
-    "actions": "الإجراءات"
+    "actions": "الإجراءات",
+    "stepOf": "الخطوة {{step}} من {{steps}}"
   },
   "nav": {
     "dashboard": "لوحة التحكم",
@@ -466,7 +467,6 @@
     "stageTaskForm": {
       "addTitle": "إضافة مهمة عند الدخول",
       "editTitle": "تعديل مهمة عند الدخول",
-      "stepOf": "الخطوة {{step}} من {{steps}}",
       "titleEn": "العنوان بالإنجليزية",
       "titleAr": "العنوان بالعربية",
       "description": "الوصف",

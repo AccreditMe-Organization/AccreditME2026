@@ -536,7 +536,7 @@ export class StageTaskDefinitionFormComponent implements OnInit {
 
   readonly stepLabel = computed(() => {
     this.translate.currentLang();
-    return this.translate.instant('workflow.stageTaskForm.stepOf', { step: this.step(), steps: this.steps });
+    return this.translate.instant('common.stepOf', { step: this.step(), steps: this.steps });
   });
 
   ngOnInit(): void {

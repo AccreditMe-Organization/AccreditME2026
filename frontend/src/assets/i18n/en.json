@@ -37,7 +37,8 @@
     "view": "View",
     "yes": "Yes",
     "notActiveYet": "Not active yet",
-    "actions": "Actions"
+    "actions": "Actions",
+    "stepOf": "Step {{step}} of {{steps}}"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -466,7 +467,6 @@
     "stageTaskForm": {
       "addTitle": "Add a task on entry",
       "editTitle": "Edit a task on entry",
-      "stepOf": "Step {{step}} of {{steps}}",
       "titleEn": "Title (English)",
       "titleAr": "Title (Arabic)",
       "description": "Description",

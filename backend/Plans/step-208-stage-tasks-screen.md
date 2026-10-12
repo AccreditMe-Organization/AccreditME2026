@@ -327,6 +327,39 @@ counts.
   density. They are not stepped unless they are still over.
 - **→ D5** (the `isApprovalPath` checkbox on Add).
 
+**4.5.1 The transition dialogs, measured (built, 12 Oct).** Neither had ever
+been measured, and before this ticket both were far over the cap:
+
+| | English | Arabic |
+|---|---|---|
+| Add, as it stood | 674 | 696 |
+| Edit, as it stood | 542 | 564 |
+
+Kind adds three radio rows, about 150px, so compaction could not close the
+gap. Both are stepped on the seam they already had:
+- **step 1 is the move**: where it goes (Add only), its two labels on one row,
+  and its Kind;
+- **step 2 is who may fire it**: the trigger, the role, the permission, and on
+  Edit the approval path, plus the validator.
+
+The actions moved to the footer, with "Step 1 of 2" on its left (the shared
+`common.stepOf`). Measured by `workflow-transition-editor.layout.spec.ts`,
+with the guard first:
+
+| State | English | Arabic |
+|---|---|---|
+| Add · step 1 | 341 | 344 |
+| Add · step 2 · role-based | 345 | 358 |
+| Add · step 2 · assignee pool (explanation showing) | 360 | 382 |
+| Edit · step 1 | 297 | 300 |
+| Edit · step 2 · with the ACC-55 warning | 384 | 382 |
+
+- **Add → warning → Edit opens on step 2**, where the permission and its
+  warning are.
+- **The table gains a Kind column**: Advance tinted, Send back dashed, End the
+  record outlined in danger, as drawn.
+- **D5 is its own commit (`cd13cfa`):** Add no longer shows "Approval path".
+
 **4.6 Stage form — a deadline lowered below its tasks**
 - `STAGE_DEADLINE_BEFORE_TASKS` shows inline under the SLA field: "This stage
   has a task due in 16 working hours. Keep the deadline at 16 or more, or lower
@@ -590,7 +623,7 @@ built:**
 - [x] 3 Picker inputs
 - [x] 4 Tasks on entry list
 - [x] 5 Definition dialog (measurements recorded)
-- [ ] 6 Transition Kind
+- [x] 6 Transition Kind
 - [ ] 7 Refusal states
 - [ ] 8 Docs
 - [ ] 9 Live proof, test definitions deleted
