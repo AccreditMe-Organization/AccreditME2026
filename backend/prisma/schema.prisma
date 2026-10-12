@@ -137,9 +137,9 @@ enum WorkflowTransitionKind {
 // ACC-190 — where a stage's task definition sends its task. ROLE is not a value:
 // a task goes to where the work sits (ACC-167), never to every role holder.
 enum StageTaskAssignKind {
-  POSITION              // a fixed unit + position, optionally one person in it
-  RECORD_UNIT_POSITION  // the record's own unit + a position
-  COMMITTEE_ROLE        // a fixed committee + a member role
+  POSITION // a fixed unit + position, optionally one person in it
+  RECORD_UNIT_POSITION // the record's own unit + a position
+  COMMITTEE_ROLE // a fixed committee + a member role
   RECORD_COMMITTEE_ROLE // the record's committee + a member role
 }
 
@@ -385,6 +385,19 @@ model Organization {
   // 30 days; cleared when the expiry date changes, so a new secret warns again.
   storageSecretWarnedAt      DateTime?
 
+  // ACC-194 — AI credits. Dedicated columns, NOT Organization.settings: six
+  // settings writers read the whole JSON and write it back (ACC-215), and a
+  // stale copy written back would erase a deduction. Nothing writes these
+  // columns except foundation/ai/ (the reservation is one conditional UPDATE;
+  // allocation and renewal take the row lock). creditsRemaining is never
+  // stored: it is aiMonthlyCredits − aiCreditsUsed.
+  aiMonthlyCredits        Int       @default(0) // the allocation: the plan's credits, or a manual value. 0 = no allowance
+  aiPendingMonthlyCredits Int? // a lower allocation waiting for the next renewal (a downgrade)
+  aiCreditsUsed           Int       @default(0) // used in the current period
+  aiCreditsPeriodStart    DateTime? // null until the organisation first has an allocation
+  aiCreditsRenewsAt       DateTime? // when the current period ends; the hourly renewal selects on it
+  aiCreditsNoticeFor      DateTime? // the period start whose "credits used up" notice was sent
+
   // Encrypted provider config (JSON blob, encrypted at rest)
   authConfig    String?
   storageConfig String?
@@ -409,35 +422,36 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                  User[]
-  storageConfirmedBy       User?  @relation("OrganizationStorageConfirmedBy", fields: [storageConfirmedById], references: [id], onDelete: SetNull)
-  storageChangeRequestedBy User?  @relation("OrganizationStorageChangeRequestedBy", fields: [storageChangeRequestedById], references: [id], onDelete: SetNull)
-  roles                  Role[]
-  lookupValues           LookupValue[]
-  lookupCategories       LookupCategory[]
-  workflowTemplates      WorkflowTemplate[]
-  workflowInstances      WorkflowInstance[]
-  workflowActionLogs     WorkflowActionLog[]
-  workingCalendar        WorkingCalendar?
-  orgUnits               OrgUnit[]
-  orgPositions           OrgPosition[]
-  tasks                  Task[]
-  taskEvidence           TaskEvidence[]
-  storedFiles            StoredFile[]
-  taskRequests           TaskRequest[]
-  notifications          Notification[]
-  setupConditions        SetupCondition[]
-  setupConditionRuns     SetupConditionRun[]
-  committees             Committee[]
-  meetings               Meeting[]
-  auditLogs              AuditLog[]
-  aiInteractionLogs      AiInteractionLog[]
-  loginAttempts          LoginAttempt[]
-  refreshTokens          RefreshToken[]
-  userTransferEvents     UserTransferEvent[] // ACC-46 Section 2.6.f
-  orgUnitHeadAssignments OrgUnitHeadAssignment[]
+  users                    User[]
+  storageConfirmedBy       User?                   @relation("OrganizationStorageConfirmedBy", fields: [storageConfirmedById], references: [id], onDelete: SetNull)
+  storageChangeRequestedBy User?                   @relation("OrganizationStorageChangeRequestedBy", fields: [storageChangeRequestedById], references: [id], onDelete: SetNull)
+  roles                    Role[]
+  lookupValues             LookupValue[]
+  lookupCategories         LookupCategory[]
+  workflowTemplates        WorkflowTemplate[]
+  workflowInstances        WorkflowInstance[]
+  workflowActionLogs       WorkflowActionLog[]
+  workingCalendar          WorkingCalendar?
+  orgUnits                 OrgUnit[]
+  orgPositions             OrgPosition[]
+  tasks                    Task[]
+  taskEvidence             TaskEvidence[]
+  storedFiles              StoredFile[]
+  taskRequests             TaskRequest[]
+  notifications            Notification[]
+  setupConditions          SetupCondition[]
+  setupConditionRuns       SetupConditionRun[]
+  committees               Committee[]
+  meetings                 Meeting[]
+  auditLogs                AuditLog[]
+  aiInteractionLogs        AiInteractionLog[]
+  loginAttempts            LoginAttempt[]
+  refreshTokens            RefreshToken[]
+  userTransferEvents       UserTransferEvent[] // ACC-46 Section 2.6.f
+  orgUnitHeadAssignments   OrgUnitHeadAssignment[]
 
   workflowStageTaskDefinitions WorkflowStageTaskDefinition[] // ACC-190
+
   @@index([slug])
   @@index([status])
   @@index([isPlatformOrg])
@@ -502,12 +516,17 @@ model AiCreditPack {
 }
 
 model AiFeatureCost {
-  id          String   @id @default(cuid())
-  featureKey  String   @unique
-  creditCost  Int
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  featureKey             String   @unique
+  creditCost             Int
+  description            String?
+  // ACC-194 — the per-organisation feature switch, platform-controlled. When
+  // restricted, only the listed organisations may use the feature, and an
+  // EMPTY list means nobody: it fails closed, unlike AiCreditPack.availableTo.
+  restricted             Boolean  @default(false)
+  allowedOrganizationIds String[] @default([])
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -602,6 +621,7 @@ model User {
   userTransferEventsAsNewManager  UserTransferEvent[]        @relation("UserTransferEventNewManager")
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionUser") // ACC-190
+
   @@unique([organizationId, email])
   @@index([organizationId])
   @@index([email])
@@ -760,6 +780,7 @@ model LookupValue {
   poolTasks    Task[]         @relation("TaskAssignedCommitteeRole") // ACC-167
 
   stageTaskDefinitionRoles WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommitteeRole") // ACC-190
+
   @@unique([categoryId, key, organizationId])
   @@index([organizationId])
   @@index([categoryId])
@@ -915,6 +936,7 @@ model OrgUnit {
   poolTasks                       Task[]                  @relation("TaskAssignedOrgUnit") // ACC-167
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionOrgUnit") // ACC-190
+
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([parentId])
@@ -1141,6 +1163,7 @@ model OrgPosition {
   poolTasks       Task[]                  @relation("TaskAssignedPosition") // ACC-167
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionPosition") // ACC-190
+
   @@unique([organizationId, nameEn])
   @@index([organizationId])
   @@index([roleId])
@@ -1224,7 +1247,8 @@ model WorkflowStage {
   assigneePosition OrgPosition?            @relation(fields: [assigneePositionId], references: [id])
   assigneeOrgUnit  OrgUnit?                @relation("WorkflowStageAssigneeOrgUnit", fields: [assigneeOrgUnitId], references: [id])
 
-  taskDefinitions  WorkflowStageTaskDefinition[] // ACC-190
+  taskDefinitions WorkflowStageTaskDefinition[] // ACC-190
+
   @@index([workflowTemplateId])
 }
 
@@ -1298,7 +1322,8 @@ model WorkflowInstanceStage {
   stage            WorkflowStage      @relation(fields: [stageId], references: [id])
   approvals        WorkflowApproval[]
 
-  tasks            Task[] // ACC-190 — the tasks this stage entry created
+  tasks Task[] // ACC-190 — the tasks this stage entry created
+
   @@index([workflowInstanceId])
   @@index([stageId])
   @@index([slaDueAt])
@@ -1464,16 +1489,16 @@ model Task {
   createdAt                    DateTime       @default(now())
   updatedAt                    DateTime       @updatedAt
 
-  organization               Organization      @relation(fields: [organizationId], references: [id])
-  createdBy                  User              @relation("TaskCreator", fields: [createdById], references: [id])
-  rejectedBy                 User?             @relation("TaskRejectedBy", fields: [rejectedById], references: [id])
-  cancelledBy                User?             @relation("TaskCancelledBy", fields: [cancelledById], references: [id])
-  reopenedBy                 User?             @relation("TaskReopenedBy", fields: [reopenedById], references: [id])
-  workflowInstance           WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
-  assignedOrgUnit            OrgUnit?          @relation("TaskAssignedOrgUnit", fields: [assignedOrgUnitId], references: [id])
-  assignedPosition           OrgPosition?      @relation("TaskAssignedPosition", fields: [assignedPositionId], references: [id])
-  assignedCommittee          Committee?        @relation("TaskAssignedCommittee", fields: [assignedCommitteeId], references: [id])
-  assignedCommitteeRoleValue LookupValue?      @relation("TaskAssignedCommitteeRole", fields: [assignedCommitteeRoleValueId], references: [id])
+  organization               Organization                 @relation(fields: [organizationId], references: [id])
+  createdBy                  User                         @relation("TaskCreator", fields: [createdById], references: [id])
+  rejectedBy                 User?                        @relation("TaskRejectedBy", fields: [rejectedById], references: [id])
+  cancelledBy                User?                        @relation("TaskCancelledBy", fields: [cancelledById], references: [id])
+  reopenedBy                 User?                        @relation("TaskReopenedBy", fields: [reopenedById], references: [id])
+  workflowInstance           WorkflowInstance?            @relation(fields: [workflowInstanceId], references: [id])
+  assignedOrgUnit            OrgUnit?                     @relation("TaskAssignedOrgUnit", fields: [assignedOrgUnitId], references: [id])
+  assignedPosition           OrgPosition?                 @relation("TaskAssignedPosition", fields: [assignedPositionId], references: [id])
+  assignedCommittee          Committee?                   @relation("TaskAssignedCommittee", fields: [assignedCommitteeId], references: [id])
+  assignedCommitteeRoleValue LookupValue?                 @relation("TaskAssignedCommitteeRole", fields: [assignedCommitteeRoleValueId], references: [id])
   assignees                  TaskAssignee[]
   evidence                   TaskEvidence[]
   requests                   TaskRequest[]
@@ -1850,6 +1875,7 @@ model Committee {
   poolTasks            Task[]                     @relation("TaskAssignedCommittee") // ACC-167
 
   stageTaskDefinitions WorkflowStageTaskDefinition[] @relation("StageTaskDefinitionCommittee") // ACC-190
+
   @@index([organizationId])
   @@index([orgUnitId]) // ACC-135
   @@index([parentCommitteeId])
@@ -1988,7 +2014,7 @@ model AuditLog {
 // ---------------------------------------------------------------------------
 
 model AiInteractionLog {
-  id              String   @id @default(cuid())
+  id              String      @id @default(cuid())
   organizationId  String
   actorId         String?
   model           String
@@ -1997,7 +2023,15 @@ model AiInteractionLog {
   responseSummary String?
   durationMs      Int
   success         Boolean
-  createdAt       DateTime @default(now())
+  // ACC-194 — nullable, so rows written before it stay valid. promptSummary
+  // and responseSummary hold a caller-written description and sizes, never
+  // the customer's text.
+  creditCost      Int? // credits charged; 0 when the call failed and was refunded
+  provider        AiProvider?
+  tier            String? // 'STANDARD' | 'PREMIUM' — a string, not an enum (tiers are not in use yet)
+  inputTokens     Int?
+  outputTokens    Int?
+  createdAt       DateTime    @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
   actor        User?        @relation(fields: [actorId], references: [id])
