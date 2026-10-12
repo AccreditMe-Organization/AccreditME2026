@@ -16,7 +16,14 @@ All evidence is file:line at `361b84c`.
 ## Revision log
 
 - **12 Oct, first draft (`284ffcc`):** questions Q1–Q11, decisions D1–D13.
-- **12 Oct, revision 1 (this version): Ahmad's answers.**
+- **12 Oct, revision 2: plan approved (`c53f868`), D14–D19 decided.** Every
+  one as recommended (§14). D14 adds: when billing exists, the credit period
+  follows the billing date. D18 adds: the plan endpoint writes an audit row with
+  the old and new plan. D8's investigation (§16) is accepted as written, and
+  nothing in it is built. ACC-198's Linear text now says the briefing runs on
+  demand, by a tenant admin, for al-nakheel only, never on a schedule, at 5
+  credits per run.
+- **12 Oct, revision 1: Ahmad's answers.**
   - **Agreed as recommended:** D1, D5, D6, D7, D9, D10, D11, D12, D13.
   - **Changed:**
     - **D2:** the credit period is anchored to the organisation's activation
@@ -768,7 +775,21 @@ flag it.
 - **D4:** costs 2 / 15 / 5, with `morning_briefing` al-nakheel only and on
   demand (§8).
 
-**New decisions for Ahmad:**
+**Decided (Ahmad, 12 Oct, revision 2): D14–D19, each as recommended below.**
+- **D14:** activation = `bootstrappedAt`, falling back to `createdAt`, with no
+  new column. **When billing exists, the credit period follows the billing
+  date.**
+- **D15:** a manual allocation follows the plan-change timing.
+- **D16:** a plan edit does not reach organisations already on it until their
+  plan is next set.
+- **D17:** a `restricted` flag plus an allowed list; an empty list means
+  nobody.
+- **D18:** `PATCH /platform/tenants/:id/plan`, backend only, with an audit row
+  recording the old and new plan.
+- **D19:** the platform checkbox is removed too, and allocate no longer sends
+  the overage value.
+
+The table as proposed:
 
 | # | Decision | Recommendation |
 |---|---|---|
