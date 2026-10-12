@@ -1128,10 +1128,7 @@
     "savedSuccess": "Changes saved.",
     "errorLoad": "Failed to load settings.",
     "errorSave": "Failed to save changes.",
-    "emailProviderNote": "UI only for now — email is still sent via the platform default provider until this setting is fully wired up.",
     "provider": "Provider",
-    "providerConfig": "Provider Configuration (JSON)",
-    "errorInvalidJson": "Invalid JSON in provider configuration.",
     "taskSla": "Task SLA & Escalation",
     "taskSlaNote": "Configure how long a task stays open before it's due, and how long it stays overdue before escalating — first to the assignee's manager, then to their unit head.",
     "dueAfterHours": "Due After (hours)",
@@ -1580,5 +1577,78 @@
     "expandLabel": "Expand to full screen",
     "restore": "Restore",
     "restoreLabel": "Restore to normal width"
+  },
+  "emailSettings": {
+    "notActiveBody": "You can choose a provider and save it, but AccreditMe won't use it yet. Mail keeps going out through AccreditMe's own delivery.",
+    "howTitle": "How AccreditMe sends your organisation's email",
+    "defaultTitle": "AccreditMe's default delivery",
+    "defaultBody": "Invitations, reminders and notifications go out from {{address}} via Resend. Nobody chose this. It's what happens until you connect your own provider.",
+    "defaultBodyNoAddress": "Invitations, reminders and notifications go out through AccreditMe's own delivery, via Resend. Nobody chose this. It's what happens until you connect your own provider.",
+    "connectWhy": "Connect your own if mail must come from your domain, or your IT policy requires your own server.",
+    "connect": "Connect a provider",
+    "provider": "Provider",
+    "providerHint": "Changing provider keeps these values until you save",
+    "providerName": {
+      "resend": "Resend",
+      "smtp": "SMTP / on-premises Exchange",
+      "office365": "Office 365",
+      "sendgrid": "SendGrid",
+      "ses": "Amazon SES"
+    },
+    "encryption": {
+      "STARTTLS": "STARTTLS",
+      "SSL_TLS": "SSL/TLS",
+      "NONE": "None"
+    },
+    "field": {
+      "apiKey": "API key",
+      "fromAddress": "Sender address",
+      "fromAddressVerified": "Sender address (verified)",
+      "fromName": "Sender name",
+      "host": "Host",
+      "port": "Port",
+      "encryption": "Encryption",
+      "username": "Username",
+      "password": "Password",
+      "tenantId": "Tenant ID",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "senderMailbox": "Sender mailbox",
+      "region": "Region",
+      "accessKeyId": "Access key ID",
+      "secretAccessKey": "Secret access key",
+      "senderIdentity": "Sender (verified identity)"
+    },
+    "hint": {
+      "port": "Set by encryption unless edited",
+      "fromAddressSmtp": "Must be allowed to send as",
+      "fromName": "Shown in the From line"
+    },
+    "error": {
+      "required": "This is needed.",
+      "email": "Enter an email address, like name@example.org.",
+      "port": "Use a port from 1 to 65535.",
+      "host": "Use a host name or an IP address, like mail.example.org.",
+      "guid": "Use the ID from Microsoft Entra, like 11111111-2222-3333-4444-555555555555.",
+      "region": "Use an AWS region, like eu-central-1.",
+      "accessKeyId": "Use an AWS access key ID: capital letters and digits.",
+      "pair": "Give the username and the password together, or neither."
+    },
+    "incomplete": "Fill in: {{fields}}.",
+    "listSeparator": ", ",
+    "saveForLater": "Save for later",
+    "saved": "Saved for later. AccreditMe won't use these settings yet.",
+    "disconnect": "Disconnect",
+    "disconnectConfirmHeader": "Disconnect {{provider}}?",
+    "disconnectConfirmMessage": "Mail goes back to AccreditMe's default delivery, and these settings are removed.",
+    "disconnected": "Disconnected. Mail goes out through AccreditMe's default delivery."
+  },
+  "secretField": {
+    "set": "set",
+    "setOn": "set {{date}}",
+    "replace": "Replace",
+    "replaceNamed": "Replace the {{label}}",
+    "neverShownAgain": "Never shown again",
+    "replacingHint": "Type the new value. Leave it empty to keep the current one."
   }
 }
