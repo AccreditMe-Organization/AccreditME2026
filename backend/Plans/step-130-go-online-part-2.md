@@ -107,3 +107,67 @@ production addresses (going online, part 2)". Not merged.
 | `.railway/railway.ts` | the custom-domain comment |
 | `SYSTEM-REFERENCE.md` | §15.15 as measured, §15.1 if it names the address |
 | `CLAUDE.md` | Infrastructure, Security Headers, and wherever hosting is described |
+
+## Results (12 Oct 2026)
+
+### The CSP walk — enforced header, scratch production build, local API
+
+Served by a scratchpad server on :4200 that sent `vercel.json`'s every-path
+headers, read from the file, as real response headers. Every document load
+carried `Content-Security-Policy` and none carried the Report-Only one.
+Violations were watched in two ways: the console (`Refused to …`) and
+`securitypolicyviolation` events.
+
+| Screen | Persona | CSP violations | Result |
+|---|---|---|---|
+| Sign-in, English | — | 0 | form shown, `dir=ltr` |
+| Sign-in, Arabic | — | 0 | `dir=rtl`, `lang=ar` |
+| Sign-in submitted | Yasser (al-nakheel) | 0 | 200, landed on `/home` |
+| Home and the shell | Yasser | 0 | rail rendered |
+| Notification bell | Yasser | 0 | popover opened |
+| Tasks (My tasks) | Yasser | 0 | 3 rows |
+| A task with evidence | Yasser | 0 | "Test Task" evidence dialog, 1 file |
+| File viewer, PDF | Yasser | 0 | rendered (see note 1) |
+| Profile, MFA setup to the QR code | Yasser | 0 | QR shown (`data:` image); NOT verified (see note 3) |
+| File viewer, image | Adel (al-manara) | 0 | JPEG shown as a `blob:` image, 1272px wide |
+| Sign-in | platform admin | 0 | 200, landed on `/platform/tenants` |
+| Platform: tenants, plans, AI credit packs, AI feature costs, settings | platform admin | 0 | each loaded |
+
+The only other console errors were the expected 401s from the signed-out
+session check on each sign-in page.
+
+1. **The PDF, and what was simulated.** The local backend has no S3
+   credentials (they exist only on Railway, and were not copied), so its link
+   request was refused with "File storage isn't set up yet" — a setup gap, not
+   a CSP refusal. The walk was repeated with the link request answered at the
+   network layer by a URL on the Supabase storage host, and that host answered
+   with a one-page PDF. **Interception sits below the browser's CSP check**, so
+   the fetch to the storage host still passed `connect-src` for real. pdf.js's
+   worker started from `'self'`, and the canvas (822×1163) was painted. Nothing
+   left the machine.
+2. **The image** is SharePoint evidence, streamed through the API (same origin
+   here), so it exercises `img-src blob:`. The storage-host fetch is the PDF's.
+3. **MFA setup** stores an unverified TOTP secret for Yasser (Better Auth's
+   `enableTwoFactor`). `verified` and `twoFactorEnabled` stay false, so MFA is
+   NOT on and his sign-in is unchanged. The row is left as it is: Better Auth's
+   tables are not written directly.
+
+### `railway config plan` (apply NOT run)
+
+`Plan: 0 to add, 1 to change, 0 to destroy` — the change is §15.4's
+`restartPolicyType` round-trip. No domain is removed.
+
+### Checks, each gated on its own exit status
+
+- **Backend:** `tsc` and the build pass; 128 suites, 2,913 tests; tenant
+  isolation 173 passed; `check:worker-gate` passes.
+- **Frontend:** `tsc` (app and specs), `ng build` and `verify:built-index`
+  pass; Karma 1,371 of 1,371; i18n parity 18 of 18.
+- **Frontend `check:*`, all exit 0:** formatting, contrast, icon-labels,
+  dialog-overlays, dialog-density, create-gating, action-gating,
+  action-gating:selftest, field-control, confirm-translated, reserved-slugs,
+  vercel-config.
+- **The scan's new rule, mutated:** back to Report-Only → red; Report-Only
+  beside the enforced header → red; the enforced header removed → red; restored
+  → green.
+- There is no frontend lint: no ESLint config exists (recorded in `ci.yml`).
