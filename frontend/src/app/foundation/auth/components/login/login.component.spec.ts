@@ -20,6 +20,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
 import { LoginComponent } from './login.component';
+import { SESSION_OTHER_ORGANIZATION, SessionAddressState } from '../../../../core/tenant/session-address-state';
 
 /** The auth layout's language plumbing and the formatting layer, held still. */
 const LAYOUT_PROVIDERS = [
@@ -377,5 +378,67 @@ describe('LoginComponent — Sign in on the auth layout (ACC-120 slice 9d)', () 
       expect(r.slot()).toContain('You can try again in 10 minutes.');
       expect(r.slot()).not.toContain('extend');
     });
+  });
+});
+
+// ACC-204 — when start-up met another organisation's session, the sign-in page
+// says so in one line; otherwise it says nothing.
+describe('LoginComponent — a session at another organisation’s address (ACC-204)', () => {
+  const NOTE_KEY = 'session.signedInElsewhere';
+
+  function load(signedInElsewhere: boolean): HTMLElement {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [LoginComponent],
+      providers: [
+        provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        {
+          provide: Router,
+          useValue: {
+            currentNavigation: () => null,
+            navigate: jasmine.createSpy('navigate'),
+            navigateByUrl: jasmine.createSpy('navigateByUrl'),
+            createUrlTree: () => ({}),
+            serializeUrl: () => '',
+            events: { subscribe: () => ({ unsubscribe: () => {} }) },
+          },
+        },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+        { provide: AuthService, useValue: { isAuthenticated: () => false } },
+        { provide: NavigationAccessService, useValue: {} },
+        { provide: TenantHostService, useValue: { slug: 'platform' } },
+        ...LAYOUT_PROVIDERS,
+      ],
+    });
+    if (signedInElsewhere) {
+      TestBed.inject(SessionAddressState).note(
+        new HttpErrorResponse({
+          status: 401,
+          statusText: 'Unauthorized',
+          error: { code: SESSION_OTHER_ORGANIZATION },
+        }),
+      );
+    }
+    const fixture = TestBed.createComponent(LoginComponent);
+    fixture.detectChanges();
+    return fixture.nativeElement;
+  }
+
+  it('shows the note when this browser’s session belongs to another organisation’s address', () => {
+    expect(load(true).textContent).toContain(NOTE_KEY);
+  });
+
+  it('shows nothing of the kind otherwise', () => {
+    expect(load(false).textContent).not.toContain(NOTE_KEY);
+  });
+
+  it('has the note in both languages, and the Arabic is Arabic', () => {
+    const enText = en.session.signedInElsewhere;
+    const arText = ar.session.signedInElsewhere;
+    expect(enText).toBe(
+      "You're signed in to another organisation in this browser. Signing in here will sign you out there.",
+    );
+    expect(arText).toMatch(/[\u0600-\u06FF]/);
+    expect(arText).not.toBe(enText);
   });
 });
