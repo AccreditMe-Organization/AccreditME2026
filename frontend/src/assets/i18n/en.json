@@ -1073,7 +1073,6 @@
     "monthlyCredits": "Monthly Credits",
     "creditsUsed": "Credits Used",
     "creditsRemaining": "Credits Remaining",
-    "overageEnabled": "Allow Overage",
     "savedSuccess": "Changes saved.",
     "impersonate": "Impersonate",
     "noTenantAdmins": "No active Tenant Admin users found for this tenant.",
@@ -1580,5 +1579,13 @@
     "expandLabel": "Expand to full screen",
     "restore": "Restore",
     "restoreLabel": "Restore to normal width"
+  },
+  "ai": {
+    "refusal": {
+      "notEnabled": "AI isn't turned on for your organization. Ask your administrator.",
+      "featureNotAvailable": "This AI feature isn't available for your organization.",
+      "creditsUsedUp": "Your organization has used all its AI credits for this period. They renew on {{date}}.",
+      "unavailable": "AI isn't available right now. Try again later."
+    }
   }
 }

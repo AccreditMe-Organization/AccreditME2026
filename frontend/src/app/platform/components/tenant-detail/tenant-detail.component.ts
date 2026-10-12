@@ -98,10 +98,6 @@ import { InputNumberLatinDigits } from '../../../core/formatting/latin-digits';
             <label for="monthlyCredits" class="text-sm font-medium">{{ 'platform.monthlyCredits' | translate }}</label>
             <p-inputNumber inputId="monthlyCredits" formControlName="monthlyCredits" [min]="0" />
           </div>
-          <div class="flex items-center gap-2">
-            <p-checkbox formControlName="overageEnabled" [binary]="true" inputId="overageEnabled" />
-            <label for="overageEnabled" class="text-sm cursor-pointer">{{ 'platform.overageEnabled' | translate }}</label>
-          </div>
           <p class="text-sm text-[var(--am-text-secondary)]">
             {{ 'platform.creditsUsed' | translate }}: {{ t.ai.creditsUsed }} ·
             {{ 'platform.creditsRemaining' | translate }}: {{ t.ai.creditsRemaining }}
@@ -157,7 +153,6 @@ export class TenantDetailComponent implements OnInit {
 
   readonly aiForm = this.fb.group({
     monthlyCredits: [0, [Validators.required, Validators.min(0)]],
-    overageEnabled: [false],
   });
 
   ngOnInit(): void {
@@ -169,10 +164,7 @@ export class TenantDetailComponent implements OnInit {
       next: (tenant) => {
         this.tenant.set(tenant);
         this.modulesForm.patchValue(tenant.modules);
-        this.aiForm.patchValue({
-          monthlyCredits: tenant.ai.monthlyCredits,
-          overageEnabled: tenant.ai.overageEnabled,
-        });
+        this.aiForm.patchValue({ monthlyCredits: tenant.ai.monthlyCredits });
       },
       error: () => this.error.set('platform.errorLoad'),
     });
@@ -205,7 +197,7 @@ export class TenantDetailComponent implements OnInit {
     this.savedMessage.set(null);
 
     const value = this.aiForm.getRawValue();
-    this.platformTenantService.allocateAiCredits(this.tenantId, value.monthlyCredits!, value.overageEnabled!).subscribe({
+    this.platformTenantService.allocateAiCredits(this.tenantId, value.monthlyCredits!).subscribe({
       next: () => {
         this.savingAi.set(false);
         this.savedMessage.set('platform.savedSuccess');
