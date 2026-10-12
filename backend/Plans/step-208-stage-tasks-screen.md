@@ -248,6 +248,34 @@ All of these live under `frontend/src/app/foundation/workflow/` unless stated.
     step 2 is the priority plus up to four cascade fields and an outcome line.
   - If it somehow fits, I stop and ask rather than step it.
 
+**4.2.1 The measurements (built, 12 Oct).** These come from
+`stage-task-definition-form.layout.spec.ts`: the real dialog shell, compact
+density, the real theme, actions in the footer, in both languages. The guard
+also asserts each body is really laid out (taller than 150px) before "≤ 420"
+counts.
+
+| State | English | Arabic |
+|---|---|---|
+| One step, for comparison (the drawing) | 730 | 778 |
+| Step 1 · title error showing | **356** | **387** |
+| Step 2 · a unit you choose (tallest: unit, position, person, outcome line) | **352** | **360** |
+| Step 2 · deadline refused · the record's unit | 278 | 284 |
+| Step 2 · a committee you choose | 261 | 267 |
+| Step 2 · the record's committee | 261 | 267 |
+| Step 2 · saved with a warning (ACC-55) | 352 | 360 |
+
+**Two fixes the measuring forced, both recorded so they are not undone:**
+- **The post-save warning sits in the footer's status slot, not the body.** In
+  the body it took step 2 to 422 (English) and 436 (Arabic). The footer is
+  outside the cap, and the drawing already puts "Couldn't save" there.
+- **Step 1 measured 418 in Arabic at first**: 2px of headroom, which ACC-120
+  counts as a fail. Two compactions brought it to 387:
+  - the radio rows went from a 4px to a 2px block padding, matching the
+    drawing's 48px row;
+  - the description declares `message="none"`. It can produce no message: it is
+    optional, and its 2,000-character limit is the textarea's own `maxlength`
+    rather than a validator. The server keeps its `@MaxLength(2000)`.
+
 **4.3 Assignment — reusing the task picker's cascade**
 - A choice of four routes comes first ("Where does the task go?"), as an
   `OverlaySelectComponent` or a radio group, whichever the drawing shows:
@@ -561,7 +589,7 @@ built:**
 - [x] 2 DTOs, refusal map, i18n
 - [x] 3 Picker inputs
 - [x] 4 Tasks on entry list
-- [ ] 5 Definition dialog (measurements recorded)
+- [x] 5 Definition dialog (measurements recorded)
 - [ ] 6 Transition Kind
 - [ ] 7 Refusal states
 - [ ] 8 Docs

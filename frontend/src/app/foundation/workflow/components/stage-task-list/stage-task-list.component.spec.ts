@@ -17,6 +17,8 @@ import {
   WorkflowTemplateDto,
 } from '../../services/workflow-template.service';
 import { StageTaskListComponent, StageTaskSummary } from './stage-task-list.component';
+import { By } from '@angular/platform-browser';
+import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 
 // ACC-208 — "Tasks on entry" (drawing section 1): the header's arithmetic, a
 // row in words, who may change it, keyboard reorder, and delete.
@@ -152,6 +154,7 @@ describe('StageTaskListComponent (ACC-208)', () => {
         provideTranslateService({ lang: 'en' }),
         provideFormatTesting(),
         ConfirmationService,
+        { provide: NavigationAccessService, useValue: { hasPermission: () => true } },
       ],
     });
     loadTranslationsForTest({ en, ar });
@@ -363,6 +366,58 @@ describe('StageTaskListComponent (ACC-208)', () => {
 
       expect(rows().map((r) => r.getAttribute('data-stage-task'))).toEqual(['def-1', 'def-3']);
       expect(fixture.componentInstance.summaries.at(-1)).toEqual({ taskDefinitionCount: 2, longestTaskHours: 16 });
+    });
+  });
+
+  // ACC-55 — a save that returns a warning keeps its dialog open on it, and
+  // nothing it triggers may destroy that dialog: the list refreshes on close.
+  describe('the add dialog (ACC-55)', () => {
+    async function openAddAndSave(warning: 'POSITION_HAS_NO_HOLDER' | null) {
+      const ctx = setup();
+      const list = ctx.fixture.debugElement.query(By.directive(StageTaskListComponent)).componentInstance as StageTaskListComponent;
+      list.openAdd();
+      ctx.fixture.detectChanges();
+      await ctx.fixture.whenStable();
+      const form = list.formRef()!;
+      expect(form).withContext('the dialog did not render its form').not.toBeNull();
+      form.form.controls.titleEn.setValue('Check the terms');
+      form.next();
+      form.form.controls.priority.setValue('HIGH');
+      form.form.controls.assignKind.setValue('RECORD_COMMITTEE_ROLE');
+      http
+        .expectOne((r) => r.url.endsWith('/tasks/assignment/committee-roles'))
+        .flush([{ id: 'r', labelEn: 'Secretary', labelAr: null, memberCount: null }]);
+      form.form.controls.committeeRoleValueId.setValue('r');
+      form.onSubmit();
+      http.expectOne(`${API}/stages/stage-1/task-definitions`).flush({
+        definition: definition({ id: 'def-new', titleEn: 'Check the terms' }),
+        warning,
+      });
+      ctx.fixture.detectChanges();
+      return { ...ctx, list, form };
+    }
+
+    it('keeps the dialog — the same form — open on its warning, and refreshes the list only when it closes', async () => {
+      const { list, form, fixture } = await openAddAndSave('POSITION_HAS_NO_HOLDER');
+
+      expect(list.formOpen()).toBeTrue();
+      expect(list.formRef()).withContext('the form must not be recreated').toBe(form);
+      expect(form.savedWarning()).toContain('Saved. Nobody holds this position');
+      // Now editing what was saved, so a second Save updates rather than duplicates.
+      expect(list.editing()?.id).toBe('def-new');
+      http.expectNone(`${API}/stages/stage-1/task-definitions`);
+
+      list.onFormVisibleChange(false);
+      fixture.detectChanges();
+      http.expectOne(`${API}/stages/stage-1/task-definitions`).flush([...THREE, definition({ id: 'def-new' })]);
+      fixture.detectChanges();
+      expect(list.rows().length).toBe(4);
+    });
+
+    it('closes and refreshes at once when there is no warning', async () => {
+      const { list } = await openAddAndSave(null);
+      expect(list.formOpen()).toBeFalse();
+      http.expectOne(`${API}/stages/stage-1/task-definitions`).flush(THREE);
     });
   });
 

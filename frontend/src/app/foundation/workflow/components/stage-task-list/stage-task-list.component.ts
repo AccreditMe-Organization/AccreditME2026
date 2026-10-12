@@ -18,7 +18,9 @@ import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import {
+  StageTaskDefinitionDto,
   StageTaskDefinitionListItemDto,
+  StageTaskDefinitionSavedDto,
   TaskPriority,
   WorkflowStageDto,
   WorkflowTemplateDto,
@@ -26,6 +28,7 @@ import {
 } from '../../services/workflow-template.service';
 import { plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { stageTaskRouteLabel } from './stage-task-route-label';
+import { StageTaskDefinitionFormComponent } from '../stage-task-definition-form/stage-task-definition-form.component';
 
 /** What entering the stage creates, as the stage row's own summary carries it. */
 export interface StageTaskSummary {
@@ -66,7 +69,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 @Component({
   selector: 'app-stage-task-list',
   standalone: true,
-  imports: [TranslatePipe, ButtonModule, EditDialogComponent, IconButtonComponent],
+  imports: [TranslatePipe, ButtonModule, EditDialogComponent, IconButtonComponent, StageTaskDefinitionFormComponent],
   template: `
     <section class="am-stage-tasks" [attr.aria-label]="'workflow.stageTasks.title' | translate">
       <div class="am-stage-tasks__head">
@@ -205,6 +208,70 @@ type LoadState = 'loading' | 'ready' | 'error';
 
       <p class="sr-only" aria-live="polite" data-stage-tasks-announcement>{{ announcement() }}</p>
     </section>
+
+    <!-- Add and edit (drawing section 2): two steps, the step named in the
+         footer's left and the actions on its right. Declared HERE, not inside
+         the form: p-dialog collects its pTemplate children at content init, so
+         a footer arriving later never lands. -->
+    <ng-template #formBody>
+      <app-stage-task-definition-form
+        [definition]="editing()"
+        [stage]="stage()"
+        [template]="template()"
+        (saved)="onSaved($event)"
+        (ready)="formRef.set($event)"
+        (dirtyChange)="formDirty.set($event)"
+      />
+    </ng-template>
+    <ng-template #formFooter>
+      @if (formRef(); as f) {
+        <div class="am-std-footer">
+          @if (f.saveError(); as error) {
+            <span class="am-std-footer__error" role="alert" data-std-save-error>{{ error | translate }}</span>
+          } @else if (f.savedWarning(); as warning) {
+            <span class="am-std-footer__warning" role="status" data-std-warning>
+              <i class="pi pi-exclamation-triangle" aria-hidden="true"></i> {{ warning }}
+            </span>
+          } @else {
+            <span class="am-std-footer__step">{{ f.stepLabel() }}</span>
+          }
+          <span class="am-std-footer__actions">
+            @if (f.canGoBack()) {
+              <p-button [label]="'common.back' | translate" [text]="true" [disabled]="f.saving()" (onClick)="f.back()" />
+            } @else {
+              <p-button
+                [label]="'common.cancel' | translate"
+                [text]="true"
+                [disabled]="f.saving()"
+                (onClick)="definitionDialog.requestClose()"
+              />
+            }
+            @if (f.canAdvance()) {
+              <p-button [label]="'workflow.stageTaskForm.next' | translate" (onClick)="f.next()" data-std-next />
+            } @else {
+              <p-button
+                [label]="'workflow.stageTaskForm.save' | translate"
+                [loading]="f.saving()"
+                (onClick)="f.onSubmit()"
+                data-std-save
+              />
+            }
+          </span>
+        </div>
+      }
+    </ng-template>
+    <app-edit-dialog
+      #definitionDialog
+      [visible]="formOpen()"
+      (visibleChange)="onFormVisibleChange($event)"
+      [header]="(editing() ? 'workflow.stageTaskForm.editTitle' : 'workflow.stageTaskForm.addTitle') | translate"
+      [context]="formRef()?.context() ?? ''"
+      [content]="formBody"
+      [footer]="formFooter"
+      density="compact"
+      [dirty]="formDirty()"
+      [saving]="!!formRef()?.saving()"
+    />
 
     <!-- Delete (drawing section 2): a 420 confirm, naming what stays. -->
     <ng-template #deleteBody>
@@ -404,6 +471,33 @@ type LoadState = 'loading' | 'ready' | 'error';
         background: var(--am-warning-bg);
         border: 1px solid var(--am-warning-border);
       }
+      .am-std-footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--am-space-8);
+        inline-size: 100%;
+      }
+      .am-std-footer__step {
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
+      }
+      .am-std-footer__error {
+        font-size: var(--am-type-meta-size);
+        font-weight: 500;
+        color: var(--am-danger-ink);
+      }
+      .am-std-footer__warning {
+        flex: 1 1 16rem;
+        font-size: var(--am-type-meta-size);
+        font-weight: 500;
+        color: var(--am-warning-ink);
+      }
+      .am-std-footer__actions {
+        display: flex;
+        gap: var(--am-space-8);
+      }
       .am-confirm__sentence {
         margin: 0;
       }
@@ -448,8 +542,15 @@ export class StageTaskListComponent implements OnInit {
   readonly announcement = signal('');
 
   /** The definition being added (null) or edited, while its dialog is open. */
-  readonly editing = signal<StageTaskDefinitionListItemDto | null>(null);
+  readonly editing = signal<StageTaskDefinitionDto | null>(null);
   readonly formOpen = signal(false);
+  readonly formRef = signal<StageTaskDefinitionFormComponent | null>(null);
+  readonly formDirty = signal(false);
+  /**
+   * ACC-55 — a save that returned a warning keeps the dialog open on it, and
+   * the list is refreshed when the dialog closes rather than under it.
+   */
+  private refreshPending = false;
   readonly deleting = signal<StageTaskDefinitionListItemDto | null>(null);
 
   readonly busy = computed(() => this.reordering() || this.removing());
@@ -566,8 +667,32 @@ export class StageTaskListComponent implements OnInit {
   }
 
   openEdit(row: StageTaskDefinitionListItemDto): void {
+    this.actionError.set(null);
     this.editing.set(row);
     this.formOpen.set(true);
+  }
+
+  /** A warning keeps the dialog open, now editing what was saved; otherwise it closes. */
+  onSaved(result: StageTaskDefinitionSavedDto): void {
+    if (result.warning) {
+      this.editing.set(result.definition);
+      this.refreshPending = true;
+      return;
+    }
+    this.formOpen.set(false);
+    this.formRef.set(null);
+    this.refreshAfterSave();
+  }
+
+  onFormVisibleChange(visible: boolean): void {
+    if (visible) return;
+    this.formOpen.set(false);
+    this.formRef.set(null);
+    this.formDirty.set(false);
+    if (this.refreshPending) {
+      this.refreshPending = false;
+      this.refreshAfterSave();
+    }
   }
 
   askDelete(row: StageTaskDefinitionListItemDto): void {
