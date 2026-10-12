@@ -9,8 +9,6 @@ import { TenantService } from './tenant.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { DelegationLabelService } from '../../common/services/delegation-label.service';
 import { ObjectVisibilityService } from '../../common/services/object-visibility.service';
-import { AI_PROVIDER } from '../../providers/ai/ai.provider';
-import { AnthropicAiProvider } from '../../providers/ai/anthropic-ai.provider';
 import { AUTH_PROVIDER } from '../../providers/auth/auth.provider';
 import { BetterAuthProvider } from '../../providers/auth/better-auth.provider';
 
@@ -28,7 +26,6 @@ import { BetterAuthProvider } from '../../providers/auth/better-auth.provider';
     AuditLogService,
     DelegationLabelService,
     ObjectVisibilityService,
-    { provide: AI_PROVIDER, useClass: AnthropicAiProvider },
     { provide: AUTH_PROVIDER, useClass: BetterAuthProvider },
   ],
   exports: [
@@ -36,7 +33,6 @@ import { BetterAuthProvider } from '../../providers/auth/better-auth.provider';
     AuditLogService,
     DelegationLabelService,
     ObjectVisibilityService,
-    AI_PROVIDER,
     AUTH_PROVIDER,
   ],
 })

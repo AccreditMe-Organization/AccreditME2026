@@ -1,35 +1,61 @@
-// AiProvider interface — all AI implementations must satisfy this contract.
+// AiProvider — the contract every model provider satisfies (ACC-194).
 //
-// Pattern: AI suggests → human reviews → human approves → recorded in audit trail.
-// The caller always receives AiCompletionResult to present to a human for review.
-// AI output is NEVER auto-saved or acted upon without explicit human approval.
-// Every call site must log: actor, model, prompt summary, response summary, timestamp.
+// A provider ONLY makes the call. It knows nothing about tenants, credits,
+// logging or which model a feature should use: the gateway
+// (foundation/ai/ai.service.ts) decides all of that, and is the only thing
+// allowed to inject AI_PROVIDER (enforced by `npm run check:ai-gateway`).
+// Keeping this contract provider-neutral is what lets a customer-hosted,
+// OpenAI-compatible provider slot in later without touching the gateway
+// (ACC-194 plan §16).
+//
+// Pattern: AI suggests → human reviews → human approves → recorded in audit
+// trail. The caller presents the result to a human; nothing is auto-saved.
 
-export interface AiCompletionOptions {
-  model?: string;
-  maxTokens?: number;
-  temperature?: number;
-  systemPrompt?: string;
-  // Identifies which AI touchpoint made the call (e.g. "lookup.suggestValues"),
-  // recorded on AiInteractionLog for the "Every AI interaction logged" rule.
-  feature?: string;
-  // Actor who triggered the call — also recorded on AiInteractionLog.
-  actorId?: string;
+/** How much the model may think and write (Anthropic `output_config.effort`). */
+export type AiEffort = 'low' | 'medium' | 'high';
+
+/** The provider values of the AiProvider enum (schema.prisma). */
+export type AiProviderName = 'ANTHROPIC' | 'AZURE_OPENAI' | 'OPENAI' | 'OLLAMA';
+
+export interface AiProviderRequest {
+  model: string;
+  prompt: string;
+  system?: string;
+  /** Thinking plus the answer: a hard limit on output. */
+  maxTokens: number;
+  effort: AiEffort;
 }
 
-export interface AiCompletionResult {
+export interface AiProviderResult {
   content: string;
+  /** The model the provider reports it used. */
   model: string;
   inputTokens: number;
   outputTokens: number;
+  /** The answer stopped at maxTokens. */
+  truncated: boolean;
 }
 
 export interface AiProvider {
-  complete(
-    prompt: string,
-    organizationId: string,
-    options?: AiCompletionOptions,
-  ): Promise<AiCompletionResult>;
+  readonly name: AiProviderName;
+  /** Whether a call can be made at all (a platform key exists). Checked before credits are reserved. */
+  isConfigured(): boolean;
+  complete(request: AiProviderRequest): Promise<AiProviderResult>;
+}
+
+/**
+ * A provider call that did not produce an answer. Carries the HTTP status and
+ * the provider's error TYPE only — never its response body, which may echo
+ * what was sent.
+ */
+export class AiProviderCallError extends Error {
+  constructor(
+    readonly status: number | null,
+    readonly kind: string,
+  ) {
+    super(`AI provider call failed (${status ?? 'no response'}: ${kind})`);
+    this.name = 'AiProviderCallError';
+  }
 }
 
 export const AI_PROVIDER = Symbol('AI_PROVIDER');

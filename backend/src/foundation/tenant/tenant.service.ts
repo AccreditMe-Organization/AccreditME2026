@@ -1,3 +1,4 @@
+import { aiBalanceOf, AiBalanceSource, IAiFeatureOpen, openAiFeatures } from '../ai/ai-balance';
 import {
   ConflictException,
   Inject,
@@ -80,7 +81,7 @@ export class TenantService {
   async findById(id: string): Promise<ITenant> {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
-    return this.mapToITenant(org);
+    return this.mapToITenant(org, await openAiFeatures(this.prisma, id));
   }
 
   // ACC-79 — what the shell needs to draw navigation, and nothing else.
@@ -148,13 +149,14 @@ export class TenantService {
       after: dto as Record<string, unknown>,
     });
 
-    return this.mapToITenant(updated);
+    return this.mapToITenant(updated, await openAiFeatures(this.prisma, id));
   }
 
   // Shared by findById/update — modules/ai (ACC-13) are the frontend
-  // navigation's one-stop source for "what am I licensed to see," derived
-  // from Organization.settings rather than a dedicated endpoint.
-  private mapToITenant(org: {
+  // navigation's one-stop source for "what am I licensed to see." Modules come
+  // from Organization.settings; the AI balance from the dedicated AI columns
+  // (ACC-194 — the old settings.ai counters are ignored everywhere).
+  private mapToITenant(org: AiBalanceSource & {
     id: string;
     name: string;
     nameAr: string | null;
@@ -177,18 +179,8 @@ export class TenantService {
     settings: unknown;
     createdAt: Date;
     updatedAt: Date;
-  }): ITenant {
-    const settings = (org.settings as {
-      modules?: Record<string, boolean>;
-      ai?: {
-        enabled?: boolean;
-        monthlyCredits?: number;
-        creditsUsed?: number;
-        creditsRemaining?: number;
-        resetDate?: string;
-        overageEnabled?: boolean;
-      };
-    } | null) ?? {};
+  }, aiFeatures: IAiFeatureOpen[]): ITenant {
+    const settings = (org.settings as { modules?: Record<string, boolean> } | null) ?? {};
 
     return {
       id: org.id,
@@ -215,14 +207,7 @@ export class TenantService {
       logo: org.logo,
       isPlatformOrg: org.isPlatformOrg,
       modules: settings.modules ?? {},
-      ai: {
-        enabled: settings.ai?.enabled ?? false,
-        monthlyCredits: settings.ai?.monthlyCredits ?? 0,
-        creditsUsed: settings.ai?.creditsUsed ?? 0,
-        creditsRemaining: settings.ai?.creditsRemaining ?? 0,
-        resetDate: settings.ai?.resetDate ?? null,
-        overageEnabled: settings.ai?.overageEnabled ?? false,
-      },
+      ai: { ...aiBalanceOf(org), features: aiFeatures },
       createdAt: org.createdAt,
       updatedAt: org.updatedAt,
     };
@@ -346,10 +331,11 @@ export class TenantService {
     return readEmailConfig(JSON.parse(this.decryptConfig(encrypted)));
   }
 
-  // Deliberately narrow (ACC-13) — a tenant admin may only toggle this one
-  // field within their own org's settings.ai; monthlyCredits/creditsUsed/
-  // creditsRemaining are exclusively set by a Platform Admin via
-  // PlatformTenantService.allocateAiCredits(), never from this endpoint.
+  // ACC-194 — overage stays off and NOTHING reads this value any more (D9):
+  // the gateway refuses at zero whatever it says, and the AI credits screen no
+  // longer shows the toggle. The route is kept until a later contract step
+  // removes it, so an old client gets a 200 rather than a 404. Credits live in
+  // dedicated Organization columns, written only by foundation/ai/.
   async updateAiOverageSetting(id: string, dto: UpdateAiOverageDto, actorId: string): Promise<void> {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');

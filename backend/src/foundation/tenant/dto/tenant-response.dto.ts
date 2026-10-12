@@ -1,3 +1,4 @@
+import { IAiBalance, IAiFeatureOpen } from '../../ai/ai-balance';
 import { ITenant } from '../interfaces/tenant.interface';
 
 export class TenantResponseDto implements ITenant {
@@ -21,14 +22,7 @@ export class TenantResponseDto implements ITenant {
   logo!: string | null;
   isPlatformOrg!: boolean;
   modules!: Record<string, boolean>;
-  ai!: {
-    enabled: boolean;
-    monthlyCredits: number;
-    creditsUsed: number;
-    creditsRemaining: number;
-    resetDate: string | null;
-    overageEnabled: boolean;
-  };
+  ai!: IAiBalance & { features: IAiFeatureOpen[] }; // ACC-194 — from the AI columns, not settings.ai
   createdAt!: Date;
   updatedAt!: Date;
 }

@@ -1,29 +1,24 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
-import { CheckboxModule } from 'primeng/checkbox';
 import { MessageModule } from 'primeng/message';
 import { CardComponent } from '../../../../shared/components/card/card.component';
 import { TenantService, ITenant } from '../../../tenant/services/tenant.service';
 import { PageHeaderComponent } from '../../../../shared/components/page-header/page-header.component';
 
-// Read-only credit display — a Platform Admin sets the allocation via the
-// Super Admin Portal, not the tenant admin. The only write action here is
-// overageEnabled, which IS tenant-controllable per CLAUDE.md's
-// Organization.settings.ai.overageEnabled field.
+// Read-only credit display — the allocation follows the tenant's plan, or a
+// platform admin's manual allocation (ACC-194). Nothing here is writable: the
+// overage toggle was removed with ACC-194 (D9), because overage stays off and
+// the gateway refuses at zero whatever it said.
 @Component({
   selector: 'app-ai-settings',
   standalone: true,
-  imports: [PageHeaderComponent, FormsModule, TranslatePipe, CheckboxModule, MessageModule, CardComponent],
+  imports: [PageHeaderComponent, TranslatePipe, MessageModule, CardComponent],
   template: `
     <div class="flex flex-col gap-4 max-w-lg">
       <app-page-header [title]="'adminSettings.aiSettings' | translate" />
 
       @if (error()) {
         <p-message severity="error" [text]="error()! | translate" />
-      }
-      @if (savedMessage()) {
-        <p-message severity="success" [text]="savedMessage()! | translate" />
       }
 
       @if (tenant(); as t) {
@@ -40,16 +35,6 @@ import { PageHeaderComponent } from '../../../../shared/components/page-header/p
         <p class="text-sm text-[var(--am-text-secondary)]">
           {{ 'platform.creditsUsed' | translate }}: {{ t.ai.creditsUsed }}
         </p>
-
-        <div class="flex items-center gap-2">
-          <p-checkbox
-            [ngModel]="t.ai.overageEnabled"
-            [binary]="true"
-            inputId="overageEnabled"
-            (ngModelChange)="onToggleOverage($event)"
-          />
-          <label for="overageEnabled" class="text-sm cursor-pointer">{{ 'platform.overageEnabled' | translate }}</label>
-        </div>
       }
     </div>
   `,
@@ -59,28 +44,11 @@ export class AiSettingsComponent implements OnInit {
 
   readonly tenant = signal<ITenant | null>(null);
   readonly error = signal<string | null>(null);
-  readonly savedMessage = signal<string | null>(null);
 
   ngOnInit(): void {
-    this.load();
-  }
-
-  private load(): void {
     this.tenantService.getCurrent().subscribe({
       next: (tenant) => this.tenant.set(tenant),
       error: () => this.error.set('adminSettings.errorLoad'),
-    });
-  }
-
-  onToggleOverage(overageEnabled: boolean): void {
-    this.error.set(null);
-    this.savedMessage.set(null);
-    this.tenantService.updateAiOverageSetting(overageEnabled).subscribe({
-      next: () => {
-        this.savedMessage.set('adminSettings.savedSuccess');
-        this.load();
-      },
-      error: () => this.error.set('adminSettings.errorSave'),
     });
   }
 }

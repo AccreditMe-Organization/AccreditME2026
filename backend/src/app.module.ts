@@ -21,6 +21,7 @@ import { UserModule } from './foundation/user/user.module';
 import { SetupHealthModule } from './foundation/setup-health/setup-health.module';
 import { PlanModule } from './platform/plan/plan.module';
 import { PlatformModule } from './platform/tenant/platform.module';
+import { AiModule } from './foundation/ai/ai.module';
 import { AccreditMeThrottlerGuard } from './common/throttle/accreditme-throttler.guard';
 import { throttlerOptions } from './common/throttle/throttle.config';
 
@@ -53,6 +54,7 @@ import { throttlerOptions } from './common/throttle/throttle.config';
     SetupHealthModule,
     PlanModule,
     PlatformModule,
+    AiModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: AccreditMeThrottlerGuard }],
 })

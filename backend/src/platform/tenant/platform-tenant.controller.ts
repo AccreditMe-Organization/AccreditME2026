@@ -21,6 +21,7 @@ import { PlatformTenantService } from './platform-tenant.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantModulesDto } from './dto/update-tenant-modules.dto';
 import { AllocateAiCreditsDto } from './dto/allocate-ai-credits.dto';
+import { ChangeTenantPlanDto } from './dto/change-tenant-plan.dto';
 import { ExtendTrialDto } from './dto/extend-trial.dto';
 
 @Controller('platform')
@@ -91,6 +92,18 @@ export class PlatformTenantController {
     @CurrentUser() actorId: string,
   ) {
     return this.platformTenantService.allocateAiCredits(id, dto, actorId);
+  }
+
+  // ACC-194 (D18) — set or change a tenant's plan. The AI allocation and the
+  // module entitlements follow it; one audit row records the old and new plan.
+  @Patch('tenants/:id/plan')
+  @UseGuards(TenantGuard, PlatformGuard)
+  changePlan(
+    @Param('id') id: string,
+    @Body() dto: ChangeTenantPlanDto,
+    @CurrentUser() actorId: string,
+  ) {
+    return this.platformTenantService.changePlan(id, dto.planId, actorId);
   }
 
   @Post('tenants/:id/impersonate/:userId')

@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { IAiBalance } from '../../foundation/tenant/services/tenant.service';
 
 export interface IPlatformTenantSummary {
   id: string;
@@ -16,12 +17,7 @@ export interface IPlatformTenantSummary {
 export interface IPlatformTenantDetail extends IPlatformTenantSummary {
   userCount: number;
   modules: Record<string, boolean>;
-  ai: {
-    monthlyCredits: number;
-    creditsUsed: number;
-    creditsRemaining: number;
-    overageEnabled: boolean;
-  };
+  ai: IAiBalance;
   tenantAdmins: { id: string; name: string; email: string }[];
 }
 
@@ -67,8 +63,10 @@ export class PlatformTenantService {
     return this.http.patch<void>(`${this.baseUrl}/tenants/${id}/modules`, { modules });
   }
 
-  allocateAiCredits(id: string, monthlyCredits: number, overageEnabled?: boolean): Observable<void> {
-    return this.http.patch<void>(`${this.baseUrl}/tenants/${id}/ai-credits`, { monthlyCredits, overageEnabled });
+  // ACC-194 — a manual allocation: a raise applies now, a cut at the next
+  // renewal, and the next plan change replaces it. No overage value (D19).
+  allocateAiCredits(id: string, monthlyCredits: number): Observable<void> {
+    return this.http.patch<void>(`${this.baseUrl}/tenants/${id}/ai-credits`, { monthlyCredits });
   }
 
   startImpersonation(tenantId: string, userId: string): Observable<void> {
