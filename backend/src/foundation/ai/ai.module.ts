@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { QueueModule } from '../../common/queue/queue.module';
+import { workersEnabled } from '../../common/queue/workers.config';
+import { AiCreditsRenewalProcessor } from './ai-credits-renewal.processor';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { AI_PROVIDER } from '../../providers/ai/ai.provider';
 import { AnthropicAiProvider } from '../../providers/ai/anthropic-ai.provider';
@@ -16,13 +19,16 @@ import { AiAllocationService } from './ai-allocation.service';
  * and providers/ai references the provider.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, QueueModule],
   providers: [
     AiService,
     AiCreditService,
     AiAllocationService,
     AuditLogService,
     { provide: AI_PROVIDER, useClass: AnthropicAiProvider },
+    // The hourly renewal both consumes its queue and schedules its own repeat,
+    // so it is registered only where workers run (ACC-92).
+    ...(workersEnabled() ? [AiCreditsRenewalProcessor] : []),
   ],
   exports: [AiService, AiAllocationService],
 })

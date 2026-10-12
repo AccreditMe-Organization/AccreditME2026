@@ -27,6 +27,9 @@ import { logWorkerRegistration } from './workers.config';
     BullModule.registerQueue({ name: 'setup-health' }),
     // ACC-177 — the daily purge of files deleted more than 30 days ago.
     BullModule.registerQueue({ name: 'storage-purge' }),
+    // ACC-194 — the hourly AI credit renewal. No retry options, like
+    // setup-health: the next hourly run tries again.
+    BullModule.registerQueue({ name: 'ai-credits' }),
     BullModule.registerQueue({
       name: 'email-delivery',
       defaultJobOptions: {

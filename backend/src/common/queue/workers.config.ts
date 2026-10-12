@@ -50,7 +50,7 @@
 export const RUN_WORKERS_ENV = 'RUN_WORKERS';
 
 /** The queues a worker process consumes, named in the startup log. */
-export const WORKER_QUEUES = ['sla-monitor', 'setup-health', 'workflow-actions', 'email-delivery', 'storage-purge'];
+export const WORKER_QUEUES = ['sla-monitor', 'setup-health', 'workflow-actions', 'email-delivery', 'storage-purge', 'ai-credits'];
 
 /**
  * Only the exact string `true` enables workers. Anything else — unset, empty,
@@ -98,7 +98,7 @@ export function logWorkerRegistration(
 
   const consequence =
     `Queue processors DISABLED — this process runs NO scheduled work ` +
-    `(SLA sweeps, Setup health reconciliation, head-vacancy recompute) and consumes no queue jobs. ` +
+    `(SLA sweeps, Setup health reconciliation, head-vacancy recompute, AI credit renewal) and consumes no queue jobs. ` +
     `Set ${RUN_WORKERS_ENV}=true to enable.`;
 
   if (looksLikeDeployment(env)) {
