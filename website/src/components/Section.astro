@@ -1,0 +1,47 @@
+---
+// One labelled placeholder section (ACC-213): the design's band, a DRAFT
+// marker, its name and a neutral note. Nothing in here is final copy.
+import { strings, type Lang, type SectionCopy } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+  section: SectionCopy;
+  /** Rendered inside a band someone else draws (the AI + security pair). */
+  bare?: boolean;
+  headingLevel?: 1 | 2;
+}
+
+const { lang, section, bare = false, headingLevel = 2 } = Astro.props;
+const t = strings[lang];
+const Heading = headingLevel === 1 ? 'h1' : 'h2';
+const headingId = `${section.id}-title`;
+---
+
+{
+  bare ? (
+    <section id={section.id} aria-labelledby={headingId} data-section={section.id}>
+      <span class="draft">{t.draft}</span>
+      <Heading class="section__title" id={headingId}>{section.title}</Heading>
+      <p class="section__note">{section.note}</p>
+      <div class="section__placeholder">{t.draft}</div>
+      <slot />
+    </section>
+  ) : (
+    <section
+      id={section.id}
+      class={`band band--${section.band}`}
+      aria-labelledby={headingId}
+      data-section={section.id}
+      data-band={section.band}
+    >
+      <div class="container">
+        <span class="draft">{t.draft}</span>
+        <Heading class="section__title" id={headingId}>{section.title}</Heading>
+        <p class="section__note">{section.note}</p>
+        <slot>
+          <div class="section__placeholder">{t.draft}</div>
+        </slot>
+      </div>
+    </section>
+  )
+}

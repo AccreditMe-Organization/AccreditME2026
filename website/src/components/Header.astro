@@ -1,0 +1,41 @@
+---
+// Section 1 of 12: the header (white, as in the design). The horizontal logo
+// lockup, section links, the language switch to the SAME page in the other
+// language, and the Sign in box.
+import SignInBox from './SignInBox.astro';
+import { strings, pathFor, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+  otherPath: string;
+}
+
+const { lang, otherPath } = Astro.props;
+const t = strings[lang];
+const home = pathFor(lang, '');
+const links = [
+  { href: `${home}#problem`, label: t.nav.problem },
+  { href: `${home}#what-it-does`, label: t.nav.whatItDoes },
+  { href: `${home}#pricing`, label: t.nav.pricing },
+  { href: `${home}#faq`, label: t.nav.faq },
+  { href: `${home}#demo`, label: t.nav.demo },
+];
+const other = t.languageSwitch.otherLang;
+---
+
+<header class="site-header" id="header">
+  <div class="container site-header__row">
+    <a class="site-header__logo" href={home}>
+      <img src="/accreditme-logo.png" width="785" height="174" alt={t.logoAlt} />
+    </a>
+    <nav class="site-nav" aria-label={t.nav.label}>
+      <ul>
+        {links.map((l) => <li><a href={l.href}>{l.label}</a></li>)}
+      </ul>
+    </nav>
+    <div class="site-header__tools">
+      <a class="lang-switch" href={otherPath} hreflang={other} lang={other}>{t.languageSwitch.otherName}</a>
+      <SignInBox lang={lang} />
+    </div>
+  </div>
+</header>

@@ -1,0 +1,79 @@
+---
+// The demo request form (ACC-213): fields and validation ONLY. Submit is
+// disabled with a "Coming soon" note. There is no action, no network call, no
+// secret and no third-party script; sending it (through Resend) is a later
+// step. Error text is rendered into data attributes for the script.
+import { strings, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang].demoForm;
+interface Field {
+  id: string;
+  name: string;
+  label: string;
+  type: 'text' | 'email' | 'tel';
+  autocomplete: string;
+  required: boolean;
+  max: number;
+  dir?: 'ltr';
+}
+const fields: Field[] = [
+  { id: 'demo-name', name: 'name', label: t.name, type: 'text', autocomplete: 'name', required: true, max: 120 },
+  { id: 'demo-email', name: 'email', label: t.email, type: 'email', autocomplete: 'email', required: true, max: 254, dir: 'ltr' },
+  { id: 'demo-organisation', name: 'organisation', label: t.organisation, type: 'text', autocomplete: 'organization', required: true, max: 160 },
+  { id: 'demo-country', name: 'country', label: t.country, type: 'text', autocomplete: 'country-name', required: true, max: 80 },
+  { id: 'demo-phone', name: 'phone', label: t.phone, type: 'tel', autocomplete: 'tel', required: false, max: 32, dir: 'ltr' },
+];
+---
+
+<form
+  class="demo-form"
+  data-demo-form
+  data-error-required={t.errors.required}
+  data-error-email={t.errors.email}
+  data-error-too-long={t.errors.tooLong}
+  novalidate
+  aria-labelledby="demo-form-title"
+>
+  <h3 class="demo-form__title" id="demo-form-title">{t.title}</h3>
+  <div class="demo-form__grid">
+    {
+      fields.map((f) => (
+        <div class="field">
+          <label for={f.id}>
+            {f.label} {!f.required && <span class="field__hint">{t.phoneOptional}</span>}
+          </label>
+          <input
+            id={f.id}
+            name={f.name}
+            type={f.type}
+            autocomplete={f.autocomplete}
+            required={f.required}
+            maxlength={f.max}
+            dir={f.dir}
+            aria-describedby={`${f.id}-error`}
+          />
+          <p class="field__error" id={`${f.id}-error`} aria-live="polite" />
+        </div>
+      ))
+    }
+    <div class="field field--wide">
+      <label for="demo-message">{t.message}</label>
+      <textarea id="demo-message" name="message" maxlength="2000" aria-describedby="demo-message-error"></textarea>
+      <p class="field__error" id="demo-message-error" aria-live="polite"></p>
+    </div>
+  </div>
+  <div class="demo-form__actions">
+    <button class="button button--on-charcoal" type="submit" disabled aria-describedby="demo-form-soon">{t.submit}</button>
+    <p class="demo-form__soon" id="demo-form-soon">{t.comingSoon}</p>
+  </div>
+</form>
+
+<script>
+  import { initDemoForm } from '../scripts/demo-form';
+  initDemoForm();
+</script>

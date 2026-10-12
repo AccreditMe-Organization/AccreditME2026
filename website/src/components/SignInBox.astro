@@ -1,0 +1,52 @@
+---
+// The header's Sign in box (ACC-213): type your organisation's address,
+// Continue goes to https://{slug}.accreditme.app/login. The rule is
+// lib/organisation-address.ts; the reserved list is generated from the backend.
+// The error text for each language is rendered into data attributes, so the
+// script needs no inline data and no strings of its own.
+import { strings, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang].signIn;
+---
+
+<form
+  class="sign-in"
+  data-sign-in
+  data-error-empty={t.errors.empty}
+  data-error-format={t.errors.format}
+  data-error-reserved={t.errors.reserved}
+  novalidate
+>
+  <label class="sign-in__label" for="org-address">{t.label}</label>
+  <div class="sign-in__row">
+    <!-- An address reads left to right in both languages: name, then .accreditme.app. -->
+    <span class="sign-in__field" dir="ltr">
+      <input
+        id="org-address"
+        name="org"
+        type="text"
+        inputmode="url"
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        maxlength="80"
+        dir="ltr"
+        aria-describedby="org-address-help org-address-error"
+      />
+      <span class="sign-in__suffix" dir="ltr" aria-hidden="true">{t.suffix}</span>
+    </span>
+    <button class="button" type="submit">{t.continue}</button>
+  </div>
+  <p class="sign-in__help" id="org-address-help">{t.help}</p>
+  <p class="sign-in__error" id="org-address-error" role="alert" aria-live="polite"></p>
+</form>
+
+<script>
+  import { initSignIn } from '../scripts/sign-in';
+  initSignIn();
+</script>

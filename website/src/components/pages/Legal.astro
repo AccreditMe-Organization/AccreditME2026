@@ -1,0 +1,27 @@
+---
+// Privacy policy and Terms of service (ACC-213): placeholders, marked DRAFT.
+// The real texts name the company, which is not decided yet, and are reviewed
+// before the cut-over (plan: "Still open").
+import Base from '../../layouts/Base.astro';
+import { strings, pathFor, type Lang } from '../../i18n/strings';
+
+interface Props {
+  lang: Lang;
+  page: 'privacy' | 'terms';
+}
+
+const { lang, page } = Astro.props;
+const t = strings[lang];
+const copy = t[page];
+const slug = `${page}/` as const;
+---
+
+<Base lang={lang} title={copy.title} description={copy.description} paths={{ en: pathFor('en', slug), ar: pathFor('ar', slug) }}>
+  <div class="page">
+    <div class="container">
+      <span class="draft">{t.draft}</span>
+      <h1>{copy.title}</h1>
+      <p>{copy.body}</p>
+    </div>
+  </div>
+</Base>
