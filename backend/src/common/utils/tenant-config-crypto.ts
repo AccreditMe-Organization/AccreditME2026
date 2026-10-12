@@ -1,5 +1,5 @@
 // Shared AES-256-GCM encrypt/decrypt for tenant provider config (auth/storage/AI).
-// Extracted so any provider implementation (e.g. AnthropicAiProvider) can decrypt
+// Extracted so any provider implementation (e.g. the storage providers) can decrypt
 // a tenant's own config at call time without depending on TenantService directly —
 // avoids a circular dependency back into TenantModule's own provider registrations.
 

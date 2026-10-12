@@ -1,3 +1,4 @@
+import { AiAllocationService } from '../ai/ai-allocation.service';
 import {
   ConflictException,
   ExecutionContext,
@@ -347,6 +348,7 @@ describe('closed organisations (ACC-168)', () => {
       {} as unknown as TenantService,
       {} as unknown as UserService,
       {} as unknown as RoleService,
+      {} as unknown as AiAllocationService,
     );
 
     // Better Auth: the right password is 'right', for everyone.

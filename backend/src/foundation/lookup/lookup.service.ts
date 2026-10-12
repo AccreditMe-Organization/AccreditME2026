@@ -546,10 +546,10 @@ export class LookupService {
       throw new NotFoundException(`Lookup category '${categoryKey}' not found`);
     }
 
-    // AI stub — when activated, call:
-    //   this.aiProvider.complete(prompt, organizationId, { actorId, feature: 'lookup.suggestValues' })
-    // organizationId and actorId must both be threaded through to satisfy
-    // AiProvider's tenant-scoped signature and AiInteractionLog's actor field.
+    // AI stub — when activated, call the gateway, never the provider (ACC-194):
+    //   this.aiService.run(featureKey, { organizationId, actorId }, { prompt, description })
+    // with a priced feature key added to foundation/ai/ai.config.ts and an
+    // AiFeatureCost row. `npm run check:ai-gateway` refuses a direct provider call.
     void organizationId;
     return [];
   }

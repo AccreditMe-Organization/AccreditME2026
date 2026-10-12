@@ -17,14 +17,32 @@ export interface ITenant {
   logo: string | null;
   isPlatformOrg: boolean;
   modules: Record<string, boolean>;
-  ai: {
-    enabled: boolean;
-    monthlyCredits: number;
-    creditsUsed: number;
-    creditsRemaining: number;
-    resetDate: string | null;
-    overageEnabled: boolean;
-  };
+  ai: IAiBalance & { features: IAiFeatureOpen[] };
+}
+
+/**
+ * ACC-194 — an organisation's AI balance, from the dedicated AI columns. The
+ * allocation follows the plan (or a platform admin's manual value); a cut
+ * waits for the next renewal in `pendingMonthlyCredits`.
+ */
+export interface IAiBalance {
+  /** An allocation, and not switched off. */
+  enabled: boolean;
+  monthlyCredits: number;
+  creditsUsed: number;
+  creditsRemaining: number;
+  /** When the current period renews (ISO). */
+  resetDate: string | null;
+  /** Always false: overage stays off. */
+  overageEnabled: false;
+  pendingMonthlyCredits: number | null;
+  periodStart: string | null;
+}
+
+/** A priced AI feature open to this organisation. */
+export interface IAiFeatureOpen {
+  key: string;
+  creditCost: number;
 }
 
 export interface IEmailConfig {
@@ -80,13 +98,6 @@ export class TenantService {
 
   updateEmailConfig(dto: { emailProvider: string; config: Record<string, unknown> }): Observable<void> {
     return this.http.patch<void>(`${this.baseUrl}/email-config`, dto);
-  }
-
-  // Deliberately narrow — a tenant admin may only toggle this one field;
-  // monthlyCredits/creditsUsed/creditsRemaining are set exclusively by a
-  // Platform Admin via the Super Admin Portal.
-  updateAiOverageSetting(overageEnabled: boolean): Observable<void> {
-    return this.http.patch<void>(`${this.baseUrl}/ai-settings`, { overageEnabled });
   }
 
   getTaskSla(): Observable<ITaskSlaSettings> {

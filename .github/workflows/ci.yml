@@ -139,6 +139,15 @@ jobs:
         env:
           # Ephemeral per-run container — no secret needed, nothing to leak.
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test
+      # ACC-194 — specs that need a real Postgres (*.db-spec.ts): concurrency,
+      # row locks and conditional UPDATEs, which a mocked Prisma cannot prove.
+      # AFTER the migrations, against the same ephemeral container. They fail,
+      # never skip, without a database, and refuse any non-local one.
+      - name: Database specs (test:db)
+        run: npm run test:db
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test
 
   # ─────────────────────────────────────────────
   # Stage 3 — Frontend

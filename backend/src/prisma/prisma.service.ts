@@ -96,6 +96,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   $transaction: ExtendedPrismaClient['$transaction'] =
     this._client.$transaction.bind(this._client);
 
+  // ACC-194 — the AI credit reservation is ONE conditional UPDATE … RETURNING
+  // (foundation/ai/ai-credit.service.ts), so it needs raw SQL outside a
+  // transaction. Tagged templates only: every value is a bound parameter.
+  $queryRaw: ExtendedPrismaClient['$queryRaw'] = this._client.$queryRaw.bind(this._client);
+  $executeRaw: ExtendedPrismaClient['$executeRaw'] = this._client.$executeRaw.bind(this._client);
+
   async onModuleInit(): Promise<void> {
     await this._client.$connect();
   }

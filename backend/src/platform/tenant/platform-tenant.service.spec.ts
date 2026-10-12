@@ -1,3 +1,4 @@
+import { AiAllocationService } from '../../foundation/ai/ai-allocation.service';
 // Importing signAccessToken/ACCESS_TOKEN_TTL_SECONDS from auth.service.ts
 // pulls in its top-level import of better-auth.config.ts, which imports
 // better-auth's own ESM-only package — same Jest/ESM interop issue this
@@ -36,6 +37,7 @@ describe('PlatformTenantService', () => {
   let mockTenantService: { bootstrap: jest.Mock; resolveDefaultTenantAdminAssignment: jest.Mock };
   let mockUserService: { invite: jest.Mock };
   let mockRoleService: { assignRoleToUser: jest.Mock };
+  let mockAiAllocation: { setAllocation: jest.Mock };
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = 'test-jwt-secret';
@@ -45,6 +47,7 @@ describe('PlatformTenantService', () => {
       user: { count: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
       role: { findFirst: jest.fn() },
       userRole: { findFirst: jest.fn() },
+      plan: { findUnique: jest.fn() },
     };
     mockAuditLog = { log: jest.fn() };
     mockTenantService = {
@@ -55,6 +58,9 @@ describe('PlatformTenantService', () => {
     };
     mockUserService = { invite: jest.fn() };
     mockRoleService = { assignRoleToUser: jest.fn().mockResolvedValue(undefined) };
+    mockAiAllocation = {
+      setAllocation: jest.fn().mockResolvedValue({ allocation: 0, pendingAllocation: null, takesEffect: 'now', renewed: false }),
+    };
 
     service = new PlatformTenantService(
       mockPrisma as unknown as PrismaService,
@@ -62,6 +68,7 @@ describe('PlatformTenantService', () => {
       mockTenantService as unknown as TenantService,
       mockUserService as unknown as UserService,
       mockRoleService as unknown as RoleService,
+      mockAiAllocation as unknown as AiAllocationService,
     );
   });
 
@@ -90,10 +97,13 @@ describe('PlatformTenantService', () => {
       await expect(service.getTenantDetail('missing')).rejects.toThrow(NotFoundException);
     });
 
-    it('defaults modules/ai fields when settings is null', async () => {
+    it('defaults modules when settings is null, and reads the AI balance from the columns (ACC-194)', async () => {
       mockPrisma.organization.findUnique.mockResolvedValue({
         id: TENANT_ID, name: 'Acme', slug: 'acme', status: 'ACTIVE', planId: null,
-        planCatalog: null, settings: null, createdAt: new Date(),
+        planCatalog: null, settings: { ai: { monthlyCredits: 999, creditsUsed: 1 } }, createdAt: new Date(),
+        bootstrappedAt: null,
+        aiMonthlyCredits: 0, aiPendingMonthlyCredits: null, aiCreditsUsed: 0,
+        aiCreditsPeriodStart: null, aiCreditsRenewsAt: null,
       });
       mockPrisma.user.count.mockResolvedValue(3);
       mockPrisma.user.findMany.mockResolvedValue([]);
@@ -101,7 +111,17 @@ describe('PlatformTenantService', () => {
       const result = await service.getTenantDetail(TENANT_ID);
 
       expect(result.modules).toEqual({});
-      expect(result.ai).toEqual({ monthlyCredits: 0, creditsUsed: 0, creditsRemaining: 0, overageEnabled: false });
+      // The old settings.ai counters (999 here) are ignored.
+      expect(result.ai).toEqual({
+        enabled: false,
+        monthlyCredits: 0,
+        creditsUsed: 0,
+        creditsRemaining: 0,
+        resetDate: null,
+        overageEnabled: false,
+        pendingMonthlyCredits: null,
+        periodStart: null,
+      });
       expect(result.userCount).toBe(3);
     });
   });
@@ -154,6 +174,29 @@ describe('PlatformTenantService', () => {
         TENANT_ID,
         ACTOR_ID,
       );
+    });
+
+    it("a plan set at creation sets the AI allocation to the plan's credits, after bootstrap (ACC-194, D3)", async () => {
+      mockPrisma.organization.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.organization.create.mockResolvedValue({ id: TENANT_ID, slug: 'acme' });
+      mockPrisma.plan.findUnique.mockResolvedValue({ aiCreditsPerMonth: 300 });
+      mockUserService.invite.mockResolvedValue({ id: 'invited-user-1' });
+      mockPrisma.role.findFirst.mockResolvedValue(null); // stop after the allocation
+
+      await expect(service.createTenant({ ...dto, planId: 'plan-pro' }, ACTOR_ID)).rejects.toThrow();
+
+      expect(mockPrisma.plan.findUnique).toHaveBeenCalledWith({ where: { id: 'plan-pro' }, select: { aiCreditsPerMonth: true } });
+      expect(mockAiAllocation.setAllocation).toHaveBeenCalledWith(TENANT_ID, 300, 'plan', ACTOR_ID);
+      expect(mockTenantService.bootstrap.mock.invocationCallOrder[0]).toBeLessThan(mockAiAllocation.setAllocation.mock.invocationCallOrder[0] ?? 0);
+    });
+
+    it('no plan at creation, no allocation', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.organization.create.mockResolvedValue({ id: TENANT_ID, slug: 'acme' });
+      mockUserService.invite.mockResolvedValue({ id: 'invited-user-1' });
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      await expect(service.createTenant(dto, ACTOR_ID)).rejects.toThrow();
+      expect(mockAiAllocation.setAllocation).not.toHaveBeenCalled();
     });
 
     it('throws when TENANT_ADMIN role is not found after bootstrap', async () => {
@@ -224,23 +267,58 @@ describe('PlatformTenantService', () => {
     });
   });
 
-  describe('allocateAiCredits', () => {
-    it('computes creditsRemaining from monthlyCredits minus existing creditsUsed', async () => {
-      mockPrisma.organization.findUnique.mockResolvedValue({
-        id: TENANT_ID,
-        settings: { ai: { creditsUsed: 100 } },
-      });
+  describe('allocateAiCredits (ACC-194, D15/D19)', () => {
+    it('goes through the one allocation writer as a manual allocation, and writes no settings JSON', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: TENANT_ID, settings: { ai: { creditsUsed: 100 } } });
 
-      await service.allocateAiCredits(TENANT_ID, { monthlyCredits: 500 }, ACTOR_ID);
+      await service.allocateAiCredits(TENANT_ID, { monthlyCredits: 500, overageEnabled: true }, ACTOR_ID);
 
-      expect(mockPrisma.organization.update).toHaveBeenCalledWith({
-        where: { id: TENANT_ID },
-        data: {
-          settings: {
-            ai: { creditsUsed: 100, monthlyCredits: 500, creditsRemaining: 400 },
-          },
-        },
-      });
+      expect(mockAiAllocation.setAllocation).toHaveBeenCalledWith(TENANT_ID, 500, 'manual', ACTOR_ID);
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unknown tenant before allocating', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue(null);
+      await expect(service.allocateAiCredits('missing', { monthlyCredits: 5 }, ACTOR_ID)).rejects.toThrow(NotFoundException);
+      expect(mockAiAllocation.setAllocation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changePlan (ACC-194, D18)', () => {
+    it("sets the plan, audits the old and new plan, and sets the allocation to the plan's credits", async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: TENANT_ID, planId: 'plan-starter' });
+      mockPrisma.plan.findUnique
+        .mockResolvedValueOnce({ id: 'plan-pro', nameEn: 'Professional', aiCreditsPerMonth: 300 })
+        .mockResolvedValueOnce({ nameEn: 'Starter' });
+
+      await service.changePlan(TENANT_ID, 'plan-pro', ACTOR_ID);
+
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith({ where: { id: TENANT_ID }, data: { planId: 'plan-pro' } });
+      expect(mockAuditLog.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: TENANT_ID,
+          actorId: ACTOR_ID,
+          before: { planId: 'plan-starter', planName: 'Starter' },
+          after: { planId: 'plan-pro', planName: 'Professional' },
+          metadata: { event: 'plan_changed' },
+        }),
+      );
+      expect(mockAiAllocation.setAllocation).toHaveBeenCalledWith(TENANT_ID, 300, 'plan', ACTOR_ID);
+    });
+
+    it('removing the plan sets an allocation of 0 (a cut, at the next renewal)', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: TENANT_ID, planId: null });
+      await service.changePlan(TENANT_ID, null, ACTOR_ID);
+      expect(mockPrisma.organization.update).toHaveBeenCalledWith({ where: { id: TENANT_ID }, data: { planId: null } });
+      expect(mockAiAllocation.setAllocation).toHaveBeenCalledWith(TENANT_ID, 0, 'plan', ACTOR_ID);
+    });
+
+    it('an unknown plan is refused and nothing changes', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ id: TENANT_ID, planId: null });
+      mockPrisma.plan.findUnique.mockResolvedValue(null);
+      await expect(service.changePlan(TENANT_ID, 'nope', ACTOR_ID)).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.organization.update).not.toHaveBeenCalled();
+      expect(mockAiAllocation.setAllocation).not.toHaveBeenCalled();
     });
   });
 

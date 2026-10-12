@@ -1,152 +1,97 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
-import {
-  decryptTenantConfig,
-  getEncryptionKey,
-} from '../../common/utils/tenant-config-crypto';
-import {
-  AiCompletionOptions,
-  AiCompletionResult,
-  AiProvider,
-} from './ai.provider';
+import { platformAnthropicKey } from '../../foundation/ai/ai.config';
+import { AiProvider, AiProviderCallError, AiProviderRequest, AiProviderResult } from './ai.provider';
 
 interface AnthropicMessage {
-  id: string;
   model: string;
-  content: Array<{ type: string; text: string }>;
+  content: Array<{ type: string; text?: string }>;
+  stop_reason: string | null;
   usage: { input_tokens: number; output_tokens: number };
 }
 
-interface DecryptedAiConfig {
-  apiKey?: string;
-}
+const API_URL = 'https://api.anthropic.com/v1/messages';
+const API_VERSION = '2023-06-01';
+const TIMEOUT_MS = 120_000;
 
-const PROMPT_SUMMARY_LENGTH = 200;
-const RESPONSE_SUMMARY_LENGTH = 200;
-
+/**
+ * Anthropic's Messages API — ACC-194.
+ *
+ * Only AccreditMe's platform key (ANTHROPIC_API_KEY) is ever used. Tenants
+ * never bring a key (CLAUDE.md, AI Providers Per Tenant); the per-tenant
+ * fallback that read Organization.aiConfig was removed with ACC-194, because a
+ * tenant key would also have bypassed metering. The column is left untouched
+ * (no organisation had one) and is dropped in a later contract step.
+ *
+ * The request follows Anthropic's documentation as confirmed on 12 Oct 2026
+ * (see foundation/ai/ai.config.ts): effort is `output_config.effort`; no
+ * `thinking` field is sent (it is on by default and Sonnet 5.5 rejects
+ * `disabled`); no `temperature`, `top_p` or `top_k` is sent (a non-default
+ * value is a 400 on Sonnet 5.5). Thinking blocks come back with empty text and
+ * are skipped; the answer is the text blocks joined.
+ */
 @Injectable()
 export class AnthropicAiProvider implements AiProvider {
-  private readonly defaultModel = 'claude-sonnet-4-6';
-  private readonly apiUrl = 'https://api.anthropic.com/v1/messages';
-  private readonly encryptionKey = getEncryptionKey();
+  readonly name = 'ANTHROPIC' as const;
 
-  constructor(private readonly prisma: PrismaService) {}
+  isConfigured(): boolean {
+    return platformAnthropicKey() !== null;
+  }
 
-  async complete(
-    prompt: string,
-    organizationId: string,
-    options: AiCompletionOptions = {},
-  ): Promise<AiCompletionResult> {
-    const model = options.model ?? this.defaultModel;
-    const feature = options.feature ?? 'unknown';
-    const startedAt = Date.now();
+  async complete(request: AiProviderRequest): Promise<AiProviderResult> {
+    const apiKey = platformAnthropicKey();
+    if (!apiKey) throw new AiProviderCallError(null, 'not_configured');
 
+    const body: Record<string, unknown> = {
+      model: request.model,
+      max_tokens: request.maxTokens,
+      messages: [{ role: 'user', content: request.prompt }],
+      output_config: { effort: request.effort },
+    };
+    if (request.system) body['system'] = request.system;
+
+    let response: Response;
     try {
-      const apiKey = await this.resolveApiKey(organizationId);
-
-      const body: Record<string, unknown> = {
-        model,
-        max_tokens: options.maxTokens ?? 4096,
-        messages: [{ role: 'user', content: prompt }],
-      };
-
-      if (options.systemPrompt) {
-        body['system'] = options.systemPrompt;
-      }
-      if (options.temperature !== undefined) {
-        body['temperature'] = options.temperature;
-      }
-
-      const response = await fetch(this.apiUrl, {
+      response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
+          'anthropic-version': API_VERSION,
           'content-type': 'application/json',
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Anthropic API error ${response.status}: ${error}`);
-      }
-
-      const data = (await response.json()) as AnthropicMessage;
-      const text = data.content.find((c) => c.type === 'text')?.text ?? '';
-
-      const result: AiCompletionResult = {
-        content: text,
-        model: data.model,
-        inputTokens: data.usage.input_tokens,
-        outputTokens: data.usage.output_tokens,
-      };
-
-      await this.logInteraction({
-        organizationId,
-        actorId: options.actorId,
-        model: data.model,
-        feature,
-        promptSummary: prompt.slice(0, PROMPT_SUMMARY_LENGTH),
-        responseSummary: text.slice(0, RESPONSE_SUMMARY_LENGTH),
-        durationMs: Date.now() - startedAt,
-        success: true,
-      });
-
-      return result;
     } catch (error) {
-      await this.logInteraction({
-        organizationId,
-        actorId: options.actorId,
-        model,
-        feature,
-        promptSummary: prompt.slice(0, PROMPT_SUMMARY_LENGTH),
-        responseSummary: null,
-        durationMs: Date.now() - startedAt,
-        success: false,
-      });
-      throw error;
-    }
-  }
-
-  // Tenant's own key (from encrypted aiConfig) takes priority; falls back to
-  // the shared platform key when the tenant has not configured their own.
-  private async resolveApiKey(organizationId: string): Promise<string> {
-    const org = await this.prisma.organization.findFirst({
-      where: { id: organizationId },
-      select: { aiConfig: true },
-    });
-
-    if (org?.aiConfig) {
-      const decrypted = decryptTenantConfig(org.aiConfig, this.encryptionKey);
-      const config = JSON.parse(decrypted) as DecryptedAiConfig;
-      if (config.apiKey) return config.apiKey;
+      throw new AiProviderCallError(null, (error as Error).name === 'TimeoutError' ? 'timeout' : 'network');
     }
 
-    return process.env['ANTHROPIC_API_KEY'] ?? '';
-  }
+    if (!response.ok) {
+      // The error TYPE only (e.g. rate_limit_error, overloaded_error) — never
+      // the body text.
+      let kind = 'http_error';
+      try {
+        const parsed = (await response.json()) as { error?: { type?: unknown } };
+        if (typeof parsed.error?.type === 'string') kind = parsed.error.type;
+      } catch {
+        /* not JSON */
+      }
+      throw new AiProviderCallError(response.status, kind);
+    }
 
-  private async logInteraction(entry: {
-    organizationId: string;
-    actorId?: string;
-    model: string;
-    feature: string;
-    promptSummary: string;
-    responseSummary: string | null;
-    durationMs: number;
-    success: boolean;
-  }): Promise<void> {
-    await this.prisma.aiInteractionLog.create({
-      data: {
-        organizationId: entry.organizationId,
-        actorId: entry.actorId ?? null,
-        model: entry.model,
-        feature: entry.feature,
-        promptSummary: entry.promptSummary,
-        responseSummary: entry.responseSummary,
-        durationMs: entry.durationMs,
-        success: entry.success,
-      },
-    });
+    const data = (await response.json()) as AnthropicMessage;
+    if (data.stop_reason === 'refusal') throw new AiProviderCallError(response.status, 'refusal');
+
+    const content = data.content
+      .filter((block) => block.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('');
+
+    return {
+      content,
+      model: data.model,
+      inputTokens: data.usage.input_tokens,
+      outputTokens: data.usage.output_tokens,
+      truncated: data.stop_reason === 'max_tokens',
+    };
   }
 }
