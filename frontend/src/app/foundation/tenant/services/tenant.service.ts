@@ -35,7 +35,7 @@ export type EmailProvider = 'resend' | 'smtp' | 'office365' | 'sendgrid' | 'ses'
 export interface IEmailConfig {
   provider: EmailProvider | null;
   /** The chosen provider's fields; each secret reads 'set' or null. */
-  settings: Record<string, string | number | null> | null;
+  settings: Record<string, number | string | null> | null;
   /** When each secret was last set (ISO), or null. */
   secretsSetAt: Record<string, string | null>;
   /** AccreditMe's own sender (RESEND_FROM_EMAIL), or null when unset. */
@@ -48,7 +48,7 @@ export interface IEmailConfig {
  */
 export interface IUpdateEmailConfig {
   provider: EmailProvider;
-  [block: string]: string | Record<string, string | number>;
+  [block: string]: string | Record<string, number | string>;
 }
 
 // ACC-46 Section 2.7.c — mirrors the backend's ITaskSlaTier/ITaskSlaSettings

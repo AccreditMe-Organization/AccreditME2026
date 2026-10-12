@@ -380,7 +380,7 @@ export class EmailProviderSettingsComponent implements OnInit {
     group.markAllAsTouched();
     if (group.invalid) return;
 
-    const block: Record<string, string | number> = {};
+    const block: Record<string, number | string> = {};
     for (const field of EMAIL_PROVIDER_FIELDS[provider]) {
       const value = (group.controls[field.name]!.value ?? '').trim();
       // A secret goes ONLY when a new value was typed. Untouched it is '', and
