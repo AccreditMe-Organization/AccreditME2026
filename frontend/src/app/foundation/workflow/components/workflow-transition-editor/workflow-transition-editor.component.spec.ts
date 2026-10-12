@@ -303,6 +303,22 @@ describe('WorkflowTransitionEditorComponent (ACC-55)', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
+  // ACC-208 (D5) — create never sent isApprovalPath, so a box ticked on Add
+  // was silently dropped. It is offered only where it saves: on Edit.
+  it('offers Approval path on Edit only, never on Add', async () => {
+    component.openAdd();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.querySelector('#add-isApprovalPath')).toBeNull();
+    expect(component.addForm.contains('isApprovalPath' as never)).toBeFalse();
+
+    component.onAddDialogVisibleChange(false);
+    component.openEdit(EXISTING);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.querySelector('#edit-isApprovalPath')).not.toBeNull();
+  });
+
   it('the blank option clears the permission', () => {
     component.openEdit(EXISTING);
     fixture.detectChanges();

@@ -263,12 +263,10 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
             }
           </div>
 
-          <div class="flex items-center gap-2">
-            <p-checkbox formControlName="isApprovalPath" [binary]="true" inputId="add-isApprovalPath" />
-            <label for="add-isApprovalPath" class="text-sm cursor-pointer">
-              {{ 'workflow.isApprovalPath' | translate }}
-            </label>
-          </div>
+          <!-- ACC-208 (D5) — no "Approval path" here. Create never sent it
+               (CreateWorkflowTransitionDto has no such field; the builder sets
+               it as a follow-up edit), so ticking it was silently dropped. It
+               stays on Edit, where it saves. -->
 
           <div class="flex flex-col gap-1">
             <label class="font-medium text-sm">{{ 'workflow.validatorConfig' | translate }}</label>
@@ -640,7 +638,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     triggerCondition: ['ROLE_BASED', [Validators.required]],
     triggerRoleId: [null as string | null],
     requiredPermission: [''],
-    isApprovalPath: [false],
     validatorConfig: [''],
   });
 
@@ -712,7 +709,6 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       triggerCondition: 'ROLE_BASED',
       triggerRoleId: null,
       requiredPermission: '',
-      isApprovalPath: false,
       validatorConfig: '',
     });
     this.saveError.set(null);
