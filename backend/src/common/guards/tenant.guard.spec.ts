@@ -1,6 +1,7 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { createHmac } from 'crypto';
 import { TenantGuard, verifySessionIdentity } from './tenant.guard';
+import { AuthRefusalException } from '../../foundation/auth/auth-refusal';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PermissionResolver } from '../services/permission-resolver.interface';
 
@@ -16,9 +17,22 @@ function signJwt(payload: Record<string, unknown>): string {
   return `${headerB64}.${payloadB64}.${signature}`;
 }
 
-function buildContext(opts: { cookies?: Record<string, string>; authHeader?: string }): ExecutionContext {
+// ACC-204 — a cookie session is held to its organisation's address, so a
+// cookie request comes from org-a's address unless a spec says otherwise;
+// `origin: null` sends none at all.
+const ORG_A_ORIGIN = 'https://org-a.accreditme.app';
+
+function buildContext(opts: {
+  cookies?: Record<string, string>;
+  authHeader?: string;
+  origin?: string | null;
+}): ExecutionContext {
+  const origin = opts.origin === undefined ? (opts.cookies?.['access_token'] ? ORG_A_ORIGIN : null) : opts.origin;
   const request = {
-    headers: opts.authHeader ? { authorization: opts.authHeader } : {},
+    headers: {
+      ...(opts.authHeader ? { authorization: opts.authHeader } : {}),
+      ...(origin !== null ? { origin } : {}),
+    },
     cookies: opts.cookies ?? {},
   };
   return {
@@ -34,6 +48,8 @@ describe('TenantGuard', () => {
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = JWT_SECRET;
+    process.env['APP_BASE_DOMAIN'] = 'accreditme.app';
+    delete process.env['APP_LINK_ORIGIN'];
     validToken = signJwt({
       sub: 'user-a',
       organizationId: 'org-a',
@@ -46,7 +62,7 @@ describe('TenantGuard', () => {
       user: {
         findFirst: jest.fn().mockResolvedValue({
           tokenVersion: 3,
-          organization: { status: 'ACTIVE' },
+          organization: { status: 'ACTIVE', slug: 'org-a' },
         }),
       },
     };
@@ -59,10 +75,11 @@ describe('TenantGuard', () => {
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
     expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
       where: { id: 'user-a', organizationId: 'org-a' },
-      // ACC-168 — the organisation's status rides on the same query.
+      // ACC-168 — the organisation's status rides on the same query; ACC-204
+      // its slug too, for the address check.
       select: {
         tokenVersion: true,
-        organization: { select: { status: true } },
+        organization: { select: { status: true, slug: true } },
       },
     });
   });
@@ -75,7 +92,11 @@ describe('TenantGuard', () => {
       exp: Math.floor(Date.now() / 1000) + 3600,
       impersonatedBy: 'platform-admin-1',
     });
-    const ctx = buildContext({ cookies: { access_token: impersonationToken } });
+    // ACC-204 — an impersonation session lives at the platform's address.
+    const ctx = buildContext({
+      cookies: { access_token: impersonationToken },
+      origin: 'https://platform.accreditme.app',
+    });
 
     await guard.canActivate(ctx);
 
@@ -106,7 +127,7 @@ describe('TenantGuard', () => {
     });
     mockPrisma.user.findFirst.mockResolvedValue({
       tokenVersion: 3,
-      organization: { status: 'ACTIVE' },
+      organization: { status: 'ACTIVE', slug: 'org-a' },
     });
 
     const ctx = buildContext({ cookies: { access_token: validToken }, authHeader: `Bearer ${headerToken}` });
@@ -114,10 +135,11 @@ describe('TenantGuard', () => {
 
     expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
       where: { id: 'user-a', organizationId: 'org-a' },
-      // ACC-168 — the organisation's status rides on the same query.
+      // ACC-168 — the organisation's status rides on the same query; ACC-204
+      // its slug too, for the address check.
       select: {
         tokenVersion: true,
-        organization: { select: { status: true } },
+        organization: { select: { status: true, slug: true } },
       },
     });
   });
@@ -130,7 +152,7 @@ describe('TenantGuard', () => {
   it('throws UnauthorizedException when the DB tokenVersion does not match the token claim (revoked session)', async () => {
     mockPrisma.user.findFirst.mockResolvedValue({
       tokenVersion: 4,
-      organization: { status: 'ACTIVE' },
+      organization: { status: 'ACTIVE', slug: 'org-a' },
     });
     const ctx = buildContext({ cookies: { access_token: validToken } });
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
@@ -192,7 +214,7 @@ describe('verifySessionIdentity (ACC-203)', () => {
       user: {
         findFirst: jest.fn().mockResolvedValue({
           tokenVersion: 3,
-          organization: { status: 'ACTIVE' },
+          organization: { status: 'ACTIVE', slug: 'org-a' },
         }),
       },
     };
@@ -207,6 +229,8 @@ describe('verifySessionIdentity (ACC-203)', () => {
         userId: 'user-a',
         organizationId: 'org-a',
         organizationStatus: 'ACTIVE',
+        organizationSlug: 'org-a',
+        tokenSource: 'cookie',
       },
     });
     expect(prisma.user.findFirst).toHaveBeenCalledTimes(1);
@@ -226,7 +250,7 @@ describe('verifySessionIdentity (ACC-203)', () => {
         id: 'user-a',
         organizationId: 'org-b',
         tokenVersion: 3,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'org-b' },
       },
     ];
     prisma.user.findFirst.mockImplementation(
@@ -272,7 +296,7 @@ describe('verifySessionIdentity (ACC-203)', () => {
   it('still proves identity for a closed organisation — refusing it is the guard’s business, not this helper’s', async () => {
     prisma.user.findFirst.mockResolvedValue({
       tokenVersion: 3,
-      organization: { status: 'SUSPENDED' },
+      organization: { status: 'SUSPENDED', slug: 'org-a' },
     });
     const result = await verifySessionIdentity(
       req(token()),
@@ -328,7 +352,7 @@ describe('verifySessionIdentity (ACC-203)', () => {
 
     prisma.user.findFirst.mockResolvedValue({
       tokenVersion: 4,
-      organization: { status: 'ACTIVE' },
+      organization: { status: 'ACTIVE', slug: 'org-a' },
     });
     expect(
       await verifySessionIdentity(
@@ -370,10 +394,119 @@ describe('verifySessionIdentity (ACC-203)', () => {
     );
     prisma.user.findFirst.mockResolvedValue({
       tokenVersion: 9,
-      organization: { status: 'ACTIVE' },
+      organization: { status: 'ACTIVE', slug: 'org-a' },
     });
     await expect(guard.canActivate(ctx(token()))).rejects.toThrow(
       'Session has been revoked',
     );
+  });
+});
+
+// ACC-204 — a browser session only works at its own organisation's address.
+describe('TenantGuard — the session’s address (ACC-204)', () => {
+  let guard: TenantGuard;
+  let prisma: { user: { findFirst: jest.Mock } };
+  const token = (claims: Record<string, unknown> = {}) =>
+    signJwt({
+      sub: 'user-a',
+      organizationId: 'org-a',
+      tokenVersion: 3,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      ...claims,
+    });
+  const refusalCode = async (ctx: ExecutionContext): Promise<unknown> => {
+    try {
+      await guard.canActivate(ctx);
+    } catch (e) {
+      return e instanceof AuthRefusalException ? e.code : (e as Error).message;
+    }
+    return 'allowed';
+  };
+
+  beforeEach(() => {
+    process.env['JWT_SECRET'] = JWT_SECRET;
+    process.env['APP_BASE_DOMAIN'] = 'accreditme.app';
+    delete process.env['APP_LINK_ORIGIN'];
+    prisma = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue({
+          tokenVersion: 3,
+          organization: { status: 'ACTIVE', slug: 'org-a' },
+        }),
+      },
+    };
+    guard = new TenantGuard(
+      { getUserPermissions: jest.fn().mockResolvedValue([]) },
+      prisma as unknown as PrismaService,
+    );
+  });
+
+  it('lets a cookie session through at its own organisation’s address, in one query', async () => {
+    await expect(
+      guard.canActivate(buildContext({ cookies: { access_token: token() }, origin: ORG_A_ORIGIN })),
+    ).resolves.toBe(true);
+    expect(prisma.user.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a cookie session at another organisation’s address, with SESSION_OTHER_ORGANIZATION', async () => {
+    for (const origin of ['https://org-b.accreditme.app', 'https://platform.accreditme.app']) {
+      expect([
+        origin,
+        await refusalCode(buildContext({ cookies: { access_token: token() }, origin })),
+      ]).toEqual([origin, 'SESSION_OTHER_ORGANIZATION']);
+    }
+  });
+
+  it('refuses a cookie session with no usable Origin', async () => {
+    for (const origin of [null, 'null', 'https://accreditme.app', 'https://evil.example', 'http://org-a.accreditme.app']) {
+      expect([
+        origin,
+        await refusalCode(buildContext({ cookies: { access_token: token() }, origin })),
+      ]).toEqual([origin, 'SESSION_OTHER_ORGANIZATION']);
+    }
+  });
+
+  it('leaves a Bearer session alone, with no Origin or with another organisation’s', async () => {
+    for (const origin of [null, 'https://org-b.accreditme.app']) {
+      expect([
+        origin,
+        await refusalCode(buildContext({ authHeader: `Bearer ${token()}`, origin })),
+      ]).toEqual([origin, 'allowed']);
+    }
+  });
+
+  it('holds an impersonation session to the platform’s address, where impersonation runs', async () => {
+    const impersonation = token({ impersonatedBy: 'platform-admin-1' });
+    expect(
+      await refusalCode(
+        buildContext({ cookies: { access_token: impersonation }, origin: 'https://platform.accreditme.app' }),
+      ),
+    ).toBe('allowed');
+    expect(
+      await refusalCode(buildContext({ cookies: { access_token: impersonation }, origin: ORG_A_ORIGIN })),
+    ).toBe('SESSION_OTHER_ORGANIZATION');
+  });
+
+  it('reads a local address only through the dev link origin', async () => {
+    const local = 'http://org-a.localhost:4200';
+    expect(await refusalCode(buildContext({ cookies: { access_token: token() }, origin: local }))).toBe(
+      'SESSION_OTHER_ORGANIZATION',
+    );
+    process.env['APP_LINK_ORIGIN'] = 'http://localhost:4200';
+    try {
+      expect(await refusalCode(buildContext({ cookies: { access_token: token() }, origin: local }))).toBe(
+        'allowed',
+      );
+    } finally {
+      delete process.env['APP_LINK_ORIGIN'];
+    }
+  });
+
+  it('keeps verifySessionIdentity itself address-free, so sign-out works from any address', async () => {
+    const result = await verifySessionIdentity(
+      { headers: { origin: 'https://org-b.accreditme.app' }, cookies: { access_token: token() } },
+      prisma as unknown as PrismaService,
+    );
+    expect(result).toEqual(expect.objectContaining({ ok: true }));
   });
 });
