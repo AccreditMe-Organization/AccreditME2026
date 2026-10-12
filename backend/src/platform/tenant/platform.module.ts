@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenantModule } from '../../foundation/tenant/tenant.module';
 import { UserModule } from '../../foundation/user/user.module';
+import { AiModule } from '../../foundation/ai/ai.module';
 import { PlatformTenantController } from './platform-tenant.controller';
 import { PlatformTenantService } from './platform-tenant.service';
 import { PlatformSettingsController } from '../settings/platform-settings.controller';
@@ -15,7 +16,7 @@ import { PlatformSettingsService } from '../settings/platform-settings.service';
 // getting their own — deliberately minimal surface, no module file of its
 // own listed in the step plan.
 @Module({
-  imports: [PrismaModule, forwardRef(() => TenantModule), UserModule],
+  imports: [PrismaModule, forwardRef(() => TenantModule), UserModule, AiModule],
   controllers: [PlatformTenantController, PlatformSettingsController],
   providers: [PlatformTenantService, PlatformSettingsService],
   exports: [PlatformTenantService, PlatformSettingsService],

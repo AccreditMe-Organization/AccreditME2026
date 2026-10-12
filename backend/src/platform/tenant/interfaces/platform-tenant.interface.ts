@@ -1,3 +1,4 @@
+import { IAiBalance } from '../../../foundation/ai/ai-balance';
 export interface IPlatformTenantSummary {
   id: string;
   name: string;
@@ -11,12 +12,8 @@ export interface IPlatformTenantSummary {
 export interface IPlatformTenantDetail extends IPlatformTenantSummary {
   userCount: number;
   modules: Record<string, boolean>;
-  ai: {
-    monthlyCredits: number;
-    creditsUsed: number;
-    creditsRemaining: number;
-    overageEnabled: boolean;
-  };
+  // ACC-194 — from the AI columns: allocation, used, remaining, renewal, a pending cut.
+  ai: IAiBalance;
   // TENANT_ADMIN users in this tenant — the impersonation target list.
   tenantAdmins: { id: string; name: string; email: string }[];
 }

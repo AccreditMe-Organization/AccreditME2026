@@ -39,6 +39,13 @@ const ORG_A = {
   planId: null,
   stripeCustomerId: null,
   stripeSubscriptionId: null,
+  // ACC-194 — the AI balance columns, at their defaults.
+  aiMonthlyCredits: 0,
+  aiPendingMonthlyCredits: null,
+  aiCreditsUsed: 0,
+  aiCreditsPeriodStart: null,
+  aiCreditsRenewsAt: null,
+  aiCreditsNoticeFor: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 };
@@ -58,6 +65,8 @@ describe('TenantService', () => {
     lookupValue: { findFirst: jest.Mock };
     // ACC-190 — updateTaskSla() checks the stage-deadline rule.
     workflowStageTaskDefinition: { findMany: jest.Mock };
+    // ACC-194 — GET /tenant lists the AI features open to the organisation.
+    aiFeatureCost: { findMany: jest.Mock };
   };
   let auditLog: { log: jest.Mock };
   let lookupService: { seedSystemData: jest.Mock };
@@ -73,6 +82,7 @@ describe('TenantService', () => {
         findUnique: jest.fn(),
         update: jest.fn(),
       },
+      aiFeatureCost: { findMany: jest.fn().mockResolvedValue([]) },
       orgUnit: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue(undefined),
@@ -134,19 +144,59 @@ describe('TenantService', () => {
       expect(result.modules).toEqual({});
       expect(result.ai).toEqual({
         enabled: false, monthlyCredits: 0, creditsUsed: 0, creditsRemaining: 0,
-        resetDate: null, overageEnabled: false,
+        resetDate: null, overageEnabled: false, pendingMonthlyCredits: null, periodStart: null,
+        features: [],
       });
     });
 
-    it('derives modules/ai from settings when present', async () => {
+    it('derives modules from settings, and the AI balance from the columns — the old settings.ai counters are ignored (ACC-194)', async () => {
       prisma.organization.findUnique.mockResolvedValue({
         ...ORG_A,
-        settings: { modules: { documents: true }, ai: { enabled: true, monthlyCredits: 500 } },
+        settings: { modules: { documents: true }, ai: { enabled: true, monthlyCredits: 999, creditsUsed: 1 } },
+        aiMonthlyCredits: 500,
+        aiCreditsUsed: 100,
+        aiPendingMonthlyCredits: 200,
+        aiCreditsPeriodStart: new Date('2026-09-21T04:39:49Z'),
+        aiCreditsRenewsAt: new Date('2099-10-21T00:00:00Z'),
       });
       const result = await service.findById('org-a');
       expect(result.modules).toEqual({ documents: true });
-      expect(result.ai.enabled).toBe(true);
-      expect(result.ai.monthlyCredits).toBe(500);
+      expect(result.ai).toEqual(
+        expect.objectContaining({
+          enabled: true,
+          monthlyCredits: 500,
+          creditsUsed: 100,
+          creditsRemaining: 400,
+          pendingMonthlyCredits: 200,
+          resetDate: '2099-10-21T00:00:00.000Z',
+          overageEnabled: false,
+        }),
+      );
+    });
+
+    it('reports AI as off when switched off, even with an allocation (D13)', async () => {
+      prisma.organization.findUnique.mockResolvedValue({
+        ...ORG_A,
+        settings: { ai: { enabled: false } },
+        aiMonthlyCredits: 500,
+        aiCreditsPeriodStart: new Date('2026-09-21T04:39:49Z'),
+        aiCreditsRenewsAt: new Date('2099-10-21T00:00:00Z'),
+      });
+      expect((await service.findById('org-a')).ai.enabled).toBe(false);
+    });
+
+    it('lists only the AI features open to this organisation: unrestricted, or restricted and listing it (D17)', async () => {
+      prisma.organization.findUnique.mockResolvedValue(ORG_A);
+      prisma.aiFeatureCost.findMany.mockResolvedValue([
+        { featureKey: 'document_summary', creditCost: 15, restricted: false, allowedOrganizationIds: [] },
+        { featureKey: 'morning_briefing', creditCost: 5, restricted: true, allowedOrganizationIds: ['org-b'] },
+        { featureKey: 'task_description_drafting', creditCost: 2, restricted: true, allowedOrganizationIds: ['org-a'] },
+        { featureKey: 'rca_assistance', creditCost: 5, restricted: false, allowedOrganizationIds: [] },
+      ]);
+      expect((await service.findById('org-a')).ai.features).toEqual([
+        { key: 'document_summary', creditCost: 15 },
+        { key: 'task_description_drafting', creditCost: 2 },
+      ]);
     });
 
     it('throws NotFoundException when tenant does not exist', async () => {

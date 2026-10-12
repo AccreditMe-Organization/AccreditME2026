@@ -19,6 +19,8 @@ import { signAccessToken, ACCESS_TOKEN_TTL_SECONDS } from '../../foundation/auth
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantModulesDto } from './dto/update-tenant-modules.dto';
 import { AllocateAiCreditsDto } from './dto/allocate-ai-credits.dto';
+import { AiAllocationService } from '../../foundation/ai/ai-allocation.service';
+import { aiBalanceOf } from '../../foundation/ai/ai-balance';
 import { IPlatformTenantDetail, IPlatformTenantSummary } from './interfaces/platform-tenant.interface';
 import { isOrganizationOpen } from '../../common/tenant/organization-status';
 import {
@@ -26,14 +28,11 @@ import {
   accessTokenCookieOptions,
 } from '../../common/config/session-cookies';
 
+// ACC-194 — the AI balance is NOT here any more: it lives in dedicated
+// Organization columns (foundation/ai/), and the old settings.ai counters are
+// ignored everywhere.
 interface OrgSettings {
   modules?: Record<string, boolean>;
-  ai?: {
-    monthlyCredits?: number;
-    creditsUsed?: number;
-    creditsRemaining?: number;
-    overageEnabled?: boolean;
-  };
   [key: string]: unknown;
 }
 
@@ -45,6 +44,7 @@ export class PlatformTenantService {
     private readonly tenantService: TenantService,
     private readonly userService: UserService,
     private readonly roleService: RoleService,
+    private readonly aiAllocation: AiAllocationService,
   ) {}
 
   async listTenants(filters?: {
@@ -103,12 +103,7 @@ export class PlatformTenantService {
       createdAt: org.createdAt,
       userCount,
       modules: settings.modules ?? {},
-      ai: {
-        monthlyCredits: settings.ai?.monthlyCredits ?? 0,
-        creditsUsed: settings.ai?.creditsUsed ?? 0,
-        creditsRemaining: settings.ai?.creditsRemaining ?? 0,
-        overageEnabled: settings.ai?.overageEnabled ?? false,
-      },
+      ai: aiBalanceOf(org),
       tenantAdmins,
     };
   }
@@ -132,6 +127,13 @@ export class PlatformTenantService {
     });
 
     await this.tenantService.bootstrap(org.id, actorId);
+
+    // ACC-194 (D3) — a plan set at creation sets the AI allocation to the
+    // plan's credits. After bootstrap, so the period anchors to bootstrappedAt.
+    if (dto.planId) {
+      const plan = await this.prisma.plan.findUnique({ where: { id: dto.planId }, select: { aiCreditsPerMonth: true } });
+      if (plan) await this.aiAllocation.setAllocation(org.id, plan.aiCreditsPerMonth, 'plan', actorId);
+    }
 
     // ACC-40 Section 2.4 — positionId/primaryOrgUnitId are now required on
     // invite(); bootstrap() guarantees a default position and root org
@@ -231,31 +233,44 @@ export class PlatformTenantService {
     });
   }
 
+  // ACC-194 — a manual allocation, for a special agreement (D3, D15). It goes
+  // through AiAllocationService, the one writer of the allocation: a raise
+  // applies now, a cut waits for the next renewal, and the next plan set or
+  // change replaces it. That service writes the audit row. overageEnabled in
+  // the DTO is ignored (D19): overage stays off and nothing reads it.
   async allocateAiCredits(id: string, dto: AllocateAiCreditsDto, actorId: string): Promise<void> {
+    await this.assertTenantExists(id);
+    await this.aiAllocation.setAllocation(id, dto.monthlyCredits, 'manual', actorId);
+  }
+
+  // ACC-194 (D18) — set or change a tenant's plan, the first way to do so after
+  // creation. The AI allocation follows the plan (D3, same timing as a manual
+  // allocation), and so do the module entitlements, which are read through
+  // planId. null removes the plan: an allocation of 0, which as a cut waits for
+  // the next renewal. Editing a plan's own credits reaches nobody until their
+  // plan is next set (D16).
+  async changePlan(id: string, planId: string | null, actorId: string): Promise<void> {
     const org = await this.assertTenantExists(id);
-    const settings = (org.settings as OrgSettings | null) ?? {};
-    const existingAi = settings.ai ?? {};
+    const plan = planId
+      ? await this.prisma.plan.findUnique({ where: { id: planId }, select: { id: true, nameEn: true, aiCreditsPerMonth: true } })
+      : null;
+    if (planId && !plan) throw new NotFoundException('Plan not found');
+    const previous = org.planId
+      ? await this.prisma.plan.findUnique({ where: { id: org.planId }, select: { nameEn: true } })
+      : null;
 
-    const ai = {
-      ...existingAi,
-      monthlyCredits: dto.monthlyCredits,
-      creditsRemaining: dto.monthlyCredits - (existingAi.creditsUsed ?? 0),
-      ...(dto.overageEnabled !== undefined ? { overageEnabled: dto.overageEnabled } : {}),
-    };
-
-    await this.prisma.organization.update({
-      where: { id },
-      data: { settings: { ...settings, ai } },
-    });
-
+    await this.prisma.organization.update({ where: { id }, data: { planId: plan?.id ?? null } });
     await this.auditLog.log({
       tenantId: id,
       actorId,
       action: 'UPDATE',
       objectType: 'Organization',
       objectId: id,
-      metadata: { event: 'ai_credits_allocated', monthlyCredits: dto.monthlyCredits },
+      before: { planId: org.planId, planName: previous?.nameEn ?? null },
+      after: { planId: plan?.id ?? null, planName: plan?.nameEn ?? null },
+      metadata: { event: 'plan_changed' },
     });
+    await this.aiAllocation.setAllocation(id, plan?.aiCreditsPerMonth ?? 0, 'plan', actorId);
   }
 
   // Mints a normal access_token JWT for targetUserId (must belong to

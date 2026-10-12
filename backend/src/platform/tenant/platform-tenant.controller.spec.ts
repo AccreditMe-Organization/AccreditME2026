@@ -34,6 +34,7 @@ describe('PlatformTenantController', () => {
     extendTrial: jest.Mock;
     updateTenantModules: jest.Mock;
     allocateAiCredits: jest.Mock;
+    changePlan: jest.Mock;
     startImpersonation: jest.Mock;
     endImpersonation: jest.Mock;
   };
@@ -48,6 +49,7 @@ describe('PlatformTenantController', () => {
       extendTrial: jest.fn().mockResolvedValue(undefined),
       updateTenantModules: jest.fn().mockResolvedValue(undefined),
       allocateAiCredits: jest.fn().mockResolvedValue(undefined),
+      changePlan: jest.fn().mockResolvedValue(undefined),
       startImpersonation: jest.fn().mockResolvedValue(undefined),
       endImpersonation: jest.fn().mockResolvedValue(undefined),
     };
@@ -108,6 +110,18 @@ describe('PlatformTenantController', () => {
     const dto = { monthlyCredits: 500 };
     await controller.allocateAiCredits(TENANT_ID, dto, ACTOR_ID);
     expect(service.allocateAiCredits).toHaveBeenCalledWith(TENANT_ID, dto, ACTOR_ID);
+  });
+
+  it('changePlan delegates the plan id, or null, with the actor (ACC-194, D18)', async () => {
+    await controller.changePlan(TENANT_ID, { planId: 'plan-pro' }, ACTOR_ID);
+    expect(service.changePlan).toHaveBeenCalledWith(TENANT_ID, 'plan-pro', ACTOR_ID);
+    await controller.changePlan(TENANT_ID, { planId: null }, ACTOR_ID);
+    expect(service.changePlan).toHaveBeenCalledWith(TENANT_ID, null, ACTOR_ID);
+  });
+
+  it('changePlan is behind TenantGuard and PlatformGuard, like its siblings', () => {
+    const guards = Reflect.getMetadata('__guards__', PlatformTenantController.prototype.changePlan) as unknown[];
+    expect(guards).toEqual([TenantGuard, PlatformGuard]);
   });
 
   it('startImpersonation delegates with tenantId, targetUserId, actorId, platformOrgId, res', async () => {
