@@ -732,13 +732,34 @@ SendGridEmailProvider   (alternative cloud)
 SesEmailProvider        (AWS SES)
 ```
 
-Per-tenant config in Organization.emailConfig (encrypted JSON):
+Per-tenant settings in `Organization.emailConfig` (encrypted JSON), **typed per
+provider since ACC-181** — only the chosen provider's block is stored:
 ```json
 {
-  "emailProvider": "smtp"|"office365"|"resend"|"sendgrid"|"ses",
-  "emailConfig": { "...encrypted provider config...": true }
+  "provider": "smtp",
+  "smtp": { "host": "…", "port": 587, "encryption": "STARTTLS",
+            "username": "…", "password": "…", "fromAddress": "…", "fromName": "…" },
+  "secretsSetAt": { "password": "2026-09-29T08:00:00.000Z" }
 }
 ```
+| Provider | Fields (secret in bold) |
+|---|---|
+| `resend` | **apiKey** · fromAddress · fromName |
+| `smtp` | host · port · encryption (`STARTTLS`/`SSL_TLS`/`NONE`) · username · **password** · fromAddress · fromName — username and password both or neither |
+| `office365` | tenantId · clientId · **clientSecret** · fromAddress (the sender mailbox) |
+| `sendgrid` | **apiKey** · fromAddress · fromName |
+| `ses` | region · accessKeyId · **secretAccessKey** · fromAddress (the verified identity) |
+
+**SECRETS ARE WRITE-ONLY (ACC-181).** `GET /tenant/email-config` answers each
+secret "set" or null, with its set date, plus `defaultSender`
+(`RESEND_FROM_EMAIL`, or null — never a guessed address). `PATCH` merges: a
+secret omitted or sent `''` keeps its stored value while the provider is
+unchanged; a switch never carries the old provider's secret; an incomplete
+provider is 400 `EMAIL_SETTINGS_INCOMPLETE` naming the fields; the audit names
+fields, never values. `DELETE` is Disconnect. The rule is shared with storage:
+`common/config/write-only-secrets.ts`. On screen, `am-secret-field` — no reveal,
+"set 29 Sep" with Replace. **Not active yet**: nothing sends with these
+settings until ACC-155, and the screen says so.
 
 Platform default: ResendEmailProvider with AccreditMe platform key.
 From: `RESEND_FROM_EMAIL` — `noreply@accreditme.app` on Railway, the domain
@@ -3199,12 +3220,10 @@ briefly:
   link: an active assignee, task open or on hold. Evidence is soft-deleted by
   its uploader while the task is open. **Every evidence count excludes deleted
   evidence.** Evidence on a closed task is read-only.
-- **SECRETS ARE WRITE-ONLY.** `GET /tenant/storage` and `GET /tenant/config`
-  answer "set" or null. **`GET /tenant/email-config` still returns its secrets
-  in clear**, deliberately left: the email settings screen fills a JSON editor
-  from it and saves the whole object back, so masking it would save the word
-  "set" over the stored secrets. That needs the screen changed first — ACC-181
-  (lane A, High).
+- **SECRETS ARE WRITE-ONLY.** `GET /tenant/storage`, `GET /tenant/config` and,
+  since ACC-181, `GET /tenant/email-config` answer "set" or null. (The email
+  route returned its secrets in clear until ACC-181 replaced the JSON-editor
+  screen; see Email Provider.)
 - **Not built, each with a ticket:** virus scanning (ACC-178, High — legacy
   Office files can carry macros), the orphan-object reconciler (ACC-179),
   moving files between locations (ACC-180), the platform admin storage screens
