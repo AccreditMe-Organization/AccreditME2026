@@ -518,6 +518,108 @@ appears in a tool call.
 The backend half runs locally against the shared DB. No migration and no enum
 value is involved, so nothing new exists on the shared DB before the deploy.
 
+### 8.1 Live proof — results (12 Oct, local 3001 / 4201, al-nakheel)
+
+Signed in page-side as Dr. Hessa Al-Dosari (tenant admin). D1 was completed as
+Dr. Yasser Al-Amri, its holder. Local requests to the Frankfurt database take
+seconds (ACC-60), so every step waited on its response rather than a fixed
+time.
+
+1. **Terms Review expanded:**
+   - header "Stage deadline: 40 working hours · no tasks";
+   - the empty state with Add;
+   - the transition chips read Advance (Approve) and Send back (Revise), as
+     backfilled.
+2. **D1 added.**
+   - Next with no title was refused, with the message on the field and focus
+     on it.
+   - Header context: "Committee Management · Terms Review", then "Check terms
+     against the template · Mandatory".
+   - Measured live with the real fonts: step 1 356px, step 2 352px.
+   - The row: "● Mandatory · High · due in 16 working hours · Director, Quality
+     & Patient Safety". No chip.
+3. **D2 on a vacant position.**
+   - The dialog stayed open, switched to "Edit a task on entry", and its footer
+     read "Saved. Nobody holds this position in Quality & Patient Safety yet…".
+   - No list request while it was open; closing fetched the list.
+   - The row carries "⚠ Nobody holds this position", with its Arabic title
+     under the English one.
+4. **D3, the record's committee, Secretary.**
+   - The role list is the whole catalogue: Chairman, Vice Chairman, Secretary,
+     Member, Observer, Advisor.
+   - The row reads "Secretary of the record's committee". No chip.
+5. **Low on a 40-hour stage.**
+   - On Priority, before Save: "Low tasks are due in 80 working hours, but this
+     stage's deadline is 40. Raise the stage deadline to at least 80 working
+     hours, or choose a higher priority."
+   - Save stayed enabled. Pressing it focused Priority, announced the sentence,
+     and sent nothing.
+   - The server, asked directly, answered 409
+     `STAGE_TASK_DUE_AFTER_STAGE_DEADLINE` with 80 / 40 / LOW. Still three
+     definitions.
+6. **Keyboard reorder.**
+   - Enter on D3's ↑ moved it to 2, then to 1, each move announced.
+   - At the top its ↑ is gone and focus moved to its ↓. Enter twice took it
+     back.
+   - After a reload the order was the original.
+7. **Stage form.** Deadline 40 → 12 was refused (409): "A task on this stage
+   is due in 40 working hours. Set the deadline to at least 40…". Focus went to
+   the SLA field. The stored deadline is still 40.
+8. **Task SLA.**
+   - Medium 40 → 48 was refused (409). Under Medium: "Medium would become 48
+     working hours, which passes the deadline of:", "Committee Management ·
+     Terms Review (40 working hours)" linked to
+     `/workflows/…/stages?stage=…`, then the way out.
+   - Reloaded: still 40.
+   - **Recorded:** a first attempt, whose typed value the number input did not
+     register, saved the existing hours unchanged ("Changes saved."). No value
+     changed.
+9. **Transitions.**
+   - Approve opened in Edit with Kind = Advance, "Step 1 of 2" and the three
+     help lines (297px).
+   - Add started at Advance, Next was disabled until the move was described,
+     and there was no Approval path (341px).
+10. **Committee page.** The test committee "ACC-208 proof committee" was created
+    (API) and submitted (UI) into Terms Review, which created D1 (for Yasser),
+    D2 and D3 (pools).
+    - **Approve** → 409 and "Can't move to Active yet", with context "ACC-208
+      proof committee · Terms Review" and D1 as a link: "Dr. Yasser Al-Amri
+      (Director, Quality & Patient Safety) · due 14 Oct 2026, 16:00 ·
+      Mandatory". "Opened from “Approve Committee”". The body measured 101px.
+    - **The link** closed the dialog, highlighted and focused D1's row, and
+      removed `?task=`.
+    - **D1 was completed by Yasser** and Approve was pressed again: 201, Active.
+      D2 and D3 were cancelled.
+11. **Arabic, keyboard only.**
+    - The list is right to left:
+      - Arabic titles lead, English is the fallback;
+      - "عالية · مستحقة خلال 16 ساعة عمل" and "أمين السر في لجنة السجل";
+      - "⚠ لا أحد يشغل هذا المنصب";
+      - the actions sit at the left end.
+    - D4 ("اعتماد الشروط", mandatory, evidence required) was added with Tab,
+      arrows and Enter only (step 1 387px, step 2 267px). **This found the
+      focus defect fixed in `cd46c44`:** after an overlay-select choice, focus
+      dropped to `<body>`. Live after the fix, focus stays on each field.
+    - **A second test committee**, "ACC-208 proof committee (Arabic pass)", was
+      sent into Terms Review. Approve by Enter gave "لا يمكن الانتقال إلى نشطة
+      بعد", listing D1 and D4 with Arabic meta lines (the pool reads "بانتظار
+      أمين السر في لجنة اختبار ACC-208"). The body measured 198px. Tab to the
+      link and Enter sought the row out.
+    - **Revise Terms** (a send-back) was then taken by Enter. It was not held,
+      and cancelled all four open tasks, mandatory ones included.
+12. **Clean-up.**
+    - D1–D4 were deleted through the confirm, which read e.g. "Already created
+      from it: 2 tasks · they stay" and "Longest task after: 40 working hours".
+      Terms Review is empty again.
+    - The stage deadline (40) and the task SLA (unchanged) are as found.
+    - Signed out; `.playwright-mcp/` cleared; the screenshots were kept outside
+      the repo.
+    - **Left behind (test data, named):**
+      - "ACC-208 proof committee" (`cmv4qtjr7000ng8p15opoqa61`) is **Active**;
+      - "ACC-208 proof committee (Arabic pass)" (`cmv4r42r9001rg8p102859nmn`)
+        is in **Formation**. Its tasks are cancelled.
+      - Neither has members.
+
 ---
 
 ## 8b. The drawing, read against this plan (12 Oct)
@@ -631,6 +733,12 @@ built:**
 - **The committee page reads `?task=` as it changes**, not through
   `injectFixLinkParam()`. That helper reads once per page load, and the link is
   followed from the same page.
+- **One shared fix, found by the keyboard-only live pass (`cd46c44`):**
+  - `OverlaySelectComponent` now returns focus to its field when its list
+    closes and focus was left nowhere.
+  - A pick by Enter or click, or Escape, had dropped focus on `<body>`, in
+    every overlay select in the app.
+  - Its own commit, with two specs that fail without it.
 - **The danger header line shows when the stage's own numbers break the rule**
   (deadline below the longest task). The drawing's "at the same moment as a
   refused edit" belongs to the in-row deadline field, which is held back (§8b).
@@ -659,4 +767,4 @@ built:**
 - [x] 6 Transition Kind
 - [x] 7 Refusal states
 - [x] 8 Docs
-- [ ] 9 Live proof, test definitions deleted
+- [x] 9 Live proof, test definitions deleted

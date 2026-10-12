@@ -5365,6 +5365,13 @@ typeahead verified with `fakeAsync`/`tick`, since CDK's own
 its source), Escape isolation against a simulated parent
 `document`-level listener, and both option shapes.
 
+**ACC-208 — focus returns to the field when the list closes.** The options
+leave the DOM with the pane, so a pick by Enter or click, or Escape, used to
+drop focus on `<body>`. A keyboard user lost their place after every choice,
+in every consumer. The `detachments()` handler now focuses the trigger when
+focus was left nowhere, and leaves alone a close that moved focus somewhere
+real. Two specs pin it; both fail without the fix.
+
 #### 10.7.1 ACC-42 — full migration, 26 additional consumers (28 total)
 
 ACC-41 deliberately scoped down to proving the mechanism on 2 fields;
