@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 9 Oct 2026 · Tasks on workflow stages · on Templates 6b (/workflows/:id/stages), Task Screens and Settings Screens</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">Stage tasks</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 108ch; text-wrap: pretty;">A stage carries task definitions; every time a record enters the stage they become real tasks, and mandatory ones block moving forward. Example: Incident Management, stage “Investigating”, deadline 40 working hours. Tweaks switch the stage row between three tasks, empty, no deadline, and a refused deadline.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div><div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div></div></sc-for>
+    </div>
+  </section>
+
+  <section id="s1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1 · 3.1 · 4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">“Tasks on entry” in the stage's expanded row · 6b</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Showing <strong style="font-weight: 600; color: #2D3748;">{{ rowLabel }}</strong>.</span>
+    </div>
+
+    <div style="border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+        <sc-for list="{{ strip }}" as="s" hint-placeholder-count="9"><span style="{{ s.style }}">{{ s.label }}</span></sc-for>
+      </div>
+      <div style="background: #fff; border: 1px solid #2E6FA3; border-radius: 8px;">
+        <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; padding: 10px 14px; border-block-end: 1px solid #E2E8F0;">
+          <span style="min-width: 0;"><span style="display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779;">Stage 2 of 5 · expanded</span><span style="display: block; font-size: 16px; font-weight: 600;">Investigating</span><span dir="rtl" style="display: block; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13.5px; color: #5A6779; text-align: start;">قيد التحقيق</span></span>
+          <span style="min-width: 260px; max-width: 420px; flex: 1 1 300px;">
+            <span style="display: block; font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Stage deadline</span>
+            <span style="{{ dl.box }}"><span style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">{{ dl.value }}</span><span style="font-size: 12px; color: #5A6779;">working hours</span></span>
+            <span style="{{ dl.helpStyle }}">{{ dl.help }}</span>
+          </span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 0;">
+          <div style="padding: 12px 14px; border-inline-end: 1px solid #E2E8F0;">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-block-end: 6px;"><span style="font-size: 13px; font-weight: 600;">Transitions</span><a href="#s4" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">Add transition</a></div>
+            <sc-for list="{{ transitions }}" as="t" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-block-end: 1px solid #F0F3F7;">
+                <span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 13px; font-weight: 500;">{{ t.label }}</span><span style="display: block; font-size: 11.5px; color: #5A6779;">{{ t.to }}</span></span>
+                <span style="{{ t.kindStyle }}">{{ t.kind }}</span>
+                <a href="#s4" style="flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none;">Edit</a>
+              </div>
+            </sc-for>
+            <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">Only Advance shows “⛔ Blocked while 2 mandatory tasks are open” on the record. Send back and End the record never are.</div>
+          </div>
+          <div style="padding: 12px 14px;">
+            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 8px;"><span style="font-size: 13px; font-weight: 600;">Tasks on entry</span><sc-if value="{{ hasTasks }}" hint-placeholder-val="{{ true }}"><a href="#s2" style="font-size: 12.5px; font-weight: 600; text-decoration: none;">Add task</a></sc-if></div>
+            <div style="{{ head.style }}">{{ head.text }}</div>
+            <sc-if value="{{ hasTasks }}" hint-placeholder-val="{{ true }}">
+              <div role="list" aria-label="Tasks on entry, in order">
+                <sc-for list="{{ tasks }}" as="t" hint-placeholder-count="3">
+                  <div role="listitem" style="{{ t.row }}">
+                    <span style="display: flex; align-items: flex-start; gap: 8px;">
+                      <button aria-label="{{ t.handleAria }}" style="flex: none; width: 22px; height: 26px; border: 1px solid #8A94A6; border-radius: 4px; background: #fff; color: #5A6779; font-size: 11px; cursor: grab;">⣿</button>
+                      <span style="flex: none; width: 16px; font-size: 12.5px; font-weight: 600; color: #5A6779; padding-block-start: 2px;">{{ t.n }}</span>
+                      <span style="flex: 1 1 auto; min-width: 0;">
+                        <span style="display: block; font-size: 13.5px; font-weight: 600;">{{ t.title }}</span>
+                        <span dir="rtl" style="display: block; font-family: 'IBM Plex Sans Arabic', sans-serif; font-size: 13px; color: #5A6779; text-align: start;">{{ t.ar }}</span>
+                        <span style="display: flex; flex-wrap: wrap; gap: 4px 6px; margin-block: 4px;"><sc-for list="{{ t.chips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}">{{ c.label }}</span></sc-for></span>
+                        <span style="display: block; font-size: 12.5px; color: #2D3748;">{{ t.prio }}</span>
+                        <span style="display: block; font-size: 12.5px; color: #4A5568;">{{ t.who }}</span>
+                      </span>
+                      <span style="flex: none; display: flex; gap: 4px;"><sc-for list="{{ t.acts }}" as="a" hint-placeholder-count="4"><button aria-label="{{ a.aria }}" title="{{ a.aria }}" style="{{ a.style }}">{{ a.g }}</button></sc-for></span>
+                    </span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">Reorder by dragging the handle, or with the keyboard: focus the handle, Space picks it up, ↑ / ↓ move, Space drops, Escape cancels; each move is announced (“Task 2 of 3, moved up”). ↑ and ↓ buttons do the same without drag.</div>
+            </sc-if>
+            <sc-if value="{{ noTasks }}" hint-placeholder-val="{{ false }}">
+              <div style="border: 1px dashed #CBD5E0; border-radius: 6px; padding: 18px 14px; text-align: center; margin-block-start: 8px;"><div style="font-size: 13px; font-weight: 600;">No tasks are created when a record enters this stage.</div><button style="margin-block-start: 8px; background: #fff; color: #2E6FA3; border: 1px solid #8A94A6; border-radius: 6px; padding: 5px 12px; font-family: inherit; font-size: 12.5px; font-weight: 600;">+ Add task</button></div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · the stage row</div>
+        <sc-for list="{{ rowNotes }}" as="n" hint-placeholder-count="8"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div dir="rtl" style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; font-family: 'IBM Plex Sans Arabic', sans-serif; background: #fff;">
+          <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0;"><span style="display: block; font-size: 15px; font-weight: 600;">المهام عند الدخول · قيد التحقيق</span><span style="display: block; font-size: 13px; color: #4A5568;">مهلة المرحلة: <span dir="ltr" style="unicode-bidi: isolate;">40</span> ساعة عمل · أطول مهمة: <span dir="ltr" style="unicode-bidi: isolate;">16</span></span></div>
+          <sc-for list="{{ tasksAr }}" as="t" hint-placeholder-count="3">
+            <div style="display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-block-end: 1px solid #F0F3F7;">
+              <span style="flex: none; width: 16px; font-size: 13px; font-weight: 600; color: #5A6779;">{{ t.n }}</span>
+              <span style="flex: 1 1 auto; min-width: 0;"><span style="display: block; font-size: 14px; font-weight: 600;">{{ t.title }}</span><span style="display: flex; flex-wrap: wrap; gap: 4px 6px; margin-block: 3px;"><sc-for list="{{ t.chips }}" as="c" hint-placeholder-count="3"><span style="{{ c.style }}">{{ c.label }}</span></sc-for></span><span style="display: block; font-size: 13px;">{{ t.prio }}</span><span style="display: block; font-size: 13px; color: #4A5568;">{{ t.who }}</span></span>
+            </div>
+          </sc-for>
+          <div dir="ltr" style="padding: 8px 12px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Arabic titles lead, the English title is the fallback when none is set. Numbers are isolated LTR runs. Handles and actions sit at the left end; ↑ / ↓ keep their meaning (up is earlier).</div>
+        </div>
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · stage row</div>
+          <sc-for list="{{ outRow }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3.2 · 4 · 5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Transition kind · the priority-hours refusal · on the record</h2>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 14px; align-items: start;">
+      <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;">
+        <div style="padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="display: block; font-size: 11.5px; color: #5A6779;">Transition editor (Templates 6b) · new field, first after the label</span><span style="display: block; font-size: 14px; font-weight: 600;">Submit Root Cause → Root Cause Identified</span></div>
+        <div style="padding: 10px 12px;">
+          <div style="font-size: 12px; font-weight: 500; color: #4A5568; margin-block-end: 4px;">Kind · required</div>
+          <div role="radiogroup" aria-label="Kind" style="display: flex; flex-direction: column;">
+            <sc-for list="{{ kinds }}" as="k" hint-placeholder-count="3"><div style="display: flex; gap: 9px; align-items: flex-start; padding: 6px 0;"><span style="{{ k.radio }}">{{ k.dot }}</span><span><span style="display: block; font-size: 13px; font-weight: 500;">{{ k.t }}</span><span style="display: block; font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ k.b }}</span></span></div></sc-for>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">Every transition defaults to Advance, whatever stage it points to: a transition nobody classified stays blocked rather than skipping mandatory work. Seeded workflows come with their kinds already set; the admin changes any of them here.</div>
+        </div>
+      </div>
+      <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;">
+        <div style="padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="display: block; font-size: 11.5px; color: #5A6779;">Settings › Task SLA &amp; escalation · priority due times</span><span style="display: block; font-size: 14px; font-weight: 600;">Due times by priority</span></div>
+        <sc-for list="{{ prioHours }}" as="p" hint-placeholder-count="4">
+          <div style="display: flex; align-items: flex-start; gap: 10px; padding: 7px 12px; border-block-end: 1px solid #F0F3F7;">
+            <span style="flex: none; width: 70px; font-size: 13px; font-weight: 500; padding-block-start: 6px;">{{ p.k }}</span>
+            <span style="flex: 1 1 auto; min-width: 0;"><span style="{{ p.box }}"><span style="flex: 1 1 auto; font-size: 13px; font-variant-numeric: tabular-nums;">{{ p.v }}</span><span style="font-size: 12px; color: #5A6779;">working hours</span></span><sc-if value="{{ p.err }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 11.5px; line-height: 17px; font-weight: 500; color: #B42318; margin-block-start: 4px; text-wrap: pretty;">{{ p.err }}</span></sc-if></span>
+          </div>
+        </sc-for>
+        <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">The list names every stage it would break, each a link to that stage's row; Save stays enabled and refuses with the same message on the field.</div>
+      </div>
+      <div style="background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;">
+        <div style="padding: 12px 20px; border-block-end: 1px solid #E2E8F0;"><span style="display: block; font-size: 16px; font-weight: 600;">Can't move to Root Cause Identified yet</span><span style="display: block; font-size: 12px; color: #5A6779;">INC-2026-0147 · Patient fall, Cardiology ward · Investigating</span></div>
+        <div style="padding: 16px 20px;">
+          <div style="font-size: 14px; line-height: 21px;">Finish these tasks before moving to Root Cause Identified:</div>
+          <sc-for list="{{ blockers }}" as="b" hint-placeholder-count="2"><div style="padding: 6px 0; border-block-end: 1px solid #F0F3F7;"><a href="#s4" style="display: block; font-size: 13.5px; font-weight: 600; text-decoration: none;">{{ b.t }}</a><span style="display: block; font-size: 12px; color: #4A5568;">{{ b.m }}</span></div></sc-for>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;"><span style="font-size: 12px; color: #5A6779;">Opened from “Submit Root Cause”</span><button style="background: #2E6FA3; color: #fff; border: 1px solid #1F5480; border-radius: 6px; padding: 6px 12px; font-family: inherit; font-size: 13px; font-weight: 600;">Close</button></div>
+        <div style="padding: 8px 20px; font-size: 11.5px; color: #5A6779; text-wrap: pretty; border-block-start: 1px solid #E2E8F0;">Confirm 420, Close only. Body: sentence 21 + 12 + 2 rows × 41 = 115; Arabic 24 + 12 + 2 × 46 = 128. The deciding approval vote gets the same dialog, titled “Your vote isn't recorded yet”: nothing is saved until the tasks are done.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="s2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2 · 1.6</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Add and edit · Form 560 in two steps · Delete</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">One step would be 730px English, 778px Arabic. The seam: step 1 “The task” (what), step 2 “When and who” (priority and assignment, the two fields that decide a due time and a person).</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+      <sc-for list="{{ dialogs }}" as="d" hint-placeholder-count="9">
+        <div style="{{ d.outer }}">
+          <div dir="{{ d.dir }}" style="{{ d.capStyle }}">{{ d.cap }}</div>
+          <div dir="{{ d.dir }}" style="{{ d.frame }}">
+            <div style="{{ d.headStyle }}"><span style="min-width: 0;"><span style="{{ d.titleStyle }}">{{ d.title }}</span><span style="{{ d.ctxStyle }}">{{ d.ctx }}</span></span><span aria-label="Close" style="color: #5A6779; font-size: 13px;">✕</span></div>
+            <div style="padding: 16px 20px;">
+              <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="4">
+                <div style="{{ it.wrap }}">
+                  <sc-if value="{{ it.isNote }}" hint-placeholder-val="{{ false }}"><div style="{{ it.style }}">{{ it.text }}</div></sc-if>
+                  <sc-if value="{{ it.isPairs }}" hint-placeholder-val="{{ false }}"><div style="{{ it.grid }}"><sc-for list="{{ it.pairs }}" as="q" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ q.labStyle }}">{{ q.k }}</div><div style="{{ q.valStyle }}">{{ q.v }}</div></div></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isFields }}" hint-placeholder-val="{{ true }}"><div style="{{ it.grid }}"><sc-for list="{{ it.cols }}" as="c" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ c.labStyle }}">{{ c.label }}<span style="font-weight: 400; color: #5A6779;">{{ c.tag }}</span></div><div style="{{ c.box }}"><span style="{{ c.valStyle }}">{{ c.value }}</span><sc-if value="{{ c.action }}" hint-placeholder-val="{{ false }}"><span style="{{ c.actStyle }}">{{ c.action }}</span></sc-if></div><div style="{{ c.helpStyle }}">{{ c.help }}</div></div></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isArea }}" hint-placeholder-val="{{ false }}"><div style="{{ it.labStyle }}">{{ it.label }}<span style="font-weight: 400; color: #5A6779;">{{ it.tag }}</span></div><div style="{{ it.areaStyle }}">{{ it.text }}</div><div style="{{ it.helpStyle }}"></div></sc-if>
+                  <sc-if value="{{ it.isRadios }}" hint-placeholder-val="{{ false }}"><div style="{{ it.labStyle }}">{{ it.label }}</div><div role="radiogroup" style="display: flex; flex-direction: column;"><sc-for list="{{ it.opts }}" as="o" hint-placeholder-count="2"><div style="{{ o.rowStyle }}"><span style="{{ o.radio }}">{{ o.dot }}</span><span style="min-width: 0;"><span style="{{ o.tStyle }}">{{ o.t }}</span><span style="{{ o.bStyle }}">{{ o.b }}</span></span></div></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isCheck }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px;"><span role="checkbox" style="{{ it.boxStyle }}">{{ it.mark }}</span><span style="{{ it.tStyle }}">{{ it.text }}</span></div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="{{ d.footStyle }}"><span style="{{ d.footLeftStyle }}">{{ d.footLeft }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ d.buttons }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ d.measure }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 16px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 8px 12px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779;">Every dialog body, both languages · cap 420</div>
+        <sc-for list="{{ measures }}" as="m" hint-placeholder-count="8"><div style="display: flex; gap: 10px; padding: 6px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="flex: 1 1 0; min-width: 0; font-weight: 500;">{{ m.d }}</span><span style="flex: none; width: 110px; color: #5A6779;">{{ m.s }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.en }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.ar }}</span></div></sc-for>
+        <div style="padding: 8px 12px; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Same constants as Task Screens: field block EN 79, AR 84; two-line message slot +17 EN, +20 AR; three-row textarea EN 119, AR 130; radio row (title + one line) EN 44, AR 48; checkbox row EN 24, AR 26; read-only pair EN 40, AR 44; sentence EN 21 / AR 24 a line; gaps 12.</div>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · the dialog</div>
+        <sc-for list="{{ dlgNotes }}" as="n" hint-placeholder-count="7"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for>
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block: 12px 6px;">Six request outcomes · dialog</div>
+        <sc-for list="{{ outDlg }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #FEDF89; padding-block-end: 10px; margin-block-end: 12px;"><h2 style="margin: 0; font-size: 20px; font-weight: 600;">Questions for the product owner</h2></div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="8"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for></div></sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;row&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;three&quot;, &quot;empty&quot;, &quot;nodeadline&quot;, &quot;refused&quot;], &quot;default&quot;: &quot;three&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Stage row&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.props.row || "three";
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = "font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const chip = (label, tone) => ({ label, style: "display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 7px; white-space: nowrap; " + ({ must: "color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3;", opt: "color: #4A5568; background: #fff; border: 1px dashed #8A94A6;", ev: "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;", warn: "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;" })[tone] });
+    const icon = (g, aria, danger) => ({ g, aria, style: "width: 28px; height: 28px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 5px; background: #fff; font-size: 12px; color: " + (danger ? "#B42318" : "#2D3748") + ";" });
+    const T = [
+      { title: "Interview the staff involved", ar: "مقابلة الموظفين المعنيين", must: 1, ev: 1, prio: "High · due in 16 working hours", who: "Quality Officer in the record's unit" },
+      { title: "Collect the incident's records", ar: "جمع سجلات الحادث", must: 1, ev: 1, prio: "High · due in 16 working hours", who: "Quality Officer, Cardiology · Nora Al-Otaibi" },
+      { title: "Inform the Quality Assurance Committee", ar: "إبلاغ لجنة ضمان الجودة", must: 0, ev: 0, prio: "Critical · due in 4 working hours", who: "Secretary of the Quality Assurance Committee", nobody: 1 }
+    ];
+    const tasks = T.map((t, i) => ({ n: (i + 1) + "", title: t.title, ar: t.ar, prio: t.prio, who: t.who, handleAria: "Reorder task " + (i + 1) + ": " + t.title,
+      chips: [chip(t.must ? "● Mandatory" : "○ Optional", t.must ? "must" : "opt")].concat(t.ev ? [chip("Evidence required", "ev")] : []).concat(t.nobody ? [chip("⚠ Nobody holds this position", "warn")] : []),
+      acts: [icon("↑", "Move up: " + t.title), icon("↓", "Move down: " + t.title), icon("✎", "Edit " + t.title), icon("🗑", "Delete " + t.title, 1)].filter((a, j) => !(i === 0 && j === 0) && !(i === T.length - 1 && j === 1)),
+      row: "padding: 10px 0; border-block-end: 1px solid #F0F3F7;" + (t.nobody ? "" : "") }));
+    const tasksAr = [
+      { title: "مقابلة الموظفين المعنيين", must: 1, ev: 1, prio: "عالية · مستحقة خلال " + iso("16") + " ساعة عمل", who: "مسؤول الجودة في وحدة السجل" },
+      { title: "جمع سجلات الحادث", must: 1, ev: 1, prio: "عالية · مستحقة خلال " + iso("16") + " ساعة عمل", who: "مسؤول الجودة، أمراض القلب · نورة العتيبي" },
+      { title: "إبلاغ لجنة ضمان الجودة", must: 0, prio: "حرجة · مستحقة خلال " + iso("4") + " ساعات عمل", who: "أمين سر لجنة ضمان الجودة", nobody: 1 }
+    ].map((t, i) => ({ n: (i + 1) + "", title: t.title, prio: t.prio, who: t.who, chips: [chip(t.must ? "● إلزامية" : "○ اختيارية", t.must ? "must" : "opt")].concat(t.ev ? [chip("الدليل مطلوب", "ev")] : []).concat(t.nobody ? [chip("⚠ لا أحد يشغل هذا المنصب", "warn")] : []).map(c => Object.assign(c, { style: c.style.replace("font-size: 11px", "font-size: 12px") })) }));
+
+    const noDl = st === "nodeadline", refused = st === "refused", empty = st === "empty";
+    const dl = {
+      value: noDl ? "" : refused ? "12" : "40",
+      box: "display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: #fff; border: 1px solid " + (refused ? "#B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);" : "#8A94A6;"),
+      help: refused ? "A task on this stage is due in 16 working hours. Set the deadline to at least 16, or give those tasks a higher priority." : noDl ? "No deadline · any priority is accepted" : "At least 16 · the longest task on this stage",
+      helpStyle: "display: block; font-size: 11.5px; line-height: 17px; min-height: 34px; margin-block-start: 4px; text-wrap: pretty; " + (refused ? "font-weight: 500; color: #B42318;" : "color: #5A6779;")
+    };
+    const head = { text: empty ? "Stage deadline: 40 working hours · no tasks" : noDl ? "No deadline · longest task: 16" : refused ? "⚠ Stage deadline: 12 working hours · longest task: 16 · 2 tasks would be late" : "Stage deadline: 40 working hours · longest task: 16",
+      style: "font-size: 12.5px; margin-block: 2px 4px; " + (refused ? "font-weight: 600; color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA; border-radius: 4px; padding: 3px 8px;" : "color: #4A5568;") };
+    const kindChip = (k) => "flex: none; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 1px 7px; white-space: nowrap; " + ({ Advance: "color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;", "Send back": "color: #4A5568; background: #fff; border: 1px dashed #5A6779;", "End the record": "color: #B42318; background: #fff; border: 1px solid #FECDCA;" })[k];
+    const transitions = [["Submit Root Cause", "→ Root Cause Identified", "Advance"], ["Cancel Incident", "→ Cancelled", "End the record"], ["More information needed", "↩ Reported · added by your organisation", "Send back"]].map(t => ({ label: t[0], to: t[1], kind: t[2], kindStyle: kindChip(t[2]) }));
+    const strip = [["Reported", 0], ["→", 9], ["Investigating", 1], ["→", 9], ["Root Cause Identified", 0], ["→", 9], ["Closed", 0], ["·", 9], ["Cancelled", 0], ["↩ Investigating → Reported (Send back, added by your organisation)", 2]].map(s => ({ label: s[0], style: s[1] === 9 ? "font-size: 12px; color: #8A94A6;" : "font-size: 12px; border-radius: 4px; padding: 2px 8px; white-space: nowrap; " + (s[1] === 1 ? "font-weight: 600; color: #1F5480; background: #E4EEF6; border: 1px solid #2E6FA3;" : s[1] === 2 ? "color: #4A5568; background: #fff; border: 1px dashed #5A6779; margin-inline-start: 8px;" : "color: #2D3748; background: #fff; border: 1px solid #CBD5E0;") }));
+
+    const B = (label, kind, ar) => ({ label, style: "font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; border-radius: 6px; padding: 6px 12px; white-space: nowrap; " + ({ primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;", text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;", danger: "background: #B42318; color: #fff; border: 1px solid #912018; font-weight: 600;" })[kind] });
+    const K = (ar) => {
+      const lab = ar ? 13 : 12, labLh = ar ? 20 : 18, val = ar ? 14 : 13, help = ar ? 12.5 : 11.5, helpLh = ar ? 20 : 17;
+      return {
+        note: (text, top) => ({ isNote: true, wrap: "margin-block-start: " + (top || 0) + "px;", text, style: "font-size: " + (ar ? 14.5 : 14) + "px; line-height: " + (ar ? 24 : 21) + "px; text-wrap: pretty;" }),
+        pairs: (list, top) => ({ isPairs: true, wrap: "margin-block-start: " + (top || 0) + "px;", grid: "display: grid; grid-template-columns: repeat(" + list.length + ", minmax(0, 1fr)); gap: 12px;", pairs: list.map(p => ({ k: p[0], v: p[1], labStyle: "font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #5A6779; margin-block-end: 2px;", valStyle: "font-size: " + val + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 500;" })) }),
+        fields: (cols, top) => ({ isFields: true, wrap: "margin-block-start: " + (top || 0) + "px;", grid: "display: grid; grid-template-columns: repeat(" + cols.length + ", minmax(0, 1fr)); gap: 12px;", cols: cols.map(c => ({ label: c.label, tag: c.req ? (ar ? " · مطلوب" : " · required") : c.opt ? (ar ? " · اختياري" : " · optional") : "", value: c.value, action: c.action || null,
+          labStyle: "display: block; font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+          box: "display: flex; align-items: center; gap: 6px; height: 36px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: " + (c.dis ? "#F4F7FA" : "#fff") + "; " + (c.err ? "border: 1px solid #B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);" : c.dis ? "border: 1px solid #E2E8F0;" : "border: 1px solid #8A94A6;"),
+          valStyle: "flex: 1 1 auto; min-width: 0; font-size: " + val + "px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: " + (c.ph ? "#8A94A6" : "#2D3748") + ";", actStyle: "flex: none; font-size: " + (val - 1.5) + "px; color: #5A6779; white-space: nowrap;",
+          help: c.help || "", helpStyle: "font-size: " + help + "px; line-height: " + helpLh + "px; min-height: " + (helpLh * (c.lines || 1)) + "px; margin-block-start: 4px; text-wrap: pretty; color: " + (c.err ? "#B42318; font-weight: 500" : c.info ? "#1F5480" : "#5A6779") + ";" })) }),
+        area: (label, text, top) => ({ isArea: true, wrap: "margin-block-start: " + (top || 0) + "px;", label, tag: ar ? " · اختياري" : " · optional", text, labStyle: "display: block; font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;", areaStyle: "box-sizing: border-box; height: " + (ar ? 82 : 76) + "px; border: 1px solid #8A94A6; border-radius: 4px; padding: 8px 10px; font-size: " + val + "px; line-height: " + (ar ? 22 : 20) + "px; overflow: hidden;", helpStyle: "min-height: " + helpLh + "px; margin-block-start: 4px;" }),
+        radios: (label, opts, top) => ({ isRadios: true, wrap: "margin-block-start: " + (top || 0) + "px;", label, labStyle: "font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 2px;",
+          opts: opts.map(o => ({ t: o.t, b: o.b, dot: o.on ? "●" : "", rowStyle: "display: flex; gap: 9px; align-items: flex-start; height: " + (ar ? 48 : 44) + "px; box-sizing: border-box; padding-block-start: 3px;", radio: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; margin-block-start: 2px; font-size: 9px; line-height: 14px; text-align: center; background: #fff; border: 1px solid " + (o.on ? "#1F5480; color: #2E6FA3;" : "#8A94A6; color: transparent;"), tStyle: "display: block; font-size: " + val + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 500;", bStyle: "display: block; font-size: " + help + "px; line-height: " + (ar ? 20 : 18) + "px; color: #5A6779; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" })) }),
+        check: (text, on, top) => ({ isCheck: true, wrap: "margin-block-start: " + (top || 0) + "px;", text, mark: on ? "✓" : "", boxStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; font-size: 11px; line-height: 14px; text-align: center; " + (on ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : "background: #fff; border: 1px solid #8A94A6;"), tStyle: "font-size: " + val + "px; line-height: " + (ar ? 26 : 24) + "px; font-weight: 500;" }),
+        make: (x) => ({ cap: x.cap, dir: ar ? "rtl" : "ltr", title: x.title, ctx: x.ctx, items: x.items, buttons: x.buttons, footLeft: x.footLeft || "", measure: x.measure,
+          capStyle: ar ? AF + " font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;",
+          outer: "flex: 0 1 " + x.w + "px; min-width: 0;", frame: "width: 100%; max-width: " + x.w + "px; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;" + (ar ? " " + AF : ""),
+          headStyle: "display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 20px; border-block-end: 1px solid #E2E8F0;", titleStyle: "display: block; font-size: " + (ar ? 17 : 16) + "px; line-height: 1.4; font-weight: 600;", ctxStyle: "display: block; font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+          footStyle: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;", footLeftStyle: "font-size: 12px; color: #5A6779;" })
+      };
+    };
+    const E = K(false), A = K(true);
+    const step1 = (X, ar) => [
+      X.fields([{ label: ar ? "العنوان بالإنجليزية" : "Title (English)", req: 1, value: "Collect the incident's records" }, { label: ar ? "العنوان بالعربية" : "Title (Arabic)", opt: 1, value: "جمع سجلات الحادث" }], 0),
+      X.area(ar ? "الوصف" : "Description", ar ? "المخطط الزمني، سجلات التمريض، صور الموقع." : "Timeline, nursing notes, photos of the location.", 12),
+      X.radios(ar ? "هل تمنع التقدم؟" : "Blocks moving forward?", ar ? [{ t: "إلزامية", b: "تمنع التقدم حتى تُنجز", on: 1 }, { t: "اختيارية", b: "لا تمنع أبدًا؛ تُلغى عند مغادرة السجل للمرحلة" }] : [{ t: "Mandatory", b: "Blocks moving forward until done", on: 1 }, { t: "Optional", b: "Never blocks; cancelled when the record leaves the stage" }], 12),
+      X.check(ar ? "الدليل مطلوب لإنجازها" : "Evidence required to complete it", true, 12)
+    ];
+    const dialogs = [
+      E.make({ w: 560, cap: "Add task · step 1 of 2 · The task", title: "Add a task on entry", ctx: "Incident Management · Investigating", footLeft: "Step 1 of 2", items: step1(E, false), buttons: [B("Cancel", "text"), B("Next: when and who", "primary")],
+        measure: "79 + 12 + textarea 119 + 12 + label 20 + 2 radios × 44 + 12 + checkbox 24 = 366. Arabic 84 + 12 + 130 + 12 + 22 + 96 + 12 + 26 = 394." }),
+      A.make({ w: 560, cap: "إضافة مهمة · الخطوة 1 من 2 · العربية", title: "إضافة مهمة عند الدخول", ctx: "إدارة الحوادث · قيد التحقيق", footLeft: "الخطوة " + iso("1") + " من " + iso("2"), items: step1(A, true), buttons: [B("إلغاء", "text", true), B("التالي: متى ومن", "primary", true)], measure: "394 of 420." }),
+      E.make({ w: 560, cap: "Step 2 of 2 · When and who · Incident Management", title: "Add a task on entry", ctx: "Collect the incident's records · Mandatory", footLeft: "Step 2 of 2",
+        items: [E.fields([{ label: "Priority", req: 1, value: "High", action: "due in 16 working hours ▼", help: "Within the stage deadline of 40", info: 1 }], 0),
+          E.fields([{ label: "Assigned through", req: 1, value: "A unit you choose", action: "▼", help: "3 choices here: a unit you choose, the record's own unit, a committee you choose" }], 12),
+          E.fields([{ label: "Unit", req: 1, value: "Cardiology", action: "▼" }, { label: "Position", req: 1, value: "Quality Officer", action: "▼", help: "1 person holds it here" }], 12),
+          E.fields([{ label: "Person", opt: 1, value: "Nora Al-Otaibi", action: "▼", help: "Quality Officer · Cardiology. Empty: whoever holds the position." }], 12)],
+        buttons: [B("Back", "text"), B("Save task", "primary")], measure: "4 rows × 79 + 3 × 12 = 352. Arabic 4 × 84 + 36 = 372. “The record's committee” is absent: incidents have no committee." }),
+      E.make({ w: 560, cap: "Step 2 · deadline refused at the priority", title: "Add a task on entry", ctx: "Collect the incident's records · Mandatory", footLeft: "Step 2 of 2",
+        items: [E.fields([{ label: "Priority", req: 1, value: "Low", action: "due in 80 working hours ▼", err: 1, lines: 2, help: "Low tasks are due in 80 working hours, but this stage's deadline is 40. Raise the stage deadline to at least 80 hours, or choose a higher priority." }], 0),
+          E.fields([{ label: "Assigned through", req: 1, value: "The record's own unit", action: "▼" }], 12), E.fields([{ label: "Position", req: 1, value: "Quality Officer", action: "▼", help: "In whichever unit owns the incident" }], 12)],
+        buttons: [B("Back", "text"), B("Save task", "primary")], footLeft: "Save refuses until fixed",
+        measure: "Priority 79 + 17 (two-line message) + 12 + 79 + 12 + 79 = 278. Arabic 84 + 20 + 12 + 84 + 12 + 84 = 296. Save stays enabled; pressing it focuses Priority and repeats the message." }),
+      E.make({ w: 560, cap: "Step 2 · Committee Management · all four choices", title: "Add a task on entry", ctx: "Committee Management · Terms Review", footLeft: "Step 2 of 2",
+        items: [E.fields([{ label: "Priority", req: 1, value: "Medium", action: "due in 40 working hours ▼", help: "Within the stage deadline of 40", info: 1 }], 0),
+          E.fields([{ label: "Assigned through", req: 1, value: "The record's committee", action: "▼", help: "4 choices: a unit you choose, the record's own unit, a committee you choose, the record's committee" }], 12),
+          E.fields([{ label: "Committee role", req: 1, value: "Secretary", action: "▼", help: "Of whichever committee the record is. Never a system role." }], 12)],
+        buttons: [B("Back", "text"), B("Save task", "primary")], measure: "3 rows × 79 + 2 × 12 = 261. Arabic 3 × 84 + 24 = 276." }),
+      A.make({ w: 560, cap: "الخطوة 2 من 2 · متى ومن · العربية", title: "إضافة مهمة عند الدخول", ctx: "جمع سجلات الحادث · إلزامية", footLeft: "الخطوة " + iso("2") + " من " + iso("2"),
+        items: [A.fields([{ label: "الأولوية", req: 1, value: "عالية", action: "خلال " + iso("16") + " ساعة عمل ▼", help: "ضمن مهلة المرحلة " + iso("40"), info: 1 }], 0),
+          A.fields([{ label: "التكليف عبر", req: 1, value: "وحدة تختارها", action: "▼" }], 12),
+          A.fields([{ label: "الوحدة", req: 1, value: "أمراض القلب", action: "▼" }, { label: "المنصب", req: 1, value: "مسؤول الجودة", action: "▼", help: "يشغله شخص واحد هنا" }], 12),
+          A.fields([{ label: "الشخص", opt: 1, value: "نورة العتيبي", action: "▼" }], 12)],
+        buttons: [B("رجوع", "text", true), B("حفظ المهمة", "primary", true)], measure: "372 of 420." }),
+      E.make({ w: 420, cap: "Delete · Confirm 420", title: "Delete this task?", ctx: "Incident Management · Investigating · task 2 of 3",
+        items: [E.note("Delete “Collect the incident's records”? New records entering this stage won't get it. Tasks already created from it stay.", 0), E.pairs([["Already created from it", "7 tasks · they stay"], ["Longest task after", "16 working hours"]], 12)],
+        buttons: [B("Keep task", "text"), B("Delete", "danger")], measure: "Sentence 42 (2 × 21) + 12 + pairs 40 = 94. Arabic 48 (2 × 24) + 12 + 44 = 104." }),
+      A.make({ w: 420, cap: "حذف · العربية", title: "حذف هذه المهمة؟", ctx: "إدارة الحوادث · قيد التحقيق",
+        items: [A.note("حذف «جمع سجلات الحادث»؟ لن تحصل عليها السجلات الجديدة التي تدخل هذه المرحلة. تبقى المهام التي أُنشئت منها.", 0), A.pairs([["أُنشئ منها", iso("7") + " مهام · تبقى"], ["أطول مهمة بعدها", iso("16") + " ساعة عمل"]], 12)],
+        buttons: [B("إبقاء", "text", true), B("حذف", "danger", true)], measure: "104 of 420." })
+    ];
+    const measures = [["Add / edit · step 1 · The task", "560 · form", 366, 394], ["Step 2 · unit you choose (tallest)", "560 · form", 352, 372], ["Step 2 · deadline refused", "560 · form", 278, 296], ["Step 2 · record's committee", "560 · form", 261, 276], ["One step, for comparison", "560 · form", 730, 778], ["Delete", "420 · confirm", 94, 104], ["Advance refused (section 3.2 · 4 · 5)", "420 · confirm", 115, 128]].map(m => ({ d: m[0], s: m[1], en: m[2] + "", ar: m[3] + "" }));
+
+    const radio = (on) => "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; margin-block-start: 2px; font-size: 9px; line-height: 14px; text-align: center; background: #fff; border: 1px solid " + (on ? "#1F5480; color: #2E6FA3;" : "#8A94A6; color: transparent;");
+    return {
+      rowLabel: { three: "three tasks", empty: "no tasks yet", nodeadline: "a stage with no deadline", refused: "the deadline lowered to 12 and refused" }[st],
+      strip, transitions, dl, head, tasks, tasksAr, hasTasks: !empty, noTasks: empty,
+      kinds: [["Advance", "Moves the record on. Blocked while mandatory tasks of this stage are open.", 1], ["Send back", "Returns the record for rework. Never blocked; this stage's open tasks are cancelled."], ["End the record", "Rejects, cancels or withdraws the record. Never blocked; this stage's open tasks are cancelled."]].map(k => ({ t: k[0], b: k[1], dot: k[2] ? "●" : "", radio: radio(k[2]) })),
+      prioHours: [["Critical", "4"], ["High", "24", "High would become 24 working hours, which passes the deadline of: Incident Management · Root Cause Identified (16 working hours). Raise that deadline first, or keep High at 16 or less."], ["Medium", "40"], ["Low", "80"]].map(p => ({ k: p[0], v: p[1], err: p[2] || null, box: "display: flex; align-items: center; gap: 8px; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: #fff; max-width: 220px; border: 1px solid " + (p[2] ? "#B42318; box-shadow: 0 0 0 3px rgba(180,35,24,0.12);" : "#8A94A6;") })),
+      blockers: [{ t: "Interview the staff involved", m: "Nora Al-Otaibi (Quality Officer in the record's unit, Cardiology) · due 12 Oct 2026 · Mandatory" }, { t: "Collect the incident's records", m: "Nora Al-Otaibi · due 12 Oct 2026 · Mandatory · evidence required" }],
+      dialogs, measures,
+      decisions: [
+        { t: "1 · Tasks sit beside transitions", b: "In 6b's expanded stage row, two columns: Transitions and Tasks on entry. What makes a record move and what must happen before it can, read side by side." },
+        { t: "2 · The header line states the arithmetic", b: "“Stage deadline: 40 working hours · longest task: 16”. When it breaks, the same line turns into a danger box with ⚠ and the words “2 tasks would be late”." },
+        { t: "3 · Mandatory is a filled chip, Optional a dashed one", b: "“● Mandatory” on a tinted chip with a solid border; “○ Optional” on a dashed outline. Different glyph, border and word, so greyscale survives." },
+        { t: "4 · Assignment is a sentence", b: "“Quality Officer in the record's unit”, “Secretary of the Quality Assurance Committee”, plus “· Nora Al-Otaibi” when a person is chosen. Never a system role." },
+        { t: "5 · Two steps, split at a real seam", b: "Step 1 “The task” (titles, description, Mandatory/Optional, evidence). Step 2 “When and who” (priority, assignment). Priority and assignment are the two fields that produce a due time and a person; they belong together." },
+        { t: "6 · Refusals name both numbers and the way out", b: "At the priority, at the stage deadline and in task settings, each inline in the field's message slot. Save stays enabled and refuses with the same words, so a keyboard user hears why." },
+        { t: "7 · Transition kind is one field", b: "Advance, Send back, End the record, each with its line. The stage row shows the kind as a small label; Send back is dashed, as returns are in 6b's strip." },
+        { t: "8 · The record refuses with links", b: "Advancing with mandatory tasks open opens a Confirm with the tasks as links (title, assignee, due) and only Close. A deciding approval vote gets the same dialog and isn't recorded." }
+      ],
+      rowNotes: [
+        { k: "Order is the creation order.", v: "Numbers 1–3 show it; the record lists created tasks in this order." },
+        { k: "Due time with its priority.", v: "“High · due in 16 working hours”, from the organisation's task settings (defaults Critical 4, High 16, Medium 40, Low 80)." },
+        { k: "Nobody holds the position.", v: "An amber chip with ⚠ and the words. Saving is allowed; the task is created unassigned and shows on Setup health, never passed up to the parent unit. A mandatory one keeps the record blocked until someone is assigned." },
+        { k: "Actions are labelled icon buttons.", v: "↑, ↓, Edit, Delete, each with an accessible name that includes the task title. The first row has no ↑, the last no ↓ (absent, not disabled)." },
+        { k: "Keyboard reordering.", v: "The drag handle is a real button: Space to pick up, arrows to move, Space to drop; each move announced. ↑/↓ buttons are the no-drag path." },
+        { k: "No deadline.", v: "The header reads “No deadline · longest task: 16” and the priority field accepts anything." },
+        { k: "Refused deadline.", v: "Lowering it to 12 shows the message under the field and turns the Tasks on entry header into a danger box at the same moment, worded, not just red." },
+        { k: "Coming back always means fresh tasks.", v: "Leaving a stage cancels its open tasks: Send back and End the record cancel them all; Advance needs the mandatory ones done and cancels the optional ones. So a record that returns never finds old open tasks, and gets a fresh set. Completed ones stay on its history; their evidence doesn't carry over." },
+        { k: "Empty.", v: "“No tasks are created when a record enters this stage.” with Add task, inside a dashed frame so the section still reads as a section." }
+      ],
+      outRow: [
+        { k: "Loading", v: "The section as two skeleton rows under its header." }, { k: "Populated", v: "As drawn (Tweaks: three tasks)." },
+        { k: "Empty", v: "Drawn (Tweaks: empty)." }, { k: "Denied", v: "Workflow settings are for tenant admins; others get the shared not-allowed page." },
+        { k: "Error", v: "Section error with Retry; transitions still show." }, { k: "Partial", v: "If position holders can't be checked, the chip reads “Holder unknown · Retry”, never a guessed “Nobody holds”." }
+      ],
+      dlgNotes: [
+        { k: "Step 1 fits only without priority.", v: "With priority it's 457 English and 490 Arabic, over the cap; without it 366 / 394. Moving priority to step 2 is also the right grouping." },
+        { k: "Step 2 shows the due time beside the priority.", v: "In the select itself (“due in 16 working hours”) and its message slot (“Within the stage deadline of 40”)." },
+        { k: "The assignee cascade is Task Screens' picker.", v: "Assigned through → unit → position → person (optional), or committee → role. Choices that need the record's own unit or committee appear only where the record type has one." },
+        { k: "Incident Management has three choices.", v: "No “The record's committee”: it's absent, not disabled. Committee Management has all four." },
+        { k: "Person is optional.", v: "Empty means whoever holds the position when the record enters, which is why the row can warn that nobody holds it." },
+        { k: "Refused Save.", v: "The button stays enabled. Pressing it focuses Priority, repeats the message in a polite live region, and saves nothing." },
+        { k: "Edit uses the same two steps.", v: "Changes apply to records entering from now on; tasks already created keep what they were created with." }
+      ],
+      outDlg: [
+        { k: "Loading", v: "Units, positions and committees load into the selects; each shows “Loading…” as its placeholder." }, { k: "Populated", v: "As drawn." },
+        { k: "Empty", v: "A unit with no positions: “No positions in Cardiology yet.”" }, { k: "Denied", v: "Doesn't apply inside the dialog." },
+        { k: "Error", v: "Save fails: footer “Couldn't save · Retry”, nothing created." }, { k: "Partial", v: "If holder counts fail, the position helper reads “Holder count unavailable”." }
+      ],
+      questions: [
+        { n: "Q1 · answered", q: "When nobody holds the position as the record enters, what happens to a mandatory task?", opts: ["Created unassigned and shown on Setup health; never passed up to the parent unit. A mandatory one keeps the record blocked until someone is assigned."] },
+        { n: "Q2 · answered", q: "A record re-enters the stage while tasks from its last visit are still open.", opts: ["Can't happen: leaving a stage cancels its open tasks, so a returning record always gets fresh ones (see the reasoning)."] },
+        { n: "Q3 · answered", q: "Editing a definition (e.g. its priority): do tasks already created change?", opts: ["No, tasks keep what they were created with (as drawn)."] },
+        { n: "Q4 · answered", q: "Entry outside working hours: does the due time start at entry or at the next working hour?", opts: ["Today's working-hours counting from entry; no new rule."] },
+        { n: "Q5 · answered", q: "Can someone cancel a mandatory task to unblock the record?", opts: ["No. A mandatory stage task can't be cancelled by hand; an optional one can."] },
+        { n: "Q6 · answered", q: "Send back cancels this stage's open tasks: should completed ones be kept as evidence when the record returns?", opts: ["Completed tasks stay on the record's history; their evidence doesn't carry over to the new tasks."] },
+        { n: "Q7 · answered", q: "Raising a priority's hours in settings when a stage has no deadline.", opts: ["Allowed: a stage with no deadline accepts any priority (as drawn)."] },
+        { n: "Q8 · answered", q: "A deciding approval vote that's refused: is the voter's choice kept as a draft?", opts: ["Nothing is recorded; they vote again once the tasks are done (as drawn)."] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

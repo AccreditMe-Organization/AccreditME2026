@@ -1,16 +1,17 @@
 # Step 208 — Stage Tasks settings screen (ACC-208)
 
-**Status: PLAN — awaiting approval (11 Oct). No code yet.**
+**Status: APPROVED, BUILDING (12 Oct).** Ahmad's answers are in §9. The
+drawing is on the branch and was read in full first (§8b).
 - Branch: `feature/ACC-208-stage-tasks-screen`, from `origin/dev` at `048c887`.
 - Lane B, High. This is the frontend for ACC-190's task definitions
   (`step-190-stage-task-definitions.md` §11).
 
-**The drawing.** `AccreditMe Stage Tasks.dc.html` was accepted on 10 Oct, but
-it is **not in `frontend/design-reference/` on this branch yet**: only
-`AccreditMe Task Screens.dc.html` is there. This plan is written against the
-brief and ACC-190 §11. Once the drawing is copied in, I read it in full before
-building. On anything visual the drawing wins; anything in it that contradicts
-§8 below comes back to Ahmad before it is built.
+**The drawing.** `frontend/design-reference/AccreditMe Stage Tasks.dc.html`
+(accepted 10 Oct). It wins on anything visual. Where it goes beyond this plan
+on BEHAVIOUR, that part is held back and reported rather than built (§8b).
+Its examples use Incident Management and "the record's unit"; the registry
+keeps only COMMITTEE and MEETING (fail closed), and everything is proved on
+Committee Management's Terms Review.
 
 ---
 
@@ -60,7 +61,7 @@ adds a field or widens a gate, and each gets its own spec.
 
 **B3 — The template carries the tenant's priority due times.**
 - `GET /workflow-templates/:id` gains
-  `taskDueHours: { LOW, MEDIUM, HIGH, URGENT }`, the same `dueHoursFor()`
+  `taskDueHours: { LOW, MEDIUM, HIGH, CRITICAL }`, the same `dueHoursFor()`
   numbers the definitions use.
 - The dialog shows "High · due in 16 working hours" for every priority before
   saving, and it can catch the deadline rule before the round trip.
@@ -97,9 +98,33 @@ adds a field or widens a gate, and each gets its own spec.
 - `TASK_SLA_EXCEEDS_STAGE_DEADLINES.stages[]` gains `workflowTemplateId`,
   `stageNameAr` and `templateNameAr`. Today it carries only English names and
   nothing to link with.
-- `STAGE_DEADLINE_BEFORE_TASKS`, `STAGE_TASK_DUE_AFTER_STAGE_DEADLINE` and
-  `STAGE_TASKS_OPEN` already carry what the screen needs: both numbers, the
-  priority, the definition ids, and the task ids with `title`/`titleAr`.
+- **Added while building:** it also gains `priority`, the priority of the
+  stage's longest task. The drawing puts the message under the priority
+  field that breaks it, and without this the screen would have to guess.
+- `STAGE_DEADLINE_BEFORE_TASKS` and `STAGE_TASK_DUE_AFTER_STAGE_DEADLINE`
+  already carry what the screen needs: both numbers, the priority, and the
+  definition ids.
+
+**B7 — The "Can't move yet" refusal names who and when (Ahmad, 12 Oct).**
+- Each item in `STAGE_TASKS_OPEN.tasks[]` gains:
+  - `assignees` (`{ id, name }[]`, active rows only);
+  - `pool` (the unit and position, or the committee and role, when the task
+    waits in one; null otherwise);
+  - `dueAt`;
+  - `requiresEvidence`.
+- The dialog shows "title (assignee, due date)" as drawn. A pool comes back as
+  data, not words, so the screen words it in either language.
+- **The name is `dueAt`, not `dueDate`:** it matches the Task model and every
+  task DTO, since a second name for one fact is how drift starts.
+- Additive, with a spec. The person pressing the transition can already see
+  these tasks on the record.
+
+**B8 — The list counts what each definition has already created.**
+- List rows gain `createdTaskCount`: one grouped count on
+  `Task.stageTaskDefinitionId`, which ACC-190 already stores.
+- The drawing's Delete confirmation names it ("Already created from it: 7
+  tasks · they stay").
+- Additive. No migration: the column exists.
 
 **Not a gap:**
 - `STAGE_TASK_ON_FINAL_STAGE` is thrown both when adding a definition to a
@@ -434,22 +459,93 @@ value is involved, so nothing new exists on the shared DB before the deploy.
 
 ---
 
-## 9. Decisions for Ahmad
+## 8b. The drawing, read against this plan (12 Oct)
 
-| # | Question | Recommendation |
+**Followed, as visual:**
+- the two-column expanded row: Transitions beside Tasks on entry;
+- the header line, including the empty, no-deadline and danger wordings;
+- the chips: "● Mandatory" filled, "○ Optional" dashed, Evidence required,
+  and the amber warning;
+- the assignment as a sentence;
+- icon actions whose accessible names include the title. The first row has no
+  ↑ and the last has no ↓; they are absent, not disabled, so focus moves to
+  the other arrow when one disappears;
+- the dialog layout:
+  - step 1 pairs the two titles on one row, then the description, the
+    "Blocks moving forward?" radios and the evidence checkbox;
+  - step 2 is Priority (its due time inside the select, and "Within the stage
+    deadline of 40" under it), then "Assigned through", then Unit and Position
+    paired on one row, then Person;
+  - "Step 1 of 2" sits at the left of the footer, in place of a step strip;
+  - Next reads "Next: when and who" and Save reads "Save task";
+  - the header context is "template · stage" on step 1 and "title ·
+    Mandatory" on step 2;
+- Save stays enabled on a deadline refusal. Pressing it focuses Priority and
+  repeats the message in a polite live region;
+- Delete as a 420 confirm, "Keep task" / "Delete", with "Already created from
+  it" (B8) and "Longest task after";
+- the transition Kind as a required radio group placed first after the
+  labels, with the drawing's three help lines;
+- the task-SLA refusal under the field that breaks it, naming each stage as a
+  link;
+- "Can't move to {stage} yet" as a 420 Confirm with Close only. Each task is a
+  link with its meta line: assignee, due date, Mandatory, and "evidence
+  required" when it is.
+
+**Held back: these go beyond the plan on behaviour, so they are reported, not
+built:**
+1. **An editable stage-deadline field inside the expanded row.** The drawing
+   draws the deadline as an input in the row's header, refused in place, with
+   the Tasks on entry header turning into a danger box at the same moment.
+   - The plan edits the deadline in the existing stage form, and that is what
+     is built: the refusal shows under that form's SLA field, worded as drawn.
+   - The danger header is also built. It shows when the template's own
+     numbers break the rule (deadline below longest task), so it reads the
+     same way.
+   - Editing in the row would be a second place to edit a stage, with its own
+     save behaviour. That is a decision, not a picture.
+2. **The drag handle with keyboard pick-up** (Space picks up, arrows move,
+   Space drops, Escape cancels). The plan's keyboard path is the ↑ / ↓
+   buttons, which the drawing also has ("↑ and ↓ buttons do the same without
+   drag"). Those are built. Drag is not.
+3. **The "Holder unknown · Retry" partial state.** The list computes each
+   warning server-side (B1), so there is no partial: if the check cannot run,
+   the list request fails and the section shows its error with Retry. Adding a
+   partial needs the warning moved to its own call.
+
+**Not taken from the drawing, by instruction:**
+- the Incident example's "record's unit" (the registry stays COMMITTEE and
+  MEETING);
+- the stage strip above the row, which is template 6b's existing work and
+  outside this ticket.
+
+**Reusable "Can't move yet" (Ahmad, 12 Oct).**
+- It is one standalone component that takes the refusal's `tasks[]`, so a
+  future approval-vote screen can reuse it. The drawing titles that variant
+  "Your vote isn't recorded yet".
+- **No vote screen exists today:** `WorkflowService.submitApproval()` has no
+  frontend caller. The component takes its title as an input, so the vote
+  screen passes its own when it is built.
+
+---
+
+## 9. Decisions (Ahmad, 12 Oct)
+
+| # | Question | Decision |
 |---|---|---|
-| **Q1** | B4: may `workflows:manage` use the assignment pickers without `tasks:create`? It sees unit, position and holder names, which it already sees for POSITION_FIXED stage assignees. | **Yes**: one extra passing condition, no taskId. |
-| **D2** | The drawing links open required tasks, but there is **no task page**. Where does a link go? | The committee page's own task list: `?task=<id>` scrolls to the row, focuses it and highlights it. The rows gain an anchor, and the fix-link helper already exists. |
-| **D3** | Relative routes cannot be checked until a record enters. Show no chip, or a quiet "checked when a record enters" note? | A quiet note in the dialog only, with no chip on the row. |
-| **D4** | Does the drawing cover a **final** stage? The backend refuses definitions there. | Show the sentence in §4.1 with no Add. |
-| **D5** | The Add-transition dialog shows an "Approval path" checkbox that create never sends (the backend sets it only on edit). It is a silent drop in a dialog this ticket edits. | Hide it on Add, keep it on Edit. One line, its own commit. |
-| **D6** | B5 changes a task endpoint for configuration's sake. The alternative is `LookupService` + `lookups:view`, as the stage form does now. | B5, so the cascade keeps one data source and one gate. |
+| **Q1** | B4: may `workflows:manage` use the assignment pickers without `tasks:create`? | **Yes.** `workflows:manage` alone, with no taskId. A taskId still means "reassigning this task", which it does not grant. |
+| **D2** | Where does a "Can't move yet" task link go, with no task page? | **That task's row in the committee page's own task list**: `?task=<id>` scrolls to it, focuses it and highlights it. |
+| **D3** | Relative routes cannot be checked until a record enters. | **A quiet note in the dialog, and no chip on the row.** |
+| **D4** | A final stage. | **The sentence from §4.1 in place of Add.** |
+| **D5** | The Add-transition "Approval path" checkbox that create never sends. | **Hidden on Add, kept on Edit, in its own commit.** |
+| **D6** | The committee-role catalogue. | **`catalogue=true` (B5).** |
+| **Added** | B7 (the refusal names assignee and due date), and "Can't move yet" as one standalone component. | Built as §2 B7 and §8b. |
 
 ---
 
 ## 10. Build order (each a commit)
 
-1. Backend B1–B6 + specs.
+1. Backend B1–B8 + specs.
 2. Frontend DTOs + `workflow-refusal.ts` + i18n keys.
 3. Picker `rolesCatalogue` / `committees` inputs + specs.
 4. `stage-task-list` + `stage-task-route-label` + specs.
@@ -461,7 +557,7 @@ value is involved, so nothing new exists on the shared DB before the deploy.
 
 ## Progress
 
-- [ ] 1 Backend B1–B6
+- [ ] 1 Backend B1–B8
 - [ ] 2 DTOs, refusal map, i18n
 - [ ] 3 Picker inputs
 - [ ] 4 Tasks on entry list
