@@ -37,6 +37,8 @@ const TRANSITION = {
   triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
+
+  kind: 'ADVANCE' as const,
 };
 
 const template = () => ({
@@ -101,6 +103,10 @@ describe('WorkflowStageList + TransitionEditor (ACC-55 seam)', () => {
         .match((r) => r.url === `${environment.apiUrl}/roles`)
         .forEach((r) => r.flush({ data: [], total: 0, page: 1, pageSize: 200 }));
       http.match(`${environment.apiUrl}/roles/permissions`).forEach((r) => r.flush([]));
+      // ACC-208 — the expanded row's "Tasks on entry" reads its own list.
+      http
+        .match(`${environment.apiUrl}/workflow-templates/stages/stage-1/task-definitions`)
+        .forEach((r) => r.flush([]));
     };
 
     const fixture = TestBed.createComponent(WorkflowStageListComponent);

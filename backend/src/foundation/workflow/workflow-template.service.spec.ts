@@ -157,6 +157,8 @@ const mockAuditLog = { log: jest.fn() };
 const mockStageTasks = {
   summaryForStages: jest.fn().mockResolvedValue(new Map()),
   assertStageDeadlineFits: jest.fn().mockResolvedValue(undefined),
+  // ACC-208 (B3).
+  taskDueHours: jest.fn().mockResolvedValue({ LOW: 80, MEDIUM: 40, HIGH: 16, CRITICAL: 4 }),
 };
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -1651,6 +1653,33 @@ describe('WorkflowTemplateService', () => {
       expect(mockStageTasks.summaryForStages).toHaveBeenCalledWith(['stage-1', 'stage-2'], ORG_A);
       expect(template.stages?.[0]).toEqual(expect.objectContaining({ taskDefinitionCount: 2, longestTaskHours: 16 }));
       expect(template.stages?.[1]).toEqual(expect.objectContaining({ taskDefinitionCount: 0, longestTaskHours: null }));
+    });
+
+    // ACC-208 (B2) — read from RECORD_ROUTES, so no screen keeps a copy, and it
+    // fails closed: a record type with no entry offers neither relative route.
+    it.each([
+      ['COMMITTEE', { unit: true, committee: true }],
+      ['MEETING', { unit: true, committee: true }],
+      ['DOCUMENT', { unit: false, committee: false }],
+      ['INCIDENT', { unit: false, committee: false }],
+    ])("says which relative routes a %s template's record can resolve", async (objectType, expected) => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue({ ...BASE_TEMPLATE, objectType });
+      mockPrisma.workflowStage.findMany.mockResolvedValue([]);
+
+      const template = await service.getTemplateById('template-1', ORG_A);
+
+      expect(template.recordRoutes).toEqual(expected);
+    });
+
+    // ACC-208 (B3) — the stage task dialog shows each priority's due time.
+    it("carries the tenant's due time for every priority", async () => {
+      mockPrisma.workflowTemplate.findFirst.mockResolvedValue(BASE_TEMPLATE);
+      mockPrisma.workflowStage.findMany.mockResolvedValue([]);
+
+      const template = await service.getTemplateById('template-1', ORG_A);
+
+      expect(mockStageTasks.taskDueHours).toHaveBeenCalledWith(ORG_A);
+      expect(template.taskDueHours).toEqual({ LOW: 80, MEDIUM: 40, HIGH: 16, CRITICAL: 4 });
     });
   });
 

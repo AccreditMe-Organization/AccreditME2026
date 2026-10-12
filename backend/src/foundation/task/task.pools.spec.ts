@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { LookupService } from '../lookup/lookup.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -162,6 +163,10 @@ describe('TaskService — pools (ACC-167)', () => {
       providers: [
         TaskService,
         TaskAssignmentService,
+
+        // ACC-208 — TaskAssignmentService's catalogue dependency; not reached here.
+
+        { provide: LookupService, useValue: {} },
         // ACC-173 — the creator acts for themself; covering is pinned in
         // task-authority.service.spec.ts.
         {

@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { COMMITTEES_PERMISSIONS, TASKS_PERMISSIONS } from '../../common/constants/permissions';
+import { COMMITTEES_PERMISSIONS, TASKS_PERMISSIONS, WORKFLOWS_PERMISSIONS } from '../../common/constants/permissions';
+import { LookupService } from '../lookup/lookup.service';
 import { AssignTargetDto } from './dto/assign-target.dto';
 import {
   IAssignableCommitteeRole,
@@ -45,16 +46,23 @@ export interface ResolvedPlacement extends PoolPlacement {
  * record, so a caller without tasks:create gets a 403 naming it. With a taskId
  * the entitlement is only knowable from the row, so a caller who is neither
  * its creator nor a reassigner gets the identical 404.
+ *
+ * ACC-208 (Ahmad, 12 Oct, Q1) — workflows:manage also opens the picker, with no
+ * taskId: configuring where a stage's tasks go is choosing a target, the same
+ * data tasks:create chooses from. A taskId still means "reassigning THIS
+ * task", which workflows:manage does not grant.
  */
 @Injectable()
 export class TaskAssignmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authority: TaskAuthorityService,
+    private readonly lookups: LookupService,
   ) {}
 
   async assertMayAssign(viewer: AssignmentViewer, organizationId: string, taskId?: string): Promise<void> {
     if (viewer.permissions.includes(TASKS_PERMISSIONS.CREATE)) return;
+    if (!taskId && viewer.permissions.includes(WORKFLOWS_PERMISSIONS.MANAGE)) return;
     if (!taskId) {
       throw new ForbiddenException(`Required permission: ${TASKS_PERMISSIONS.CREATE}`);
     }
@@ -128,6 +136,42 @@ export class TaskAssignmentService {
       orderBy: { name: 'asc' },
     });
     return holders.map(toHolder);
+  }
+
+  /**
+   * ACC-208 (B5) — every active committee member role, as the tenant's lookups
+   * show them (LookupService's own hiding and label overrides, not a copy), with
+   * each role's member count when a committee is named and null when not.
+   * Unlike listCommitteeRoles(), empty roles are kept: a stage task definition
+   * may target one, and its row warns that nobody is in it.
+   */
+  async listCommitteeRoleCatalogue(
+    viewer: AssignmentViewer,
+    organizationId: string,
+    committeeId: string | undefined,
+    taskId?: string,
+  ): Promise<IAssignableCommitteeRole[]> {
+    this.assertMayViewCommittee(viewer);
+    await this.assertMayAssign(viewer, organizationId, taskId);
+    if (committeeId) await this.requireCommittee(committeeId, organizationId);
+
+    const [roles, members] = await Promise.all([
+      this.lookups.getValues(COMMITTEE_MEMBER_ROLE_CATEGORY, organizationId),
+      committeeId
+        ? this.prisma.committeeMember.groupBy({
+            by: ['roleValueId'],
+            where: { organizationId, committeeId, isActive: true, user: { status: 'ACTIVE' } },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const counts = new Map(members.map((m) => [m.roleValueId, m._count._all]));
+    return roles.map((r) => ({
+      id: r.id,
+      labelEn: r.labelEn,
+      labelAr: r.labelAr,
+      memberCount: committeeId ? (counts.get(r.id) ?? 0) : null,
+    }));
   }
 
   async listCommitteeRoles(

@@ -23,6 +23,12 @@ export interface StageDeadlineConflict {
   templateName: string;
   stageHours: number;
   longestTaskHours: number;
+  // ACC-208 (B6) — so the task SLA screen can name the stage in Arabic, link
+  // to its row, and put the message under the priority that breaks it.
+  workflowTemplateId: string;
+  stageNameAr: string | null;
+  templateNameAr: string | null;
+  priority: TaskPriority;
 }
 
 /** Every stage in the tenant whose deadline is shorter than its longest task, with `dueHours`. */
@@ -35,7 +41,15 @@ export async function stageDeadlineConflicts(
     where: { organizationId, stage: { slaWorkingHours: { not: null } } },
     select: {
       priority: true,
-      stage: { select: { id: true, nameEn: true, slaWorkingHours: true, workflowTemplate: { select: { nameEn: true } } } },
+      stage: {
+        select: {
+          id: true,
+          nameEn: true,
+          nameAr: true,
+          slaWorkingHours: true,
+          workflowTemplate: { select: { id: true, nameEn: true, nameAr: true } },
+        },
+      },
     },
   });
   const byStage = new Map<string, StageDeadlineConflict>();
@@ -50,6 +64,10 @@ export async function stageDeadlineConflicts(
         templateName: stage.workflowTemplate.nameEn,
         stageHours: stage.slaWorkingHours ?? 0,
         longestTaskHours: hours,
+        workflowTemplateId: stage.workflowTemplate.id,
+        stageNameAr: stage.nameAr,
+        templateNameAr: stage.workflowTemplate.nameAr,
+        priority: definition.priority,
       });
     }
   }

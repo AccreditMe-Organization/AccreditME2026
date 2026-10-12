@@ -48,6 +48,7 @@ import { WorkingCalendarService } from '../working-calendar/working-calendar.ser
 import { TaskController } from './task.controller';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { LookupService } from '../lookup/lookup.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { TaskAuthorityService } from './task-authority.service';
@@ -113,6 +114,10 @@ describe('Child list gated by its parent (ACC-101)', () => {
         // ACC-167 — injected by TaskService and TaskController; never reached
         // by the reads under test here.
         TaskAssignmentService,
+
+        // ACC-208 — TaskAssignmentService's catalogue dependency; not reached here.
+
+        { provide: LookupService, useValue: {} },
         // ACC-173 — the creator acts for themself; covering is pinned in
         // task-authority.service.spec.ts.
         // ACC-173 — the controller's request routes; never reached here.

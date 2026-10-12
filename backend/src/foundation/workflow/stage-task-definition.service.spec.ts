@@ -69,6 +69,7 @@ const mockPrisma = {
   user: { findMany: jest.fn(), count: jest.fn() },
   committeeMember: { findMany: jest.fn(), count: jest.fn() },
   organization: { findFirst: jest.fn() },
+  task: { groupBy: jest.fn() },
   $transaction: jest.fn(),
 };
 const mockAuditLog = { log: jest.fn() };
@@ -113,6 +114,7 @@ describe('StageTaskDefinitionService (ACC-190)', () => {
     mockPrisma.committeeMember.findMany.mockResolvedValue([{ userId: 'member-1' }]);
     mockPrisma.organization.findFirst.mockResolvedValue({ settings: null });
     mockPrisma.$transaction.mockResolvedValue([]);
+    mockPrisma.task.groupBy.mockResolvedValue([]);
 
     const module = await Test.createTestingModule({
       providers: [
@@ -402,6 +404,76 @@ describe('StageTaskDefinitionService (ACC-190)', () => {
       );
       expect(mockPrisma.workflowStageTaskDefinition.update).not.toHaveBeenCalled();
       expect(mockPrisma.workflowStageTaskDefinition.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── ACC-208 — the list the settings screen reads ───────────────────────────
+  describe('list (ACC-208)', () => {
+    const vacant = { ...DEFINITION, id: 'def-vacant', positionId: 'pos-vacant' };
+    const chosen = { ...DEFINITION, id: 'def-chosen', userId: 'holder-1', user: { id: 'holder-1', name: 'Nora' } };
+    const emptyRole = {
+      ...DEFINITION,
+      id: 'def-role',
+      assignKind: 'COMMITTEE_ROLE',
+      orgUnitId: null,
+      positionId: null,
+      committeeId: 'committee-1',
+      committeeRoleValueId: 'role-secretary',
+    };
+    const relative = { ...DEFINITION, id: 'def-relative', assignKind: 'RECORD_UNIT_POSITION', orgUnitId: null };
+
+    it('carries the warning a save would return, per row — and none for a chosen person or a relative route (B1)', async () => {
+      mockPrisma.workflowStageTaskDefinition.findMany.mockResolvedValue([DEFINITION, vacant, chosen, emptyRole, relative]);
+      mockPrisma.user.findMany.mockImplementation(({ where }: { where: { positionId: string } }) =>
+        Promise.resolve(where.positionId === 'pos-vacant' ? [] : [{ id: 'holder-1' }]),
+      );
+      mockPrisma.committeeMember.findMany.mockResolvedValue([]);
+
+      const rows = await service.list('stage-1', ORG_A);
+
+      expect(rows.map((r) => [r.id, r.warning])).toEqual([
+        ['def-1', null],
+        ['def-vacant', 'POSITION_HAS_NO_HOLDER'],
+        ['def-chosen', null],
+        ['def-role', 'POOL_EMPTY'],
+        ['def-relative', null],
+      ]);
+    });
+
+    it('counts the tasks each definition has already created, zero included (B8)', async () => {
+      mockPrisma.workflowStageTaskDefinition.findMany.mockResolvedValue([DEFINITION, vacant]);
+      mockPrisma.task.groupBy.mockResolvedValue([{ stageTaskDefinitionId: 'def-1', _count: { _all: 7 } }]);
+
+      const rows = await service.list('stage-1', ORG_A);
+
+      expect(rows.map((r) => [r.id, r.createdTaskCount])).toEqual([
+        ['def-1', 7],
+        ['def-vacant', 0],
+      ]);
+    });
+
+    it('asks nothing of tasks for a stage with no definitions', async () => {
+      await expect(service.list('stage-1', ORG_A)).resolves.toEqual([]);
+      expect(mockPrisma.task.groupBy).not.toHaveBeenCalled();
+    });
+
+    it("gives every priority's due time from the tenant's task SLA (B3)", async () => {
+      await expect(service.taskDueHours(ORG_A)).resolves.toEqual({ LOW: 80, MEDIUM: 40, HIGH: 16, CRITICAL: 4 });
+      expect(mockPrisma.organization.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: ORG_A } }));
+    });
+
+    itEnforcesTenantIsolation('definitions and created-task counts read by the list', async () => {
+      mockPrisma.workflowStageTaskDefinition.findMany.mockResolvedValue([DEFINITION]);
+      await service.list('stage-1', ORG_B);
+      expect(mockPrisma.workflowStageTaskDefinition.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { stageId: 'stage-1', organizationId: ORG_B } }),
+      );
+      expect(mockPrisma.task.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { organizationId: ORG_B, stageTaskDefinitionId: { in: ['def-1'] } } }),
+      );
+      expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+      );
     });
   });
 

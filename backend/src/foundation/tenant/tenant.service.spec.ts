@@ -675,7 +675,13 @@ describe('TenantService', () => {
     describe('the stage-deadline rule', () => {
       const definition = (priority: string, stageHours: number) => ({
         priority,
-        stage: { id: `stage-${priority}`, nameEn: 'Terms Review', slaWorkingHours: stageHours, workflowTemplate: { nameEn: 'Committee lifecycle' } },
+        stage: {
+          id: `stage-${priority}`,
+          nameEn: 'Terms Review',
+          nameAr: 'مراجعة الشروط',
+          slaWorkingHours: stageHours,
+          workflowTemplate: { id: 'template-committee', nameEn: 'Committee lifecycle', nameAr: null },
+        },
       });
 
       it('refuses with TASK_SLA_EXCEEDS_STAGE_DEADLINES, naming the stage, and writes nothing', async () => {
@@ -692,6 +698,30 @@ describe('TenantService', () => {
           expect.objectContaining({ stageName: 'Terms Review', templateName: 'Committee lifecycle', longestTaskHours: CUSTOM_SLA.HIGH.dueAfterHours }),
         ]);
         expect(prisma.organization.update).not.toHaveBeenCalled();
+      });
+
+      // ACC-208 (B6) — the settings screen names the stage in either language,
+      // links to its row, and puts the message under the priority that breaks it.
+      it('gives each conflict its template id, its Arabic names and the priority behind it', async () => {
+        prisma.organization.findUnique.mockResolvedValue({ ...ORG_A, settings: null });
+        prisma.workflowStageTaskDefinition.findMany.mockResolvedValue([definition('HIGH', CUSTOM_SLA.HIGH.dueAfterHours - 1)]);
+
+        const error = await service.updateTaskSla('org-a', CUSTOM_SLA, 'user-1').catch((e: unknown) => e);
+
+        const body = (error as WorkflowRefusalException).getResponse() as { stages: unknown[] };
+        expect(body.stages).toEqual([
+          {
+            stageId: 'stage-HIGH',
+            stageName: 'Terms Review',
+            stageNameAr: 'مراجعة الشروط',
+            templateName: 'Committee lifecycle',
+            templateNameAr: null,
+            workflowTemplateId: 'template-committee',
+            stageHours: CUSTOM_SLA.HIGH.dueAfterHours - 1,
+            longestTaskHours: CUSTOM_SLA.HIGH.dueAfterHours,
+            priority: 'HIGH',
+          },
+        ]);
       });
 
       it('accepts hours that still fit every stage', async () => {

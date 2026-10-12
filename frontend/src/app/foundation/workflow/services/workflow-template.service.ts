@@ -14,7 +14,15 @@ export interface WorkflowTemplateDto {
   createdAt: string;
   updatedAt: string;
   stages?: WorkflowStageDto[];
+  // ACC-208 — detail reads only. Which relative assignment routes this
+  // template's record type can resolve (from the backend's RECORD_ROUTES, so
+  // no copy of it lives here), and each priority's due time in working hours.
+  recordRoutes?: { unit: boolean; committee: boolean };
+  taskDueHours?: TaskDueHours;
 }
+
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type TaskDueHours = Record<TaskPriority, number>;
 
 export interface WorkflowStageDto {
   id: string;
@@ -44,6 +52,10 @@ export interface WorkflowStageDto {
   assigneeOrgUnitId: string | null;
   escalationConfig: Record<string, unknown> | null;
   transitions?: WorkflowTransitionDto[];
+  // ACC-190 — on the detail read: how many tasks entering this stage creates,
+  // and the longest one's due time in working hours (null with none).
+  taskDefinitionCount?: number;
+  longestTaskHours?: number | null;
 }
 
 export interface WorkflowTransitionDto {
@@ -58,7 +70,79 @@ export interface WorkflowTransitionDto {
   triggerRoleId: string | null;
   validatorConfig: Record<string, unknown> | null;
   isApprovalPath: boolean;
+  // ACC-190 — ADVANCE is held by the stage's open mandatory tasks; RETURN and
+  // EXIT never are. Never inferred from stage order.
+  kind: WorkflowTransitionKind;
   actions?: WorkflowTransitionActionDto[];
+}
+
+export type WorkflowTransitionKind = 'ADVANCE' | 'RETURN' | 'EXIT';
+export const WORKFLOW_TRANSITION_KINDS: readonly WorkflowTransitionKind[] = ['ADVANCE', 'RETURN', 'EXIT'];
+
+// ── ACC-190 / ACC-208 — task definitions on a stage ─────────────────────────
+
+export type StageTaskAssignKind = 'POSITION' | 'RECORD_UNIT_POSITION' | 'COMMITTEE_ROLE' | 'RECORD_COMMITTEE_ROLE';
+
+/** A non-blocking note on a save, and on each list row (ACC-55's contract). */
+export type StageTaskDefinitionWarning = 'POSITION_HAS_NO_HOLDER' | 'POOL_EMPTY' | null;
+
+interface NamedRef {
+  id: string;
+  nameEn: string;
+  nameAr: string | null;
+}
+
+export interface StageTaskDefinitionDto {
+  id: string;
+  stageId: string;
+  order: number;
+  titleEn: string;
+  titleAr: string | null;
+  description: string | null;
+  isMandatory: boolean;
+  requiresEvidence: boolean;
+  priority: TaskPriority;
+  assignKind: StageTaskAssignKind;
+  orgUnitId: string | null;
+  positionId: string | null;
+  userId: string | null;
+  committeeId: string | null;
+  committeeRoleValueId: string | null;
+  orgUnit: NamedRef | null;
+  position: NamedRef | null;
+  user: { id: string; name: string } | null;
+  committee: NamedRef | null;
+  committeeRole: { id: string; labelEn: string; labelAr: string | null } | null;
+  /** The priority's due time, in working hours from stage entry. */
+  dueAfterHours: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A list row: the same warning a save returns, and how many tasks it has created. */
+export interface StageTaskDefinitionListItemDto extends StageTaskDefinitionDto {
+  warning: StageTaskDefinitionWarning;
+  createdTaskCount: number;
+}
+
+export interface StageTaskDefinitionSavedDto {
+  definition: StageTaskDefinitionDto;
+  warning: StageTaskDefinitionWarning;
+}
+
+export interface StageTaskDefinitionWriteDto {
+  titleEn: string;
+  titleAr?: string | null;
+  description?: string | null;
+  isMandatory: boolean;
+  requiresEvidence?: boolean;
+  priority: TaskPriority;
+  assignKind: StageTaskAssignKind;
+  orgUnitId?: string | null;
+  positionId?: string | null;
+  userId?: string | null;
+  committeeId?: string | null;
+  committeeRoleValueId?: string | null;
 }
 
 // ACC-55 — why a saved transition's requiredPermission may not do what the
@@ -150,6 +234,7 @@ export interface CreateWorkflowTransitionDto {
   triggerUserId?: string;
   triggerRoleId?: string;
   validatorConfig?: Record<string, unknown>;
+  kind?: WorkflowTransitionKind;
 }
 
 export interface UpdateWorkflowTransitionDto {
@@ -165,6 +250,7 @@ export interface UpdateWorkflowTransitionDto {
   triggerRoleId?: string;
   validatorConfig?: Record<string, unknown>;
   isApprovalPath?: boolean;
+  kind?: WorkflowTransitionKind;
 }
 
 export interface CreateWorkflowTransitionActionDto {
@@ -292,5 +378,28 @@ export class WorkflowTemplateService {
 
   removeTransitionAction(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/transitions/actions/${id}`);
+  }
+
+  // ── Task definitions on a stage (ACC-190, ACC-208) ────────────────────────
+
+  listStageTaskDefinitions(stageId: string): Observable<StageTaskDefinitionListItemDto[]> {
+    return this.http.get<StageTaskDefinitionListItemDto[]>(`${this.base}/stages/${stageId}/task-definitions`);
+  }
+
+  addStageTaskDefinition(stageId: string, dto: StageTaskDefinitionWriteDto): Observable<StageTaskDefinitionSavedDto> {
+    return this.http.post<StageTaskDefinitionSavedDto>(`${this.base}/stages/${stageId}/task-definitions`, dto);
+  }
+
+  updateStageTaskDefinition(id: string, dto: Partial<StageTaskDefinitionWriteDto>): Observable<StageTaskDefinitionSavedDto> {
+    return this.http.patch<StageTaskDefinitionSavedDto>(`${this.base}/task-definitions/${id}`, dto);
+  }
+
+  removeStageTaskDefinition(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/task-definitions/${id}`);
+  }
+
+  /** The new order must name every definition of the stage, once each. */
+  reorderStageTaskDefinitions(stageId: string, ids: string[]): Observable<StageTaskDefinitionListItemDto[]> {
+    return this.http.post<StageTaskDefinitionListItemDto[]>(`${this.base}/stages/${stageId}/task-definitions/order`, { ids });
   }
 }

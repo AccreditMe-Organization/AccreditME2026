@@ -37,7 +37,7 @@ import {
   ReorderStageTaskDefinitionsDto,
   UpdateStageTaskDefinitionDto,
 } from './dto/stage-task-definition.dto';
-import { IStageTaskDefinition, IStageTaskDefinitionSaved } from './interfaces/stage-task-definition.interface';
+import { IStageTaskDefinitionListItem, IStageTaskDefinitionSaved } from './interfaces/stage-task-definition.interface';
 
 // Route order is deliberate: static segments (transitions, stages) are
 // declared before the dynamic '/:id' routes below them — Nest matches routes
@@ -175,7 +175,7 @@ export class WorkflowTemplateController {
   listStageTaskDefinitions(
     @Param('stageId') stageId: string,
     @CurrentTenant() tenantId: string,
-  ): Promise<IStageTaskDefinition[]> {
+  ): Promise<IStageTaskDefinitionListItem[]> {
     return this.stageTaskDefinitions.list(stageId, tenantId);
   }
 
@@ -198,7 +198,7 @@ export class WorkflowTemplateController {
     @Body() dto: ReorderStageTaskDefinitionsDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() actorId: string,
-  ): Promise<IStageTaskDefinition[]> {
+  ): Promise<IStageTaskDefinitionListItem[]> {
     return this.stageTaskDefinitions.reorder(stageId, dto.ids, tenantId, actorId);
   }
 

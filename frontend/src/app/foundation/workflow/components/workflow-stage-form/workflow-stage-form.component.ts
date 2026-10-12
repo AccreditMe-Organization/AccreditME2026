@@ -3,7 +3,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Observable, forkJoin, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+import { FormatService } from '../../../../core/formatting';
+import { deadlineBeforeTasks, finalStageTaskCount, plainWorkflowRefusalKey } from '../../workflow-refusal';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
@@ -133,7 +135,13 @@ const ASSIGNEE_STRATEGIES = [
           formControlName="slaWorkingHours"
           [min]="0"
           styleClass="w-full"
+          [inputStyleClass]="slaRefusal() ? 'p-invalid' : ''"
         />
+        <!-- ACC-208 — the deadline rule from the stage's side: both numbers,
+             and the way out, under the field it is about (drawing). -->
+        @if (slaRefusal(); as refusal) {
+          <small id="sla-refusal" class="am-stage-form__refusal" role="alert" data-sla-refusal>{{ refusal }}</small>
+        }
       </div>
 
       <div class="flex gap-4">
@@ -150,6 +158,10 @@ const ASSIGNEE_STRATEGIES = [
           </label>
         </div>
       </div>
+      <!-- ACC-208 — a final stage cannot create tasks: say how many it does. -->
+      @if (finalRefusal(); as refusal) {
+        <small class="am-stage-form__refusal" role="alert" data-final-refusal>{{ refusal }}</small>
+      }
 
       <div class="flex flex-col gap-1">
         <label for="approvalMode" class="font-medium text-sm">
@@ -331,6 +343,15 @@ const ASSIGNEE_STRATEGIES = [
 
     </form>
   `,
+  styles: [
+    `
+      .am-stage-form__refusal {
+        font-size: var(--am-type-meta-size);
+        font-weight: 500;
+        color: var(--am-danger-ink);
+      }
+    `,
+  ],
 })
 export class WorkflowStageFormComponent implements OnInit {
   @Input() stage: WorkflowStageDto | null = null;
@@ -354,6 +375,11 @@ export class WorkflowStageFormComponent implements OnInit {
 
   readonly saving = signal(false);
   readonly saveError = signal<string | null>(null);
+  // ACC-208 — a refusal shown under its own field; cleared when that field changes.
+  readonly slaRefusal = signal<string | null>(null);
+  readonly finalRefusal = signal<string | null>(null);
+  private readonly translate = inject(TranslateService);
+  private readonly format = inject(FormatService);
   readonly roles = signal<RoleDto[]>([]);
   readonly committeeRoles = signal<LookupValueDto[]>([]);
   readonly positions = signal<IOrgPositionDto[]>([]);
@@ -435,6 +461,9 @@ export class WorkflowStageFormComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    // ACC-208 — a refusal stands only until the field it is about changes.
+    this.form.controls.slaWorkingHours.valueChanges.subscribe(() => this.slaRefusal.set(null));
+    this.form.controls.isFinal.valueChanges.subscribe(() => this.finalRefusal.set(null));
     this.roleService.listAllRoles().subscribe({ next: (roles) => this.roles.set(roles) });
     this.lookupService.getValues('committee_member_role').subscribe({
       next: (values) => this.committeeRoles.set(values),
@@ -574,9 +603,39 @@ export class WorkflowStageFormComponent implements OnInit {
         this.saved.emit({ stage, hadNoHolderWarning });
       },
       error: (err: unknown) => {
-        this.saveError.set(extractErrorMessage(err, 'Save failed'));
         this.saving.set(false);
+        if (this.showRefusal(err)) return;
+        this.saveError.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'Save failed'));
       },
     });
+  }
+
+  /**
+   * ACC-208 — the two refusals with a field to stand under, worded from the
+   * refusal's code and numbers, never its English message. True when shown.
+   */
+  private showRefusal(err: unknown): boolean {
+    const deadline = deadlineBeforeTasks(err);
+    if (deadline) {
+      this.slaRefusal.set(
+        this.translate.instant('workflow.stageDeadline.beforeTasks', {
+          longest: this.format.count('workflow.workingHours', deadline.longestTaskHours),
+          min: deadline.longestTaskHours,
+        }),
+      );
+      document.getElementById('slaWorkingHours')?.focus();
+      return true;
+    }
+    const count = finalStageTaskCount(err);
+    if (count !== null) {
+      this.finalRefusal.set(
+        this.translate.instant('workflow.stageDeadline.finalWithTasks', {
+          tasks: this.format.count('workflow.stageTasks', count),
+        }),
+      );
+      document.getElementById('isFinal')?.focus();
+      return true;
+    }
+    return false;
   }
 }

@@ -2145,8 +2145,12 @@ flagging, transition actions, the instance audit row. Timeout 20 s (ACC-60).
 
 **The gate.** `ADVANCE` refused while any task with this
 `workflowInstanceStageId`, `isMandatory`, status not COMPLETED/CANCELLED
-exists; the 409 lists `{ id, title, titleAr, status, statusLabel }`. RETURN and
-EXIT are never gated. Manual tasks attached to a stage never gate.
+exists; the 409 lists `{ id, title, titleAr, status, statusLabel }` and, since
+ACC-208 (B7), `dueAt`, `requiresEvidence`, `assignees` (`{ id, name }`,
+active rows only) and `pool` (`{ kind: 'POSITION', orgUnit, position }` or
+`{ kind: 'COMMITTEE_ROLE', committee, role }` with the tenant's label override,
+or null), so "Can't move yet" can say who has each task and when it is due.
+RETURN and EXIT are never gated. Manual tasks attached to a stage never gate.
 
 **Leaving an entry** cancels every open task of it (by entry id) and every open
 task with no entry that matches the old instance + stage pair; holds end and
@@ -2172,6 +2176,51 @@ then `--execute`, after the deploy) deletes seeded `CREATE_TASK` actions with
 their `WorkflowActionLog` rows, sets seeded kinds, reports what it cannot match,
 refuses customer tenants, never writes Task, and writes one audit row per
 tenant.
+
+### 2.15.1 The settings screen (ACC-208)
+
+Plan, decisions and measurements: `backend/Plans/step-208-stage-tasks-screen.md`.
+Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
+
+**What the screen reads (all additive).**
+- **The definition list:** each row carries `warning` (the save's
+  `POSITION_HAS_NO_HOLDER` / `POOL_EMPTY`, checked on read; null for a chosen
+  person or a relative route) and `createdTaskCount` (a grouped count on
+  `Task.stageTaskDefinitionId`).
+- **`GET /workflow-templates/:id`:**
+  - `recordRoutes: { unit, committee }`, read from `RECORD_ROUTES`, so no
+    frontend copy of the registry exists and it still fails closed;
+  - `taskDueHours` per priority, which a `workflows:manage`-only caller cannot
+    read from `GET /tenant/task-sla`.
+- **`TASK_SLA_EXCEEDS_STAGE_DEADLINES.stages[]`** adds `workflowTemplateId`,
+  `stageNameAr`, `templateNameAr` and the longest task's `priority`.
+
+**The screen.**
+- **`StageTaskListComponent`** ("Tasks on entry") sits beside the transition
+  editor in a stage's expanded row.
+  - It loads its own list.
+  - It patches the stage's summary in place (`summaryChanged`) and never
+    re-reads the template, which is ACC-55's trap.
+  - Reordering is the ↑ / ↓ buttons. An arrow that cannot move is absent, and
+    focus moves to the row's other arrow.
+- **`StageTaskDefinitionFormComponent`** is the two-step dialog.
+  - "A unit you choose" is the ACC-167 picker with `purpose="stage-task"`.
+  - The other routes are one or two selects.
+  - The deadline rule is a validator and a message on Priority, before Save.
+- **The transition editor** gains Kind, and both of its dialogs are stepped
+  (10.5).
+- **Refusals are read by code**, never the English `message`, through
+  `foundation/workflow/workflow-refusal.ts`.
+- **`CantMoveDialogComponent`** shows `STAGE_TASKS_OPEN`.
+  - It is standalone, with title and lead as inputs, for the vote screen that
+    does not exist yet: `submitApproval()` has no frontend caller.
+  - Its links go to `?task=<id>` on the record page, which seeks the row out
+    (D2).
+
+**Not built, from the drawing (reported, §8b of the plan):**
+- the editable deadline field inside the stage row;
+- the drag handle with keyboard pick-up;
+- the "Holder unknown" partial state.
 
 ---
 
@@ -3043,6 +3092,20 @@ a committee task) states the server's outcome before Save. My tasks gains
 - No filter-search in the picker; typeahead only (`OverlaySelectComponent`,
   10.7).
 - Out-of-office routing is not applied to pool members (2.5.2).
+
+**ACC-208 additions.**
+- **`workflows:manage` opens the picker too**, with no `taskId`
+  (`assertMayAssign()`). A stage task definition chooses a target the same way;
+  a `taskId` still means reassigning that task, which `workflows:manage` does
+  not grant. The committee variants still need `committees:view`.
+- **`GET /tasks/assignment/committee-roles?catalogue=true`** lists every active
+  `committee_member_role` through `LookupService.getValues()` (its hiding and
+  overrides, not a copy).
+  - It includes roles nobody holds.
+  - `memberCount` is counted on `committeeId` when one is given, and is null
+    when not ("the record's committee").
+  - Without the flag the picker still hides empty roles: a task to an empty
+    pool reaches nobody.
 
 ### 3.10 More time and holds — requests the creator decides (ACC-173)
 
@@ -5100,6 +5163,20 @@ ACC-39 shipped as pure adoption of the "required pattern going
 forward" note below — not a fix for a live bug on any of these 8
 screens.
 
+**ACC-208 — three more consumers, and the transition dialogs measured.**
+`stage-task-list` hosts three dialogs:
+- the two-step add/edit dialog (`stage-task-definition-form`, compact);
+- its 420 delete confirm;
+- `cant-move-dialog`, a confirm with Close only, which the transition buttons
+  open.
+
+The transition editor's Add and Edit dialogs were never measured before, and
+stood at 674 / 696 and 542 / 564 (English / Arabic). Both are now stepped on
+their seam: the move, then who may fire it. The actions are in the footer, and
+every state is at or under 384. Both forms carry a layout spec with the
+non-vacuity guard first (`*.layout.spec.ts`). The numbers are in the plan, §4.2.1
+and §4.5.1.
+
 **Required pattern going forward** — every future module's own
 add/edit dialog (starting with Meeting Management, the next module in
 the build sequence) must use `EditDialogComponent`, not a raw
@@ -5288,6 +5365,13 @@ typeahead verified with `fakeAsync`/`tick`, since CDK's own
 `Typeahead` debounces keystrokes 200ms before matching, confirmed via
 its source), Escape isolation against a simulated parent
 `document`-level listener, and both option shapes.
+
+**ACC-208 — focus returns to the field when the list closes.** The options
+leave the DOM with the pane, so a pick by Enter or click, or Escape, used to
+drop focus on `<body>`. A keyboard user lost their place after every choice,
+in every consumer. The `detachments()` handler now focuses the trigger when
+focus was left nowhere, and leaves alone a close that moved focus somewhere
+real. Two specs pin it; both fail without the fix.
 
 #### 10.7.1 ACC-42 — full migration, 26 additional consumers (28 total)
 

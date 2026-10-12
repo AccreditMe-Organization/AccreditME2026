@@ -34,6 +34,7 @@ export interface IAssignableCommitteeRole {
   id: string;
   labelEn: string;
   labelAr: string | null;
-  // Active members holding this role on the committee, right now.
-  memberCount: number;
+  // Active members holding this role on the committee, right now. Null only in
+  // the catalogue (ACC-208, B5) when no committee was named.
+  memberCount: number | null;
 }

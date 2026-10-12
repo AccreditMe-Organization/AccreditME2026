@@ -15,6 +15,9 @@ import { environment } from '../../../../../environments/environment';
 import { WorkflowTransitionActionsComponent } from './workflow-transition-actions.component';
 import { WorkflowInstanceDto } from '../../services/workflow.service';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+import { provideRouter } from '@angular/router';
+import { ConfirmationService } from 'primeng/api';
+import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
 
 const INSTANCE: WorkflowInstanceDto = {
   id: 'instance-1',
@@ -41,6 +44,8 @@ const TRANSITION = {
   triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
+
+  kind: 'ADVANCE' as const,
 };
 
 const TEMPLATE_RESPONSE = {
@@ -74,6 +79,26 @@ const TEMPLATE_RESPONSE = {
       escalationConfig: null,
       transitions: [TRANSITION],
     },
+    // ACC-208 — the target, so a refused move can name where it was going.
+    {
+      id: 'stage-terms-review',
+      workflowTemplateId: 'template-1',
+      nameEn: 'Terms Review',
+      nameAr: 'مراجعة الشروط',
+      description: null,
+      order: 20,
+      slaWorkingHours: null,
+      isInitial: false,
+      isFinal: false,
+      approvalMode: 'SINGLE',
+      parallelThreshold: null,
+      committeeId: null,
+      assigneeStrategy: 'ROLE',
+      assigneeUserId: null,
+      assigneeRoleId: null,
+      escalationConfig: null,
+      transitions: [],
+    },
   ],
 };
 
@@ -89,6 +114,9 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideTranslateService({ lang: 'en', loader: provideTranslateLoader(TranslateNoOpLoader) }),
+        // ACC-208 — the "Can't move yet" dialog: links, and the dialog shell.
+        provideRouter([]),
+        ConfirmationService,
         {
           provide: NavigationAccessService,
           useValue: { hasPermission: jasmine.createSpy('hasPermission').and.returnValue(hasPermission) },
@@ -185,5 +213,53 @@ describe('WorkflowTransitionActionsComponent (ACC-22 extension)', () => {
 
     const warnings = fixture.debugElement.queryAll(By.css('p-message[severity="warn"]'));
     expect(warnings.length).toBe(0);
+  });
+
+  // ACC-208 — an Advance refused while the stage's mandatory tasks are open.
+  describe("Can't move yet", () => {
+    const OPEN_TASK = {
+      id: 'task-1',
+      title: 'Check the terms',
+      titleAr: null,
+      status: 'PENDING',
+      statusLabel: 'Assigned',
+      dueAt: '2026-10-14T13:00:00.000Z',
+      requiresEvidence: true,
+      assignees: [{ id: 'u-1', name: 'Nora Al-Otaibi' }],
+      pool: null,
+    };
+
+    function refuse(body: Record<string, unknown>, status = 409): void {
+      component.onTrigger(TRANSITION);
+      httpMock
+        .expectOne(`${environment.apiUrl}/workflows/instances/instance-1/transitions`)
+        .flush({ statusCode: status, message: 'English for a log', ...body }, { status, statusText: 'Refused' });
+      fixture.detectChanges();
+    }
+
+    it('opens the dialog with the open tasks, naming the stage it could not reach and the button pressed', () => {
+      setup(true);
+      fixture.componentRef.setInput('recordLabel', 'Quality Assurance Committee');
+      refuse({ code: 'STAGE_TASKS_OPEN', tasks: [OPEN_TASK] });
+
+      const refused = component.cantMove();
+      expect(refused?.label).toBe('Submit for Approval');
+      expect(refused?.toStage).toBe('Terms Review');
+      expect(refused?.tasks.map((t) => t.id)).toEqual(['task-1']);
+      expect(component.refusalContext()).toBe('Quality Assurance Committee · Formation');
+      expect(component.error()).toBeNull();
+      expect(fixture.debugElement.query(By.directive(CantMoveDialogComponent))).not.toBeNull();
+
+      component.cantMove.set(null);
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.directive(CantMoveDialogComponent))).toBeNull();
+    });
+
+    it('words any other workflow refusal by its code, never the server English', () => {
+      setup(true);
+      refuse({ code: 'STAGE_TASK_ROUTE_NOT_AVAILABLE' }, 400);
+      expect(component.error()).toBe('workflow.refusal.routeNotAvailable');
+      expect(component.cantMove()).toBeNull();
+    });
   });
 });

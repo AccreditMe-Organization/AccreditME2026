@@ -996,12 +996,44 @@ export class WorkflowService {
         isMandatory: true,
         status: { notIn: ['COMPLETED', 'CANCELLED'] },
       },
-      select: { id: true, title: true, titleAr: true, status: true },
+      select: {
+        id: true,
+        title: true,
+        titleAr: true,
+        status: true,
+        // ACC-208 (B7) — what the "Can't move yet" dialog names beside each
+        // task: who has it (or the pool it waits in), when it is due, and
+        // whether it needs evidence. The person pressing the transition can
+        // already see these tasks on the record.
+        dueAt: true,
+        requiresEvidence: true,
+        assignees: {
+          where: { removedAt: null },
+          select: { user: { select: { id: true, name: true } } },
+          orderBy: { assignedAt: 'asc' },
+        },
+        assignedOrgUnit: { select: { nameEn: true, nameAr: true } },
+        assignedPosition: { select: { nameEn: true, nameAr: true } },
+        assignedCommittee: { select: { nameEn: true, nameAr: true } },
+        assignedCommitteeRoleValue: {
+          select: { labelEn: true, labelAr: true, labelOverrideEn: true, labelOverrideAr: true },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
     if (open.length === 0) return;
     throw new WorkflowRefusalException('STAGE_TASKS_OPEN', {
-      tasks: open.map((t) => ({ ...t, statusLabel: taskStatusTitle(t.status) })),
+      tasks: open.map((t) => ({
+        id: t.id,
+        title: t.title,
+        titleAr: t.titleAr,
+        status: t.status,
+        statusLabel: taskStatusTitle(t.status),
+        dueAt: t.dueAt,
+        requiresEvidence: t.requiresEvidence,
+        assignees: t.assignees.map((a) => a.user),
+        pool: openTaskPool(t),
+      })),
     });
   }
 
@@ -1814,4 +1846,34 @@ export class WorkflowService {
       delegationContextId: approval.delegationContextId,
     };
   }
+}
+
+type Named = { nameEn: string; nameAr: string | null };
+
+/**
+ * ACC-208 (B7) — the pool an open stage task waits in, so the "Can't move yet"
+ * dialog can say where it sits when nobody holds it yet. Null when the task
+ * has no target (a person was chosen, or it came from before ACC-167).
+ */
+function openTaskPool(task: {
+  assignedOrgUnit: Named | null;
+  assignedPosition: Named | null;
+  assignedCommittee: Named | null;
+  assignedCommitteeRoleValue: { labelEn: string; labelAr: string | null; labelOverrideEn: string | null; labelOverrideAr: string | null } | null;
+}):
+  | { kind: 'POSITION'; orgUnit: Named; position: Named }
+  | { kind: 'COMMITTEE_ROLE'; committee: Named; role: { labelEn: string; labelAr: string | null } }
+  | null {
+  if (task.assignedOrgUnit && task.assignedPosition) {
+    return { kind: 'POSITION', orgUnit: task.assignedOrgUnit, position: task.assignedPosition };
+  }
+  const role = task.assignedCommitteeRoleValue;
+  if (task.assignedCommittee && role) {
+    return {
+      kind: 'COMMITTEE_ROLE',
+      committee: task.assignedCommittee,
+      role: { labelEn: role.labelOverrideEn ?? role.labelEn, labelAr: role.labelOverrideAr ?? role.labelAr },
+    };
+  }
+  return null;
 }

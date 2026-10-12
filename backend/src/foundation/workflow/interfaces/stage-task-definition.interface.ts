@@ -41,3 +41,16 @@ export interface IStageTaskDefinitionSaved {
   definition: IStageTaskDefinition;
   warning: StageTaskDefinitionWarning;
 }
+
+/**
+ * ACC-208 — a definition as the stage's "Tasks on entry" list shows it: the
+ * same warning a save returns, so the chip survives a reload (B1), and how many
+ * tasks it has already created, which the delete confirmation names (B8).
+ */
+export interface IStageTaskDefinitionListItem extends IStageTaskDefinition {
+  warning: StageTaskDefinitionWarning;
+  createdTaskCount: number;
+}
+
+/** ACC-208 (B3) — each priority's due time, in working hours from stage entry. */
+export type TaskDueHours = Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number>;
