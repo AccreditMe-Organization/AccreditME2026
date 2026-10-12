@@ -11,6 +11,7 @@ import {
 import { createHash, createHmac } from 'crypto';
 import { AuthService } from './auth.service';
 import { PasswordRefusalException } from './password-refusal';
+import { AuthRefusalException } from './auth-refusal';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { NotificationService } from '../notification/notification.service';
@@ -81,10 +82,15 @@ const INVALID_EMAIL_OR_PASSWORD = fakeResponse(
   401,
 );
 
+// ACC-204 — a request comes from the test organisation's own address
+// (`acme`, whose slug every mocked organisation below carries) unless a spec
+// says otherwise, so refresh() reaches what each spec is about.
+const ACME_ORIGIN = 'https://acme.accreditme.app';
+
 function fakeExpressReq(overrides: Partial<{ cookies: Record<string, string>; headers: Record<string, string>; ip: string }> = {}) {
   return {
     cookies: overrides.cookies ?? {},
-    headers: overrides.headers ?? {},
+    headers: overrides.headers ?? { origin: ACME_ORIGIN },
     ip: overrides.ip ?? '127.0.0.1',
   } as any;
 }
@@ -117,6 +123,8 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     process.env['JWT_SECRET'] = 'test-jwt-secret';
+    process.env['APP_BASE_DOMAIN'] = 'accreditme.app';
+    delete process.env['APP_LINK_ORIGIN'];
     jest.clearAllMocks();
 
     mockPrisma = {
@@ -172,7 +180,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       const req = fakeExpressReq();
@@ -206,7 +214,7 @@ describe('AuthService', () => {
         organizationId: ORG_A,
         email: 'a@example.com',
         status: 'ACTIVE',
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       const req = fakeExpressReq();
@@ -253,7 +261,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'SUSPENDED',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       await expect(
@@ -276,7 +284,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       const req = fakeExpressReq();
@@ -325,7 +333,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
         lastLoginIp: '9.9.9.9',
       });
 
@@ -346,7 +354,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
         lastLoginIp: '9.9.9.9',
       });
       mockLoginAttemptService.isNewIp.mockReturnValue(true);
@@ -369,7 +377,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
         lastLoginIp: '127.0.0.1',
       });
       mockLoginAttemptService.isNewIp.mockReturnValue(false);
@@ -390,7 +398,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       const result = await service.verifyMfa({ code: '123456' }, fakeExpressReq(), fakeExpressRes());
@@ -430,7 +438,7 @@ describe('AuthService', () => {
         organizationId: ORG_A,
         status: 'ACTIVE',
         tokenVersion: 2,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       const req = fakeExpressReq({ cookies: { refresh_token: 'raw-token-value' } });
@@ -561,7 +569,7 @@ describe('AuthService', () => {
       mockPrisma.refreshToken.updateManyAndReturn.mockResolvedValue([rowOwner]);
       mockPrisma.user.findFirst.mockResolvedValue({
         tokenVersion: 2,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       await service.logout(
@@ -611,7 +619,7 @@ describe('AuthService', () => {
       const stale = accessToken(); // tokenVersion 2, but the user is now at 3
       mockPrisma.user.findFirst.mockResolvedValue({
         tokenVersion: 3,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
 
       for (const token of [forged, expired, stale]) {
@@ -684,6 +692,68 @@ describe('AuthService', () => {
     });
   });
 
+  // ACC-204 — a session renews only at its own organisation's address, and a
+  // refusal leaves the presented token exactly as it was.
+  describe('refresh — the session’s address (ACC-204)', () => {
+    const row = () => ({
+      id: 'rt-1',
+      userId: 'user-1',
+      organizationId: ORG_A,
+      tokenVersion: 1,
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 86_400_000),
+    });
+    beforeEach(() => {
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(row());
+      mockPrisma.user.findFirst.mockResolvedValue({
+        id: 'user-1',
+        organizationId: ORG_A,
+        status: 'ACTIVE',
+        tokenVersion: 1,
+        organization: { status: 'ACTIVE', slug: 'acme' },
+      });
+    });
+
+    it('renews at the organisation’s own address, reading the user in the row’s organisation', async () => {
+      const res = fakeExpressRes();
+      await expect(
+        service.refresh(
+          fakeExpressReq({ cookies: { refresh_token: 'raw' }, headers: { origin: ACME_ORIGIN } }),
+          res,
+        ),
+      ).resolves.toEqual({ success: true });
+      expect(mockPrisma.refreshToken.update).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'user-1', organizationId: ORG_A } }),
+      );
+    });
+
+    it('refuses at another organisation’s address, or with none, WITHOUT revoking or rotating the token', async () => {
+      for (const headers of [
+        { origin: 'https://al-manara.accreditme.app' },
+        { origin: 'https://platform.accreditme.app' },
+        {},
+      ] as Record<string, string>[]) {
+        mockPrisma.refreshToken.update.mockClear();
+        mockPrisma.refreshToken.create.mockClear();
+        const res = fakeExpressRes();
+        let code: unknown = 'no refusal';
+        try {
+          await service.refresh(fakeExpressReq({ cookies: { refresh_token: 'raw' }, headers }), res);
+        } catch (e) {
+          code = e instanceof AuthRefusalException ? e.code : (e as Error).message;
+        }
+        const label = headers['origin'] ?? '(no Origin)';
+        expect([label, code]).toEqual([label, 'SESSION_OTHER_ORGANIZATION']);
+        // Not revoked, not rotated, no new cookie: the session at its own
+        // address keeps working.
+        expect([label, mockPrisma.refreshToken.update.mock.calls.length]).toEqual([label, 0]);
+        expect([label, mockPrisma.refreshToken.create.mock.calls.length]).toEqual([label, 0]);
+        expect([label, res.cookie.mock.calls.length]).toEqual([label, 0]);
+      }
+    });
+  });
+
   // ACC-203 — the change-over: every set of the refresh cookie also deletes
   // one left at the old /api/v1/auth/refresh path, or the browser would send
   // both to /refresh, old first, and the next refresh would sign them out.
@@ -702,7 +772,7 @@ describe('AuthService', () => {
         organizationId: ORG_A,
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
       const res = fakeExpressRes();
 
@@ -1436,7 +1506,7 @@ describe('AuthService', () => {
       organizationId: ORG_A,
       status: 'ACTIVE',
       tokenVersion: 2,
-      organization: { status: 'ACTIVE' },
+      organization: { status: 'ACTIVE', slug: 'acme' },
       ...over,
     });
 
@@ -1553,7 +1623,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
       const res = fakeExpressRes();
 
@@ -1596,7 +1666,7 @@ describe('AuthService', () => {
         name: 'A User',
         status: 'ACTIVE',
         tokenVersion: 1,
-        organization: { status: 'ACTIVE' },
+        organization: { status: 'ACTIVE', slug: 'acme' },
       });
       const signIn = fakeExpressRes();
       await service.login(

@@ -374,7 +374,14 @@ describe('closed organisations (ACC-168)', () => {
   afterEach(() => jest.useRealTimers());
 
   const req = (over: Record<string, unknown> = {}) =>
-    ({ headers: {}, cookies: {}, ip: '10.0.0.1', ...over }) as never;
+    // ACC-204 — from al-nakheel's own address (ORG_A, whose users these
+    // requests carry), so refresh() reaches the closed-organisation rule.
+    ({
+      headers: { origin: 'https://al-nakheel.accreditme.app' },
+      cookies: {},
+      ip: '10.0.0.1',
+      ...over,
+    }) as never;
   const res = () => ({
     cookie: jest.fn(),
     clearCookie: jest.fn(),
