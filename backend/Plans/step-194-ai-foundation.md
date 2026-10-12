@@ -933,7 +933,7 @@ features to use it.
 - [x] 8. `chore(ai)`: idempotent seed for the three feature costs (`morning_briefing` restricted to al-nakheel) (`b63e3a2`)
 - [x] 9. `feat(ai)`: shared frontend refusal helper and words; overage controls removed (D9, D19); types updated (`5eeac1a`)
 - [x] 10. `docs`: SYSTEM-REFERENCE AI section; CLAUDE.md AI Runtime Flow, Org AI settings, renewal and cost table; Key Architecture Decisions (ACC-194) (this commit)
-- [ ] STOP 1: lint, typecheck, tests, scans; report
+- [x] STOP 1: lint, typecheck, tests, scans; report (12 Oct, see §19)
 - [ ] After deploy, STOP 2: seed, live calls on al-nakheel (and the al-manara refusal), restore, report
 
 ---
@@ -995,3 +995,23 @@ overview, effort, thinking, the Sonnet 5.5 migration guide):
 - the live AI call.
 
 All three wait for the deploy and a separate prompt (STOP 2).
+
+---
+
+## 19. STOP 1 verification (12 Oct, on `aaabd9b`)
+
+**Backend:**
+- `tsc` 0;
+- Jest: 138 suites / 3,032 tests, all passing;
+- tenant isolation: 179 tests;
+- `test:db`: 7 tests against a local throwaway Postgres 17;
+- scans `check:ai-gateway` and `check:worker-gate` (6 processors, all gated) exit 0;
+- the whole application context boots with every AI service resolved (local database, workers off).
+
+**Frontend:**
+- `tsc` (app and spec) 0;
+- `ng build` 0;
+- Karma: 1,475 tests, all passing;
+- all 12 `check:*` scans exit 0.
+
+**Lint:** ESLint on the lines this branch added in the backend finds **0 in production code**. It finds 50 in specs, all the mock-typing patterns existing specs already use (`no-unsafe-*` and `unbound-method`); 33 of them come from the platform spec's existing `mockPrisma: any` declaration. The frontend has no ESLint setup; its gate is the strict typecheck plus `ng build`. CI does not lint.
