@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.astro/
+.vercel/
+# Written by scripts/generate-reserved.mjs on every build, from the backend file.
+src/generated/

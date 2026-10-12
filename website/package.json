@@ -1,0 +1,25 @@
+{
+  "name": "accreditme-website",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-reserved.mjs",
+    "dev": "npm run generate && astro dev",
+    "build": "npm run generate && astro build",
+    "preview": "astro preview",
+    "typecheck": "npm run generate && astro check",
+    "verify": "node scripts/verify-site.mjs",
+    "check": "npm run typecheck && npm run build && npm run verify"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "3.7.4",
+    "astro": "7.3.8"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "typescript": "6.0.3"
+  }
+}
