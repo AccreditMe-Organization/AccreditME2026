@@ -245,6 +245,13 @@ jobs:
       - name: Build Angular app
         run: npm run build
         working-directory: frontend
+      # ACC-130 — the BUILT page must run under vercel.json's CSP (script-src
+      # 'self'): no inline event handler, no inline script. Checks the output,
+      # not angular.json, so it catches whatever reintroduces one. Not a
+      # check:* script because it needs the build first.
+      - name: The built index.html has no inline script
+        run: npm run verify:built-index
+        working-directory: frontend
 
   # ─────────────────────────────────────────────
   # Stage 4 — Tenant isolation tests

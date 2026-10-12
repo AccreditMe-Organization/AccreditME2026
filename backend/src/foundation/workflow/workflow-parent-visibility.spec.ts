@@ -34,6 +34,7 @@ import { TaskService } from '../task/task.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { WorkflowController } from './workflow.controller';
 import { WorkflowService } from './workflow.service';
+import { StageTaskDefinitionService } from './stage-task-definition.service';
 
 const TENANT_ID = 'org-a';
 const COMMITTEE_ID = 'committee-1';
@@ -117,6 +118,7 @@ describe('Workflow reads gated by their parent object (ACC-101)', () => {
         { provide: RoleService, useValue: {} },
         { provide: OrganizationService, useValue: {} },
         { provide: getQueueToken('workflow-actions'), useValue: { add: jest.fn() } },
+        { provide: StageTaskDefinitionService, useValue: {} },
       ],
     })
       // PermissionGuard stays real; only TenantGuard is stubbed.

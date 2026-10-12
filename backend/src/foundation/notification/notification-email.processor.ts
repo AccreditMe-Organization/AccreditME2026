@@ -3,6 +3,10 @@ import { Job } from 'bullmq';
 import { Resend } from 'resend';
 import { PrismaService } from '../../prisma/prisma.service';
 import { resolveAppLinkConfig } from '../../common/config/app-url.config';
+import {
+  PLATFORM_SENDER_MISSING,
+  resolvePlatformSender,
+} from '../../common/config/email-sender.config';
 import { renderEmailHtml } from './email-html';
 
 interface EmailDeliveryJobData {
@@ -42,8 +46,14 @@ export class NotificationEmailProcessor extends WorkerHost {
       ? (notification.bodyAr ?? notification.bodyEn)
       : notification.bodyEn;
 
+    // ACC-130 — no fallback address: the old one was on accreditme.com, which
+    // is not ours. Throwing makes BullMQ record the failure and leaves sentAt
+    // null, the same signal as a refused send (see email-sender.config.ts).
+    const from = resolvePlatformSender();
+    if (!from) throw new Error(PLATFORM_SENDER_MISSING);
+
     const result = await this.resend.emails.send({
-      from: process.env['RESEND_FROM_EMAIL'] || 'noreply@accreditme.com',
+      from,
       to: notification.user.email,
       subject,
       // ACC-158 — escaped, with the product's own links as anchors, and an

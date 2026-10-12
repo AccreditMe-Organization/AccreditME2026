@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { UserService } from '../user/user.service';
 import { WorkingCalendarService } from '../working-calendar/working-calendar.service';
 import { TenantGuard } from '../../common/guards/tenant.guard';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
 
 // AuthController imports the real AuthService module for its DI token even
 // though useValue below swaps the implementation — that real file's own
@@ -132,12 +133,20 @@ describe('AuthController', () => {
   });
 
   it('getMe resolves impersonatedBy via AuthService.getPublicUserById when the session is impersonated', async () => {
-    service.getPublicUserById.mockResolvedValue({ id: 'platform-admin-1', email: 'admin@accreditme.com', name: 'Platform Admin' });
+    service.getPublicUserById.mockResolvedValue({
+      id: 'platform-admin-1',
+      email: 'admin@example.test',
+      name: 'Platform Admin',
+    });
 
     const result = await controller.getMe('user-1', 'org-1', 'platform-admin-1');
 
     expect(service.getPublicUserById).toHaveBeenCalledWith('platform-admin-1');
-    expect(result.impersonatedBy).toEqual({ id: 'platform-admin-1', email: 'admin@accreditme.com', name: 'Platform Admin' });
+    expect(result.impersonatedBy).toEqual({
+      id: 'platform-admin-1',
+      email: 'admin@example.test',
+      name: 'Platform Admin',
+    });
     expect(result.language).toBe('en');
   });
 
@@ -161,6 +170,20 @@ describe('AuthController', () => {
   it('logout delegates to AuthService.logout', async () => {
     await controller.logout(req, res);
     expect(service.logout).toHaveBeenCalledWith(req, res);
+  });
+
+  // ACC-203 — sign-out must work after the access cookie has expired, so the
+  // route carries no guard. Read from the same metadata Nest reads.
+  it('logout is public: no guard on the route', () => {
+    const guardsOn = (method: object): unknown[] =>
+      (Reflect.getMetadata(GUARDS_METADATA, method) as unknown[] | undefined) ??
+      [];
+    // Non-vacuity guard: the metadata is readable this way — /me is guarded.
+    const route = (name: 'getMe' | 'logout'): object =>
+      Object.getOwnPropertyDescriptor(AuthController.prototype, name)
+        ?.value as object;
+    expect(guardsOn(route('getMe'))).toContain(TenantGuard);
+    expect(guardsOn(route('logout'))).toEqual([]);
   });
 
   it('acceptInvitation delegates to AuthService.acceptInvitation', async () => {

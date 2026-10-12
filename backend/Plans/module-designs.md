@@ -436,7 +436,9 @@ Secretary records in MINUTES_DRAFT:
 
 ### AI Integration Points — Task Module
 
-1. SMART_TASK_CREATION (when workflow fires CREATE_TASK)
+1. SMART_TASK_CREATION (when a record enters a workflow stage and its
+   stage task definitions create tasks — ACC-190 retired the CREATE_TASK
+   action this originally named)
    AI enriches auto-generated tasks with:
    - Better descriptive title from context
    - Realistic due date based on assignee workload

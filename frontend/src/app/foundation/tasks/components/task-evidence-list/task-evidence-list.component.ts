@@ -1,9 +1,11 @@
-import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ConfirmationService } from 'primeng/api';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { FilesService } from '../../../../shared/files/files.service';
+import { FileViewerService } from '../../../../shared/files/viewer/file-viewer.service';
+import { IViewableFile } from '../../../../shared/files/viewer/file-viewer.model';
 import { FormatService } from '../../../../core/formatting';
 import { ITaskEvidenceDto, ITaskEvidenceListDto, TaskService } from '../../services/task.service';
 
@@ -17,8 +19,9 @@ import { ITaskEvidenceDto, ITaskEvidenceListDto, TaskService } from '../../servi
  * whether the viewer may add or remove; the panel never decides that itself.
  *
  * Rows: a glyph for the kind, the title (a file's name, a link's title or
- * address, a record's name), and who added it and when. A file downloads; a
- * link opens in a new tab; the person who added a piece removes it while the
+ * address, a record's name), and who added it and when. A file OPENS IN THE
+ * VIEWER from its name or its eye button (ACC-189), and downloads; a link
+ * opens in a new tab; the person who added a piece removes it while the
  * task is open. Evidence on a completed or cancelled task is read-only, and
  * the panel says so rather than leaving the reader to wonder why nothing can
  * be done.
@@ -62,12 +65,26 @@ import { ITaskEvidenceDto, ITaskEvidenceListDto, TaskService } from '../../servi
               <span class="am-evidence__main">
                 @if (item.type === 'LINK' && item.url) {
                   <a class="am-evidence__name am-evidence__name--link" [href]="item.url" target="_blank" rel="noopener noreferrer" dir="auto">{{ title(item) }}</a>
+                } @else if (item.file) {
+                  <button
+                    type="button"
+                    class="am-evidence__name am-evidence__name--link am-evidence__name--button"
+                    dir="auto"
+                    [attr.data-am-evidence-file]="item.id"
+                    [attr.title]="title(item)"
+                    (click)="view(item)"
+                  >{{ title(item) }}</button>
                 } @else {
                   <span class="am-evidence__name" dir="auto" [attr.title]="title(item)">{{ title(item) }}</span>
                 }
                 <span class="am-evidence__meta">{{ meta(item) }}</span>
               </span>
               @if (item.file) {
+                <am-icon-button
+                  icon="pi pi-eye"
+                  [label]="'task.evidence.viewFileNamed' | translate: { name: item.file.name }"
+                  (activated)="view(item)"
+                />
                 <am-icon-button
                   icon="pi pi-download"
                   [label]="'task.evidence.downloadNamed' | translate: { name: item.file.name }"
@@ -191,6 +208,23 @@ import { ITaskEvidenceDto, ITaskEvidenceListDto, TaskService } from '../../servi
       .am-evidence__name--link:hover {
         text-decoration: underline;
       }
+      .am-evidence__name--button {
+        display: block;
+        max-inline-size: 100%;
+        padding: 0;
+        border: none;
+        background: none;
+        font: inherit;
+        font-size: var(--am-type-value-size);
+        font-weight: 500;
+        text-align: start;
+        unicode-bidi: plaintext;
+        cursor: pointer;
+      }
+      .am-evidence__name--button:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
       .am-evidence__meta {
         font-size: var(--am-type-meta-size);
         color: var(--am-ink-500);
@@ -217,6 +251,8 @@ export class TaskEvidenceListComponent {
   private readonly format = inject(FormatService);
   private readonly translate = inject(TranslateService);
   private readonly confirmation = inject(ConfirmationService);
+  private readonly viewer = inject(FileViewerService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly taskId = input.required<string>();
   readonly requiresEvidence = input(false);
@@ -281,6 +317,39 @@ export class TaskEvidenceListComponent {
     if (item.file) parts.push(this.files.size(item.file.sizeBytes));
     else if (item.type === 'LINK' && item.linkTitle && item.url) parts.push(hostOf(item.url));
     return parts.join(' · ');
+  }
+
+  /**
+   * ACC-189 — opens the viewer at this file, over the list's FILES only:
+   * links and record references are not files, so "n / total" counts files
+   * and stepping skips them. On close, focus returns to the name of the file
+   * LAST SHOWN — which may be a different row if the reader stepped through.
+   */
+  view(item: ITaskEvidenceDto): void {
+    const fileItems = this.items().filter((i) => i.file);
+    const files: IViewableFile[] = fileItems.map((i) => ({
+      id: i.id,
+      name: i.file!.name,
+      mimeType: i.file!.mimeType,
+      sizeBytes: i.file!.sizeBytes,
+    }));
+    const taskId = this.taskId();
+    this.viewer.open({
+      files,
+      startIndex: Math.max(0, fileItems.indexOf(item)),
+      context: { key: 'files.viewer.from.taskEvidence' },
+      access: (file) => this.taskService.viewEvidence(taskId, file.id),
+      download: (file) => {
+        const target = this.items().find((i) => i.id === file.id);
+        if (target) this.download(target);
+      },
+      closed: (last) => this.focusFile(last.id),
+    });
+  }
+
+  private focusFile(evidenceId: string): void {
+    const name = this.host.nativeElement.querySelector(`[data-am-evidence-file="${CSS.escape(evidenceId)}"]`) as HTMLElement | null;
+    name?.focus();
   }
 
   download(item: ITaskEvidenceDto): void {

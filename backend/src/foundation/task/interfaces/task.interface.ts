@@ -54,6 +54,13 @@ export interface ITask {
   reopenedReason: string | null;
   reopenedAt: Date | null;
   reopenedById: string | null;
+  // ACC-190 — a task created from a stage task definition when its record
+  // entered a stage: the entry it belongs to, the definition it came from, and
+  // the definition's mandatory flag and Arabic title as they were at entry.
+  workflowInstanceStageId: string | null;
+  stageTaskDefinitionId: string | null;
+  isMandatory: boolean;
+  titleAr: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

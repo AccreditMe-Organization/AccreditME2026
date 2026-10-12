@@ -381,10 +381,11 @@ assumed): `working-calendar`, `task`, `organization`, `org-position`,
 **Three deliberate exceptions**, all confirmed and code-commented:
 
 - **`AuthController`** — no class-level `@UseGuards()` at all (every
-  endpoint is pre-authentication or self-service); `/auth/me` and
-  `/auth/logout` etc. apply `@UseGuards(TenantGuard)` individually,
-  never `PermissionGuard` (there is no meaningful permission to require
-  before a user has even established a session).
+  endpoint is pre-authentication or self-service); `/auth/me` and the
+  MFA routes apply `@UseGuards(TenantGuard)` individually, never
+  `PermissionGuard` (there is no meaningful permission to require
+  before a user has even established a session). **`/auth/logout` is
+  public since ACC-203** — see §15.14.
 - **`NotificationController`** — `@UseGuards(TenantGuard)` only, no
   `PermissionGuard`, no `@Permissions()` anywhere in the file. Every
   query is self-scoped to the caller's own `userId` — there is nothing
@@ -903,6 +904,17 @@ ran out. The reason travels with it, so every tab gives the same account.
 token is a database row with a 7-day life, and forgetting it client-side would
 leave the session alive on the server while telling the user otherwise.
 
+**Until ACC-203 that call never revoked anything**, for two reasons that added
+up: the route sat behind `TenantGuard`, so an idle sign-out from a frozen tab or
+a slept laptop (access cookie already expired) was a 401; and the refresh
+cookie's path was `/api/v1/auth/refresh`, so it was never sent to `/logout`
+anyway. The next visit renewed the session and the person was back in without a
+password — reproduced three times on `al-nakheel.accreditme.app`. Sign-out is
+now public and revokes the presented refresh token (§15.14). `signOut()` still
+clears locally when the call fails, because a network failure must not strand
+anyone in a session they have been told is over, and `/auth/logout` stays in
+the interceptor's `NO_RENEWAL_PATHS`, so a refused sign-out is never renewed.
+
 **The warning dialog** is built on `EditDialogComponent` (so Escape resolves
 through `LayerStackService`) with `role="alertdialog"` — a `role` input added
 to that shell for this. Escape means "stay signed in": dismissing a warning is
@@ -940,6 +952,7 @@ logs.
 | `MFA_INVALID` | 401 | a wrong code on a live challenge | `attemptsRemaining` | — (reached only after a correct password). The smaller of the challenge's five attempts and the user's ten before their MFA locks. |
 | `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
 | `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
+| `SESSION_OTHER_ORGANIZATION` | 401 | NOT a sign-in outcome (ACC-204): a COOKIE session used at another organisation's address, or with no usable `Origin` — on every authenticated request (TenantGuard) and on session refresh, where it is refused before the rotation and revokes nothing | — | which organisation the session belongs to: the message names neither. The app reads it as "not signed in at this address" (§15.16). |
 
 **What Sign in shows for each (ACC-120 slice 9d).** One sentence per code, in
 the one message slot above the button (`foundation/auth/components/login/
@@ -1187,6 +1200,11 @@ Workflow Engine). Every field/enum below cited against
 
 ### 2.1 Models (Core Shape)
 
+> **ACC-190:** `WorkflowTransition` gains `kind` (`ADVANCE` default, `RETURN`,
+> `EXIT`); a new `WorkflowStageTaskDefinition` table hangs off `WorkflowStage`;
+> `Task` gains `workflowInstanceStageId`, `stageTaskDefinitionId`, `isMandatory`
+> and `titleAr`. Shapes and rules: §2.15. The listing below predates them.
+
 ```prisma
 model WorkflowTemplate {
   id             String             @id @default(cuid())
@@ -1355,6 +1373,11 @@ seed data.
 
 ### 2.3 Instance Lifecycle
 
+> **ACC-190:** `startInstance()` now enters the initial stage like any other
+> stage: the instance, its first `WorkflowInstanceStage` and the stage's
+> definition tasks are written in ONE transaction (§2.15), and the tasks are
+> announced after it commits.
+
 - **`startInstance(objectType, objectId, organizationId, actorId, templateId?)`**
   — resolves the tenant's default active `WorkflowTemplate` for the
   object type (or a specific `templateId`), finds the template's
@@ -1376,6 +1399,14 @@ seed data.
   cycles each start a fresh instance).
 
 ### 2.4 `triggerTransition()` — Full Gating Trace (`workflow.service.ts:176–293`)
+
+> **ACC-190 — two steps added to this trace.** (1) After the validator check,
+> an `ADVANCE` this request would actually fire (always on a SINGLE stage; on a
+> multi-approver stage only when this vote completes the threshold) is refused
+> with `STAGE_TASKS_OPEN` while a mandatory task of the current entry is open —
+> before any vote is recorded. (2) `performTransition()` is one transaction
+> under the instance's row lock, re-checking the gate there (authoritative).
+> `submitApproval()` runs the same deciding-vote check. §2.15.
 
 In order, exactly as executed:
 
@@ -1657,6 +1688,14 @@ different `ROLE_BASED`/`SPECIFIC_USER` `triggerCondition` gaps.
 
 ### 2.9 Transition Actions — `fireTransitionActions()` (`workflow.service.ts:485–550`)
 
+> **ACC-190 — `CREATE_TASK` is RETIRED.** `executeCreateTask()` is deleted; a
+> stored `CREATE_TASK` action is skipped, logged at warn, and recorded in
+> `WorkflowActionLog` as `FAILED` "Retired". Adding one is refused
+> (`ACTION_TYPE_RETIRED`). Actions now run after the stage-change transaction
+> commits and no longer produce `unassignedTaskWarnings` — those come from the
+> entry's definition tasks (§2.15). The per-action table below is history for
+> `CREATE_TASK`.
+
 Fires in `order` after a successful transition. Per `actionType`:
 
 - **`WEBHOOK`** — enqueued to BullMQ (`workflow-actions` queue) and
@@ -1754,6 +1793,13 @@ precisely because this validator is buildable from data that already
 exists.
 
 #### 2.10.1 `allPreviousStageTasksComplete` — enforcement (ACC-65)
+
+> **RETIRED (ACC-190).** Replaced by the stage gate (§2.15): a stage's
+> MANDATORY tasks hold every `ADVANCE` without opting in, on the approval path
+> too, keyed by the stage ENTRY. Saving this validator is refused
+> (`VALIDATOR_RETIRED`); one left in stored config is ignored with a warning.
+> `assertStageTasksComplete()` is deleted. Kept below as the record of ACC-65's
+> reasoning — its "open" predicate is the one the gate kept.
 
 `assertStageTasksComplete()` blocks a transition while the stage being
 **left** still has outstanding tasks. Three scoping decisions were made
@@ -2042,6 +2088,142 @@ on each visit are resolved by `DelegationLabelService` (3.8).
 
 ---
 
+### 2.15 Stage task definitions, the gate, and the stage deadline (ACC-190, CF-07)
+
+Files: `stage-task-definition.service.ts` (CRUD, the deadline rule, entry
+preparation), `stage-task-record-routes.ts` (the record's unit / committee),
+`stage-deadline-rule.ts` (the tenant-SLA side), `workflow-refusal.ts` (codes),
+`task/stage-deadline.ts` (the instance lock and the run-time deadline move),
+`workflow.service.ts` (`startInstance`, `performTransition`, the gate). Plan
+and Ahmad's answers: `backend/Plans/step-190-stage-task-definitions.md`.
+
+**Model.** `WorkflowStageTaskDefinition`: `organizationId`, `stageId`
+(cascade), `order`, `titleEn`, `titleAr?`, `description?`, `isMandatory`,
+`requiresEvidence`, `priority`, `assignKind`
+(`POSITION | RECORD_UNIT_POSITION | COMMITTEE_ROLE | RECORD_COMMITTEE_ROLE` —
+no ROLE), `orgUnitId?`, `positionId?`, `userId?` (POSITION only), `committeeId?`
+(COMMITTEE_ROLE only), `committeeRoleValueId?`, plain `createdById` /
+`updatedById`. `Task.workflowInstanceStageId` (the ENTRY), `stageTaskDefinitionId`
+(SetNull), `isMandatory`, `titleAr`. `WorkflowTransition.kind`.
+
+**API** (`workflow-templates`): `GET|POST stages/:stageId/task-definitions`,
+`POST stages/:stageId/task-definitions/order`, `PATCH|DELETE
+task-definitions/:id`. Read `workflows:view`, write `workflows:manage`. Saves
+return `{ definition, warning }`, warning `POSITION_HAS_NO_HOLDER | POOL_EMPTY |
+null` (ACC-55 contract). Every write audited with full before/after. The
+template read adds `taskDefinitionCount` and `longestTaskHours` per stage.
+Refusals (`{ statusCode, message, error, code, …details }`):
+`STAGE_TASK_ROUTE_INCOMPLETE`, `STAGE_TASK_ROUTE_NOT_AVAILABLE`,
+`STAGE_TASK_{UNIT,POSITION,COMMITTEE,ROLE}_NOT_FOUND` (404, tenant-scoped),
+`STAGE_TASK_USER_NOT_IN_POSITION`, `STAGE_TASK_ON_FINAL_STAGE` (also refuses
+making a stage with definitions final), `STAGE_TASK_ORDER_MISMATCH`,
+`STAGE_TASK_DUE_AFTER_STAGE_DEADLINE`, `STAGE_DEADLINE_BEFORE_TASKS`,
+`TASK_SLA_EXCEEDS_STAGE_DEADLINES`, `STAGE_TASKS_OPEN`, `ACTION_TYPE_RETIRED`,
+`VALIDATOR_RETIRED`.
+
+**Placement at entry** (`prepareEntryTasks`, the manual-task rules of §3.9): a
+chosen person still in the position → that person; otherwise a single-holder
+position → its holder (none → UNASSIGNED, target kept); a multi-holder position
+and every committee role → a pool. A chosen person who has left the position
+falls back to the position. "The record's unit / committee" come from
+`RECORD_ROUTES` (COMMITTEE: its `orgUnitId` / itself; MEETING: its committee's
+unit / its committee), which fails closed. No walk to a parent unit. A route
+whose unit or position has been deactivated still creates the task: a stage
+entry never fails over a definition. No out-of-office routing (the manual
+route never had it). Unassigned tasks and empty pools become the actor's
+`unassignedTaskWarnings` and Setup health's "Task with no actionable owner".
+
+**One transaction per stage change.** Read first (outside): `enteredAt`, the
+stage deadline from it, delegation, the prepared tasks (placement, SLA windows
+from `enteredAt`, pool clocks). Inside, under `SELECT … FOR UPDATE` on the
+instance: re-read the open entry (409 if gone), the gate if `ADVANCE`, close the
+entry (`exitedAt = enteredAt`), `cancelStageExitTasksInTx`, create the new
+entry, insert the tasks (creator = the mover; `workflowInstanceId` and
+`workflowInstanceStageId` set here), move the instance. After commit: the
+cancellations' audit rows, each task's audit and notices, unassigned-stage
+flagging, transition actions, the instance audit row. Timeout 20 s (ACC-60).
+
+**The gate.** `ADVANCE` refused while any task with this
+`workflowInstanceStageId`, `isMandatory`, status not COMPLETED/CANCELLED
+exists; the 409 lists `{ id, title, titleAr, status, statusLabel }` and, since
+ACC-208 (B7), `dueAt`, `requiresEvidence`, `assignees` (`{ id, name }`,
+active rows only) and `pool` (`{ kind: 'POSITION', orgUnit, position }` or
+`{ kind: 'COMMITTEE_ROLE', committee, role }` with the tenant's label override,
+or null), so "Can't move yet" can say who has each task and when it is due.
+RETURN and EXIT are never gated. Manual tasks attached to a stage never gate.
+
+**Leaving an entry** cancels every open task of it (by entry id) and every open
+task with no entry that matches the old instance + stage pair; holds end and
+pending requests are cancelled; silent, audit rows only.
+
+**The deadline rule.** Stage `slaWorkingHours` ≥ `taskSla[priority].dueAfterHours`
+of every definition on it, refused from the definition, the stage and the
+tenant-SLA side; no deadline = nothing to break. Run time: `TaskRequestService.
+approve()` (extension and hold) locks the instance before the task and calls
+`moveStageDeadlineForTaskInTx`: a MANDATORY task's new due date past its OPEN
+entry's `slaDueAt` moves the deadline out (clearing `slaBreached` and
+`escalatedRuleIndexes` when it lands in the future), audited
+`stage_deadline_extended` on `WorkflowInstanceStage`.
+
+**Other task rules.** Cancel by hand: optional definition task allowed,
+mandatory refused, other workflow tasks refused as before. Reopen: a definition
+task only while its own entry is open and the workflow runs.
+`recoverUnassignedStageTasks` never touches definition tasks.
+
+**Seed and backfill.** The seed has no `CREATE_TASK`, 14 `RETURN` and 8 `EXIT`
+transitions, and no definitions. `backfill-acc190-stage-tasks.ts` (dry run,
+then `--execute`, after the deploy) deletes seeded `CREATE_TASK` actions with
+their `WorkflowActionLog` rows, sets seeded kinds, reports what it cannot match,
+refuses customer tenants, never writes Task, and writes one audit row per
+tenant.
+
+### 2.15.1 The settings screen (ACC-208)
+
+Plan, decisions and measurements: `backend/Plans/step-208-stage-tasks-screen.md`.
+Drawing: `frontend/design-reference/AccreditMe Stage Tasks.dc.html`.
+
+**What the screen reads (all additive).**
+- **The definition list:** each row carries `warning` (the save's
+  `POSITION_HAS_NO_HOLDER` / `POOL_EMPTY`, checked on read; null for a chosen
+  person or a relative route) and `createdTaskCount` (a grouped count on
+  `Task.stageTaskDefinitionId`).
+- **`GET /workflow-templates/:id`:**
+  - `recordRoutes: { unit, committee }`, read from `RECORD_ROUTES`, so no
+    frontend copy of the registry exists and it still fails closed;
+  - `taskDueHours` per priority, which a `workflows:manage`-only caller cannot
+    read from `GET /tenant/task-sla`.
+- **`TASK_SLA_EXCEEDS_STAGE_DEADLINES.stages[]`** adds `workflowTemplateId`,
+  `stageNameAr`, `templateNameAr` and the longest task's `priority`.
+
+**The screen.**
+- **`StageTaskListComponent`** ("Tasks on entry") sits beside the transition
+  editor in a stage's expanded row.
+  - It loads its own list.
+  - It patches the stage's summary in place (`summaryChanged`) and never
+    re-reads the template, which is ACC-55's trap.
+  - Reordering is the ↑ / ↓ buttons. An arrow that cannot move is absent, and
+    focus moves to the row's other arrow.
+- **`StageTaskDefinitionFormComponent`** is the two-step dialog.
+  - "A unit you choose" is the ACC-167 picker with `purpose="stage-task"`.
+  - The other routes are one or two selects.
+  - The deadline rule is a validator and a message on Priority, before Save.
+- **The transition editor** gains Kind, and both of its dialogs are stepped
+  (10.5).
+- **Refusals are read by code**, never the English `message`, through
+  `foundation/workflow/workflow-refusal.ts`.
+- **`CantMoveDialogComponent`** shows `STAGE_TASKS_OPEN`.
+  - It is standalone, with title and lead as inputs, for the vote screen that
+    does not exist yet: `submitApproval()` has no frontend caller.
+  - Its links go to `?task=<id>` on the record page, which seeks the row out
+    (D2).
+
+**Not built, from the drawing (reported, §8b of the plan):**
+- the editable deadline field inside the stage row;
+- the drag handle with keyboard pick-up;
+- the "Holder unknown" partial state.
+
+---
+
 ## 3. Task System
 
 `backend/src/foundation/task/task.service.ts` +
@@ -2049,6 +2231,12 @@ on each visit are resolved by `DelegationLabelService` (3.8).
 firing — a structural quirk explained in 3.4).
 
 ### 3.1 Models
+
+> **ACC-190:** `Task` gains `workflowInstanceStageId` (the stage ENTRY a
+> definition task belongs to), `stageTaskDefinitionId` (provenance, SetNull),
+> `isMandatory` (snapshot) and `titleAr` (snapshot), plus indexes
+> `[workflowInstanceStageId, status]` and `[workflowInstanceId, sourceStageId]`.
+> §2.15.
 
 ```prisma
 model Task {
@@ -2168,6 +2356,14 @@ KPI, GAP, QUALITY_IMPROVEMENT_PLAN` — **note this list does not include
 `COMMITTEE`**, the exact enum gap already documented in Section 2.9.
 
 ### 3.2 `TaskService` Methods — Exact Behavior
+
+> **ACC-190 changes to the methods below.** `create()` is the person's path only
+> (the `origin` parameter and its engine branch are gone) and is built from
+> `insertPrepared()` + `announceCreated()`, which the engine also uses with
+> `prepareStageEntryTask()`. `cancelForStage()` is replaced by
+> `cancelStageExitTasksInTx()` + `auditStageExitCancellation()` (keyed by entry,
+> inside the engine's transaction). `cancel()` allows an optional definition
+> task; `reopen()` checks a definition task's entry. §2.15.
 
 - **`create()`** — computes `dueAt` via `computeSlaDueAt()` (3.3) unless
   an explicit `dueDate` is given (`dueDateOverridden: true` in that
@@ -2897,7 +3093,26 @@ a committee task) states the server's outcome before Save. My tasks gains
   10.7).
 - Out-of-office routing is not applied to pool members (2.5.2).
 
+**ACC-208 additions.**
+- **`workflows:manage` opens the picker too**, with no `taskId`
+  (`assertMayAssign()`). A stage task definition chooses a target the same way;
+  a `taskId` still means reassigning that task, which `workflows:manage` does
+  not grant. The committee variants still need `committees:view`.
+- **`GET /tasks/assignment/committee-roles?catalogue=true`** lists every active
+  `committee_member_role` through `LookupService.getValues()` (its hiding and
+  overrides, not a copy).
+  - It includes roles nobody holds.
+  - `memberCount` is counted on `committeeId` when one is given, and is null
+    when not ("the record's committee").
+  - Without the flag the picker still hides empty roles: a task to an empty
+    pool reaches nobody.
+
 ### 3.10 More time and holds — requests the creator decides (ACC-173)
+
+> **ACC-190:** an approved extension or hold on a MANDATORY stage-definition
+> task now moves its open entry's deadline out when the new due date passes it
+> (the stage SLA was never shifted before). The approval locks the instance
+> before the task. §2.15.
 
 An assignee asks for more time (`EXTENSION`, a new due date) or for the task to
 be put on hold (`ON_HOLD`, until a date). The creator — or whoever currently
@@ -3030,6 +3245,12 @@ on the task's row; deciding happens in My tasks only.
 - The creator's own edit and cancel are ACC-174 (3.11).
 
 ### 3.11 The SLA limit, and edit, cancel and reopen by the creator (ACC-174)
+
+> **ACC-190:** the "engine-created task whose stage sets a longer SLA raises
+> the limit" rule below is GONE with `CREATE_TASK`. A definition task's window
+> is its priority SLA from the stage entry, with no extension; the stage
+> deadline is made to fit it (§2.15). Optional definition tasks may now be
+> cancelled by hand.
 
 Files: `task-sla.service.ts` (the limit), `task.service.ts` (`update`,
 `cancel`, `reopen`, `mayManage`), `tenant/task-sla-settings.ts`,
@@ -4942,6 +5163,20 @@ ACC-39 shipped as pure adoption of the "required pattern going
 forward" note below — not a fix for a live bug on any of these 8
 screens.
 
+**ACC-208 — three more consumers, and the transition dialogs measured.**
+`stage-task-list` hosts three dialogs:
+- the two-step add/edit dialog (`stage-task-definition-form`, compact);
+- its 420 delete confirm;
+- `cant-move-dialog`, a confirm with Close only, which the transition buttons
+  open.
+
+The transition editor's Add and Edit dialogs were never measured before, and
+stood at 674 / 696 and 542 / 564 (English / Arabic). Both are now stepped on
+their seam: the move, then who may fire it. The actions are in the footer, and
+every state is at or under 384. Both forms carry a layout spec with the
+non-vacuity guard first (`*.layout.spec.ts`). The numbers are in the plan, §4.2.1
+and §4.5.1.
+
 **Required pattern going forward** — every future module's own
 add/edit dialog (starting with Meeting Management, the next module in
 the build sequence) must use `EditDialogComponent`, not a raw
@@ -5130,6 +5365,13 @@ typeahead verified with `fakeAsync`/`tick`, since CDK's own
 `Typeahead` debounces keystrokes 200ms before matching, confirmed via
 its source), Escape isolation against a simulated parent
 `document`-level listener, and both option shapes.
+
+**ACC-208 — focus returns to the field when the list closes.** The options
+leave the DOM with the pane, so a pick by Enter or click, or Escape, used to
+drop focus on `<body>`. A keyboard user lost their place after every choice,
+in every consumer. The `detachments()` handler now focuses the trigger when
+focus was left nowhere, and leaves alone a close that moved focus somewhere
+real. Two specs pin it; both fail without the fix.
 
 #### 10.7.1 ACC-42 — full migration, 26 additional consumers (28 total)
 
@@ -6331,6 +6573,52 @@ success and danger chip pairs `check:contrast` asserts, and
 preset. **Known, not changed:** Aura's warning message is about 2.85:1; info
 measures 4.75:1.
 
+### 10.17 `am-drawer` and the File Viewer (ACC-189)
+
+**`am-drawer`** (`shared/components/drawer/`) is the app's one drawer, on
+PrimeNG Drawer through its HEADLESS template, so the frame, buttons and
+semantics are ours. Its rules, each pinned by spec:
+
+- **From the END side**: right in English, left in Arabic. PrimeNG's
+  `position` is PHYSICAL, so the side is computed from `LanguageService`.
+- **Modal**: the mask dims the page and never closes the drawer
+  (`dismissible` off); every other child of `<body>` is made `inert` while it
+  is open, and only what the drawer made inert is released.
+- **Escape closes only the top layer** (`LayerStackService`), in one press.
+  PrimeNG's own Escape is off.
+- **Size**: `--am-drawer-width` (60vw), `--am-drawer-min-width` (720px), full
+  screen below 900px (a constant in the component: a media query cannot read a
+  custom property). Expand / Restore; it opens at normal width each time.
+- `role="dialog"`, `aria-modal`, named by the FULL name of what it shows;
+  focus goes to the dialog on open; the body is a Tab stop. Where focus goes
+  on close is the host's call.
+- Slots `[amDrawerHeader]`, `[amDrawerToolbar]`, body, `[amDrawerFooter]`;
+  slot buttons use `am-drawer__button` (`--text`, `--on`).
+
+**The file viewer** (`shared/files/viewer/`) opens through
+`FileViewerService.open({ files, startIndex, context, access, download,
+closed })` — never placed in a template, one at a time, closed on any
+navigation, no deep link. A host passes only FILES (links are not), its view
+mint as `access`, its download, and a `closed(lastShown)` callback for focus
+return. Renderers: PDF (pdf.js 6 legacy, lazy-loaded; pages render as they
+near the view, observed against the drawer body; no text layer, D4), image
+(fit by default, zoom steps, drag to pan), text (lines with `dir="auto"`, 1 MB
+cap), CSV (header row sticky, 500 data rows, every row counted), and a state
+panel for no preview, couldn't open, deleted, SharePoint withdrawn and MinIO
+blocked. Download is offered in every state except deleted and withdrawn. One
+file is held at a time: moving on or closing aborts the fetch, revokes the
+object URL and drops the bytes.
+
+pdf.js ships from our origin (`angular.json` assets): the worker, `cmaps`,
+`standard_fonts`, `iccs`, and the image-decoder wasm WITHOUT `quickjs-eval.*`
+(it has no eval path of its own, and PDF scripting is not shipped). The CSP
+(`vercel.json`, ENFORCED since ACC-130 part 2) names the platform storage host in `connect-src`,
+`worker-src 'self' blob:`, and `'wasm-unsafe-eval'` in `script-src`.
+
+**Consumers today**: task evidence (`TaskEvidenceListComponent` — the file
+name and an eye button open it). Meeting attachments and Document Management
+plug in the same way.
+
 ---
 
 ## 11. Known Cross-Cutting Gaps
@@ -7078,6 +7366,11 @@ opening creates no bell entry; the rail badge is the signal.
 
 ### 13.2 Condition types shipped, and what was deferred or excluded
 
+> **ACC-190:** a stage-definition task whose position in "the record's unit" is
+> vacant is created UNASSIGNED with its target, and appears under
+> `TASK_WITHOUT_OWNER` like any unassigned task — never passed up to a parent
+> unit. A definition task in an empty pool appears there too. No new type.
+
 | Type (`SetupConditionType`) | Object keyed by | Severity | Opened at | Fix opens |
 | -- | -- | -- | -- | -- |
 | `ORG_UNIT_WITHOUT_HEAD` | `OrgUnit.id` | `BLOCKS_WORK` if `isHeadFullyUnresolved` (escalation resolves no one); else `AT_RISK` (vacant but covered) | `OrgUnit.headVacantSince` | `/organization?head=<id>` — that unit's head panel |
@@ -7517,7 +7810,8 @@ monorepo (railwayapp/cli#1224). If it ever needs regenerating, pull.
 Deployed URLs:
 
 ```
-backend    https://accreditme2026-production.up.railway.app   (port 3000)
+backend    https://api.accreditme.app   (custom domain, ACC-130; port 3000)
+fallback   https://accreditme2026-production.up.railway.app   (until ACC-209)
 service    fd82c530-7fd9-43a6-8092-22737e1a1232
 env        79e906ea-f95e-4521-8ffc-569cff4d5908
 project    affd8063-7fb5-4857-a8ab-866f6c4bb4da
@@ -7884,7 +8178,8 @@ emailed.
 **Railway.** `APP_BASE_DOMAIN` was already declared with `preserve()` in
 `.railway/railway.ts` and already set, so this needed no authoring-file change
 and no set-before-merge step: the boot check passes on the existing value. Its
-value moves from `accreditme.com` to `accreditme.app` as a dashboard change.
+value moved from `accreditme.com` to `accreditme.app` as a dashboard change —
+done: Railway holds `accreditme.app` (read 9 Oct, ACC-130).
 `APP_LINK_ORIGIN` must never be set there.
 
 ### 15.12 Rate limiting, and the client address (ACC-129)
@@ -8013,11 +8308,12 @@ yourorg.accreditme.app."). **An unknown slug gets the ordinary form and then the
 neutral `INVALID_CREDENTIALS`** — there is no lookup, so an organisation that
 does not exist is indistinguishable from a wrong password.
 
-**Used ONLY by Sign in and Forgot password.** After sign-in the session's own
-organisation is the authority and nothing compares it with the address. That is
-what lets a platform administrator signed in at `platform.localhost:4200`
-impersonate a tenant and end it: every navigation in that flow is a relative
-path on the same host, and the cookies are host-only. Do not add a comparison.
+**Used by Sign in and Forgot password to say which organisation they are for.**
+This paragraph used to end "after sign-in … nothing compares it with the address
+… Do not add a comparison." **ACC-204 superseded that** (§15.16): the API now
+holds a cookie session to its organisation's address, and an impersonation
+session to the platform's, so a platform administrator signed in at
+`platform.localhost:4200` still impersonates a tenant and ends it.
 
 **Reserved slugs, two lists** (`backend/src/common/tenant/reserved-slugs.ts`):
 `INFRASTRUCTURE_LABELS` (www, api, mail, status, …) are never a tenant and never a
@@ -8068,14 +8364,56 @@ on the deployed API until then.
 **Better Auth's `baseURL` is `API_ORIGIN`**, required at boot
 (`resolveApiOrigin()`, same throw-rather-than-default rule as
 `resolveFrontendOrigin()`): exactly an origin, https, or http for `localhost`
-only. `https://accreditme2026-production.up.railway.app` today,
-`https://api.accreditme.app` after ACC-130. ONE value, because Better Auth's base
+only. `https://api.accreditme.app` since 10 Oct 2026 (ACC-130; it was the
+Railway-generated host before). ONE value, because Better Auth's base
 URL is where Better Auth lives and the API is one host for every tenant; every
 link a tenant clicks is built by `buildTenantUrl()` from configuration. It is a
 STRING, which Better Auth resolves once at start-up — an object (`allowedHosts`)
 would make it re-resolve per request. The "Base URL is not set" boot warning is
 gone. `appName` is "AccreditMe", so authenticator apps no longer say "Better
 Auth".
+
+#### Sign-out ends the server session, even after an idle wait (ACC-203)
+
+**`POST /auth/logout` is public, idempotent, and always answers
+`200 { success: true }`**, with or without cookies. It:
+
+1. revokes the refresh token the browser presented, if any, with ONE atomic
+   `updateManyAndReturn` on `{ tokenHash, revokedAt: null }` — so it returns only
+   the row this call revoked, and two simultaneous sign-outs cannot both audit
+   it;
+2. clears both cookies (and the pre-ACC-203 refresh path, below);
+3. audits `LOGOUT` as the person a valid access token names — valid exactly as
+   `TenantGuard` means it, through the shared `verifySessionIdentity()`
+   (`tenant.guard.ts`), which the guard itself calls — or else as the owner of
+   the row just revoked. Neither means nothing was signed out: no audit entry,
+   still a 200. A forged, expired or stale (`tokenVersion`) access token is
+   never trusted for the audit.
+
+It is still rate-limited: with no valid session the global guard counts it per
+address (§15.12). `verifySessionIdentity()` deliberately leaves out the
+closed-organisation refusal, so signing out of a closed organisation works.
+
+**The refresh cookie's path is `/api/v1/auth`** (was `/api/v1/auth/refresh`),
+so the browser sends it to both routes that read it: refresh and sign-out. The
+other auth routes receive it too; none reads it, nothing logs cookies, and it
+stays httpOnly, Secure, `SameSite=Strict` and host-only. Moving both routes under
+a narrower shared path was considered and not taken: a breaking route change for
+little gain, since a cookie's Path is not a security boundary (RFC 6265 §8.6).
+
+**The change-over clears the old path on every SET as well as every clear.** A
+browser that signed in before the deploy keeps its `/api/v1/auth/refresh` cookie.
+After its first refresh it would hold two cookies that both match `/refresh`,
+the browser sends the longer path FIRST, `cookie-parser` keeps the first value —
+the old, already-rotated token — and the next refresh would sign the person out.
+Clearing the old path in `setSessionCookies()` as well as
+`clearSessionCookies()` removes it on the first refresh or sign-in after the
+deploy. **Both clears are removable once 7 days (the refresh-token life) have
+passed since ACC-203 deployed** (dated comments beside each). One harmless gap: a
+browser with only an old-path cookie that signs out before its first refresh
+does not send it to `/logout`, so its row is not revoked — but the clear deletes
+the cookie, nothing can present that token again, and the row expires within 7
+days.
 
 **ACC-148's feared exposure was verified absent (8 Oct), for three independent
 reasons** — a forged `Host` could not have pointed a reset link at an attacker:
@@ -8096,6 +8434,191 @@ that our `auth.api` calls carry no request, `host` or `x-forwarded-host`.
 **`API_ORIGIN` was set on Railway BEFORE the code requiring it merged**
 (9 Oct), the same expand-then-contract order `FRONTEND_URL` needed: the boot now
 refuses to start without it, and a deploy whose boot fails is not promoted.
+
+### 15.15 Online: where each address is served (ACC-130)
+
+> **Restated as measured, 12 Oct 2026 (ACC-130 part 2).** Online since 10 Oct:
+> runbook steps 1–8 (`backend/Plans/step-130-go-online.md`, Part 2) are done and
+> verified, including the first real sign-ins and SPF, DKIM and DMARC passing.
+> The nameservers, the `api` CNAME and the mail record names below were read
+> from public DNS on 12 Oct.
+
+| Address | Served by | What it is |
+|---|---|---|
+| `{slug}.accreditme.app` | Vercel (`*.accreditme.app`, wildcard certificate) | the app, for one organisation (ACC-139) |
+| `platform.accreditme.app` | Vercel, the same wildcard | the platform organisation's sign-in |
+| `accreditme.app` | Vercel | the "Open your organisation's address" note; a marketing page can come later |
+| `www.accreditme.app` | Vercel, a 308 redirect to the apex | load-bearing for CORS: `www` never becomes a second origin |
+| the website (`website/`, ACC-213) | **Preview only — NOT yet on `www`.** Its own Vercel project (root directory `website`), on a preview address | the public one-page site, EN/AR; `noindex` + `Disallow: /` until the cut-over moves `www` and the apex to it |
+| `api.accreditme.app` | Railway, a DIRECT CNAME — no proxy | the API (`/api/v1`) and `API_ORIGIN`; a custom domain registered with `railway domain` |
+| `accreditme2026-production.up.railway.app` | Railway | the generated host: the FALLBACK only, retired by ACC-209 (still declared in `.railway/railway.ts` until then) |
+
+**DNS is on Vercel: `ns1.vercel-dns.com`, `ns2.vercel-dns.com`.** GoDaddy stays
+the registrar; the zone moved to Vercel's nameservers because Vercel issues the
+wildcard certificate only for a zone it serves. The mail records, by name: the
+apex `MX`, `send` (Resend's sending subdomain), `resend._domainkey` (the DKIM key)
+and `_dmarc`. There is no CAA record and no apex TXT. GoDaddy's zone was left in
+place: it is the mail rollback.
+
+**Rollback order** (runbook step 9): **`API_ORIGIN` first** — back to the
+fallback host, which redeploys — **then the nameservers, and the nameservers only
+for mail.** Sign-in trouble is never a DNS rollback; the Vercel and Railway
+domains can stay.
+
+**HTTPS is always forced, for everyone.** `.app` is on the browsers' HSTS
+preload list as a whole TLD, so no browser will make a plain-HTTP request to any
+`*.accreditme.app` host — including local testing against the real hostname.
+Even GoDaddy's placeholder page sent `max-age=63072000; includeSubDomains;
+preload`. Local development is unaffected: it runs on `*.localhost`.
+
+**The API is not proxied, so `trust proxy` stays 2** (§15.12). The frontend calls
+`https://api.accreditme.app/api/v1` directly (`environment.prod.ts`); no Vercel
+rewrite points at the API, and `check:vercel-config` fails one that does. A
+proxy — a Vercel rewrite, or Cloudflare in proxied mode — would add a hop and
+must move the count to 3.
+
+**The cookies still need nothing.** `{slug}.accreditme.app` and
+`api.accreditme.app` are the SAME SITE (`accreditme.app`), so the host-only,
+`SameSite=Strict`, `Secure` cookies (§15.14) are sent on the app's credentialed
+calls. CORS already admits every tenant origin (§15.10). Both are confirmed as
+results at runbook step 8, not assumed.
+
+**The frontend's headers** (`frontend/vercel.json`, pinned by
+`check:vercel-config`):
+
+- **CSP, ENFORCED** (ACC-130 part 2, 12 Oct; Report-Only at go-live).
+  `check:vercel-config` requires `Content-Security-Policy` and fails a
+  `Content-Security-Policy-Report-Only` header, so report-only cannot quietly
+  come back. Before the switch the shipped production build was walked locally
+  under the enforced header, against the local API, with no violation
+  (`backend/Plans/step-130-go-online-part-2.md`).
+  `script-src 'self' 'wasm-unsafe-eval'` (the wasm half is ACC-189's pdf.js
+  decoders, no JavaScript eval), `worker-src 'self' blob:`;
+  `style-src 'self' 'unsafe-inline'`,
+  because PrimeNG and Angular's emulated encapsulation insert `<style>`
+  elements at runtime and a static host cannot hand out nonces;
+  `connect-src 'self' https://api.accreditme.app` plus the platform storage host,
+  the API half kept equal to `environment.prod.ts` by the scan;
+  `img-src 'self' data: blob:`; `frame-ancestors 'none'`, `object-src 'none'`.
+- **Critical-CSS inlining is off** (`optimization.styles.inlineCritical: false`
+  in the production configuration). It wrote
+  `<link … media="print" onload="this.media='all'">` into the built page; an
+  inline handler that `script-src 'self'` blocks, leaving the stylesheet on
+  `media="print"` and the app unstyled. `npm run verify:built-index`, a CI step
+  right after the build, fails a built page with any inline handler or inline
+  script.
+- HSTS, `nosniff`, `X-Frame-Options: DENY`, `strict-origin-when-cross-origin`,
+  a closed `Permissions-Policy`, COOP and CORP `same-origin`. Hashed JS, CSS and
+  `media/` files are cached for a year; `index.html` and `assets/i18n` keep
+  Vercel's revalidate default.
+
+**Only `dev` builds on Vercel.** `ignoreCommand` skips every other branch, so
+there are no preview deployments. A preview could never sign in anyway: its
+`*.vercel.app` host is not under `accreditme.app`, so the app shows the "Open
+your organisation's address" note and CORS refuses its session check (§15.10).
+The project's Production Branch is `dev`, matching Railway's source branch — the
+repository's default branch is `main`, so this is set by hand after import.
+
+**Two Railway traps, measured 9 Oct:**
+
+1. **A custom domain cannot be registered from `.railway/railway.ts`.** The SDK's
+   `domains: [...]` option is refused by `config plan`: *"Custom-domain
+   registration is not supported by Railway configuration. Add
+   api.accreditme.app in the dashboard, then run railway config pull."* Adding
+   it to `serviceDomains` produced an IDENTICAL plan, and
+   `networking.customDomains` is dropped by the SDK's `normalizeNetworking()`.
+   So the domain is registered with `railway domain api.accreditme.app --port
+   3000`. **Answered, 12 Oct: the file does not declare it, and must not need
+   to** — with the domain live, `config plan` reads `0 to add, 1 to change, 0 to
+   destroy`, the change being §15.4's round-trip, so the plan does not see the
+   custom domain at all. A comment beside `serviceDomains` says so, and **any
+   `config apply` must first show a plan with no domain removed.**
+2. **Six `AWS_*` variables existed on Railway and nowhere in the file**, so
+   `config plan` read `6 to destroy` — any apply would have deleted them. They
+   are declared with `preserve()`, and the plan reads
+   `0 to add, 1 to change, 0 to destroy` (the change is §15.4's round-trip).
+
+**Running `railway config plan` on Windows.** `railway/iac` checks the CLI
+version by executing `process.env._ || "railway"`. Under Git Bash `_` is a path
+Node cannot execute, and in PowerShell `railway` is a `.ps1`/`.cmd` shim
+`execFileSync` cannot run, so both fail with *"requires Railway CLI 5.42.1 or
+newer"* on CLI 5.59.0. Point `_` at the native binary and run that:
+`$env:_ = "$env:APPDATA\npm\node_modules\@railway\cli\bin\railway.exe"`.
+
+**No fallback addresses on a domain we do not own.** `accreditme.com` is listed
+for sale. The email processor's fallback sender and the demo seed's fallback
+platform-admin address were both on it; both are gone
+(`resolvePlatformSender()` → the job fails with a named error;
+`resolvePlatformAdminEmail()` → the seed refuses to run).
+
+### 15.16 A session only works at its own organisation's address (ACC-204)
+
+**The defect.** Every address calls ONE API host, and the session cookies are
+host-only on it, so a browser holds one session for every address. Signed in as
+Yasser at `al-nakheel.accreditme.app`, the same browser opened
+`platform.accreditme.app` and the app showed Yasser there. Data stayed scoped to
+the token's organisation — not a leak — but the session showed at the wrong
+address.
+
+**The rule.** A COOKIE session works only at its own organisation's address:
+
+- **Where it is enforced:** `TenantGuard` (every authenticated request) and
+  `refresh()`. Both read the request's `Origin` through `labelFromOrigin()`
+  (`common/config/cors.config.ts`), the same parsing CORS uses:
+  - production: `https://{one label}.{APP_BASE_DOMAIN}`;
+  - locally, when `APP_LINK_ORIGIN` is set: `http://{label}.localhost:4200`.
+- **The check:** the label must equal the session organisation's `slug`, which
+  rides on the organisation join `verifySessionIdentity()` already makes — one
+  more column, no extra query. `isAtOwnAddress()` (`common/tenant/session-address.ts`)
+  is the one comparison; `isSessionAtItsAddress()` (`tenant.guard.ts`) adds the
+  two exceptions below.
+- **Mismatch, or no usable Origin:** 401 `SESSION_OTHER_ORGANIZATION` (§1.12).
+- **`refresh()` checks BEFORE the rotation and revokes nothing**, so a tab at
+  another organisation's address can neither end nor move the session the
+  person uses at their own. Its user lookup moved ahead of the rotation (now
+  scoped by the row's organisation too); the ACC-168 refusals after it still
+  revoke.
+- **Bearer clients are unchanged** — an API client is not a browser tab.
+- **An impersonation session is held to the PLATFORM's address** (`platform`,
+  the platform organisation's slug, `PLATFORM_ORGANIZATION_SLUG`), because a
+  platform administrator impersonates from `platform.…` and the app stays there.
+  Impersonation itself is due to go (ACC-99).
+- **Sign-out stays address-free** (ACC-203): the check sits in the guard, not in
+  `verifySessionIdentity()`, which sign-out shares.
+
+**Why the Origin, and what it is not.** A browser sends `Origin` on every CORS
+request, and in production every call the app makes is one (app and API are
+different origins); a page cannot forge it. The only non-CORS browser request to
+the API is a download navigation to `/files/stream/:token`, which uses no cookie.
+**This is a correctness guard, not a security boundary:** a non-browser client
+holding the cookie can send any Origin. Data isolation is still organizationId
+scoping.
+
+**Locally** the dev server proxies `/api`, so app and API are the same origin and
+a browser sends no `Origin` on a GET. `proxy.conf.js` adds the page's own origin
+(from the `Host` the browser asked for) when the browser sent none, so the
+backend rule is the same everywhere. A consequence worth knowing: through the
+proxy the cookies are per PAGE host (`al-nakheel.localhost`), so locally the
+cross-address case never arises on its own — reproducing it means copying one
+host's session cookies to another (ACC-204's browser proof did exactly that).
+
+**The frontend** (`core/tenant/session-address-state.ts`) reads the code as
+"not signed in at this address":
+
+- `restoreSession()` does not renew on it and lands as signed out, with no
+  redirect (ACC-24).
+- The interceptor does not renew on it; an ordinary request refused with it
+  ends the session HERE, locally only — never `/auth/logout`, which would end
+  the session the other address is using.
+- The renewal service records a refresh refused with it.
+- The sign-in page then says, in English and Arabic: "You're signed in to
+  another organisation in this browser. Signing in here will sign you out there."
+  A sign-in or a session at this address clears it.
+
+**Known, unchanged:** one browser still holds one session, so signing in at one
+address replaces it everywhere (the note says so), and a sign-out in any tab
+ends it. Per-organisation cookie names, which would let one browser hold two
+organisations' sessions, are not built.
 
 ## 16. File Storage — Per Organisation, and File Evidence (ACC-177, SharePoint ACC-185)
 
@@ -8234,6 +8757,30 @@ SharePoint access withdrawn, which is 409 `STORAGE_ACCESS_WITHDRAWN`. The respon
 **Verified live against SeaweedFS (7 Oct)**: the pre-signed URL returned the
 same bytes (SHA-256 equal) with
 `filename*=UTF-8''%D9%85%D8%AD%D8%B6%D8%B1%20…pdf`.
+
+### 16.5.1 View (ACC-189)
+
+`GET /tasks/:id/evidence/:evidenceId/view` mints the link the in-app viewer
+fetches. **Exactly the download's entitlement**: `TaskEvidenceService.openView()`
+and `download()` share one lookup (`fileForViewer()`), so the same caller gets
+the same identical 404. `StoredFileService.openView()` then refuses a deleted
+file first (`FILE_UNAVAILABLE`), then any type outside `PREVIEWABLE_MIME_TYPES`
+(`file-content.ts`: pdf, png, jpeg, gif, webp, txt, csv) with 409
+`PREVIEW_NOT_AVAILABLE`, and otherwise returns **the same URL a download
+gets**. Nothing is ever served inline: the response stays `attachment` +
+`nosniff`, and the browser never opens the URL — the viewer fetches the bytes
+and draws them itself. A view is a read: a log line ("viewed"; downloads say
+"opened"), no audit row (D1). Office files and HEIC stay download only until
+ACC-192. Meetings and documents mint their views through the same
+`openView()`.
+
+**The storage fetch never carries credentials** (`FileBytesService`, an
+`HttpClient` on `HttpBackend`, so no interceptor runs): Supabase answers a
+pre-signed GET with `Access-Control-Allow-Origin: *`, which a browser rejects
+for a credentialed request. A customer's MinIO that refuses the cross-origin
+fetch shows "can't be previewed from your organization's storage", with
+Download, and is never streamed through the API (D3;
+`docs/customer/minio-storage-viewing.md`).
 
 ### 16.6 File evidence (`TaskEvidenceService`)
 

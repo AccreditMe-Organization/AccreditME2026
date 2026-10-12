@@ -43,6 +43,11 @@ import {
   PermissionResolver,
 } from '../services/permission-resolver.interface';
 import { isOrganizationOpen } from '../tenant/organization-status';
+import {
+  PLATFORM_ORGANIZATION_SLUG,
+  isAtOwnAddress,
+} from '../tenant/session-address';
+import type { TenantStatus } from '../../../generated/prisma/client';
 import { AuthRefusalException } from '../../foundation/auth/auth-refusal';
 
 export interface JwtPayload {
@@ -74,11 +79,25 @@ export function readSessionToken(request: {
   cookies?: Record<string, unknown>;
   headers: Record<string, string | string[] | undefined>;
 }): string | undefined {
+  return readSessionCredential(request)?.token;
+}
+
+/**
+ * The session token AND where it came from — ACC-204. Only a COOKIE session is
+ * a browser tab, so only a cookie session is held to its organisation's
+ * address; a Bearer header is an API client and is left alone.
+ */
+export function readSessionCredential(request: {
+  cookies?: Record<string, unknown>;
+  headers: Record<string, string | string[] | undefined>;
+}): { token: string; source: 'cookie' | 'bearer' } | undefined {
   const cookieToken = request.cookies?.['access_token'];
-  if (typeof cookieToken === 'string' && cookieToken) return cookieToken;
+  if (typeof cookieToken === 'string' && cookieToken) {
+    return { token: cookieToken, source: 'cookie' };
+  }
   const authHeader = request.headers['authorization'];
   return typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7)
+    ? { token: authHeader.slice(7), source: 'bearer' }
     : undefined;
 }
 
@@ -110,6 +129,156 @@ export function verifyJwt(token: string, secret: string): JwtPayload {
   return payload;
 }
 
+/** Why a request's access token does not prove who is calling. */
+export type SessionIdentityRefusal =
+  'missing' | 'not_configured' | 'invalid' | 'claims' | 'revoked';
+
+/** Who a valid access token proves the caller is. */
+export interface SessionIdentity {
+  userId: string;
+  organizationId: string;
+  impersonatedBy?: string;
+  organizationStatus: TenantStatus;
+  /** ACC-204 — the organisation's slug, the label of its address. */
+  organizationSlug: string;
+  /** ACC-204 — a cookie (a browser tab) or a Bearer header (an API client). */
+  tokenSource: 'cookie' | 'bearer';
+}
+
+export type SessionIdentityResult =
+  | { ok: true; identity: SessionIdentity }
+  | { ok: false; refusal: SessionIdentityRefusal };
+
+/**
+ * Who the request's access token proves the caller is — ACC-203.
+ *
+ * THE one place this is decided, for TenantGuard and for sign-out. Sign-out is
+ * public (it must work after the access cookie has expired), but when a valid
+ * access token IS present its audit entry names that person, and "valid" must
+ * mean exactly what it means to the guard: the signature and expiry verify, the
+ * claims are there, and the user still exists in that organisation with the
+ * same tokenVersion. A copy would drift.
+ *
+ * Deliberately NOT here: the closed-organisation refusal and the permission
+ * lookup. Those decide whether a request may PROCEED, which is the guard's
+ * business; signing out of a closed organisation must still work.
+ *
+ * One query, the same one the guard always made.
+ */
+export async function verifySessionIdentity(
+  request: {
+    cookies?: Record<string, unknown>;
+    headers: Record<string, string | string[] | undefined>;
+  },
+  prisma: Pick<PrismaService, 'user'>,
+): Promise<SessionIdentityResult> {
+  // Cookie first (browser clients — the login flow, Commit 3), then the
+  // Authorization header (non-browser API clients that can't hold cookies).
+  const credential = readSessionCredential(request);
+  if (!credential) return { ok: false, refusal: 'missing' };
+  const { token } = credential;
+
+  const secret = process.env['JWT_SECRET'];
+  if (!secret) return { ok: false, refusal: 'not_configured' };
+
+  let payload: JwtPayload;
+  try {
+    payload = verifyJwt(token, secret);
+  } catch {
+    return { ok: false, refusal: 'invalid' };
+  }
+
+  if (!payload.organizationId || !payload.sub) {
+    return { ok: false, refusal: 'claims' };
+  }
+
+  // tokenVersion check (Step 9) — a mismatch means this token was issued
+  // before a deactivation bumped the stored value (UserService.deactivate()
+  // is the only caller of AuthProvider.invalidateUserSessions() today);
+  // reject rather than trust a stale token until it naturally expires.
+  // Role/permission changes do NOT bump tokenVersion (role.service.ts has
+  // zero tokenVersion/invalidateUserSessions references), so a user whose
+  // role changes is NOT signed out — their session stays valid until the
+  // token expires.
+  //
+  // CORRECTED (ACC-101): this comment used to add "keeps full access for up
+  // to 15 minutes", which was wrong. It conflated session validity with
+  // authorization. The JWT carries no permissions; the permission set is
+  // resolved from the database a few lines below, on EVERY request. A
+  // revocation therefore applies on the very next request — the JWT
+  // authenticates, it does not authorize. Verified live in one unbroken
+  // session: my-permissions went from ["roles:view"] to [], the endpoint
+  // from 200 to 403, /auth/me stayed 200. See SYSTEM-REFERENCE §1.2.
+  //
+  // ACC-168 — the organisation's status is joined into this SAME query, so
+  // refusing a closed organisation costs no extra round trip: one primary-key
+  // join on a query that already runs on every request. A closed
+  // organisation's sessions therefore stop at the next request, and start
+  // working again the moment it reopens — no token is revoked, so there is
+  // nothing to reissue. Not exempted for the platform organisation: the rule
+  // stays one rule, and the platform organisation cannot be closed
+  // (PlatformTenantService.suspendTenant()).
+  const user = await prisma.user.findFirst({
+    where: { id: payload.sub, organizationId: payload.organizationId },
+    select: {
+      tokenVersion: true,
+      organization: { select: { status: true, slug: true } },
+    },
+  });
+
+  if (!user || user.tokenVersion !== payload.tokenVersion) {
+    return { ok: false, refusal: 'revoked' };
+  }
+
+  return {
+    ok: true,
+    identity: {
+      userId: payload.sub,
+      organizationId: payload.organizationId,
+      ...(payload.impersonatedBy
+        ? { impersonatedBy: payload.impersonatedBy }
+        : {}),
+      organizationStatus: user.organization.status,
+      organizationSlug: user.organization.slug,
+      tokenSource: credential.source,
+    },
+  };
+}
+
+/**
+ * ACC-204 — whether a proved session is being used at its own address.
+ *
+ * - A Bearer session: always (an API client is not a browser tab).
+ * - A cookie session: only when the request's Origin is the address of its
+ *   organisation — or, for an IMPERSONATION session, of the platform
+ *   organisation, because a platform administrator impersonates from
+ *   `platform.…` and the app stays there (the token names the tenant, but the
+ *   tab is the platform admin's). Impersonation is due to go (ACC-99); this
+ *   keeps it working until then.
+ *
+ * Kept OUT of verifySessionIdentity() on purpose: sign-out (ACC-203) shares
+ * that helper and must work from any address.
+ */
+export function isSessionAtItsAddress(
+  identity: SessionIdentity,
+  origin: string | string[] | undefined,
+): boolean {
+  if (identity.tokenSource !== 'cookie') return true;
+  const expected = identity.impersonatedBy
+    ? PLATFORM_ORGANIZATION_SLUG
+    : identity.organizationSlug;
+  return isAtOwnAddress(origin, expected);
+}
+
+/** TenantGuard's refusal for each reason — the messages its callers and specs rely on. */
+const REFUSAL_MESSAGES: Record<SessionIdentityRefusal, string> = {
+  missing: 'Missing bearer token',
+  not_configured: 'Auth not configured',
+  invalid: 'Invalid or expired token',
+  claims: 'Token missing required claims',
+  revoked: 'Session has been revoked',
+};
+
 @Injectable()
 export class TenantGuard implements CanActivate {
   constructor(
@@ -121,80 +290,34 @@ export class TenantGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const request = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
 
-    // Cookie first (browser clients — the login flow, Commit 3), then the
-    // Authorization header (non-browser API clients that can't hold cookies).
-    const token = readSessionToken(request);
+    // ACC-203 — who the token proves the caller is, decided in the one place
+    // sign-out shares (verifySessionIdentity, above).
+    const result = await verifySessionIdentity(request, this.prisma);
+    if (!result.ok) {
+      throw new UnauthorizedException(REFUSAL_MESSAGES[result.refusal]);
+    }
+    const { identity } = result;
 
-    if (!token) {
-      throw new UnauthorizedException('Missing bearer token');
+    // ACC-204 — a browser session only works at its own organisation's
+    // address. Checked before the closed-organisation refusal: a session at
+    // the wrong address is not this address's to report on.
+    if (!isSessionAtItsAddress(identity, request.headers['origin'])) {
+      throw new AuthRefusalException('SESSION_OTHER_ORGANIZATION');
     }
 
-    const secret = process.env['JWT_SECRET'];
-
-    if (!secret) throw new UnauthorizedException('Auth not configured');
-
-    let payload: JwtPayload;
-    try {
-      payload = verifyJwt(token, secret);
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
-
-    if (!payload.organizationId || !payload.sub) {
-      throw new UnauthorizedException('Token missing required claims');
-    }
-
-    // tokenVersion check (Step 9) — a mismatch means this token was issued
-    // before a deactivation bumped the stored value (UserService.deactivate()
-    // is the only caller of AuthProvider.invalidateUserSessions() today);
-    // reject rather than trust a stale token until it naturally expires.
-    // Role/permission changes do NOT bump tokenVersion (role.service.ts has
-    // zero tokenVersion/invalidateUserSessions references), so a user whose
-    // role changes is NOT signed out — their session stays valid until the
-    // token expires.
-    //
-    // CORRECTED (ACC-101): this comment used to add "keeps full access for up
-    // to 15 minutes", which was wrong. It conflated session validity with
-    // authorization. The JWT carries no permissions; the permission set is
-    // resolved from the database a few lines below, on EVERY request. A
-    // revocation therefore applies on the very next request — the JWT
-    // authenticates, it does not authorize. Verified live in one unbroken
-    // session: my-permissions went from ["roles:view"] to [], the endpoint
-    // from 200 to 403, /auth/me stayed 200. See SYSTEM-REFERENCE §1.2.
-    //
-    // ACC-168 — the organisation's status is joined into this SAME query, so
-    // refusing a closed organisation costs no extra round trip: one primary-key
-    // join on a query that already runs on every request. A closed
-    // organisation's sessions therefore stop at the next request, and start
-    // working again the moment it reopens — no token is revoked, so there is
-    // nothing to reissue. Not exempted for the platform organisation: the rule
-    // stays one rule, and the platform organisation cannot be closed
-    // (PlatformTenantService.suspendTenant()).
-    const user = await this.prisma.user.findFirst({
-      where: { id: payload.sub, organizationId: payload.organizationId },
-      select: {
-        tokenVersion: true,
-        organization: { select: { status: true } },
-      },
-    });
-
-    if (!user || user.tokenVersion !== payload.tokenVersion) {
-      throw new UnauthorizedException('Session has been revoked');
-    }
-
-    if (!isOrganizationOpen(user.organization.status)) {
+    if (!isOrganizationOpen(identity.organizationStatus)) {
       throw new AuthRefusalException('ORGANIZATION_UNAVAILABLE');
     }
 
-    request.tenantId = payload.organizationId;
-    request.userId = payload.sub;
+    request.tenantId = identity.organizationId;
+    request.userId = identity.userId;
     request.userPermissions = await this.permissionResolver.getUserPermissions(
-      payload.sub,
-      payload.organizationId,
+      identity.userId,
+      identity.organizationId,
     );
     // ACC-13 — passthrough only, no behavior change to this guard otherwise.
-    if (payload.impersonatedBy) {
-      request.impersonatedBy = payload.impersonatedBy;
+    if (identity.impersonatedBy) {
+      request.impersonatedBy = identity.impersonatedBy;
     }
     return true;
   }

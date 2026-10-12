@@ -4,6 +4,7 @@ import { ConflictException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { LookupService } from '../lookup/lookup.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -126,6 +127,10 @@ describe('TaskService — holds and requests (ACC-173)', () => {
       providers: [
         TaskService,
         TaskAssignmentService,
+
+        // ACC-208 — TaskAssignmentService's catalogue dependency; not reached here.
+
+        { provide: LookupService, useValue: {} },
         { provide: TaskAuthorityService, useValue: mockAuthority },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAudit },
@@ -239,9 +244,11 @@ describe('TaskService — holds and requests (ACC-173)', () => {
       );
     });
 
-    it('when the stage closes the task (cancelForStage), with the hold ended', async () => {
+    it('when the stage closes the task (the stage-exit cancel, ACC-190), with the hold ended', async () => {
       mockPrisma.task.findMany.mockResolvedValue([onHold()]);
-      await service.cancelForStage('instance-1', 'stage-1', ORG_A, 'actor', 'STAGE_EXIT');
+      const scope = { workflowInstanceId: 'instance-1', stageId: 'stage-1', workflowInstanceStageId: 'entry-1' };
+      const result = await service.cancelStageExitTasksInTx(mockPrisma as never, scope, ORG_A);
+      await service.auditStageExitCancellation(result, scope, ORG_A, 'actor');
 
       expect(mockPrisma.task.updateMany).toHaveBeenCalledWith({
         where: { id: { in: ['task-1'] }, organizationId: ORG_A },

@@ -10,6 +10,7 @@
 // the interval then never runs.
 import { TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 import { IDLE_TIMEOUT_MS, IDLE_WARNING_LEAD_MS, IdleService } from './idle.service';
 import { AuthService } from './auth.service';
@@ -21,12 +22,13 @@ describe('IdleService (ACC-122)', () => {
   /** Whether THIS spec built the fixture — see the afterEach below. */
   let fixtureBuilt = false;
 
-  function setup(logoutFails = false): void {
+  function setup(logoutFails: boolean | Error | HttpErrorResponse = false): void {
     router = { navigate: jasmine.createSpy('navigate'), url: '/committees/abc' };
+    const failure = logoutFails === true ? new Error('offline') : logoutFails || null;
     authService = {
       logout: jasmine
         .createSpy('logout')
-        .and.returnValue(logoutFails ? throwError(() => new Error('offline')) : of({ success: true })),
+        .and.returnValue(failure ? throwError(() => failure) : of({ success: true })),
       clearSession: jasmine.createSpy('clearSession'),
     };
 
@@ -122,6 +124,28 @@ describe('IdleService (ACC-122)', () => {
     // database row with a 7-day life. Dropping only the client's memory of it
     // would leave the session alive on the server.
     expect(authService.logout).toHaveBeenCalled();
+    expect(authService.clearSession).toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/login'],
+      jasmine.objectContaining({
+        queryParams: jasmine.objectContaining({ returnUrl: '/committees/abc', reason: 'idle' }),
+      }),
+    );
+    discardPeriodicTasks();
+  }));
+
+  // ACC-203 — the exact failure behind the bug: after an idle wait in a frozen
+  // tab the access cookie had expired, the server answered 401 "Missing bearer
+  // token", and the sign-out ended only locally. The server no longer refuses
+  // it, but a failed call must still end the session here and say why.
+  it('still clears and goes to /login?reason=idle when the logout call is refused', fakeAsync(() => {
+    setup(new HttpErrorResponse({ status: 401, statusText: 'Unauthorized', error: { message: 'Missing bearer token' } }));
+    service.start();
+
+    advance(IDLE_TIMEOUT_MS);
+    tick();
+
+    expect(authService.logout).toHaveBeenCalledTimes(1);
     expect(authService.clearSession).toHaveBeenCalled();
     expect(router.navigate).toHaveBeenCalledWith(
       ['/login'],

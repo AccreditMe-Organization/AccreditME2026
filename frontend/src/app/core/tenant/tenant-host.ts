@@ -17,10 +17,16 @@ import { INFRASTRUCTURE_LABELS } from './reserved-labels';
  * backend never lets a tenant take (`www`, `api`, …). `platform` IS a valid
  * host: it is where a platform administrator signs in.
  *
- * USED ONLY BY SIGN-IN AND FORGOT PASSWORD. After sign-in, the session's own
- * organisation is the authority, and nothing compares it with the address —
- * a platform administrator signed in at `platform.…` and impersonating a tenant
- * is one such case, and it must keep working. Do not add a comparison.
+ * USED BY SIGN-IN AND FORGOT PASSWORD to say which organisation they are for.
+ *
+ * SUPERSEDED (ACC-204): this used to say "nothing compares the session with the
+ * address — do not add a comparison". Now the API does: a browser session only
+ * works at its own organisation's address, judged from the request's Origin
+ * (backend `common/tenant/session-address.ts`), and the app reads the refusal
+ * as "not signed in here" (`session-address-state.ts`). The comparison lives on
+ * the server, not here, so this service still only reads the address. A
+ * platform administrator impersonating a tenant from `platform.…` keeps
+ * working: an impersonation session is held to the PLATFORM's address.
  */
 
 // A DNS label: 1–63 lower-case letters, digits and inner hyphens, not punycode.

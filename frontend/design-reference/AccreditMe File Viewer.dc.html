@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+  @keyframes shimmer { 0% { background-position: -300px 0; } 100% { background-position: 300px 0; } }
+</style>
+</helmet>
+
+<div style="max-width: 1480px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 9 Oct 2026 · Shared component: am-file-viewer · on Design System Rev 8, Templates Rev 6, Task / Meeting / Storage Settings files</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">File viewer</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 108ch; text-wrap: pretty;">One component that opens any attached file inside AccreditMe, from every attachment list. The large drawing is live: use <strong style="font-weight: 600;">Tweaks</strong> to switch the file type or state and the language. Below it, every state is drawn side by side in English and Arabic.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8">
+        <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div><div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div></div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="v1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The viewer · the app's first drawer</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Showing <strong style="font-weight: 600; color: #2D3748;">{{ big.label }}</strong> at a 1440 × 900 window, drawn at full size. Tweaks: Expanded for full screen.</span>
+    </div>
+
+    <div style="position: relative; width: 1440px; max-width: 100%; height: 900px; border-radius: 8px; overflow: hidden; background: #F4F7FA; border: 1px solid #E2E8F0;">
+      <div aria-hidden="true" style="{{ bigPage }}">
+        <div style="flex: none; width: 260px; background: #1E2A38;"></div>
+        <div style="flex: 1 1 auto; min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 10px; {{ bigPg.font }}"><div style="font-size: 12px; color: #5A6779;">{{ bigPg.crumb }}</div><div style="font-size: 28px; line-height: 34px; font-weight: 600; color: #2D3748;">{{ bigPg.title }}</div><div style="font-size: 13px; color: #4A5568;">{{ bigPg.date }}</div><div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;"><div style="padding: 9px 12px; border-block-end: 1px solid #E2E8F0; font-size: 13px; font-weight: 600;">{{ bigPg.att }}</div><sc-for list="{{ bigPg.rows }}" as="r" hint-placeholder-count="5"><div style="{{ r.style }}">{{ r.n }}</div></sc-for></div></div>
+      </div>
+      <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(30,42,56,0.45);"></div>
+      <div role="dialog" aria-modal="true" aria-label="{{ big.name }}" dir="{{ big.dir }}" style="{{ big.frame }}">
+        <div style="{{ big.headStyle }}">
+          <span style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto;">
+            <span style="{{ big.iconStyle }}">{{ big.icon }}</span>
+            <span style="min-width: 0; flex: 1 1 auto;">
+              <span title="{{ big.name }}" style="display: flex; min-width: 0; font-size: {{ big.titleSize }}; font-weight: 600;"><span dir="{{ big.nameDir }}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; unicode-bidi: isolate;">{{ big.nameHead }}</span><span dir="{{ big.nameDir }}" style="flex: none; white-space: nowrap; unicode-bidi: isolate;">{{ big.nameTail }}</span></span>
+              <span style="display: block; font-size: 12px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><span dir="ltr" style="unicode-bidi: isolate;">{{ big.meta }}</span> · {{ big.from }}</span>
+            </span>
+          </span>
+          <sc-if value="{{ big.hasNav }}" hint-placeholder-val="{{ true }}">
+            <span style="flex: none; display: flex; align-items: center; gap: 6px;">
+              <button aria-label="{{ big.prevLabel }}" title="{{ big.prevLabel }}" style="width: 32px; height: 32px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #2D3748; font-size: 14px;">{{ big.prevGlyph }}</button>
+              <span style="font-size: 12.5px; color: #4A5568; min-width: 48px; text-align: center;"><span dir="ltr" style="unicode-bidi: isolate;">{{ big.pos }}</span></span>
+              <button aria-label="{{ big.nextLabel }}" title="{{ big.nextLabel }}" style="width: 32px; height: 32px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #2D3748; font-size: 14px;">{{ big.nextGlyph }}</button>
+            </span>
+          </sc-if>
+          <span style="flex: none; width: 1px; height: 24px; background: #E2E8F0;"></span>
+          <sc-if value="{{ big.canDownload }}" hint-placeholder-val="{{ true }}"><button style="flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid #5A6779; border-radius: 6px; background: #fff; color: #2D3748; padding: 0 12px; font-family: inherit; font-size: 13px; font-weight: 500;">⤓ {{ big.downloadLabel }}</button></sc-if>
+          <button aria-label="{{ big.expandLabel }}" title="{{ big.expandLabel }}" style="flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #2D3748; padding: 0 10px; font-family: inherit; font-size: 13px;">{{ big.expandGlyph }} {{ big.expandText }}</button>
+          <button aria-label="{{ big.closeLabel }}" title="{{ big.closeLabel }}" style="flex: none; width: 32px; height: 32px; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #2D3748; font-size: 13px;">✕</button>
+        </div>
+
+        <sc-if value="{{ big.toolbar }}" hint-placeholder-val="{{ false }}">
+          <div style="flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 20px; border-block-end: 1px solid #E2E8F0; background: #FBFCFD;">
+            <sc-for list="{{ big.toolbar }}" as="g" hint-placeholder-count="3">
+              <span style="display: flex; align-items: center; gap: 6px;">
+                <sc-for list="{{ g }}" as="t" hint-placeholder-count="3"><span style="{{ t.style }}" aria-label="{{ t.aria }}">{{ t.label }}</span></sc-for>
+              </span>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div style="{{ big.bodyStyle }}">
+          <sc-if value="{{ big.isPdf }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 20px 0;">
+              <sc-for list="{{ big.pages }}" as="pg" hint-placeholder-count="2">
+                <div style="{{ pg.style }}">
+                  <sc-if value="{{ pg.loaded }}" hint-placeholder-val="{{ true }}">
+                    <div style="font-size: 15px; font-weight: 700; margin-block-end: 6px;">{{ pg.h }}</div>
+                    <div style="font-size: 10.5px; color: #5A6779; margin-block-end: 14px;">{{ pg.sub }}</div>
+                    <sc-for list="{{ pg.lines }}" as="l" hint-placeholder-count="10"><div style="{{ l }}"></div></sc-for>
+                    <div style="position: absolute; bottom: 14px; inset-inline: 0; text-align: center; font-size: 10px; color: #8A94A6;">{{ pg.foot }}</div>
+                  </sc-if>
+                  <sc-if value="{{ pg.pending }}" hint-placeholder-val="{{ false }}"><div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #5A6779; background: linear-gradient(90deg,#F4F7FA 0%,#FBFCFD 50%,#F4F7FA 100%); background-size: 600px 100%; animation: shimmer 1.4s linear infinite;">{{ pg.pendingText }}</div></sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ big.isImage }}" hint-placeholder-val="{{ false }}">
+            <div style="height: 100%; display: flex; align-items: center; justify-content: center; background: repeating-conic-gradient(#EDF1F6 0% 25%, #F7F9FB 0% 50%) 0 0 / 20px 20px;">
+              <div style="{{ big.imgStyle }}">
+                <div style="position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px; padding: 14px;"><sc-for list="{{ big.imgTiles }}" as="t" hint-placeholder-count="12"><span style="{{ t }}"></span></sc-for></div>
+                <span style="position: absolute; bottom: 10px; inset-inline-start: 12px; font-size: 11px; color: #fff; background: rgba(30,42,56,0.7); border-radius: 4px; padding: 2px 8px;">Image placeholder · ward photo, 4032 × 3024</span>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ big.isTxt }}" hint-placeholder-val="{{ false }}">
+            <div style="max-width: 860px; margin: 24px auto; background: #fff; border: 1px solid #E2E8F0; border-radius: 6px; padding: 16px 20px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 21px;">
+              <sc-for list="{{ big.txt }}" as="l" hint-placeholder-count="12"><div dir="auto" style="{{ l.style }}">{{ l.t }}</div></sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ big.isCsv }}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 16px 20px;">
+              <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; margin-block-end: 10px; background: #F2F7FB; border: 1px solid #C5DAEA; border-radius: 6px; font-size: 13px; color: #1F5480;"><span style="font-weight: 600;">ⓘ {{ big.csvNote }}</span></div>
+              <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 6px; overflow: auto;">
+                <div style="display: grid; grid-template-columns: 56px repeat(5, minmax(140px, 1fr)); min-width: 820px;">
+                  <sc-for list="{{ big.csvHead }}" as="h" hint-placeholder-count="6"><span style="{{ h.style }}">{{ h.t }}</span></sc-for>
+                  <sc-for list="{{ big.csvCells }}" as="c" hint-placeholder-count="60"><span dir="{{ c.dir }}" style="{{ c.style }}">{{ c.t }}</span></sc-for>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ big.isPanel }}" hint-placeholder-val="{{ false }}">
+            <div style="height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px;">
+              <div role="{{ big.panel.role }}" style="{{ big.panel.box }}">
+                <span style="{{ big.panel.iconStyle }}">{{ big.panel.icon }}</span>
+                <span style="font-size: {{ big.titleSize }}; font-weight: 600;">{{ big.panel.title }}</span>
+                <sc-if value="{{ big.panel.file }}" hint-placeholder-val="{{ false }}"><span style="font-size: 13px; color: #4A5568;"><span dir="{{ big.nameDir }}" style="unicode-bidi: isolate;">{{ big.name }}</span> · <span dir="ltr" style="unicode-bidi: isolate;">{{ big.meta }}</span></span></sc-if>
+                <span style="font-size: 13.5px; color: #4A5568; text-wrap: pretty; max-width: 46ch;">{{ big.panel.body }}</span>
+                <sc-if value="{{ big.panel.btns }}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-block-start: 4px;"><sc-for list="{{ big.panel.btns }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></sc-if>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ big.isLoading }}" hint-placeholder-val="{{ false }}">
+            <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;">
+              <div style="width: 520px; max-width: 80%; height: 560px; max-height: 70%; border-radius: 4px; background: linear-gradient(90deg,#EDF1F6 0%,#F7F9FB 50%,#EDF1F6 100%); background-size: 600px 100%; animation: shimmer 1.4s linear infinite;"></div>
+              <span role="status" style="font-size: 13px; color: #4A5568;">{{ big.loadingText }}</span>
+            </div>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ big.foot }}" hint-placeholder-val="{{ false }}">
+          <div style="flex: none; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 16px; padding: 8px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA; font-size: 12px; color: #4A5568;">
+            <span>{{ big.foot.left }}</span><span style="color: #5A6779;">{{ big.foot.right }}</span>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">The drawer · defined once in the design system</div>
+        <sc-for list="{{ sizeSpec }}" as="r" hint-placeholder-count="8"><div style="display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 5px 0; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="font-weight: 600;">{{ r.k }}</span><span style="color: #4A5568; text-wrap: pretty;">{{ r.v }}</span></div></sc-for>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Keyboard and screen readers</div>
+        <sc-for list="{{ keys }}" as="k" hint-placeholder-count="9"><div style="display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 5px 0; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="font-weight: 600; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;">{{ k.k }}</span><span style="color: #4A5568; text-wrap: pretty;">{{ k.v }}</span></div></sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="v2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Every state, English and Arabic</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Each pair is the same 1440 × 900 window at 26% scale, drawer open: English on the left (drawer from the right), Arabic on the right (drawer from the left). Switch the large drawing above to any of them in Tweaks for full size.</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 18px;">
+      <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="12">
+        <div>
+          <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; margin-block-end: 8px;"><span style="font-size: 11px; font-weight: 700; color: #8A94A6;">{{ g.n }}</span><span style="font-size: 14px; font-weight: 600;">{{ g.label }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ g.note }}</span></div>
+          <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+            <sc-for list="{{ g.pair }}" as="v" hint-placeholder-count="2">
+              <div style="{{ v.box }}">
+                <div style="{{ v.scene }}">
+                <div aria-hidden="true" style="{{ v.page }}"><div style="flex: none; width: 260px; background: #1E2A38;"></div><div style="flex: 1 1 auto; min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 10px; {{ v.pg.font }}"><div style="font-size: 12px; color: #5A6779;">{{ v.pg.crumb }}</div><div style="font-size: 28px; line-height: 34px; font-weight: 600; color: #2D3748;">{{ v.pg.title }}</div><div style="font-size: 13px; color: #4A5568;">{{ v.pg.date }}</div><div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;"><div style="padding: 9px 12px; border-block-end: 1px solid #E2E8F0; font-size: 13px; font-weight: 600;">{{ v.pg.att }}</div><sc-for list="{{ v.pg.rows }}" as="r" hint-placeholder-count="5"><div style="{{ r.style }}">{{ r.n }}</div></sc-for></div></div></div>
+                <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(30,42,56,0.45);"></div>
+                <div dir="{{ v.dir }}" style="{{ v.mini }}">
+                  <div style="{{ v.headStyle }}">
+                    <span style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto;">
+                      <span style="{{ v.iconStyle }}">{{ v.icon }}</span>
+                      <span style="min-width: 0; flex: 1 1 auto;"><span style="display: flex; min-width: 0; font-size: {{ v.titleSize }}; font-weight: 600;"><span dir="{{ v.nameDir }}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; unicode-bidi: isolate;">{{ v.nameHead }}</span><span dir="{{ v.nameDir }}" style="flex: none; white-space: nowrap; unicode-bidi: isolate;">{{ v.nameTail }}</span></span><span style="display: block; font-size: 12px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><span dir="ltr" style="unicode-bidi: isolate;">{{ v.meta }}</span> · {{ v.from }}</span></span>
+                    </span>
+                    <sc-if value="{{ v.hasNav }}" hint-placeholder-val="{{ true }}"><span style="flex: none; display: flex; align-items: center; gap: 6px;"><span style="width: 32px; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px;">{{ v.prevGlyph }}</span><span style="font-size: 12.5px; color: #4A5568;"><span dir="ltr" style="unicode-bidi: isolate;">{{ v.pos }}</span></span><span style="width: 32px; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px;">{{ v.nextGlyph }}</span></span></sc-if>
+                    <sc-if value="{{ v.canDownload }}" hint-placeholder-val="{{ true }}"><span style="flex: none; display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; border: 1px solid #5A6779; border-radius: 6px; padding: 0 12px; font-size: 13px;">⤓ {{ v.downloadLabel }}</span></sc-if><sc-if value="{{ v.canExpand }}" hint-placeholder-val="{{ true }}"><span style="flex: none; display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 6px; padding: 0 10px; font-size: 13px;">{{ v.expandGlyph }} {{ v.expandText }}</span></sc-if>
+                    <span style="flex: none; width: 32px; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px;">✕</span>
+                  </div>
+                  <sc-if value="{{ v.toolbar }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 20px; border-block-end: 1px solid #E2E8F0; background: #FBFCFD;"><sc-for list="{{ v.toolbar }}" as="grp" hint-placeholder-count="3"><span style="display: flex; align-items: center; gap: 6px;"><sc-for list="{{ grp }}" as="t" hint-placeholder-count="3"><span style="{{ t.style }}">{{ t.label }}</span></sc-for></span></sc-for></div></sc-if>
+                  <div style="{{ v.bodyStyle }}">
+                    <sc-if value="{{ v.isPdf }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 20px 0;"><sc-for list="{{ v.pages }}" as="pg" hint-placeholder-count="2"><div style="{{ pg.style }}"><sc-if value="{{ pg.loaded }}" hint-placeholder-val="{{ true }}"><div style="font-size: 15px; font-weight: 700; margin-block-end: 6px;">{{ pg.h }}</div><div style="font-size: 10.5px; color: #5A6779; margin-block-end: 14px;">{{ pg.sub }}</div><sc-for list="{{ pg.lines }}" as="l" hint-placeholder-count="10"><div style="{{ l }}"></div></sc-for></sc-if><sc-if value="{{ pg.pending }}" hint-placeholder-val="{{ false }}"><div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; color: #5A6779; background: #F4F7FA;">{{ pg.pendingText }}</div></sc-if></div></sc-for></div></sc-if>
+                    <sc-if value="{{ v.isImage }}" hint-placeholder-val="{{ false }}"><div style="height: 100%; display: flex; align-items: center; justify-content: center; background: repeating-conic-gradient(#EDF1F6 0% 25%, #F7F9FB 0% 50%) 0 0 / 20px 20px;"><div style="{{ v.imgStyle }}"><div style="position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px; padding: 14px;"><sc-for list="{{ v.imgTiles }}" as="t" hint-placeholder-count="12"><span style="{{ t }}"></span></sc-for></div></div></div></sc-if>
+                    <sc-if value="{{ v.isTxt }}" hint-placeholder-val="{{ false }}"><div style="max-width: 860px; margin: 24px auto; background: #fff; border: 1px solid #E2E8F0; border-radius: 6px; padding: 16px 20px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; line-height: 21px;"><sc-for list="{{ v.txt }}" as="l" hint-placeholder-count="12"><div dir="auto" style="{{ l.style }}">{{ l.t }}</div></sc-for></div></sc-if>
+                    <sc-if value="{{ v.isCsv }}" hint-placeholder-val="{{ false }}"><div style="padding: 16px 20px;"><div style="padding: 8px 12px; margin-block-end: 10px; background: #F2F7FB; border: 1px solid #C5DAEA; border-radius: 6px; font-size: 13px; font-weight: 600; color: #1F5480;">ⓘ {{ v.csvNote }}</div><div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden;"><div style="display: grid; grid-template-columns: 56px repeat(5, minmax(140px, 1fr)); min-width: 820px;"><sc-for list="{{ v.csvHead }}" as="h" hint-placeholder-count="6"><span style="{{ h.style }}">{{ h.t }}</span></sc-for><sc-for list="{{ v.csvCells }}" as="c" hint-placeholder-count="60"><span dir="{{ c.dir }}" style="{{ c.style }}">{{ c.t }}</span></sc-for></div></div></div></sc-if>
+                    <sc-if value="{{ v.isPanel }}" hint-placeholder-val="{{ false }}"><div style="height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px;"><div style="{{ v.panel.box }}"><span style="{{ v.panel.iconStyle }}">{{ v.panel.icon }}</span><span style="font-size: {{ v.titleSize }}; font-weight: 600;">{{ v.panel.title }}</span><sc-if value="{{ v.panel.file }}" hint-placeholder-val="{{ false }}"><span style="font-size: 13px; color: #4A5568;"><span dir="{{ v.nameDir }}" style="unicode-bidi: isolate;">{{ v.name }}</span> · <span dir="ltr" style="unicode-bidi: isolate;">{{ v.meta }}</span></span></sc-if><span style="font-size: 13.5px; color: #4A5568; text-wrap: pretty; max-width: 46ch;">{{ v.panel.body }}</span><sc-if value="{{ v.panel.btns }}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-block-start: 4px;"><sc-for list="{{ v.panel.btns }}" as="b" hint-placeholder-count="2"><span style="{{ b.style }}">{{ b.label }}</span></sc-for></span></sc-if></div></div></sc-if>
+                    <sc-if value="{{ v.isLoading }}" hint-placeholder-val="{{ false }}"><div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;"><div style="width: 520px; max-width: 80%; height: 560px; max-height: 70%; border-radius: 4px; background: #EDF1F6;"></div><span style="font-size: 13px; color: #4A5568;">{{ v.loadingText }}</span></div></sc-if>
+                  </div>
+                  <sc-if value="{{ v.foot }}" hint-placeholder-val="{{ false }}"><div style="flex: none; display: flex; justify-content: space-between; gap: 16px; padding: 8px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA; font-size: 12px; color: #4A5568;"><span>{{ v.foot.left }}</span><span>{{ v.foot.right }}</span></div></sc-if>
+                </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="v3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">How it opens · the same row in three homes</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The file name is a link to the viewer; an eye button does the same; Download and Delete stay where they were.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px;">
+      <sc-for list="{{ homes }}" as="h" hint-placeholder-count="5">
+        <div dir="{{ h.dir }}" style="{{ h.wrap }}">
+          <div style="{{ h.capStyle }}">{{ h.cap }}</div>
+          <div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; box-sizing: border-box; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;"><span style="{{ h.titleStyle }}">{{ h.title }}</span><span style="{{ h.tagStyle }}">{{ h.tag }}</span></span><a href="#v3" style="{{ h.addStyle }}">{{ h.add }}</a></div>
+            <div style="padding: 2px 12px 6px;">
+              <sc-for list="{{ h.rows }}" as="r" hint-placeholder-count="3">
+                <div style="{{ r.rowStyle }}">
+                  <span style="{{ r.iconStyle }}">{{ r.icon }}</span>
+                  <span style="flex: 1 1 auto; min-width: 0;">
+                    <sc-if value="{{ r.link }}" hint-placeholder-val="{{ true }}"><a href="#v1" dir="{{ r.dir }}" style="{{ r.nameStyle }}">{{ r.name }}</a></sc-if>
+                    <sc-if value="{{ r.plain }}" hint-placeholder-val="{{ false }}"><span dir="{{ r.dir }}" style="{{ r.nameStyle }}">{{ r.name }}</span></sc-if>
+                    <span style="{{ r.metaStyle }}">{{ r.meta }}</span>
+                  </span>
+                  <sc-if value="{{ r.chip }}" hint-placeholder-val="{{ false }}"><span style="{{ r.chipStyle }}">{{ r.chip }}</span></sc-if>
+                  <span style="display: flex; align-items: center; gap: 4px; flex: none;">
+                    <sc-for list="{{ r.acts }}" as="a" hint-placeholder-count="3"><button aria-label="{{ a.aria }}" title="{{ a.aria }}" style="{{ a.style }}">{{ a.g }}</button></sc-for>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="{{ h.noteStyle }}">{{ h.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · opening, content, states</div>
+        <sc-for list="{{ notes }}" as="n" hint-placeholder-count="12"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for>
+      </div>
+      <div style="border: 1px solid #FEDF89; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #B54708; margin-block-end: 8px;">Questions for the product owner</div>
+        <sc-for list="{{ questions }}" as="q" hint-placeholder-count="7">
+          <div style="padding: 6px 0; border-block-end: 1px solid #F0F3F7;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 12.5px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 2px 0 0 26px; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for></div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;state&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;pdf&quot;, &quot;pdfBig&quot;, &quot;image&quot;, &quot;txt&quot;, &quot;csv&quot;, &quot;noPreview&quot;, &quot;heic&quot;, &quot;loading&quot;, &quot;error&quot;, &quot;deleted&quot;, &quot;sharepoint&quot;], &quot;default&quot;: &quot;pdf&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Viewer&quot;}, &quot;lang&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;en&quot;, &quot;ar&quot;], &quot;default&quot;: &quot;en&quot;, &quot;tsType&quot;: &quot;'en' | 'ar'&quot;, &quot;section&quot;: &quot;Viewer&quot;}, &quot;expanded&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Viewer&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = "font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    const FILES = {
+      pdf: { en: "Hand hygiene audit, Ward 4B · September 2026.pdf", ar: "تدقيق نظافة اليدين، جناح 4B · سبتمبر 2026.pdf", nameDirEn: "ltr", nameDirAr: "rtl", meta: "PDF · 2.4 MB", icon: "PDF", pos: [2, 5], src: "meeting" },
+      pdfBig: { en: "JCI Accreditation Standards for Hospitals, 8th Edition.pdf", ar: "JCI Accreditation Standards for Hospitals, 8th Edition.pdf", nameDirEn: "ltr", nameDirAr: "ltr", meta: "PDF · 24.6 MB · 412 pages", icon: "PDF", pos: [1, 3], src: "standard", metaAr: "PDF · 24.6 MB · 412 صفحة" },
+      image: { en: "Isolation room 3, Tower A.jpg", ar: "غرفة العزل 3، البرج A.jpg", nameDirEn: "ltr", nameDirAr: "rtl", meta: "JPEG · 3.1 MB · 4032 × 3024", icon: "IMG", pos: [1, 5], src: "meeting" },
+      txt: { en: "Ward 6A observations.txt", ar: "ملاحظات الجناح 6A.txt", nameDirEn: "ltr", nameDirAr: "rtl", meta: "TXT · 6 KB", icon: "TXT", pos: [4, 5], src: "meeting" },
+      csv: { en: "Q3 surveillance data export.csv", ar: "بيانات الترصد للربع الثالث.csv", nameDirEn: "ltr", nameDirAr: "rtl", meta: "CSV · 412 KB · 2,140 rows", icon: "CSV", pos: [5, 5], src: "meeting", metaAr: "CSV · 412 KB · 2,140 صفًا" },
+      word: { en: "Infection control policy IPC-04, revision 3 (draft for committee review).docx", ar: "سياسة مكافحة العدوى IPC-04، المراجعة 3 (مسودة للجنة).docx", nameDirEn: "ltr", nameDirAr: "rtl", meta: "Word · 1.2 MB", icon: "DOC", pos: [3, 5], src: "meeting" },
+      heic: { en: "Hand-rub dispenser, corridor B.heic", ar: "موزّع المعقّم، الممر B.heic", nameDirEn: "ltr", nameDirAr: "rtl", meta: "HEIC · 2.8 MB", icon: "IMG", pos: [1, 1], src: "task1" }
+    };
+    const T = (ar) => ar ? {
+      download: "تنزيل", close: "إغلاق العارض", prev: "الملف السابق", next: "الملف التالي", of: " من ",
+      page: "صفحة", fitW: "ملاءمة العرض", fitP: "ملاءمة الصفحة", zoomIn: "تكبير", zoomOut: "تصغير", actual: "100%",
+      loading: "جارٍ فتح الملف…", csvNote: "عرض أول 500 صف من 2,140. نزّل الملف لرؤيتها كلها.",
+      noPrevT: "لا تتوفر معاينة لهذا النوع بعد", noPrevB: "لا يمكن عرض ملفات Word داخل AccreditMe حتى الآن. نزّل الملف لفتحه على جهازك.",
+      noPrevHeicB: "لا يمكن عرض صور HEIC داخل AccreditMe حتى الآن. نزّل الملف لفتحه على جهازك.",
+      errT: "تعذّر فتح هذا الملف", errB: "تعذّر علينا فتح هذا الملف. حاول مرة أخرى أو نزّله.", retry: "حاول مرة أخرى",
+      delT: "حُذف هذا الملف", delB: "حُذف هذا الملف. لم يعد متاحًا.", spT: "لا يمكن الوصول إلى SharePoint", spB: "لم يعد بإمكان AccreditMe الوصول إلى مكتبة SharePoint الخاصة بكم. اطلب من مسؤول النظام إعادة ربطها.",
+      bigFootL: "الصفحات 1–4 جاهزة · تُحمَّل كل صفحة عند الاقتراب منها", bigFootR: "الملف كبير: لا يُحمَّل كاملًا",
+      dragHint: "اسحب لتحريك الصورة"
+    } : {
+      download: "Download", close: "Close viewer", prev: "Previous file", next: "Next file", of: " of ",
+      page: "Page", fitW: "Fit width", fitP: "Fit page", zoomIn: "Zoom in", zoomOut: "Zoom out", actual: "100%",
+      loading: "Opening the file…", csvNote: "Showing the first 500 rows of 2,140. Download to see all.",
+      noPrevT: "No preview for this type yet", noPrevB: "Word files can't be shown inside AccreditMe yet. Download it to open it on your computer.",
+      noPrevHeicB: "HEIC photos can't be shown inside AccreditMe yet. Download it to open it on your computer.",
+      errT: "We couldn't open this file", errB: "We couldn't open this file. Try again or download it.", retry: "Try again",
+      delT: "This file was deleted", delB: "This file was deleted. It is no longer available.", spT: "SharePoint can't be reached", spB: "AccreditMe can no longer reach your SharePoint library. Ask your administrator to connect it again.",
+      bigFootL: "Pages 1–4 ready · each page loads as you reach it", bigFootR: "Large file: never loaded whole",
+      dragHint: "Drag to move the image"
+    };
+    const btn = (label, kind, ar) => ({ label, style: "display: inline-flex; align-items: center; height: 32px; box-sizing: border-box; border-radius: 6px; padding: 0 12px; font-family: inherit; font-size: " + (ar ? 14 : 13) + "px; " + (kind === "primary" ? "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;" : "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;") });
+    const tb = (label, o) => ({ label, aria: (o && o.aria) || label, style: "display: inline-flex; align-items: center; justify-content: center; height: 30px; min-width: 30px; box-sizing: border-box; padding: 0 8px; border-radius: 5px; font-size: 12.5px; white-space: nowrap; " + (o && o.field ? "border: 1px solid #8A94A6; background: #fff; min-width: 46px; font-variant-numeric: tabular-nums;" : o && o.on ? "border: 1px solid #2E6FA3; background: #E4EEF6; color: #1F5480; font-weight: 600;" : o && o.text ? "border: none; color: #4A5568; padding: 0 2px;" : "border: 1px solid #8A94A6; background: #fff; color: #2D3748;") });
+    const midTrunc = (name) => { const dot = name.lastIndexOf("."); const tail = name.length > 34 ? name.slice(Math.max(dot - 10, 0)) : ""; return tail ? { head: name.slice(0, Math.max(dot - 10, 0)), tail } : { head: name, tail: "" }; };
+
+    const lines = (n, seed) => Array.from({ length: n }, (_, i) => "height: 6px; border-radius: 2px; background: #E2E8F0; margin-block-end: 9px; width: " + (60 + ((i * 37 + seed * 13) % 38)) + "%;");
+    const page = (h, sub, foot, o) => ({ h, sub, foot, loaded: !(o && o.pending), pending: !!(o && o.pending), pendingText: (o && o.pendingText) || "",
+      lines: lines((o && o.n) || 18, (o && o.seed) || 1),
+      style: "position: relative; flex: none; width: " + ((o && o.w) || 640) + "px; max-width: calc(100% - 40px); height: " + ((o && o.h) || 828) + "px; box-sizing: border-box; padding: 48px 56px; background: #fff; box-shadow: 0 1px 3px rgba(16,24,40,0.12); border: 1px solid #E2E8F0;" });
+
+    const build = (kind, ar) => {
+      const t = T(ar);
+      const fk = { pdf: "pdf", pdfBig: "pdfBig", image: "image", txt: "txt", csv: "csv", noPreview: "word", heic: "heic", loading: "pdf", error: "pdf", deleted: "pdf", sharepoint: "pdf" }[kind];
+      const f = FILES[fk];
+      const name = ar ? f.ar : f.en, nameDir = ar ? f.nameDirAr : f.nameDirEn;
+      const mt = midTrunc(name);
+      const v = {
+        dir: ar ? "rtl" : "ltr", name, nameDir, nameHead: mt.head, nameTail: mt.tail, meta: (ar && f.metaAr) || f.meta, icon: f.icon, canExpand: true,
+        from: ({ meeting: ar ? "من مرفقات اجتماع مكافحة العدوى" : "From the IPC meeting's attachments", standard: ar ? "من أدلة المعيار IPSG.1" : "From Standard IPSG.1's evidence", task1: ar ? "من أدلة مهمة" : "From a task's evidence" })[f.src],
+        titleSize: ar ? "16px" : "15px",
+        iconStyle: "flex: none; width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;",
+        hasNav: f.pos[1] > 1, pos: f.pos[0] + " / " + f.pos[1],
+        prevGlyph: ar ? "→" : "←", nextGlyph: ar ? "←" : "→",
+        prevLabel: t.prev + " · " + (f.pos[0] - 1) + t.of + f.pos[1], nextLabel: t.next + " · " + (f.pos[0] + 1) + t.of + f.pos[1],
+        canDownload: kind !== "sharepoint" && kind !== "deleted", downloadLabel: t.download, closeLabel: t.close,
+        expandGlyph: "⤢", expandText: ar ? "توسيع" : "Expand", expandLabel: ar ? "توسيع العارض إلى ملء الشاشة" : "Expand the viewer to full screen",
+        headStyle: "flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-block-end: 1px solid #E2E8F0; background: #fff;",
+        bodyStyle: "flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: " + (kind === "csv" ? "auto" : "hidden") + "; background: #F4F7FA;",
+        toolbar: null, foot: null, isPdf: false, isImage: false, isTxt: false, isCsv: false, isPanel: false, isLoading: false, panel: null, loadingText: t.loading
+      };
+      if (kind === "pdf" || kind === "pdfBig") {
+        v.isPdf = true;
+        const big = kind === "pdfBig";
+        v.toolbar = [
+          [tb(t.page, { text: 1 }), tb(big ? "3" : "3", { field: 1, aria: t.page }), tb(t.of.trim() + " " + (big ? "412" : "12"), { text: 1 })],
+          [tb(t.fitW, { on: 1 }), tb(t.fitP)],
+          [tb("−", { aria: t.zoomOut }), tb("110%", { text: 1, aria: "Zoom level 110%" }), tb("+", { aria: t.zoomIn })]
+        ];
+        v.pages = big ? [
+          page("Standard IPSG.1", "International Patient Safety Goals · page 3", "3", { seed: 2 }),
+          page("", "", "", { pending: 1, pendingText: ar ? "الصفحة 5 قيد التحميل…" : "Loading page 5…" })
+        ] : [
+          page(ar ? "تدقيق نظافة اليدين · الجناح 4B" : "Hand hygiene audit · Ward 4B", ar ? "سبتمبر 2026 · الصفحة 3" : "September 2026 · page 3", "3"),
+          page(ar ? "النتائج حسب الفئة" : "Results by staff group", ar ? "الصفحة 4" : "page 4", "4", { seed: 5, n: 14 })
+        ];
+        if (big) v.foot = { left: t.bigFootL, right: t.bigFootR };
+      } else if (kind === "image") {
+        v.isImage = true;
+        v.toolbar = [[tb("−", { aria: t.zoomOut }), tb(ar ? "ملاءمة" : "Fit", { on: 1 }), tb("+", { aria: t.zoomIn })], [tb(t.actual)], [tb(t.dragHint, { text: 1 })]];
+        v.imgStyle = "position: relative; width: 760px; height: 570px; max-width: 92%; max-height: 92%; background: #5A6779; box-shadow: 0 2px 8px rgba(16,24,40,0.25);";
+        v.imgTiles = Array.from({ length: 12 }, (_, i) => "background: " + ["#8A94A6", "#A7B2C2", "#CBD5E0", "#718096"][i % 4] + "; border-radius: 3px; opacity: 0.85;");
+      } else if (kind === "txt") {
+        v.isTxt = true;
+        const L = [
+          "Ward 6A · hand hygiene observations · 7 Oct 2026",
+          "Observer: Omar Haddad, Infection Control Nurse",
+          "",
+          "07:40  Nurse station — 6 of 8 opportunities compliant.",
+          "08:15  Bay 3 — glove use without hand rub before patient contact.",
+          "ملاحظة: نقص في المعقّم عند مدخل الغرفة 12.",
+          "09:05  Medication round — 5 of 5 compliant.",
+          "ملاحظة: تم إبلاغ مشرفة الجناح بالنتائج.",
+          "",
+          "Summary: 11 of 13 compliant (85%). Target 90%.",
+          "الخلاصة: 11 من 13 ممتثلة (85%). المستهدف 90%."
+        ];
+        v.txt = L.map(x => ({ t: x || "\u00a0", style: "white-space: pre-wrap; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start;" + (/[\u0600-\u06FF]/.test(x) ? " " + AF + " font-size: 14px;" : "") }));
+        v.foot = { left: ar ? "11 سطرًا · نص عادي" : "11 lines · plain text", right: ar ? "كل سطر باتجاهه الخاص" : "Each line takes its own direction" };
+      } else if (kind === "csv") {
+        v.isCsv = true; v.csvNote = t.csvNote;
+        const head = ["#", "Ward", "Date", "Observations", "Compliant", "Note"];
+        const rows = [
+          ["1", "4B", "1 Sep 2026", "24", "19", "Missed before glove use"],
+          ["2", "4B", "2 Sep 2026", "22", "20", ""],
+          ["3", "6A", "1 Sep 2026", "18", "13", "نقص في المعقّم"],
+          ["4", "6A", "2 Sep 2026", "20", "17", ""],
+          ["5", "ICU", "1 Sep 2026", "30", "29", ""],
+          ["6", "ICU", "2 Sep 2026", "28", "27", "ملاحظة على الزوار"],
+          ["7", "3C", "1 Sep 2026", "16", "14", ""],
+          ["8", "3C", "2 Sep 2026", "15", "12", "Agency staff"],
+          ["9", "ER", "1 Sep 2026", "34", "26", "High volume"]
+        ];
+        const cellS = "padding: 7px 10px; border-block-end: 1px solid #F0F3F7; border-inline-start: 1px solid #F0F3F7; font-size: 12.5px; text-align: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+        v.csvHead = head.map((h, i) => ({ t: h, style: "padding: 7px 10px; background: #F4F7FA; border-block-end: 1px solid #E2E8F0; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #5A6779; position: sticky; top: 0;" + (i ? " border-inline-start: 1px solid #E2E8F0;" : "") }));
+        v.csvCells = [];
+        rows.forEach(r => r.forEach((c, i) => { const arab = /[\u0600-\u06FF]/.test(c); v.csvCells.push({ t: c, dir: arab ? "rtl" : "auto", style: cellS + (i === 0 ? " color: #8A94A6; font-variant-numeric: tabular-nums; border-inline-start: none;" : "") + (i >= 3 && i <= 4 ? " font-variant-numeric: tabular-nums;" : "") + (arab ? " " + AF + " font-size: 13.5px;" : "") }); }));
+        v.foot = { left: ar ? "500 من 2,140 صفًا" : "500 of 2,140 rows", right: ar ? "الصف الأول عناوين" : "First row is the header" };
+      } else if (kind === "loading") {
+        v.isLoading = true;
+      } else {
+        v.isPanel = true;
+        const P = {
+          noPreview: { icon: "DOC", title: t.noPrevT, body: t.noPrevB, file: 1, btns: [btn("⤓ " + t.download, "primary", ar)], tone: "muted", role: "region" },
+          heic: { icon: "IMG", title: t.noPrevT, body: t.noPrevHeicB, file: 1, btns: [btn("⤓ " + t.download, "primary", ar)], tone: "muted", role: "region" },
+          error: { icon: "!", title: t.errT, body: t.errB, btns: [btn(t.retry, "primary", ar), btn("⤓ " + t.download, "secondary", ar)], tone: "danger", role: "alert" },
+          deleted: { icon: "⊘", title: t.delT, body: t.delB, btns: null, tone: "muted", role: "alert" },
+          sharepoint: { icon: "⚠", title: t.spT, body: t.spB, btns: null, tone: "warn", role: "alert" }
+        }[kind];
+        v.panel = Object.assign({ file: 0 }, P, {
+          box: "display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; max-width: 480px; padding: 28px 32px; background: #fff; border-radius: 8px; border: 1px solid " + ({ muted: "#E2E8F0", danger: "#FECDCA", warn: "#FEDF89" })[P.tone] + ";",
+          iconStyle: "width: 56px; height: 56px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: " + (P.icon.length > 1 ? 13 : 24) + "px; font-weight: 700; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; " + ({ muted: "color: #4A5568; background: #F1F4F8; border: 1px solid #E2E8F0;", danger: "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;", warn: "color: #B54708; background: #FFFAEB; border: 1px solid #FEDF89;" })[P.tone]
+        });
+        if (kind === "heic") v.hasNav = false;
+      }
+      return v;
+    };
+
+    const kind = this.props.state || "pdf";
+    const lang = this.props.lang || "en";
+    const LABELS = { pdf: "PDF, 2 of 5", pdfBig: "large PDF, page by page", image: "image, fit to window", txt: "TXT", csv: "CSV, cut at 500 rows", noPreview: "Word, no preview yet", heic: "HEIC, the only file in the list", loading: "loading", error: "couldn't open", deleted: "deleted while open", sharepoint: "SharePoint access withdrawn" };
+    const expanded = !!this.props.expanded;
+    const drawerFrame = (ar, full) => "position: absolute; top: 0; bottom: 0; " + (ar ? "left: 0;" : "right: 0;") + " width: " + (full ? "100%" : "60%") + "; min-width: " + (full ? "0" : "720px") + "; display: flex; flex-direction: column; background: #fff; overflow: hidden; box-shadow: " + (full ? "none" : (ar ? "16px" : "-16px") + " 0 40px rgba(16,24,40,0.24)") + ";" + (ar ? " " + AF : "");
+    const big = Object.assign(build(kind, lang === "ar"), {
+      label: LABELS[kind] + (lang === "ar" ? " · Arabic" : "") + (expanded ? " · expanded" : ""),
+      frame: drawerFrame(lang === "ar", expanded)
+    }, expanded ? { expandGlyph: "⤡", expandText: lang === "ar" ? "استعادة" : "Restore", expandLabel: lang === "ar" ? "إعادة العارض إلى عرضه العادي" : "Restore the viewer to its normal width" } : {});
+
+    const ATT5 = [["IMG", "Isolation room 3, Tower A.jpg", "JPEG · 3.1 MB"], ["PDF", "Hand hygiene audit, Ward 4B · September 2026.pdf", "PDF · 2.4 MB"], ["DOC", "Infection control policy IPC-04, revision 3 (draft for committee review).docx", "Word · 1.2 MB"], ["TXT", "Ward 6A observations.txt", "TXT · 6 KB"], ["CSV", "Q3 surveillance data export.csv", "CSV · 412 KB · 2,140 rows"]];
+    const pgFor = (ar, openIdx) => ({ font: ar ? AF : "", crumb: ar ? "الاجتماعات / مكافحة العدوى · سبتمبر" : "Meetings / Infection Prevention & Control · September", title: ar ? "مكافحة العدوى · سبتمبر" : "Infection Prevention & Control · September", date: ar ? "24 Sep 2026، 10:00–11:30 · قاعة الاجتماعات 1، البرج A" : "24 Sep 2026, 10:00–11:30 · Board room 1, Tower A", att: ar ? "المرفقات · 5" : "Attachments · 5",
+      rows: ATT5.map((a, j) => ({ n: a[1], style: "padding: 7px 12px; border-block-end: 1px solid #F0F3F7; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: start;" + (j === openIdx ? " background: #E4EEF6; font-weight: 600; color: #1F5480;" : " color: #2E6FA3;") })) });
+    const scene = (ar, mode) => {
+      const narrow = mode === "narrow", W = narrow ? 800 : 1440, H = narrow ? 1000 : 900, sc = narrow ? 0.238 : 0.2625;
+      return { mini: narrow ? "position: absolute; inset: 0; display: flex; flex-direction: column; background: #fff; overflow: hidden;" + (ar ? " " + AF : "") : drawerFrame(ar, mode === "full"),
+        page: "position: absolute; inset: 0; display: flex; direction: " + (ar ? "rtl" : "ltr") + ";", pg: pgFor(ar, 1),
+        box: "flex: none; width: " + Math.round(W * sc) + "px; height: " + Math.round(H * sc) + "px; box-sizing: border-box; overflow: hidden; border: 1px solid #E2E8F0; border-radius: 8px; background: #F4F7FA;",
+        scene: "position: relative; width: " + W + "px; height: " + H + "px; transform: scale(" + sc + "); transform-origin: top left; background: #F4F7FA;" };
+    };
+    const order = ["pdf", "pdfBig", "image", "txt", "csv", "noPreview", "heic", "loading", "error", "deleted", "sharepoint"];
+    const GNOTES = {
+      pdf: "Pages scroll in one column. Page field jumps on Enter; fit width is the default; the zoom level is always shown.",
+      pdfBig: "Opened from Standard IPSG.1's evidence, its own list: “1 / 3”. Pages load as they approach the view; a page not yet loaded keeps its height with “Loading page 5…”. Page jump fetches only that page.",
+      image: "Fit to the window by default; + and − in steps; 100% shows actual pixels; drag to move once zoomed past fit.",
+      txt: "Monospace, wrapped, each line with dir=auto, so Arabic lines start from the right and English lines from the left in either interface language.",
+      csv: "Header row from the file's first row, sticky. Cut at 500 rows with the sentence above the table. Arabic cells read right to left.",
+      noPreview: "Word, Excel and PowerPoint share this panel: type icon, name, size, why, and Download. Long names are cut in the middle in the header.",
+      heic: "Opened from a one-file list: no arrows and no position.",
+      loading: "The header is complete at once (name, type, size, Download). Only the body waits.",
+      error: "Try again re-requests the file; Download still offered.",
+      deleted: "Download is removed: there is nothing to download. Prev / next still work for the other files.",
+      sharepoint: "No Download: the file can't be reached either way. The arrows still move on to the others, which show the same panel."
+    };
+    const gallery = order.map((k, i) => {
+      const pair = [false, true].map(ar => Object.assign(build(k, ar), scene(ar, "drawer")));
+      return { n: (i + 1) + "", label: LABELS[k], note: GNOTES[k], pair };
+    });
+    gallery.push({ n: (order.length + 1) + "", label: "Expanded · full screen with Restore", note: "Expand fills the window for A4 pages and wide tables; the button becomes Restore and the page behind is covered. Esc still closes in one press.", pair: [false, true].map(ar => Object.assign(build("pdf", ar), scene(ar, "full"), { expandGlyph: "⤡", expandText: ar ? "استعادة" : "Restore" })) });
+    gallery.push({ n: (order.length + 2) + "", label: "Narrow · 800 × 1000, always full screen", note: "Below 900px wide the drawer is always full screen and Expand is hidden. The page behind isn't visible, so the header's “From…” line carries the context.", pair: [false, true].map(ar => Object.assign(build("pdf", ar), scene(ar, "narrow"), { canExpand: false })) });
+
+    const act = (g, aria, danger) => ({ g, aria, style: "width: 30px; height: 30px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; font-size: 13px; color: " + (danger ? "#B42318" : "#2D3748") + ";" });
+    const frow = (o, ar) => Object.assign({ chip: null, link: o.link !== false, plain: o.link === false }, o, {
+      dir: o.dir || "auto",
+      rowStyle: "display: flex; align-items: center; gap: 8px; padding: 8px 0; border-block-end: 1px solid #F0F3F7;" + (o.focus ? " outline: 2px solid #2E6FA3; outline-offset: 2px; border-radius: 4px;" : ""),
+      iconStyle: "flex: none; width: 28px; height: 28px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;",
+      nameStyle: "display: block; font-size: " + (ar ? 14 : 13) + "px; font-weight: 500; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; text-align: start;" + (o.link === false ? " color: #2D3748;" : ""),
+      metaStyle: "display: block; font-size: " + (ar ? 12.5 : 11.5) + "px; color: #5A6779;",
+      chipStyle: "flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; color: #1F5480; background: #E4EEF6; border: 1px solid #C5DAEA;"
+    });
+    const V = (n, ar) => act("👁", (ar ? "عرض " : "View ") + n), D = (n, ar) => act("⤓", (ar ? "تنزيل " : "Download ") + n), X = (n, ar) => act("🗑", (ar ? "حذف " : "Delete ") + n, true);
+    const HH = "Hand hygiene audit, Ward 4B · September 2026.pdf", IMG = "Isolation room 3, Tower A.jpg", CSV = "Q3 surveillance data export.csv";
+        const homes = [
+      { dir: "ltr", cap: "Task Screens · a task's evidence (open task)", title: "Evidence", tag: "Required · 3 added", add: "Add evidence",
+        rows: [frow({ icon: "IMG", name: IMG, meta: "JPEG · 3.1 MB · Nora Al-Otaibi · 6 Oct 2026", acts: [V(IMG), D(IMG), X(IMG)] }),
+          frow({ icon: "PDF", name: HH, meta: "PDF · 2.4 MB · Nora Al-Otaibi · 7 Oct 2026", acts: [V(HH), D(HH), X(HH)], focus: 1 }),
+          frow({ icon: "↗", name: "IPC audit dashboard", meta: "Link · bi.alnakheel.sa/ipc", acts: [act("↗", "Open link IPC audit dashboard"), act("✕", "Remove link IPC audit dashboard", true)] })],
+        note: "Files get View; links keep Open link and Remove. Its 2 files open as “1 / 2” (the photo) and “2 / 2” (the audit PDF): links aren't files, so the viewer skips them. The focus ring shows where focus returns on close." },
+      { dir: "ltr", cap: "Task Screens · a closed task's evidence (read-only)", title: "Evidence", tag: "Completed 8 Oct 2026", add: null,
+        rows: [frow({ icon: "IMG", name: IMG, meta: "JPEG · 3.1 MB", acts: [V(IMG), D(IMG)] }), frow({ icon: "PDF", name: HH, meta: "PDF · 2.4 MB", acts: [V(HH), D(HH)] })],
+        note: "Delete is absent, not disabled. View and Download are always there." },
+      { dir: "ltr", cap: "Meeting Screens · the IPC meeting's attachments · the viewer's 5-file list", title: "Attachments", tag: "5 files", add: "Add",
+        rows: ATT5.map((a, j) => frow({ icon: a[0], name: a[1], meta: (j + 1) + " / 5 in the viewer · " + a[2], acts: [V(a[1]), D(a[1]), X(a[1])], focus: j === 1 })),
+        note: "This is the list every “n / 5” in the drawings refers to, in this order. A Word file still gets View: it opens the “no preview yet” panel, so stepping never skips a file. Locked minutes hide Delete." },
+      { dir: "ltr", cap: "Storage Settings · the upload control's file chip", title: "Evidence", tag: null, add: null,
+        rows: [frow({ icon: "PDF", name: HH, meta: "2.4 MB · uploaded 09:41", acts: [V(HH), D(HH), X(HH)] }),
+          frow({ icon: "DOC", name: "Ward 6A observations.docx", meta: "1.1 of 1.6 MB", link: false, chip: "Uploading 68%", acts: [act("✕", "Cancel uploading Ward 6A observations.docx")] })],
+        note: "View appears once a file is Ready. While uploading (and Checking or Blocked, once scanning ships) the name isn't a link and there's no View." },
+      { dir: "rtl", cap: "العربية · أدلة المهمة", title: "الأدلة", tag: "مطلوبة · أُضيف " + iso("2"), add: "إضافة دليل",
+        rows: [frow({ icon: "PDF", name: "تدقيق نظافة اليدين، جناح 4B · سبتمبر 2026.pdf", meta: iso("2.4 MB") + " · نورة العتيبي", acts: [V("الملف", true), D("الملف", true), X("الملف", true)] }, true),
+          frow({ icon: "CSV", name: CSV, meta: iso("412 KB"), acts: [V(CSV, true), D(CSV, true), X(CSV, true)] }, true)],
+        note: "Actions sit at the row's left end; each file name keeps its own direction." }
+    ].map(h => Object.assign(h, {
+      wrap: h.dir === "rtl" ? AF : "",
+      capStyle: h.dir === "rtl" ? "font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;",
+      titleStyle: "font-size: " + (h.dir === "rtl" ? 14 : 13) + "px; font-weight: 600;",
+      tagStyle: (h.tag ? "display: inline-block;" : "display: none;") + " font-size: 11px; line-height: 18px; font-weight: 600; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 4px; padding: 0 6px; white-space: nowrap;",
+      addStyle: h.add ? "flex: none; font-size: 12.5px; font-weight: 600; text-decoration: none;" : "display: none;", add: h.add || "",
+      noteStyle: (h.dir === "rtl" ? "font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; direction: ltr; " : "") + "font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;"
+    }));
+
+    return {
+      big, gallery, homes, bigPg: pgFor(lang === "ar", ({ image: 0, pdf: 1, loading: 1, error: 1, deleted: 1, sharepoint: 1, noPreview: 2, txt: 3, csv: 4 })[kind] ?? -1), bigPage: "position: absolute; inset: 0; display: flex; direction: " + (lang === "ar" ? "rtl" : "ltr") + ";",
+      decisions: [
+        { t: "1 · A drawer, from the end side", b: "PrimeNG Drawer at 60% of the window, minimum 720px, full height. It slides in from the right in English and from the left in Arabic. The page behind stays visible but dimmed and can't be clicked. The app's first drawer, defined once." },
+        { t: "2 · Why 60% and 720px", b: "720px fits an A4 page at fit width (640 + margins) with the toolbar on one line. 60% leaves 40% of the page visible, enough to see the task or meeting title, so the reader keeps track of whose file it is. Below 1200px wide, 60% would drop under 720, so the minimum wins; below 900px wide it's full screen." },
+        { t: "3 · One header for every type and state", b: "Type icon, file name (cut in the middle so the extension stays visible), type and size, prev / position / next, Download, Close. The content changes; the frame never does." },
+        { t: "4 · Toolbar only where it does something", b: "PDF: page jump, fit width / fit page, zoom with the level shown. Images: zoom, Fit, 100%. TXT, CSV and the panels have no toolbar." },
+        { t: "5 · Large files never load whole", b: "PDFs load page by page as they approach the view; each unloaded page keeps its real height so the scrollbar is honest. A page jump fetches just that page." },
+        { t: "6 · Stepping includes every file", b: "Prev / next walks the list it was opened from, in order. Files with no preview show their panel; links and record references aren't files and are skipped." },
+        { t: "7 · States replace the body, never the header", b: "Loading, couldn't open, deleted, SharePoint withdrawn and no-preview are centred panels with an icon, a title and a sentence. Download is shown only where it can work." },
+        { t: "8 · Not recorded in the audit log", b: "Viewing isn't logged (the default to draw). Downloading follows what the product does today. Question 1 asks whether that should change." }
+      ],
+      sizeSpec: [
+        { k: "Component", v: "am-drawer, on PrimeNG Drawer (position end, modal, dismissable mask off so a stray click on the dim page doesn't lose the file). Reusable by any module: width and Expand are inputs." },
+        { k: "Expand / Restore", v: "A header button. Expand makes it full screen (for A4 pages and wide tables) and becomes Restore. The state lasts while the drawer is open; it opens at normal width each time." },
+        { k: "Width", v: "60% of the window, minimum 720px, full height. At 1440: 864px. At 1280: 768px. At 1100: 720px (the minimum)." },
+        { k: "Narrow", v: "Below 900px wide it's always full screen and Expand is hidden." },
+        { k: "Side", v: "inset-inline-end: from the right in English, from the left in Arabic. The shadow falls toward the page behind." },
+        { k: "Header", v: "Fixed, 56px. Name, type and size, prev / position / next, Download, Close." },
+        { k: "Toolbar", v: "Fixed, 46px, only for PDF and images." },
+        { k: "Body", v: "The only scrolling region, on the surface token (surface, #F4F7FA), so white pages and images read as objects." },
+        { k: "Footer", v: "Fixed, 36px, only when there's something to say (large PDF, TXT, CSV)." },
+        { k: "Behind it", v: "The page is dimmed with the overlay scrim and inert: no clicks, no focus, no scroll." }
+      ],
+      keys: [
+        { k: "Esc", v: "Closes the drawer (from full screen too, in one press); focus returns to the row's file name that opened it." },
+        { k: "← / →", v: "Previous / next file. In Arabic they mirror: → is previous, ← is next, matching the arrows on screen." },
+        { k: "+ / −", v: "Zoom in / out (PDF and images). 0 returns to fit." },
+        { k: "Tab", v: "Stays inside the drawer: header buttons (incl. Expand), toolbar, content, footer, then back. The page behind is inert." },
+        { k: "Page Up / Down", v: "Scroll the PDF by a page (browser default within the body)." },
+        { k: "Dialog name", v: "aria-label is the full file name, never the truncated one." },
+        { k: "Moving files", v: "A polite live region announces “File 2 of 5, Hand hygiene audit, Ward 4B · September 2026.pdf”." },
+        { k: "No preview", v: "The panel is a labelled region; its sentence says why, and its Download button is the first focus stop." },
+        { k: "Errors", v: "Couldn't open, deleted and SharePoint withdrawn use role=alert so the change is announced." }
+      ],
+      notes: [
+        { k: "Two ways in, one destination.", v: "The file name is a link and the eye button has the accessible name “View <file name>” and a matching tooltip. Both open the same viewer at that file." },
+        { k: "Middle truncation.", v: "“Infection control policy IPC-04, revision 3…(draft for committee review).docx” keeps the end visible, because the extension and version are what tell files apart. The full name is the title tooltip and the dialog's accessible name." },
+        { k: "Names keep their own direction.", v: "Arabic names read right to left and Latin names left to right, in either interface language. Type and size are always an LTR run: “PDF · 2.4 MB”." },
+        { k: "Position.", v: "“2 / 5” between the arrows; the full sentence “File 2 of 5” is for screen readers. Hidden, with the arrows, when the list has one file." },
+        { k: "PDF.", v: "Fit width by default. The page field shows the page most in view and jumps on Enter. Zoom steps 50–300% with the level always visible." },
+        { k: "Images.", v: "Fit by default, on a checkerboard so transparent PNGs read correctly. Past fit, drag moves the image; the cursor shows it." },
+        { k: "TXT.", v: "Monospace at 13px on 21px lines, wrapped, never sideways-scrolling. Each line takes its own direction." },
+        { k: "CSV.", v: "Up to 500 rows, header sticky, the cut stated above the table and in the footer. Columns are sized from the first rows; long cells truncate with a tooltip." },
+        { k: "No preview yet.", v: "Word, Excel, PowerPoint and HEIC. The word “yet” is deliberate: the same panel will be replaced type by type." },
+        { k: "Deleted while open.", v: "If another user deletes the file, the next request to it fails and the body changes to the panel. Download disappears; the other files are still reachable." },
+        { k: "SharePoint withdrawn.", v: "Every file in a SharePoint organisation shows this panel until the admin connects again. No Download, because it would fail the same way." },
+        { k: "Focus return.", v: "On close, focus goes back to the file name link of the file being shown, which may be a different row from the one that opened the viewer if the user stepped through." }
+      ],
+      questions: [
+        { n: "Q1 · answered", q: "Is opening a file in the viewer recorded in the audit log?", opts: ["No, viewing isn't recorded in the audit log."] },
+        { n: "Q2 · answered", q: "Should the viewer have a deep link (a URL that opens a file directly)?", opts: ["No deep link."] },
+        { n: "Q3 · answered", q: "On close, should focus return to the opening row or to the file last shown?", opts: ["Focus returns to the file last shown (as drawn)."] },
+        { n: "Q4 · answered", q: "Can a 25 MB PDF be downloaded on a slow connection from inside the viewer while it's still loading pages?", opts: ["Download is always live."] },
+        { n: "Q5 · answered", q: "Should text be selectable and copyable in PDF and TXT previews?", opts: ["Yes, text is selectable in PDF and TXT."] },
+        { n: "Q6 · answered", q: "Which renderer for PDF?", opts: ["pdf.js, loaded only on first use."] },
+        { n: "Q7 · answered", q: "When a newer version of a file replaces it later (version history is out of scope), what does an open viewer show?", opts: ["The viewer keeps the version it opened until it's closed."] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

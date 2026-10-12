@@ -37,7 +37,6 @@ import { EditDialogComponent } from '../../../../shared/components/edit-dialog/e
 import { InputNumberLatinDigits } from '../../../../core/formatting/latin-digits';
 
 const ACTION_TYPES = [
-  { label: 'CREATE_TASK', value: 'CREATE_TASK' },
   { label: 'SEND_NOTIFICATION', value: 'SEND_NOTIFICATION' },
   { label: 'GENERATE_PDF', value: 'GENERATE_PDF' },
   { label: 'LOCK_DOCUMENT', value: 'LOCK_DOCUMENT' },

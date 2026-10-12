@@ -1,0 +1,34 @@
+---
+// Section 12 of 12: the footer (charcoal, as in the design), with the reversed
+// logo. Contact and social links are not decided yet (plan: "Still open"), so
+// only the legal pages and a "[Company name]" placeholder are here.
+import { strings, pathFor, type Lang } from '../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang];
+---
+
+<footer class="site-footer" id="footer">
+  <div class="container">
+    <div class="site-footer__row">
+      <div>
+        <a class="site-footer__logo" href={pathFor(lang, '')}>
+          <img src="/accreditme-logo-reversed.png" width="785" height="174" alt={t.logoAlt} />
+        </a>
+        <span class="draft">{t.draft}</span>
+      </div>
+      <nav aria-label={t.footer.legal}>
+        <p class="site-footer__heading">{t.footer.legal}</p>
+        <ul>
+          <li><a href={pathFor(lang, 'privacy/')}>{t.footer.privacy}</a></li>
+          <li><a href={pathFor(lang, 'terms/')}>{t.footer.terms}</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="site-footer__copyright">{t.footer.copyright}</p>
+  </div>
+</footer>

@@ -55,7 +55,7 @@ describe('initializeSession (ACC-21 — ordering guarantee)', () => {
 
     meReq.flush({
       id: 'u1',
-      email: 'admin@platform.accreditme.com',
+      email: 'admin@platform.example.test',
       name: 'Platform Admin',
       language: 'en',
       impersonatedBy: null,

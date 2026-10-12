@@ -9,6 +9,7 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { TextareaModule } from 'primeng/textarea';
 import { CheckboxModule } from 'primeng/checkbox';
+import { RadioButtonModule } from 'primeng/radiobutton';
 import { MessageModule } from 'primeng/message';
 import { ConfirmationService } from 'primeng/api';
 import {
@@ -18,6 +19,8 @@ import {
   CreateWorkflowTransitionDto,
   UpdateWorkflowTransitionDto,
   TransitionPermissionWarning,
+  WORKFLOW_TRANSITION_KINDS,
+  WorkflowTransitionKind,
 } from '../../services/workflow-template.service';
 import { RoleService, RoleDto, PermissionDto } from '../../../roles/services/role.service';
 import { WorkflowActionConfiguratorComponent } from '../workflow-action-configurator/workflow-action-configurator.component';
@@ -76,6 +79,18 @@ const TRIGGER_CONDITIONS = [
   { label: 'ASSIGNEE_POOL', value: 'ASSIGNEE_POOL' },
 ];
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
+// ACC-208 — literal keys, so the translation-keys spec sees each one.
+const KIND_LABEL_KEYS: Record<WorkflowTransitionKind, string> = {
+  ADVANCE: 'workflow.kind.advance',
+  RETURN: 'workflow.kind.return',
+  EXIT: 'workflow.kind.exit',
+};
+const KIND_HELP_KEYS: Record<WorkflowTransitionKind, string> = {
+  ADVANCE: 'workflow.kind.advanceHelp',
+  RETURN: 'workflow.kind.returnHelp',
+  EXIT: 'workflow.kind.exitHelp',
+};
+
 @Component({
   selector: 'app-workflow-transition-editor',
   standalone: true,
@@ -90,6 +105,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     InputTextModule,
     TextareaModule,
     CheckboxModule,
+    RadioButtonModule,
     MessageModule,
     WorkflowActionConfiguratorComponent,
     OverlaySelectComponent,
@@ -122,6 +138,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
           <tr>
             <th>{{ 'workflow.label' | translate }}</th>
             <th>{{ 'workflow.toStage' | translate }}</th>
+            <th>{{ 'workflow.kind.label' | translate }}</th>
             <th>{{ 'workflow.triggerCondition' | translate }}</th>
             <th></th>
             <th></th>
@@ -132,6 +149,13 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
           <tr>
             <td>{{ transitionLabel(transition) }}</td>
             <td>{{ stageName(transition.toStageId) }}</td>
+            <td>
+              <!-- ACC-208 — Send back is dashed, as returns are in the stage
+                   strip; End the record is outlined in danger (drawing). -->
+              <span [class]="'am-tr-chip am-tr-chip--' + kindOf(transition).toLowerCase()" data-tr-kind>
+                {{ kindLabelKey(transition) | translate }}
+              </span>
+            </td>
             <td>
               <p-tag [value]="transition.triggerCondition" severity="info" />
               <!-- ACC-82 — which role can fire it. ROLE_BASED alone does not say, and
@@ -178,233 +202,320 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
         <ng-template pTemplate="emptymessage">
           <tr>
-            <td colspan="5" class="text-center py-4 text-[var(--am-text-secondary)]">
+            <td colspan="6" class="text-center py-4 text-[var(--am-text-secondary)]">
               {{ 'workflow.noTransitions' | translate }}
             </td>
           </tr>
         </ng-template>
       </p-table>
 
-      <!-- Add Transition -->
+      <!-- Add Transition.
+           ACC-208 — TWO STEPS, measured (ACC-120). Before Kind existed this
+           dialog measured 674 English / 696 Arabic against the 420 cap, and
+           Kind adds three radio rows. The seam it already had: step 1 is the
+           move itself (where to, what it is called, what kind of move), step 2
+           who may fire it and what it checks. The actions moved to the footer.
+           Numbers: step-208-stage-tasks-screen.md §4.5. -->
       <ng-template #addFormTpl>
         <form [formGroup]="addForm" (ngSubmit)="onSubmitAdd()" class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.toStage' | translate }} <span class="text-red-500">*</span></label>
-            <app-overlay-select
-              formControlName="toStageId"
-              [options]="availableStages"
-              optionLabel="nameEn"
-              optionValue="id"
-            />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelEn' | translate }} <span class="text-red-500">*</span></label>
-            <input pInputText formControlName="labelEn" />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
-            <input pInputText dir="rtl" formControlName="labelAr" />
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-            <app-overlay-select
-              formControlName="triggerCondition"
-              [options]="triggerConditions"
-              optionLabel="label"
-              optionValue="value"
-            />
-          </div>
-
-          @if (addForm.controls.triggerCondition.value === 'ROLE_BASED') {
+          @if (addStep() === 1) {
             <div class="flex flex-col gap-1">
-              <label class="font-medium text-sm">{{ 'workflow.assigneeRole' | translate }}</label>
+              <label class="font-medium text-sm">{{ 'workflow.toStage' | translate }} <span class="text-red-500">*</span></label>
               <app-overlay-select
-                formControlName="triggerRoleId"
-                [options]="roles()"
+                formControlName="toStageId"
+                [options]="availableStages"
                 optionLabel="nameEn"
                 optionValue="id"
               />
             </div>
-          }
 
-          @if (addForm.controls.triggerCondition.value === 'SPECIFIC_USER') {
-            <p-message severity="info" [text]="'workflow.userPickerUnavailable' | translate" />
-          }
+            <div class="am-tr-pair">
+              <div class="flex flex-col gap-1">
+                <label class="font-medium text-sm">{{ 'workflow.labelEn' | translate }} <span class="text-red-500">*</span></label>
+                <input pInputText formControlName="labelEn" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
+                <input pInputText dir="rtl" formControlName="labelAr" />
+              </div>
+            </div>
 
-          @if (addForm.controls.triggerCondition.value === 'ASSIGNEE_POOL') {
-            <p-message severity="info" [text]="'workflow.assigneePoolHelp' | translate" />
-          }
+            <!-- ACC-208 — Kind, first after the labels (drawing). Always starts
+                 at Advance and is never inferred from stage order: Reject goes
+                 to a higher-order stage and Reactivate to a lower one. -->
+            <fieldset class="am-tr-kind">
+              <legend class="am-tr-kind__legend">{{ 'workflow.kind.label' | translate }}</legend>
+              @for (kind of kinds; track kind.value) {
+                <div class="am-tr-kind__row">
+                  <p-radiobutton [inputId]="'add-kind-' + kind.value" formControlName="kind" [value]="kind.value" />
+                  <label [for]="'add-kind-' + kind.value">
+                    <span class="am-tr-kind__title">{{ kind.labelKey | translate }}</span>
+                    <span class="am-tr-kind__help">{{ kind.helpKey | translate }}</span>
+                  </label>
+                </div>
+              }
+            </fieldset>
+          } @else {
+            <div class="flex flex-col gap-1">
+              <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
+              <app-overlay-select
+                formControlName="triggerCondition"
+                [options]="triggerConditions"
+                optionLabel="label"
+                optionValue="value"
+              />
+            </div>
 
-          <!--
-            ACC-55 — grouped picker replaces the free-text input. 72 strings
-            across 19 modules, read from GET /roles/permissions (the real
-            source), so a typo can no longer silently create a permanently
-            unfireable transition.
-          -->
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-            <app-overlay-select
-              formControlName="requiredPermission"
-              [options]="permissionGroups()"
-              optionLabel="label"
-              optionValue="value"
-              optionGroupLabel="module"
-              optionGroupChildren="permissions"
-              [groupsSelectable]="false"
-              [placeholder]="'workflow.noPermissionRequired' | translate"
-            />
-            @if (permissionsLoadFailed()) {
-              <small class="text-[var(--am-text-secondary)]">
-                {{ 'workflow.permissionListUnavailable' | translate }}
-              </small>
+            @if (addForm.controls.triggerCondition.value === 'ROLE_BASED') {
+              <div class="flex flex-col gap-1">
+                <label class="font-medium text-sm">{{ 'workflow.assigneeRole' | translate }}</label>
+                <app-overlay-select
+                  formControlName="triggerRoleId"
+                  [options]="roles()"
+                  optionLabel="nameEn"
+                  optionValue="id"
+                />
+              </div>
             }
-          </div>
 
-          <div class="flex items-center gap-2">
-            <p-checkbox formControlName="isApprovalPath" [binary]="true" inputId="add-isApprovalPath" />
-            <label for="add-isApprovalPath" class="text-sm cursor-pointer">
-              {{ 'workflow.isApprovalPath' | translate }}
-            </label>
-          </div>
+            @if (addForm.controls.triggerCondition.value === 'SPECIFIC_USER') {
+              <p-message severity="info" [text]="'workflow.userPickerUnavailable' | translate" />
+            }
 
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.validatorConfig' | translate }}</label>
-            <textarea pTextarea rows="3" formControlName="validatorConfig"></textarea>
-          </div>
+            @if (addForm.controls.triggerCondition.value === 'ASSIGNEE_POOL') {
+              <p-message severity="info" [text]="'workflow.assigneePoolHelp' | translate" />
+            }
 
-          @if (saveError()) {
-            <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
+            <!--
+              ACC-55 — grouped picker replaces the free-text input. 72 strings
+              across 19 modules, read from GET /roles/permissions (the real
+              source), so a typo can no longer silently create a permanently
+              unfireable transition.
+            -->
+            <div class="flex flex-col gap-1">
+              <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
+              <app-overlay-select
+                formControlName="requiredPermission"
+                [options]="permissionGroups()"
+                optionLabel="label"
+                optionValue="value"
+                optionGroupLabel="module"
+                optionGroupChildren="permissions"
+                [groupsSelectable]="false"
+                [placeholder]="'workflow.noPermissionRequired' | translate"
+              />
+              @if (permissionsLoadFailed()) {
+                <small class="text-[var(--am-text-secondary)]">
+                  {{ 'workflow.permissionListUnavailable' | translate }}
+                </small>
+              }
+            </div>
+
+            <!-- ACC-208 (D5) — no "Approval path" here. Create never sent it
+                 (CreateWorkflowTransitionDto has no such field; the builder sets
+                 it as a follow-up edit), so ticking it was silently dropped. It
+                 stays on Edit, where it saves. -->
+
+            <div class="flex flex-col gap-1">
+              <label class="font-medium text-sm">{{ 'workflow.validatorConfig' | translate }}</label>
+              <textarea pTextarea rows="3" formControlName="validatorConfig"></textarea>
+            </div>
           }
-
-          <div class="flex gap-3 justify-end">
-            <p-button
-              [label]="'common.cancel' | translate"
-              severity="secondary"
-              [text]="true"
-              type="button"
-              (onClick)="onAddDialogVisibleChange(false)"
-            />
-            <p-button
-              type="submit"
-              [label]="'common.add' | translate"
-              [loading]="saving()"
-              [disabled]="addForm.invalid"
-            />
-          </div>
         </form>
+      </ng-template>
+      <ng-template #addFooterTpl>
+        <div class="am-tr-footer">
+          @if (saveError()) {
+            <span class="am-tr-footer__error" role="alert">{{ saveError()! | translate }}</span>
+          } @else {
+            <span class="am-tr-footer__step">{{ 'common.stepOf' | translate: { step: addStep(), steps: 2 } }}</span>
+          }
+          <span class="am-tr-footer__actions">
+            @if (addStep() === 1) {
+              <p-button
+                [label]="'common.cancel' | translate"
+                severity="secondary"
+                [text]="true"
+                (onClick)="onAddDialogVisibleChange(false)"
+              />
+              <p-button
+                [label]="'common.next' | translate"
+                [disabled]="addStepOneInvalid()"
+                (onClick)="addStep.set(2)"
+                data-tr-next
+              />
+            } @else {
+              <p-button
+                [label]="'common.back' | translate"
+                severity="secondary"
+                [text]="true"
+                [disabled]="saving()"
+                (onClick)="addStep.set(1)"
+              />
+              <p-button
+                [label]="'common.add' | translate"
+                [loading]="saving()"
+                [disabled]="addForm.invalid"
+                (onClick)="onSubmitAdd()"
+                data-tr-save
+              />
+            }
+          </span>
+        </div>
       </ng-template>
       <app-edit-dialog
         [visible]="showAddDialog()"
         (visibleChange)="onAddDialogVisibleChange($event)"
         [header]="'workflow.addTransition' | translate"
         [content]="addFormTpl"
+        [footer]="addFooterTpl"
         width="560px"
       />
 
-      <!-- Edit Transition -->
+      <!-- Edit Transition — the same two steps (measured 542 English / 564
+           Arabic before Kind). A save that warns keeps step 2 open on the
+           warning (ACC-55). -->
       <ng-template #editFormTpl>
-        <p class="text-sm text-[var(--am-text-secondary)] mb-2">
-          {{ 'workflow.transitionEndpointsLocked' | translate }}
-        </p>
         <form [formGroup]="editForm" (ngSubmit)="onSubmitEdit()" class="flex flex-col gap-4">
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelEn' | translate }} <span class="text-red-500">*</span></label>
-            <input pInputText formControlName="labelEn" />
-          </div>
+          @if (editStep() === 1) {
+            <p class="text-sm text-[var(--am-text-secondary)] m-0">
+              {{ 'workflow.transitionEndpointsLocked' | translate }}
+            </p>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
-            <input pInputText dir="rtl" formControlName="labelAr" />
-          </div>
+            <div class="am-tr-pair">
+              <div class="flex flex-col gap-1">
+                <label class="font-medium text-sm">{{ 'workflow.labelEn' | translate }} <span class="text-red-500">*</span></label>
+                <input pInputText formControlName="labelEn" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="font-medium text-sm">{{ 'workflow.labelAr' | translate }}</label>
+                <input pInputText dir="rtl" formControlName="labelAr" />
+              </div>
+            </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
-            <app-overlay-select
-              formControlName="triggerCondition"
-              [options]="triggerConditions"
-              optionLabel="label"
-              optionValue="value"
-            />
-          </div>
+            <!-- ACC-208 — Kind, first after the labels (drawing). Always starts
+                 at Advance and is never inferred from stage order: Reject goes
+                 to a higher-order stage and Reactivate to a lower one. -->
+            <fieldset class="am-tr-kind">
+              <legend class="am-tr-kind__legend">{{ 'workflow.kind.label' | translate }}</legend>
+              @for (kind of kinds; track kind.value) {
+                <div class="am-tr-kind__row">
+                  <p-radiobutton [inputId]="'edit-kind-' + kind.value" formControlName="kind" [value]="kind.value" />
+                  <label [for]="'edit-kind-' + kind.value">
+                    <span class="am-tr-kind__title">{{ kind.labelKey | translate }}</span>
+                    <span class="am-tr-kind__help">{{ kind.helpKey | translate }}</span>
+                  </label>
+                </div>
+              }
+            </fieldset>
+          } @else {
+            <div class="flex flex-col gap-1">
+              <label class="font-medium text-sm">{{ 'workflow.triggerCondition' | translate }} <span class="text-red-500">*</span></label>
+              <app-overlay-select
+                formControlName="triggerCondition"
+                [options]="triggerConditions"
+                optionLabel="label"
+                optionValue="value"
+              />
+            </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
-            <app-overlay-select
-              formControlName="requiredPermission"
-              [options]="permissionGroups()"
-              optionLabel="label"
-              optionValue="value"
-              optionGroupLabel="module"
-              optionGroupChildren="permissions"
-              [groupsSelectable]="false"
-              [placeholder]="'workflow.noPermissionRequired' | translate"
-            />
-            @if (permissionsLoadFailed()) {
-              <small class="text-[var(--am-text-secondary)]">
-                {{ 'workflow.permissionListUnavailable' | translate }}
-              </small>
-            }
-            <!--
-              ACC-55 — the warning sits in normal flow directly under the
-              field it is about, deliberately NOT in a sticky footer. ACC-54
-              tried that on the stage form and it regressed: sticky content
-              overlays what scrolls beneath it, so the panel covered the very
-              picker it was advising on. Here it pushes content instead.
-            -->
-            @if (editPermissionWarning(); as warning) {
-              <p-message
-                severity="warn"
-                [text]="
-                  (warning === 'UNKNOWN_PERMISSION'
-                    ? 'workflow.permissionUnknownWarning'
-                    : 'workflow.permissionNoHolderWarning'
-                  ) | translate
-                "
+            <div class="flex flex-col gap-1">
+              <label class="font-medium text-sm">{{ 'workflow.requiredPermission' | translate }}</label>
+              <app-overlay-select
+                formControlName="requiredPermission"
+                [options]="permissionGroups()"
+                optionLabel="label"
+                optionValue="value"
+                optionGroupLabel="module"
+                optionGroupChildren="permissions"
+                [groupsSelectable]="false"
+                [placeholder]="'workflow.noPermissionRequired' | translate"
+              />
+              @if (permissionsLoadFailed()) {
+                <small class="text-[var(--am-text-secondary)]">
+                  {{ 'workflow.permissionListUnavailable' | translate }}
+                </small>
+              }
+              <!--
+                ACC-55 — the warning sits in normal flow directly under the
+                field it is about, deliberately NOT in a sticky footer. ACC-54
+                tried that on the stage form and it regressed: sticky content
+                overlays what scrolls beneath it, so the panel covered the very
+                picker it was advising on. Here it pushes content instead.
+              -->
+              @if (editPermissionWarning(); as warning) {
+                <p-message
+                  severity="warn"
+                  [text]="
+                    (warning === 'UNKNOWN_PERMISSION'
+                      ? 'workflow.permissionUnknownWarning'
+                      : 'workflow.permissionNoHolderWarning'
+                    ) | translate
+                  "
+                />
+              }
+            </div>
+
+            <div class="flex items-center gap-2">
+              <p-checkbox formControlName="isApprovalPath" [binary]="true" inputId="edit-isApprovalPath" />
+              <label for="edit-isApprovalPath" class="text-sm cursor-pointer">
+                {{ 'workflow.isApprovalPath' | translate }}
+              </label>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="font-medium text-sm">{{ 'workflow.validatorConfig' | translate }}</label>
+              <textarea pTextarea rows="3" formControlName="validatorConfig"></textarea>
+            </div>
+          }
+        </form>
+      </ng-template>
+      <ng-template #editFooterTpl>
+        <div class="am-tr-footer">
+          @if (saveError()) {
+            <span class="am-tr-footer__error" role="alert">{{ saveError()! | translate }}</span>
+          } @else {
+            <span class="am-tr-footer__step">{{ 'common.stepOf' | translate: { step: editStep(), steps: 2 } }}</span>
+          }
+          <span class="am-tr-footer__actions">
+            @if (editStep() === 1) {
+              <p-button
+                [label]="'common.cancel' | translate"
+                severity="secondary"
+                [text]="true"
+                (onClick)="onEditDialogVisibleChange(false)"
+              />
+              <p-button
+                [label]="'common.next' | translate"
+                [disabled]="editStepOneInvalid()"
+                (onClick)="editStep.set(2)"
+                data-tr-next
+              />
+            } @else {
+              <p-button
+                [label]="'common.back' | translate"
+                severity="secondary"
+                [text]="true"
+                [disabled]="saving()"
+                (onClick)="editStep.set(1)"
+              />
+              <p-button
+                [label]="'common.save' | translate"
+                [loading]="saving()"
+                [disabled]="editForm.invalid"
+                (onClick)="onSubmitEdit()"
+                data-tr-save
               />
             }
-          </div>
-
-          <div class="flex items-center gap-2">
-            <p-checkbox formControlName="isApprovalPath" [binary]="true" inputId="edit-isApprovalPath" />
-            <label for="edit-isApprovalPath" class="text-sm cursor-pointer">
-              {{ 'workflow.isApprovalPath' | translate }}
-            </label>
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="font-medium text-sm">{{ 'workflow.validatorConfig' | translate }}</label>
-            <textarea pTextarea rows="3" formControlName="validatorConfig"></textarea>
-          </div>
-
-          @if (saveError()) {
-            <p class="text-red-500 text-sm">{{ saveError() | translate }}</p>
-          }
-
-          <div class="flex gap-3 justify-end">
-            <p-button
-              [label]="'common.cancel' | translate"
-              severity="secondary"
-              [text]="true"
-              type="button"
-              (onClick)="onEditDialogVisibleChange(false)"
-            />
-            <p-button
-              type="submit"
-              [label]="'common.save' | translate"
-              [loading]="saving()"
-              [disabled]="editForm.invalid"
-            />
-          </div>
-        </form>
+          </span>
+        </div>
       </ng-template>
       <app-edit-dialog
         [visible]="showEditDialog()"
         (visibleChange)="onEditDialogVisibleChange($event)"
         [header]="'workflow.editTransition' | translate"
         [content]="editFormTpl"
+        [footer]="editFooterTpl"
         width="560px"
       />
 
@@ -427,6 +538,94 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
     </div>
   `,
+  styles: [
+    `
+      .am-tr-pair {
+        display: flex;
+        gap: var(--am-space-12);
+      }
+      .am-tr-pair > * {
+        flex: 1 1 0;
+        min-inline-size: 0;
+      }
+      .am-tr-kind {
+        border: 0;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .am-tr-kind__legend {
+        padding: 0;
+        margin-block-end: var(--am-space-2);
+        font-size: var(--am-type-value-size);
+        font-weight: 500;
+      }
+      .am-tr-kind__row {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--am-space-8);
+        padding-block: var(--am-space-2);
+      }
+      .am-tr-kind__row label {
+        display: flex;
+        flex-direction: column;
+        cursor: pointer;
+      }
+      .am-tr-kind__title {
+        font-size: var(--am-type-value-size);
+        font-weight: 500;
+      }
+      .am-tr-kind__help {
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
+      }
+      .am-tr-footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--am-space-8);
+        inline-size: 100%;
+      }
+      .am-tr-footer__step {
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
+      }
+      .am-tr-footer__error {
+        font-size: var(--am-type-meta-size);
+        font-weight: 500;
+        color: var(--am-danger-ink);
+      }
+      .am-tr-footer__actions {
+        display: flex;
+        gap: var(--am-space-8);
+      }
+      .am-tr-chip {
+        display: inline-flex;
+        font-size: var(--am-type-micro-size);
+        font-weight: 600;
+        border-radius: var(--am-radius-control);
+        padding: 0 var(--am-space-6);
+        white-space: nowrap;
+      }
+      .am-tr-chip--advance {
+        color: var(--am-primary-700);
+        background: var(--am-primary-100);
+        border: 1px solid var(--am-primary-100);
+      }
+      .am-tr-chip--return {
+        color: var(--am-ink-700);
+        background: var(--am-surface-raised);
+        border: 1px dashed var(--am-ink-500);
+      }
+      .am-tr-chip--exit {
+        color: var(--am-danger-ink);
+        background: var(--am-surface-raised);
+        border: 1px solid var(--am-danger-border);
+      }
+    `,
+  ],
 })
 export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
   @Input() stageId!: string;
@@ -619,6 +818,34 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     return raw;
   }
 
+  // ACC-208 — the transition's kind, offered in this order with its help line.
+  readonly kinds = WORKFLOW_TRANSITION_KINDS.map((value) => ({
+    value,
+    labelKey: KIND_LABEL_KEYS[value],
+    helpKey: KIND_HELP_KEYS[value],
+  }));
+  readonly addStep = signal(1);
+  readonly editStep = signal(1);
+
+  addStepOneInvalid(): boolean {
+    const { toStageId, labelEn, labelAr, kind } = this.addForm.controls;
+    return toStageId.invalid || labelEn.invalid || labelAr.invalid || kind.invalid;
+  }
+
+  editStepOneInvalid(): boolean {
+    const { labelEn, labelAr, kind } = this.editForm.controls;
+    return labelEn.invalid || labelAr.invalid || kind.invalid;
+  }
+
+  /** A transition read before ACC-190's column existed reads as the default. */
+  kindOf(transition: WorkflowTransitionDto): WorkflowTransitionKind {
+    return transition.kind ?? 'ADVANCE';
+  }
+
+  kindLabelKey(transition: WorkflowTransitionDto): string {
+    return KIND_LABEL_KEYS[this.kindOf(transition)];
+  }
+
   readonly showAddDialog = signal(false);
   readonly showEditDialog = signal(false);
   readonly showActionsDialog = signal(false);
@@ -637,10 +864,10 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     // maxLength stays. An emptied field is sent as '' and stored as NULL by the
     // DTO's trimToNull, so the empty-to-null decision lives in one place.
     labelAr: ['', [Validators.maxLength(100)]],
+    kind: ['ADVANCE' as WorkflowTransitionKind, [Validators.required]],
     triggerCondition: ['ROLE_BASED', [Validators.required]],
     triggerRoleId: [null as string | null],
     requiredPermission: [''],
-    isApprovalPath: [false],
     validatorConfig: [''],
   });
 
@@ -651,6 +878,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     // maxLength stays. An emptied field is sent as '' and stored as NULL by the
     // DTO's trimToNull, so the empty-to-null decision lives in one place.
     labelAr: ['', [Validators.maxLength(100)]],
+    kind: ['ADVANCE' as WorkflowTransitionKind, [Validators.required]],
     triggerCondition: ['ROLE_BASED', [Validators.required]],
     requiredPermission: [''],
     isApprovalPath: [false],
@@ -709,13 +937,14 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       toStageId: null,
       labelEn: '',
       labelAr: '',
+      kind: 'ADVANCE',
       triggerCondition: 'ROLE_BASED',
       triggerRoleId: null,
       requiredPermission: '',
-      isApprovalPath: false,
       validatorConfig: '',
     });
     this.saveError.set(null);
+    this.addStep.set(1);
     this.showAddDialog.set(true);
   }
 
@@ -729,6 +958,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     this.editForm.reset({
       labelEn: transition.labelEn,
       labelAr: transition.labelAr,
+      kind: transition.kind ?? 'ADVANCE',
       triggerCondition: transition.triggerCondition,
       requiredPermission: transition.requiredPermission ?? '',
       isApprovalPath: transition.isApprovalPath,
@@ -736,6 +966,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     });
     this.saveError.set(null);
     this.editPermissionWarning.set(null);
+    this.editStep.set(1);
     this.showEditDialog.set(true);
   }
 
@@ -764,6 +995,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
       toStageId: raw.toStageId!,
       labelEn: raw.labelEn!,
       labelAr: raw.labelAr!,
+      kind: raw.kind!,
       triggerCondition: raw.triggerCondition!,
       // Omitted entirely when blank — on CREATE the column defaults to null,
       // so there is nothing to clear and sending null would be noise.
@@ -787,6 +1019,8 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
         // stage form does the same create→edit switch).
         if (result.permissionWarning) {
           this.openEdit(result.transition);
+          // The warning sits under the permission picker, on step 2.
+          this.editStep.set(2);
           this.editPermissionWarning.set(result.permissionWarning);
           // Saved, but the parent must not refresh yet — doing so would
           // destroy the dialog we just opened to show this warning.
@@ -821,6 +1055,7 @@ export class WorkflowTransitionEditorComponent implements OnInit, OnChanges {
     const dto: UpdateWorkflowTransitionDto = {
       labelEn: raw.labelEn!,
       labelAr: raw.labelAr!,
+      kind: raw.kind!,
       triggerCondition: raw.triggerCondition!,
       // null, not undefined — the picker's "no permission required" option
       // must actually CLEAR the field. `|| undefined` meant "leave

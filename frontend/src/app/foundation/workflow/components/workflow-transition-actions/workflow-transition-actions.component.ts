@@ -1,9 +1,11 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { MessageModule } from 'primeng/message';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { WorkflowService, WorkflowInstanceDto } from '../../services/workflow.service';
-import { WorkflowTemplateService, WorkflowTransitionDto } from '../../services/workflow-template.service';
+import { WorkflowStageDto, WorkflowTemplateService, WorkflowTransitionDto } from '../../services/workflow-template.service';
+import { OpenStageTask, openStageTasks, plainWorkflowRefusalKey } from '../../workflow-refusal';
+import { CantMoveDialogComponent } from '../cant-move-dialog/cant-move-dialog.component';
 import { NavigationAccessService } from '../../../../core/services/navigation-access.service';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
@@ -35,7 +37,7 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 @Component({
   selector: 'app-workflow-transition-actions',
   standalone: true,
-  imports: [ButtonModule, MessageModule, TranslatePipe],
+  imports: [ButtonModule, MessageModule, TranslatePipe, CantMoveDialogComponent],
   template: `
     @if (error()) {
       <p-message severity="error" [text]="error()! | translate" />
@@ -56,6 +58,20 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
         }
       </div>
     }
+
+    <!-- ACC-208 — an Advance refused while the stage's mandatory tasks are
+         open (STAGE_TASKS_OPEN): which tasks, as links to their rows. -->
+    @if (cantMove(); as refused) {
+      <app-cant-move-dialog
+        [visible]="true"
+        [tasks]="refused.tasks"
+        [title]="'workflow.cantMove.title' | translate: { stage: refused.toStage }"
+        [lead]="'workflow.cantMove.lead' | translate: { stage: refused.toStage }"
+        [context]="refusalContext()"
+        [openedFrom]="refused.label"
+        (closed)="cantMove.set(null)"
+      />
+    }
   `,
 })
 export class WorkflowTransitionActionsComponent {
@@ -65,12 +81,25 @@ export class WorkflowTransitionActionsComponent {
   private readonly languageService = inject(LanguageService);
 
   readonly instance = input.required<WorkflowInstanceDto>();
+  /** ACC-208 — the record's own name, for the "Can't move yet" dialog's context line. */
+  readonly recordLabel = input<string | null>(null);
   readonly transitioned = output<WorkflowInstanceDto>();
 
   readonly transitionsFromCurrentStage = signal<WorkflowTransitionDto[]>([]);
   readonly triggeringId = signal<string | null>(null);
   readonly error = signal<string | null>(null);
   readonly warnings = signal<string[]>([]);
+  /** ACC-208 — a move refused for open mandatory tasks: what was pressed, where to, and which tasks. */
+  readonly cantMove = signal<{ label: string; toStage: string; tasks: OpenStageTask[] } | null>(null);
+  private readonly stages = signal<WorkflowStageDto[]>([]);
+  private readonly translate = inject(TranslateService);
+
+  /** "Infection Control Committee · Terms Review" — the record, then the stage it is held in. */
+  readonly refusalContext = computed(() => {
+    const stage = this.stageName(this.instance().currentStageId);
+    const record = this.recordLabel();
+    return record ? `${record} · ${stage}` : stage;
+  });
 
   readonly availableTransitions = computed(() =>
     this.transitionsFromCurrentStage().filter(
@@ -88,6 +117,12 @@ export class WorkflowTransitionActionsComponent {
     return this.languageService.bilingual(transition.labelEn, transition.labelAr);
   }
 
+  /** Tenant data, chosen by language (ACC-160); an unknown id reads as nothing rather than the id. */
+  private stageName(stageId: string | null): string {
+    const stage = this.stages().find((s) => s.id === stageId);
+    return stage ? this.languageService.bilingual(stage.nameEn, stage.nameAr) : '';
+  }
+
   onTrigger(transition: WorkflowTransitionDto): void {
     const instanceId = this.instance().id;
     this.triggeringId.set(transition.id);
@@ -101,7 +136,16 @@ export class WorkflowTransitionActionsComponent {
       },
       error: (err: unknown) => {
         this.triggeringId.set(null);
-        this.error.set(extractErrorMessage(err, 'workflow.errorTransition'));
+        const tasks = openStageTasks(err);
+        if (tasks) {
+          this.cantMove.set({
+            label: this.transitionLabel(transition),
+            toStage: this.stageName(transition.toStageId),
+            tasks,
+          });
+          return;
+        }
+        this.error.set(plainWorkflowRefusalKey(err) ?? extractErrorMessage(err, 'workflow.errorTransition'));
       },
     });
   }
@@ -132,6 +176,7 @@ export class WorkflowTransitionActionsComponent {
 
     this.workflowTemplateService.getTemplate(instance.workflowTemplateId).subscribe({
       next: (template) => {
+        this.stages.set(template.stages ?? []);
         const stage = template.stages?.find((s) => s.id === instance.currentStageId);
         this.transitionsFromCurrentStage.set(stage?.transitions ?? []);
       },

@@ -70,10 +70,13 @@ import {
   REFRESH_TOKEN_COOKIE,
   accessTokenClearOptions,
   accessTokenCookieOptions,
+  legacyRefreshTokenClearOptions,
   refreshTokenClearOptions,
   refreshTokenCookieOptions,
   twoFactorCookieClearOptions,
 } from '../../common/config/session-cookies';
+import { verifySessionIdentity } from '../../common/guards/tenant.guard';
+import { isAtOwnAddress } from '../../common/tenant/session-address';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -251,18 +254,32 @@ export class AuthService {
       accessToken,
       accessTokenCookieOptions(ACCESS_TOKEN_TTL_SECONDS * 1000),
     );
-    // Scoped narrowly — the browser only ever sends this cookie back on the
-    // one endpoint that needs it, per Section 12 Discussion 4.
+    // Scoped to the auth routes (/api/v1/auth), so the browser sends it to the
+    // two that read it — refresh, and sign-out, which revokes it (ACC-203) —
+    // and to nothing outside them. It was scoped to /refresh alone, which is
+    // why no sign-out had ever revoked a session (session-cookies.ts).
     res.cookie(
       REFRESH_TOKEN_COOKIE,
       refreshToken,
       refreshTokenCookieOptions(REFRESH_TOKEN_TTL_SECONDS * 1000),
     );
+    // ACC-203 CHANGE-OVER (written 10 Oct 2026): delete a cookie left at the
+    // pre-ACC-203 path. Without this, a browser that signed in before the
+    // deploy would send BOTH cookies to /refresh, the old one first, and its
+    // next refresh would read the old, already-rotated token and sign the
+    // person out. Remove once 7 days (the refresh-token life) have passed since
+    // ACC-203 deployed.
+    res.clearCookie(REFRESH_TOKEN_COOKIE, legacyRefreshTokenClearOptions());
   }
 
   private clearSessionCookies(res: ExpressResponse): void {
     res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenClearOptions());
     res.clearCookie(REFRESH_TOKEN_COOKIE, refreshTokenClearOptions());
+    // ACC-203 CHANGE-OVER (written 10 Oct 2026): a refresh cookie at the
+    // pre-ACC-203 path is cleared too, so signing out removes it from browsers
+    // that still hold one. Remove once 7 days (the refresh-token life) have
+    // passed since ACC-203 deployed.
+    res.clearCookie(REFRESH_TOKEN_COOKIE, legacyRefreshTokenClearOptions());
   }
 
   // Shared tail for both the no-MFA login path and the post-verifyMfa path —
@@ -660,6 +677,27 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    // ACC-204 — read BEFORE the rotation, so the address check below can
+    // refuse without touching the token. Scoped by the row's organisation as
+    // well as its user. Same one query as before, moved up.
+    const user = await this.prisma.user.findFirst({
+      where: { id: existing.userId, organizationId: existing.organizationId },
+      include: { organization: { select: { status: true, slug: true } } },
+    });
+
+    // ACC-204 — a session renews only at its own organisation's address.
+    // Refused BEFORE the rotation and WITHOUT revoking: a tab at another
+    // organisation's address must not be able to end, or move, the session the
+    // person is using at their own. The refresh cookie is a browser cookie by
+    // definition, so the check always applies here. (A missing user falls
+    // through to the refusals below, exactly as before.)
+    if (
+      user &&
+      !isAtOwnAddress(req.headers['origin'], user.organization.slug)
+    ) {
+      throw new AuthRefusalException('SESSION_OTHER_ORGANIZATION');
+    }
+
     // Rotate — revoke the presented token, issue a brand new one. Never
     // reuse a refresh token value across requests.
     await this.prisma.refreshToken.update({
@@ -667,10 +705,6 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const user = await this.prisma.user.findFirst({
-      where: { id: existing.userId },
-      include: { organization: { select: { status: true } } },
-    });
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('This account is not active');
     }
@@ -725,26 +759,54 @@ export class AuthService {
     return { success: true };
   }
 
+  /**
+   * Sign-out — ACC-203. PUBLIC, idempotent, and always `{ success: true }`.
+   *
+   * It must work with no access cookie: after an idle wait in a frozen tab or a
+   * slept laptop, the 15-minute access cookie has often expired, and when this
+   * sat behind TenantGuard that sign-out was a 401 that revoked nothing. So:
+   *
+   *   1. revoke the refresh token the browser presented, if any — ONE atomic
+   *      statement, so it returns only the row THIS call revoked (two
+   *      simultaneous sign-outs cannot both revoke and audit it);
+   *   2. clear both cookies, and the pre-ACC-203 refresh path;
+   *   3. audit LOGOUT as the person a valid access token names (the SAME check
+   *      TenantGuard makes, through verifySessionIdentity), or else as the
+   *      owner of the row just revoked. Neither means nothing was signed out,
+   *      so there is nothing to record — and it is still a 200.
+   *
+   * The lookup is by the token's hash, which is unique: there is no tenant to
+   * scope by until the token says whose it is, exactly as refresh() reads it.
+   */
   async logout(req: ExpressRequest, res: ExpressResponse): Promise<{ success: true }> {
     const rawToken = req.cookies?.['refresh_token'] as string | undefined;
+    let revoked: { userId: string; organizationId: string } | undefined;
     if (rawToken) {
       const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-      await this.prisma.refreshToken.updateMany({
+      const rows = await this.prisma.refreshToken.updateManyAndReturn({
         where: { tokenHash, revokedAt: null },
         data: { revokedAt: new Date() },
+        select: { userId: true, organizationId: true },
       });
+      revoked = rows[0];
     }
 
     this.clearSessionCookies(res);
 
-    const authReq = req as ExpressRequest & { tenantId?: string; userId?: string };
-    if (authReq.tenantId && authReq.userId) {
+    const session = await verifySessionIdentity(req, this.prisma);
+    const actor = session.ok
+      ? {
+          userId: session.identity.userId,
+          organizationId: session.identity.organizationId,
+        }
+      : revoked;
+    if (actor) {
       await this.auditLog.log({
-        tenantId: authReq.tenantId,
-        actorId: authReq.userId,
+        tenantId: actor.organizationId,
+        actorId: actor.userId,
         action: 'LOGOUT',
         objectType: 'User',
-        objectId: authReq.userId,
+        objectId: actor.userId,
         ipAddress: req.ip,
       });
     }

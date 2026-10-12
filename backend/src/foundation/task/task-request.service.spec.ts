@@ -76,6 +76,8 @@ const mockPrisma = {
   task: { findFirst: jest.fn(), update: jest.fn() },
   taskRequest: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   user: { findFirst: jest.fn() },
+  // ACC-190 — approving may move a stage task's stage deadline.
+  workflowInstanceStage: { findFirst: jest.fn(), update: jest.fn() },
   $queryRaw: jest.fn(),
   $transaction: jest.fn(),
 };
@@ -572,6 +574,97 @@ describe('TaskRequestService (ACC-173)', () => {
         expect.objectContaining({ where: { id: 'task-1', organizationId: ORG_B } }),
       );
       expect(mockPrisma.task.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // ACC-190 — a stage's deadline is never before a MANDATORY stage task's due
+  // date (Ahmad, 6 Oct; 9 Oct E): an approved request that moves one past it
+  // moves the stage deadline out, inside the same transaction.
+  describe('approve — the stage deadline (ACC-190)', () => {
+    const DEADLINE = inDays(3);
+    const stageTask = (over: Record<string, unknown> = {}) =>
+      task({ workflowInstanceId: 'instance-1', workflowInstanceStageId: 'entry-1', isMandatory: true, ...over });
+    // The update returns the whole row, stage fields included, as Prisma does.
+    const arrangeTask = (over: Record<string, unknown> = {}) => {
+      mockPrisma.task.findFirst.mockResolvedValue(stageTask(over));
+      mockPrisma.task.update.mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({ ...stageTask(over), ...data }),
+      );
+    };
+
+    beforeEach(() => {
+      mockPrisma.workflowInstanceStage.findFirst.mockResolvedValue({ id: 'entry-1', slaDueAt: DEADLINE });
+      mockPrisma.workflowInstanceStage.update.mockResolvedValue({});
+    });
+
+    it('an extension past the deadline moves it, and the move is audited after commit', async () => {
+      const asked = inDays(5);
+      arrangeTask();
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(request({ requestedDueAt: asked }));
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      expect(mockPrisma.workflowInstanceStage.update).toHaveBeenCalledWith({
+        where: { id: 'entry-1' },
+        data: { slaDueAt: asked, slaBreached: false, escalatedRuleIndexes: [] },
+      });
+      expect(mockAudit.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          objectType: 'WorkflowInstanceStage',
+          objectId: 'entry-1',
+          before: { slaDueAt: DEADLINE },
+          after: { slaDueAt: asked },
+          metadata: expect.objectContaining({ event: 'stage_deadline_extended', taskId: 'task-1', requestId: 'req-1', requestType: 'EXTENSION' }),
+        }),
+      );
+    });
+
+    it('a hold that pushes the due date past the deadline moves it too', async () => {
+      // Hold shifts are working hours; the calendar mock adds them as plain
+      // hours — 48 moves a due date two days out from three, past the deadline.
+      mockCalendar.workingHoursBetween.mockResolvedValue(48);
+      arrangeTask({ dueAt: inDays(2) });
+      const hold = request({ type: 'ON_HOLD', requestedDueAt: null, holdUntil: inDays(10) });
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(hold);
+      mockPrisma.taskRequest.update.mockResolvedValue({ ...hold, status: 'APPROVED' });
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      const update = mockPrisma.workflowInstanceStage.update.mock.calls[0]?.[0] as { data: { slaDueAt: Date } } | undefined;
+      expect(update?.data.slaDueAt.getTime()).toBeGreaterThan(DEADLINE.getTime());
+    });
+
+    it('an OPTIONAL stage task never moves it', async () => {
+      arrangeTask({ isMandatory: false });
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(request({ requestedDueAt: inDays(5) }));
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
+      expect(mockAudit.log).not.toHaveBeenCalledWith(expect.objectContaining({ objectType: 'WorkflowInstanceStage' }));
+    });
+
+    // The engine locks the instance first on every stage change, so this path
+    // must too, or the two could wait on each other.
+    it('locks the workflow instance BEFORE the task', async () => {
+      arrangeTask();
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(request({ requestedDueAt: inDays(5) }));
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      const locks = (mockPrisma.$queryRaw.mock.calls as [TemplateStringsArray, ...unknown[]][]).map(([s]) => s.join('?'));
+      expect(locks[0]).toContain('FROM "WorkflowInstance"');
+      expect(locks[1]).toContain('FROM "Task"');
+    });
+
+    it('takes no instance lock for a task outside any workflow', async () => {
+      mockPrisma.task.findFirst.mockResolvedValue(task({ workflowInstanceId: null }));
+      mockPrisma.taskRequest.findFirst.mockResolvedValue(request({ requestedDueAt: inDays(5) }));
+
+      await service.approve('task-1', 'req-1', {}, creator, ORG_A);
+
+      const locks = (mockPrisma.$queryRaw.mock.calls as [TemplateStringsArray, ...unknown[]][]).map(([s]) => s.join('?'));
+      expect(locks.some((l) => l.includes('"WorkflowInstance"'))).toBe(false);
     });
   });
 

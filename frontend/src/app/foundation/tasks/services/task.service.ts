@@ -260,6 +260,18 @@ export interface AssignableCommitteeRoleDto {
   memberCount: number;
 }
 
+/**
+ * ACC-208 (B5) — every committee member role, including those nobody holds:
+ * configuring a stage task may target an empty role. The count is null when
+ * no committee was named ("the record's committee").
+ */
+export interface CommitteeRoleCatalogueDto {
+  id: string;
+  labelEn: string;
+  labelAr: string | null;
+  memberCount: number | null;
+}
+
 export interface RejectTaskDto {
   reason: string;
 }
@@ -390,6 +402,13 @@ export class TaskService {
     });
   }
 
+  /** ACC-208 (B5) — the role catalogue, counted on `committeeId` when one is named. */
+  getCommitteeRoleCatalogue(committeeId?: string): Observable<CommitteeRoleCatalogueDto[]> {
+    let params = new HttpParams().set('catalogue', 'true');
+    if (committeeId) params = params.set('committeeId', committeeId);
+    return this.http.get<CommitteeRoleCatalogueDto[]>(`${this.base}/assignment/committee-roles`, { params });
+  }
+
   getCommitteeAssignees(committeeId: string, roleValueId: string, taskId?: string): Observable<AssignableHolderDto[]> {
     return this.http.get<AssignableHolderDto[]>(`${this.base}/assignees/committee`, {
       params: withTask(new HttpParams().set('committeeId', committeeId).set('roleValueId', roleValueId), taskId),
@@ -510,6 +529,11 @@ export class TaskService {
 
   downloadEvidence(taskId: string, evidenceId: string): Observable<IFileDownloadDto> {
     return this.http.get<IFileDownloadDto>(`${this.base}/${taskId}/evidence/${evidenceId}/download`);
+  }
+
+  /** ACC-189 — the in-app viewer's mint: the download's entitlement, 409 for a type it does not render. */
+  viewEvidence(taskId: string, evidenceId: string): Observable<IFileDownloadDto> {
+    return this.http.get<IFileDownloadDto>(`${this.base}/${taskId}/evidence/${evidenceId}/view`);
   }
 
   removeEvidence(taskId: string, evidenceId: string): Observable<void> {

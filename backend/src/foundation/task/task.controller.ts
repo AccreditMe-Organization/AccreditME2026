@@ -157,7 +157,11 @@ export class TaskController {
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IAssignableCommitteeRole[]> {
-    return this.assignment.listCommitteeRoles(viewer(userId, permissions), tenantId, query.committeeId, query.taskId);
+    // ACC-208 (B5) — the DTO lets committeeId be absent only with catalogue.
+    if (query.catalogue) {
+      return this.assignment.listCommitteeRoleCatalogue(viewer(userId, permissions), tenantId, query.committeeId, query.taskId);
+    }
+    return this.assignment.listCommitteeRoles(viewer(userId, permissions), tenantId, query.committeeId!, query.taskId);
   }
 
   @Get('assignees/committee')
@@ -531,6 +535,20 @@ export class TaskController {
     @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IFileDownload> {
     return this.evidence.download(id, evidenceId, tenantId, viewer(userId, actorPermissions));
+  }
+
+  // ACC-189 — the in-app viewer's mint: exactly the download's entitlement
+  // (checked in the service), and 409 PREVIEW_NOT_AVAILABLE for a type the
+  // viewer does not render.
+  @Get(':id/evidence/:evidenceId/view')
+  viewEvidence(
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IFileDownload> {
+    return this.evidence.openView(id, evidenceId, tenantId, viewer(userId, actorPermissions));
   }
 
   @Delete(':id/evidence/:evidenceId')

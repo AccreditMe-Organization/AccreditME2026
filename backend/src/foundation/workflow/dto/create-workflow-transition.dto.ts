@@ -16,6 +16,10 @@ const WORKFLOW_TRIGGER_CONDITIONS = [
   'SYSTEM_AUTOMATIC',
 ] as const;
 
+// ACC-190 — ADVANCE is held by the stage's mandatory tasks; RETURN (send back)
+// and EXIT (end the record) never are. Omitted means ADVANCE (the schema default).
+export const WORKFLOW_TRANSITION_KINDS = ['ADVANCE', 'RETURN', 'EXIT'] as const;
+
 export class CreateWorkflowTransitionDto {
   @IsString()
   @IsNotEmpty()
@@ -63,4 +67,8 @@ export class CreateWorkflowTransitionDto {
   @IsObject()
   @IsOptional()
   validatorConfig?: Record<string, unknown>;
+
+  @IsIn(WORKFLOW_TRANSITION_KINDS)
+  @IsOptional()
+  kind?: (typeof WORKFLOW_TRANSITION_KINDS)[number];
 }

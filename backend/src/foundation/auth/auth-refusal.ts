@@ -21,7 +21,8 @@ export type AuthRefusalCode =
   | 'ACCOUNT_INACTIVE'
   | 'MFA_INVALID'
   | 'MFA_EXPIRED'
-  | 'ORGANIZATION_UNAVAILABLE';
+  | 'ORGANIZATION_UNAVAILABLE'
+  | 'SESSION_OTHER_ORGANIZATION';
 
 /**
  * ONE message per code, and the only place a refusal's wording is written.
@@ -46,6 +47,12 @@ export const AUTH_REFUSAL_MESSAGES: Readonly<Record<AuthRefusalCode, string>> =
     // organisation's closure has just ended. At sign-in it is given only after a
     // correct password, so it tells nothing to someone without one.
     ORGANIZATION_UNAVAILABLE: 'This organization is not available',
+    // ACC-204 — a browser session used at another organisation's address (or
+    // with no usable Origin at all). Not a sign-in outcome: TenantGuard and
+    // refresh() give it, and the frontend reads it as "not signed in at this
+    // address". It names neither organisation.
+    SESSION_OTHER_ORGANIZATION:
+      "This session belongs to another organization's address",
   };
 
 export interface AuthRefusalBody {
@@ -67,7 +74,8 @@ export class AuthRefusalException extends UnauthorizedException {
       | 'INVALID_CREDENTIALS'
       | 'ACCOUNT_INACTIVE'
       | 'MFA_EXPIRED'
-      | 'ORGANIZATION_UNAVAILABLE',
+      | 'ORGANIZATION_UNAVAILABLE'
+      | 'SESSION_OTHER_ORGANIZATION',
   );
   constructor(code: 'ACCOUNT_LOCKED', details: { lockedUntil: Date });
   constructor(code: 'MFA_INVALID', details: { attemptsRemaining: number });

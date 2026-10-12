@@ -57,6 +57,10 @@ const MOCK_TASK: ITask = {
   reopenedReason: null,
   reopenedAt: null,
   reopenedById: null,
+  workflowInstanceStageId: null,
+  stageTaskDefinitionId: null,
+  isMandatory: false,
+  titleAr: null,
   managerEscalatedAt: null,
   headEscalatedAt: null,
   createdAt: new Date('2026-01-01'),
@@ -92,6 +96,7 @@ describe('TaskController', () => {
     listPositions: jest.Mock;
     listHolders: jest.Mock;
     listCommitteeRoles: jest.Mock;
+    listCommitteeRoleCatalogue: jest.Mock;
     listCommitteeMembers: jest.Mock;
   };
 
@@ -100,6 +105,7 @@ describe('TaskController', () => {
     addFile: jest.fn().mockResolvedValue({ id: 'evidence-2' }),
     list: jest.fn().mockResolvedValue({ items: [], canAdd: true }),
     download: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '2026-10-07T10:15:00.000Z' }),
+    openView: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '2026-10-07T10:15:00.000Z' }),
     remove: jest.fn().mockResolvedValue(undefined),
   };
 
@@ -118,6 +124,7 @@ describe('TaskController', () => {
       listPositions: jest.fn().mockResolvedValue([]),
       listHolders: jest.fn().mockResolvedValue([]),
       listCommitteeRoles: jest.fn().mockResolvedValue([]),
+      listCommitteeRoleCatalogue: jest.fn().mockResolvedValue([]),
       listCommitteeMembers: jest.fn().mockResolvedValue([]),
     };
     service = {
@@ -328,7 +335,7 @@ describe('TaskController', () => {
 
   // ACC-177 — the evidence routes carry no route permission: who may is
   // decided from the task row, exactly as addEvidence() is.
-  it.each(['addFileEvidence', 'listEvidence', 'downloadEvidence', 'removeEvidence'] as const)(
+  it.each(['addFileEvidence', 'listEvidence', 'downloadEvidence', 'viewEvidence', 'removeEvidence'] as const)(
     '%s requires NO route permission — the service decides from the task',
     (method) => {
       const required = new Reflector().get<string[] | undefined>(PERMISSIONS_KEY, TaskController.prototype[method]);
@@ -346,6 +353,10 @@ describe('TaskController', () => {
 
     await controller.downloadEvidence('task-1', 'ev-1', TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
     expect(evidence.download).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
+
+    // ACC-189 — the viewer's mint takes exactly what the download takes.
+    await controller.viewEvidence('task-1', 'ev-1', TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
+    expect(evidence.openView).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS });
 
     await controller.removeEvidence('task-1', 'ev-1', TENANT_ID, USER_ID);
     expect(evidence.remove).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, USER_ID);
@@ -415,6 +426,14 @@ describe('TaskController', () => {
 
     await controller.getAssignableCommitteeRoles({ committeeId: 'c1' }, TENANT_ID, USER_ID, perms);
     expect(assignment.listCommitteeRoles).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', undefined);
+    expect(assignment.listCommitteeRoleCatalogue).not.toHaveBeenCalled();
+
+    // ACC-208 (B5) — catalogue goes to its own method, with or without a committee.
+    await controller.getAssignableCommitteeRoles({ catalogue: true }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listCommitteeRoleCatalogue).toHaveBeenCalledWith(viewer, TENANT_ID, undefined, undefined);
+    await controller.getAssignableCommitteeRoles({ catalogue: true, committeeId: 'c1' }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listCommitteeRoleCatalogue).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', undefined);
+    expect(assignment.listCommitteeRoles).toHaveBeenCalledTimes(1);
 
     await controller.getCommitteeAssignees({ committeeId: 'c1', roleValueId: 'r1' }, TENANT_ID, USER_ID, perms);
     expect(assignment.listCommitteeMembers).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', 'r1', undefined);

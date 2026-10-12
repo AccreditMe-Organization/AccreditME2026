@@ -1,0 +1,115 @@
+/*
+ * The website's tokens (ACC-213). Two sources, kept apart on purpose:
+ *
+ * COLOUR — the WEBSITE's brand palette, from the accepted design
+ * (frontend/design-reference/AccreditMe Website.dc.html), NOT the app's
+ * colours. Sky and lime are fills only: never text on white. Text uses the
+ * inks.
+ *
+ * TYPE, SPACING, RADIUS, FONT — copied from the app's
+ * frontend/src/styles/design-tokens.scss (artboard 1 and 2 of the app's design
+ * reference), so moving from the website into the app feels like one product.
+ * The fonts are the app's own files (see fonts.css). Nothing is loaded from the
+ * app: these are copies, and a change in the app is copied here by hand.
+ */
+:root {
+  /* Brand (design) */
+  --w-charcoal: #33393f;
+  --w-sky: #7bc8e6;
+  --w-steel: #4a80b5;
+  --w-lime: #a2d83c;
+
+  /* Text inks (design) — the only colours used for text on light bands */
+  --w-ink-steel: #3a6c9e;
+  --w-ink-steel-strong: #2c5580;
+  --w-ink-sky: #2a6a86;
+  --w-ink-lime: #4d7a12;
+
+  /* Tints (design) — the light bands */
+  --w-tint-sky: #eaf6fb;
+  --w-tint-steel: #eaf1f8;
+  --w-tint-lime: #f2f9e6;
+  --w-tint-grey: #eef0f2;
+
+  /* Neutrals the design draws with: body text, muted text, borders, and text
+     on charcoal bands */
+  --w-white: #ffffff;
+  --w-text: var(--w-charcoal);
+  --w-text-muted: #4a5568;
+  --w-border: #e2e8f0;
+  /* A form control's border: the app's AA-safe one (3:1 on white, 1.4.11) */
+  --w-control-border: #8a94a6;
+  --w-on-charcoal: #ffffff;
+  --w-on-charcoal-muted: #c9d3e0;
+  --w-error: #b42318;
+  --w-error-on-charcoal: #fda29b;
+  --w-focus: var(--w-ink-steel);
+
+  /* Spacing (app) */
+  --am-space-2: 2px;
+  --am-space-4: 4px;
+  --am-space-6: 6px;
+  --am-space-8: 8px;
+  --am-space-12: 12px;
+  --am-space-16: 16px;
+  --am-space-20: 20px;
+  --am-space-24: 24px;
+  --am-space-32: 32px;
+  --am-space-40: 40px;
+
+  /* Radius (app) */
+  --am-radius-control: 4px;
+  --am-radius-button: 6px;
+  --am-radius-card: 8px;
+  --am-radius-pill: 999px;
+
+  /* Font (app) — one family for both scripts */
+  --am-font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+
+  /* Type scale (app) */
+  --am-type-micro-size: 11px;
+  --am-type-micro-line: 16px;
+  --am-type-micro-weight: 700;
+  --am-type-micro-tracking: 0.08em;
+  --am-type-micro-transform: uppercase;
+  --am-type-meta-size: 12px;
+  --am-type-meta-line: 18px;
+  --am-type-value-size: 13px;
+  --am-type-value-line: 20px;
+  --am-type-body-size: 14px;
+  --am-type-body-line: 21px;
+  --am-type-heading-size: 16px;
+  --am-type-heading-line: 24px;
+  --am-type-heading-weight: 600;
+  --am-type-title-size: 22px;
+  --am-type-title-line: 28px;
+  --am-type-title-weight: 600;
+  --am-type-title-tracking: -0.01em;
+  --am-type-record-size: 28px;
+  --am-type-record-line: 36px;
+  --am-type-record-weight: 600;
+  --am-type-record-tracking: -0.015em;
+}
+
+/* Arabic steps (app): +1 to +4px with more leading, and no tracking — Arabic is
+   a joining script and tracking severs the strokes. */
+[lang|='ar'] {
+  --am-type-micro-size: 12px;
+  --am-type-micro-line: 18px;
+  --am-type-micro-tracking: 0;
+  --am-type-micro-transform: none;
+  --am-type-meta-size: 13px;
+  --am-type-meta-line: 20px;
+  --am-type-value-size: 14px;
+  --am-type-value-line: 22px;
+  --am-type-body-size: 15px;
+  --am-type-body-line: 24px;
+  --am-type-heading-size: 17px;
+  --am-type-heading-line: 27px;
+  --am-type-title-size: 23px;
+  --am-type-title-line: 32px;
+  --am-type-title-tracking: 0;
+  --am-type-record-size: 29px;
+  --am-type-record-line: 40px;
+  --am-type-record-tracking: 0;
+}

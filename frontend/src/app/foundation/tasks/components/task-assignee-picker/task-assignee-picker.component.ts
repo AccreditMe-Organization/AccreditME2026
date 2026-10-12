@@ -110,6 +110,15 @@ interface TargetOption {
  * three in one row, the outcome on a line beneath. New task's step 1 measured
  * 414px against the 420 cap stacked — too close to call a fit, and a pool's
  * outcome wraps to a second line — so it takes the row.
+ *
+ * ## purpose: 'stage-task' (ACC-208)
+ *
+ * A stage's task definition chooses the same way, but nothing is placed now:
+ * every record entering the stage gets its own task, resolved then. So the
+ * outcome line speaks of each entry, not of this save — "whoever holds the
+ * position when a record enters" — and still says when nobody holds it today.
+ * The lists and the rules are the task picker's own; the server answers to
+ * workflows:manage for this use (ACC-208, B4).
  */
 @Component({
   selector: 'app-task-assignee-picker',
@@ -253,6 +262,8 @@ export class TaskAssigneePickerComponent implements OnInit {
   readonly forceShowErrors = input(false);
   /** 'stacked': unit and position, then person (Reassign). 'row': all three in one row (New task). */
   readonly layout = input<'stacked' | 'row'>('stacked');
+  /** 'task': one task, placed on save. 'stage-task': a stage's definition, placed at each entry (ACC-208). */
+  readonly purpose = input<'task' | 'stage-task'>('task');
 
   private readonly units = signal<AssignableUnitDto[]>([]);
   private readonly positions = signal<AssignablePositionDto[]>([]);
@@ -324,7 +335,11 @@ export class TaskAssigneePickerComponent implements OnInit {
     const chosen = this.userId();
     if (chosen) {
       const person = this.people().find((p) => p.id === chosen);
-      return person ? this.translate.instant('task.assign.outcomePerson', { name: person.name }) : '';
+      if (!person) return '';
+      return this.translate.instant(
+        this.purpose() === 'stage-task' ? 'workflow.stageTaskForm.outcomePerson' : 'task.assign.outcomePerson',
+        { name: person.name },
+      );
     }
 
     if (scope === COMMITTEE_SCOPE) {
@@ -334,6 +349,12 @@ export class TaskAssigneePickerComponent implements OnInit {
 
     const position = this.positions().find((p) => p.id === target);
     if (!position) return '';
+    if (this.purpose() === 'stage-task') {
+      // Resolved at each entry: say so, and say when nobody holds it today.
+      return this.translate.instant(
+        position.holderCount === 0 ? 'workflow.stageTaskForm.outcomeVacant' : 'workflow.stageTaskForm.outcomeAnyone',
+      );
+    }
     if (position.isSingleAssignee) {
       if (this.peopleLoading()) return '';
       const holder = this.people()[0];

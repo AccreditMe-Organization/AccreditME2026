@@ -140,11 +140,27 @@
   --am-dialog-picker:  520px;
   --am-dialog-form-body-max: 420px;
 
+  // ─── Drawer (File Viewer drawing, 9 Oct · am-drawer, ACC-189) ──────────
+  // 60% of the window and never under 720px: an A4 page at fit width (640
+  // plus margins) with its toolbar on one line. Full screen below 900px —
+  // that breakpoint lives in drawer.component.ts, because a media query
+  // cannot read a custom property. The shadow falls toward the page behind,
+  // so it has a side.
+  --am-drawer-width:          60vw;
+  --am-drawer-min-width:      720px;
+  --am-drawer-header-height:  56px;
+  --am-drawer-toolbar-height: 46px;
+  --am-drawer-footer-height:  36px;
+  --am-drawer-shadow-ltr: -16px 0 40px rgba(16, 24, 40, 0.24);
+  --am-drawer-shadow-rtl:  16px 0 40px rgba(16, 24, 40, 0.24);
+
   // ─── Type ──────────────────────────────────────────────────────────────
   // One family for both scripts: IBM Plex Sans Arabic carries a Latin set
   // drawn as IBM Plex Sans, so "14 Jan 2025" inside Arabic text is the same
   // design as the words around it. See styles/fonts.css.
   --am-font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  // A text file shown as text (the file viewer): monospace, the system's own.
+  --am-font-mono: ui-monospace, Menlo, Consolas, monospace;
 
   // Steps from the artboard-2 specimen. Values are the DRAWN ones: "Record
   // name" is labelled 28/34 but drawn at 36, and 36 is what its Arabic step

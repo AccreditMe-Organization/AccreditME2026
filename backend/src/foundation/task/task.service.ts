@@ -87,9 +87,47 @@ export interface TaskViewer {
   permissions: readonly string[];
 }
 
-// Where a task came from. The SLA cap applies to a date a PERSON sets; the
-// engine's own stage SLA is recorded as a raised limit instead (ACC-174, C1).
-export type TaskOrigin = 'person' | 'engine';
+// The two columns an "open" task can never hold — the gate, the stage-exit
+// cancel and cancelForInstance() all use this one list.
+const OPEN_STATUS_FILTER = { notIn: [...CLOSED_STATUSES] };
+
+/**
+ * ACC-190 — one task a stage entry creates from a definition: what the engine
+ * resolved (the snapshot of the definition, its placement, the entry it belongs
+ * to). TaskService turns it into a row, the SLA counted from `enteredAt`.
+ */
+export interface StageEntryTaskDraft {
+  title: string;
+  titleAr: string | null;
+  description: string | null;
+  priority: TaskPriority;
+  requiresEvidence: boolean;
+  isMandatory: boolean;
+  sourceType: TaskSourceType;
+  sourceId: string;
+  sourceStageId: string;
+  stageTaskDefinitionId: string;
+  /** Null when a relative route found no unit or committee on the record: the task is UNASSIGNED. */
+  placement: ResolvedPlacement | null;
+}
+
+/**
+ * A task ready to insert: every read done (placement, SLA window, pool clock,
+ * active assignees), so the insert itself can run inside a caller's short
+ * transaction and its notices after commit (ACC-190).
+ */
+export interface PreparedTask {
+  data: Omit<Prisma.TaskUncheckedCreateInput, 'assignees' | 'createdById' | 'organizationId'>;
+  eligibleAssigneeIds: string[];
+  delegations: ReadonlyMap<string, { delegationReason: TaskAssignee['delegationReason']; delegationContextId: string | null }>;
+  pooled: boolean;
+}
+
+/** ACC-190 — the open tasks a stage exit cancelled, for the after-commit audit. */
+export interface StageExitCancellation {
+  open: TaskWithAssigneeRows[];
+  cancelledRequests: CancelledRequest[];
+}
 
 // ACC-174 — the creator's status on a list row, so canManage can apply the
 // "creator no longer ACTIVE" half of the rule without a query per row.
@@ -137,41 +175,31 @@ export class TaskService {
   // stage, because a stage's committee need not be the task's source.
   //
   // ACC-174 — the SLA limit. slaStartAt is now; the limit is the priority SLA
-  // from it. A due date a PERSON sends must be in the future and within the
-  // limit (400). The ENGINE's due date is its stage's SLA: when that is later
-  // than the priority limit, the limit is raised to it and the date recorded in
-  // slaExtendedTo — temporary, until stage task definitions (CF-07) give every
-  // stage task its own priority SLA from stage entry.
-  async create(
-    dto: CreateTaskDto,
-    organizationId: string,
-    actorId: string,
-    enginePlacement?: ResolvedPlacement,
-    origin: TaskOrigin = 'person',
-  ): Promise<ITask> {
+  // from it. A due date a person sends must be in the future and within the
+  // limit (400).
+  //
+  // ACC-190 — this is the PERSON's path only. The engine's interim path (a stage
+  // SLA raising the limit through slaExtendedTo, for CREATE_TASK) is gone with
+  // CREATE_TASK: a stage task now comes from a definition, through
+  // prepareStageEntryTask(), with its own priority SLA counted from stage entry.
+  async create(dto: CreateTaskDto, organizationId: string, actorId: string): Promise<ITask> {
     if (dto.assignTo && dto.assigneeUserIds?.length) {
       throw new BadRequestException('Choose either who the task goes to or named people, not both');
     }
-    const placement =
-      enginePlacement ??
-      (dto.assignTo
-        ? await this.assignment.resolvePlacement(dto.assignTo, organizationId, {
-            sourceType: dto.sourceType,
-            sourceId: dto.sourceId,
-          })
-        : null);
+    const placement = dto.assignTo
+      ? await this.assignment.resolvePlacement(dto.assignTo, organizationId, {
+          sourceType: dto.sourceType,
+          sourceId: dto.sourceId,
+        })
+      : null;
 
     const priority = dto.priority ?? 'MEDIUM';
     const slaStartAt = new Date();
     const priorityLimit = await this.sla.windowFrom(slaStartAt, priority, organizationId);
     const askedDueAt = dto.dueDate ? new Date(dto.dueDate) : null;
-    if (askedDueAt && origin === 'person') {
+    if (askedDueAt) {
       await this.sla.assertPersonDueDate(askedDueAt, priorityLimit, priority, organizationId, slaStartAt);
     }
-    const slaExtendedTo =
-      origin === 'engine' && askedDueAt && askedDueAt > priorityLimit ? askedDueAt : null;
-    const dueAt = askedDueAt ?? priorityLimit;
-    const slaLimitAt = latest(priorityLimit, slaExtendedTo);
 
     const eligibleAssigneeIds = await this.filterActiveUsers(
       placement ? placement.directUserIds : (dto.assigneeUserIds ?? []),
@@ -185,15 +213,10 @@ export class TaskService {
 
     // ACC-40 Section 2.6.3 — stamped once, at the moment each TaskAssignee
     // row is created, from the caller-supplied per-assignee delegation map
-    // (workflow-engine calls only; manual tasks:create callers never send
-    // this, so every assignee there simply has no matching entry).
-    const delegationByUserId = new Map(
-      (dto.assigneeDelegations ?? []).map((d) => [d.userId, d]),
-    );
-
-    const task = await this.prisma.task.create({
+    // (manual tasks:create callers never send this, so every assignee there
+    // simply has no matching entry).
+    const prepared: PreparedTask = {
       data: {
-        organizationId,
         title: dto.title,
         description: dto.description ?? null,
         sourceType: dto.sourceType,
@@ -201,22 +224,92 @@ export class TaskService {
         sourceStageId: dto.sourceStageId ?? null,
         workflowInstanceId: dto.workflowInstanceId ?? null,
         meetingId: dto.meetingId ?? null,
-        createdById: actorId,
         requiresEvidence: dto.requiresEvidence ?? false,
         priority,
         status: isUnassigned ? 'UNASSIGNED' : 'PENDING',
-        dueAt,
+        dueAt: askedDueAt ?? priorityLimit,
         dueDateOverridden: !!dto.dueDate,
         slaStartAt,
-        slaLimitAt,
-        slaExtendedTo,
+        slaLimitAt: priorityLimit,
+        slaExtendedTo: null,
         ...toPoolColumns(placement?.target ?? null),
         ...poolClock,
+      },
+      eligibleAssigneeIds,
+      delegations: new Map((dto.assigneeDelegations ?? []).map((d) => [d.userId, d])),
+      pooled,
+    };
+
+    const task = await this.insertPrepared(this.prisma, prepared, organizationId, actorId);
+    await this.announceCreated(task, prepared, organizationId, actorId);
+    return task;
+  }
+
+  /**
+   * ACC-190 — a stage entry's task, ready to insert. Every read happens here,
+   * BEFORE the engine opens its transaction (a transaction stays short: ACC-60
+   * measured a transition at 6–11 s from a Middle East client against the
+   * Frankfurt database, and Prisma's default limit is 5 s).
+   *
+   * The SLA clock starts at the stage entry, not now: the due date and the
+   * limit are the priority SLA from `enteredAt`, exactly as ACC-174 computes
+   * them, with no extension. The stage's deadline is made to fit its tasks
+   * (StageTaskDefinitionService), never the other way round.
+   */
+  async prepareStageEntryTask(draft: StageEntryTaskDraft, enteredAt: Date, organizationId: string): Promise<PreparedTask> {
+    const window = await this.sla.windowFrom(enteredAt, draft.priority, organizationId);
+    const eligibleAssigneeIds = await this.filterActiveUsers(draft.placement?.directUserIds ?? [], organizationId);
+    const pooled = draft.placement?.pooled ?? false;
+    const isUnassigned = !pooled && eligibleAssigneeIds.length === 0;
+    const poolClock = pooled ? await this.poolClock(draft.priority, organizationId, enteredAt) : NO_POOL_CLOCK;
+    return {
+      data: {
+        title: draft.title,
+        titleAr: draft.titleAr,
+        description: draft.description,
+        sourceType: draft.sourceType,
+        sourceId: draft.sourceId,
+        sourceStageId: draft.sourceStageId,
+        // workflowInstanceId and workflowInstanceStageId are set at insert: the
+        // instance (on start) and the entry row are created inside the engine's
+        // transaction, after this is prepared.
+        stageTaskDefinitionId: draft.stageTaskDefinitionId,
+        isMandatory: draft.isMandatory,
+        requiresEvidence: draft.requiresEvidence,
+        priority: draft.priority,
+        status: isUnassigned ? 'UNASSIGNED' : 'PENDING',
+        dueAt: window,
+        dueDateOverridden: false,
+        slaStartAt: enteredAt,
+        slaLimitAt: window,
+        slaExtendedTo: null,
+        ...toPoolColumns(draft.placement?.target ?? null),
+        ...poolClock,
+      },
+      eligibleAssigneeIds,
+      delegations: new Map(),
+      pooled,
+    };
+  }
+
+  /** The insert alone, on the caller's client — `this.prisma`, or a transaction. */
+  async insertPrepared(
+    client: Pick<TaskTx, 'task'>,
+    prepared: PreparedTask,
+    organizationId: string,
+    actorId: string,
+  ): Promise<TaskWithAssigneeRows> {
+    const { eligibleAssigneeIds, delegations } = prepared;
+    return client.task.create({
+      data: {
+        ...prepared.data,
+        organizationId,
+        createdById: actorId,
         assignees: eligibleAssigneeIds.length === 0
           ? undefined
           : {
               create: eligibleAssigneeIds.map((userId) => {
-                const delegation = delegationByUserId.get(userId);
+                const delegation = delegations.get(userId);
                 return {
                   userId,
                   assignedById: actorId,
@@ -228,7 +321,18 @@ export class TaskService {
       },
       include: { assignees: true },
     });
+  }
 
+  /**
+   * What follows a task's creation, AFTER any transaction it was inserted in
+   * has committed: the audit row, and the notices.
+   */
+  async announceCreated(
+    task: ITask,
+    prepared: Pick<PreparedTask, 'eligibleAssigneeIds' | 'pooled'>,
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
     await this.auditLog.log({
       action: 'CREATE',
       objectType: 'Task',
@@ -242,7 +346,7 @@ export class TaskService {
     // Setup health condition (TASK_WITHOUT_OWNER), listed until someone is
     // assigned (SYSTEM-REFERENCE §13.7). Assignees are still told: that is an
     // event, addressed to the person who has to act.
-    for (const userId of eligibleAssigneeIds) {
+    for (const userId of prepared.eligibleAssigneeIds) {
       await this.notificationService.create(
         {
           userId,
@@ -256,11 +360,9 @@ export class TaskService {
     }
     // ACC-167 — a pool is told once, when the task enters it. A task created
     // for one chosen person sends only the assignment notice above.
-    if (pooled) {
+    if (prepared.pooled) {
       await this.notifyPool(task.id, organizationId, { event: 'created', excludeUserId: actorId });
     }
-
-    return task;
   }
 
   // "My Tasks" — every task where the calling user has an active
@@ -793,10 +895,12 @@ export class TaskService {
    * requests and the pick-up clock; the assignee rows stay, so the task stays
    * visible as Cancelled (ACC-68's reasoning).
    *
-   * A WORKFLOW STAGE TASK cannot be cancelled by hand. Whether a stage task may
-   * end without its step depends on whether it is mandatory or optional, which
-   * stage task definitions (CF-07) introduce; until then the engine alone ends
-   * them, when the record leaves the stage.
+   * ACC-190 (Ahmad, 9 Oct, K) — a task a stage definition created may be
+   * cancelled by hand when it is OPTIONAL: it never holds its step. A
+   * MANDATORY one never may: it is what the step's forward move waits for.
+   * Any other workflow-linked task (CREATE_TASK's, before ACC-190, or a manual
+   * task attached to a stage) still cannot: whether it may end without its step
+   * was never recorded, so the engine alone ends it when the record leaves.
    */
   async cancel(id: string, dto: CancelTaskDto, viewer: TaskViewer, organizationId: string): Promise<ITask> {
     const { existing, task, cancelled } = await this.prisma.$transaction(async (tx) => {
@@ -804,7 +908,11 @@ export class TaskService {
       if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
         throw new ConflictException(`${aTaskThatIs(existing.status)} cannot be cancelled`);
       }
-      if (existing.sourceStageId || existing.workflowInstanceId) {
+      if (existing.workflowInstanceStageId) {
+        if (existing.isMandatory) {
+          throw new ConflictException('This task is required for its workflow step and cannot be cancelled');
+        }
+      } else if (existing.sourceStageId || existing.workflowInstanceId) {
         throw new ConflictException('This task belongs to a workflow step');
       }
       const task = await tx.task.update({
@@ -865,6 +973,9 @@ export class TaskService {
    *
    * A stage task reopens only while its record is still in that stage and the
    * workflow is still running — otherwise the step it gated is already decided.
+   * ACC-190 — for a task a stage definition created, "in that stage" means the
+   * same ENTRY: a record that left and came back has a fresh set of tasks, and
+   * the old entry's are history. A reopened mandatory task holds the step again.
    */
   async reopen(id: string, dto: ReopenTaskDto, viewer: TaskViewer, organizationId: string): Promise<ITask> {
     const now = new Date();
@@ -876,7 +987,17 @@ export class TaskService {
       if (existing.status !== 'COMPLETED') {
         throw new ConflictException('Only a completed task can be reopened');
       }
-      if (existing.workflowInstanceId) {
+      if (existing.workflowInstanceStageId) {
+        const entry = await tx.workflowInstanceStage.findFirst({
+          where: {
+            id: existing.workflowInstanceStageId,
+            exitedAt: null,
+            workflowInstance: { organizationId, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+          },
+          select: { id: true },
+        });
+        if (!entry) throw new ConflictException('The workflow has moved past this step');
+      } else if (existing.workflowInstanceId) {
         const instance = await tx.workflowInstance.findFirst({
           where: { id: existing.workflowInstanceId, organizationId },
           select: { status: true, currentStageId: true },
@@ -1036,37 +1157,54 @@ export class TaskService {
   //    tasks were cancelled. A task leaving someone's active work with no
   //    trail is exactly what a compliance product has to be able to explain.
   //
-  // Returns the number of tasks cancelled so callers can log it.
-  async cancelForStage(
-    workflowInstanceId: string,
-    sourceStageId: string,
+  // ACC-190 — the stage the record is leaving is one ENTRY. Its own tasks are
+  // matched by workflowInstanceStageId; tasks with no entry (CREATE_TASK's,
+  // before ACC-190, and manual tasks attached to the stage) by the old pair.
+  //
+  // Runs INSIDE the engine's stage-change transaction; the audit rows are
+  // written after it commits (auditStageExitCancellation()).
+  //
+  // Every open task of the entry is cancelled, whatever the transition's kind:
+  // an ADVANCE has already passed the gate, so no mandatory task is open and
+  // only optional ones remain (Ahmad, 9 Oct, G: silently, like ACC-68); a
+  // RETURN or EXIT takes the whole entry's open work with it.
+  async cancelStageExitTasksInTx(
+    tx: TaskTx,
+    scope: { workflowInstanceId: string; stageId: string; workflowInstanceStageId: string },
     organizationId: string,
-    actorId: string,
-    reason: 'STAGE_EXIT' | 'INSTANCE_CANCELLED',
-  ): Promise<number> {
-    const open = await this.prisma.task.findMany({
+  ): Promise<StageExitCancellation> {
+    const open = await tx.task.findMany({
       where: {
         organizationId,
-        workflowInstanceId,
-        sourceStageId,
-        status: { notIn: ['COMPLETED', 'CANCELLED'] },
+        status: OPEN_STATUS_FILTER,
+        OR: [
+          { workflowInstanceStageId: scope.workflowInstanceStageId },
+          { workflowInstanceStageId: null, workflowInstanceId: scope.workflowInstanceId, sourceStageId: scope.stageId },
+        ],
       },
       include: { assignees: true },
     });
-    if (open.length === 0) return 0;
+    if (open.length === 0) return { open: [], cancelledRequests: [] };
 
     // ACC-173 — an ON_HOLD task is open and closes like any other: its hold
     // ends here, and any pending request with it.
     const ids = open.map((t) => t.id);
-    const cancelled = await this.prisma.$transaction(async (tx) => {
-      await tx.task.updateMany({
-        where: { id: { in: ids }, organizationId },
-        data: { status: 'CANCELLED', ...HOLD_CLEARED },
-      });
-      return cancelOpenRequests(tx, organizationId, ids, 'task_cancelled');
+    await tx.task.updateMany({
+      where: { id: { in: ids }, organizationId },
+      data: { status: 'CANCELLED', ...HOLD_CLEARED },
     });
+    const cancelledRequests = await cancelOpenRequests(tx, organizationId, ids, 'task_cancelled');
+    return { open, cancelledRequests };
+  }
 
-    for (const before of open) {
+  /** The audit rows for a stage exit's cancellations, after the transaction commits. */
+  async auditStageExitCancellation(
+    result: StageExitCancellation,
+    scope: { workflowInstanceId: string; stageId: string; workflowInstanceStageId: string },
+    organizationId: string,
+    actorId: string,
+  ): Promise<void> {
+    for (const before of result.open) {
       await this.auditLog.log({
         action: 'UPDATE',
         objectType: 'Task',
@@ -1075,12 +1213,16 @@ export class TaskService {
         tenantId: organizationId,
         before: before as unknown as Record<string, unknown>,
         after: { ...before, status: 'CANCELLED', ...HOLD_CLEARED } as unknown as Record<string, unknown>,
-        metadata: { cancelledBy: actorId, reason, workflowInstanceId, sourceStageId },
+        metadata: {
+          cancelledBy: actorId,
+          reason: 'STAGE_EXIT',
+          workflowInstanceId: scope.workflowInstanceId,
+          sourceStageId: scope.stageId,
+          workflowInstanceStageId: scope.workflowInstanceStageId,
+        },
       });
     }
-    await auditCancelledRequests(this.auditLog, cancelled, organizationId, actorId);
-
-    return open.length;
+    await auditCancelledRequests(this.auditLog, result.cancelledRequests, organizationId, actorId);
   }
 
   // ACC-68 — cancels every open task across EVERY stage of one instance, for
@@ -1621,7 +1763,9 @@ export class TaskService {
     // codebase's manual tenant-scoping discipline — never a bare lookup by
     // workflowInstanceId on the assumption the caller already scoped it.
     const tasks = await this.prisma.task.findMany({
-      where: { organizationId, workflowInstanceId, sourceStageId, status: 'UNASSIGNED' },
+      // ACC-190 — a task from a stage definition has its OWN target, so the
+      // stage's assignee is never attached to it; it waits like a manual task.
+      where: { organizationId, workflowInstanceId, sourceStageId, status: 'UNASSIGNED', stageTaskDefinitionId: null },
       include: { assignees: true },
     });
     if (tasks.length === 0) return 0;
@@ -1728,7 +1872,9 @@ export class TaskService {
     organizationId: string,
   ): Promise<boolean> {
     const orphanCount = await this.prisma.task.count({
-      where: { organizationId, workflowInstanceId, sourceStageId, status: 'UNASSIGNED' },
+      // ACC-190 — a task from a stage definition has its OWN target, so the
+      // stage's assignee is never attached to it; it waits like a manual task.
+      where: { organizationId, workflowInstanceId, sourceStageId, status: 'UNASSIGNED', stageTaskDefinitionId: null },
     });
     return orphanCount > 0;
   }

@@ -22,4 +22,8 @@ export interface IWorkflowStage {
   assigneeOrgUnitId: string | null;
   escalationConfig: Record<string, unknown> | null;
   transitions?: IWorkflowTransition[];
+  // ACC-190 — on a template read: how many tasks entering this stage creates,
+  // and the longest one's due time in working hours (null when it creates none).
+  taskDefinitionCount?: number;
+  longestTaskHours?: number | null;
 }

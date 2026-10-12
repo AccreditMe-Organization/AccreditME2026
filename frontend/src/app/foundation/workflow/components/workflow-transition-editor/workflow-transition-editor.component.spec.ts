@@ -35,6 +35,8 @@ const EXISTING: WorkflowTransitionDto = {
   triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
+
+  kind: 'ADVANCE' as const,
 };
 
 const PERMISSIONS = [
@@ -80,6 +82,10 @@ describe('WorkflowTransitionEditorComponent (ACC-55)', () => {
   afterEach(() => http.verify());
 
   function openPermissionPicker(): HTMLElement[] {
+    // ACC-208 — the permission picker is on step 2 of both dialogs.
+    component.addStep.set(2);
+    component.editStep.set(2);
+    fixture.detectChanges();
     // The permission picker is the last overlay-select in the open dialog.
     const triggers = Array.from(
       document.querySelectorAll('.am-overlay-select-trigger'),
@@ -301,6 +307,95 @@ describe('WorkflowTransitionEditorComponent (ACC-55)', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
+  // ACC-208 — the transition's kind (drawing section 3.2).
+  describe('Kind', () => {
+    it('starts at Advance on Add, whatever stage it points to, and sends it', async () => {
+      fixture.componentRef.setInput('availableStages', [
+        { id: 'stage-0', nameEn: 'Earlier', nameAr: null, order: 0 },
+        { id: 'stage-1', nameEn: 'Here', nameAr: null, order: 10 },
+      ]);
+      component.openAdd();
+      component.addForm.patchValue({ toStageId: 'stage-0', labelEn: 'Send it back' });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      // Never inferred from stage order: an earlier target stays Advance.
+      expect(component.addForm.controls.kind.value).toBe('ADVANCE');
+      const radios = Array.from(document.querySelectorAll('.am-tr-kind__row')).map((r) => [
+        r.querySelector('.am-tr-kind__title')?.textContent?.trim(),
+        r.querySelector('.am-tr-kind__help')?.textContent?.trim(),
+      ]);
+      expect(radios).toEqual([
+        ['workflow.kind.advance', 'workflow.kind.advanceHelp'],
+        ['workflow.kind.return', 'workflow.kind.returnHelp'],
+        ['workflow.kind.exit', 'workflow.kind.exitHelp'],
+      ]);
+
+      component.addForm.controls.kind.setValue('RETURN');
+      component.addStep.set(2);
+      component.onSubmitAdd();
+      const req = http.expectOne(TRANSITIONS_URL);
+      expect(req.request.body).toEqual(jasmine.objectContaining({ kind: 'RETURN', toStageId: 'stage-0' }));
+      req.flush({ transition: { ...EXISTING, id: 'new', kind: 'RETURN' }, permissionWarning: null });
+    });
+
+    it('shows the stored kind on Edit and sends the one chosen', () => {
+      component.openEdit({ ...EXISTING, kind: 'EXIT' });
+      expect(component.editForm.controls.kind.value).toBe('EXIT');
+      component.editForm.controls.kind.setValue('RETURN');
+      component.onSubmitEdit();
+      const req = http.expectOne(`${TRANSITIONS_URL}/transition-1`);
+      expect(req.request.body).toEqual(jasmine.objectContaining({ kind: 'RETURN' }));
+      req.flush({ transition: { ...EXISTING, kind: 'RETURN' }, permissionWarning: null });
+    });
+
+    it('will not move on to step 2 until the move is described', () => {
+      component.openAdd();
+      expect(component.addStepOneInvalid()).toBeTrue();
+      component.addForm.patchValue({ toStageId: 'stage-2', labelEn: 'Approve' });
+      expect(component.addStepOneInvalid()).toBeFalse();
+    });
+
+    it('labels each row of the table with its kind', () => {
+      fixture.componentRef.setInput('transitions', [
+        EXISTING,
+        { ...EXISTING, id: 't-return', kind: 'RETURN' },
+        { ...EXISTING, id: 't-exit', kind: 'EXIT' },
+      ]);
+      fixture.detectChanges();
+      const chips = Array.from(fixture.nativeElement.querySelectorAll('[data-tr-kind]')) as HTMLElement[];
+      expect(chips.map((chip) => chip.textContent?.trim())).toEqual(['workflow.kind.advance', 'workflow.kind.return', 'workflow.kind.exit']);
+      expect(chips[1].classList).toContain('am-tr-chip--return');
+    });
+
+    it('opens the warning an Add produced on step 2 of Edit, where the permission is (ACC-55)', () => {
+      component.openAdd();
+      component.addForm.patchValue({ toStageId: 'stage-2', labelEn: 'Approve' });
+      component.onSubmitAdd();
+      http.expectOne(TRANSITIONS_URL).flush({ transition: { ...EXISTING, id: 'new' }, permissionWarning: 'NO_ACTIVE_ROLE_HOLDS' });
+      expect(component.showEditDialog()).toBeTrue();
+      expect(component.editStep()).toBe(2);
+      expect(component.editPermissionWarning()).toBe('NO_ACTIVE_ROLE_HOLDS');
+    });
+  });
+
+  // ACC-208 (D5) — create never sent isApprovalPath, so a box ticked on Add
+  // was silently dropped. It is offered only where it saves: on Edit.
+  it('offers Approval path on Edit only, never on Add', async () => {
+    component.openAdd();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.querySelector('#add-isApprovalPath')).toBeNull();
+    expect(component.addForm.contains('isApprovalPath' as never)).toBeFalse();
+
+    component.onAddDialogVisibleChange(false);
+    component.openEdit(EXISTING);
+    component.editStep.set(2); // ACC-208 — it sits on step 2, with who may fire it
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.querySelector('#edit-isApprovalPath')).not.toBeNull();
+  });
+
   it('the blank option clears the permission', () => {
     component.openEdit(EXISTING);
     fixture.detectChanges();
@@ -369,7 +464,7 @@ describe('WorkflowTransitionEditorComponent — trigger role in the table (ACC-8
   it('shows the role’s name beside ROLE_BASED', () => {
     const el = render([{ ...EXISTING, triggerRoleId: 'role-auditor' }]);
     expect(rowText(el)[0]).toContain('ROLE_BASED');
-    expect(el.querySelector('tbody tr td:nth-child(3) span.ms-2')?.textContent?.trim()).toBe('Auditor');
+    expect(el.querySelector('tbody tr td:nth-child(4) span.ms-2')?.textContent?.trim()).toBe('Auditor');
   });
 
   it('shows the Arabic name in an Arabic session', () => {

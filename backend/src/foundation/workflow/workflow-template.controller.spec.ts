@@ -6,6 +6,8 @@ import { PermissionGuard } from '../../common/guards/permission.guard';
 import { IWorkflowTemplate } from './interfaces/workflow-template.interface';
 import { IWorkflowStage } from './interfaces/workflow-stage.interface';
 import { IWorkflowTransition, IWorkflowTransitionAction } from './interfaces/workflow-transition.interface';
+import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -58,6 +60,7 @@ const MOCK_TRANSITION: IWorkflowTransition = {
   triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
+  kind: 'ADVANCE',
 };
 
 const MOCK_ACTION: IWorkflowTransitionAction = {
@@ -90,8 +93,17 @@ describe('WorkflowTemplateController', () => {
     updateTransitionAction: jest.Mock;
     removeTransitionAction: jest.Mock;
   };
+  // ACC-190 — the stage task definition routes.
+  let stageTaskDefinitions: Record<'list' | 'create' | 'update' | 'remove' | 'reorder', jest.Mock>;
 
   beforeEach(async () => {
+    stageTaskDefinitions = {
+      list: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ definition: { id: 'def-1' }, warning: null }),
+      update: jest.fn().mockResolvedValue({ definition: { id: 'def-1' }, warning: null }),
+      remove: jest.fn().mockResolvedValue(undefined),
+      reorder: jest.fn().mockResolvedValue([]),
+    };
     service = {
       getTemplates: jest.fn().mockResolvedValue([MOCK_TEMPLATE]),
       getTemplateById: jest.fn().mockResolvedValue(MOCK_TEMPLATE),
@@ -112,7 +124,10 @@ describe('WorkflowTemplateController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WorkflowTemplateController],
-      providers: [{ provide: WorkflowTemplateService, useValue: service }],
+      providers: [
+        { provide: WorkflowTemplateService, useValue: service },
+        { provide: StageTaskDefinitionService, useValue: stageTaskDefinitions },
+      ],
     })
       .overrideGuard(TenantGuard)
       .useValue({ canActivate: () => true })
@@ -245,6 +260,42 @@ describe('WorkflowTemplateController', () => {
       const result = await controller.addStage('template-1', dto, TENANT_ID, ACTOR_ID);
       expect(service.addStage).toHaveBeenCalledWith('template-1', dto, TENANT_ID, ACTOR_ID);
       expect(result).toEqual(MOCK_STAGE);
+    });
+  });
+
+  // ACC-190 — routing only; the service owns every rule.
+  describe('stage task definitions', () => {
+    it('lists a stage\'s definitions for the tenant', async () => {
+      await controller.listStageTaskDefinitions('stage-1', TENANT_ID);
+      expect(stageTaskDefinitions.list).toHaveBeenCalledWith('stage-1', TENANT_ID);
+    });
+
+    it('creates, with the tenant and actor from the request — never from the body', async () => {
+      const dto = { titleEn: 'Check the terms', isMandatory: true, priority: 'HIGH', assignKind: 'RECORD_UNIT_POSITION', positionId: 'p' } as never;
+      await controller.createStageTaskDefinition('stage-1', dto, TENANT_ID, ACTOR_ID);
+      expect(stageTaskDefinitions.create).toHaveBeenCalledWith('stage-1', dto, TENANT_ID, ACTOR_ID);
+    });
+
+    it('updates, removes and reorders by id', async () => {
+      const dto = { priority: 'LOW' } as never;
+      await controller.updateStageTaskDefinition('def-1', dto, TENANT_ID, ACTOR_ID);
+      await controller.removeStageTaskDefinition('def-1', TENANT_ID, ACTOR_ID);
+      await controller.reorderStageTaskDefinitions('stage-1', { ids: ['def-2', 'def-1'] }, TENANT_ID, ACTOR_ID);
+      expect(stageTaskDefinitions.update).toHaveBeenCalledWith('def-1', dto, TENANT_ID, ACTOR_ID);
+      expect(stageTaskDefinitions.remove).toHaveBeenCalledWith('def-1', TENANT_ID, ACTOR_ID);
+      expect(stageTaskDefinitions.reorder).toHaveBeenCalledWith('stage-1', ['def-2', 'def-1'], TENANT_ID, ACTOR_ID);
+    });
+
+    // Reading takes workflows:view; every write workflows:manage (Ahmad, 9 Oct, F).
+    it.each([
+      ['listStageTaskDefinitions', 'workflows:view'],
+      ['createStageTaskDefinition', 'workflows:manage'],
+      ['updateStageTaskDefinition', 'workflows:manage'],
+      ['removeStageTaskDefinition', 'workflows:manage'],
+      ['reorderStageTaskDefinitions', 'workflows:manage'],
+    ] as const)('%s requires %s', (method, permission) => {
+      const handler = WorkflowTemplateController.prototype[method];
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toEqual([permission]);
     });
   });
 });

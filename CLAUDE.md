@@ -145,24 +145,28 @@ already sits above this line, so this documents the floor rather than lowering
 the app to it. A feature below this baseline is a real constraint to design
 around; anything above it may be used freely.
 
-### Infrastructure — measured 2026-09-28, not aspirational
+### Infrastructure — measured 2026-09-28, online since 2026-10-10 (ACC-130)
 - Backend hosting: Railway — `europe-west4-drams3a` (Amsterdam), auto-deploy
-  from GitHub. **The BACKEND only** — `.railway/railway.ts` declares three
-  resources (the `AccreditME2026` service, Redis, its volume) and no frontend
-  service, `backend/Dockerfile` never mentions `frontend`, and nothing in
-  `backend/src` serves static assets.
-- Frontend hosting: **NOWHERE.** The Angular app is not deployed, so there is no
-  URL to show anyone and no environment in which a frontend change can be
-  verified after merging — only locally.
-  **This is a KNOWN, TICKETED state, not a discovery: ACC-130 recorded it on
-  23 September** ("the Angular frontend is deployed nowhere") and owns deploying
-  it. Read that ticket rather than re-deriving this.
-  Corrected 2026-09-29: this line previously read "Backend + frontend hosting:
-  Railway", which was wrong, and wrong in the way this whole section exists to
-  prevent — the measurement it came from said "backend + frontend (Railway)" and
-  was transcribed without checking the IaC. The answer was already filed; nobody
-  read it. That is the second time in two days — ACC-97 likewise already held the
-  authoritative-timezone answer that was set up as an investigation.
+  from GitHub (`dev`). **The BACKEND only** — `.railway/railway.ts` declares
+  three resources (the `AccreditME2026` service, Redis, its volume) and no
+  frontend service, and nothing in `backend/src` serves static assets.
+- **API address: `https://api.accreditme.app`** — and `API_ORIGIN` — a Railway
+  CUSTOM domain, a direct CNAME with no proxy (so `trust proxy` stays 2). It is
+  registered with the Railway CLI (`railway domain`) because
+  `.railway/railway.ts` cannot declare a custom domain, so **any `railway config
+  apply` must first show a `config plan` with no domain removed.**
+  `accreditme2026-production.up.railway.app` is the FALLBACK only, kept until
+  ACC-209 retires it.
+- Frontend hosting: **Vercel** — `{slug}.accreditme.app` (wildcard certificate),
+  `platform.accreditme.app`, the apex, and `www` (a redirect to the apex). Only
+  `dev` builds; no preview deployments. Was "NOWHERE" until ACC-130 (10 Oct).
+- **DNS: Vercel's nameservers (`ns1.vercel-dns.com`, `ns2.vercel-dns.com`)**;
+  GoDaddy stays the registrar. Mail records: the apex `MX`, `send`,
+  `resend._domainkey` and `_dmarc`.
+- **Rollback order** (runbook step 9, `backend/Plans/step-130-go-online.md`):
+  `API_ORIGIN` first (back to the fallback host — it redeploys), then the
+  nameservers, and the nameservers ONLY for mail.
+- Full table of addresses: SYSTEM-REFERENCE.md §15.15.
 - Database: Supabase PostgreSQL — `aws-1-eu-central-1` (Frankfurt)
 - Redis + `redis-volume`: Railway — `sfo` (San Francisco). **KNOWN OPEN ITEM,
   ACC-143.** Every cache call crosses the Atlantic twice, and "cache in the
@@ -177,7 +181,9 @@ around; anything above it may be used freely.
   variables exist, every upload is refused with "File storage isn't set up
   yet" — by design, never a default region.
 - On-premises storage alternative: MinIO (S3-compatible)
-- CDN: Cloudflare (free tier)
+- CDN: none in front. Vercel serves the app from its own edge, and the API is a
+  direct CNAME. Cloudflare is NOT used; proxying the API through anything would
+  move `trust proxy` to 3 (Rate Limiting).
 - Containers: Docker (every service containerized from day one)
 - CI/CD: GitHub Actions
 
@@ -186,6 +192,34 @@ around; anything above it may be used freely.
 - Enterprise option: Azure OpenAI
 - Direct option: OpenAI API
 - Tier 3 (on-premises) only: Ollama with local models
+
+---
+
+## Public Website (`website/`, ACC-213)
+
+- **Its own package, its own Vercel project.** Astro (exact pin), static output,
+  no UI framework, TypeScript strict. `npm ci` and `npm run check` in
+  `website/`: astro check, the build, then `scripts/verify-site.mjs`. It is NOT
+  part of the app: nothing is imported from `frontend/`, and the app's CI does
+  not build or test it.
+- **PREVIEW ONLY.** `www.accreditme.app` and the apex are still served by the
+  app's Vercel project. Until the cut-over, `X-Robots-Tag: noindex, nofollow`
+  and `robots.txt` `Disallow: /`; the cut-over flips both.
+- **Nothing inline, ever.** Its CSP is enforced and strict (`script-src 'self';
+  style-src 'self'`), so `inlineStylesheets: 'never'`, `assetsInlineLimit: 0`,
+  and no `style=""`, `<style>` or `on*=` anywhere; `verify-site` fails a built
+  page that has one.
+- **The brand palette is the WEBSITE's** (from
+  `frontend/design-reference/AccreditMe Website.dc.html`), not the app's colours;
+  sky and lime are fills, never text on white. Type scale, spacing, radius and
+  the IBM Plex Sans Arabic files are COPIES of the app's (`website/src/styles/`
+  names the sources) — a change in the app is copied by hand.
+- **The Sign in box's reserved list is generated at build time** from
+  `backend/src/common/tenant/reserved-slugs.ts` (`INFRASTRUCTURE_LABELS` and
+  `DNS_LABEL`; `platform` stays allowed). Its `ignoreCommand` also rebuilds when
+  that file changes, so the two cannot drift.
+- **Copy is DRAFT placeholder** until the page is built from the design. No
+  product claims, prices, customer names or testimonials until approved.
 
 ---
 
@@ -707,7 +741,9 @@ Per-tenant config in Organization.emailConfig (encrypted JSON):
 ```
 
 Platform default: ResendEmailProvider with AccreditMe platform key.
-From: noreply@accreditme.com
+From: `RESEND_FROM_EMAIL` — `noreply@accreditme.app` on Railway, the domain
+Resend has verified. No fallback (ACC-130): unset, the email job fails with a
+named error and sends nothing (`common/config/email-sender.config.ts`).
 
 Build sequence:
 ```
@@ -760,7 +796,10 @@ SPECIFIC_USER, ROLE, ORG_UNIT_HEAD, SELF, COMMITTEE, ROUND_ROBIN
 SPECIFIC_USER, ROLE_BASED, ANY_AUTHENTICATED, SYSTEM_AUTOMATIC
 
 #### Internal Actions (fire on every transition)
-- CREATE_TASK: assign task to stage assignee with SLA due date
+- ~~CREATE_TASK~~ — **RETIRED (ACC-190).** A stage's TASK DEFINITIONS create
+  its tasks when a record enters it; adding a CREATE_TASK action is refused
+  (`ACTION_TYPE_RETIRED`) and one left in stored config is skipped and logged.
+  See Key Architecture Decisions (ACC-190).
 - SEND_NOTIFICATION: notify relevant parties
 - GENERATE_PDF: snapshot of object at this stage
 - LOCK_DOCUMENT: prevent editing during review
@@ -776,7 +815,9 @@ SPECIFIC_USER, ROLE_BASED, ANY_AUTHENTICATED, SYSTEM_AUTOMATIC
 #### Validator Conditions (must be true before transition)
 - Required fields filled
 - Minimum attachments present
-- All previous stage tasks completed
+- ~~All previous stage tasks completed~~ — **RETIRED (ACC-190)**, replaced by
+  the stage gate: a stage's MANDATORY tasks hold every ADVANCE out of it,
+  without opting in, on the approval path too.
 - Minimum approvals reached
 
 #### SLA Rules
@@ -831,7 +872,8 @@ Full visual integration builder (n8n-style) deferred to Phase 3.
 
 ### Task System
 - Tasks are created two ways:
-  1. Automatically by workflow engine (CREATE_TASK action)
+  1. Automatically when a record ENTERS a workflow stage, one task per
+     stage task definition (ACC-190 — this replaced the CREATE_TASK action)
   2. Manually by users with tasks:create permission
   Every task MUST have sourceType and sourceId regardless
   of how it was created — no standalone tasks
@@ -849,6 +891,11 @@ Full visual integration builder (n8n-style) deferred to Phase 3.
   **Workflow-created tasks are STAGE-scoped.** They are cancelled
   when the object leaves the stage that created them (ACC-68,
   `TaskService.cancelForStage()`, called from `performTransition()`).
+  **ACC-190:** now `cancelStageExitTasksInTx()`, inside the stage-change
+  transaction, keyed by the stage ENTRY (`Task.workflowInstanceStageId`) for
+  tasks created from stage definitions, and by the old instance + stage pair
+  for tasks with no entry. Optional definition tasks are cancelled this way when
+  the record advances; mandatory ones have already been completed (the gate).
   That is right because such a task exists to gate *that stage's*
   transition: once the object has moved on, the work it was holding
   up is moot. Leaving it open was the ACC-68 bug — a PENDING task
@@ -862,8 +909,8 @@ Full visual integration builder (n8n-style) deferred to Phase 3.
   because the committee advanced from Terms Review to Active.
 
   **How the separation is enforced: structurally, not by a guard.**
-  `cancelForStage()` matches on `workflowInstanceId` AND
-  `sourceStageId` together. The manual path
+  `cancelForStage()` (since ACC-190 `cancelStageExitTasksInTx()`) matches on
+  `workflowInstanceId` AND `sourceStageId` together, or on the entry id. The manual path
   (`POST /tasks` → `TaskService.create()`) sets neither — both DTO
   fields are optional and are only ever populated by the engine's own
   `executeCreateTask()` — so a manual task stores `null` for both and
@@ -1200,6 +1247,10 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
   requests a minute per signed-in user). There is no upload-specific tier.
 
 ### Security Headers (Helmet.js in main.ts)
+The API's own headers. The APP's headers are in `frontend/vercel.json`, where the
+**Content-Security-Policy is ENFORCED** (ACC-130 part 2; it was Report-Only at
+go-live), pinned by `check:vercel-config`, which also refuses a Report-Only
+header — SYSTEM-REFERENCE §15.15.
 - Content-Security-Policy
 - HTTP Strict Transport Security
 - X-Frame-Options: DENY
@@ -1213,7 +1264,12 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
 - Forced logout on role change or account suspension
 - Idle timeout: 30 minutes, with a 2-minute warning (ACC-122). It calls
   `POST /auth/logout`, so it ends the server session rather than only clearing
-  the browser's.
+  the browser's. **True only since ACC-203**: before it, sign-out sat behind
+  `TenantGuard` (a 401 once the access cookie had expired) and the refresh
+  cookie's path never reached `/logout`, so no sign-out revoked anything and the
+  next visit signed the person straight back in. `/auth/logout` is now public
+  and idempotent, and the refresh cookie's path is `/api/v1/auth`
+  (SYSTEM-REFERENCE §15.14).
 - **Max concurrent sessions — NOT BUILT.** This line previously claimed "5 per
   user (configurable per tenant)". There is no field, no counter and no
   configuration anywhere; a user may hold unlimited concurrent sessions.
@@ -1498,9 +1554,23 @@ ACC-40 concepts don't suffer the same fate.
   read the slug from the host and no longer ask for it: the ONE label in front
   of the base domain (`frontend/src/app/core/tenant/tenant-host.ts`). A host
   that names none — the apex, `www`, two labels — shows a note and no form; an
-  unknown slug gets the form and then the neutral `INVALID_CREDENTIALS`. After
-  sign-in nothing compares the host with the session, which is what lets a
-  platform admin impersonate from `platform.…` — do not add a comparison.
+  unknown slug gets the form and then the neutral `INVALID_CREDENTIALS`.
+- **A session only works at its own organisation's address (ACC-204).** This
+  line used to say "after sign-in nothing compares the host with the session —
+  do not add a comparison"; ACC-204 is the decision to add one, on the SERVER.
+  Every address calls one API host and the cookies are host-only on it, so a
+  browser holds ONE session for every address: signed in at al-nakheel, the
+  same browser opened `platform.…` showed the al-nakheel user. Now TenantGuard
+  and `/auth/refresh` read the request's `Origin` (the same parsing CORS uses,
+  `labelFromOrigin()`) and refuse a COOKIE session used at another
+  organisation's address with 401 `SESSION_OTHER_ORGANIZATION`; a refused
+  refresh revokes and rotates nothing. Bearer clients are unchanged; sign-out
+  stays address-free. **An impersonation session is held to the platform's
+  address**, so a platform admin still impersonates from `platform.…`. The app
+  reads the code as "not signed in here" and the sign-in page says so. NOT a
+  security boundary: a non-browser client can send any Origin; data isolation
+  is still organizationId scoping. Locally the dev proxy adds the page's
+  Origin to same-origin GETs (`proxy.conf.js`). SYSTEM-REFERENCE §15.16.
 - **The platform organisation signs in at `platform.accreditme.app`**
   (`platform.localhost:4200` locally).
 - **Reserved names**: a slug must be a DNS label and not an infrastructure label
@@ -1515,8 +1585,8 @@ ACC-40 concepts don't suffer the same fate.
   — a namespace we own, unlike `*.vercel.app` (SYSTEM-REFERENCE §15.10)
 - Subdomain chosen during onboarding — validated unique
 - Cannot be changed after first non-admin user logs in
-- Wildcard DNS and certificate: ACC-130. Until it ships, no tenant address
-  resolves in production, and ACC-139 is verifiable only locally
+- Wildcard DNS and certificate: shipped with ACC-130 (online 10 Oct) — every
+  `{slug}.accreditme.app` resolves to Vercel, with Vercel's wildcard certificate
 
 ### User Types — Key Distinction
 ```
@@ -2258,12 +2328,15 @@ Prisma Studio.
   3. A merged document reaching Published → move its source documents to
      Obsolete
 
-  **All three resolve to `CREATE_TASK` plus task-completion gating.** The task
+  **All three resolve to a task plus task-completion gating.** The task
   is the bridge: the workflow creates a task, a human does the work, and their
-  completion gates the next advancement (via the
-  `allPreviousStageTasksComplete` validator — see SYSTEM-REFERENCE.md Section
-  2.10 for why that one is buildable from data the engine already has, unlike
-  the other two unenforced validators).
+  completion gates the next advancement.
+  **UPDATED (ACC-190):** the task is now a MANDATORY stage task definition on
+  the stage, created when the record enters it, and the gate is built in — an
+  ADVANCE out of the stage is refused while it is open. When this was written
+  the mechanism was a `CREATE_TASK` action plus the opt-in
+  `allPreviousStageTasksComplete` validator; both are retired. The reasoning
+  below is unchanged.
 
   **No new `WorkflowActionType` is being added.** A `START_WORKFLOW` action was
   considered and deliberately not built. This is recorded so a future reader
@@ -3017,6 +3090,10 @@ change). The decisions — Ahmad's, 6 October — briefly:
   transition. With CF-07 every stage task takes its due date from its own
   priority SLA counted from stage entry, and the stage SLA stays the record's
   clock only.
+  **SUPERSEDED (ACC-190, CF-07 built):** the temporary engine path is gone with
+  `CREATE_TASK`. A stage task's window is its own priority SLA from the stage
+  ENTRY, and the stage's deadline is made to fit its tasks, never the other way
+  round. Tasks the old path created keep their stored dates.
 - **One home for the rule: `TaskSlaService`.** No screen does working-hours
   arithmetic: the pickers read the server's SLA preview (`GET /tasks/sla-preview`
   for New task, `GET /tasks/:id/sla-preview` for Edit, `?restart=true` for
@@ -3043,6 +3120,9 @@ change). The decisions — Ahmad's, 6 October — briefly:
   reason null.** It ends a hold and pending requests and keeps the assignee
   rows. **A workflow stage task cannot be cancelled by hand** until CF-07 says
   which stage tasks are optional — a mandatory one holds its step until done.
+  **ANSWERED (ACC-190):** an OPTIONAL stage-definition task may be cancelled by
+  whoever manages it; a MANDATORY one never may. Older workflow tasks still
+  cannot be.
 - **Reopen sends a completed task back to the people who were on it at
   completion**, restarts its SLA from now, keeps its evidence, and is refused
   for a stage task whose record has left that step.
@@ -3197,6 +3277,78 @@ answers (8 Oct, Q1–Q6) and the live STOP 1 results:
 
 ---
 
+## Key Architecture Decisions (ACC-190)
+
+CF-07, task definitions on workflow stages. Full mechanism: SYSTEM-REFERENCE.md
+Section 2.15. The plan and Ahmad's answers (9 Oct, A–K):
+`backend/Plans/step-190-stage-task-definitions.md`. The decisions, briefly:
+
+- **A STAGE CARRIES TASK DEFINITIONS, configured per tenant; nothing is
+  hard-coded per module, and the seed ships none.** Each has a title (English
+  required, Arabic optional), a description, mandatory or optional, evidence
+  required, and a priority — which sets the SLA and the due date. Managed with
+  `workflows:manage`, read with `workflows:view`.
+- **Assignment is the manual-task route (ACC-167):** a unit → position →
+  optional person, or a committee role; "the record's unit" or "the record's
+  committee" may stand in for the fixed one. **ROLE is not a value of the
+  enum**, so it cannot be stored. The relative routes come from a per-record-
+  type registry (`stage-task-record-routes.ts`, COMMITTEE and MEETING today)
+  that FAILS CLOSED: a type with no entry refuses them at save
+  (`STAGE_TASK_ROUTE_NOT_AVAILABLE`). A vacant position in the record's unit is
+  NOT passed up to a parent unit (Ahmad, 9 Oct, C): the task is UNASSIGNED and
+  Setup health lists it. Stage tasks follow the manual route, so no
+  out-of-office routing applies to them (it never did for manual tasks).
+- **ENTERING A STAGE CREATES ITS TASKS — a snapshot.** Every entry: the initial
+  stage at `startInstance()`, a forward move, a return, a self-transition (old
+  entry's tasks cancelled first). The creator is whoever moved the record in;
+  the SLA clock starts at the entry (`slaStartAt = enteredAt`), due date and
+  limit are the priority SLA from there, exactly as ACC-174 computes them.
+  Editing or deleting the definition later never touches a task already made.
+- **`Task.workflowInstanceStageId` is the ENTRY a task belongs to.** The gate,
+  the stage-exit cancel, reopen and the deadline move all key on it — never on
+  the template stage, because a record that left and came back is a new entry
+  with fresh tasks.
+- **THE GATE: an ADVANCE is refused (`STAGE_TASKS_OPEN`, 409, naming the
+  tasks) while a MANDATORY task of the current entry is open** — ACC-65's
+  "open" (anything but COMPLETED and CANCELLED). Completing tasks never moves
+  the record. It runs on the approval path too, where the DECIDING vote is
+  refused before it is recorded (9 Oct, J). It replaced the opt-in
+  `allPreviousStageTasksComplete` validator, which nothing used and the
+  approval path skipped; saving that validator is refused (`VALIDATOR_RETIRED`).
+- **`WorkflowTransition.kind`: ADVANCE (default, gated), RETURN (send back),
+  EXIT (end the record).** Stage `order` cannot tell them apart (Reject goes to
+  a higher-order final stage, Committee Reactivate to a lower one), so every
+  seeded return and exit says so. Leaving an entry cancels its open tasks:
+  after an ADVANCE only optional ones are left, silently, like ACC-68 (9 Oct,
+  G); a RETURN or EXIT takes them all.
+- **A STAGE CHANGE IS ONE TRANSACTION under the instance's row lock** — the
+  engine's first. It had none: eight separate writes. Every read happens BEFORE
+  the transaction (definitions, placement, SLA windows), so it holds only the
+  gate and the writes; notices, audit rows and transition actions run AFTER it
+  commits. **Lock order is instance, then task**: an approved extension or hold
+  on a stage task locks the instance first.
+- **THE STAGE DEADLINE RULE (Ahmad, 6 Oct): a stage's deadline is at least the
+  longest due time of the tasks defined on it**, both in working hours from
+  entry. Refused from three sides: saving a definition
+  (`STAGE_TASK_DUE_AFTER_STAGE_DEADLINE`), shortening a stage's SLA
+  (`STAGE_DEADLINE_BEFORE_TASKS`), and raising a priority's hours in the
+  tenant's task SLA (`TASK_SLA_EXCEEDS_STAGE_DEADLINES` — the side easy to
+  miss). A stage with no deadline allows anything (9 Oct, D). At run time an
+  approved extension or hold that moves a MANDATORY stage task past its open
+  entry's deadline moves the deadline out, audited (9 Oct, E).
+- **`CREATE_TASK` IS RETIRED.** Adding one is refused (`ACTION_TYPE_RETIRED`);
+  one left in stored config is skipped and logged FAILED. The seed's 26 per
+  tenant are gone, and `npm run backfill:acc190-stage-tasks` (dry run first,
+  then `--execute`, AFTER the deploy) deletes the seeded ones on existing
+  tenants with their log rows (9 Oct, B: test data), sets the seeded kinds, and
+  leaves already-created tasks alone. The enum value goes in a later
+  contracting migration. ACC-174's interim stage-SLA extension went with it.
+- **Required tasks can't be cancelled by hand; optional ones can** (9 Oct, K).
+  Reopen works only in the same entry. `titleAr` is returned by the API; task
+  screens don't show it yet (9 Oct, H).
+
+---
+
 ## Key Architecture Decisions (ACC-167)
 
 Full mechanism: SYSTEM-REFERENCE.md Section 3.9 (pools), 2.5.2 (the engine and
@@ -3247,6 +3399,37 @@ the holder rule), 13.2 (the Setup health extension). The decisions, briefly:
   database; ACC-167's engine path is covered by specs, not by a live stage.
 
 ---
+
+## Key Architecture Decisions (ACC-208)
+
+The Stage Tasks settings screen, ACC-190's frontend. Full mechanism:
+SYSTEM-REFERENCE.md §2.15.1. Plan, Ahmad's answers (12 Oct) and the 420px
+measurements: `backend/Plans/step-208-stage-tasks-screen.md`. The decisions,
+briefly:
+
+- **`workflows:manage` opens the assignment pickers, with no `taskId` (Q1).**
+  Configuring where a stage's tasks go is choosing a target, the same data
+  `tasks:create` chooses from. A `taskId` still means reassigning that task,
+  which it does not grant. The committee lists still need `committees:view`.
+- **The relative routes come from the template, never a frontend copy.**
+  `GET /workflow-templates/:id` says `recordRoutes: { unit, committee }`, read
+  from `RECORD_ROUTES`. A screen that kept its own list would drift the day a
+  module adds its line, and the registry must stay the one place that fails
+  closed.
+- **A workflow refusal is shown from its CODE and numbers**
+  (`foundation/workflow/workflow-refusal.ts`), under the field it is about,
+  naming both numbers and the way out. The deadline rule shows on Priority
+  before Save, and Save stays enabled. Never the server's English `message`.
+- **"Can't move yet" is one standalone component** (`CantMoveDialogComponent`)
+  taking the refusal's tasks. The vote screen will reuse it: no vote screen
+  exists, since `submitApproval()` has no frontend caller. Its task links go to
+  the record page's own row via `?task=<id>` (D2), because there is no task
+  page.
+- **The transition editor's dialogs were over the cap before this ticket**
+  (674 / 696 Add, 542 / 564 Edit, measured). Adding Kind made stepping them
+  necessary, not optional. Both are now two steps, the move then who may fire
+  it, with a layout spec each. **Add no longer shows "Approval path"** (D5):
+  create never sent it.
 
 ## Open / Deferred Items
 
@@ -3313,11 +3496,13 @@ the holder rule), 13.2 (the Setup health extension). The decisions, briefly:
   `metadata` is null on those rows) — real, and confirmed in ACC-94's
   browser pass, but it is evidence on ACC-99, not a gap to close, since
   the feature is going away.
-- **Resend email domain (`accreditme.com`) is not verified** in the
-  Resend dashboard — invitation/notification emails will not actually
-  deliver until this is configured. Infrastructure task, not a code
-  fix, needs doing before any real customer relies on email-based
-  flows.
+- **RESOLVED (ACC-130)** — was: *"Resend email domain (`accreditme.com`) is
+  not verified."* The sending domain is `accreditme.app`: Resend's DKIM
+  record (`resend._domainkey`) and `send` record are on it, and Railway's
+  `RESEND_FROM_EMAIL` is `noreply@accreditme.app`, so the two match.
+  `accreditme.com` was never ours — it is listed for sale — and the code's
+  fallback to it is gone. Resend's dashboard showing `accreditme.app` as
+  Verified is checked again after the DNS move (ACC-130 runbook step 6).
 - **`angular-component` skill's templates are stale against current
   project conventions** — `@if` not `*ngIf`, standalone `TranslatePipe`
   imports, `EditDialogComponent`/`OverlaySelectComponent` not
@@ -3583,7 +3768,12 @@ complete, not just the currently-in-review ones.
      position would resolve against the *triggering object's own*
      `orgUnitId`, walking up the parent chain if vacant. It has no live
      consumer: `Committee` has no `orgUnitId` field, and it is the only
-     fully-built workflow-driven module. Building it now would ship a
+     fully-built workflow-driven module.
+     **CORRECTED (ACC-190): `Committee.orgUnitId` exists and is REQUIRED since
+     ACC-135** — the line above went stale. Stage task definitions use it ("the
+     record's unit", `RECORD_UNIT_POSITION`), deliberately WITHOUT walking up
+     to a parent unit (Ahmad, 9 Oct). This stage-assignee RELATIVE mode is
+     still not built. Building it now would ship a
      second strategy resolving to an empty pool for every object that
      exists — repeating exactly the wired-but-unreachable state
      `ORG_UNIT_HEAD` sat in from ACC-40. Revisit when
@@ -4148,7 +4338,7 @@ REDIS_URL=
 SENTRY_DSN=
 ENCRYPTION_KEY=
 PLATFORM_ADMIN_EMAIL=
-APP_BASE_DOMAIN=accreditme.com
+APP_BASE_DOMAIN=accreditme.app
 ```
 
 ---

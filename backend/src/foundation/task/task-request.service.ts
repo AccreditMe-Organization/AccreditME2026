@@ -19,6 +19,7 @@ import { TaskAuthorityService } from './task-authority.service';
 import { TaskSlaService, latest } from './task-sla.service';
 import { aTaskThatIs } from './task-status-label';
 import { HOLD_CLEARED, REQUESTABLE_STATUSES } from './task-request-lifecycle';
+import { lockWorkflowInstance, moveStageDeadlineForTaskInTx } from './stage-deadline';
 
 type TaskTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 type TaskWithAssigneeRows = ITask & { assignees: TaskAssignee[] };
@@ -62,9 +63,11 @@ const REQUEST_STATUS_PHRASE: Record<string, string> = {
  * module computes its own dates). Resume, at onHoldUntil by the SLA monitor or
  * early by hand, shifts nothing: it restores the status and clears the hold.
  *
- * KNOWN LIMITATION: the stage's own SLA clock (WorkflowInstanceStage.slaDueAt)
- * is NOT shifted. Pausing a stage with its tasks belongs to stage task
- * definitions, where mandatory stage tasks exist.
+ * ACC-190 — the stage's own deadline (WorkflowInstanceStage.slaDueAt) now
+ * follows a MANDATORY stage task: an approved extension or hold that moves its
+ * due date past the open entry's deadline moves the deadline out to match
+ * (stage-deadline.ts). An optional task, or a task with no stage entry, never
+ * moves it.
  */
 @Injectable()
 export class TaskRequestService {
@@ -206,7 +209,11 @@ export class TaskRequestService {
     organizationId: string,
   ): Promise<ITaskRequest> {
     const now = new Date();
-    const { before, task, request, heldHours } = await this.prisma.$transaction(async (tx) => {
+    const { before, task, request, heldHours, stageMove } = await this.prisma.$transaction(async (tx) => {
+      // ACC-190 — approving may move the stage's deadline, so a stage task's
+      // instance is locked BEFORE the task, the engine's own order.
+      const link = await tx.task.findFirst({ where: { id: taskId, organizationId }, select: { workflowInstanceId: true } });
+      if (link?.workflowInstanceId) await lockWorkflowInstance(tx, link.workflowInstanceId, organizationId);
       const { task, request: existing } = await this.lockForDecision(tx, taskId, requestId, viewer, organizationId);
 
       if (!REQUESTABLE_STATUSES.includes(task.status)) {
@@ -292,12 +299,29 @@ export class TaskRequestService {
         });
       }
 
+      // ACC-190 — a mandatory stage task's new due date past its stage's
+      // deadline moves the deadline out (extension and hold alike).
+      const stageMove = await moveStageDeadlineForTaskInTx(tx, after, organizationId, now);
+
       const request = await tx.taskRequest.update({
         where: { id: requestId },
         data: { status: 'APPROVED', decidedById: viewer.id, decidedAt: now, decisionNote: dto.note || null },
       });
-      return { before: task, task: after, request, heldHours };
+      return { before: task, task: after, request, heldHours, stageMove };
     });
+
+    if (stageMove) {
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: 'WorkflowInstanceStage',
+        objectId: stageMove.workflowInstanceStageId,
+        actorId: viewer.id,
+        tenantId: organizationId,
+        before: { slaDueAt: stageMove.from },
+        after: { slaDueAt: stageMove.to },
+        metadata: { event: 'stage_deadline_extended', taskId, requestId, requestType: request.type },
+      });
+    }
 
     await this.auditLog.log({
       action: 'UPDATE',
