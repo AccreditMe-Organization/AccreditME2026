@@ -5,7 +5,7 @@ import { GetMyTasksQueryDto } from './get-my-tasks-query.dto';
 import { ReleaseTaskDto } from './release-task.dto';
 import { CreateTaskDto } from './create-task.dto';
 import { ReassignTaskDto } from './reassign-task.dto';
-import { AssignmentHoldersQueryDto } from './assignment-query.dto';
+import { AssignmentCommitteeRolesQueryDto, AssignmentHoldersQueryDto } from './assignment-query.dto';
 import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './task-request.dto';
 
 // ACC-163 — these DTOs ARE the refusal for most bad input, so they are tested
@@ -314,6 +314,34 @@ describe('AssignmentHoldersQueryDto (ACC-167)', () => {
 });
 
 // ── ACC-173 ─────────────────────────────────────────────────────────────────
+
+// ACC-208 (B5) — committeeId may be left out only when asking for the catalogue.
+describe('AssignmentCommitteeRolesQueryDto (ACC-208)', () => {
+  it('still requires a committee without catalogue', async () => {
+    expect(await messages(run(AssignmentCommitteeRolesQueryDto, {}, 'query'))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^committeeId /)]),
+    );
+  });
+
+  it('reads the literal "true" as the catalogue and lets the committee be absent', async () => {
+    const dto = await run(AssignmentCommitteeRolesQueryDto, { catalogue: 'true' }, 'query');
+
+    expect(dto.catalogue).toBe(true);
+    expect(dto.committeeId).toBeUndefined();
+  });
+
+  it('still validates a committee sent with the catalogue', async () => {
+    expect(await messages(run(AssignmentCommitteeRolesQueryDto, { catalogue: 'true', committeeId: '' }, 'query'))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^committeeId /)]),
+    );
+  });
+
+  it('refuses any other spelling of catalogue', async () => {
+    expect(await messages(run(AssignmentCommitteeRolesQueryDto, { catalogue: 'yes', committeeId: 'c1' }, 'query'))).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^catalogue /)]),
+    );
+  });
+});
 
 describe('CreateTaskRequestDto (ACC-173)', () => {
   it('accepts a request for more time, with the reason trimmed', async () => {

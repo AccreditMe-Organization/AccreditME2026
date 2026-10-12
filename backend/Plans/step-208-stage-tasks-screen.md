@@ -557,7 +557,7 @@ built:**
 
 ## Progress
 
-- [ ] 1 Backend B1–B8
+- [x] 1 Backend B1–B8
 - [ ] 2 DTOs, refusal map, i18n
 - [ ] 3 Picker inputs
 - [ ] 4 Tasks on entry list

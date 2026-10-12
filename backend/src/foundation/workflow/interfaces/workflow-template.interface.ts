@@ -1,4 +1,5 @@
 import { IWorkflowStage } from './workflow-stage.interface';
+import { TaskDueHours } from './stage-task-definition.interface';
 
 export interface IWorkflowTemplate {
   id: string;
@@ -13,4 +14,10 @@ export interface IWorkflowTemplate {
   createdAt: Date;
   updatedAt: Date;
   stages?: IWorkflowStage[]; // populated when requested with detail
+  // ACC-208 — detail only. Which relative assignment routes this template's
+  // record type can resolve, read from RECORD_ROUTES so no screen keeps a copy
+  // of the registry (B2); and each priority's due time, for the stage task
+  // dialog (B3), which a workflows:manage holder may not otherwise read.
+  recordRoutes?: { unit: boolean; committee: boolean };
+  taskDueHours?: TaskDueHours;
 }

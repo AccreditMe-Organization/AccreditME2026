@@ -4,6 +4,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { LookupService } from '../lookup/lookup.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -184,6 +185,10 @@ describe('TaskService', () => {
         // ACC-167 — REAL, over the same mockPrisma: it decides where a chosen
         // target lands, and a stub would leave those tests asserting a mock.
         TaskAssignmentService,
+
+        // ACC-208 — TaskAssignmentService's catalogue dependency; not reached here.
+
+        { provide: LookupService, useValue: {} },
         // ACC-173 — the creator acts for themself; covering is pinned in
         // task-authority.service.spec.ts.
         {

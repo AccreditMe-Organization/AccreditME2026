@@ -19,8 +19,10 @@ import {
 } from './dto/stage-task-definition.dto';
 import {
   IStageTaskDefinition,
+  IStageTaskDefinitionListItem,
   IStageTaskDefinitionSaved,
   StageTaskDefinitionWarning,
+  TaskDueHours,
 } from './interfaces/stage-task-definition.interface';
 import { RECORD_ROUTES } from './stage-task-record-routes';
 import { DueHours } from './stage-deadline-rule';
@@ -55,6 +57,18 @@ const ROUTE_FIELDS: Record<StageTaskAssignKindValue, { required: (keyof Route)[]
   RECORD_COMMITTEE_ROLE: { required: ['committeeRoleValueId'], optional: [] },
 };
 const ROUTE_KEYS = ['orgUnitId', 'positionId', 'userId', 'committeeId', 'committeeRoleValueId'] as const;
+
+/** A stored definition's route, as saved (it passed routeFrom() then). */
+function routeOf(row: DefinitionRow): Route {
+  return {
+    assignKind: row.assignKind,
+    orgUnitId: row.orgUnitId,
+    positionId: row.positionId,
+    userId: row.userId,
+    committeeId: row.committeeId,
+    committeeRoleValueId: row.committeeRoleValueId,
+  };
+}
 
 /** The record entering a stage — all placement needs (the instance may not exist yet, on start). */
 export type EnteringRecord = Pick<PrismaWorkflowInstance, 'objectType' | 'objectId'>;
@@ -91,7 +105,12 @@ export class StageTaskDefinitionService {
 
   // ── Reads ────────────────────────────────────────────────────────────────────
 
-  async list(stageId: string, organizationId: string): Promise<IStageTaskDefinition[]> {
+  /**
+   * ACC-208 — each row carries the warning a save would return (B1), checked
+   * now, and the count of tasks it has already created (B8). One pool lookup
+   * per row: a stage has a handful of definitions.
+   */
+  async list(stageId: string, organizationId: string): Promise<IStageTaskDefinitionListItem[]> {
     await this.loadStage(stageId, organizationId);
     const dueHours = await this.dueHoursFor(organizationId);
     const rows = await this.prisma.workflowStageTaskDefinition.findMany({
@@ -99,7 +118,26 @@ export class StageTaskDefinitionService {
       include: DEFINITION_INCLUDE,
       orderBy: { order: 'asc' },
     });
-    return rows.map((row) => this.toView(row, dueHours));
+    if (rows.length === 0) return [];
+    const created = await this.prisma.task.groupBy({
+      by: ['stageTaskDefinitionId'],
+      where: { organizationId, stageTaskDefinitionId: { in: rows.map((row) => row.id) } },
+      _count: { _all: true },
+    });
+    const createdCounts = new Map(created.map((c) => [c.stageTaskDefinitionId, c._count._all]));
+    return Promise.all(
+      rows.map(async (row) => ({
+        ...this.toView(row, dueHours),
+        warning: await this.warningFor(routeOf(row), organizationId),
+        createdTaskCount: createdCounts.get(row.id) ?? 0,
+      })),
+    );
+  }
+
+  /** ACC-208 (B3) — the tenant's due time for every priority, as the definitions use it. */
+  async taskDueHours(organizationId: string): Promise<TaskDueHours> {
+    const dueHours = await this.dueHoursFor(organizationId);
+    return { LOW: dueHours('LOW'), MEDIUM: dueHours('MEDIUM'), HIGH: dueHours('HIGH'), CRITICAL: dueHours('CRITICAL') };
   }
 
   /** Per stage of a template: how many tasks it creates, and the longest one's due hours. */
@@ -230,7 +268,7 @@ export class StageTaskDefinitionService {
     });
   }
 
-  async reorder(stageId: string, ids: string[], organizationId: string, actorId: string): Promise<IStageTaskDefinition[]> {
+  async reorder(stageId: string, ids: string[], organizationId: string, actorId: string): Promise<IStageTaskDefinitionListItem[]> {
     await this.loadStage(stageId, organizationId);
     const current = await this.prisma.workflowStageTaskDefinition.findMany({
       where: { stageId, organizationId },

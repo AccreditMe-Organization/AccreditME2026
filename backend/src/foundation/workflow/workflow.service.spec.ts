@@ -1661,9 +1661,32 @@ describe('WorkflowService', () => {
       mockPrisma.workflowInstance.update.mockResolvedValue(makeInstance({ currentStageId: 'stage-target' }));
     }
     const trigger = () => service.triggerTransition('instance-1', { transitionId: 'transition-1' }, ORG_A, ACTOR, []);
+    // ACC-208 (B7) — as Prisma returns the gate's select: who has each task,
+    // the pool it waits in, its due date and whether it needs evidence.
+    const noPool = { assignedOrgUnit: null, assignedPosition: null, assignedCommittee: null, assignedCommitteeRoleValue: null };
     const openMandatory = [
-      { id: 'task-a', title: 'Check the terms', titleAr: 'مراجعة الشروط', status: 'PENDING' },
-      { id: 'task-b', title: 'Collect signatures', titleAr: null, status: 'ON_HOLD' },
+      {
+        id: 'task-a',
+        title: 'Check the terms',
+        titleAr: 'مراجعة الشروط',
+        status: 'PENDING',
+        dueAt: new Date('2026-10-14T13:00:00Z'),
+        requiresEvidence: true,
+        assignees: [{ user: { id: 'user-nora', name: 'Nora Al-Otaibi' } }],
+        ...noPool,
+      },
+      {
+        id: 'task-b',
+        title: 'Collect signatures',
+        titleAr: null,
+        status: 'ON_HOLD',
+        dueAt: null,
+        requiresEvidence: false,
+        assignees: [],
+        ...noPool,
+        assignedCommittee: { nameEn: 'Quality Assurance Committee', nameAr: null },
+        assignedCommitteeRoleValue: { labelEn: 'Secretary', labelAr: 'أمين السر', labelOverrideEn: 'Clerk', labelOverrideAr: null },
+      },
     ];
 
     it('refuses an ADVANCE with STAGE_TASKS_OPEN, naming each open mandatory task, before anything is written', async () => {
@@ -1684,6 +1707,51 @@ describe('WorkflowService', () => {
       expect(mockPrisma.workflowInstanceStage.update).not.toHaveBeenCalled();
       expect(mockPrisma.workflowInstance.update).not.toHaveBeenCalled();
       expect(mockTaskService.cancelStageExitTasksInTx).not.toHaveBeenCalled();
+    });
+
+    // ACC-208 (B7) — what the "Can't move yet" dialog names beside each task.
+    it('names who has each open task, or the pool it waits in, with its due date and evidence rule', async () => {
+      arrangeTransition();
+      mockPrisma.task.findMany.mockResolvedValue(openMandatory);
+
+      const error = await trigger().catch((e: unknown) => e);
+
+      const body = (error as WorkflowRefusalException).getResponse() as { tasks: unknown[] };
+      expect(body.tasks).toEqual([
+        {
+          id: 'task-a',
+          title: 'Check the terms',
+          titleAr: 'مراجعة الشروط',
+          status: 'PENDING',
+          statusLabel: 'Assigned',
+          dueAt: new Date('2026-10-14T13:00:00Z'),
+          requiresEvidence: true,
+          assignees: [{ id: 'user-nora', name: 'Nora Al-Otaibi' }],
+          pool: null,
+        },
+        {
+          id: 'task-b',
+          title: 'Collect signatures',
+          titleAr: null,
+          status: 'ON_HOLD',
+          statusLabel: 'On hold',
+          dueAt: null,
+          requiresEvidence: false,
+          assignees: [],
+          // The tenant's label override wins, as the picker shows it.
+          pool: {
+            kind: 'COMMITTEE_ROLE',
+            committee: { nameEn: 'Quality Assurance Committee', nameAr: null },
+            role: { labelEn: 'Clerk', labelAr: 'أمين السر' },
+          },
+        },
+      ]);
+      // Only people still on the task are named.
+      expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ assignees: expect.objectContaining({ where: { removedAt: null } }) }),
+        }),
+      );
     });
 
     it("counts only the CURRENT entry's MANDATORY, open tasks — scoped to the tenant", async () => {

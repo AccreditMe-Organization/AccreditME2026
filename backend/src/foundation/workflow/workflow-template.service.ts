@@ -26,6 +26,7 @@ import { CreateWorkflowTransitionActionDto } from './dto/create-workflow-transit
 import { UpdateWorkflowTransitionActionDto } from './dto/update-workflow-transition-action.dto';
 import { SYSTEM_WORKFLOW_SEED } from './workflow.seed';
 import { StageTaskDefinitionService } from './stage-task-definition.service';
+import { RECORD_ROUTES } from './stage-task-record-routes';
 import { WorkflowRefusalException } from './workflow-refusal';
 
 @Injectable()
@@ -209,9 +210,13 @@ export class WorkflowTemplateService {
 
     // ACC-190 — what entering each stage creates, for the stage header line.
     const stageTasks = await this.stageTasks.summaryForStages(stages.map((s) => s.id), organizationId);
+    const recordRoute = RECORD_ROUTES[template.objectType];
 
     return {
       ...this.mapTemplate(template),
+      // ACC-208 (B2, B3).
+      recordRoutes: { unit: typeof recordRoute?.unit === 'function', committee: typeof recordRoute?.committee === 'function' },
+      taskDueHours: await this.stageTasks.taskDueHours(organizationId),
       stages: stages.map((s) => ({
         ...this.mapStage(
           s,

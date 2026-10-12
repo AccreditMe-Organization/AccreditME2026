@@ -11,6 +11,7 @@ import { TaskRequestService } from './task-request.service';
 import { TaskSlaService } from './task-sla.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { FileStorageModule } from '../file-storage/file-storage.module';
+import { LookupModule } from '../lookup/lookup.module';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -31,6 +32,10 @@ import { FileStorageModule } from '../file-storage/file-storage.module';
     forwardRef(() => TenantModule),
     // ACC-177 — file evidence stores through StoredFileService.
     FileStorageModule,
+    // ACC-208 (B5) — the committee-role catalogue reads LookupService's own
+    // resolution (hidden values, label overrides). forwardRef: LookupModule
+    // reaches TenantModule, which reaches this module through the workflow engine.
+    forwardRef(() => LookupModule),
   ],
   controllers: [TaskController],
   // ACC-167 — TaskAssignmentService serves this module's picker endpoints

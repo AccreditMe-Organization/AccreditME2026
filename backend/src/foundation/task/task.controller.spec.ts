@@ -96,6 +96,7 @@ describe('TaskController', () => {
     listPositions: jest.Mock;
     listHolders: jest.Mock;
     listCommitteeRoles: jest.Mock;
+    listCommitteeRoleCatalogue: jest.Mock;
     listCommitteeMembers: jest.Mock;
   };
 
@@ -123,6 +124,7 @@ describe('TaskController', () => {
       listPositions: jest.fn().mockResolvedValue([]),
       listHolders: jest.fn().mockResolvedValue([]),
       listCommitteeRoles: jest.fn().mockResolvedValue([]),
+      listCommitteeRoleCatalogue: jest.fn().mockResolvedValue([]),
       listCommitteeMembers: jest.fn().mockResolvedValue([]),
     };
     service = {
@@ -424,6 +426,14 @@ describe('TaskController', () => {
 
     await controller.getAssignableCommitteeRoles({ committeeId: 'c1' }, TENANT_ID, USER_ID, perms);
     expect(assignment.listCommitteeRoles).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', undefined);
+    expect(assignment.listCommitteeRoleCatalogue).not.toHaveBeenCalled();
+
+    // ACC-208 (B5) — catalogue goes to its own method, with or without a committee.
+    await controller.getAssignableCommitteeRoles({ catalogue: true }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listCommitteeRoleCatalogue).toHaveBeenCalledWith(viewer, TENANT_ID, undefined, undefined);
+    await controller.getAssignableCommitteeRoles({ catalogue: true, committeeId: 'c1' }, TENANT_ID, USER_ID, perms);
+    expect(assignment.listCommitteeRoleCatalogue).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', undefined);
+    expect(assignment.listCommitteeRoles).toHaveBeenCalledTimes(1);
 
     await controller.getCommitteeAssignees({ committeeId: 'c1', roleValueId: 'r1' }, TENANT_ID, USER_ID, perms);
     expect(assignment.listCommitteeMembers).toHaveBeenCalledWith(viewer, TENANT_ID, 'c1', 'r1', undefined);

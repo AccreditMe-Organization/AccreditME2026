@@ -157,7 +157,11 @@ export class TaskController {
     @CurrentUser() userId: string,
     @CurrentUserPermissions() permissions: string[],
   ): Promise<IAssignableCommitteeRole[]> {
-    return this.assignment.listCommitteeRoles(viewer(userId, permissions), tenantId, query.committeeId, query.taskId);
+    // ACC-208 (B5) — the DTO lets committeeId be absent only with catalogue.
+    if (query.catalogue) {
+      return this.assignment.listCommitteeRoleCatalogue(viewer(userId, permissions), tenantId, query.committeeId, query.taskId);
+    }
+    return this.assignment.listCommitteeRoles(viewer(userId, permissions), tenantId, query.committeeId!, query.taskId);
   }
 
   @Get('assignees/committee')

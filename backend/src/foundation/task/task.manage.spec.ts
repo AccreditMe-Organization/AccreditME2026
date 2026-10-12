@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import { TaskService } from './task.service';
 import { TaskSlaService } from './task-sla.service';
 import { TaskAssignmentService } from './task-assignment.service';
+import { LookupService } from '../lookup/lookup.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
@@ -168,6 +169,10 @@ describe('TaskService — edit, cancel and reopen within the SLA limit (ACC-174)
         TaskService,
         TaskSlaService,
         TaskAssignmentService,
+
+        // ACC-208 — TaskAssignmentService's catalogue dependency; not reached here.
+
+        { provide: LookupService, useValue: {} },
         { provide: TaskAuthorityService, useValue: mockAuthority },
         { provide: PrismaService, useValue: mockPrisma },
         { provide: AuditLogService, useValue: mockAudit },

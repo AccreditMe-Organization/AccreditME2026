@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { TaskAssignmentService, AssignmentViewer } from './task-assignment.service';
+import { LookupService } from '../lookup/lookup.service';
 import { TaskAuthorityService } from './task-authority.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
@@ -23,10 +24,15 @@ const mockPrisma = {
   lookupValue: { findMany: jest.fn() },
 };
 
+// ACC-208 (B5) — LookupService's own resolution, which the catalogue reuses.
+const mockLookups = { getValues: jest.fn() };
+
 const creator: AssignmentViewer = { id: 'creator', permissions: ['committees:view'] };
 const assigner: AssignmentViewer = { id: 'assigner', permissions: ['tasks:create', 'committees:view'] };
 const reassigner: AssignmentViewer = { id: 'reassigner', permissions: ['tasks:reassign', 'committees:view'] };
 const bystander: AssignmentViewer = { id: 'bystander', permissions: ['committees:view'] };
+// ACC-208 (Q1) — configures workflows; holds neither tasks:create nor tasks:reassign.
+const configurer: AssignmentViewer = { id: 'configurer', permissions: ['workflows:manage', 'committees:view'] };
 
 async function captureError(promise: Promise<unknown>): Promise<unknown> {
   try {
@@ -52,10 +58,13 @@ describe('TaskAssignmentService (ACC-167)', () => {
     mockPrisma.committeeMember.findMany.mockResolvedValue([]);
     mockPrisma.committeeMember.groupBy.mockResolvedValue([]);
     mockPrisma.lookupValue.findMany.mockResolvedValue([]);
+    mockLookups.getValues.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskAssignmentService,
+        // ACC-208 (B5) — the committee-role catalogue reads the tenant's lookups.
+        { provide: LookupService, useValue: mockLookups },
         { provide: PrismaService, useValue: mockPrisma },
         // ACC-173 — the creator acts for themself; covering is pinned in
         // task-authority.service.spec.ts.
@@ -96,6 +105,19 @@ describe('TaskAssignmentService (ACC-167)', () => {
 
     it('lets a tasks:reassign holder in for any task', async () => {
       await expect(service.listUnits(reassigner, ORG_A, 'task-1')).resolves.toEqual([]);
+    });
+
+    // ACC-208 (Ahmad, Q1) — configuring a stage task chooses a target too.
+    it('lets a workflows:manage holder in with no task named, without reading any task', async () => {
+      await expect(service.listUnits(configurer, ORG_A)).resolves.toEqual([]);
+      expect(mockPrisma.task.findFirst).not.toHaveBeenCalled();
+    });
+
+    // A taskId means "reassigning THIS task", which workflows:manage does not
+    // grant: the not-found answer, as for any bystander.
+    it('does not let workflows:manage reassign a named task', async () => {
+      const error = await captureError(service.listUnits(configurer, ORG_A, 'task-1'));
+      expect(error).toBeInstanceOf(NotFoundException);
     });
 
     // ACC-101 clause (b): the entitlement is only knowable from the row, so a
@@ -224,6 +246,48 @@ describe('TaskAssignmentService (ACC-167)', () => {
     });
   });
 
+  // ── ACC-208 (B5) — the committee-role catalogue ─────────────────────────
+  describe('the committee-role catalogue', () => {
+    const catalogue = [
+      { id: 'role-chair', labelEn: 'Chairman', labelAr: 'الرئيس' },
+      { id: 'role-sec', labelEn: 'Clerk', labelAr: null },
+    ];
+
+    it("keeps roles nobody holds, counting each on the named committee, from the tenant's own lookups", async () => {
+      mockLookups.getValues.mockResolvedValue(catalogue);
+      mockPrisma.committeeMember.groupBy.mockResolvedValue([{ roleValueId: 'role-chair', _count: { _all: 1 } }]);
+
+      const roles = await service.listCommitteeRoleCatalogue(configurer, ORG_A, 'committee-1');
+
+      expect(mockLookups.getValues).toHaveBeenCalledWith('committee_member_role', ORG_A);
+      expect(roles).toEqual([
+        { id: 'role-chair', labelEn: 'Chairman', labelAr: 'الرئيس', memberCount: 1 },
+        { id: 'role-sec', labelEn: 'Clerk', labelAr: null, memberCount: 0 },
+      ]);
+    });
+
+    it("names no committee for the record's committee: counts are null and no committee is read", async () => {
+      mockLookups.getValues.mockResolvedValue(catalogue);
+
+      const roles = await service.listCommitteeRoleCatalogue(configurer, ORG_A, undefined);
+
+      expect(roles.map((r) => r.memberCount)).toEqual([null, null]);
+      expect(mockPrisma.committee.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.committeeMember.groupBy).not.toHaveBeenCalled();
+    });
+
+    it('applies both gates: the picker gate and committees:view, before anything is read', async () => {
+      const noPicker = await captureError(service.listCommitteeRoleCatalogue(bystander, ORG_A, undefined));
+      const noCommittees = await captureError(
+        service.listCommitteeRoleCatalogue({ id: 'x', permissions: ['workflows:manage'] }, ORG_A, undefined),
+      );
+
+      expect((noPicker as ForbiddenException).message).toBe('Required permission: tasks:create');
+      expect((noCommittees as ForbiddenException).message).toBe('Required permission: committees:view');
+      expect(mockLookups.getValues).not.toHaveBeenCalled();
+    });
+  });
+
   // ── tenant isolation, per endpoint ───────────────────────────────────────
   describe('tenant isolation', () => {
     itEnforcesTenantIsolation('listUnits', async () => {
@@ -266,6 +330,20 @@ describe('TaskAssignmentService (ACC-167)', () => {
       await service.listCommitteeMembers(assigner, ORG_B, 'committee-1', 'role-1');
       expect(mockPrisma.committeeMember.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B }) }),
+      );
+    });
+
+    itEnforcesTenantIsolation('listCommitteeRoleCatalogue', async () => {
+      mockPrisma.committee.findFirst.mockResolvedValue(null);
+      await expect(service.listCommitteeRoleCatalogue(configurer, ORG_B, 'committee-1')).rejects.toThrow('Committee not found');
+      expect(mockPrisma.committee.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'committee-1', organizationId: ORG_B } }),
+      );
+      mockPrisma.committee.findFirst.mockResolvedValue({ id: 'committee-1' });
+      await service.listCommitteeRoleCatalogue(configurer, ORG_B, 'committee-1');
+      expect(mockLookups.getValues).toHaveBeenCalledWith('committee_member_role', ORG_B);
+      expect(mockPrisma.committeeMember.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG_B, committeeId: 'committee-1' }) }),
       );
     });
 
