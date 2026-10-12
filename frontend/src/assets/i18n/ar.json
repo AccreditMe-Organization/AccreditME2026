@@ -1127,10 +1127,7 @@
     "savedSuccess": "تم حفظ التغييرات.",
     "errorLoad": "فشل تحميل الإعدادات.",
     "errorSave": "فشل حفظ التغييرات.",
-    "emailProviderNote": "واجهة فقط في الوقت الحالي — لا يزال البريد يُرسل عبر المزوّد الافتراضي للمنصة حتى يتم تفعيل هذا الإعداد بالكامل.",
     "provider": "المزوّد",
-    "providerConfig": "إعدادات المزوّد (JSON)",
-    "errorInvalidJson": "صيغة JSON غير صالحة في إعدادات المزوّد.",
     "taskSla": "مهلة المهام والتصعيد",
     "taskSlaNote": "حدد المدة التي تبقى فيها المهمة مفتوحة قبل موعد استحقاقها، والمدة التي تبقى فيها متأخرة قبل تصعيدها — أولاً إلى مدير المكلّف بها، ثم إلى رئيس وحدته.",
     "dueAfterHours": "الاستحقاق بعد (ساعات)",
@@ -1691,6 +1688,79 @@
     "expandLabel": "توسيع إلى ملء الشاشة",
     "restore": "استعادة",
     "restoreLabel": "إعادة إلى العرض العادي"
+  },
+  "emailSettings": {
+    "notActiveBody": "يمكنك اختيار مزوّد وحفظه، لكن AccreditMe لن يستخدمه بعد. يستمر إرسال البريد عبر التسليم الخاص بـ AccreditMe.",
+    "howTitle": "كيف يرسل AccreditMe بريد مؤسستك",
+    "defaultTitle": "التسليم الافتراضي من AccreditMe",
+    "defaultBody": "تُرسَل الدعوات والتذكيرات والإشعارات من {{address}} عبر Resend. لم يختر أحد ذلك، وهو ما يحدث إلى أن تربط مزوّدك الخاص.",
+    "defaultBodyNoAddress": "تُرسَل الدعوات والتذكيرات والإشعارات عبر التسليم الخاص بـ AccreditMe، بواسطة Resend. لم يختر أحد ذلك، وهو ما يحدث إلى أن تربط مزوّدك الخاص.",
+    "connectWhy": "اربط مزوّدك إن كان يجب أن يصدر البريد من نطاقك، أو كانت سياسة تقنية المعلومات لديك تتطلب خادمك الخاص.",
+    "connect": "ربط مزوّد",
+    "provider": "المزوّد",
+    "providerHint": "تغيير المزوّد يُبقي هذه القيم إلى أن تحفظ",
+    "providerName": {
+      "resend": "Resend",
+      "smtp": "SMTP / خادم Exchange داخلي",
+      "office365": "Office 365",
+      "sendgrid": "SendGrid",
+      "ses": "Amazon SES"
+    },
+    "encryption": {
+      "STARTTLS": "STARTTLS",
+      "SSL_TLS": "SSL/TLS",
+      "NONE": "بلا تشفير"
+    },
+    "field": {
+      "apiKey": "مفتاح API",
+      "fromAddress": "عنوان المرسِل",
+      "fromAddressVerified": "عنوان المرسِل (موثَّق)",
+      "fromName": "اسم المرسِل",
+      "host": "الخادم",
+      "port": "المنفذ",
+      "encryption": "التشفير",
+      "username": "اسم المستخدم",
+      "password": "كلمة المرور",
+      "tenantId": "معرّف المستأجر (Tenant ID)",
+      "clientId": "معرّف التطبيق (Client ID)",
+      "clientSecret": "سر التطبيق (Client secret)",
+      "senderMailbox": "صندوق بريد المرسِل",
+      "region": "المنطقة",
+      "accessKeyId": "معرّف مفتاح الوصول",
+      "secretAccessKey": "مفتاح الوصول السري",
+      "senderIdentity": "المرسِل (هوية موثَّقة)"
+    },
+    "hint": {
+      "port": "يتبع التشفير ما لم يُعدَّل",
+      "fromAddressSmtp": "يجب أن يكون مسموحًا بالإرسال باسمه",
+      "fromName": "يظهر في خانة «من»"
+    },
+    "error": {
+      "required": "هذا الحقل مطلوب.",
+      "email": "أدخل بريدًا إلكترونيًا، مثل name@example.org.",
+      "port": "استخدم منفذًا من 1 إلى 65535.",
+      "host": "استخدم اسم خادم أو عنوان IP، مثل mail.example.org.",
+      "guid": "استخدم المعرّف من Microsoft Entra، مثل 11111111-2222-3333-4444-555555555555.",
+      "region": "استخدم منطقة AWS، مثل eu-central-1.",
+      "accessKeyId": "استخدم معرّف مفتاح وصول AWS: أحرف إنجليزية كبيرة وأرقام.",
+      "pair": "أدخل اسم المستخدم وكلمة المرور معًا، أو اتركهما كليهما."
+    },
+    "incomplete": "أكمل: {{fields}}.",
+    "listSeparator": "، ",
+    "saveForLater": "حفظ لوقت لاحق",
+    "saved": "حُفظت لوقت لاحق. لن يستخدم AccreditMe هذه الإعدادات بعد.",
+    "disconnect": "قطع الاتصال",
+    "disconnectConfirmHeader": "قطع الاتصال بـ {{provider}}؟",
+    "disconnectConfirmMessage": "يعود البريد إلى التسليم الافتراضي من AccreditMe، وتُحذف هذه الإعدادات.",
+    "disconnected": "تم قطع الاتصال. يُرسَل البريد عبر التسليم الافتراضي من AccreditMe."
+  },
+  "secretField": {
+    "set": "مُعيَّن",
+    "setOn": "مُعيَّن في {{date}}",
+    "replace": "استبدال",
+    "replaceNamed": "استبدال {{label}}",
+    "neverShownAgain": "لا تُعرض مرة أخرى",
+    "replacingHint": "اكتب القيمة الجديدة. اتركها فارغة للإبقاء على القيمة الحالية."
   },
   "ai": {
     "refusal": {

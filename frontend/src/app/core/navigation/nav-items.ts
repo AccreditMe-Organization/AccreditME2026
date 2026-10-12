@@ -255,10 +255,11 @@ export const TENANT_NAV_GROUPS: readonly NavGroup[] = [
         route: '/admin-settings/organization-profile',
         requiredPermission: 'tenant:view',
       },
-      // INERT TODAY, and the page says so. It stores Organization.emailConfig,
-      // which nothing reads — email still goes through the platform default
-      // (CLAUDE.md, Email Provider). Listed so the screen is not orphaned; when
-      // per-tenant email resolution is built this entry needs no change.
+      // NOT ACTIVE YET, and the page says so (ACC-181 D1). It stores a tenant's
+      // own provider in Organization.emailConfig — typed per provider, secrets
+      // write-only — which nothing sends with yet: email still goes through
+      // AccreditMe's own delivery (CLAUDE.md, Email Provider). When per-tenant
+      // email resolution is built (ACC-155) this entry needs no change.
       {
         key: 'emailProvider',
         labelKey: 'nav.emailProvider',

@@ -1,4 +1,5 @@
 import { IAiBalance, IAiFeatureOpen } from '../../ai/ai-balance';
+import type { IMaskedEmailConfig } from '../email-config';
 export interface ITenant {
   id: string;
   name: string;
@@ -70,10 +71,9 @@ export interface ITenantConfig {
   aiConfig: 'set' | null;
 }
 
-export interface IEmailConfig {
-  emailProvider: 'resend' | 'smtp' | 'office365' | 'sendgrid' | 'ses' | null;
-  config: Record<string, unknown> | null;
-}
+// ACC-181 — the MASKED email settings: each secret reads 'set' or null, never
+// its value. The shape and the masking live in ../email-config.ts.
+export type IEmailConfig = IMaskedEmailConfig;
 
 // ACC-46 Section 2.7.c — stored at Organization.settings.taskSla. Two
 // tenant-configurable grace periods per priority, both allowed to be 0

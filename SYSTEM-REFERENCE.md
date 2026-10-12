@@ -3504,6 +3504,43 @@ Section 11.
 
 ---
 
+### 4.7 A Tenant's Own Email Provider Settings (ACC-181)
+
+**Not active yet.** A tenant can choose its own provider and save it; nothing
+sends with it. Email still goes out through AccreditMe's own Resend delivery
+(`notification-email.processor.ts`, `RESEND_FROM_EMAIL`) until ACC-155 builds
+per-tenant resolution.
+
+**Stored** encrypted in `Organization.emailConfig` (the column is unchanged —
+no migration) as `{ provider, [provider]: { …fields }, secretsSetAt }`. Only the
+chosen provider's block is kept. Fields per provider, and which are secret:
+`foundation/tenant/email-config.ts`. A legacy `{ emailProvider, config }` blob
+(the old JSON editor's) is read for its provider only; none existed (0 of 3
+organisations, measured 9 Oct).
+
+| Route | Does |
+|---|---|
+| `GET /tenant/email-config` | The chosen provider's fields; each **secret reads `'set'` or null**, with `secretsSetAt`; `defaultSender` is `RESEND_FROM_EMAIL` or null (`resolvePlatformSender()`), never a guessed address. |
+| `PATCH /tenant/email-config` | `{ provider, [provider]: { … } }`, typed per provider (`forbidNonWhitelisted` refuses the old `config`). Merges via `mergeKeepingSecrets`: a secret omitted or `''` keeps its stored value **only while the provider is unchanged**; an ordinary field sent `''` is cleared. Complete or refused: 400 `EMAIL_SETTINGS_INCOMPLETE` with `missing` (D6). SMTP username and password both or neither (D5). Only a newly sent secret gets a new set date (D2). Audit `email_config_updated`: provider, previous provider, changed field NAMES. |
+| `DELETE /tenant/email-config` | Disconnect: the column becomes null; audit `email_config_disconnected`. No per-secret remove (D3). |
+
+All three need `tenant:manage_config` and act on the session's organisation.
+**The write-only rule is shared with storage** (`common/config/write-only-secrets.ts`,
+D4): `mergeKeepingSecrets` and `changedFieldNames`. Storage passes no secret
+list, so every storage field keeps on `''` exactly as before.
+
+**Finding, recorded:** storage's own specs do not pin "an empty value keeps the
+stored one"; removing that branch from the shared helper turned only the
+helper's spec red. The helper spec now covers it for both callers.
+
+**The screen** (`admin-settings/components/email-provider-settings/`) is built
+to Settings Screens section 1: a sentence about the default delivery with
+Connect a provider; the provider in `OverlaySelect`; each field in `am-field`;
+secrets in `am-secret-field` (Section 10.18); SMTP's port follows encryption
+until edited; Disconnect behind a translated confirm. **It sends a secret only
+when a new value was typed** — the bug was a form filled from a GET that held
+every secret, saved back whole.
+
 ## 5. OrgPosition, Unit Head, and Delegated Authority (ACC-40)
 
 `backend/src/foundation/org-position/org-position.service.ts` (position
@@ -6087,10 +6124,10 @@ exist.
   because provider selection is unbuilt (Section 11). Relabelled "AI credits";
   it was NOT merged with Email provider. Its natural home is the reference's
   Plan & modules page.
-- **Email provider is inert.** It writes `Organization.emailConfig`, which
-  only its own GET reads; email still goes through the platform default. The
-  page says so in a message (not a purpose line — it goes false when per-tenant
-  email ships). Kept in the rail so the screen is not orphaned.
+- **Email provider is not active yet** (ACC-181 D1, Section 4.7). It writes
+  `Organization.emailConfig`, which nothing sends with: email still goes through
+  AccreditMe's own delivery. The page says so in a banner, and its button is
+  "Save for later". Kept in the rail so the screen is not orphaned.
 - **Organization profile loads with `tenant:view` and saves with
   `tenant:update`.** A custom role holding only view sees a save that 403s.
   Unreachable with seeded roles (only `TENANT_ADMIN` holds any `tenant:*`).
@@ -6621,6 +6658,28 @@ name and an eye button open it). Meeting attachments and Document Management
 plug in the same way.
 
 ---
+
+### 10.18 `am-secret-field` — the Write-Once Secret (ACC-181)
+
+`shared/components/secret-field/`. The design system's write-once rule: a
+secret is entered once and never rendered again.
+
+- **Not set:** an empty `type="password"` input in `am-field`. **No reveal
+  control** — so this is not `password-input`, which has one.
+- **Set:** the read-only pair "●●●●●●●● · set 29 Sep 2026" with a single
+  **Replace**. No input exists in this state, so the browser never holds a
+  value and there is no masked placeholder pretending to.
+- **Replace** opens an empty input; leaving it empty keeps the stored value.
+  The input's `am-field` is created fresh, because `am-field` wires its control
+  once after it renders.
+- **Untouched, its control is `''`, and the screen sends nothing** — an omitted
+  secret is what the server keeps. A new set date (after a save) closes the
+  input and clears what was typed.
+- The date goes through the formatting layer (`amDate`), so it reads
+  "29 Sep 2026" rather than the drawing's "29 Sep".
+
+First consumer: the email provider screen (Section 4.7). The storage settings
+screen is the next.
 
 ## 11. Known Cross-Cutting Gaps
 
@@ -8817,8 +8876,8 @@ found". `complete()`'s evidence check, the three list counts and
 | `POST /tenant/storage/disconnect` | ACC-185, SharePoint only (16.14). |
 
 `GET /tenant/config` reports each provider config as "set" or null.
-**`GET /tenant/email-config` is still unmasked** — ACC-181. All the screens are
-lane A's.
+`GET /tenant/email-config` is masked too since ACC-181 (Section 4.7), on the same
+rule (`common/config/write-only-secrets.ts`).
 
 ### 16.8 Refusal codes
 
@@ -8915,8 +8974,7 @@ deploy** (ACC-173's enum rule).
 ### 16.13 Not built
 
 Virus scanning (ACC-178), the orphan-object reconciler (ACC-179), moving files
-between locations, SharePoint included (ACC-180), the email settings screen's
-secrets (ACC-181),
+between locations, SharePoint included (ACC-180),
 the platform admin storage screens (ACC-182), an upload-specific rate limit
 (ACC-129's global per-user limit applies),
 per-plan upload caps, and the tenant storage, confirm, request-a-change and

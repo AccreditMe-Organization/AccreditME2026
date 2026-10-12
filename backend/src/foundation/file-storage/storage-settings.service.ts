@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'crypto';
 import { Readable } from 'stream';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
+import { changedFieldNames, mergeKeepingSecrets } from '../../common/config/write-only-secrets';
 import { StorageProvider } from '../../providers/storage/storage.provider';
 import { GraphError } from '../../providers/storage/sharepoint/graph-client';
 import { MicrosoftSignInError } from '../../providers/storage/sharepoint/microsoft-identity';
@@ -519,11 +520,12 @@ export class StorageSettingsService {
   // Stored settings with the sent ones on top. An omitted field — a secret
   // above all — keeps its stored value.
   private merge(stored: IStorageConfig, dto: TestStorageSettingsDto): IStorageConfig {
-    const defined = <T extends object>(value: T | undefined): Partial<T> =>
-      Object.fromEntries(Object.entries(value ?? {}).filter(([, v]) => v !== undefined && v !== '')) as Partial<T>;
-    const minio = { ...stored.minio, ...defined(dto.minio) };
-    const local = { ...stored.local, ...defined(dto.local) };
-    const sharepoint = { ...stored.sharepoint, ...defined(dto.sharepoint) };
+    // ACC-181 D4 — the shared write-only rule: a field not sent, or sent
+    // empty, keeps its stored value. No secret list: every storage setting
+    // keeps on '' (common/config/write-only-secrets.ts).
+    const minio = mergeKeepingSecrets(stored.minio, dto.minio);
+    const local = mergeKeepingSecrets(stored.local, dto.local);
+    const sharepoint = mergeKeepingSecrets(stored.sharepoint, dto.sharepoint);
     return {
       ...(Object.keys(minio).length ? { minio } : {}),
       ...(Object.keys(local).length ? { local } : {}),
@@ -606,15 +608,9 @@ export class StorageSettingsService {
 // The field names that differ, secrets included BY NAME only. draftProvider is
 // not a setting, so it never counts as a change.
 function changedFields(before: IStorageConfig, after: IStorageConfig): string[] {
-  const names: string[] = [];
-  for (const block of ['minio', 'local', 'sharepoint'] as const) {
-    const a = (before[block] ?? {}) as Record<string, unknown>;
-    const b = (after[block] ?? {}) as Record<string, unknown>;
-    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-      if (a[key] !== b[key]) names.push(`${block}.${key}`);
-    }
-  }
-  return names;
+  return (['minio', 'local', 'sharepoint'] as const).flatMap((block) =>
+    changedFieldNames(before[block], after[block], `${block}.`),
+  );
 }
 
 function sha256(content: Buffer): string {
