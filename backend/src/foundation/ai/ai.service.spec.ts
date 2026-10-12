@@ -2,6 +2,7 @@ import { AiService } from './ai.service';
 import { AiCreditService } from './ai-credit.service';
 import { AiAllocationService } from './ai-allocation.service';
 import { AiRefusalException } from './ai-refusal';
+import { AiNoticesService } from './ai-notices.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AiProvider, AiProviderCallError } from '../../providers/ai/ai.provider';
 
@@ -15,6 +16,10 @@ function setup() {
   const prisma = {
     aiFeatureCost: {
       findUnique: jest.fn().mockResolvedValue({ featureKey: 'task_description_drafting', creditCost: 2, restricted: false, allowedOrganizationIds: [] }),
+      findMany: jest.fn().mockResolvedValue([
+        { featureKey: 'task_description_drafting', creditCost: 2, restricted: false, allowedOrganizationIds: [] },
+        { featureKey: 'document_summary', creditCost: 15, restricted: false, allowedOrganizationIds: [] },
+      ]),
     },
     aiInteractionLog: { create: jest.fn().mockResolvedValue({}) },
   };
@@ -22,7 +27,9 @@ function setup() {
     reserve: jest.fn().mockResolvedValue({ used: 2, allocation: 20, periodStart: PERIOD_START, renewsAt: RENEWS_AT }),
     refund: jest.fn().mockResolvedValue(true),
     state: jest.fn(),
+    claimNotice: jest.fn().mockResolvedValue(true),
   };
+  const notices = { creditsUsedUp: jest.fn().mockResolvedValue(undefined) };
   const allocation = { renewIfDue: jest.fn().mockResolvedValue(true) };
   const provider: jest.Mocked<AiProvider> = {
     name: 'ANTHROPIC',
@@ -33,9 +40,10 @@ function setup() {
     prisma as unknown as PrismaService,
     credits as unknown as AiCreditService,
     allocation as unknown as AiAllocationService,
+    notices as unknown as AiNoticesService,
     provider,
   );
-  return { service, prisma, credits, allocation, provider };
+  return { service, prisma, credits, allocation, provider, notices };
 }
 
 const request = { prompt: `Draft a description. ${MARKER}`, description: 'Task tsk_1 draft' };
@@ -177,6 +185,50 @@ describe('AiService.run (ACC-194)', () => {
     await expect(service.run('task_description_drafting', { organizationId: ORG }, request)).resolves.toEqual(
       expect.objectContaining({ content: 'A drafted description.' }),
     );
+  });
+
+  describe('the "credits used up" notice (D10)', () => {
+    it('is sent at the first AI_CREDITS_EXHAUSTED refusal of a period, claimed for that period', async () => {
+      const { service, credits, notices } = setup();
+      credits.reserve.mockResolvedValue(null);
+      credits.state.mockResolvedValue({ allocation: 20, used: 19, periodStart: PERIOD_START, renewsAt: RENEWS_AT, switchedOff: false });
+      await refusal(service.run('task_description_drafting', { organizationId: ORG }, request));
+      expect(credits.claimNotice).toHaveBeenCalledWith(ORG, PERIOD_START);
+      expect(notices.creditsUsedUp).toHaveBeenCalledWith(ORG, RENEWS_AT);
+    });
+
+    it('is not sent again in the same period: an unclaimed stamp sends nothing', async () => {
+      const { service, credits, notices } = setup();
+      credits.reserve.mockResolvedValue(null);
+      credits.state.mockResolvedValue({ allocation: 20, used: 19, periodStart: PERIOD_START, renewsAt: RENEWS_AT, switchedOff: false });
+      credits.claimNotice.mockResolvedValue(false);
+      await refusal(service.run('task_description_drafting', { organizationId: ORG }, request));
+      expect(notices.creditsUsedUp).not.toHaveBeenCalled();
+    });
+
+    it('is sent after a call that leaves less than the cheapest open feature — nothing can run any more', async () => {
+      const { service, credits, notices } = setup();
+      credits.reserve.mockResolvedValue({ used: 19, allocation: 20, periodStart: PERIOD_START, renewsAt: RENEWS_AT }); // 1 left < 2
+      await service.run('task_description_drafting', { organizationId: ORG }, request);
+      expect(notices.creditsUsedUp).toHaveBeenCalledWith(ORG, RENEWS_AT);
+    });
+
+    it('is not sent while the cheapest open feature still fits', async () => {
+      const { service, credits, notices } = setup();
+      credits.reserve.mockResolvedValue({ used: 18, allocation: 20, periodStart: PERIOD_START, renewsAt: RENEWS_AT }); // 2 left = cheapest
+      await service.run('task_description_drafting', { organizationId: ORG }, request);
+      expect(credits.claimNotice).not.toHaveBeenCalled();
+      expect(notices.creditsUsedUp).not.toHaveBeenCalled();
+    });
+
+    it('a notice that fails never fails the call', async () => {
+      const { service, credits, notices } = setup();
+      credits.reserve.mockResolvedValue({ used: 20, allocation: 20, periodStart: PERIOD_START, renewsAt: RENEWS_AT });
+      notices.creditsUsedUp.mockRejectedValue(new Error('mail down'));
+      await expect(service.run('task_description_drafting', { organizationId: ORG }, request)).resolves.toEqual(
+        expect.objectContaining({ content: 'A drafted description.' }),
+      );
+    });
   });
 
   it('should NOT return records belonging to a different tenant — reserves, refunds and logs only for the caller organisation', async () => {

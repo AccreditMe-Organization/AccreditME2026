@@ -9,6 +9,7 @@ import { AnthropicAiProvider } from '../../providers/ai/anthropic-ai.provider';
 import { AiService } from './ai.service';
 import { AiCreditService } from './ai-credit.service';
 import { AiAllocationService } from './ai-allocation.service';
+import { AiNoticesService } from './ai-notices.service';
 
 /**
  * ACC-194 — AI metering and the one gateway to a model.
@@ -24,6 +25,7 @@ import { AiAllocationService } from './ai-allocation.service';
     AiService,
     AiCreditService,
     AiAllocationService,
+    AiNoticesService,
     AuditLogService,
     { provide: AI_PROVIDER, useClass: AnthropicAiProvider },
     // The hourly renewal both consumes its queue and schedules its own repeat,

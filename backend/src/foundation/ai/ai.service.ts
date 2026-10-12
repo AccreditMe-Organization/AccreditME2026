@@ -5,6 +5,8 @@ import { AI_FEATURES, AiFeatureKey, resolveAnthropicModel } from './ai.config';
 import { AiCreditService, ReservedCredits } from './ai-credit.service';
 import { AiAllocationService } from './ai-allocation.service';
 import { AiRefusalException } from './ai-refusal';
+import { AiNoticesService } from './ai-notices.service';
+import { openAiFeatures } from './ai-balance';
 
 export interface AiRunContext {
   organizationId: string;
@@ -50,6 +52,11 @@ export interface AiRunResult {
  *   6. Success: log with the cost.
  *   7. Failure: refund — only into the period the credits came from — log with
  *      cost 0, refuse AI_PROVIDER_FAILED. A failed call costs nothing.
+ *
+ * The "credits used up" notice (D10) goes to the tenant admins once per credit
+ * period, at the first of: a reservation that leaves less than the cheapest
+ * feature open to the organisation (nothing can run any more), or the first
+ * AI_CREDITS_EXHAUSTED refusal.
  */
 @Injectable()
 export class AiService {
@@ -59,6 +66,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     private readonly credits: AiCreditService,
     private readonly allocation: AiAllocationService,
+    private readonly notices: AiNoticesService,
     @Inject(AI_PROVIDER) private readonly provider: AiProvider,
   ) {}
 
@@ -105,6 +113,7 @@ export class AiService {
         inputTokens: answer.inputTokens,
         outputTokens: answer.outputTokens,
       });
+      await this.noticeIfNothingCanRun(organizationId, reserved);
       return {
         content: answer.content,
         creditCost: price.creditCost,
@@ -160,11 +169,36 @@ export class AiService {
       this.logger.warn(`Org ${organizationId} has an AI allocation but no credit period; refused.`);
       throw new AiRefusalException('AI_NOT_ENABLED', { reason: 'NO_ALLOWANCE', feature: featureKey });
     }
+    if (state.periodStart) await this.sendUsedUpNotice(organizationId, state.periodStart, state.renewsAt);
     throw new AiRefusalException('AI_CREDITS_EXHAUSTED', {
       creditCost: cost,
       creditsRemaining: Math.max(0, state.allocation - state.used),
       renewsAt: state.renewsAt.toISOString(),
     });
+  }
+
+  /** After a successful reservation: if no open feature fits in what is left, the period is spent. */
+  private async noticeIfNothingCanRun(organizationId: string, reserved: ReservedCredits): Promise<void> {
+    try {
+      const remaining = reserved.allocation - reserved.used;
+      const open = await openAiFeatures(this.prisma, organizationId);
+      if (open.length === 0) return;
+      const cheapest = Math.min(...open.map((f) => f.creditCost));
+      if (remaining < cheapest) await this.sendUsedUpNotice(organizationId, reserved.periodStart, reserved.renewsAt);
+    } catch (error) {
+      this.logger.error(`The AI credits notice check failed for org ${organizationId}: ${(error as Error).message}`);
+    }
+  }
+
+  /** Once per period: only the call that claims the period's stamp sends. Never throws. */
+  private async sendUsedUpNotice(organizationId: string, periodStart: Date, renewsAt: Date): Promise<void> {
+    try {
+      if (await this.credits.claimNotice(organizationId, periodStart)) {
+        await this.notices.creditsUsedUp(organizationId, renewsAt);
+      }
+    } catch (error) {
+      this.logger.error(`The "AI credits used up" notice failed for org ${organizationId}: ${(error as Error).message}`);
+    }
   }
 
   /** Writes the log row. A failure to log is reported and never fails the call. */
