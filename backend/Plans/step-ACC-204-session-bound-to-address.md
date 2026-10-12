@@ -154,7 +154,7 @@ another address still ends it. That is the shared cookie, not a new behaviour.
 | `backend/src/foundation/auth/auth.service.ts` (+ spec) | `refresh()` checks before rotating |
 | `backend/src/foundation/auth/closed-organisation.spec.ts` | the guard's one query now selects the slug too |
 | `frontend/proxy.conf.js` | the dev Origin shim |
-| `frontend/src/app/core/auth/session-address-state.ts` (+ spec) | the shared signal |
+| `frontend/src/app/core/tenant/session-address-state.ts` (+ spec) | the shared signal (built under `core/tenant/`, beside `tenant-host.ts`, not `core/auth/` as first planned) |
 | `frontend/src/app/core/services/auth.service.ts` (+ spec) | `restoreSession()`; clear on sign-in |
 | `frontend/src/app/core/services/session-renewal.service.ts` (+ spec) | records the refusal |
 | `frontend/src/app/core/interceptors/auth.interceptor.ts` (+ spec) | no renewal on the code |
@@ -196,3 +196,54 @@ another address still ends it. That is the shared cookie, not a new behaviour.
    No cookie values, tokens or passwords are printed.
 
 No migration.
+
+## Verification results (12 Oct 2026)
+
+### Checks, each gated on its own exit status
+
+| Check | Result |
+|---|---|
+| Backend `tsc --noEmit`, `npm run build`, `prisma generate` | exit 0 |
+| Backend Jest | **128 suites, 2,913 tests, all passed** |
+| Tenant isolation (the gate's name pattern) | **173 passed**; no new query, so no new isolation test (`refresh()`'s user lookup moved and gained `organizationId` scoping; the guard's select gained one column) |
+| Backend `check:worker-gate` | exit 0 |
+| Frontend `tsc` (app and spec), `ng build`, `verify:built-index` | exit 0 |
+| Frontend Karma | **1,371 of 1,371 passed** (affected files alone: 62 of 62) |
+| i18n parity (`translation-keys.spec`) | 18 of 18 |
+| Frontend `check:*` (11 discovered) | formatting, contrast, icon-labels, dialog-overlays, dialog-density, create-gating, action-gating, action-gating:selftest, field-control, confirm-translated, reserved-slugs, vercel-config: all exit 0 |
+| Lint on lines this branch added | 19 `no-unsafe-*` messages, all in `auth.service.spec.ts`, from that spec's existing `mockPrisma: any` / `as any` request idiom; none in production code |
+
+### Mutations — every one went red, then restored
+
+- **Guard:** drop the check; treat a missing Origin as a pass; apply the check to
+  Bearer; expect the token's own organisation for impersonation; compare the
+  wrong field.
+- **refresh():** check after the rotation; drop the check.
+- **`labelFromOrigin()`:** accept any port; accept http in production.
+- **Frontend:** restore renews anyway; the interceptor renews on the code; the
+  renewal service does not record it; the sign-in page always shows the note.
+
+### Browser proof — local only, as a seeded al-nakheel user
+
+**Finding first: locally the bug cannot happen on its own.** Through the dev
+proxy the cookies are host-only on the PAGE host (`al-nakheel.localhost`), so a
+tab at `al-manara.localhost` or `platform.localhost` simply has no session: it
+showed its sign-in page with no note (plain 401 on `/auth/me`, renewal 401). The
+production shape, one API host holding one session for every address, was
+therefore reproduced by copying al-nakheel's session cookies onto the other
+hosts with Playwright's `addCookies` (values never printed).
+
+1. Sign-in at `http://al-nakheel.localhost:4200` → `/home`; cookies
+   `refresh_token@/api/v1/auth` and `access_token@/`.
+2. al-nakheel's access cookie on al-manara and on platform: `/auth/me` → 401
+   `SESSION_OTHER_ORGANIZATION`, **no renewal attempted**, sign-in page with the
+   note, at both.
+3. Only the refresh cookie on al-manara: `/auth/me` 401, `/auth/refresh` → 401
+   `SESSION_OTHER_ORGANIZATION`, note shown.
+4. The al-nakheel tab, reloaded: `/auth/me` 200.
+5. **The refused renewal neither rotated nor revoked:** with al-nakheel's own
+   access cookie removed, its refresh returned 200 with the same token. On the
+   database the row stayed unrevoked until al-nakheel's own renewal, which
+   created the next row.
+
+The proof never touched `api.accreditme.app`.
