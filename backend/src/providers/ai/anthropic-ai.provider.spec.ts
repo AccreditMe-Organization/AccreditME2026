@@ -9,7 +9,7 @@ describe('AnthropicAiProvider (ACC-194)', () => {
   beforeEach(() => {
     process.env['ANTHROPIC_API_KEY'] = 'test-key-not-real';
     fetchMock = jest.fn();
-    global.fetch = fetchMock as unknown as typeof fetch;
+    global.fetch = fetchMock;
   });
 
   afterEach(() => {

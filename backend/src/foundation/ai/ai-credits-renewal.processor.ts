@@ -1,6 +1,6 @@
 import { Logger, OnModuleInit } from '@nestjs/common';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job, Queue } from 'bullmq';
+import { Queue } from 'bullmq';
 import { AiAllocationService } from './ai-allocation.service';
 
 export const AI_CREDITS_RENEWAL_INTERVAL_MS = 60 * 60 * 1000;
@@ -38,7 +38,7 @@ export class AiCreditsRenewalProcessor extends WorkerHost implements OnModuleIni
     await this.queue.add(AI_CREDITS_RENEWAL_JOB, {}, { repeat: { every: AI_CREDITS_RENEWAL_INTERVAL_MS }, jobId: 'ai-credits-renewal-repeat' });
   }
 
-  async process(_job: Job): Promise<void> {
+  async process(): Promise<void> {
     const { renewed, failed } = await this.allocation.renewDue();
     if (failed.length > 0) {
       // Failed, so the job shows as failed; every other organisation still renewed.

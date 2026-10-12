@@ -1,4 +1,4 @@
-import { Job, Queue } from 'bullmq';
+import { Queue } from 'bullmq';
 import { AiCreditsRenewalProcessor, AI_CREDITS_RENEWAL_INTERVAL_MS, AI_CREDITS_RENEWAL_JOB } from './ai-credits-renewal.processor';
 import { AiAllocationService } from './ai-allocation.service';
 
@@ -19,12 +19,12 @@ describe('AiCreditsRenewalProcessor (ACC-194)', () => {
 
   it('renews what is due, and a run with nothing due is a quiet success', async () => {
     const { processor, allocation } = setup({ renewed: 0, failed: [] });
-    await expect(processor.process({} as Job)).resolves.toBeUndefined();
+    await expect(processor.process()).resolves.toBeUndefined();
     expect(allocation.renewDue).toHaveBeenCalledTimes(1);
   });
 
   it('a failed organisation fails the job so it is visible, after the others renewed', async () => {
     const { processor } = setup({ renewed: 3, failed: ['org-x'] });
-    await expect(processor.process({} as Job)).rejects.toThrow('AI credit renewal failed for 1 organisation(s): org-x. 3 renewed.');
+    await expect(processor.process()).rejects.toThrow('AI credit renewal failed for 1 organisation(s): org-x. 3 renewed.');
   });
 });
