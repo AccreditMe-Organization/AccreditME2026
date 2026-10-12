@@ -27,9 +27,28 @@ export interface ITenant {
   };
 }
 
+// ACC-181 — mirrors the backend's IMaskedEmailConfig
+// (backend/src/foundation/tenant/email-config.ts). SECRETS ARE WRITE-ONLY:
+// each one reads 'set' or null, never its value.
+export type EmailProvider = 'resend' | 'smtp' | 'office365' | 'sendgrid' | 'ses';
+
 export interface IEmailConfig {
-  emailProvider: 'resend' | 'smtp' | 'office365' | 'sendgrid' | 'ses' | null;
-  config: Record<string, unknown> | null;
+  provider: EmailProvider | null;
+  /** The chosen provider's fields; each secret reads 'set' or null. */
+  settings: Record<string, string | number | null> | null;
+  /** When each secret was last set (ISO), or null. */
+  secretsSetAt: Record<string, string | null>;
+  /** AccreditMe's own sender (RESEND_FROM_EMAIL), or null when unset. */
+  defaultSender: string | null;
+}
+
+/**
+ * A save: the chosen provider and its block. A secret is included ONLY when a
+ * new value was typed — omitted, the stored one is kept.
+ */
+export interface IUpdateEmailConfig {
+  provider: EmailProvider;
+  [block: string]: string | Record<string, string | number>;
 }
 
 // ACC-46 Section 2.7.c — mirrors the backend's ITaskSlaTier/ITaskSlaSettings
@@ -78,8 +97,13 @@ export class TenantService {
     return this.http.get<IEmailConfig>(`${this.baseUrl}/email-config`);
   }
 
-  updateEmailConfig(dto: { emailProvider: string; config: Record<string, unknown> }): Observable<void> {
-    return this.http.patch<void>(`${this.baseUrl}/email-config`, dto);
+  updateEmailConfig(dto: IUpdateEmailConfig): Observable<IEmailConfig> {
+    return this.http.patch<IEmailConfig>(`${this.baseUrl}/email-config`, dto);
+  }
+
+  /** ACC-181 — Disconnect: back to AccreditMe's default delivery. */
+  disconnectEmailConfig(): Observable<IEmailConfig> {
+    return this.http.delete<IEmailConfig>(`${this.baseUrl}/email-config`);
   }
 
   // Deliberately narrow — a tenant admin may only toggle this one field;
