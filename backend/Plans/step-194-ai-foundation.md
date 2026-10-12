@@ -1,9 +1,8 @@
-# Step 194 — AI foundation (metering, monthly reset, organisation switch, platform key only)
+# Step 194 — AI foundation (metering, credit periods, organisation and feature switches, platform key only)
 
 Linear: **ACC-194** (High, lane B). **ACC-156** is its sub-issue and closes with it.
 Branch: `feature/ACC-194-ai-foundation`, from `origin/dev` at `361b84c`.
-Status: **PLAN — no code yet.** Decisions for Ahmad are in §13. Each one has a
-recommendation marked **(recommended)**.
+Status: **PLAN, revised with Ahmad's answers (12 Oct). No code yet.**
 
 The brief is the ticket's scope (items 1–9) and its out-of-scope list:
 - no provider choice;
@@ -12,8 +11,26 @@ The brief is the ticket's scope (items 1–9) and its out-of-scope list:
 - no platform AI admin screens;
 - no tenant AI settings page.
 
-This plan answers the eleven questions Ahmad asked on 12 Oct, each with
-file:line evidence from `361b84c`.
+All evidence is file:line at `361b84c`.
+
+## Revision log
+
+- **12 Oct, first draft (`284ffcc`):** questions Q1–Q11, decisions D1–D13.
+- **12 Oct, revision 1 (this version): Ahmad's answers.**
+  - **Agreed as recommended:** D1, D5, D6, D7, D9, D10, D11, D12, D13.
+  - **Changed:**
+    - **D2:** the credit period is anchored to the organisation's activation
+      date (§4).
+    - **D3:** the allocation follows the plan, with upgrade and downgrade timing
+      (§5).
+    - **D4:** costs are set, and `morning_briefing` is limited to al-nakheel, on
+      demand only (§8, §9).
+  - **D8:** agreed, plus an investigation of customer-hosted models (§16).
+  - **Also added:**
+    - every reader and writer of the old counters, listed (§1.4);
+    - effort and maximum output per feature, confirmed at build (§7);
+    - ACC-215 opened for the remaining settings race (§1.5).
+  - **New decisions D14–D19 are in §14.**
 
 ---
 
@@ -24,705 +41,876 @@ file:line evidence from `361b84c`.
 | Fact | Evidence |
 |---|---|
 | The provider makes a real Anthropic call, and nothing calls it | `providers/ai/anthropic-ai.provider.ts:35-110`. The only reference outside the provider is a commented-out stub at `foundation/lookup/lookup.service.ts:550` |
-| The model is hard-coded | `anthropic-ai.provider.ts:29` `defaultModel = 'claude-sonnet-4-6'`. Callers may override it: `:40`, and `ai.provider.ts:9` `model?: string` |
-| The tenant's own key wins over the platform key | `anthropic-ai.provider.ts:112-127` |
-| With no key at all, it still calls Anthropic | `:126` falls back to an **empty string**. "Not configured" shows up as an Anthropic 401 after a network round trip, logged as a generic failure |
-| The provider writes the log itself | `:85-107`, through `logInteraction()` `:129-151` |
-| The log keeps the first 200 characters of the prompt and response | `:24-25`, `:90-91`, `:103` |
-| `AI_PROVIDER` is bound in TenantModule and exported to everyone | `foundation/tenant/tenant.module.ts:31,39` |
-| `AiInteractionLog` has no cost, provider, tier or token fields | `prisma/schema.prisma:1990-2009` |
-| `AiFeatureCost` is platform-global: `featureKey` unique and `creditCost`, with no organisation | `schema.prisma:504-511` |
-| Organisation fields | `aiProvider AiProvider @default(ANTHROPIC)` `:360`; `aiConfig String?` (encrypted) `:391`; `settings Json?` `:401` |
-| Nothing writes `aiConfig` | It is read only at `tenant/tenant.service.ts:234` (reported as `'set'`/null). There is no write path in `backend/src` |
-| The balance reaches the screen from JSON | `tenant.service.ts:169-179` and `:206-213`. Missing values become 0 or false, and `enabled` defaults to **false** (`:207`). The screen is `admin-settings/components/ai-settings/ai-settings.component.ts:33-51` |
+| The model is hard-coded, and callers may override it | `anthropic-ai.provider.ts:29` (`claude-sonnet-4-6`), `:40`; `ai.provider.ts:9` |
+| The tenant's own key wins | `anthropic-ai.provider.ts:112-127` |
+| With no key at all, it still calls Anthropic | `:126` falls back to an **empty string** |
+| The provider logs the first 200 characters of the prompt and response | `:24-25`, `:90-91`, `:103` |
+| `AI_PROVIDER` is bound in TenantModule and exported | `foundation/tenant/tenant.module.ts:31,39` |
+| `AiProvider` enum | `ANTHROPIC`, `AZURE_OPENAI`, `OPENAI`, `OLLAMA` (`prisma/schema.prisma:33-38`) |
+| `AiInteractionLog` has no cost, provider, tier or tokens | `schema.prisma:1990-2009` |
+| `AiFeatureCost` is platform-global | `schema.prisma:504-511`. The platform saves only cost and description (`platform/plan/plan.service.ts:221-226`, update at `:224`) |
+| Nothing writes `aiConfig` | It is read only at `tenant/tenant.service.ts:234` |
+| **Plan assignment happens ONLY at tenant creation** | `platform/tenant/platform-tenant.service.ts:130` (`planId: dto.planId ?? null`, optional in `create-tenant.dto.ts:40`). **No route changes a tenant's plan afterwards.** The platform tenant routes are create, suspend, reactivate, extend-trial, modules, ai-credits and impersonate (`platform-tenant.controller.ts:45-119`) |
+| **There is no activation date** | `TenantStatus` is `TRIAL` / `ACTIVE` / `SUSPENDED` / `CANCELLED` / `OFFBOARDING` (`schema.prisma:46-52`). Creation defaults to `TRIAL`. The only write of `ACTIVE` is `reactivateTenant` (`platform-tenant.service.ts:188-190`), from `SUSPENDED`. Nothing moves `TRIAL` to `ACTIVE`, and no `activatedAt` exists. The nearest stored facts are `bootstrappedAt` (written once, `tenant.service.ts:457-458`, guarded by `isBootstrapped` at `:389`) and `createdAt` |
 
-**Shared database**
+**Shared database** (a read-only script; it printed counts, dates and platform
+tables, never a key or secret):
 
-Measured with a read-only count script. It printed counts and platform tables
-only, never a key.
-
-| Item | Count |
+| Item | Value |
 |---|---|
-| Organisations | 3 (platform, al-manara, al-nakheel) |
-| Organisations with a stored own key (`aiConfig`) | **0** |
-| `settings.ai` | **absent on all three**. The tenants' `settings` hold only `taskSla`, and the platform org's holds nothing |
+| Organisations | 3. All `TRIAL`, all with no plan, `trialEndsAt` null |
+| Provisioning (`bootstrappedAt`) | platform 2026-09-21T04:37Z; al-nakheel 2026-09-21T04:39Z; al-manara 2026-09-21T04:43Z |
+| Stored own key (`aiConfig`) | **0** organisations |
+| `settings.ai` | **absent on all three** |
 | `AiFeatureCost` rows | 0 |
 | `AiCreditPack` rows | 0 |
-| `Plan` rows | 0 |
+| **`Plan` rows** | **0** |
 | `AiInteractionLog` rows | 0 |
 
-**al-nakheel's starting state, which the live proof restores:** no `settings.ai`.
+**al-nakheel's starting state, which the live proof restores:**
+- no `settings.ai`;
+- no plan;
+- after the migration, every new AI column at its default.
 
 ---
 
-## 1. Atomic credits (Q1)
+## 1. Atomic credits (Q1, D1 agreed: dedicated columns)
 
-### 1.1 Every other settings writer reads and rewrites the whole JSON
+### 1.1 Why not the JSON
 
-Each of these reads `settings`, spreads it, and writes the whole object back:
-`findUnique`/`findFirst`, then `update({ data: { settings: { ...settings, x } } })`.
-None takes a row lock, and none runs in a transaction.
+Six writers read the whole `settings` JSON and write it back with no lock or
+transaction:
+- `tenant.service.ts:286-296`
+- `tenant.service.ts:319-335`
+- `tenant.service.ts:452-461`
+- `platform-tenant.service.ts:214-222`
+- `platform-tenant.service.ts:234-249`
+- `platform-settings.service.ts:35-54`
 
-| Writer | Who | Evidence |
-|---|---|---|
-| `updateAiOverageSetting` | tenant admin | `tenant/tenant.service.ts:286-296` |
-| `updateTaskSla` | tenant admin | `tenant.service.ts:319-335` |
-| `bootstrap` | tenant creation | `tenant.service.ts:452-461` |
-| `updateTenantModules` | platform admin | `platform/tenant/platform-tenant.service.ts:214-222` |
-| `allocateAiCredits` | platform admin | `platform-tenant.service.ts:234-249` (computes `creditsRemaining` itself, `:242`) |
-| `updateSettings` | platform admin, platform org only | `platform/settings/platform-settings.service.ts:35-54` |
+A stale copy written back would erase a deduction. **Moving the counters into
+their own columns takes them out of that race entirely.** The settings writers
+never write those columns.
 
-**What that means for a deduction kept in the JSON:**
-- Even a perfectly atomic deduction (a single `jsonb_set` under a row lock) can
-  be undone.
-- A writer above that read `settings` before the deduction committed writes its
-  stale copy back afterwards.
-- The deduction is then **erased**. The tenant got the call for free, and the
-  balance can drift in either direction.
+### 1.2 The columns (one additive migration, with §6's log fields and §8's switch)
 
-So locking only the AI path is not enough. **Every one of the six writers**
-would have to take the same lock, and so would any writer added later.
-"Every writer must remember X" is the shape ACC-82 forbids.
-
-### 1.2 Options
-
-- **A. Row lock plus one conditional `jsonb` update.**
-  - The AI path does `SELECT … FOR UPDATE` and a `jsonb_set` guarded by
-    `creditsUsed + cost <= monthlyCredits`.
-  - **All six writers** above change to lock-then-write inside a transaction.
-  - It needs no migration for the counters, but it touches tenant,
-    platform-tenant and platform-settings, plus bootstrap.
-  - It stays correct only while every future settings writer remembers the lock.
-- **B. Dedicated columns on `Organization`, in the same additive migration as
-  the log fields (recommended).**
-  - The counters leave the JSON.
-  - The settings writers never write these columns, so their read-modify-write
-    **cannot reach the counters**, and nothing in them changes for this ticket.
-  - The deduction is one conditional `UPDATE … RETURNING`. Postgres serialises
-    concurrent updates of one row, and under READ COMMITTED the second updater
-    re-checks the `WHERE` against the row the first one committed, so two calls
-    cannot both take the last credits.
-
-**Recommendation: B.** The measured data makes it cheap: no organisation has
-`settings.ai`, so there is nothing to backfill. The read API stays the same,
-because `mapToITenant` derives the same `ai` object from columns, so the
-screen does not change.
-
-### 1.3 The columns (option B)
+**`Organization`:**
 
 | Column | Type | Meaning |
 |---|---|---|
-| `aiMonthlyCredits` | `Int @default(0)` | The allowance, set by the platform admin's allocate. 0 means no allowance |
-| `aiCreditsUsed` | `Int @default(0)` | Used in `aiCreditsPeriod` |
-| `aiCreditsPeriod` | `String?` | The month the used count belongs to, as `YYYY-MM` (D2). Null means never used |
-| `aiCreditsNoticePeriod` | `String?` | The period whose "credits ran out" notice was sent (§9) |
+| `aiMonthlyCredits` | `Int @default(0)` | **The allocation:** the plan's credits, or a manual value (§5). 0 means no allowance |
+| `aiPendingMonthlyCredits` | `Int?` | A **lower** allocation waiting for the next renewal (a downgrade, §5). Null means none |
+| `aiCreditsUsed` | `Int @default(0)` | Used in the current period |
+| `aiCreditsPeriodStart` | `DateTime?` | When the current period began (§4). Null until the organisation first has an allocation |
+| `aiCreditsRenewsAt` | `DateTime?` | When the current period ends and the next begins (§4) |
+| `aiCreditsNoticeFor` | `DateTime?` | The `aiCreditsPeriodStart` whose "credits used up" notice was sent (§10) |
 
-**Three keys stay in `settings.ai`:**
-- `enabled`, the organisation switch (§3);
-- `overageEnabled`, which is unused because overage stays off (§2 and D9);
-- `resetDate`, which no longer needs storing because it is derived (§4).
+**`AiFeatureCost`** (§8):
 
-**`creditsRemaining` is never stored.** It is `aiMonthlyCredits` minus the used
-count, where the used count is 0 when the period is not the current one. Two
-fields holding one fact is ACC-82's stale-flag shape, and `allocateAiCredits`
-already had to compute it by hand at `:242`.
+| Column | Type | Meaning |
+|---|---|---|
+| `restricted` | `Boolean @default(false)` | When true, only the listed organisations may use the feature |
+| `allowedOrganizationIds` | `String[] @default([])` | The organisations a restricted feature is open to |
 
-### 1.4 The reservation, as one statement
+**`AiInteractionLog`** (§6): `creditCost Int?`, `provider AiProvider?`,
+`tier String?`, `inputTokens Int?`, `outputTokens Int?`.
+
+**What the migration does not contain:**
+- **no activation column:** D14 recommends `bootstrappedAt`, which every
+  organisation already has;
+- no `DROP`, no rename, no new enum and no new enum value.
+
+**`creditsRemaining` is never stored.** It is `aiMonthlyCredits − aiCreditsUsed`,
+and it is never negative because of the reservation's condition.
+
+**`settings.ai` keeps only `enabled`** (the organisation switch, §3). The old
+`monthlyCredits`, `creditsUsed`, `creditsRemaining`, `resetDate` and
+`overageEnabled` keys are then **ignored everywhere**. None exist in the data
+(§0).
+
+### 1.3 The reservation: one statement on the hot path
 
 ```sql
 UPDATE "Organization"
-SET "aiCreditsUsed"   = (CASE WHEN "aiCreditsPeriod" = $period THEN "aiCreditsUsed" ELSE 0 END) + $cost,
-    "aiCreditsPeriod" = $period
+SET "aiCreditsUsed" = "aiCreditsUsed" + $cost
 WHERE "id" = $organizationId
   AND "aiMonthlyCredits" > 0
   AND COALESCE(("settings" -> 'ai' ->> 'enabled')::boolean, true)
-  AND (CASE WHEN "aiCreditsPeriod" = $period THEN "aiCreditsUsed" ELSE 0 END) + $cost <= "aiMonthlyCredits"
-RETURNING "aiCreditsUsed", "aiMonthlyCredits";
+  AND "aiCreditsRenewsAt" > now()
+  AND "aiCreditsUsed" + $cost <= "aiMonthlyCredits"
+RETURNING "aiCreditsUsed", "aiMonthlyCredits", "aiCreditsPeriodStart";
 ```
 
-- **A stale period counts as zero used, decided live.** The decision never
-  depends on whether the reset job has run yet: anything read to make a decision
-  resolves live (ACC-82). The job (§4) persists the reset for display and the
-  record.
-- **Zero rows returned means refused.** One follow-up read picks the code: no
-  allowance or the switch off gives `AI_NOT_ENABLED`, otherwise
-  `AI_CREDITS_EXHAUSTED`. The state may change between the two statements; that
-  only affects which words are shown, never the balance.
-- **Allocate becomes a single-column write** (`aiMonthlyCredits`). It no longer
-  touches the counters, and it still merges `overageEnabled` into settings when
-  sent, as it does today.
+- **Concurrent calls cannot overspend.** Postgres serialises concurrent
+  updates of one row. Under READ COMMITTED the second re-checks the `WHERE`
+  against the row the first committed, so two calls cannot both take the last
+  credits, and the balance cannot go negative.
+- **When zero rows come back:**
+  - if `aiCreditsRenewsAt <= now()`, the period is due. The gateway runs
+    `renewIfDue()` (§4.3, the same function the job uses) and **retries the
+    reservation once**. So whether a call is allowed never depends on the job
+    having run (ACC-82: anything read to make a decision resolves live);
+  - otherwise, one read picks the refusal (§3).
 
-### 1.5 What remains racy, stated so it is not assumed fixed
+### 1.4 Every reader and writer of the old `settings.ai` counters, moved
 
-The six settings writers still race **each other**. For example, a modules
-change at the same moment as a task SLA change loses one of them. This predates
-this ticket and no longer touches credits. The smallest fix is a per-key
-`jsonb_set` in each writer.
+**Backend:**
 
-**Recommended:** a separate Low ticket, not this one (Risk R1).
+| File:line | Today | After |
+|---|---|---|
+| `foundation/tenant/tenant.service.ts:169-179` | Type of `settings.ai` | Only `enabled` remains |
+| `tenant.service.ts:206-213` | `mapToITenant` reads JSON counters, with `enabled ?? false` | Reads the columns. `enabled` is the **effective** value (D13). `resetDate` = `aiCreditsRenewsAt`. Adds `pendingMonthlyCredits` and `features` (§8.3) |
+| `tenant.service.ts:282-306` | `updateAiOverageSetting` writes `settings.ai.overageEnabled` | The route stays but its value is **ignored** (D9). The comment at `:282-285` is corrected. Removing the route is a later contract step |
+| `foundation/tenant/interfaces/tenant.interface.ts:34-38`, `dto/tenant-response.dto.ts:26-30` | Response shape | Same fields, plus `pendingMonthlyCredits` and `features`. `overageEnabled` is always `false` |
+| `foundation/tenant/dto/update-ai-overage.dto.ts:3-8` | Comment | Corrected |
+| `platform/tenant/platform-tenant.service.ts:32-35` | `OrgSettings.ai` type | Only `enabled` remains |
+| `platform-tenant.service.ts:106-110` | Tenant detail reads JSON counters | Reads the columns, plus `pendingMonthlyCredits` and the period dates |
+| `platform-tenant.service.ts:234-259` | `allocateAiCredits` writes `monthlyCredits` / `creditsRemaining` into JSON | Calls `AiAllocationService.setAllocation(org, value, 'manual')` (§5), which writes the columns. **No JSON write at all.** `overageEnabled` in the DTO is ignored (D9) |
+| `platform/tenant/dto/allocate-ai-credits.dto.ts:3-12` | DTO | `monthlyCredits` unchanged. `overageEnabled` stays optional and is ignored (removed in a later contract step) |
+| `platform/tenant/interfaces/platform-tenant.interface.ts:15-18` | Detail shape | Adds `pendingMonthlyCredits`, `periodStart`, `renewsAt` |
+| `platform-tenant.service.ts:121-133` | `createTenant` sets `planId` only | Also applies the plan's allocation (§5) |
+
+**Frontend:**
+
+| File:line | Today | After |
+|---|---|---|
+| `foundation/tenant/services/tenant.service.ts:22-26` | Tenant `ai` type | Adds `pendingMonthlyCredits` and `features` |
+| `tenant.service.ts:86-89` | `updateAiOverageSetting()` | Removed: there is no caller after D9 |
+| `foundation/admin-settings/components/ai-settings/ai-settings.component.ts:32-41` | Shows allocation, remaining and used from `GET /tenant` | Unchanged: same fields, now from the columns |
+| `ai-settings.component.ts:44-51`, `:75-78` | The overage toggle and its handler | **Removed (D9)** |
+| `platform/components/tenant-detail/tenant-detail.component.ts:98-107`, `:159-174`, `:208` | The allocation form, with an overage checkbox | The allocation input stays. **The overage checkbox and its form control are removed (D19).** The used and remaining read-outs are unchanged |
+| `platform/services/platform-tenant.service.ts:20-23`, `:70-71` | Detail type; `allocateAiCredits(id, monthlyCredits, overageEnabled?)` | Adds the new fields; `overageEnabled` is no longer sent |
+
+### 1.5 What remains racy
+
+The six writers still race **each other**. For example, a modules change and a
+task SLA change saved together lose one of them. That predates this ticket and
+no longer touches credits. It is **ACC-215** (Low, lane B, opened 12 Oct and
+linked to ACC-194).
 
 ---
 
 ## 2. Reserve, then call (Q2)
 
-The order inside the one gateway, `AiService.run()` (§10.1):
+The order inside the one gateway, `AiService.run()` (§11.1):
 
-1. **Load the feature's cost.** No row means refuse `AI_FEATURE_NOT_PRICED`.
-   This fails closed: an unpriced feature is never free.
-2. **Check the provider is configured.** The platform key must be present.
-   Without it, refuse `AI_PROVIDER_UNAVAILABLE` **before anything is
-   reserved**, so a call that cannot happen costs nothing and leaves no
-   reservation to undo.
-3. **Reserve** with the §1.4 statement. Zero rows means `AI_NOT_ENABLED` or
-   `AI_CREDITS_EXHAUSTED`. The balance can never go negative, because the
-   statement only succeeds when `used + cost <= allowance`.
-4. **Call the provider.**
-5. **On success:** write the log with `creditCost = cost` and return.
-6. **On failure** (any throw, a timeout or a non-2xx):
+1. **Load the feature's cost.** No row means `AI_FEATURE_NOT_PRICED`. It fails
+   closed: an unpriced feature is never free.
+2. **The feature switch (§8).** A restricted feature that this organisation is
+   not on the list for is refused `AI_NOT_ENABLED`, reason
+   `FEATURE_NOT_AVAILABLE`.
+3. **The provider is configured.** No platform key means
+   `AI_PROVIDER_UNAVAILABLE`, **before anything is reserved**.
+4. **Reserve** (§1.3), with an inline renewal if the period is due. Zero rows
+   means `AI_NOT_ENABLED` or `AI_CREDITS_EXHAUSTED` (§3).
+5. **Call the provider** with the feature's model, effort and maximum output
+   (§7).
+6. **On success:** log with `creditCost = cost` and return. If nothing can run
+   any more, claim and send the notice (§10).
+7. **On failure** (any throw, a timeout or a non-2xx):
    - refund with
-     `UPDATE … SET "aiCreditsUsed" = GREATEST("aiCreditsUsed" - $cost, 0) WHERE "id" = $org AND "aiCreditsPeriod" = $reservedPeriod`;
+     `UPDATE … SET "aiCreditsUsed" = GREATEST("aiCreditsUsed" - $cost, 0) WHERE "id" = $org AND "aiCreditsPeriodStart" = $reservedPeriodStart`;
    - log with `success = false` and `creditCost = 0`;
    - refuse `AI_PROVIDER_FAILED`.
 
-**Why the refund is keyed by the reserved period:** if a month boundary passes
-during the call, the old period's usage is gone, so there is nothing to refund.
-Refunding into the new period would wrongly give credits back.
+   **The refund applies only within the same period:** if the period renewed
+   during the call, the old period's usage is already gone, and refunding into
+   the new period would give credits away.
 
-**Overage stays off.** `overageEnabled` is never read. The service refuses at
-zero whatever the toggle says (decision D9 asks what to do with the toggle on
-the screen).
+**Overage stays off.** Nothing reads `overageEnabled`.
 
-**Known gap (R10):** a process that dies between step 3 and step 5 keeps the
-reservation, so the tenant loses that one call's credits. It is accepted
-deliberately: a reconciler for it would cost far more than the credits it
-recovers.
+**Accepted gap (R10):** a process that dies between steps 4 and 6 keeps the
+reservation.
 
 ---
 
 ## 3. Refusals (Q3) and the organisation switch
 
-There is one exception class, `AiRefusalException`
-(`foundation/ai/ai-refusal.ts`). It has the same shape as
-`StorageRefusalException` (`file-storage/storage-refusal.ts:119-140`): the
-body is `{ statusCode, message, error, code, ...details }`. The frontend maps
-the CODE and never the English message. The statuses follow the closest
-storage precedent so the two families agree.
+One class, `AiRefusalException` (`foundation/ai/ai-refusal.ts`), with the shape
+of `StorageRefusalException` (`file-storage/storage-refusal.ts:119-140`): the
+body is `{ statusCode, message, error, code, ...details }`. The statuses follow
+the storage precedents (`storage-refusal.ts:46,50,53,54`).
 
-| Code | HTTP | When | Precedent |
+| Code | HTTP | When | Details |
 |---|---|---|---|
-| `AI_NOT_ENABLED` | **409** | `aiMonthlyCredits = 0` (AccreditMe has allocated nothing), or `settings.ai.enabled === false` | `STORAGE_NOT_CONFIRMED` 409 (`storage-refusal.ts:46`): "not set up for you" |
-| `AI_CREDITS_EXHAUSTED` | **409** | An allowance exists, but `used + cost > allowance` this period. Details: `creditCost`, `creditsRemaining`, `renewsOn` (first day of the next period) | `STORAGE_QUOTA_EXCEEDED` 409 (`:54`) |
-| `AI_PROVIDER_UNAVAILABLE` | **503** | No platform key configured. **This is Railway today** | `STORAGE_NOT_CONFIGURED` 503 (`:50`) |
-| `AI_PROVIDER_FAILED` | **502** | The provider was called and failed. The reservation is refunded | `STORAGE_UNAVAILABLE` 502 (`:53`) |
-| `AI_FEATURE_NOT_PRICED` | **503** | No `AiFeatureCost` row for the feature. This is our configuration error, logged at `error` | — |
+| `AI_NOT_ENABLED` | **409** | The organisation has no allocation, or `settings.ai.enabled === false`, or the feature is restricted and the organisation is not on its list | `reason`: `NO_ALLOWANCE`, `SWITCHED_OFF` or `FEATURE_NOT_AVAILABLE`; `feature` |
+| `AI_CREDITS_EXHAUSTED` | **409** | `used + cost > allocation` this period | `creditCost`, `creditsRemaining`, `renewsAt` |
+| `AI_PROVIDER_UNAVAILABLE` | **503** | No platform key (Railway today) | — |
+| `AI_PROVIDER_FAILED` | **502** | The provider was called and failed. The reservation was refunded | — |
+| `AI_FEATURE_NOT_PRICED` | **503** | No cost row for the feature. Logged at `error` | `feature` |
 
-**Neither 409 is 403.** A 403 already means "you lack a permission" across the
-app (ACC-101 asserts on 403 messages), and an administrator told they lack a
-permission goes off to ask for one. These are states of the organisation, not
-permissions of the person.
+**Neither 409 is 403:** in this app a 403 means "you lack a permission"
+(ACC-101).
 
-**The switch:** AI is on for an organisation when `aiMonthlyCredits > 0` **and**
-`settings.ai.enabled` is not `false`.
-- An absent `enabled` counts as on, so an allocation alone turns AI on, as the
-  ticket requires ("an organisation has AI only when AccreditMe has allocated it
-  credits").
-- `enabled: false` is honoured when present. Nothing writes it until the tenant
-  AI settings page exists.
-- The mapper's `ai.enabled` (`tenant.service.ts:207`, today `?? false`) reports
-  this **effective** value (D13).
+**The switch (D13, agreed):** AI is on for an organisation when
+`aiMonthlyCredits > 0` **and** `settings.ai.enabled` is not `false`. An absent
+`enabled` counts as on. `GET /tenant` reports this effective value.
 
 ---
 
-## 4. Monthly reset job (Q4)
+## 4. Credit periods and renewal (Q4, D2 changed)
 
-- **Queue `ai-credits`, processor `AiCreditsResetProcessor`.** It is registered
-  only behind `workersEnabled()` (`common/queue/workers.config.ts:60-62`), in
-  the same `...(workersEnabled() ? [X] : [])` form as
+### 4.1 The rule (Ahmad, 12 Oct)
+
+Each organisation's credit period is **anchored to its activation date, in
+UTC**. Let *A* be the activation instant and *d* its UTC day of the month.
+
+- **When *d* is 1–28: monthly, on day *d*.**
+  - Renewals fall at **00:00 UTC on day *d*** of each month after *A*'s month.
+  - Every month has a day 1–28, so the day never drifts.
+- **When *d* is 29, 30 or 31: every 30 days, whatever the month's length.**
+  - Renewals fall at **00:00 UTC on *A*'s date plus 30·k days** (k = 1, 2, …).
+  - These organisations need no anchor beyond the stored period itself: the
+    next renewal is always the period's renewal plus 30 days.
+  - The *mode* is still decided from *A*, never from the current period start.
+    A 30-day period starting on 31 Jan renews on 2 Mar, and reading "day 2"
+    from that start would wrongly switch the organisation to monthly.
+- **The first period begins at *A*** and ends at the first renewal after it.
+- **The period "containing now"** is from the latest renewal at or before now
+  (or *A*) up to the next renewal after now. This is computed by one pure
+  function, `creditPeriodAt(activation, now)` in
+  `foundation/ai/ai-credit-period.ts`, which is the only place the rule lives.
+
+**Worked examples:**
+
+| Activation | Renewals |
+|---|---|
+| 21 Sep 2026, 04:39Z (al-nakheel, if D14 holds) | 21 Oct 00:00Z, 21 Nov, 21 Dec… The current period is 21 Sep 04:39 → **21 Oct 00:00Z** |
+| 31 Jan 2027 | 2 Mar 2027, 1 Apr, 1 May, 31 May, 30 Jun… (every 30 days) |
+| 28 Feb 2027 | 28 Mar, 28 Apr… (monthly) |
+
+### 4.2 Where activation lives (D14, new)
+
+**Today nothing records an "activation"** (§0). Every organisation is `TRIAL`,
+nothing writes `TRIAL` → `ACTIVE`, and there is no `activatedAt`.
+
+**What is stored is when each organisation became usable:**
+- `bootstrappedAt`, written once by `bootstrap()` (`tenant.service.ts:457-458`,
+  guarded by `isBootstrapped` at `:389`);
+- `createdAt`.
+
+**Recommended (D14): activation = `bootstrappedAt`, falling back to
+`createdAt`.**
+- **No new column, and existing organisations already have one** (§0, all on
+  21 Sep).
+- It is read when an organisation's period is first set up, and at every
+  renewal, to decide monthly or 30-day mode.
+- It is immutable once written.
+
+**The alternative:**
+- a new `activatedAt DateTime?`, written when a tenant first becomes `ACTIVE`;
+- **no code makes that transition today** (it belongs with billing, Phase 2);
+- so every organisation would have no activation, and therefore no period,
+  until that flow exists;
+- existing organisations would need a backfill to `bootstrappedAt` anyway.
+
+### 4.3 Renewal: one function, run hourly and inline
+
+`renewIfDue(organizationId)` runs in a short transaction:
+1. `SELECT … FOR UPDATE` on the organisation row.
+2. If `aiCreditsRenewsAt` is null or still in the future: **do nothing**. This
+   is what makes a re-run, or a second worker, harmless: the second waits on the
+   lock and then sees the new `aiCreditsRenewsAt`.
+3. Otherwise, compute the period containing now (`creditPeriodAt`), so a missed
+   renewal catches up straight to the current period with **one** refill, not
+   one per missed period. Then set:
+   - `aiCreditsUsed = 0`;
+   - `aiMonthlyCredits = COALESCE(aiPendingMonthlyCredits, aiMonthlyCredits)`
+     (a waiting downgrade takes effect here, §5);
+   - `aiPendingMonthlyCredits = NULL`;
+   - the new `aiCreditsPeriodStart` and `aiCreditsRenewsAt`.
+4. Write one `AuditLog` row: `event: 'ai_credits_renewed'`, with the previous
+   period, the used count and the allocation before and after. `actorId` is
+   optional (`common/services/audit-log.service.ts:27`).
+
+**The hourly job:**
+- **Queue and processor:** queue `ai-credits`, processor
+  `AiCreditsRenewalProcessor`. It is registered only behind `workersEnabled()`
+  (`common/queue/workers.config.ts:60-62`), in the same form as
   `file-storage.module.ts:42`. It is added to `WORKER_QUEUES`
-  (`workers.config.ts:53`), and `check:worker-gate` proves the registration.
-- **Schedule:** a repeat every **hour**, added in `onModuleInit` with a fixed
-  `jobId`, the same pattern as `storage-purge.processor.ts:41-43`.
-  - It runs hourly rather than as a cron on the 1st, so a deploy, a worker
-    restart or Redis being away at midnight on the 1st delays the reset by at
-    most an hour instead of a month.
-  - Each tick is one `UPDATE`.
-- **What a tick does:**
-  - The update:
-    `UPDATE "Organization" SET "aiCreditsUsed" = 0, "aiCreditsPeriod" = $current WHERE "aiCreditsPeriod" IS NOT NULL AND "aiCreditsPeriod" <> $current RETURNING "id", "aiCreditsPeriod" AS previous`.
-  - Then one `AuditLog` row per organisation reset (`event: 'ai_credits_reset'`,
-    with the previous period and the used count). `actorId` is optional
-    (`common/services/audit-log.service.ts:27`), so a system row is allowed.
-- **Which organisations:** only those whose stored period is an earlier month.
-  - An organisation that has never used AI has a null period and zero used, so
-    there is nothing to reset and it is left alone.
-  - The allowance (`aiMonthlyCredits`) is never touched: the allocation persists
-    month to month (D3).
-- **Idempotent, and two workers cannot double-reset:**
-  - The `WHERE` matches only stale periods. The first update moves the period
-    to the current month, so a re-run, or a second worker in the same second,
-    matches zero rows.
-  - **It cannot reset mid-month:** `$current` is computed from the clock at run
-    time, so a row already in the current period never matches.
-- **What it does to existing balances on the first run after deploy:
-  nothing.**
-  - Every organisation has `aiCreditsPeriod = NULL` (a new column), and
-    `settings.ai` is absent on all three, so no balance exists to carry over or
-    lose.
-  - The first run matches zero rows. That is the expected first-run result, and
-    it is logged as "0 organisations reset".
-- **Not where workers are off** (local, `RUN_WORKERS` unset): no job runs, and
-  nothing is wrong. The reservation (§1.4) and the mapper (§1.3) already treat a
-  stale period as zero used. The job only makes the stored numbers match.
-- **The period clock: a UTC calendar month (D2, recommended).** "Renews on" is
-  the 1st, 00:00 UTC, which is 03:00 in Riyadh. Using each tenant's own zone
-  would make a platform-wide reset a per-tenant schedule, for a difference of
-  three hours.
+  (`workers.config.ts:53`) and to the startup log's list of skipped work
+  (`:99-102`). `check:worker-gate` proves the registration.
+- **Schedule:** a repeat every hour, with a fixed `jobId`
+  (`storage-purge.processor.ts:41-43`).
+- **Each tick** selects `WHERE "aiCreditsRenewsAt" <= now()` and calls
+  `renewIfDue()` for each organisation. **It renews only organisations whose
+  next renewal time has passed.**
+- **The reservation calls the same function inline** when it meets a due period
+  (§1.3). So where workers are off (local, `RUN_WORKERS` unset), no decision is
+  wrong; the stored numbers simply wait for the next call or tick.
+
+**The first run after deploy changes nothing.** Every organisation has
+`aiCreditsRenewsAt = NULL` until it first gets an allocation, so the job matches
+zero rows. That is logged as "0 organisations renewed".
+
+**When a period is first set up:** the first time an organisation's allocation
+becomes greater than 0, by a plan or by hand (§5), its period is set to the one
+containing now: `aiCreditsPeriodStart`, `aiCreditsRenewsAt`, `aiCreditsUsed = 0`.
+Its credits are available at once.
 
 ---
 
-## 5. Removing the tenant's own key (Q5)
+## 5. Allocation follows the plan (Q4 continued, D3 changed)
 
-- **Count: 0** organisations have a stored `aiConfig` (§0).
-- **No write path exists:** `aiConfig` is read only at `tenant.service.ts:234`.
-  Nothing in `backend/src` writes it.
-- **The change:**
-  - delete `resolveApiKey()`'s tenant branch (`anthropic-ai.provider.ts:112-125`)
-    and the decrypt imports with it;
-  - the key comes only from the platform's `ANTHROPIC_API_KEY`;
-  - an empty or absent key is `AI_PROVIDER_UNAVAILABLE` (§3) and is never sent.
-- **The stored value: leave it untouched (D8, recommended).** There is nothing
-  to clear, because the count is zero, so no write to the shared database is
-  needed. Dropping the column is a later contract step (ACC-127), once nothing
-  reads it. `GET /tenant/config` keeps reporting `aiConfig: 'set' | null` until
-  then.
-- **If the count were ever non-zero:** clearing it waits for Ahmad's yes, as
-  this brief requires. The code would already ignore it, so leaving it in place
-  is safe.
+### 5.1 The rule (Ahmad, 12 Oct)
+
+- **When an organisation's plan is set or changed, its allocation becomes that
+  plan's `aiCreditsPerMonth`.** This replaces any earlier value, including a
+  manual one. There is no "custom" flag.
+- **A platform admin may still set a different allocation** for a special
+  agreement, through the existing `PATCH /platform/tenants/:id/ai-credits`. The
+  next plan set or change replaces it.
+- **Timing:**
+  - **Upgrade** (new ≥ current): `aiMonthlyCredits = new` at once, and any
+    pending downgrade is cleared. Remaining is allocation minus used, so **the
+    difference is added to the current period's balance immediately**.
+  - **Downgrade** (new < current): `aiPendingMonthlyCredits = new`, and the
+    current allocation stays until the **next renewal**, where `renewIfDue()`
+    applies it.
+  - **No period yet** (the allocation was 0): the allocation is set directly and
+    the period is set up (§4.3).
+- **Renewal restores the organisation's allocation:** `aiCreditsUsed = 0`
+  against `aiMonthlyCredits` (§4.3).
+- **One writer for all of this:** `AiAllocationService.setAllocation(org,
+  credits, source: 'plan' | 'manual')`. It is a short transaction with
+  `SELECT … FOR UPDATE`, the same lock as renewal, so a plan change and a renewal
+  cannot interleave. It writes one audit row (`event: 'ai_allocation_changed'`,
+  with the source, before, after and whether it is pending).
+
+### 5.2 Where plan assignment happens, and the smallest change
+
+**Today plan assignment exists only at creation**
+(`platform-tenant.service.ts:130`).
+
+**The smallest additive change:**
+1. **`createTenant`** (`:121-133`): after `bootstrap()`, if `planId` is given,
+   call `setAllocation(org, plan.aiCreditsPerMonth, 'plan')`.
+2. **A new `PATCH /platform/tenants/:id/plan`** (`PlatformGuard`, as its
+   siblings at `platform-tenant.controller.ts:45-96`):
+   - body `{ planId: string | null }`;
+   - sets `planId` and calls `setAllocation(…, 'plan')`;
+   - a null plan means an allocation of 0, which as a decrease waits for the
+     next renewal.
+
+   **Changing the plan also changes the tenant's module entitlements**, because
+   modules are read through `planId` (`tenant.service.ts:93-95`,
+   `foundation/tenant/module-entitlements.ts`). That is the plan's existing
+   meaning, not a side effect of this ticket.
+3. **No UI in ACC-194** (D18). The platform tenant detail has no plan picker,
+   and **no `Plan` rows exist yet** (§0), so the endpoint has nothing to
+   assign until plans are created.
+
+**Two rules that need Ahmad's word:**
+- **D15:** a manual allocation follows the same timing (raise now, lower at
+  renewal).
+- **D16:** editing a plan's `aiCreditsPerMonth` does **not** reach the
+  organisations already on it.
+
+**Consequence until plans exist:** every organisation stays at an allocation of
+0, which is `AI_NOT_ENABLED`, unless a platform admin allocates by hand. That is
+how al-nakheel gets credits for the demo and for the live proof.
 
 ---
 
-## 6. Logging (Q6)
+## 6. Logging (Q6, D5 and D7 agreed)
 
-**The migration adds these fields to `AiInteractionLog`, all nullable, so rows
-written before the deploy stay valid:**
+The migration adds these fields to `AiInteractionLog`, all nullable, so rows
+written before the deploy stay valid:
+- `creditCost Int?`: the cost on success, **0** when a call failed and was
+  refunded;
+- `provider AiProvider?`: the **existing** enum (`schema.prisma:33-38`);
+- `tier String?`: always `'STANDARD'` in this ticket;
+- `inputTokens Int?` and `outputTokens Int?`.
 
-| Field | Type | Written |
-|---|---|---|
-| `creditCost` | `Int?` | Credits charged: the feature's cost on success, **0** on a failed or refunded call |
-| `provider` | `AiProvider?` | The **existing** enum (`schema.prisma:360`), so no new enum and no new value |
-| `tier` | `String?` | `'STANDARD'` for every call in this ticket. A string, not an enum, because the ticket allows no new enum and tiers are out of scope in use |
-| `inputTokens` / `outputTokens` | `Int?` | From the provider's `usage` (D7) |
-
-**Logging the prompt text: the recommendation is to stop logging customer text
-(D5).**
-- Today `promptSummary` is the first 200 characters of the prompt (`:90`) and
-  `responseSummary` the first 200 of the answer (`:91`).
-- For `document_summary` that is the customer's document text, and its summary,
-  copied into a platform log:
-  - the customer cannot delete it;
-  - it is outside the file's own recycle-bin and purge rules (ACC-177);
-  - it outlives the file.
-- For the morning briefing it is a list of the user's work.
-
-**What gets logged instead, for every feature:**
-- `promptSummary` is a **description supplied by the caller**, never a slice of
-  the prompt. For example:
+**No customer text is logged, for any feature:**
+- `promptSummary` is a **description supplied by the caller**. For example:
   `document_summary · StoredFile cmv… · 18,240 characters in`.
 - `responseSummary` is `"<n> characters out"`.
-- The tokens, the model, the cost, the actor and the time.
+- Each row also carries the model, the tokens, the cost, the actor and the time.
 
-This still satisfies "every AI interaction logged: prompt, model used,
-response, actor, timestamp" as an audit of **what was done**. What was said is
-recorded where the person accepted it: the AI pattern is suggest → review →
-approve, and the approved text lives on the record it was approved for.
+The text a person accepted is recorded where they accepted it (suggest → review
+→ approve).
+
+A spec asserts that a marker string in the prompt never appears in the log row.
 
 ---
 
-## 7. The model (Q7)
+## 7. Model, effort and maximum output (Q7, D6 agreed)
 
-**Confirmed against Anthropic's models overview on 12 Oct 2026**
+**Confirmed against Anthropic's models overview on 12 Oct**
 (`platform.claude.com/docs/en/models/overview`):
 
 | Model | API ID | Price per million tokens (in / out) |
 |---|---|---|
-| Opus 5.5 | `claude-opus-5-5` | $4 / $20 |
 | Sonnet 5.5 | `claude-sonnet-5-5` | $2 / $10 |
+| Opus 5.5 | `claude-opus-5-5` | $4 / $20 |
 | Haiku 5.5 | `claude-haiku-5-5` | from $0.10 / $0.50 |
-| Fable 5.1 | `claude-fable-5-1` | $10 / $50 |
 
-- **The hard-coded `claude-sonnet-4-6` is now a LEGACY model.**
-- **This is confirmed again at build time**, as the ticket says, and the
-  commit message records the date.
+- **The hard-coded `claude-sonnet-4-6` is a legacy model.**
+- **The IDs are confirmed again at build time** and named in the commit.
 
-**The config: `foundation/ai/ai.config.ts`, the one place a model is named.**
+**Configuration: `foundation/ai/ai.config.ts`, the only place a model is
+named.**
+- Standard = `ANTHROPIC_MODEL_STANDARD`, else `claude-sonnet-5-5`.
+- Premium = `ANTHROPIC_MODEL_PREMIUM`, else `claude-opus-5-5` (configured,
+  unused).
+- `AiCompletionOptions.model` (`ai.provider.ts:9`) is removed: a caller picks a
+  feature, never a model.
 
-```ts
-resolveModel('ANTHROPIC', 'STANDARD') // env ANTHROPIC_MODEL_STANDARD, else 'claude-sonnet-5-5'
-resolveModel('ANTHROPIC', 'PREMIUM')  // env ANTHROPIC_MODEL_PREMIUM,  else 'claude-opus-5-5' (configured, unused)
-```
+**Every feature sets its effort and maximum output explicitly, in one table in
+`ai.config.ts`.** No call inherits the API's defaults.
+- Sonnet 5.5 thinks adaptively by default at `high` effort.
+- Thinking is billed as output and counts against `max_tokens`.
+- A missing effort would roughly double the cost, and a tight `max_tokens`
+  would cut answers short.
 
-- `AiCompletionOptions.model` (`ai.provider.ts:9`) is **removed**. A caller
-  picks a feature, and the feature has a tier. A caller can never choose a model
-  (CLAUDE.md: "a tenant admin selects a QUALITY TIER … never a specific model").
+| Feature | Effort (starting point) | `max_tokens` (starting point) |
+|---|---|---|
+| `task_description_drafting` | `low` | 2,000 |
+| `document_summary` | `medium` | 4,000 |
+| `morning_briefing` | `low` | 3,000 |
 
-**Default proposed: `claude-sonnet-5-5` for Standard (D6).**
-- Arabic summaries and drafting are quality-sensitive, and Sonnet is half Opus's
-  price.
-- Haiku 5.5 is the candidate to make drafting cheaper later. That is a config
-  change, not code.
+**At build time, before any feature value is final, confirm from Anthropic's
+documentation:**
+- the exact request shape for effort and thinking on the 5.x models;
+- **whether `temperature` is still accepted** alongside adaptive thinking (the
+  provider sends it when given, `anthropic-ai.provider.ts:56-58`; if it is
+  refused or ignored, the provider stops sending it);
+- that `anthropic-version: 2023-06-01` (`:64`) is still the version to send.
 
-**Two build-time checks, because the 5.x models changed the request:**
-1. **Thinking is adaptive and on by default** (Sonnet 5.5's default effort is
-   `high`). Thinking tokens are billed as output and count against
-   `max_tokens`.
-   - Each feature sets its effort explicitly. Drafting and briefing use `low`
-     and summary uses `medium`, unless testing says otherwise.
-   - Each feature sets a `max_tokens` that leaves room for thinking.
-2. **Whether `temperature` is still accepted** with adaptive thinking. The
-   provider sends it when given (`:56-58`). If it is not accepted, the provider
-   stops sending it.
+The values in the table above are adjusted then. The commit records what the
+documentation said and on what date.
 
 ---
 
-## 8. Feature costs (Q8). Ahmad decides
+## 8. Feature costs and the per-organisation feature switch (Q8, D4 changed)
 
-The arithmetic uses Sonnet 5.5 at $2 / $10 per million tokens, with thinking at
-the efforts in §7.
+### 8.1 The costs (Ahmad, 12 Oct)
 
-| Feature | Input tokens | Output tokens (incl. thinking) | Our cost per call |
-|---|---|---|---|
-| `task_description_drafting` | ~1.5k (instructions + the note + record context) | ~1k | ≈ $0.013 |
-| `morning_briefing` | ~6k (the user's open work) | ~2k | ≈ $0.032 |
-| `document_summary` | **capped at 30k** (about 20 pages) | ~2.5k | ≈ $0.085 worst case |
+| Feature | Credits | Notes |
+|---|---|---|
+| `task_description_drafting` | **2** | — |
+| `document_summary` | **15** | Summary input **capped at 30k tokens**. Whether a longer file is truncated or refused is ACC-193's call |
+| `morning_briefing` | **5 per on-demand run** | **Restricted to al-nakheel**, for demos |
 
-The ratio is about **1 : 2.5 : 6.5**. CLAUDE.md's credit table already lists
-`task_description_drafting: 2` and `morning_briefing: 5`, and those numbers
-match the ratio.
-
-**Proposed (D4):**
-- `task_description_drafting` **2**: keep CLAUDE.md's number.
-- `morning_briefing` **5**: keep CLAUDE.md's number.
-- `document_summary` **15**:
-  - 6.5 × the drafting cost is 13;
-  - rounded **up**, because CLAUDE.md's pricing rule calibrates against the
-    worst case, and the worst case is a document at the 30k cap;
-  - 15 sits inside CLAUDE.md's MEDIUM band (5–20).
-
-**The 30k input cap belongs to ACC-193.** Whether it truncates the input or
-refuses is that ticket's call, but the cost assumes it.
-
-**Seeding the rows (D12, recommended):** an idempotent
+They arrive through an **idempotent seed run after the deploy** (D12, agreed):
 `npm run seed:ai-feature-costs`.
-- It creates each row only if it is absent and **never overwrites** a cost
-  someone has changed.
-- It runs after the deploy.
-- The platform admin's AI feature costs screen can then adjust them. That
-  screen already exists (ACC-79's rail).
+- **Dry run by default**, with `--execute`.
+- It **creates a row only if it is absent and never overwrites one.** An edited
+  cost, or an edited restriction, stays as someone set it.
+- `morning_briefing` is created with `restricted: true` and al-nakheel's id,
+  **resolved by its slug at run time**.
+- **If al-nakheel is not found,** the seed creates the row restricted with an
+  empty list, open to nobody, and says so. It never creates it unrestricted.
 
-**Sizing note for whoever sets allowances (R4):** the briefing is per user per
-working day. 50 users × 22 days × 5 credits is **5,500 credits a month** from
-the briefing alone, which dwarfs every other feature. Allowances, or the
-briefing's cost, should be set with that in view.
+### 8.2 The switch: platform-controlled, on the feature's own row
+
+**Shape (D17):** two additive columns on `AiFeatureCost` (§1.2):
+`restricted Boolean @default(false)` and `allowedOrganizationIds String[]`.
+
+**Why two columns, not one list where empty means everyone:**
+- `AiCreditPack.availableTo` uses that one-list shape (`schema.prisma:496`).
+- **Here an empty list would mean "open to every organisation"**, and emptying
+  a demo feature's list by mistake would switch it on for every tenant.
+- With the flag, a restricted feature with an empty list is open to **nobody**.
+  It fails closed.
+
+**Who controls it:**
+- `AiFeatureCost` is platform data, written only by platform admins
+  (`plan.service.ts:221-226`, behind `PlatformGuard`).
+- That upsert updates only `creditCost` and `description` (`:224`), so **a cost
+  saved on the platform screen cannot clear a restriction.**
+- Until a platform screen shows it, the restriction is set by the seed, or by a
+  platform admin through a script. **ACC-194 builds no screen.**
+
+**The check:** step 2 of §2. If `restricted` and the organisation's id is not in
+`allowedOrganizationIds`, the call is refused `AI_NOT_ENABLED` with reason
+`FEATURE_NOT_AVAILABLE`, before any other check and without reserving anything.
+
+**Tenant isolation:**
+- the organisation id compared is always the one from the JWT;
+- the list holds ids only;
+- no tenant can read another tenant's membership in it, because a tenant sees
+  only its own `features` (§8.3);
+- a deleted organisation leaves a harmless stale id.
+
+### 8.3 What ACC-194 provides, and what ACC-198 must add
+
+**ACC-194 provides:**
+- the switch and its check in the gateway;
+- the seeded `morning_briefing` row (5 credits, al-nakheel only);
+- **`features` on `GET /tenant`'s `ai` object:**
+  - the priced features open to the caller's organisation, as
+    `{ key, creditCost }[]`;
+  - restricted features appear **only** for an organisation on their list;
+  - a screen can then show or hide a button without a refusal round trip;
+- the shared frontend refusal helper (§12), with the `FEATURE_NOT_AVAILABLE`
+  wording.
+
+**ACC-198 must add:**
+- **The on-demand endpoint**, for example `POST /ai/morning-briefing`:
+  - gated by a **tenant-admin permission**;
+  - the AI credits screen's own `tenant:manage_config`
+    (`core/navigation/nav-items.ts:279`) is the obvious candidate. That is
+    ACC-198's decision;
+  - it calls `AiService.run('morning_briefing', …)`.
+- **The button**, shown only when `features` includes `morning_briefing`.
+  Every other organisation would only ever be refused `AI_NOT_ENABLED`.
+- **A guard against a double press** (one run in flight per organisation), so
+  one click is never charged twice.
+- **No schedule:** no processor and no repeat. The briefing runs only from the
+  button. `check:worker-gate` stays as it is, and ACC-198's plan should say so.
+- **The prompt, and what the briefing covers.**
+- **ACC-198's Linear text** still says "for each user"; it needs rewording to
+  "on demand, by a tenant admin".
 
 ---
 
-## 9. The zero-balance notice (Q9)
+## 9. (Merged into §8.)
 
-**Trigger: once per period, at the first of these:**
-- a reservation that leaves `creditsRemaining` below the **cheapest active
-  feature cost**, so nothing can run any more;
-- or a refusal with `AI_CREDITS_EXHAUSTED`.
+---
 
-This catches "1 credit left" too, not only exactly 0. CLAUDE.md's step 7 says
-`= 0`, but with costs of 2, 5 and 15, a balance of 1 is just as spent (D10).
+## 10. The "credits used up" notice (Q9, D10 agreed)
 
-**Once per period, by claim:**
-```sql
-UPDATE "Organization" SET "aiCreditsNoticePeriod" = $period
-WHERE "id" = $org AND "aiCreditsNoticePeriod" IS DISTINCT FROM $period
-```
-This is `updateMany` returning a count. **Only the call that moves the value
-sends**, the same shape as `storageWarnedAt` (`file-storage/stored-file.service.ts:190-205`,
-send at `:200`). A new period makes the notice sendable again, with no reset
-needed.
+**When:** once per credit period, at whichever comes first:
+- a reservation that leaves less than the **cheapest feature open to this
+  organisation**, so nothing can run any more;
+- the first `AI_CREDITS_EXHAUSTED` refusal.
 
-**The existing notification path:**
-- An `AiNoticesService.creditsUsedUp()` modelled on
-  `StorageNoticesService.storageAlmostFull()`
-  (`file-storage/storage-notices.service.ts:40-64`).
-- It goes to the organisation's ACTIVE holders of an active `TENANT_ADMIN`
-  role, in-app, in English and Arabic, through `NotificationService`, with
-  `objectType: 'Organization'`.
-- It is sent **after** the reservation commits. A failure to send is logged and
-  never refunds or blocks anything.
+**How it is sent only once, by claim:**
+`updateMany({ where: { id, OR: [{ aiCreditsNoticeFor: null }, { aiCreditsNoticeFor: { not: periodStart } }] }, data: { aiCreditsNoticeFor: periodStart } })`.
+**Only the call that moves the value sends**, the same shape as
+`storageWarnedAt` (`file-storage/stored-file.service.ts:190-205`, send at
+`:200`). A new period makes it sendable again on its own.
+
+**The path:**
+- `AiNoticesService.creditsUsedUp()`, modelled on
+  `StorageNoticesService.storageAlmostFull()` (`storage-notices.service.ts:40-64`);
+- in-app, in English and Arabic, to the organisation's ACTIVE holders of an
+  active `TENANT_ADMIN` role, through `NotificationService`;
+- sent **after** the reservation commits. A failure to send is logged and never
+  refunds or blocks anything.
 
 **The words:**
 - **Title:** "AI credits used up" / «نفدت أرصدة الذكاء الاصطناعي».
-- **Body:** "Your organization has used all its AI credits for {month}. They
-  renew on {date}." /
-  «استخدمت مؤسستك جميع أرصدة الذكاء الاصطناعي لشهر {month}، وتتجدد في {date}.»
-- The dates are server-built text: the known ACC-95 limitation.
+- **Body:** "Your organization has used all its AI credits for this period.
+  They renew on {date}." /
+  «استخدمت مؤسستك جميع أرصدة الذكاء الاصطناعي لهذه الفترة، وتتجدد في {date}.»
+- This is server-built text: the known ACC-95 limitation.
 
-It is an **event**, so it goes to the bell (ACC-82). There is no Setup health
-condition, because running out is the expected end of a month, not a
-configuration gap.
+It is a bell event. There is no Setup health condition (ACC-82).
 
 ---
 
-## 10. The shape of the code
+## 11. The shape of the code
 
-### 10.1 One gateway, enforced
+### 11.1 One gateway, enforced
 
 - **New `foundation/ai/`:**
   - `AiModule`;
-  - `AiService` (the gateway, `run(featureKey, organizationId, actorId, request)`);
-  - `AiCreditService` (the reserve, refund, reset and notice claim, as raw SQL);
+  - `AiService` (the gateway);
+  - `AiCreditService` (reserve, refund, notice claim; raw SQL);
+  - `AiAllocationService` (`setAllocation`, `renewIfDue`);
+  - `ai-credit-period.ts` (the pure period rule);
   - `AiNoticesService`;
   - `ai-refusal.ts`;
   - `ai.config.ts`;
-  - `AiCreditsResetProcessor`, gated.
-- **The `AI_PROVIDER` binding moves** from TenantModule (`tenant.module.ts:31,39`)
-  into `AiModule` and is **not exported**. Only `AiService` is exported.
-- **`AnthropicAiProvider` is reduced to one thing: make the call.** It loses:
+  - `AiCreditsRenewalProcessor`, gated.
+- **The `AI_PROVIDER` binding moves** from `tenant.module.ts:31,39` into
+  `AiModule`, and is **not exported**. `PlatformTenantModule` imports `AiModule`
+  for `AiAllocationService`.
+- **`AnthropicAiProvider` only makes the call.** It takes
+  `{ model, system, prompt, maxTokens, effort }` and returns content, usage and
+  the model name. It loses:
   - the tenant key;
-  - the database access (no `PrismaService`);
-  - the logging;
+  - Prisma;
+  - logging;
   - model choice.
+- **`check:ai-gateway`:** a new backend scan that fails on any reference to
+  `AI_PROVIDER` or `AnthropicAiProvider` outside `foundation/ai/` and
+  `providers/ai/`. It keys off the symbol, not a file list, and CI discovers it.
+- **The stub comment** at `lookup.service.ts:550` is updated to name
+  `AiService`.
 
-  It takes `{ model, maxTokens, effort, systemPrompt, prompt }` and returns the
-  content and usage. The gateway logs, because the gateway knows the cost.
-- **A new backend scan, `check:ai-gateway`.**
-  - It fails if `AI_PROVIDER` or `AnthropicAiProvider` is referenced outside
-    `foundation/ai/` and `providers/ai/`, so a future feature cannot bypass
-    metering by injecting the provider.
-  - It keys off the symbol, not a list of files (ACC-120's "predicate, not
-    allowlist").
-  - CI discovers it automatically (`ci.yml` discovers `check:*`).
-- **The commented stub** at `lookup.service.ts:550` is updated to name
-  `AiService`, so it does not teach the bypass.
-
-### 10.2 Reads and writes moved to columns
-
-- `tenant.service.ts:169-213`: `mapToITenant` derives the same `ai` object
-  from columns plus `settings.ai.enabled`/`overageEnabled`:
-  - `monthlyCredits`;
-  - `creditsUsed`, which is 0 when the period is stale;
-  - `creditsRemaining`;
-  - `resetDate`, the next 1st;
-  - `enabled`, the effective value.
-
-  The frontend contract is unchanged.
-- `platform-tenant.service.ts:94-110`: the same derivation for the platform
-  tenant detail.
-- `platform-tenant.service.ts:234-249`: `allocateAiCredits` writes
-  `aiMonthlyCredits` and still merges `overageEnabled` into settings when sent.
-  It stops writing `monthlyCredits`, `creditsUsed` and `creditsRemaining` into
-  the JSON.
-
-### 10.3 Migration (additive only)
+### 11.2 Migration (additive only)
 
 One migration, `add-ai-metering-columns`:
-- the four `Organization` columns (§1.3), defaulted or nullable;
-- the five `AiInteractionLog` fields (§6), all nullable.
+- the six `Organization` columns;
+- the two `AiFeatureCost` columns;
+- the five `AiInteractionLog` fields.
 
-It has no `DROP`, no rename, no new enum and no new enum value.
+All are defaulted or nullable. There is no drop, no rename, no new enum and no
+new value.
 
 **It is safe for the old container that is still serving during the
-pre-deploy migration (ACC-127).** That container's Prisma client never selects
-columns it does not know, and the shared database has no data in the old
-`settings.ai` keys to strand.
+pre-deploy migration (ACC-127).**
 
-**It is NOT applied to the shared database before the PR deploys** (this
-brief's rule). Locally it is generated with `--create-only`, and CI applies it
-to its own ephemeral Postgres (`ci.yml:136-141`).
-
----
-
-## 11. Tests and the live proof (Q11)
-
-**Unit tests, with the provider mocked:**
-- `AiService`:
-  - the order of §2;
-  - every refusal code with its status and details;
-  - unavailable is refused before reserving;
-  - a failed call is refunded and logged with `creditCost: 0`;
-  - the log carries cost, provider, tier and tokens;
-  - **no customer text in the log** (asserted against a prompt containing a
-    marker string);
-  - an unpriced feature is refused.
-- `AiCreditService`: the SQL text and its parameters. This is weak on its own,
-  and the database spec below is the real proof.
-- The reset processor and its gate (`check:worker-gate` plus a spec), the notice
-  claim (once per period), the mapper derivation (stale period reads as zero
-  used) and allocate writing the column.
-
-**A concurrency spec against a real database: new `npm run test:db`.**
-- Jest with `testRegex` `\.db-spec\.ts$`, against the CI job's ephemeral
-  Postgres.
-- It runs as a **new CI step after `prisma migrate deploy`** (`ci.yml:136-141`).
-  Today `npx jest` runs *before* migrations (`ci.yml:134`) and has no database.
-- **It fails rather than skips without `DATABASE_URL`**, because a spec that
-  silently skips is ACC-120's vacuous pass.
-- **What it proves:**
-  1. **Concurrent calls cannot overspend:** an allowance of 100, 50 concurrent
-     reservations of 3 → **exactly 33** succeed, and `aiCreditsUsed = 99`.
-  2. **A settings write cannot erase a deduction:** while the reservations run,
-     concurrent `updateTenantModules`-style read-modify-writes of `settings`
-     leave `aiCreditsUsed` exactly as the successful reservations made it.
-  3. **The reset cannot double-run:** two concurrent reset ticks → one update,
-     one no-op.
-  4. **A refund is keyed by period:** a refund after the period moved changes
-     nothing.
-
-**Tenant isolation:** every reservation, refund and claim is keyed by the
-organisation's own id. Specs named with the gate's exact string
-`should NOT return records belonging to a different tenant` (the ACC-44 lesson)
-assert:
-- org B is untouched by org A's reservation and refund;
-- the log row carries org A's id;
-- the notice goes only to org A's admins.
-
-**Local verification limit:** Docker is not installed here, so the database
-spec runs in CI only. That is stated in the report rather than implied green
-locally.
-
-**The live proof: AFTER the PR deploys (R2),** because the new columns must not
-reach the shared database before the deploy, and there is no local Postgres. It
-is a **STOP 2**, like ACC-185's post-deploy run.
-1. `npm run seed:ai-feature-costs` (dry run first).
-2. As the platform admin, allocate al-nakheel **20** credits on its tenant
-   record (the existing screen or API).
-3. A scratchpad script, run from a local backend at the merged commit with
-   `RUN_WORKERS` unset, calls `AiService.run('task_description_drafting', …)`
-   in-process for al-nakheel. The key is read from the local `.env` and never
-   printed.
-
-   **What it checks:**
-   - one real answer;
-   - `aiCreditsUsed = 2`;
-   - one `AiInteractionLog` row with `creditCost 2`, `provider ANTHROPIC`,
-     `tier STANDARD`, tokens, and no prompt text;
-   - a refusal with `AI_CREDITS_EXHAUSTED` once the allowance is spent by
-     setting the allowance to 2;
-   - the notice sent once.
-4. **Restore al-nakheel to its starting values:**
-   - `aiMonthlyCredits = 0`, `aiCreditsUsed = 0`;
-   - `aiCreditsPeriod = NULL`, `aiCreditsNoticePeriod = NULL`;
-   - `settings.ai` absent, as measured in §0;
-   - the notice deleted from the admins' bells.
-5. **The `AiInteractionLog` row stays.** It is the record of a real call. The
-   report names it.
+**It is NOT applied to the shared database before the PR deploys.** It is
+generated locally with `--create-only`, and CI applies it to its own ephemeral
+Postgres (`.github/workflows/ci.yml:136-141`).
 
 ---
 
 ## 12. Frontend: the shared refusal helper (Q10)
 
-**`frontend/src/app/core/ai/ai-refusal.ts`**, beside
-`core/http/refusal.ts` and built on its `refusalCode()` / `refusalBody()`
-(`core/http/refusal.ts:16-26`).
+**`frontend/src/app/core/ai/ai-refusal.ts`**, built on `refusalCode()` /
+`refusalBody()` (`core/http/refusal.ts:16-26`).
+- **Input:** an error.
+- **Output:** `{ kind, messageKey, params }` or null.
+- `renewsAt` is formatted through `FormatService` (ACC-94).
 
-```ts
-export type AiRefusalKind = 'notEnabled' | 'creditsUsedUp' | 'unavailable';
-export interface AiRefusal { kind: AiRefusalKind; messageKey: string; params: Record<string, string> }
-export function aiRefusal(err: unknown, format: FormatService): AiRefusal | null;
-```
+| Key | When | English | Arabic |
+|---|---|---|---|
+| `ai.refusal.notEnabled` | `AI_NOT_ENABLED`, `NO_ALLOWANCE` or `SWITCHED_OFF` | AI isn't turned on for your organization. Ask your administrator. | الذكاء الاصطناعي غير مفعّل لمؤسستك. تواصل مع مسؤول النظام. |
+| `ai.refusal.featureNotAvailable` | `AI_NOT_ENABLED`, `FEATURE_NOT_AVAILABLE` | This AI feature isn't available for your organization. | ميزة الذكاء الاصطناعي هذه غير متاحة لمؤسستك. |
+| `ai.refusal.creditsUsedUp` | `AI_CREDITS_EXHAUSTED` | Your organization has used all its AI credits for this period. They renew on {{date}}. | استخدمت مؤسستك جميع أرصدة الذكاء الاصطناعي لهذه الفترة. تتجدد في {{date}}. |
+| `ai.refusal.unavailable` | `AI_PROVIDER_UNAVAILABLE`, `AI_PROVIDER_FAILED`, `AI_FEATURE_NOT_PRICED` | AI isn't available right now. Try again later. | الذكاء الاصطناعي غير متاح حاليًا. حاول مرة أخرى لاحقًا. |
 
-- `AI_NOT_ENABLED` maps to `notEnabled`.
-- `AI_CREDITS_EXHAUSTED` maps to `creditsUsedUp`, with `renewsOn` formatted by
-  `FormatService` (ACC-94 rules: Latin digits, the user's calendar).
-- `AI_PROVIDER_UNAVAILABLE`, `AI_PROVIDER_FAILED` and `AI_FEATURE_NOT_PRICED`
-  map to `unavailable`.
-- Anything else returns `null`, and the caller shows its usual error.
-
-| Key | English | Arabic |
-|---|---|---|
-| `ai.refusal.notEnabled` | AI isn't turned on for your organization. Ask your administrator. | الذكاء الاصطناعي غير مفعّل لمؤسستك. تواصل مع مسؤول النظام. |
-| `ai.refusal.creditsUsedUp` | Your organization has used all its AI credits for this month. They renew on {{date}}. | استخدمت مؤسستك جميع أرصدة الذكاء الاصطناعي لهذا الشهر. تتجدد في {{date}}. |
-| `ai.refusal.unavailable` | AI isn't available right now. Try again later. | الذكاء الاصطناعي غير متاح حاليًا. حاول مرة أخرى لاحقًا. |
-
-The helper has a spec and no consumer yet. ACC-193, ACC-197 and ACC-198 are its
-first callers. The parameter is named `date`, not `count`, so the
-translation-keys spec's plural check does not flag it.
+The helper has a spec and no consumer yet; ACC-193, ACC-197 and ACC-198 are its
+callers. The parameter is `date`, so the translation-keys plural check does not
+flag it.
 
 ---
 
-## 13. Decisions for Ahmad
+## 13. Tests and the live proof (Q11, D11 agreed)
+
+**Unit tests, with the provider mocked:**
+- `AiService`:
+  - the order in §2;
+  - every refusal, with its status, reason and details;
+  - a restricted feature refused before anything is reserved;
+  - provider unavailable refused before reserving;
+  - the refund on failure, keyed by period;
+  - the log fields, and no customer text;
+  - an unpriced feature refused.
+- `creditPeriodAt()`, as a table:
+  - activations on the 1st, the 28th, the 29th, the 30th and the 31st;
+  - February in leap and non-leap years;
+  - catch-up across several missed periods;
+  - "30-day mode never turns monthly".
+- `setAllocation`: upgrade adds at once and clears pending; downgrade is
+  pending; first allocation sets up the period; plan replaces manual.
+- `renewIfDue`: applies pending, a no-op when not due.
+- The renewal processor and its gate; the notice claim; the mapper's effective
+  `enabled` and `features`; `createTenant` and the plan endpoint applying the
+  allocation.
+
+**`npm run test:db`, a new CI step after `prisma migrate deploy`.**
+- It runs against the ephemeral Postgres (`ci.yml:136-141`).
+- It **fails, rather than skips, without `DATABASE_URL`**.
+- **What it proves:**
+  1. **Concurrent calls cannot overspend:** an allocation of 100, 50 concurrent
+     reservations of 3 → exactly 33 succeed, and used = 99.
+  2. **A settings write cannot erase a deduction:** concurrent whole-JSON
+     `settings` writes leave `aiCreditsUsed` exactly as the reservations made
+     it.
+  3. **Renewal cannot double-run:** two concurrent `renewIfDue()` calls for a
+     due organisation → one renewal, one no-op.
+  4. **A refund is keyed by period:** a refund after the period moved changes
+     nothing.
+  5. **A plan change and a renewal do not interleave:** they serialise on the
+     row lock.
+
+**Tenant isolation**, named with the gate's exact string (ACC-44):
+- a reservation, refund, renewal or allocation for org A never touches org B;
+- the log row carries A's id;
+- the notice reaches only A's admins;
+- `features` for A never lists a feature restricted to B.
+
+**Limits:**
+- Docker is not installed here, so the database spec runs in CI only.
+- **The live proof is a STOP 2 after the deploy.** The migration must not reach
+  the shared database first.
+
+**The live proof:**
+1. `npm run seed:ai-feature-costs`: a dry run, then `--execute`.
+2. As the platform admin, allocate al-nakheel **20** credits by hand. Its period
+   is set up: 21 Sep → 21 Oct, if D14 holds.
+3. From a local backend at the merged commit, with `RUN_WORKERS` unset and the
+   key read from the local `.env` and never printed, a scratchpad script calls
+   `AiService.run('task_description_drafting', …)` for al-nakheel in-process.
+   **What it checks:**
+   - one real answer;
+   - `aiCreditsUsed = 2`;
+   - one log row with cost 2, provider `ANTHROPIC`, tier `STANDARD`, tokens and
+     no prompt text;
+   - `morning_briefing` is refused `FEATURE_NOT_AVAILABLE` for al-manara, and
+     allowed for al-nakheel (one call, 5 credits);
+   - lowering the allocation to the amount used gives `AI_CREDITS_EXHAUSTED`,
+     and the notice is sent once.
+4. **Restore al-nakheel exactly:**
+   - `aiMonthlyCredits 0`, `aiPendingMonthlyCredits null`, `aiCreditsUsed 0`;
+   - `aiCreditsPeriodStart`, `aiCreditsRenewsAt` and `aiCreditsNoticeFor` null;
+   - `settings.ai` absent, and no plan;
+   - the notices deleted.
+5. **The log rows stay**, as the record of real calls. The report names them.
+
+---
+
+## 14. Decisions
+
+**Agreed (Ahmad, 12 Oct):**
+- D1 dedicated columns;
+- D5 no customer text in the log;
+- D6 `claude-sonnet-5-5`, overridable;
+- D7 token counts;
+- D8 leave the own-key column untouched;
+- D9 hide the overage toggle;
+- D10 the notice when nothing can run or at the first refusal, once per period;
+- D11 `test:db`;
+- D12 an idempotent seed;
+- D13 the effective "AI enabled".
+
+**Changed (Ahmad, 12 Oct):**
+- **D2:** periods are anchored to activation, monthly on days 1–28, every 30
+  days on the 29th–31st (§4).
+- **D3:** the allocation follows the plan; upgrade at once, downgrade at renewal
+  (§5).
+- **D4:** costs 2 / 15 / 5, with `morning_briefing` al-nakheel only and on
+  demand (§8).
+
+**New decisions for Ahmad:**
 
 | # | Decision | Recommendation |
 |---|---|---|
-| **D1** | Where the counters live | **Dedicated `Organization` columns, in the one additive migration (recommended)**, over a row lock plus `jsonb` update, which would need all six settings writers changed (§1) |
-| **D2** | The period clock | **UTC calendar month (recommended)**, renewing on the 1st at 00:00 UTC. Alternative: each tenant's working-calendar zone |
-| **D3** | What the reset restores | **The tenant's own allocation (`aiMonthlyCredits`), which persists month to month (recommended)**. Not `Plan.aiCreditsPerMonth`: no plans exist, and the ticket makes the platform tenant record the source. CLAUDE.md's "Monthly BullMQ job" lines get corrected |
-| **D4** | Credit costs | **`task_description_drafting` 2, `morning_briefing` 5, `document_summary` 15 with a 30k-token input cap (recommended)** (§8) |
-| **D5** | Prompt and response text in `AiInteractionLog` | **Stop logging customer text for every feature, and log a caller-supplied description, sizes and tokens instead (recommended)**. Alternative: keep the 200-character slices |
-| **D6** | Default model | **`claude-sonnet-5-5` for Standard (recommended)**, configurable through `ANTHROPIC_MODEL_STANDARD`. Premium is mapped to `claude-opus-5-5` but unused |
-| **D7** | Token counts on the log | **Add `inputTokens` and `outputTokens` (recommended)**: they are what reconciles our cost, and CLAUDE.md asks for "accurate cost reconciliation" |
-| **D8** | The stored own-key column | **Leave untouched (recommended).** The count is 0, so there is nothing to clear. Drop the column in a later contract step |
-| **D9** | The overage toggle on the tenant's AI credits screen | **Hide it (recommended)**: it promises a behaviour that does not exist, and the service ignores it. A one-line template change. Alternative: leave it and document it |
-| **D10** | When the "credits used up" notice fires | **When nothing can run any more, or at the first refusal, once per period (recommended)**, rather than only at exactly 0 |
-| **D11** | A database-backed concurrency spec in CI | **Yes: a `test:db` step after migrations, failing without a database (recommended)** |
-| **D12** | How the three `AiFeatureCost` rows arrive | **An idempotent seed script run after deploy, never overwriting (recommended)**. Alternative: entered by hand on the platform screen |
-| **D13** | What `ai.enabled` reports on `GET /tenant` | **The effective value: allocated and not switched off (recommended)**. Today it reports `?? false` |
+| **D14** | What "activation date" means, since nothing records one today | **Provisioning: `bootstrappedAt`, falling back to `createdAt` (recommended).** No new column, and every organisation already has one. Alternative: a new `activatedAt` for `TRIAL` → `ACTIVE`, which no code writes until billing exists |
+| **D15** | Timing of a manual allocation by a platform admin | **The same as a plan change: a raise applies now, a cut at the next renewal (recommended)** |
+| **D16** | Editing a plan's `aiCreditsPerMonth` | **Does not reach organisations already on the plan; it applies when their plan is next set or changed (recommended).** Propagating would silently overwrite special agreements. Alternative: apply to every organisation on the plan, with the same raise and cut timing |
+| **D17** | Shape of the per-organisation feature switch | **`restricted` flag plus `allowedOrganizationIds`, where a restricted feature with an empty list is open to nobody (recommended)**, over one list where empty means everyone (the `AiCreditPack.availableTo` shape) |
+| **D18** | Changing a tenant's plan | **A backend endpoint only in ACC-194, with no picker on the platform tenant detail (recommended).** No `Plan` rows exist yet, so a picker would have nothing to show |
+| **D19** | The **platform** tenant detail's overage checkbox (`tenant-detail.component.ts:102-103`), which D9 did not name | **Remove it too, and stop sending `overageEnabled` from allocate (recommended).** It sets a value nothing reads |
 
 ---
 
-## 14. Risks
+## 15. Risks
 
-- **R1.** The settings writers still race each other (§1.5). The counters are
-  out of that race, but modules, task SLA, overage and bootstrap can still lose
-  each other's writes. **Recommended:** a separate Low ticket (per-key
-  `jsonb_set`).
-- **R2. The live proof cannot run before the deploy.** The migration must not
-  reach the shared database first, and there is no local Postgres (Docker is not
-  installed). The proof is a post-deploy STOP 2. **Until then the concurrency
-  proof is the CI database spec only.**
-- **R3. Production refuses every call until ACC-193 adds a key.**
-  `ANTHROPIC_API_KEY` stays off Railway, as instructed. After deploy, every
-  production call refuses `AI_PROVIDER_UNAVAILABLE`, which is correct and is
-  what the frontend helper is for. It is also why the live proof runs from a
-  local backend.
-- **R4. The morning briefing's volume** dominates any allowance (§8).
-- **R5. 5.x request semantics** (adaptive thinking billed as output, and
-  `temperature`): verified at build. A wrong `max_tokens` would truncate
-  answers, and a missing effort would roughly double the cost.
-- **R6. CLAUDE.md is wrong in three places this ticket touches.** It is fixed in
-  the docs step:
-  - the "AI Runtime Flow" (deduct after the call; `creditsRemaining` stored;
+- **R1. The settings writers still race each other** (§1.5). → **ACC-215.**
+- **R2. The live proof cannot run before the deploy**, and there is no local
+  Postgres. Until then the concurrency proof is the CI database spec.
+- **R3. Production refuses every call until a key is added.**
+  `ANTHROPIC_API_KEY` stays off Railway, so every production call refuses
+  `AI_PROVIDER_UNAVAILABLE` until ACC-193 adds a key.
+- **R4. With no `Plan` rows, plan-driven allocation does nothing yet.** Every
+  organisation is at 0 until plans exist, or until a platform admin allocates
+  by hand.
+- **R5. 5.x request semantics** (thinking billed as output, effort,
+  `temperature`): confirmed at build (§7).
+- **R6. CLAUDE.md is wrong in four AI sections**, corrected in the docs step:
+  - the AI Runtime Flow (deduct after the call; `creditsRemaining` stored;
     notice at exactly 0);
-  - "Organization AI Settings" (the counters in JSON);
-  - "Monthly BullMQ job" (reset to the Plan value).
+  - Organization AI Settings (the counters in JSON);
+  - the monthly job (it resets to the Plan value on the 1st);
+  - the AI credit-cost table (`document_summary` is missing; `morning_briefing`
+    is described as a daily per-user feature).
 - **R7. The provider's error message includes Anthropic's response body**
-  (`anthropic-ai.provider.ts:71-72`). That body does not contain our key, but
-  the new gateway logs only the status and Anthropic's error type, never the
-  body, so nothing customer-derived reaches stdout either.
-- **R8. Expand-then-contract.** The old `settings.ai` credit keys become dead
-  keys. None exist in data (§0), so the contract step is code-only:
-  - nothing writes them after this ticket;
-  - the `OrgSettings` / mapper types drop them;
-  - nothing on the database needs contracting except `aiConfig` (D8).
-- **R9. The worker gate's startup log** (`workers.config.ts:99-102`) lists what
-  a disabled process does not run. The AI reset is added to that sentence, so a
-  deployment with workers off says so.
-- **R10. A crash mid-call keeps the reservation** (§2). This is accepted
-  deliberately.
+  (`anthropic-ai.provider.ts:71-72`). The gateway logs only the status and the
+  error type.
+- **R8. Expand-then-contract:**
+  - the old `settings.ai` counter keys become dead (none exist in the data);
+  - the overage routes and the DTO field are ignored now and removed in a later
+    contract step;
+  - `aiConfig` stays (D8).
+- **R9. Renewal day.** If D14 holds, al-nakheel and al-manara both renew on the
+  21st (the next is 21 Oct, 00:00Z). A live proof done after the deploy but
+  before the 21st, and then restored, leaves no period behind.
+- **R10. A crash mid-call keeps the reservation** (accepted).
+- **R11. `allowedOrganizationIds` holds ids with no foreign key.** It is safe
+  because it is only ever compared with the JWT's organisation. A deleted
+  organisation leaves a stale id that matches nobody.
+- **R12. A plan change also changes module entitlements.** That is the existing
+  meaning of `planId`, but the plan endpoint is the first way to change it after
+  creation. Its audit row records the old and new plan.
 
 ---
 
-## 15. Build order (one commit each)
+## 16. Investigation: customer-hosted models in closed environments (no implementation)
+
+**The question:** a customer in a closed environment runs its own model server
+on premises (Ollama, vLLM, LM Studio or similar) and wants AccreditMe's AI
+features to use it.
+
+**Can the provider interface take it? Yes, after ACC-194.**
+- The reduced provider contract (§11.1) is provider-neutral: model, system
+  prompt, prompt and maximum output in; content, token usage and the model name
+  out.
+- Every server named above exposes an **OpenAI-compatible
+  `/v1/chat/completions`**: `messages`, `max_tokens`, and
+  `usage.prompt_tokens` / `completion_tokens` in the response. That maps onto
+  the contract one to one.
+- `effort` has no equivalent and is ignored.
+- So an `OpenAiCompatibleAiProvider` is a second class behind the same
+  interface. The gateway, metering, logging and refusals are untouched.
+- The `AiProvider` enum already has `OLLAMA` and `OPENAI` (`schema.prisma:33-38`).
+  A generic "customer-hosted" value would be a new enum value, which is decided
+  when this is built.
+
+**Per deployment or per organisation?**
+
+| | Per deployment (Tier 3 on-premises; Tier 2 dedicated) | Per organisation on the shared cloud (Tier 1) |
+|---|---|---|
+| Who configures | AccreditMe or the customer's IT, at install, in the deployment's environment (endpoint, model, optional auth header) | A tenant admin enters an endpoint and credential |
+| "Tenants never bring a key" | Holds: it is deployment configuration, like the database URL, not a tenant setting | **Broken:** a tenant-supplied endpoint and credential is exactly what that rule rejects |
+| Network | Same network as the model server. Private addresses are allowed, as `STORAGE_ALLOW_PRIVATE_ENDPOINTS` does for storage (ACC-177) | Our cloud must reach into their network: the model server exposed to the internet, or a VPN or private link, plus TLS and an allowlist of our egress addresses (not fixed on Railway). A per-tenant URL is also an SSRF path that would need ACC-177's connect-time guard |
+| Data residency | **The real benefit:** prompts and documents never leave the customer's network | **None gained:** their data is already in our EU cloud, and sending it to their server adds a hop rather than removing one |
+
+**Metering:**
+- Credits exist to cover **AccreditMe's** model cost. When the customer runs
+  the compute, charging credits charges for nothing.
+- CLAUDE.md already puts Tier 3 outside the credit system (annual licence).
+- **Recommended:** keep the gateway on every call, so the feature switch, the
+  organisation switch, the refusals and the log all still apply. Add a
+  **deployment-level** mode, `AI_CREDITS_MODE=metered|unmetered` (default
+  `metered`):
+  - an unmetered deployment reserves and deducts nothing and logs
+    `creditCost: null`;
+  - the rule "every call is metered" becomes "every call goes through the
+    gateway and is logged; credits apply where AccreditMe pays for the model".
+
+**Risks:**
+- **Quality:** Arabic and instruction-following vary widely across local models;
+  prompts tuned for Claude may need per-model work; "AI is bad" support tickets
+  will be about the customer's model.
+- **Capacity:**
+  - a 30k-token summary needs a model with at least a 32k context;
+  - on modest hardware it can take minutes, which needs long timeouts and
+    probably asynchronous delivery;
+  - token counts differ by tokenizer, so input caps need per-model checks.
+- **Feature parity:** a feature that later needs tool use or images may not work
+  on the customer's model.
+- **Security:** the endpoint's credential is a deployment secret (environment,
+  not database). The model server's TLS and authentication are the customer's
+  responsibility, and must be stated in the install guide, as the SharePoint
+  guide does (ACC-185).
+- **Version drift:** the log records the model name the server reports, so
+  answers can be traced to a model.
+
+**Recommendation:**
+- Support customer-hosted models **per deployment only** (Tier 3, and Tier 2 on
+  request), through an OpenAI-compatible provider chosen by environment, with
+  credits unmetered on that deployment.
+- **Do not offer per-organisation customer-hosted endpoints on the shared
+  cloud.** It breaks "no tenant keys", adds an SSRF surface and network
+  plumbing, and buys no residency.
+- **Build it when a Tier 3 customer exists.** ACC-194's only obligation is the
+  one it already meets: keep the provider contract neutral, so the new provider
+  slots in without touching the gateway.
+
+---
+
+## 17. Build order (one commit each)
 
 **Progress:**
 
-- [ ] 0a. `docs(plans)`: this plan
-- [ ] 0b. `docs`: CLAUDE.md file storage corrected (separate commit, requested on 12 Oct)
-- [ ] 1. `chore(prisma)`: migrate — add AI metering columns (`--create-only` locally; CI applies it)
-- [ ] 2. `feat(ai)`: config (models by tier), refusal codes, with specs
-- [ ] 3. `feat(ai)`: credit service (reserve, refund, reset, notice claim) with unit specs and the CI `test:db` concurrency spec
-- [ ] 4. `feat(ai)`: the gateway and the slimmed provider (platform key only, no customer text logged), `AiModule`, the `check:ai-gateway` scan
-- [ ] 5. `feat(tenant)`: the AI balance read from the columns, and allocate writes the allowance column
-- [ ] 6. `feat(ai)`: monthly reset processor behind the worker gate
+- [x] 0a. `docs(plans)`: plan (`284ffcc`), revised with Ahmad's answers (this commit)
+- [x] 0b. `docs`: CLAUDE.md file storage corrected (`ada5fda`)
+- [ ] 1. `chore(prisma)`: migrate — add AI metering, period, allocation, feature-switch and log columns (`--create-only` locally; CI applies it)
+- [ ] 2. `feat(ai)`: config (models, effort and max output per feature), refusal codes, the period rule; specs
+- [ ] 3. `feat(ai)`: credit and allocation services (reserve, refund, renew, setAllocation, notice claim); unit specs and the CI `test:db` step
+- [ ] 4. `feat(ai)`: gateway, slimmed provider (platform key only, no customer text logged), feature switch, `AiModule`, `check:ai-gateway`
+- [ ] 5. `feat(tenant)`: AI balance from the columns everywhere (§1.4), allocate through `setAllocation`, plan applied at creation, `PATCH /platform/tenants/:id/plan`
+- [ ] 6. `feat(ai)`: renewal processor behind the worker gate
 - [ ] 7. `feat(ai)`: the "credits used up" notice, once per period
-- [ ] 8. `chore(ai)`: idempotent seed for the three feature costs
-- [ ] 9. `feat(ai)`: the shared frontend refusal helper and its words, plus D9 if yes
-- [ ] 10. `docs`: SYSTEM-REFERENCE AI section, CLAUDE.md AI Runtime Flow / Org AI settings / reset, Key Architecture Decisions (ACC-194)
+- [ ] 8. `chore(ai)`: idempotent seed for the three feature costs (`morning_briefing` restricted to al-nakheel)
+- [ ] 9. `feat(ai)`: shared frontend refusal helper and words; overage controls removed (D9, D19); types updated
+- [ ] 10. `docs`: SYSTEM-REFERENCE AI section; CLAUDE.md AI Runtime Flow, Org AI settings, renewal and cost table; Key Architecture Decisions (ACC-194)
 - [ ] STOP 1: lint, typecheck, tests, scans; report
-- [ ] After deploy, STOP 2: seed, live call on al-nakheel, restore, report
+- [ ] After deploy, STOP 2: seed, live calls on al-nakheel (and the al-manara refusal), restore, report
