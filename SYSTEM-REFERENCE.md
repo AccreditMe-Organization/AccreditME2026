@@ -6528,7 +6528,7 @@ object URL and drops the bytes.
 pdf.js ships from our origin (`angular.json` assets): the worker, `cmaps`,
 `standard_fonts`, `iccs`, and the image-decoder wasm WITHOUT `quickjs-eval.*`
 (it has no eval path of its own, and PDF scripting is not shipped). The CSP
-(`vercel.json`, report-only) names the platform storage host in `connect-src`,
+(`vercel.json`, ENFORCED since ACC-130 part 2) names the platform storage host in `connect-src`,
 `worker-src 'self' blob:`, and `'wasm-unsafe-eval'` in `script-src`.
 
 **Consumers today**: task evidence (`TaskEvidenceListComponent` — the file
@@ -7726,7 +7726,8 @@ monorepo (railwayapp/cli#1224). If it ever needs regenerating, pull.
 Deployed URLs:
 
 ```
-backend    https://accreditme2026-production.up.railway.app   (port 3000)
+backend    https://api.accreditme.app   (custom domain, ACC-130; port 3000)
+fallback   https://accreditme2026-production.up.railway.app   (until ACC-209)
 service    fd82c530-7fd9-43a6-8092-22737e1a1232
 env        79e906ea-f95e-4521-8ffc-569cff4d5908
 project    affd8063-7fb5-4857-a8ab-866f6c4bb4da
@@ -8279,8 +8280,8 @@ on the deployed API until then.
 **Better Auth's `baseURL` is `API_ORIGIN`**, required at boot
 (`resolveApiOrigin()`, same throw-rather-than-default rule as
 `resolveFrontendOrigin()`): exactly an origin, https, or http for `localhost`
-only. `https://accreditme2026-production.up.railway.app` today,
-`https://api.accreditme.app` after ACC-130. ONE value, because Better Auth's base
+only. `https://api.accreditme.app` since 10 Oct 2026 (ACC-130; it was the
+Railway-generated host before). ONE value, because Better Auth's base
 URL is where Better Auth lives and the API is one host for every tenant; every
 link a tenant clicks is built by `buildTenantUrl()` from configuration. It is a
 STRING, which Better Auth resolves once at start-up — an object (`allowedHosts`)
@@ -8352,11 +8353,11 @@ refuses to start without it, and a deploy whose boot fails is not promoted.
 
 ### 15.15 Online: where each address is served (ACC-130)
 
-> **Written with the code PR, before the switch-over.** The Railway values and
-> the DNS records below were MEASURED on 9 Oct. The Vercel and nameserver rows
-> describe the shape the runbook (`backend/Plans/step-130-go-online.md`, Part 2)
-> puts in place; each is confirmed there by its own step, and this section is
-> re-stated as measured after step 8.
+> **Restated as measured, 12 Oct 2026 (ACC-130 part 2).** Online since 10 Oct:
+> runbook steps 1–8 (`backend/Plans/step-130-go-online.md`, Part 2) are done and
+> verified, including the first real sign-ins and SPF, DKIM and DMARC passing.
+> The nameservers, the `api` CNAME and the mail record names below were read
+> from public DNS on 12 Oct.
 
 | Address | Served by | What it is |
 |---|---|---|
@@ -8364,17 +8365,20 @@ refuses to start without it, and a deploy whose boot fails is not promoted.
 | `platform.accreditme.app` | Vercel, the same wildcard | the platform organisation's sign-in |
 | `accreditme.app` | Vercel | the "Open your organisation's address" note; a marketing page can come later |
 | `www.accreditme.app` | Vercel, a 308 redirect to the apex | load-bearing for CORS: `www` never becomes a second origin |
-| `api.accreditme.app` | Railway, a DIRECT CNAME — no proxy | the API (`/api/v1`) |
-| `accreditme2026-production.up.railway.app` | Railway | the generated host, kept as a fallback until ~7 days after go-live (runbook step 10) |
+| `api.accreditme.app` | Railway, a DIRECT CNAME — no proxy | the API (`/api/v1`) and `API_ORIGIN`; a custom domain registered with `railway domain` |
+| `accreditme2026-production.up.railway.app` | Railway | the generated host: the FALLBACK only, retired by ACC-209 (still declared in `.railway/railway.ts` until then) |
 
-**DNS.** GoDaddy stays the registrar; the zone moves to Vercel's nameservers,
-because Vercel issues the wildcard certificate only for a zone it serves. The
-records that carry over unchanged, as the public lookup showed them on 9 Oct:
-apex MX `0 inbound-smtp.eu-west-1.amazonaws.com`; `send` CNAME
-`send.forge.rmta.net` (Resend's sending subdomain); `resend._domainkey` TXT (the
-DKIM key); `_dmarc` TXT `v=DMARC1; p=quarantine; adkim=r; aspf=r; …`. There is no
-CAA record and no apex TXT. GoDaddy's apex A records (its Website Builder page),
-its `www` CNAME and `_domainconnect` do not carry over.
+**DNS is on Vercel: `ns1.vercel-dns.com`, `ns2.vercel-dns.com`.** GoDaddy stays
+the registrar; the zone moved to Vercel's nameservers because Vercel issues the
+wildcard certificate only for a zone it serves. The mail records, by name: the
+apex `MX`, `send` (Resend's sending subdomain), `resend._domainkey` (the DKIM key)
+and `_dmarc`. There is no CAA record and no apex TXT. GoDaddy's zone was left in
+place: it is the mail rollback.
+
+**Rollback order** (runbook step 9): **`API_ORIGIN` first** — back to the
+fallback host, which redeploys — **then the nameservers, and the nameservers only
+for mail.** Sign-in trouble is never a DNS rollback; the Vercel and Railway
+domains can stay.
 
 **HTTPS is always forced, for everyone.** `.app` is on the browsers' HSTS
 preload list as a whole TLD, so no browser will make a plain-HTTP request to any
@@ -8397,12 +8401,20 @@ results at runbook step 8, not assumed.
 **The frontend's headers** (`frontend/vercel.json`, pinned by
 `check:vercel-config`):
 
-- **CSP, Report-Only for now** (enforced once step 8 shows no reports):
-  `script-src 'self'` — nothing else; `style-src 'self' 'unsafe-inline'`,
+- **CSP, ENFORCED** (ACC-130 part 2, 12 Oct; Report-Only at go-live).
+  `check:vercel-config` requires `Content-Security-Policy` and fails a
+  `Content-Security-Policy-Report-Only` header, so report-only cannot quietly
+  come back. Before the switch the shipped production build was walked locally
+  under the enforced header, against the local API, with no violation
+  (`backend/Plans/step-130-go-online-part-2.md`).
+  `script-src 'self' 'wasm-unsafe-eval'` (the wasm half is ACC-189's pdf.js
+  decoders, no JavaScript eval), `worker-src 'self' blob:`;
+  `style-src 'self' 'unsafe-inline'`,
   because PrimeNG and Angular's emulated encapsulation insert `<style>`
   elements at runtime and a static host cannot hand out nonces;
-  `connect-src 'self' https://api.accreditme.app`, which the scan keeps equal to
-  `environment.prod.ts`; `frame-ancestors 'none'`, `object-src 'none'`.
+  `connect-src 'self' https://api.accreditme.app` plus the platform storage host,
+  the API half kept equal to `environment.prod.ts` by the scan;
+  `img-src 'self' data: blob:`; `frame-ancestors 'none'`, `object-src 'none'`.
 - **Critical-CSS inlining is off** (`optimization.styles.inlineCritical: false`
   in the production configuration). It wrote
   `<link … media="print" onload="this.media='all'">` into the built page; an
@@ -8431,7 +8443,11 @@ repository's default branch is `main`, so this is set by hand after import.
    it to `serviceDomains` produced an IDENTICAL plan, and
    `networking.customDomains` is dropped by the SDK's `normalizeNetworking()`.
    So the domain is registered with `railway domain api.accreditme.app --port
-   3000`, and a plan afterwards says whether the file must then declare it.
+   3000`. **Answered, 12 Oct: the file does not declare it, and must not need
+   to** — with the domain live, `config plan` reads `0 to add, 1 to change, 0 to
+   destroy`, the change being §15.4's round-trip, so the plan does not see the
+   custom domain at all. A comment beside `serviceDomains` says so, and **any
+   `config apply` must first show a plan with no domain removed.**
 2. **Six `AWS_*` variables existed on Railway and nowhere in the file**, so
    `config plan` read `6 to destroy` — any apply would have deleted them. They
    are declared with `preserve()`, and the plan reads

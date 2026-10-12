@@ -142,10 +142,13 @@ export default defineRailway(() => {
     // "fix" this by adding it here: the plan would stay silent, and a value
     // the plan is silent about has not been verified (§15.3).
     //
-    // The generated host below stays as the fallback until about 7 days after
-    // go-live (ACC-130 runbook step 10), then goes in its own change.
+    // The generated host below is the FALLBACK only; ACC-209 retires it.
     networking: {
       privateNetworkEndpoint: "accreditme2026",
+      // api.accreditme.app — the API's address and API_ORIGIN — is a CUSTOM
+      // domain registered with the Railway CLI (`railway domain`), which this
+      // file cannot declare (above). So it is NOT listed here, and ANY
+      // `config apply` must first show a `config plan` with no domain removed.
       serviceDomains: { "accreditme2026-production.up.railway.app": { port: 3000 } },
     },
 

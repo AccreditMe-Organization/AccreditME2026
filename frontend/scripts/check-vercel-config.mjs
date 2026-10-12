@@ -16,7 +16,11 @@
 //      wasm; it compiles WebAssembly and allows NO JavaScript eval and NO
 //      inline script). Anything else fails — verify:built-index checks the
 //      built page has no inline script for the same reason.
-//   4. The security headers are present on every path.
+//   4. The security headers are present on every path, and the CSP is
+//      ENFORCED (ACC-130 part 2): the Content-Security-Policy header must be
+//      there, and a Content-Security-Policy-Report-Only header fails — on its
+//      own it would silently switch enforcement off, and beside the enforced
+//      one it is a second policy nobody reads.
 //   5. Only dev builds (previews are off): ignoreCommand skips any other branch.
 //   6. The output directory is where angular.json builds to, and the Node
 //      version Vercel uses (package.json engines) is the one CI uses.
@@ -82,9 +86,12 @@ try {
 } catch {
   fail('3 csp', `environment.prod.ts apiUrl "${apiUrl}" is not an absolute URL`);
 }
-const csp = headers.get('content-security-policy') ?? headers.get('content-security-policy-report-only');
+if (headers.has('content-security-policy-report-only')) {
+  fail('4 headers', 'Content-Security-Policy-Report-Only is present — the policy is enforced, so it must be Content-Security-Policy');
+}
+const csp = headers.get('content-security-policy');
 if (!csp) {
-  fail('3 csp', 'no Content-Security-Policy (or -Report-Only) header');
+  fail('4 headers', 'no enforced Content-Security-Policy header');
 } else {
   const directive = (name) =>
     csp.split(';').map((d) => d.trim().split(/\s+/)).find((parts) => parts[0] === name)?.slice(1) ?? null;

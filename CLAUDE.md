@@ -145,24 +145,28 @@ already sits above this line, so this documents the floor rather than lowering
 the app to it. A feature below this baseline is a real constraint to design
 around; anything above it may be used freely.
 
-### Infrastructure — measured 2026-09-28, not aspirational
+### Infrastructure — measured 2026-09-28, online since 2026-10-10 (ACC-130)
 - Backend hosting: Railway — `europe-west4-drams3a` (Amsterdam), auto-deploy
-  from GitHub. **The BACKEND only** — `.railway/railway.ts` declares three
-  resources (the `AccreditME2026` service, Redis, its volume) and no frontend
-  service, `backend/Dockerfile` never mentions `frontend`, and nothing in
-  `backend/src` serves static assets.
-- Frontend hosting: **NOWHERE.** The Angular app is not deployed, so there is no
-  URL to show anyone and no environment in which a frontend change can be
-  verified after merging — only locally.
-  **This is a KNOWN, TICKETED state, not a discovery: ACC-130 recorded it on
-  23 September** ("the Angular frontend is deployed nowhere") and owns deploying
-  it. Read that ticket rather than re-deriving this.
-  Corrected 2026-09-29: this line previously read "Backend + frontend hosting:
-  Railway", which was wrong, and wrong in the way this whole section exists to
-  prevent — the measurement it came from said "backend + frontend (Railway)" and
-  was transcribed without checking the IaC. The answer was already filed; nobody
-  read it. That is the second time in two days — ACC-97 likewise already held the
-  authoritative-timezone answer that was set up as an investigation.
+  from GitHub (`dev`). **The BACKEND only** — `.railway/railway.ts` declares
+  three resources (the `AccreditME2026` service, Redis, its volume) and no
+  frontend service, and nothing in `backend/src` serves static assets.
+- **API address: `https://api.accreditme.app`** — and `API_ORIGIN` — a Railway
+  CUSTOM domain, a direct CNAME with no proxy (so `trust proxy` stays 2). It is
+  registered with the Railway CLI (`railway domain`) because
+  `.railway/railway.ts` cannot declare a custom domain, so **any `railway config
+  apply` must first show a `config plan` with no domain removed.**
+  `accreditme2026-production.up.railway.app` is the FALLBACK only, kept until
+  ACC-209 retires it.
+- Frontend hosting: **Vercel** — `{slug}.accreditme.app` (wildcard certificate),
+  `platform.accreditme.app`, the apex, and `www` (a redirect to the apex). Only
+  `dev` builds; no preview deployments. Was "NOWHERE" until ACC-130 (10 Oct).
+- **DNS: Vercel's nameservers (`ns1.vercel-dns.com`, `ns2.vercel-dns.com`)**;
+  GoDaddy stays the registrar. Mail records: the apex `MX`, `send`,
+  `resend._domainkey` and `_dmarc`.
+- **Rollback order** (runbook step 9, `backend/Plans/step-130-go-online.md`):
+  `API_ORIGIN` first (back to the fallback host — it redeploys), then the
+  nameservers, and the nameservers ONLY for mail.
+- Full table of addresses: SYSTEM-REFERENCE.md §15.15.
 - Database: Supabase PostgreSQL — `aws-1-eu-central-1` (Frankfurt)
 - Redis + `redis-volume`: Railway — `sfo` (San Francisco). **KNOWN OPEN ITEM,
   ACC-143.** Every cache call crosses the Atlantic twice, and "cache in the
@@ -177,7 +181,9 @@ around; anything above it may be used freely.
   variables exist, every upload is refused with "File storage isn't set up
   yet" — by design, never a default region.
 - On-premises storage alternative: MinIO (S3-compatible)
-- CDN: Cloudflare (free tier)
+- CDN: none in front. Vercel serves the app from its own edge, and the API is a
+  direct CNAME. Cloudflare is NOT used; proxying the API through anything would
+  move `trust proxy` to 3 (Rate Limiting).
 - Containers: Docker (every service containerized from day one)
 - CI/CD: GitHub Actions
 
@@ -1213,6 +1219,10 @@ Was "none of this is built" (measured 2026-10-01). As of ACC-177:
   requests a minute per signed-in user). There is no upload-specific tier.
 
 ### Security Headers (Helmet.js in main.ts)
+The API's own headers. The APP's headers are in `frontend/vercel.json`, where the
+**Content-Security-Policy is ENFORCED** (ACC-130 part 2; it was Report-Only at
+go-live), pinned by `check:vercel-config`, which also refuses a Report-Only
+header — SYSTEM-REFERENCE §15.15.
 - Content-Security-Policy
 - HTTP Strict Transport Security
 - X-Frame-Options: DENY
@@ -1547,8 +1557,8 @@ ACC-40 concepts don't suffer the same fate.
   — a namespace we own, unlike `*.vercel.app` (SYSTEM-REFERENCE §15.10)
 - Subdomain chosen during onboarding — validated unique
 - Cannot be changed after first non-admin user logs in
-- Wildcard DNS and certificate: ACC-130. Until it ships, no tenant address
-  resolves in production, and ACC-139 is verifiable only locally
+- Wildcard DNS and certificate: shipped with ACC-130 (online 10 Oct) — every
+  `{slug}.accreditme.app` resolves to Vercel, with Vercel's wildcard certificate
 
 ### User Types — Key Distinction
 ```
