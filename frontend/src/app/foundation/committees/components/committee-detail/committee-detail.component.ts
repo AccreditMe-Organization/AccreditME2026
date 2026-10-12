@@ -1,5 +1,6 @@
-import { Component, OnInit, TemplateRef, ViewChild, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Component, DestroyRef, Injector, OnInit, TemplateRef, ViewChild, afterNextRender, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { TagModule } from 'primeng/tag';
@@ -155,6 +156,7 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
               @if (currentInstance(); as instance) {
                 <app-workflow-transition-actions
                   [instance]="instance"
+                  [recordLabel]="displayName(c)"
                   (transitioned)="onWorkflowTransitioned($event)"
                 />
               }
@@ -364,8 +366,13 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
                 </button>
               }
               @for (task of tasks(); track task.id) {
+                <!-- ACC-208 (D2) — the target of a "Can't move yet" link:
+                     ?task=<id> scrolls here, focuses it and highlights it. -->
                 <div
                   class="grid grid-cols-[1fr_auto] gap-2.5 items-center px-4 py-2 border-b border-[var(--am-border)]"
+                  [attr.data-task-row]="task.id"
+                  tabindex="-1"
+                  [class.am-task-row--sought]="soughtTaskId() === task.id"
                 >
                   <span class="min-w-0">
                     <span class="block text-[13px] font-medium truncate">{{ task.title }}</span>
@@ -725,6 +732,15 @@ type TaskRowAction = 'edit' | 'cancel' | 'reopen' | 'addEvidence' | 'evidence';
       }
       /* ACC-163 — overdue as a badge (Q8: a flag beside the status). The due
          text is the badge's words, so it costs no width the panel lacks. */
+      /* ACC-208 (D2) — the row a "Can't move yet" link points at. */
+      .am-task-row--sought {
+        background: var(--am-primary-50);
+        box-shadow: inset 3px 0 0 var(--am-primary-600);
+      }
+      [data-task-row]:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: -2px;
+      }
       .am-task-overdue-badge {
         color: var(--am-danger-ink);
         background: var(--am-danger-bg);
@@ -792,6 +808,53 @@ export class CommitteeDetailComponent implements OnInit {
   // TaskListComponent, so it can reload after a create. The embedded list had
   // no way to be told a task had been added.
   readonly tasks = signal<ITaskWithAssigneesDto[]>([]);
+
+  /**
+   * ACC-208 (Ahmad, 12 Oct, D2) — a "Can't move yet" link names a task by
+   * ?task=<id>, because there is no task page: its row here is scrolled to,
+   * focused and highlighted. Read from the query params as they CHANGE, not
+   * once (injectFixLinkParam reads once per load), because the link is
+   * followed from this same page. The parameter is then removed, so Back and
+   * a reload do not repeat it.
+   */
+  readonly soughtTaskId = signal<string | null>(null);
+  private pendingTaskId: string | null = null;
+  private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private watchSoughtTask(): void {
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const id = params.get('task');
+      if (!id) return;
+      this.pendingTaskId = id;
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { task: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      // A task the list does not hold yet (created by the move that was just
+      // refused) needs a fresh read; one it holds is shown at once.
+      if (this.tasks().some((t) => t.id === id)) this.showSoughtTask();
+      else if (this.canViewTasks()) this.loadTasks();
+    });
+  }
+
+  private showSoughtTask(): void {
+    const id = this.pendingTaskId;
+    if (!id || !this.tasks().some((t) => t.id === id)) return;
+    this.pendingTaskId = null;
+    this.soughtTaskId.set(id);
+    afterNextRender(
+      () => {
+        const row = document.querySelector<HTMLElement>(`[data-task-row="${id}"]`);
+        row?.scrollIntoView({ block: 'center' });
+        row?.focus({ preventScroll: true });
+      },
+      { injector: this.injector },
+    );
+  }
   readonly tasksLoading = signal(false);
   readonly tasksError = signal<string | null>(null);
   readonly taskFormVisible = signal(false);
@@ -889,6 +952,7 @@ export class CommitteeDetailComponent implements OnInit {
     this.loadMembershipEvents();
     this.loadCurrentStage();
     if (this.canViewTasks()) this.loadTasks();
+    this.watchSoughtTask();
   }
 
   displayName(committee: CommitteeDto): string {
@@ -1169,6 +1233,7 @@ export class CommitteeDetailComponent implements OnInit {
       next: (tasks) => {
         this.tasks.set(tasks);
         this.tasksLoading.set(false);
+        this.showSoughtTask();
       },
       error: () => {
         this.tasksError.set('task.errorLoad');

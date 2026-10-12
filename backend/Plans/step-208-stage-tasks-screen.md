@@ -624,6 +624,6 @@ built:**
 - [x] 4 Tasks on entry list
 - [x] 5 Definition dialog (measurements recorded)
 - [x] 6 Transition Kind
-- [ ] 7 Refusal states
+- [x] 7 Refusal states
 - [ ] 8 Docs
 - [ ] 9 Live proof, test definitions deleted
