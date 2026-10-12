@@ -111,8 +111,58 @@ export function resolveFrontendOrigin(env: NodeJS.ProcessEnv = process.env): str
 }
 
 /**
+ * The ONE DNS label an Origin names in front of the base domain, or null —
+ * ACC-204. The single place an Origin is read as an organisation's address:
+ * CORS asks "is this one of ours?" and TenantGuard/refresh() ask "whose
+ * address is this?", and both get the same answer from here.
+ *
+ * - **Production:** `https://{label}.{baseDomain}` — https, no port, nothing
+ *   after the origin.
+ * - **Local, only when `devOrigin` is given** (`APP_LINK_ORIGIN`, e.g.
+ *   `http://localhost:4200`): `{its scheme}//{label}.localhost{:its port}`, the
+ *   address the dev server serves each organisation at.
+ *
+ * Anything else is null: the apex, two labels, a path, a port in production,
+ * http in production, the literal `null` a sandboxed page sends, or junk. The
+ * label is NOT checked against the reserved list here — `www` is a label, and
+ * simply matches no organisation.
+ */
+export function labelFromOrigin(
+  origin: string,
+  baseDomain: string,
+  devOrigin: string | null = null,
+): string | null {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return null;
+  }
+  // An Origin header is scheme://host[:port] and nothing else; anything with
+  // more in it is not one.
+  if (url.origin !== origin) return null;
+
+  let suffix: string;
+  if (url.protocol === 'https:' && url.port === '') {
+    suffix = `.${baseDomain}`;
+  } else if (devOrigin) {
+    const dev = new URL(devOrigin);
+    if (url.protocol !== dev.protocol || url.port !== dev.port) return null;
+    suffix = '.localhost';
+  } else {
+    return null;
+  }
+  if (!url.hostname.endsWith(suffix)) return null;
+  const label = url.hostname.slice(0, -suffix.length);
+  // DNS_LABEL has no dot in it, so a.b.{baseDomain} is refused here.
+  return DNS_LABEL.test(label) ? label : null;
+}
+
+/**
  * Whether a browser origin may make credentialed requests: exactly
  * `frontendOrigin`, or `https://{one DNS label}.{baseDomain}` with no port.
+ * The second half is labelFromOrigin() without a dev origin, so CORS is
+ * exactly what it was before ACC-204.
  */
 export function isAllowedOrigin(
   origin: string,
@@ -120,20 +170,7 @@ export function isAllowedOrigin(
   baseDomain: string,
 ): boolean {
   if (origin === frontendOrigin) return true;
-  let url: URL;
-  try {
-    url = new URL(origin);
-  } catch {
-    return false;
-  }
-  // An Origin header is scheme://host[:port] and nothing else; anything with
-  // more in it is not one.
-  if (url.origin !== origin) return false;
-  if (url.protocol !== 'https:' || url.port !== '') return false;
-  const suffix = `.${baseDomain}`;
-  if (!url.hostname.endsWith(suffix)) return false;
-  // DNS_LABEL has no dot in it, so a.b.{baseDomain} is refused here.
-  return DNS_LABEL.test(url.hostname.slice(0, -suffix.length));
+  return labelFromOrigin(origin, baseDomain) !== null;
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   FRONTEND_URL_MISSING,
   buildCorsOptions,
   isAllowedOrigin,
+  labelFromOrigin,
   resolveFrontendOrigin,
 } from './cors.config';
 
@@ -205,6 +206,45 @@ describe('CORS configuration (ACC-128, ACC-139)', () => {
           origin,
           isAllowedOrigin(origin, FRONTEND, BASE_DOMAIN),
         ]).toEqual([origin, false]);
+      }
+    });
+  });
+
+  // ACC-204 — the one place an Origin is read as an organisation's address.
+  describe('labelFromOrigin', () => {
+    const DEV = 'http://localhost:4200';
+
+    it('reads the one label of a production address', () => {
+      expect(labelFromOrigin('https://al-nakheel.accreditme.app', 'accreditme.app')).toBe('al-nakheel');
+      // The platform organisation's address (its slug is `platform`).
+      expect(labelFromOrigin('https://platform.accreditme.app', 'accreditme.app')).toBe('platform');
+    });
+
+    it('reads a local address only when the dev origin is given, on its scheme and port', () => {
+      expect(labelFromOrigin('http://al-nakheel.localhost:4200', 'accreditme.app', DEV)).toBe('al-nakheel');
+      expect(labelFromOrigin('http://platform.localhost:4200', 'accreditme.app', DEV)).toBe('platform');
+      expect(labelFromOrigin('http://al-nakheel.localhost:4200', 'accreditme.app')).toBeNull();
+      expect(labelFromOrigin('http://al-nakheel.localhost:4201', 'accreditme.app', DEV)).toBeNull();
+      expect(labelFromOrigin('https://al-nakheel.localhost:4200', 'accreditme.app', DEV)).toBeNull();
+    });
+
+    it('returns the label of www (it matches no organisation), and null for everything that names none', () => {
+      expect(labelFromOrigin('https://www.accreditme.app', 'accreditme.app')).toBe('www');
+      for (const origin of [
+        'https://accreditme.app', // the apex
+        'https://a.b.accreditme.app', // two labels
+        'https://al-nakheel.accreditme.app/', // more than an origin
+        'https://al-nakheel.accreditme.app/login',
+        'https://al-nakheel.accreditme.app:8443', // a port in production
+        'http://al-nakheel.accreditme.app', // http in production
+        'https://al-nakheel.accreditme.app.evil.example',
+        'https://evil.example',
+        'https://xn--nxasmq6b.accreditme.app', // punycode is not a slug
+        'null', // what a sandboxed page sends
+        '',
+        'not an origin',
+      ]) {
+        expect([origin, labelFromOrigin(origin, 'accreditme.app', DEV)]).toEqual([origin, null]);
       }
     });
   });
