@@ -11,6 +11,7 @@ import {
 } from '../../services/workflow-template.service';
 import { WorkflowStageFormComponent } from '../workflow-stage-form/workflow-stage-form.component';
 import { WorkflowTransitionEditorComponent } from '../workflow-transition-editor/workflow-transition-editor.component';
+import { StageTaskListComponent, StageTaskSummary } from '../stage-task-list/stage-task-list.component';
 import { EditDialogComponent } from '../../../../shared/components/edit-dialog/edit-dialog.component';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { LanguageService } from '../../../../core/services/language.service';
@@ -36,6 +37,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
     WorkflowStageFormComponent,
     DataListComponent,
     WorkflowTransitionEditorComponent,
+    StageTaskListComponent,
     EditDialogComponent,
   ],
   template: `
@@ -211,14 +213,25 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
                    pRowToggler and expandedRowKeys to coordinate two templates;
                    here the row owns its own disclosure, and the nested editor
                    is simply a child of it. -->
+              <!-- ACC-208 — two columns, read side by side (drawing decision 1):
+                   what makes a record move, and what must happen before it
+                   can. They stack below the width where both fit. -->
               @if (isExpanded(stage.id)) {
-                <div class="px-3 pb-3 bg-[var(--am-surface)]">
+                <div class="am-stage-expanded px-3 pb-3 bg-[var(--am-surface)]">
                   <app-workflow-transition-editor
                     [stageId]="stage.id"
                     [transitions]="stage.transitions ?? []"
                     [availableStages]="stages()"
                     (changed)="loadTemplate()"
                   />
+                  @if (template(); as t) {
+                    <app-stage-task-list
+                      [stage]="stage"
+                      [template]="t"
+                      [canManage]="canManage()"
+                      (summaryChanged)="onStageTasksChanged(stage.id, $event)"
+                    />
+                  }
                 </div>
               }
             </div>
@@ -245,6 +258,16 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 
     </div>
   `,
+  styles: [
+    `
+      .am-stage-expanded {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+        gap: var(--am-space-16);
+        align-items: start;
+      }
+    `,
+  ],
 })
 export class WorkflowStageListComponent implements OnInit {
   @ViewChild('formTpl', { read: TemplateRef, static: true }) formTpl!: TemplateRef<unknown>;
@@ -443,6 +466,20 @@ export class WorkflowStageListComponent implements OnInit {
         this.loadTemplate(); // reload to restore true server state
       },
     });
+  }
+
+  /**
+   * ACC-208 — a definition change patches only that stage's summary, in place.
+   * Re-reading the whole template would replace every stage under an open
+   * dialog in the row (ACC-55's trap); the rows are tracked by id, so this
+   * keeps the expanded row and its section alive.
+   */
+  onStageTasksChanged(stageId: string, summary: StageTaskSummary): void {
+    this.template.update((template) =>
+      template
+        ? { ...template, stages: template.stages?.map((s) => (s.id === stageId ? { ...s, ...summary } : s)) }
+        : template,
+    );
   }
 
   // ACC-82 — a Setup health Fix link (?stage=<id>) expands that stage's row.
