@@ -1,4 +1,5 @@
 import { refusalBody, refusalCode } from '../http/refusal';
+import type { FormatService } from '../formatting/format.service';
 
 /**
  * ACC-194 — the ONE reading of an AI refusal, so every AI feature (document
@@ -35,11 +36,11 @@ const MESSAGE_KEYS: Readonly<Record<AiRefusalKind, string>> = {
 };
 
 /**
- * @param formatDate how to show the renewal date — pass `(iso) => format.date(iso)`
- *   from FormatService, so the date follows ACC-94 (Latin digits, the user's
- *   calendar, the tenant's zone).
+ * @param format the caller's FormatService (or anything with its `date`), so
+ *   the renewal date follows ACC-94: Latin digits, the user's calendar, the
+ *   tenant's zone.
  */
-export function aiRefusal(err: unknown, formatDate: (iso: string) => string): AiRefusal | null {
+export function aiRefusal(err: unknown, format: Pick<FormatService, 'date'>): AiRefusal | null {
   const code = refusalCode(err);
   const body = refusalBody(err);
   const of = (kind: AiRefusalKind, params: Record<string, string> = {}): AiRefusal => ({ kind, messageKey: MESSAGE_KEYS[kind], params });
@@ -49,7 +50,7 @@ export function aiRefusal(err: unknown, formatDate: (iso: string) => string): Ai
       return of(body?.['reason'] === 'FEATURE_NOT_AVAILABLE' ? 'featureNotAvailable' : 'notEnabled');
     case 'AI_CREDITS_EXHAUSTED': {
       const renewsAt = body?.['renewsAt'];
-      return of('creditsUsedUp', { date: typeof renewsAt === 'string' ? formatDate(renewsAt) : '—' });
+      return of('creditsUsedUp', { date: typeof renewsAt === 'string' ? format.date(renewsAt) : '—' });
     }
     case 'AI_PROVIDER_UNAVAILABLE':
     case 'AI_PROVIDER_FAILED':

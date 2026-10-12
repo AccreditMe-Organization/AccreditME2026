@@ -963,8 +963,9 @@ overview, effort, thinking, the Sonnet 5.5 migration guide):
 - **`ai.features` on `GET /tenant` lists only callable features:** keys in
   `AI_FEATURE_KEYS` with a cost row. A cost row for an unbuilt feature (say,
   `rca_assistance`) is not listed.
-- **The frontend helper takes a date-formatting function** rather than
-  injecting `FormatService`. Callers pass `(iso) => format.date(iso)`.
+- **The frontend helper takes the caller's `FormatService`** (`aiRefusal(err,
+  format)`) rather than injecting it. A first version took a `formatDate`
+  function, and `check:formatting` (ACC-94) rightly refused the name.
 - **The frontend helper has four kinds, not three:** a feature not open to
   the organisation (`featureNotAvailable`) gets its own sentence, not "AI
   isn't turned on".

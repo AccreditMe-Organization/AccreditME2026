@@ -9195,7 +9195,7 @@ the text blocks and times out at 120 s.
   (`{ key, creditCost }[]` open to this organisation — a tenant never sees who
   else a restricted feature is open to). The platform tenant detail returns the
   same balance without `features`.
-- `frontend/src/app/core/ai/ai-refusal.ts` → `aiRefusal(err, formatDate)`:
+- `frontend/src/app/core/ai/ai-refusal.ts` → `aiRefusal(err, format)`:
   `notEnabled`, `featureNotAvailable`, `creditsUsedUp` (`{{date}}`),
   `unavailable`; keys `ai.refusal.*` in EN and AR. No consumer yet.
 - The overage toggle is gone from the tenant AI credits screen and the platform
