@@ -234,3 +234,77 @@ All nine recommendations accepted.
 
 When it is built: the browser check writes al-nakheel's `emailConfig` and must
 Disconnect afterwards. The audit rows stay.
+
+## Results (built 12 Oct 2026, CC-83)
+
+### Backend tests — each mutation run and seen red, then restored
+
+| # | Test | Mutation | Red? |
+|---|---|---|---|
+| 1 | GET, every provider's secret stored: no value in the response, each `'set'` | return one secret in clear | yes (5 failed) |
+| 2 | An unset secret reads null | `'set'` unconditionally | yes |
+| 3 | PATCH without the secret keeps it (decrypted what was written) | write only what was sent | yes |
+| 4 | PATCH with `''` keeps it | drop the `''` filter | yes |
+| 5 | A replaced secret gets a new date; an untouched one keeps it | always restamp | yes |
+| 6 | A provider switch never carries the old secret, even with the same field name; only the new block is kept | merge across providers | yes |
+| 7 | Incomplete: 400 `EMAIL_SETTINGS_INCOMPLETE` naming the fields | skip the check | yes |
+| 8 | The audit holds field names and no secret or value | put the body in the audit | yes |
+| 9 | Disconnect nulls the config and is audited | make it a no-op | yes |
+| 10 | The DTO refuses a bad email, a bad port, the old `config` and `emailProvider` fields, unknown fields, a non-GUID tenant ID, a non-region | remove `@IsEmail` | yes |
+| 11 | SMTP username and password both or neither | allow username alone | yes |
+| 12 | Every route, `DELETE` included, needs `tenant:manage_config` | remove `@Permissions` from DELETE | yes |
+| 13 | Tenant isolation (the gate's name): reads and writes act on the session organisation only | act on another organisation | yes |
+| 14 | `defaultSender` is `RESEND_FROM_EMAIL`, or null — never the accreditme.com fallback | return the fallback | yes |
+| 15 | D4: storage's specs pass unchanged on the shared helper | — | 17 suites, 295 tests, no spec edited |
+
+Suites: `tenant.email-config.spec.ts` (23), `tenant.email-routes.spec.ts` (18),
+`write-only-secrets.spec.ts` (9).
+
+### Frontend tests — each mutation run and seen red, then restored
+
+| # | Test | Mutation | Red? |
+|---|---|---|---|
+| 1 | Set: the pair and Replace, no input; Replace: an empty password input, no reveal | render an input while set | yes |
+| 2 | Untouched secrets send NO secret key, never "set" | fill the form from the GET, secrets included | yes — see note 1 |
+| 3 | Each provider shows exactly its fields | swap SMTP's and SES's lists | yes |
+| 4 | Port follows encryption until edited; a stored non-default port counts as edited | always overwrite the port | yes |
+| 5 | No provider: the sentence and Connect, no form | render the form anyway | yes |
+| 6 | No address in the sentence when `defaultSender` is null | print a fallback | yes |
+| 7 | Disconnect confirms first, then DELETE | call DELETE without the confirm | yes |
+| 8 | Arabic labels; product names Latin; the address isolated | — | — |
+
+Specs: `secret-field.component.spec.ts` (5), `email-provider-settings.component.spec.ts` (13).
+
+### Checks, each on its own exit status
+
+- Backend: `tsc`, build, 131 suites / 2,982 tests, tenant isolation 177, `check:worker-gate`.
+- Frontend: `tsc` (app and specs), `ng build`, `verify:built-index`, 1,487 of 1,487, i18n parity 18 of 18.
+- Frontend `check:*`: formatting (after the union fix below), contrast, icon-labels, dialog-overlays, dialog-density, create-gating, action-gating, action-gating:selftest, field-control, confirm-translated, reserved-slugs, vercel-config — all exit 0.
+
+### Browser check — local only, al-nakheel's tenant admin persona, both languages
+
+In English and in Arabic (`dir="rtl"` at every step):
+- the resting sentence, with the platform sender in bidi isolates, and no form;
+- Connect, SMTP, a made-up host and a random password, saved (200; the PATCH carried it);
+- reload: the password reads "set" in the GET and as the "set" pair on screen, with no input; **no response from the email route ever contained either password** (18 exchanges);
+- saved again untouched: the PATCH had no password key, and the GET still says set with the same date;
+- Replace: the new password was sent, the GET still says set, with a new date;
+- Disconnect behind the confirm ("Disconnect SMTP / on-premises Exchange?" / "قطع الاتصال بـ SMTP / خادم Exchange داخلي؟"), DELETE 200, the sentence again, and **al-nakheel's `emailConfig` null in the database** afterwards.
+
+Screenshots: `.playwright-mcp/c83-{en,ar}-{1..7}-*.png`.
+
+### What differs from the plan, and why
+
+1. **The platform sender helper already existed** (`resolvePlatformSender()`, ACC-130), so GET reads it; no second helper.
+2. **The set date reads "29 Sep 2026", not "29 Sep"**: it goes through the formatting layer (`amDate`, ACC-94), which has one date format.
+3. **Every provider's sender is `fromAddress`**, labelled per the drawing (sender address, sender mailbox, sender verified identity).
+4. **The shared helper takes an optional secret list.** Storage passes none, so every storage field still keeps on `''`. Email names its secrets, so an ordinary field sent `''` is cleared — otherwise an optional sender name could never be emptied.
+5. **Turning SMTP authentication off means Disconnect**: D3 has no per-secret remove, so a cleared username with a stored password is refused (D5), naming the pair.
+6. **SES's access key ID is an ordinary field**; only the secret access key is a secret.
+7. **PATCH and DELETE return the masked GET shape**, so the screen needs no second read.
+8. **Cancel instead of Disconnect while connecting** with nothing stored: there is nothing to disconnect yet.
+9. **Disconnect with nothing connected writes nothing and audits nothing.**
+10. **Frontend test 2 has a pre-render half.** `am-secret-field` also clears its control when it renders, which masked the plan's mutation; the new test pins the screen on its own.
+11. **Storage's own specs do not pin "empty keeps"** (finding): removing that branch turned only the helper's spec red. The helper spec covers both callers.
+12. **`check:formatting` reads `| number` as the Angular pipe**, so the unions are written `number | string`. The scan is unchanged.
+13. **`adminSettings.provider` is now unused**; the plan's D8 list did not name it, so it stays.
