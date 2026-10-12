@@ -725,6 +725,14 @@ export class OverlaySelectComponent implements ControlValueAccessor, OnDestroy {
           destroy();
         });
         this.manualScrollables = [];
+        // ACC-208 — focus goes back to the trigger when the list closes and
+        // left it nowhere. The options are removed with the pane, so a pick
+        // by Enter or click, or Escape, dropped focus on <body>: a keyboard
+        // user lost their place in the form after every choice (found
+        // keyboard-only in ACC-208's live proof). A close that moved focus
+        // somewhere real is left alone.
+        const active = document.activeElement;
+        if (!active || active === document.body) this.triggerRef.nativeElement.focus();
       });
     }
 

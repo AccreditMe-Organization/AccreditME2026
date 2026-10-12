@@ -382,6 +382,38 @@ describe('OverlaySelectComponent', () => {
     );
   });
 
+  // ACC-208 — a keyboard user keeps their place: closing the list returns
+  // focus to the trigger instead of dropping it on <body> with the pane.
+  describe('focus after the list closes', () => {
+    it('returns to the trigger after Enter picks an option', () => {
+      const fixture = TestBed.createComponent(ObjectOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).focus();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      (panel.querySelector('.am-overlay-select-option') as HTMLElement).focus();
+      keydown(panel, 'Enter', ENTER);
+      fixture.detectChanges();
+
+      expect(document.querySelector('.am-overlay-select-panel')).toBeNull();
+      expect(document.activeElement).toBe(getTrigger(fixture));
+    });
+
+    it('returns to the trigger after Escape', () => {
+      const fixture = TestBed.createComponent(ObjectOptionsHostComponent);
+      fixture.detectChanges();
+      getTrigger(fixture).click();
+      fixture.detectChanges();
+      const panel = document.querySelector('.am-overlay-select-panel') as HTMLElement;
+      (panel.querySelector('.am-overlay-select-option') as HTMLElement).focus();
+      keydown(panel, 'Escape', 27);
+      fixture.detectChanges();
+
+      expect(document.activeElement).toBe(getTrigger(fixture));
+    });
+  });
+
   describe('Escape isolation (closes only the dropdown, never a parent listener)', () => {
     it('stops a real bubbled Escape from reaching a document-level listener while open', () => {
       const fixture = TestBed.createComponent(ObjectOptionsHostComponent);
