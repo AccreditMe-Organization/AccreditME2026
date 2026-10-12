@@ -27,7 +27,12 @@ function buildContext(opts: {
   authHeader?: string;
   origin?: string | null;
 }): ExecutionContext {
-  const origin = opts.origin === undefined ? (opts.cookies?.['access_token'] ? ORG_A_ORIGIN : null) : opts.origin;
+  const origin =
+    opts.origin === undefined
+      ? opts.cookies?.['access_token']
+        ? ORG_A_ORIGIN
+        : null
+      : opts.origin;
   const request = {
     headers: {
       ...(opts.authHeader ? { authorization: opts.authHeader } : {}),
@@ -443,25 +448,43 @@ describe('TenantGuard — the session’s address (ACC-204)', () => {
 
   it('lets a cookie session through at its own organisation’s address, in one query', async () => {
     await expect(
-      guard.canActivate(buildContext({ cookies: { access_token: token() }, origin: ORG_A_ORIGIN })),
+      guard.canActivate(
+        buildContext({
+          cookies: { access_token: token() },
+          origin: ORG_A_ORIGIN,
+        }),
+      ),
     ).resolves.toBe(true);
     expect(prisma.user.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it('refuses a cookie session at another organisation’s address, with SESSION_OTHER_ORGANIZATION', async () => {
-    for (const origin of ['https://org-b.accreditme.app', 'https://platform.accreditme.app']) {
+    for (const origin of [
+      'https://org-b.accreditme.app',
+      'https://platform.accreditme.app',
+    ]) {
       expect([
         origin,
-        await refusalCode(buildContext({ cookies: { access_token: token() }, origin })),
+        await refusalCode(
+          buildContext({ cookies: { access_token: token() }, origin }),
+        ),
       ]).toEqual([origin, 'SESSION_OTHER_ORGANIZATION']);
     }
   });
 
   it('refuses a cookie session with no usable Origin', async () => {
-    for (const origin of [null, 'null', 'https://accreditme.app', 'https://evil.example', 'http://org-a.accreditme.app']) {
+    for (const origin of [
+      null,
+      'null',
+      'https://accreditme.app',
+      'https://evil.example',
+      'http://org-a.accreditme.app',
+    ]) {
       expect([
         origin,
-        await refusalCode(buildContext({ cookies: { access_token: token() }, origin })),
+        await refusalCode(
+          buildContext({ cookies: { access_token: token() }, origin }),
+        ),
       ]).toEqual([origin, 'SESSION_OTHER_ORGANIZATION']);
     }
   });
@@ -470,7 +493,9 @@ describe('TenantGuard — the session’s address (ACC-204)', () => {
     for (const origin of [null, 'https://org-b.accreditme.app']) {
       expect([
         origin,
-        await refusalCode(buildContext({ authHeader: `Bearer ${token()}`, origin })),
+        await refusalCode(
+          buildContext({ authHeader: `Bearer ${token()}`, origin }),
+        ),
       ]).toEqual([origin, 'allowed']);
     }
   });
@@ -479,24 +504,36 @@ describe('TenantGuard — the session’s address (ACC-204)', () => {
     const impersonation = token({ impersonatedBy: 'platform-admin-1' });
     expect(
       await refusalCode(
-        buildContext({ cookies: { access_token: impersonation }, origin: 'https://platform.accreditme.app' }),
+        buildContext({
+          cookies: { access_token: impersonation },
+          origin: 'https://platform.accreditme.app',
+        }),
       ),
     ).toBe('allowed');
     expect(
-      await refusalCode(buildContext({ cookies: { access_token: impersonation }, origin: ORG_A_ORIGIN })),
+      await refusalCode(
+        buildContext({
+          cookies: { access_token: impersonation },
+          origin: ORG_A_ORIGIN,
+        }),
+      ),
     ).toBe('SESSION_OTHER_ORGANIZATION');
   });
 
   it('reads a local address only through the dev link origin', async () => {
     const local = 'http://org-a.localhost:4200';
-    expect(await refusalCode(buildContext({ cookies: { access_token: token() }, origin: local }))).toBe(
-      'SESSION_OTHER_ORGANIZATION',
-    );
+    expect(
+      await refusalCode(
+        buildContext({ cookies: { access_token: token() }, origin: local }),
+      ),
+    ).toBe('SESSION_OTHER_ORGANIZATION');
     process.env['APP_LINK_ORIGIN'] = 'http://localhost:4200';
     try {
-      expect(await refusalCode(buildContext({ cookies: { access_token: token() }, origin: local }))).toBe(
-        'allowed',
-      );
+      expect(
+        await refusalCode(
+          buildContext({ cookies: { access_token: token() }, origin: local }),
+        ),
+      ).toBe('allowed');
     } finally {
       delete process.env['APP_LINK_ORIGIN'];
     }
@@ -504,7 +541,10 @@ describe('TenantGuard — the session’s address (ACC-204)', () => {
 
   it('keeps verifySessionIdentity itself address-free, so sign-out works from any address', async () => {
     const result = await verifySessionIdentity(
-      { headers: { origin: 'https://org-b.accreditme.app' }, cookies: { access_token: token() } },
+      {
+        headers: { origin: 'https://org-b.accreditme.app' },
+        cookies: { access_token: token() },
+      },
       prisma as unknown as PrismaService,
     );
     expect(result).toEqual(expect.objectContaining({ ok: true }));

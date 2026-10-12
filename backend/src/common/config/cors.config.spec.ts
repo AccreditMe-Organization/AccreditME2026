@@ -215,21 +215,53 @@ describe('CORS configuration (ACC-128, ACC-139)', () => {
     const DEV = 'http://localhost:4200';
 
     it('reads the one label of a production address', () => {
-      expect(labelFromOrigin('https://al-nakheel.accreditme.app', 'accreditme.app')).toBe('al-nakheel');
+      expect(
+        labelFromOrigin('https://al-nakheel.accreditme.app', 'accreditme.app'),
+      ).toBe('al-nakheel');
       // The platform organisation's address (its slug is `platform`).
-      expect(labelFromOrigin('https://platform.accreditme.app', 'accreditme.app')).toBe('platform');
+      expect(
+        labelFromOrigin('https://platform.accreditme.app', 'accreditme.app'),
+      ).toBe('platform');
     });
 
     it('reads a local address only when the dev origin is given, on its scheme and port', () => {
-      expect(labelFromOrigin('http://al-nakheel.localhost:4200', 'accreditme.app', DEV)).toBe('al-nakheel');
-      expect(labelFromOrigin('http://platform.localhost:4200', 'accreditme.app', DEV)).toBe('platform');
-      expect(labelFromOrigin('http://al-nakheel.localhost:4200', 'accreditme.app')).toBeNull();
-      expect(labelFromOrigin('http://al-nakheel.localhost:4201', 'accreditme.app', DEV)).toBeNull();
-      expect(labelFromOrigin('https://al-nakheel.localhost:4200', 'accreditme.app', DEV)).toBeNull();
+      expect(
+        labelFromOrigin(
+          'http://al-nakheel.localhost:4200',
+          'accreditme.app',
+          DEV,
+        ),
+      ).toBe('al-nakheel');
+      expect(
+        labelFromOrigin(
+          'http://platform.localhost:4200',
+          'accreditme.app',
+          DEV,
+        ),
+      ).toBe('platform');
+      expect(
+        labelFromOrigin('http://al-nakheel.localhost:4200', 'accreditme.app'),
+      ).toBeNull();
+      expect(
+        labelFromOrigin(
+          'http://al-nakheel.localhost:4201',
+          'accreditme.app',
+          DEV,
+        ),
+      ).toBeNull();
+      expect(
+        labelFromOrigin(
+          'https://al-nakheel.localhost:4200',
+          'accreditme.app',
+          DEV,
+        ),
+      ).toBeNull();
     });
 
     it('returns the label of www (it matches no organisation), and null for everything that names none', () => {
-      expect(labelFromOrigin('https://www.accreditme.app', 'accreditme.app')).toBe('www');
+      expect(
+        labelFromOrigin('https://www.accreditme.app', 'accreditme.app'),
+      ).toBe('www');
       for (const origin of [
         'https://accreditme.app', // the apex
         'https://a.b.accreditme.app', // two labels
@@ -244,7 +276,10 @@ describe('CORS configuration (ACC-128, ACC-139)', () => {
         '',
         'not an origin',
       ]) {
-        expect([origin, labelFromOrigin(origin, 'accreditme.app', DEV)]).toEqual([origin, null]);
+        expect([
+          origin,
+          labelFromOrigin(origin, 'accreditme.app', DEV),
+        ]).toEqual([origin, null]);
       }
     });
   });

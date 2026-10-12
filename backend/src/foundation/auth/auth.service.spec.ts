@@ -718,13 +718,18 @@ describe('AuthService', () => {
       const res = fakeExpressRes();
       await expect(
         service.refresh(
-          fakeExpressReq({ cookies: { refresh_token: 'raw' }, headers: { origin: ACME_ORIGIN } }),
+          fakeExpressReq({
+            cookies: { refresh_token: 'raw' },
+            headers: { origin: ACME_ORIGIN },
+          }),
           res,
         ),
       ).resolves.toEqual({ success: true });
       expect(mockPrisma.refreshToken.update).toHaveBeenCalledTimes(1);
       expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'user-1', organizationId: ORG_A } }),
+        expect.objectContaining({
+          where: { id: 'user-1', organizationId: ORG_A },
+        }),
       );
     });
 
@@ -739,16 +744,26 @@ describe('AuthService', () => {
         const res = fakeExpressRes();
         let code: unknown = 'no refusal';
         try {
-          await service.refresh(fakeExpressReq({ cookies: { refresh_token: 'raw' }, headers }), res);
+          await service.refresh(
+            fakeExpressReq({ cookies: { refresh_token: 'raw' }, headers }),
+            res,
+          );
         } catch (e) {
-          code = e instanceof AuthRefusalException ? e.code : (e as Error).message;
+          code =
+            e instanceof AuthRefusalException ? e.code : (e as Error).message;
         }
         const label = headers['origin'] ?? '(no Origin)';
         expect([label, code]).toEqual([label, 'SESSION_OTHER_ORGANIZATION']);
         // Not revoked, not rotated, no new cookie: the session at its own
         // address keeps working.
-        expect([label, mockPrisma.refreshToken.update.mock.calls.length]).toEqual([label, 0]);
-        expect([label, mockPrisma.refreshToken.create.mock.calls.length]).toEqual([label, 0]);
+        expect([
+          label,
+          mockPrisma.refreshToken.update.mock.calls.length,
+        ]).toEqual([label, 0]);
+        expect([
+          label,
+          mockPrisma.refreshToken.create.mock.calls.length,
+        ]).toEqual([label, 0]);
         expect([label, res.cookie.mock.calls.length]).toEqual([label, 0]);
       }
     });

@@ -691,7 +691,10 @@ export class AuthService {
     // person is using at their own. The refresh cookie is a browser cookie by
     // definition, so the check always applies here. (A missing user falls
     // through to the refusals below, exactly as before.)
-    if (user && !isAtOwnAddress(req.headers['origin'], user.organization.slug)) {
+    if (
+      user &&
+      !isAtOwnAddress(req.headers['origin'], user.organization.slug)
+    ) {
       throw new AuthRefusalException('SESSION_OTHER_ORGANIZATION');
     }
 
