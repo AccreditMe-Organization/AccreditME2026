@@ -1516,9 +1516,23 @@ ACC-40 concepts don't suffer the same fate.
   read the slug from the host and no longer ask for it: the ONE label in front
   of the base domain (`frontend/src/app/core/tenant/tenant-host.ts`). A host
   that names none — the apex, `www`, two labels — shows a note and no form; an
-  unknown slug gets the form and then the neutral `INVALID_CREDENTIALS`. After
-  sign-in nothing compares the host with the session, which is what lets a
-  platform admin impersonate from `platform.…` — do not add a comparison.
+  unknown slug gets the form and then the neutral `INVALID_CREDENTIALS`.
+- **A session only works at its own organisation's address (ACC-204).** This
+  line used to say "after sign-in nothing compares the host with the session —
+  do not add a comparison"; ACC-204 is the decision to add one, on the SERVER.
+  Every address calls one API host and the cookies are host-only on it, so a
+  browser holds ONE session for every address: signed in at al-nakheel, the
+  same browser opened `platform.…` showed the al-nakheel user. Now TenantGuard
+  and `/auth/refresh` read the request's `Origin` (the same parsing CORS uses,
+  `labelFromOrigin()`) and refuse a COOKIE session used at another
+  organisation's address with 401 `SESSION_OTHER_ORGANIZATION`; a refused
+  refresh revokes and rotates nothing. Bearer clients are unchanged; sign-out
+  stays address-free. **An impersonation session is held to the platform's
+  address**, so a platform admin still impersonates from `platform.…`. The app
+  reads the code as "not signed in here" and the sign-in page says so. NOT a
+  security boundary: a non-browser client can send any Origin; data isolation
+  is still organizationId scoping. Locally the dev proxy adds the page's
+  Origin to same-origin GETs (`proxy.conf.js`). SYSTEM-REFERENCE §15.16.
 - **The platform organisation signs in at `platform.accreditme.app`**
   (`platform.localhost:4200` locally).
 - **Reserved names**: a slug must be a DNS label and not an infrastructure label

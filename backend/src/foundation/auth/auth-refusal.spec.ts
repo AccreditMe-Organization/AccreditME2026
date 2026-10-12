@@ -53,8 +53,8 @@ describe('AuthRefusalException', () => {
 
   it('words every code, and no two the same', () => {
     const messages = Object.values(AUTH_REFUSAL_MESSAGES);
-    // Six since ACC-168 added ORGANIZATION_UNAVAILABLE.
-    expect(messages).toHaveLength(6);
-    expect(new Set(messages).size).toBe(6);
+    // Seven since ACC-204 added SESSION_OTHER_ORGANIZATION (ACC-168 made six).
+    expect(messages).toHaveLength(7);
+    expect(new Set(messages).size).toBe(7);
   });
 });

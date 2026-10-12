@@ -952,6 +952,7 @@ logs.
 | `MFA_INVALID` | 401 | a wrong code on a live challenge | `attemptsRemaining` | — (reached only after a correct password). The smaller of the challenge's five attempts and the user's ten before their MFA locks. |
 | `MFA_EXPIRED` | 401 | the challenge cookie is missing, tampered with or past its 10 minutes; or its five attempts are spent | — | — |
 | `ORGANIZATION_UNAVAILABLE` | 401 | the person's organisation is SUSPENDED, CANCELLED or OFFBOARDING — at sign-in (after a correct password, before MFA), on session refresh, and on every authenticated request (ACC-168) | — | anything to someone without the password: at sign-in it is checked after the password, and a wrong password stays `INVALID_CREDENTIALS`. A 401, so the frontend's existing 401 handling signs the person out. |
+| `SESSION_OTHER_ORGANIZATION` | 401 | NOT a sign-in outcome (ACC-204): a COOKIE session used at another organisation's address, or with no usable `Origin` — on every authenticated request (TenantGuard) and on session refresh, where it is refused before the rotation and revokes nothing | — | which organisation the session belongs to: the message names neither. The app reads it as "not signed in at this address" (§15.16). |
 
 **What Sign in shows for each (ACC-120 slice 9d).** One sentence per code, in
 the one message slot above the button (`foundation/auth/components/login/
@@ -8306,11 +8307,12 @@ yourorg.accreditme.app."). **An unknown slug gets the ordinary form and then the
 neutral `INVALID_CREDENTIALS`** — there is no lookup, so an organisation that
 does not exist is indistinguishable from a wrong password.
 
-**Used ONLY by Sign in and Forgot password.** After sign-in the session's own
-organisation is the authority and nothing compares it with the address. That is
-what lets a platform administrator signed in at `platform.localhost:4200`
-impersonate a tenant and end it: every navigation in that flow is a relative
-path on the same host, and the cookies are host-only. Do not add a comparison.
+**Used by Sign in and Forgot password to say which organisation they are for.**
+This paragraph used to end "after sign-in … nothing compares it with the address
+… Do not add a comparison." **ACC-204 superseded that** (§15.16): the API now
+holds a cookie session to its organisation's address, and an impersonation
+session to the platform's, so a platform administrator signed in at
+`platform.localhost:4200` still impersonates a tenant and ends it.
 
 **Reserved slugs, two lists** (`backend/src/common/tenant/reserved-slugs.ts`):
 `INFRASTRUCTURE_LABELS` (www, api, mail, status, …) are never a tenant and never a
@@ -8531,6 +8533,75 @@ for sale. The email processor's fallback sender and the demo seed's fallback
 platform-admin address were both on it; both are gone
 (`resolvePlatformSender()` → the job fails with a named error;
 `resolvePlatformAdminEmail()` → the seed refuses to run).
+
+### 15.16 A session only works at its own organisation's address (ACC-204)
+
+**The defect.** Every address calls ONE API host, and the session cookies are
+host-only on it, so a browser holds one session for every address. Signed in as
+Yasser at `al-nakheel.accreditme.app`, the same browser opened
+`platform.accreditme.app` and the app showed Yasser there. Data stayed scoped to
+the token's organisation — not a leak — but the session showed at the wrong
+address.
+
+**The rule.** A COOKIE session works only at its own organisation's address:
+
+- **Where it is enforced:** `TenantGuard` (every authenticated request) and
+  `refresh()`. Both read the request's `Origin` through `labelFromOrigin()`
+  (`common/config/cors.config.ts`), the same parsing CORS uses:
+  - production: `https://{one label}.{APP_BASE_DOMAIN}`;
+  - locally, when `APP_LINK_ORIGIN` is set: `http://{label}.localhost:4200`.
+- **The check:** the label must equal the session organisation's `slug`, which
+  rides on the organisation join `verifySessionIdentity()` already makes — one
+  more column, no extra query. `isAtOwnAddress()` (`common/tenant/session-address.ts`)
+  is the one comparison; `isSessionAtItsAddress()` (`tenant.guard.ts`) adds the
+  two exceptions below.
+- **Mismatch, or no usable Origin:** 401 `SESSION_OTHER_ORGANIZATION` (§1.12).
+- **`refresh()` checks BEFORE the rotation and revokes nothing**, so a tab at
+  another organisation's address can neither end nor move the session the
+  person uses at their own. Its user lookup moved ahead of the rotation (now
+  scoped by the row's organisation too); the ACC-168 refusals after it still
+  revoke.
+- **Bearer clients are unchanged** — an API client is not a browser tab.
+- **An impersonation session is held to the PLATFORM's address** (`platform`,
+  the platform organisation's slug, `PLATFORM_ORGANIZATION_SLUG`), because a
+  platform administrator impersonates from `platform.…` and the app stays there.
+  Impersonation itself is due to go (ACC-99).
+- **Sign-out stays address-free** (ACC-203): the check sits in the guard, not in
+  `verifySessionIdentity()`, which sign-out shares.
+
+**Why the Origin, and what it is not.** A browser sends `Origin` on every CORS
+request, and in production every call the app makes is one (app and API are
+different origins); a page cannot forge it. The only non-CORS browser request to
+the API is a download navigation to `/files/stream/:token`, which uses no cookie.
+**This is a correctness guard, not a security boundary:** a non-browser client
+holding the cookie can send any Origin. Data isolation is still organizationId
+scoping.
+
+**Locally** the dev server proxies `/api`, so app and API are the same origin and
+a browser sends no `Origin` on a GET. `proxy.conf.js` adds the page's own origin
+(from the `Host` the browser asked for) when the browser sent none, so the
+backend rule is the same everywhere. A consequence worth knowing: through the
+proxy the cookies are per PAGE host (`al-nakheel.localhost`), so locally the
+cross-address case never arises on its own — reproducing it means copying one
+host's session cookies to another (ACC-204's browser proof did exactly that).
+
+**The frontend** (`core/tenant/session-address-state.ts`) reads the code as
+"not signed in at this address":
+
+- `restoreSession()` does not renew on it and lands as signed out, with no
+  redirect (ACC-24).
+- The interceptor does not renew on it; an ordinary request refused with it
+  ends the session HERE, locally only — never `/auth/logout`, which would end
+  the session the other address is using.
+- The renewal service records a refresh refused with it.
+- The sign-in page then says, in English and Arabic: "You're signed in to
+  another organisation in this browser. Signing in here will sign you out there."
+  A sign-in or a session at this address clears it.
+
+**Known, unchanged:** one browser still holds one session, so signing in at one
+address replaces it everywhere (the note says so), and a sign-out in any tab
+ends it. Per-organisation cookie names, which would let one browser hold two
+organisations' sessions, are not built.
 
 ## 16. File Storage — Per Organisation, and File Evidence (ACC-177, SharePoint ACC-185)
 

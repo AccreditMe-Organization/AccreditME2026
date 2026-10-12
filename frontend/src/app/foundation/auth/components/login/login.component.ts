@@ -12,6 +12,7 @@ import { NavigationAccessService } from '../../../../core/services/navigation-ac
 import { FormatService } from '../../../../core/formatting/format.service';
 import { INVITATION_ACCEPTED_NOTICE } from '../accept-invitation/accept-invitation.component';
 import { TenantHostService } from '../../../../core/tenant/tenant-host';
+import { SessionAddressState } from '../../../../core/tenant/session-address-state';
 import { NoOrganisationAddressComponent } from '../no-organisation-address/no-organisation-address.component';
 import { AuthLayoutComponent } from '../auth-layout/auth-layout.component';
 import { FieldComponent } from '../../../../shared/components/field/field.component';
@@ -62,6 +63,13 @@ import { SIGN_IN_REFUSAL_KEYS, SignInRefusal, describeSignInRefusal } from './si
              which is what the 15-minute bug felt like. -->
         @if (signedOutForIdle) {
           <p-message severity="info" [text]="'session.signedOutIdle' | translate" />
+        }
+
+        <!-- ACC-204 — this browser's session belongs to another organisation's
+             address, so this address is signed out. Signing in here replaces
+             that session, which is what the line warns. -->
+        @if (signedInElsewhere()) {
+          <p-message severity="info" [text]="'session.signedInElsewhere' | translate" />
         }
 
         <!-- ACC-120 slice 9e — arriving from Accept invitation. -->
@@ -189,6 +197,9 @@ export class LoginComponent {
 
   /** ACC-139 — the organisation this address names, or null for none. */
   protected readonly organizationSlug = inject(TenantHostService).slug;
+
+  /** ACC-204 — set when this browser's session belongs to another organisation's address. */
+  protected readonly signedInElsewhere = inject(SessionAddressState).signedInElsewhere;
 
   /** Set when the idle rule ended the last session (IdleService). */
   protected readonly signedOutForIdle =

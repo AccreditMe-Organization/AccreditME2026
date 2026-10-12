@@ -76,6 +76,7 @@ import {
   twoFactorCookieClearOptions,
 } from '../../common/config/session-cookies';
 import { verifySessionIdentity } from '../../common/guards/tenant.guard';
+import { isAtOwnAddress } from '../../common/tenant/session-address';
 
 // CLAUDE.md's "JWT expiry: 15 minutes". ACC-122 did NOT change it.
 const DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
@@ -676,6 +677,27 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    // ACC-204 — read BEFORE the rotation, so the address check below can
+    // refuse without touching the token. Scoped by the row's organisation as
+    // well as its user. Same one query as before, moved up.
+    const user = await this.prisma.user.findFirst({
+      where: { id: existing.userId, organizationId: existing.organizationId },
+      include: { organization: { select: { status: true, slug: true } } },
+    });
+
+    // ACC-204 — a session renews only at its own organisation's address.
+    // Refused BEFORE the rotation and WITHOUT revoking: a tab at another
+    // organisation's address must not be able to end, or move, the session the
+    // person is using at their own. The refresh cookie is a browser cookie by
+    // definition, so the check always applies here. (A missing user falls
+    // through to the refusals below, exactly as before.)
+    if (
+      user &&
+      !isAtOwnAddress(req.headers['origin'], user.organization.slug)
+    ) {
+      throw new AuthRefusalException('SESSION_OTHER_ORGANIZATION');
+    }
+
     // Rotate — revoke the presented token, issue a brand new one. Never
     // reuse a refresh token value across requests.
     await this.prisma.refreshToken.update({
@@ -683,10 +705,6 @@ export class AuthService {
       data: { revokedAt: new Date() },
     });
 
-    const user = await this.prisma.user.findFirst({
-      where: { id: existing.userId },
-      include: { organization: { select: { status: true } } },
-    });
     if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException('This account is not active');
     }
