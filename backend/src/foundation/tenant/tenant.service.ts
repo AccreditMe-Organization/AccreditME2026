@@ -19,6 +19,18 @@ import {
 } from '../../common/utils/tenant-config-crypto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateEmailConfigDto } from './dto/update-email-config.dto';
+import {
+  IStoredEmailConfig,
+  keepKnownFields,
+  maskEmailConfig,
+  missingEmailFields,
+  readEmailConfig,
+  secretFieldsOf,
+  writeEmailConfig,
+} from './email-config';
+import { EmailSettingsIncompleteException } from './email-settings-refusal';
+import { changedFieldNames, mergeKeepingSecrets } from '../../common/config/write-only-secrets';
+import { resolvePlatformSender } from '../../common/config/email-sender.config';
 import { UpdateAiOverageDto } from './dto/update-ai-overage.dto';
 import { UpdateTaskSlaDto } from './dto/update-task-sla.dto';
 import {
@@ -235,48 +247,103 @@ export class TenantService {
     };
   }
 
-  // UI only for now (ACC-13) — see UpdateEmailConfigDto's own header comment.
-  // Same encrypted-JSON pattern as authConfig/storageConfig/aiConfig.
+  // ── Email provider settings (ACC-181) ─────────────────────────────────────
+  // Typed per provider, secrets write-only: GET answers each secret 'set' or
+  // null, a save merges with what is stored, the audit names fields only.
+  // Nothing sends mail with these yet (email-config.ts).
+
   async getEmailConfig(id: string): Promise<IEmailConfig> {
     const org = await this.prisma.organization.findUnique({ where: { id } });
     if (!org) throw new NotFoundException('Tenant not found');
-
-    if (!org.emailConfig) {
-      return { emailProvider: null, config: null };
-    }
-
-    const parsed = JSON.parse(this.decryptConfig(org.emailConfig)) as {
-      emailProvider: IEmailConfig['emailProvider'];
-      config: Record<string, unknown>;
-    };
-    return { emailProvider: parsed.emailProvider, config: parsed.config };
+    return maskEmailConfig(this.readStoredEmailConfig(org.emailConfig), resolvePlatformSender());
   }
 
-  async updateEmailConfig(
-    id: string,
-    dto: UpdateEmailConfigDto,
-    actorId: string,
-  ): Promise<void> {
-    await this.findById(id);
+  /**
+   * Merges the chosen provider's settings with the stored ones:
+   * - a secret omitted or sent '' keeps its stored value, but only while the
+   *   provider is unchanged — a switch never carries the old provider's secret;
+   * - the result must be complete, else 400 EMAIL_SETTINGS_INCOMPLETE (D6);
+   * - only a newly sent secret gets a new set date (D2);
+   * - the audit records the provider and the changed field NAMES.
+   */
+  async updateEmailConfig(id: string, dto: UpdateEmailConfigDto, actorId: string): Promise<IEmailConfig> {
+    const org = await this.prisma.organization.findUnique({ where: { id } });
+    if (!org) throw new NotFoundException('Tenant not found');
 
-    const encrypted = this.encryptConfig({
-      emailProvider: dto.emailProvider,
-      config: dto.config,
-    });
+    const stored = this.readStoredEmailConfig(org.emailConfig);
+    const provider = dto.provider;
+    const sameProvider = stored?.provider === provider;
+    const before = sameProvider ? stored.settings : {};
+    const sent = (dto[provider] ?? {}) as Record<string, unknown>;
+    const secrets = secretFieldsOf(provider);
 
+    const settings = keepKnownFields(provider, mergeKeepingSecrets(before, sent, secrets));
+    const missing = missingEmailFields(provider, settings);
+    if (missing.length > 0) throw new EmailSettingsIncompleteException(missing);
+
+    const now = new Date().toISOString();
+    const newlySent = secrets.filter((name) => typeof sent[name] === 'string' && sent[name] !== '');
+    const secretsSetAt: Record<string, string> = {};
+    for (const name of secrets) {
+      if (settings[name] === undefined) continue;
+      if (newlySent.includes(name)) secretsSetAt[name] = now;
+      else if (sameProvider && stored.secretsSetAt[name]) secretsSetAt[name] = stored.secretsSetAt[name];
+    }
+
+    const next = { provider, settings, secretsSetAt };
     await this.prisma.organization.update({
       where: { id },
-      data: { emailConfig: encrypted },
+      data: { emailConfig: this.encryptConfig(writeEmailConfig(next)) },
     });
 
+    // Names only. A secret that was sent counts as changed even when the value
+    // is the same, because it was replaced.
+    const changedFields = [
+      ...(stored?.provider !== provider ? ['provider'] : []),
+      ...new Set([
+        ...changedFieldNames(before, settings, `${provider}.`),
+        ...newlySent.map((name) => `${provider}.${name}`),
+      ]),
+    ];
     await this.auditLog.log({
       action: 'UPDATE',
       objectType: 'Organization',
       objectId: id,
       actorId,
       tenantId: id,
-      metadata: { event: 'email_config_updated', emailProvider: dto.emailProvider },
+      metadata: {
+        event: 'email_config_updated',
+        provider,
+        previousProvider: stored?.provider ?? null,
+        changedFields,
+      },
     });
+
+    return maskEmailConfig(next, resolvePlatformSender());
+  }
+
+  /** Disconnect: back to AccreditMe's default delivery. The whole provider goes (D3). */
+  async disconnectEmailConfig(id: string, actorId: string): Promise<IEmailConfig> {
+    const org = await this.prisma.organization.findUnique({ where: { id } });
+    if (!org) throw new NotFoundException('Tenant not found');
+    if (org.emailConfig) {
+      const stored = this.readStoredEmailConfig(org.emailConfig);
+      await this.prisma.organization.update({ where: { id }, data: { emailConfig: null } });
+      await this.auditLog.log({
+        action: 'UPDATE',
+        objectType: 'Organization',
+        objectId: id,
+        actorId,
+        tenantId: id,
+        metadata: { event: 'email_config_disconnected', previousProvider: stored?.provider ?? null },
+      });
+    }
+    return maskEmailConfig(null, resolvePlatformSender());
+  }
+
+  private readStoredEmailConfig(encrypted: string | null): IStoredEmailConfig | null {
+    if (!encrypted) return null;
+    return readEmailConfig(JSON.parse(this.decryptConfig(encrypted)));
   }
 
   // Deliberately narrow (ACC-13) — a tenant admin may only toggle this one

@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   UseGuards,
+  Delete,
 } from '@nestjs/common';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
@@ -94,8 +95,15 @@ export class TenantController {
     @Body() dto: UpdateEmailConfigDto,
     @CurrentTenant() tenantId: string,
     @CurrentUser() userId: string,
-  ): Promise<void> {
+  ): Promise<IEmailConfig> {
     return this.tenantService.updateEmailConfig(tenantId, dto, userId);
+  }
+
+  // ACC-181 — Disconnect: back to AccreditMe's default delivery.
+  @Delete('email-config')
+  @Permissions(TENANT_PERMISSIONS.MANAGE_CONFIG)
+  disconnectEmailConfig(@CurrentTenant() tenantId: string, @CurrentUser() userId: string): Promise<IEmailConfig> {
+    return this.tenantService.disconnectEmailConfig(tenantId, userId);
   }
 
   @Patch('ai-settings')

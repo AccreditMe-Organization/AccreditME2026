@@ -46,6 +46,7 @@ describe('TenantController', () => {
     bootstrap: jest.Mock;
     getEmailConfig: jest.Mock;
     updateEmailConfig: jest.Mock;
+    disconnectEmailConfig: jest.Mock;
     updateAiOverageSetting: jest.Mock;
     getTaskSla: jest.Mock;
     updateTaskSla: jest.Mock;
@@ -64,8 +65,9 @@ describe('TenantController', () => {
         aiConfig: null,
       }),
       bootstrap: jest.fn().mockResolvedValue(undefined),
-      getEmailConfig: jest.fn().mockResolvedValue({ emailProvider: null, config: null }),
+      getEmailConfig: jest.fn().mockResolvedValue({ provider: null, settings: null, secretsSetAt: {}, defaultSender: null }),
       updateEmailConfig: jest.fn().mockResolvedValue(undefined),
+      disconnectEmailConfig: jest.fn().mockResolvedValue(undefined),
       updateAiOverageSetting: jest.fn().mockResolvedValue(undefined),
       getTaskSla: jest.fn().mockResolvedValue(MOCK_TASK_SLA),
       updateTaskSla: jest.fn().mockResolvedValue(undefined),
@@ -132,13 +134,20 @@ describe('TenantController', () => {
 
   describe('updateEmailConfig', () => {
     it('calls updateEmailConfig with tenantId, dto, and userId', async () => {
-      const dto = { emailProvider: 'resend' as const, config: { apiKey: 'abc' } };
+      const dto = { provider: 'resend' as const, resend: { apiKey: 'abc', fromAddress: 'quality@example.test' } };
       await controller.updateEmailConfig(dto, MOCK_TENANT_ID, MOCK_USER_ID);
       expect(service.updateEmailConfig).toHaveBeenCalledWith(
         MOCK_TENANT_ID,
         dto,
         MOCK_USER_ID,
       );
+    });
+  });
+
+  describe('disconnectEmailConfig (ACC-181)', () => {
+    it('calls disconnectEmailConfig with tenantId and userId', async () => {
+      await controller.disconnectEmailConfig(MOCK_TENANT_ID, MOCK_USER_ID);
+      expect(service.disconnectEmailConfig).toHaveBeenCalledWith(MOCK_TENANT_ID, MOCK_USER_ID);
     });
   });
 
