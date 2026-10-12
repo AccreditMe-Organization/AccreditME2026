@@ -36,6 +36,7 @@ const API = `${environment.apiUrl}/tasks`;
         [sourceType]="sourceType()"
         [sourceId]="sourceId()"
         [required]="required()"
+        [purpose]="purpose()"
       />
     }
   `,
@@ -45,6 +46,7 @@ class HostComponent {
   readonly sourceType = signal<string | null>(null);
   readonly sourceId = signal<string | null>(null);
   readonly required = signal(false);
+  readonly purpose = signal<'task' | 'stage-task'>('task');
   group: AssignGroup = createAssignGroup(false);
 }
 
@@ -56,7 +58,13 @@ describe('TaskAssigneePickerComponent (ACC-167)', () => {
   let http: HttpTestingController;
 
   function setup(
-    options: { language?: 'en' | 'ar'; committee?: boolean; permissions?: string[]; required?: boolean } = {},
+    options: {
+      language?: 'en' | 'ar';
+      committee?: boolean;
+      permissions?: string[];
+      required?: boolean;
+      purpose?: 'task' | 'stage-task';
+    } = {},
   ) {
     TestBed.configureTestingModule({
       imports: [HostComponent],
@@ -81,6 +89,7 @@ describe('TaskAssigneePickerComponent (ACC-167)', () => {
       fixture.componentInstance.sourceType.set('COMMITTEE');
       fixture.componentInstance.sourceId.set('committee-1');
     }
+    if (options.purpose) fixture.componentInstance.purpose.set(options.purpose);
     if (options.required) {
       fixture.componentInstance.required.set(true);
       fixture.componentInstance.group = createAssignGroup(true);
@@ -166,6 +175,35 @@ describe('TaskAssigneePickerComponent (ACC-167)', () => {
       ]);
       group().controls.userId.setValue('u2');
       expect(picker().outcome()).toBe('Goes to Omar.');
+    });
+  });
+
+  // ACC-208 — a stage's task definition: nothing is placed now, so the line
+  // speaks of each record that enters, and still says when nobody holds it.
+  describe("the outcome line for a stage's task (ACC-208)", () => {
+    it('says whoever holds the position when a record enters, for a pool and a single holder alike', () => {
+      const { picker, group } = setup({ purpose: 'stage-task', required: true });
+      choose(group(), { isSingleAssignee: false, holderCount: 3 }, []);
+      expect(picker().outcome()).toBe('Empty: whoever holds the position when a record enters.');
+    });
+
+    it('says nobody holds it today, when nobody does', () => {
+      const { picker, group } = setup({ purpose: 'stage-task', required: true });
+      choose(group(), { isSingleAssignee: true, holderCount: 0 }, []);
+      expect(picker().outcome()).toBe('Nobody holds it here today. Its tasks wait unassigned until someone does.');
+    });
+
+    it('names a chosen person, and what happens once they leave the position', () => {
+      const { picker, group } = setup({ purpose: 'stage-task', required: true });
+      choose(group(), { isSingleAssignee: false, holderCount: 2 }, [{ id: 'u1', name: 'Huda' }]);
+      group().controls.userId.setValue('u1');
+      expect(picker().outcome()).toBe('Goes to Huda while they hold this position; otherwise to whoever does.');
+    });
+
+    it('says it in Arabic', () => {
+      const { picker, group } = setup({ purpose: 'stage-task', required: true, language: 'ar' });
+      choose(group(), { isSingleAssignee: false, holderCount: 3 }, []);
+      expect(picker().outcome()).toBe('إن تُرك فارغًا: من يشغل المنصب عند دخول السجل.');
     });
   });
 

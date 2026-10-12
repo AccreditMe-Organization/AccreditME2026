@@ -559,7 +559,7 @@ built:**
 
 - [x] 1 Backend B1–B8
 - [x] 2 DTOs, refusal map, i18n
-- [ ] 3 Picker inputs
+- [x] 3 Picker inputs
 - [ ] 4 Tasks on entry list
 - [ ] 5 Definition dialog (measurements recorded)
 - [ ] 6 Transition Kind
