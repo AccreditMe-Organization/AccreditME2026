@@ -1491,6 +1491,8 @@ storage-purge       Daily — purge files deleted more than 30 days ago (ACC-177
                     and the 30-day SharePoint secret warning (ACC-185);
                     hourly — probe each confirmed SharePoint library, setting
                     and clearing "access withdrawn" (ACC-185)
+ai-credits          Hourly — renew each organisation's AI credit period once its
+                    renewal time has passed (ACC-194)
 notification-digest Daily digest emails for digest-mode users
 data-export         Tenant data export packages (async, notified when ready)
 report-scheduler    Scheduled automated report generation and email delivery
@@ -1687,10 +1689,20 @@ Platform Admin configures:
 - Credit cost per AI feature (AiFeatureCost table)
 
 AI credit costs per feature (platform admin adjustable):
+
+**Only three of these are rows, and they are seeded, not hand-set (ACC-194,
+Ahmad, 12 Oct):** `task_description_drafting` 2, `document_summary` 15 (input
+capped at 30,000 tokens, ACC-193), `morning_briefing` 5 **per on-demand run**,
+restricted to al-nakheel for demos (a tenant admin presses a button, ACC-198 —
+never a schedule, never per user per day). They arrive through
+`npm run seed:ai-feature-costs` after the deploy, which never overwrites an
+edited row. Everything else below is a price list for features that do not
+exist; a feature is callable only when it is in `foundation/ai/ai.config.ts`
+AND has a row.
 ```
 LIGHT (1-5 credits):
   task_title_suggestion: 1
-  task_description_drafting: 2
+  task_description_drafting: 2        ← seeded (ACC-194)
   meeting_agenda_generation: 3
   standard_interpretation: 3
   severity_suggestion: 2
@@ -1699,7 +1711,8 @@ LIGHT (1-5 credits):
 MEDIUM (5-20 credits):
   rca_assistance: 5
   capa_suggestion: 5
-  morning_briefing: 5
+  morning_briefing: 5                 ← seeded; per on-demand run, al-nakheel only
+  document_summary: 15                ← seeded (ACC-194, for ACC-193)
   minutes_drafting: 8
   committee_health_report: 10
   evidence_suggestion_per_element: 2
@@ -1738,23 +1751,35 @@ AiCreditPack: name, credits, price, isActive,
               availableTo[], sortOrder
 
 AiFeatureCost: featureKey (unique), creditCost,
-               description
+               description,
+               restricted, allowedOrganizationIds[]   (ACC-194: the per-
+               organisation feature switch; restricted + empty = nobody)
 ```
 
-### Organization AI Settings (in Organization.settings JSON)
-```json
-{
-  "modules": { "documents": true, "audits": true, ... },
-  "ai": {
-    "enabled": true,
-    "monthlyCredits": 500,
-    "creditsUsed": 127,
-    "creditsRemaining": 373,
-    "resetDate": "2026-08-01",
-    "overageEnabled": true
-  }
-}
+### Organization AI credits — dedicated COLUMNS, not settings JSON (ACC-194)
+
+**Corrected 2026-10-12.** This section used to show the balance inside
+`Organization.settings.ai` (`monthlyCredits`, `creditsUsed`,
+`creditsRemaining`, `resetDate`, `overageEnabled`). It is not there any more,
+and those keys are **ignored everywhere**: six settings writers read the whole
+JSON and write it back with no lock (ACC-215), so a stale copy would have erased
+deductions.
+
 ```
+Organization.aiMonthlyCredits         the allocation (the plan's, or a manual value)
+Organization.aiPendingMonthlyCredits  a cut waiting for the next renewal
+Organization.aiCreditsUsed            used in the current period
+Organization.aiCreditsPeriodStart     when the current period began
+Organization.aiCreditsRenewsAt        when it renews
+Organization.aiCreditsNoticeFor       the period whose "used up" notice was sent
+settings.ai.enabled                   the organisation switch — only an explicit
+                                      false turns AI off; nothing writes it yet
+```
+
+`creditsRemaining` is never stored (allocation − used). `GET /tenant` still
+answers the old `ai` shape, derived from the columns live, plus
+`pendingMonthlyCredits`, `periodStart` and `features`; `overageEnabled` is
+always false — **overage stays off** and its toggles were removed.
 
 ### Platform Admin Controls (ACC-13 — Super Admin Portal)
 Platform admin manages without code deployment:
@@ -1764,24 +1789,56 @@ Platform admin manages without code deployment:
 - Per-tenant overrides (custom plan, trial access, credit boost)
 - Tenant usage monitoring
 
-### AI Runtime Flow
-Every AI call:
+### AI Runtime Flow — BUILT (ACC-194)
+
+**Corrected 2026-10-12.** The flow below used to check, call, THEN deduct, with
+a `FeatureQuotaExceededException`, credits in settings JSON and a notice at
+exactly 0. As built, credits are RESERVED before the call and refunded if it
+fails, so a failed call costs nothing and the balance can never go negative.
+
+Every AI call goes through `AiService.run(featureKey, …)`
+(`backend/src/foundation/ai/ai.service.ts`) — the only consumer of
+`AI_PROVIDER`, enforced by `npm run check:ai-gateway`:
 ```
-1. Load AiFeatureCost for featureKey from DB
-2. Check organization.settings.ai.creditsRemaining >= cost
-3. If insufficient → return FeatureQuotaExceededException
-4. Execute AI call via AIProvider
-5. Deduct credits from organization settings
-6. Log to AiInteractionLog with creditCost field
-7. If creditsRemaining = 0 → notify tenant admin
+1. AiFeatureCost row for the feature       none → AI_FEATURE_NOT_PRICED (503)
+2. Feature switch (restricted + list)      not listed → AI_NOT_ENABLED (409),
+                                           reason FEATURE_NOT_AVAILABLE
+3. Platform key configured                 none → AI_PROVIDER_UNAVAILABLE (503),
+                                           BEFORE anything is reserved
+4. Reserve the cost: ONE conditional UPDATE on the Organization row
+   (allocation > 0, not switched off, period not due, used + cost ≤ allocation)
+   — a due period is renewed inline and the reserve retried once
+                                           no allowance / switched off →
+                                           AI_NOT_ENABLED (409);
+                                           too few → AI_CREDITS_EXHAUSTED (409)
+5. Call the provider with the feature's model, effort and max output
+6. Success → AiInteractionLog: creditCost, provider, tier, tokens, and a
+   caller-written description — NEVER the prompt or the answer
+7. Failure → refund into the SAME period, log at cost 0,
+   AI_PROVIDER_FAILED (502)
+"Credits used up" notice → the tenant admins, ONCE per period, at the first
+of: nothing open to the organisation fits in what is left, or the first
+AI_CREDITS_EXHAUSTED.
 ```
 
-Monthly BullMQ job:
+Credit periods and renewal (D2, D14):
 ```
-Reset creditsUsed to 0 for all organizations
-Set creditsRemaining = Plan.aiCreditsPerMonth
-Set resetDate = first day of next month
+A period is anchored to ACTIVATION = bootstrappedAt (else createdAt), in UTC.
+  activated on the 1st–28th → renews monthly at 00:00 UTC on that day
+  activated on the 29th–31st → renews every 30 days
+The hourly ai-credits job (RUN_WORKERS only) renews every organisation whose
+renewal time has passed: used → 0, a waiting cut applied. Re-runs and a second
+worker change nothing (row lock; only a due period is touched).
+When billing exists, the period follows the billing date instead.
 ```
+
+Allocation (D3, D15, D16): it FOLLOWS THE PLAN — setting or changing a plan
+(`PATCH /platform/tenants/:id/plan`, or at creation) sets it to the plan's
+`aiCreditsPerMonth`, replacing any earlier value. A platform admin may still
+allocate by hand for a special agreement; the next plan change replaces it.
+A raise applies now, a cut at the next renewal. Editing a plan's own credits
+reaches nobody until their plan is next set. **It is NOT reset to
+`Plan.aiCreditsPerMonth` monthly** — this section used to say it was.
 
 ---
 
@@ -3407,6 +3464,66 @@ briefly:
   it, with a layout spec each. **Add no longer shows "Approval path"** (D5):
   create never sent it.
 
+## Key Architecture Decisions (ACC-194)
+
+AI foundation: metering, credit periods, organisation and feature switches,
+platform key only. Full mechanism: SYSTEM-REFERENCE.md §17. Plan and Ahmad's
+answers (12 Oct, D1–D19): `backend/Plans/step-194-ai-foundation.md`. The
+decisions, briefly:
+
+- **EVERY AI CALL GOES THROUGH `AiService.run()`** — priced, switched, metered,
+  logged. `AI_PROVIDER` lives in `AiModule` and is not exported;
+  `npm run check:ai-gateway` fails any reference outside `foundation/ai` and
+  `providers/ai`. A feature is callable only with a key in
+  `foundation/ai/ai.config.ts` AND an `AiFeatureCost` row (none = refused,
+  never free).
+- **CREDITS LIVE IN DEDICATED `Organization` COLUMNS, not settings JSON** (D1).
+  Six settings writers rewrite the whole JSON with no lock (ACC-215); the
+  counters are out of their reach. The reservation is ONE conditional
+  `UPDATE … RETURNING`, so concurrent calls cannot overspend and the balance
+  cannot go negative — proved against a real Postgres by `npm run test:db`
+  (CI step after the migrations; fails without a database, refuses a
+  non-local one), and the proof goes red if the cap or the row lock is
+  removed.
+- **RESERVE, THEN CALL; a failed call is refunded into the SAME period.**
+  Overage stays off: the gateway refuses at zero, and the overage toggles are
+  removed (D9, D19).
+- **Refusals by code:** `AI_NOT_ENABLED` 409 (reason `NO_ALLOWANCE`,
+  `SWITCHED_OFF` or `FEATURE_NOT_AVAILABLE`), `AI_CREDITS_EXHAUSTED` 409,
+  `AI_PROVIDER_UNAVAILABLE` 503 (no key — Railway today, checked before
+  reserving), `AI_PROVIDER_FAILED` 502, `AI_FEATURE_NOT_PRICED` 503. Never 403.
+  The frontend says them through `core/ai/ai-refusal.ts`.
+- **PERIODS ARE ANCHORED TO ACTIVATION** (D2, D14): `bootstrappedAt`, else
+  `createdAt`, in UTC; the 1st–28th renew monthly on that day, the 29th–31st
+  every 30 days. The rule lives only in `ai-credit-period.ts`. When billing
+  exists, the period follows the billing date. Renewal is hourly behind the
+  worker gate, and also inline when a call meets a due period, so a decision
+  never waits for the job.
+- **THE ALLOCATION FOLLOWS THE PLAN** (D3, D15, D16, D18): set at creation and
+  by `PATCH /platform/tenants/:id/plan` (audited old → new). A manual
+  allocation is allowed and the next plan change replaces it. A raise applies
+  now, a cut at the next renewal. A plan edit reaches nobody until their plan
+  is next set. **No `Plan` rows exist yet**, so every organisation is at 0
+  until plans exist or a platform admin allocates by hand.
+- **PER-ORGANISATION FEATURE SWITCH** (D17): `AiFeatureCost.restricted` +
+  `allowedOrganizationIds`; restricted with an empty list = open to NOBODY.
+  `morning_briefing` is restricted to al-nakheel, on demand only (ACC-198).
+- **NO CUSTOMER TEXT IN THE AI LOG** (D5, D7): a caller-written description,
+  sizes, credit cost, provider, tier and tokens. The accepted text is recorded
+  where a person accepted it.
+- **THE MODEL IS CONFIGURATION** (D6): `ANTHROPIC_MODEL_STANDARD`, else
+  `claude-sonnet-5-5`; each feature sets its own effort and max output.
+  Confirmed against Anthropic's documentation on 12 Oct: no `temperature`
+  (a non-default value is a 400 on Sonnet 5.5) and no `thinking` field are
+  sent; effort is `output_config.effort`.
+- **PLATFORM KEY ONLY** (D8): the per-tenant `aiConfig` fallback is gone; the
+  column is untouched (no organisation had one) and dropped in a later contract
+  step. Customer-hosted models: per DEPLOYMENT only, unmetered there, built when
+  a Tier 3 customer exists (plan §16).
+- **The seed (`npm run seed:ai-feature-costs`), al-nakheel's demo allocation
+  and the live AI call run AFTER the deploy**, never before: the columns must
+  not reach the shared database first.
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
@@ -3912,20 +4029,22 @@ complete, not just the currently-in-review ones.
 
 - **AI provider selection is a confirmed 3-layer gap — no UI, no
   `aiConfig` write path, hardcoded single-provider DI binding** (full
-  detail: SYSTEM-REFERENCE.md Section 11, Tier 2). `AIProvider` itself
-  is fully built and working (real Anthropic integration, per-tenant
-  key resolution, complete audit logging) but has zero real consumers
-  app-wide (one stub caller, `LookupService.suggestValues()`, doesn't
-  count) — genuinely idle, production-ready infrastructure, not
-  blocking anything on its own. A real pricing-model question this
+  detail: SYSTEM-REFERENCE.md Section 11, Tier 2). **UPDATED (ACC-194):**
+  the per-tenant key resolution is GONE (platform key only), and the
+  provider now sits behind one metered gateway, `AiService.run()`
+  (SYSTEM-REFERENCE §17). Provider SELECTION is still unbuilt and still
+  out of scope; the provider contract was kept neutral so a second
+  provider slots in without touching the gateway. No user feature calls
+  the gateway yet — ACC-193, ACC-197 and ACC-198 are its first callers.
+  A real pricing-model question this
   surfaced has now been resolved: tenant-facing "bring your own API
   key" was considered and explicitly REJECTED in favor of a different
   design — AccreditMe maintains its OWN platform-level keys for
   multiple AI providers (Anthropic, Azure OpenAI, OpenAI); a tenant
   admin SELECTS their preferred provider, but traffic is routed
   through AccreditMe's own key regardless of selection. This keeps
-  the existing AI credit system (`Organization.settings.ai`,
-  `AiCreditPack`, the full usage-metered revenue model already
+  the existing AI credit system (the Organization AI credit columns since
+  ACC-194, `AiCreditPack`, the full usage-metered revenue model already
   designed) fully intact and in AccreditMe's control — selection
   affects WHICH backend serves a request, never who pays for it or
   how it's metered. This applies to Tier 1 (Cloud SaaS) and Tier 2
@@ -3939,9 +4058,8 @@ complete, not just the currently-in-review ones.
   feature or the Tenant Onboarding wizard actually needs it — but the
   DESIGN QUESTION itself is now resolved, so whenever this does get
   built, it should NOT default back to a generic bring-your-own-key
-  implementation. `AiInteractionLog` should capture provider and tier
-  as explicit fields (not inferred from a model-name string) for
-  accurate cost reconciliation, once this is actually built.
+  implementation. `AiInteractionLog` captures provider, tier, credit
+  cost and token counts as explicit fields since ACC-194.
   (Committee's `TOR_DRAFTING`/Health Report/Decision Pattern Analysis
   AI features remain separately blocked on Document Management's and
   Meeting Management's own data existing — unrelated to this
@@ -3949,9 +4067,9 @@ complete, not just the currently-in-review ones.
 - **Two small, unrelated findings needing their own tiny tickets
   eventually**: the frontend's `suggestHolidays()` calls a backend
   route that doesn't exist (a live 404, not a stub);
-  `AiFeatureCost`/`AiCreditPack` billing machinery is fully built but
-  structurally unreachable since no feature triggers the
-  credit-deduction flow.
+  `AiCreditPack` (credit purchase) is still unreachable — there is no
+  purchase flow. **`AiFeatureCost` is reachable since ACC-194**: every
+  call through `AiService.run()` reserves its cost.
 - **List-page filtering is inconsistent/missing across the app** —
   flagged by Ahmad after ACC-40 removed OrgPosition's org-unit filter
   (a necessary removal, since positions became org-wide with nothing
@@ -4308,6 +4426,10 @@ STORAGE_ALLOW_PRIVATE_ENDPOINTS=
 # Per-file upload cap in MB; 25 when unset.
 MAX_UPLOAD_MB=
 ANTHROPIC_API_KEY=
+# ACC-194 — the model behind each AI tier. Unset = claude-sonnet-5-5 (Standard)
+# and claude-opus-5-5 (Premium, unused). No model is named anywhere else.
+ANTHROPIC_MODEL_STANDARD=
+ANTHROPIC_MODEL_PREMIUM=
 # The API's own origin — Better Auth's base URL. REQUIRED at boot (ACC-148).
 API_ORIGIN=http://localhost:3000
 RESEND_API_KEY=
@@ -4391,13 +4513,18 @@ Section 10.11.
 These are wired and ready for all subsequent steps to import:
 
 - `TenantModule` — import this in every foundation and functional module
-  to get `TenantService`, `AuditLogService`, and the AI and auth provider tokens
+  to get `TenantService`, `AuditLogService`, and the auth provider token
+  (the AI provider moved to `AiModule` in ACC-194 and is not exported)
 - `AuditLogService` — call `log()` on every create/update/delete mutation
 - File storage — import `FileStorageModule` and use `StoredFileService`
   (ACC-177). There is no `STORAGE_PROVIDER` to inject any more: a provider is
   built per organisation, or per stored file, by `StorageResolverService`, and
   nothing else constructs one.
-- `AI_PROVIDER` (Symbol) — inject for AI completions (Anthropic default)
+- AI — import `AiModule` and call `AiService.run(featureKey, …)` (ACC-194). Do
+  NOT inject `AI_PROVIDER`: it is bound in `AiModule`, not exported, and
+  `npm run check:ai-gateway` fails any reference outside `foundation/ai` and
+  `providers/ai`. A new feature needs a key in `foundation/ai/ai.config.ts`
+  (with its effort and maximum output) and an `AiFeatureCost` row.
 - `AUTH_PROVIDER` (Symbol) — inject for token validation (BetterAuth default)
 - `TenantGuard` + `PermissionGuard` — apply `@UseGuards(TenantGuard, PermissionGuard)` at class level on every controller
 - `@CurrentTenant()` — use this decorator (never `request.body.organizationId`) to get the tenant ID in controllers

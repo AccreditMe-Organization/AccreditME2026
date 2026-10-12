@@ -923,15 +923,74 @@ features to use it.
 
 - [x] 0a. `docs(plans)`: plan (`284ffcc`), revised with Ahmad's answers (this commit)
 - [x] 0b. `docs`: CLAUDE.md file storage corrected (`ada5fda`)
-- [ ] 1. `chore(prisma)`: migrate — add AI metering, period, allocation, feature-switch and log columns (`--create-only` locally; CI applies it)
-- [ ] 2. `feat(ai)`: config (models, effort and max output per feature), refusal codes, the period rule; specs
-- [ ] 3. `feat(ai)`: credit and allocation services (reserve, refund, renew, setAllocation, notice claim); unit specs and the CI `test:db` step
-- [ ] 4. `feat(ai)`: gateway, slimmed provider (platform key only, no customer text logged), feature switch, `AiModule`, `check:ai-gateway`
-- [ ] 5. `feat(tenant)`: AI balance from the columns everywhere (§1.4), allocate through `setAllocation`, plan applied at creation, `PATCH /platform/tenants/:id/plan`
-- [ ] 6. `feat(ai)`: renewal processor behind the worker gate
-- [ ] 7. `feat(ai)`: the "credits used up" notice, once per period
-- [ ] 8. `chore(ai)`: idempotent seed for the three feature costs (`morning_briefing` restricted to al-nakheel)
-- [ ] 9. `feat(ai)`: shared frontend refusal helper and words; overage controls removed (D9, D19); types updated
-- [ ] 10. `docs`: SYSTEM-REFERENCE AI section; CLAUDE.md AI Runtime Flow, Org AI settings, renewal and cost table; Key Architecture Decisions (ACC-194)
+- [x] 1. `chore(prisma)`: migrate — add AI metering, period, allocation, feature-switch and log columns (`--create-only` locally; CI applies it) (`3f7f823`)
+- [x] 2. `feat(ai)`: config (models, effort and max output per feature), refusal codes, the period rule; specs (`c590843`)
+- [x] 3. `feat(ai)`: credit and allocation services (reserve, refund, renew, setAllocation, notice claim); unit specs and the CI `test:db` step (`016dfb6`)
+- [x] 4. `feat(ai)`: gateway, slimmed provider (platform key only, no customer text logged), feature switch, `AiModule`, `check:ai-gateway` (`80e4cb6`)
+- [x] 5. `feat(tenant)`: AI balance from the columns everywhere (§1.4), allocate through `setAllocation`, plan applied at creation, `PATCH /platform/tenants/:id/plan` (`29bf79d`)
+- [x] 6. `feat(ai)`: renewal processor behind the worker gate (`ee464f5`)
+- [x] 7. `feat(ai)`: the "credits used up" notice, once per period (`d307524`)
+- [x] 8. `chore(ai)`: idempotent seed for the three feature costs (`morning_briefing` restricted to al-nakheel) (`b63e3a2`)
+- [x] 9. `feat(ai)`: shared frontend refusal helper and words; overage controls removed (D9, D19); types updated (`5eeac1a`)
+- [x] 10. `docs`: SYSTEM-REFERENCE AI section; CLAUDE.md AI Runtime Flow, Org AI settings, renewal and cost table; Key Architecture Decisions (ACC-194) (this commit)
 - [ ] STOP 1: lint, typecheck, tests, scans; report
 - [ ] After deploy, STOP 2: seed, live calls on al-nakheel (and the al-manara refusal), restore, report
+
+---
+
+## 18. Where the build differs from the plan (12 Oct)
+
+**What Anthropic's documentation said at build time** (read 12 Oct: models
+overview, effort, thinking, the Sonnet 5.5 migration guide):
+- **`temperature`:** a non-default `temperature`, `top_p` or `top_k` is a
+  **400** on Sonnet 5.5. The provider never sends any of them.
+- **Effort:** `output_config.effort`, generally available, no beta header.
+  Sonnet 5.5's default is `high`.
+- **Thinking:** on by default on the 5.x models; Sonnet 5.5 refuses
+  `thinking: disabled`. No `thinking` field is sent, and thinking blocks come
+  back with empty text, so the answer is the text blocks joined.
+- **Header:** `anthropic-version: 2023-06-01` is still current.
+- **Per-feature settings:** the effort and output limits in §7 were kept as
+  written.
+
+**Added during the build:**
+- **A model refusal is a failed call.** A response with
+  `stop_reason: refusal` is treated as `AI_PROVIDER_FAILED` and refunded, so a
+  person pays nothing for no answer. An answer cut off at the output limit
+  (`max_tokens`) is returned with `truncated: true`, and the log says so.
+- **`PrismaService` gained `$queryRaw` and `$executeRaw`** (tagged templates
+  only), because the reservation is a single statement outside a transaction.
+- **`ai.features` on `GET /tenant` lists only callable features:** keys in
+  `AI_FEATURE_KEYS` with a cost row. A cost row for an unbuilt feature (say,
+  `rca_assistance`) is not listed.
+- **The frontend helper takes a date-formatting function** rather than
+  injecting `FormatService`. Callers pass `(iso) => format.date(iso)`.
+- **The frontend helper has four kinds, not three:** a feature not open to
+  the organisation (`featureNotAvailable`) gets its own sentence, not "AI
+  isn't turned on".
+- **The seed's audit rows** are written in the platform organisation's trail,
+  because `AiFeatureCost` is platform data.
+- **`test:db` runs with `--forceExit`:** `PrismaService.$disconnect()` does not
+  end its `pg` pool, so Jest would otherwise wait on it.
+- **Proving `test:db` locally:** Docker is not installed here, so it ran on a
+  throwaway Postgres 17 from the `embedded-postgres` npm package, installed in
+  the session scratchpad (not the repo), on `localhost:55432`. The migration
+  was generated and applied there too, and the seed proved there (dry run,
+  apply, rerun).
+
+**Left as it was:**
+- **`PATCH /tenant/ai-settings` still exists** and answers 200, but nothing
+  reads what it writes. It is removed in a later contract step; the frontend
+  method that called it is removed now.
+- **The platform tenant detail's allocation field** shows the current
+  allocation, not a pending cut. The API returns `pendingMonthlyCredits`, so a
+  screen can show it later. No new UI was in scope.
+- **`aiCreditsRenewsAt` has no index.** The hourly query runs over a handful
+  of organisations.
+
+**Not done here, by instruction:**
+- running the seed on the shared database;
+- al-nakheel's demo allocation;
+- the live AI call.
+
+All three wait for the deploy and a separate prompt (STOP 2).
