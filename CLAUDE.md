@@ -195,6 +195,34 @@ around; anything above it may be used freely.
 
 ---
 
+## Public Website (`website/`, ACC-213)
+
+- **Its own package, its own Vercel project.** Astro (exact pin), static output,
+  no UI framework, TypeScript strict. `npm ci` and `npm run check` in
+  `website/`: astro check, the build, then `scripts/verify-site.mjs`. It is NOT
+  part of the app: nothing is imported from `frontend/`, and the app's CI does
+  not build or test it.
+- **PREVIEW ONLY.** `www.accreditme.app` and the apex are still served by the
+  app's Vercel project. Until the cut-over, `X-Robots-Tag: noindex, nofollow`
+  and `robots.txt` `Disallow: /`; the cut-over flips both.
+- **Nothing inline, ever.** Its CSP is enforced and strict (`script-src 'self';
+  style-src 'self'`), so `inlineStylesheets: 'never'`, `assetsInlineLimit: 0`,
+  and no `style=""`, `<style>` or `on*=` anywhere; `verify-site` fails a built
+  page that has one.
+- **The brand palette is the WEBSITE's** (from
+  `frontend/design-reference/AccreditMe Website.dc.html`), not the app's colours;
+  sky and lime are fills, never text on white. Type scale, spacing, radius and
+  the IBM Plex Sans Arabic files are COPIES of the app's (`website/src/styles/`
+  names the sources) — a change in the app is copied by hand.
+- **The Sign in box's reserved list is generated at build time** from
+  `backend/src/common/tenant/reserved-slugs.ts` (`INFRASTRUCTURE_LABELS` and
+  `DNS_LABEL`; `platform` stays allowed). Its `ignoreCommand` also rebuilds when
+  that file changes, so the two cannot drift.
+- **Copy is DRAFT placeholder** until the page is built from the design. No
+  product claims, prices, customer names or testimonials until approved.
+
+---
+
 ## Project Structure
 
 ```

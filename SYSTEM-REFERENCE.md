@@ -8449,6 +8449,7 @@ refuses to start without it, and a deploy whose boot fails is not promoted.
 | `platform.accreditme.app` | Vercel, the same wildcard | the platform organisation's sign-in |
 | `accreditme.app` | Vercel | the "Open your organisation's address" note; a marketing page can come later |
 | `www.accreditme.app` | Vercel, a 308 redirect to the apex | load-bearing for CORS: `www` never becomes a second origin |
+| the website (`website/`, ACC-213) | **Preview only — NOT yet on `www`.** Its own Vercel project (root directory `website`), on a preview address | the public one-page site, EN/AR; `noindex` + `Disallow: /` until the cut-over moves `www` and the apex to it |
 | `api.accreditme.app` | Railway, a DIRECT CNAME — no proxy | the API (`/api/v1`) and `API_ORIGIN`; a custom domain registered with `railway domain` |
 | `accreditme2026-production.up.railway.app` | Railway | the generated host: the FALLBACK only, retired by ACC-209 (still declared in `.railway/railway.ts` until then) |
 
