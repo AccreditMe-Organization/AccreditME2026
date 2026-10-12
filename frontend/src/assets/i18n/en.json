@@ -419,7 +419,121 @@
     "userPickerUnavailable": "User assignment will be available after User Management module is configured.",
     "validatorConfig": "Validation Rules (JSON)",
     "webhookHeaders": "Custom Headers",
-    "webhookUrl": "Webhook URL"
+    "webhookUrl": "Webhook URL",
+    "stageTasks": {
+      "title": "Tasks on entry",
+      "add": "Add task",
+      "listAria": "Tasks on entry, in order",
+      "header": {
+        "deadline": "Stage deadline: {{deadline}} · longest task: {{longest}}",
+        "deadlineEmpty": "Stage deadline: {{deadline}} · no tasks",
+        "noDeadline": "No deadline · longest task: {{longest}}",
+        "noDeadlineEmpty": "No deadline · no tasks",
+        "late": "Stage deadline: {{deadline}} · longest task: {{longest}} · {{late}}"
+      },
+      "empty": "No tasks are created when a record enters this stage.",
+      "finalStage": "A final stage can't create tasks: the record is complete when it arrives.",
+      "loadError": "Couldn't load this stage's tasks.",
+      "mandatory": "Mandatory",
+      "optional": "Optional",
+      "evidence": "Evidence required",
+      "warnNoHolder": "Nobody holds this position",
+      "warnPoolEmpty": "Nobody has this role",
+      "priorityDue": "{{priority}} · due in {{due}}",
+      "route": {
+        "position": "{{position}}, {{unit}}",
+        "recordUnit": "{{position}} in the record's unit",
+        "committee": "{{role}} of the {{committee}}",
+        "recordCommittee": "{{role}} of the record's committee"
+      },
+      "moveUpNamed": "Move up: {{title}}",
+      "moveDownNamed": "Move down: {{title}}",
+      "editNamed": "Edit {{title}}",
+      "deleteNamed": "Delete {{title}}",
+      "moved": "“{{title}}” moved to position {{position}} of {{of}}",
+      "orderChanged": "Someone else changed this list, so it has been reloaded.",
+      "delete": {
+        "title": "Delete this task?",
+        "context": "{{template}} · {{stage}} · task {{position}} of {{of}}",
+        "body": "Delete “{{title}}”? New records entering this stage won't get it. Tasks already created from it stay.",
+        "created": "Already created from it",
+        "longestAfter": "Longest task after",
+        "noneLeft": "No tasks left",
+        "keep": "Keep task",
+        "failed": "Couldn't delete the task. Try again."
+      }
+    },
+    "stageTaskForm": {
+      "addTitle": "Add a task on entry",
+      "editTitle": "Edit a task on entry",
+      "stepOf": "Step {{step}} of {{steps}}",
+      "titleEn": "Title (English)",
+      "titleAr": "Title (Arabic)",
+      "description": "Description",
+      "blocks": "Blocks moving forward?",
+      "mandatoryHelp": "Blocks moving forward until done",
+      "optionalHelp": "Never blocks; cancelled when the record leaves the stage",
+      "evidence": "Evidence required to complete it",
+      "next": "Next: when and who",
+      "save": "Save task",
+      "priorityDue": "due in {{due}}",
+      "priorityWithin": "Within the stage deadline of {{deadline}}",
+      "priorityNoDeadline": "This stage has no deadline, so any priority fits",
+      "priorityTooLong": "{{priority}} tasks are due in {{due}}, but this stage's deadline is {{deadline}}. Raise the stage deadline to at least {{needed}}, or choose a higher priority.",
+      "assignedThrough": "Assigned through",
+      "chooseRoute": "Choose how it is assigned",
+      "routeUnit": "A unit you choose",
+      "routeRecordUnit": "The record's own unit",
+      "routeCommittee": "A committee you choose",
+      "routeRecordCommittee": "The record's committee",
+      "noRelativeRoutes": "This kind of record has no unit or committee of its own, so only fixed choices are offered.",
+      "recordUnitHelp": "In whichever unit owns the record. Who holds it is checked when a record enters.",
+      "recordCommitteeHelp": "On whichever committee the record belongs to. Who has it is checked when a record enters.",
+      "committee": "Committee",
+      "chooseCommittee": "Choose a committee",
+      "committeeRole": "Committee role",
+      "chooseCommitteeFirst": "Choose a committee first",
+      "committeesUnavailable": "You can't see committees, so the committee choices aren't offered.",
+      "positionsUnavailable": "You can't see positions, so the record's own unit isn't offered.",
+      "savedNoHolder": "Saved. Nobody holds this position in {{unit}} yet, so its tasks will wait unassigned until someone does.",
+      "savedPoolEmpty": "Saved. Nobody has this role on {{committee}} yet, so its tasks will wait until someone joins.",
+      "outcomePerson": "Goes to {{name}} while they hold this position; otherwise to whoever does.",
+      "outcomeAnyone": "Empty: whoever holds the position when a record enters.",
+      "outcomeVacant": "Nobody holds it here today. Its tasks wait unassigned until someone does."
+    },
+    "kind": {
+      "label": "Kind",
+      "advance": "Advance",
+      "advanceHelp": "Moves the record on. Blocked while mandatory tasks of this stage are open.",
+      "return": "Send back",
+      "returnHelp": "Returns the record for rework. Never blocked; this stage's open tasks are cancelled.",
+      "exit": "End the record",
+      "exitHelp": "Rejects, cancels or withdraws the record. Never blocked; this stage's open tasks are cancelled."
+    },
+    "stageDeadline": {
+      "beforeTasks": "A task on this stage is due in {{longest}}. Set the deadline to at least {{min}}, or give those tasks a higher priority.",
+      "finalWithTasks": "This stage creates {{tasks}} on entry. Remove them before making it final."
+    },
+    "cantMove": {
+      "title": "Can't move to {{stage}} yet",
+      "lead": "Finish these tasks before moving to {{stage}}:",
+      "due": "due {{date}}",
+      "noDue": "no due date",
+      "evidence": "evidence required",
+      "nobody": "Nobody yet",
+      "waitingFor": "Waiting for {{pool}}",
+      "openedFrom": "Opened from “{{transition}}”"
+    },
+    "refusal": {
+      "routeIncomplete": "Choose where the task goes: something this choice needs is missing.",
+      "routeNotAvailable": "This kind of record has no unit or committee of its own, so the record's unit or committee can't be used.",
+      "unitNotFound": "That unit no longer exists. Choose another.",
+      "positionNotFound": "That position no longer exists. Choose another.",
+      "committeeNotFound": "That committee no longer exists. Choose another.",
+      "roleNotFound": "That committee role no longer exists. Choose another.",
+      "userNotInPosition": "That person no longer holds this position here. Choose again.",
+      "onFinalStage": "A final stage can't create tasks: the record is complete when it arrives."
+    }
   },
   "notification": {
     "title": "Notifications",
@@ -1030,7 +1144,12 @@
     "orgNameArTooLong": "Keep the Arabic name to 255 characters or fewer.",
     "logoNotActiveYet": "Logo upload is not live yet. The monogram below is shown everywhere a logo would appear.",
     "logoWhereSidebar": "Sidebar",
-    "logoWhereReport": "Reports"
+    "logoWhereReport": "Reports",
+    "taskSlaRefusal": {
+      "lead": "{{priority}} would become {{due}}, which passes the deadline of:",
+      "stage": "{{template}} · {{stage}} ({{deadline}})",
+      "wayOut": "Raise those deadlines first, or keep {{priority}} at {{max}} or less."
+    }
   },
   "home": {
     "greeting": "Welcome back, {{name}}",
@@ -1273,6 +1392,24 @@
       "pages": {
         "one": "{{count}} page",
         "other": "{{count}} pages"
+      }
+    },
+    "workflow": {
+      "workingHours": {
+        "one": "{{count}} working hour",
+        "other": "{{count}} working hours"
+      },
+      "tasksLate": {
+        "one": "{{count}} task would be late",
+        "other": "{{count}} tasks would be late"
+      },
+      "createdStay": {
+        "one": "{{count}} task · it stays",
+        "other": "{{count}} tasks · they stay"
+      },
+      "stageTasks": {
+        "one": "{{count}} task",
+        "other": "{{count}} tasks"
       }
     }
   },

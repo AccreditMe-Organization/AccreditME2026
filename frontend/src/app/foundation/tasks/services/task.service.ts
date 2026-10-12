@@ -260,6 +260,18 @@ export interface AssignableCommitteeRoleDto {
   memberCount: number;
 }
 
+/**
+ * ACC-208 (B5) — every committee member role, including those nobody holds:
+ * configuring a stage task may target an empty role. The count is null when
+ * no committee was named ("the record's committee").
+ */
+export interface CommitteeRoleCatalogueDto {
+  id: string;
+  labelEn: string;
+  labelAr: string | null;
+  memberCount: number | null;
+}
+
 export interface RejectTaskDto {
   reason: string;
 }
@@ -388,6 +400,13 @@ export class TaskService {
     return this.http.get<AssignableCommitteeRoleDto[]>(`${this.base}/assignment/committee-roles`, {
       params: withTask(new HttpParams().set('committeeId', committeeId), taskId),
     });
+  }
+
+  /** ACC-208 (B5) — the role catalogue, counted on `committeeId` when one is named. */
+  getCommitteeRoleCatalogue(committeeId?: string): Observable<CommitteeRoleCatalogueDto[]> {
+    let params = new HttpParams().set('catalogue', 'true');
+    if (committeeId) params = params.set('committeeId', committeeId);
+    return this.http.get<CommitteeRoleCatalogueDto[]>(`${this.base}/assignment/committee-roles`, { params });
   }
 
   getCommitteeAssignees(committeeId: string, roleValueId: string, taskId?: string): Observable<AssignableHolderDto[]> {

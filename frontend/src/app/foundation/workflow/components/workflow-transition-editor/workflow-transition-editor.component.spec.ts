@@ -35,6 +35,8 @@ const EXISTING: WorkflowTransitionDto = {
   triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
+
+  kind: 'ADVANCE' as const,
 };
 
 const PERMISSIONS = [

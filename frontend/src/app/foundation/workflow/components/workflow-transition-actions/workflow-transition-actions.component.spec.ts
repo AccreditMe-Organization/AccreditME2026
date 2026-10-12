@@ -41,6 +41,8 @@ const TRANSITION = {
   triggerRoleId: null,
   validatorConfig: null,
   isApprovalPath: false,
+
+  kind: 'ADVANCE' as const,
 };
 
 const TEMPLATE_RESPONSE = {
