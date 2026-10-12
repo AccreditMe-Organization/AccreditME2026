@@ -604,6 +604,39 @@ built:**
 
 ---
 
+## 9b. Where the build differs from the plan
+
+- **The picker has one new input, `purpose` ('task' | 'stage-task'), not
+  `rolesCatalogue` and `committees`.**
+  - "A unit you choose" is the picker unchanged apart from its outcome line,
+    which in the stage-task wording speaks of each entry ("whoever holds the
+    position when a record enters").
+  - The committee routes are selects in the dialog, reading the B5 catalogue
+    directly. Widening the task picker to choose any committee would have
+    changed two working screens to serve a third.
+- **B6 also carries `priority`**, and **B7 and B8 were added** (§2).
+- **Delete is an `EditDialogComponent` confirm, not a `ConfirmationService`
+  message**: the drawing gives it two label/value pairs, which a plain message
+  cannot hold.
+- **The ↑ / ↓ arrows are absent at the ends, not disabled** (drawing), and focus
+  moves to the row's other arrow.
+- **The definition dialog's post-save warning sits in the footer's status
+  slot**, and the description declares `message="none"`. Both were forced by
+  measuring (§4.2.1).
+- **The transition dialogs are stepped** (§4.5.1): measured over the cap before
+  Kind, they could not take it otherwise. "Step n of 2" is a new shared key,
+  `common.stepOf`, used by both dialogs.
+- **"Can't move yet" is a 420 Confirm with Close only, as drawn**, not an
+  inline panel. It is one standalone component.
+- **The committee page reads `?task=` as it changes**, not through
+  `injectFixLinkParam()`. That helper reads once per page load, and the link is
+  followed from the same page.
+- **The danger header line shows when the stage's own numbers break the rule**
+  (deadline below the longest task). The drawing's "at the same moment as a
+  refused edit" belongs to the in-row deadline field, which is held back (§8b).
+
+---
+
 ## 10. Build order (each a commit)
 
 1. Backend B1–B8 + specs.
@@ -625,5 +658,5 @@ built:**
 - [x] 5 Definition dialog (measurements recorded)
 - [x] 6 Transition Kind
 - [x] 7 Refusal states
-- [ ] 8 Docs
+- [x] 8 Docs
 - [ ] 9 Live proof, test definitions deleted

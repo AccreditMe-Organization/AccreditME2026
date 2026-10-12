@@ -3348,6 +3348,37 @@ the holder rule), 13.2 (the Setup health extension). The decisions, briefly:
 
 ---
 
+## Key Architecture Decisions (ACC-208)
+
+The Stage Tasks settings screen, ACC-190's frontend. Full mechanism:
+SYSTEM-REFERENCE.md §2.15.1. Plan, Ahmad's answers (12 Oct) and the 420px
+measurements: `backend/Plans/step-208-stage-tasks-screen.md`. The decisions,
+briefly:
+
+- **`workflows:manage` opens the assignment pickers, with no `taskId` (Q1).**
+  Configuring where a stage's tasks go is choosing a target, the same data
+  `tasks:create` chooses from. A `taskId` still means reassigning that task,
+  which it does not grant. The committee lists still need `committees:view`.
+- **The relative routes come from the template, never a frontend copy.**
+  `GET /workflow-templates/:id` says `recordRoutes: { unit, committee }`, read
+  from `RECORD_ROUTES`. A screen that kept its own list would drift the day a
+  module adds its line, and the registry must stay the one place that fails
+  closed.
+- **A workflow refusal is shown from its CODE and numbers**
+  (`foundation/workflow/workflow-refusal.ts`), under the field it is about,
+  naming both numbers and the way out. The deadline rule shows on Priority
+  before Save, and Save stays enabled. Never the server's English `message`.
+- **"Can't move yet" is one standalone component** (`CantMoveDialogComponent`)
+  taking the refusal's tasks. The vote screen will reuse it: no vote screen
+  exists, since `submitApproval()` has no frontend caller. Its task links go to
+  the record page's own row via `?task=<id>` (D2), because there is no task
+  page.
+- **The transition editor's dialogs were over the cap before this ticket**
+  (674 / 696 Add, 542 / 564 Edit, measured). Adding Kind made stepping them
+  necessary, not optional. Both are now two steps, the move then who may fire
+  it, with a layout spec each. **Add no longer shows "Approval path"** (D5):
+  create never sent it.
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require
