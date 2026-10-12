@@ -154,6 +154,32 @@ describe('EmailProviderSettingsComponent (ACC-181)', () => {
     expect(c.form.controls.smtp.controls['port']!.value).toBe('2525');
   });
 
+  it('says it is loading until the settings arrive, then shows them', () => {
+    TestBed.configureTestingModule({
+      imports: [EmailProviderSettingsComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
+        provideRouter([]),
+        provideTranslateService({ lang: 'en' }),
+        provideFormatTesting(),
+        ConfirmationService,
+      ],
+    });
+    loadTranslationsForTest({ en, ar });
+    TestBed.inject(TranslateService).use('en');
+    http = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(EmailProviderSettingsComponent);
+    fixture.detectChanges();
+    expect(el().querySelector('[data-email-loading]')?.textContent?.trim()).toBe('Loading...');
+    expect(el().querySelector('[data-email-resting]')).toBeNull();
+    http.expectOne(url).flush(NONE);
+    fixture.detectChanges();
+    expect(el().querySelector('[data-email-loading]')).toBeNull();
+    expect(el().querySelector('[data-email-resting]')).not.toBeNull();
+  });
+
   // Test 5
   it('with no provider: the sentence and Connect a provider, and no form', () => {
     setup(NONE);

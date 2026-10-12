@@ -247,6 +247,7 @@ const isolate = (text: string) => `\u2068${text}\u2069`;
                   severity="danger"
                   [outlined]="true"
                   [label]="'emailSettings.disconnect' | translate"
+                  [loading]="disconnecting()"
                   (onClick)="disconnect()"
                   data-email-disconnect
                 />
@@ -257,6 +258,8 @@ const isolate = (text: string) => `\u2068${text}\u2069`;
             </div>
           </form>
         }
+      } @else {
+        <p class="text-sm text-[var(--am-text-secondary)]" data-email-loading>{{ 'common.loading' | translate }}</p>
       }
     </div>
   `,
@@ -271,6 +274,7 @@ export class EmailProviderSettingsComponent implements OnInit {
 
   readonly loaded = signal(false);
   readonly saving = signal(false);
+  readonly disconnecting = signal(false);
   readonly stored = signal<IEmailConfig | null>(null);
   readonly connecting = signal(false);
   readonly notice = signal<string | null>(null);
@@ -424,14 +428,19 @@ export class EmailProviderSettingsComponent implements OnInit {
       icon: 'pi pi-exclamation-triangle',
       acceptButtonProps: { severity: 'danger' },
       accept: () => {
+        this.disconnecting.set(true);
         this.tenantService.disconnectEmailConfig().subscribe({
           next: (config) => {
+            this.disconnecting.set(false);
             this.connecting.set(false);
             this.resetForms();
             this.applyStored(config);
             this.notice.set('emailSettings.disconnected');
           },
-          error: () => this.errorKey.set({ key: 'adminSettings.errorSave' }),
+          error: () => {
+            this.disconnecting.set(false);
+            this.errorKey.set({ key: 'adminSettings.errorSave' });
+          },
         });
       },
     });
