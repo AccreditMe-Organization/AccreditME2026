@@ -1,0 +1,56 @@
+---
+// The one page (ACC-213), in outline: the 12 sections of CC-74, in the order
+// they appear in the accepted design, each on the design's band:
+//
+//    1 header            white     (Header.astro)
+//    2 hero              white → sky tint, with a sky glow
+//    3 the problem       grey tint
+//    4 what it does      white
+//    5 how it works      white
+//    6 AI that assists   white  ┐ one band, side by side,
+//    7 security and data white  ┘ as in the design
+//    8 who it's for      sky tint
+//    9 pricing           charcoal
+//   10 FAQ               white
+//   11 final CTA + demo  charcoal
+//   12 footer            charcoal  (Footer.astro)
+//
+// The design also has three bands CC-74's list does not name (sourced facts on
+// charcoal after "what it does", "built for your role" and "what it is worth"
+// on the sky tint); they come with the full page, built from the design later.
+import Base from '../../layouts/Base.astro';
+import Section from '../Section.astro';
+import DemoForm from '../DemoForm.astro';
+import { strings, pathFor, type Lang, type SectionCopy } from '../../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang];
+const byId = (id: string): SectionCopy => {
+  const s = t.home.sections.find((x) => x.id === id);
+  if (!s) throw new Error(`No section "${id}" in strings.${lang}.home`);
+  return s;
+};
+---
+
+<Base lang={lang} title={t.home.title} description={t.home.description} paths={{ en: pathFor('en', ''), ar: pathFor('ar', '') }}>
+  <Section lang={lang} section={byId('hero')} headingLevel={1} />
+  <Section lang={lang} section={byId('problem')} />
+  <Section lang={lang} section={byId('what-it-does')} />
+  <Section lang={lang} section={byId('how-it-works')} />
+  <div class="band band--white" data-band="white">
+    <div class="container band__pair">
+      <Section lang={lang} section={byId('ai')} bare />
+      <Section lang={lang} section={byId('security')} bare />
+    </div>
+  </div>
+  <Section lang={lang} section={byId('who')} />
+  <Section lang={lang} section={byId('pricing')} />
+  <Section lang={lang} section={byId('faq')} />
+  <Section lang={lang} section={byId('demo')}>
+    <DemoForm lang={lang} />
+  </Section>
+</Base>

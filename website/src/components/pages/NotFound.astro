@@ -1,0 +1,30 @@
+---
+// The 404 in each language (ACC-213). Not canonical, not in the sitemap.
+// Vercel serves the root 404.html for any missing path, including under /ar/;
+// its language switch leads to the Arabic one.
+import Base from '../../layouts/Base.astro';
+import { strings, pathFor, type Lang } from '../../i18n/strings';
+
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const t = strings[lang];
+---
+
+<Base
+  lang={lang}
+  title={t.notFound.title}
+  description={t.notFound.description}
+  paths={{ en: '/404.html', ar: pathFor('ar', '404/') }}
+  canonical={false}
+>
+  <div class="page">
+    <div class="container">
+      <h1>{t.notFound.title}</h1>
+      <p>{t.notFound.body}</p>
+      <p><a href={pathFor(lang, '')}>{t.notFound.home}</a></p>
+    </div>
+  </div>
+</Base>
