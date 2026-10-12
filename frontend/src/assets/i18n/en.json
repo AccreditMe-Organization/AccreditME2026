@@ -1322,7 +1322,8 @@
       "staySignedIn": "Stay signed in",
       "signOutNow": "Sign out now"
     },
-    "signedOutIdle": "You were signed out because there was no activity for a while."
+    "signedOutIdle": "You were signed out because there was no activity for a while.",
+    "signedInElsewhere": "You're signed in to another organisation in this browser. Signing in here will sign you out there."
   },
   "manageRoles": {
     "comesWithPosition": "Comes with their head position, {{position}}. It ends when that headship ends, so change it in Headship, not here.",

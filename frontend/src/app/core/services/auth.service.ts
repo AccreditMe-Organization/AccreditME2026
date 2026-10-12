@@ -12,6 +12,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, switchMap, tap, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { TenantHostService } from '../tenant/tenant-host';
+import { SessionAddressState } from '../tenant/session-address-state';
 import { SessionRenewalService } from './session-renewal.service';
 import { LanguageService } from './language.service';
 
@@ -77,6 +78,7 @@ export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.apiUrl}/auth`;
   private readonly sessionRenewalService = inject(SessionRenewalService);
+  private readonly addressState = inject(SessionAddressState);
   // ACC-139 — the organisation for sign-in and password reset is the address
   // the page was opened at. Reads only DOCUMENT, so it is safe to inject here.
   private readonly tenantHost = inject(TenantHostService);
@@ -206,17 +208,27 @@ export class AuthService {
       // provideAppInitializer on every boot, including on /accept-invitation
       // and /forgot-password where a 401 simply means nobody is signed in —
       // redirecting from here is the ACC-24 bug, and it stays fixed.
-      catchError(() =>
-        this.sessionRenewalService.renew().pipe(
+      catchError((error: unknown) => {
+        // ACC-204 — this browser's session belongs to another organisation's
+        // address. That is "not signed in HERE": no renewal (which would be
+        // refused the same way), no redirect (ACC-24), and the sign-in page
+        // says why (SessionAddressState).
+        if (this.addressState.note(error)) {
+          this.clearSession();
+          return of(null);
+        }
+        return this.sessionRenewalService.renew().pipe(
           switchMap(() => this.loadMe()),
           // Renewal refused, or /auth/me failed again: genuinely not signed
-          // in. Exactly the old behaviour, reached one attempt later.
+          // in. Exactly the old behaviour, reached one attempt later. (A
+          // refresh refused with the ACC-204 code was recorded by the renewal
+          // service on the way.)
           catchError(() => {
             this.clearSession();
             return of(null);
           }),
-        ),
-      ),
+        );
+      }),
       map(() => void 0),
     );
   }
@@ -228,6 +240,8 @@ export class AuthService {
         this.languageService.use(response.language).pipe(map(() => response)),
       ),
       tap((response) => {
+        // ACC-204 — a session at THIS address: nothing elsewhere to warn about.
+        this.addressState.clear();
         this._currentUser.set({ id: response.id, email: response.email, name: response.name });
         this._impersonatedBy.set(response.impersonatedBy);
         this.applyDisplayPreferences(response);
@@ -242,7 +256,12 @@ export class AuthService {
     if (!result.success || !result.user) return of(result);
     const user = result.user;
     return this.languageService.use(result.language ?? 'en').pipe(
-      tap(() => this._currentUser.set(user)),
+      tap(() => {
+        // ACC-204 — signed in HERE, which replaced the other address's session
+        // in this browser: the note no longer applies.
+        this.addressState.clear();
+        this._currentUser.set(user);
+      }),
       // ACC-94 — the login response carries no display context, and widening it
       // was not part of decision D2. /auth/me is asked once instead, so dates
       // are in the tenant's zone from the first screen rather than after a

@@ -108,6 +108,8 @@ describe('closed organisations (ACC-168)', () => {
   const JWT_SECRET = 'test-jwt-secret';
   beforeAll(() => {
     process.env['JWT_SECRET'] = JWT_SECRET;
+    // ACC-204 — a cookie session is held to its organisation's address.
+    process.env['APP_BASE_DOMAIN'] = 'accreditme.app';
   });
 
   const orgOf = (id: string) => orgs.find((o) => o.id === id)!;
@@ -185,7 +187,13 @@ describe('closed organisations (ACC-168)', () => {
     // does — so a path that forgot to ask for it gets nothing to check.
     const withOrg = (row: UserRow, shape?: { organization?: unknown }) =>
       shape?.organization
-        ? { ...row, organization: { status: orgOf(row.organizationId).status } }
+        ? {
+            ...row,
+            organization: {
+              status: orgOf(row.organizationId).status,
+              slug: orgOf(row.organizationId).slug,
+            },
+          }
         : { ...row };
     userFindFirst = jest.fn(
       (args: {
@@ -214,10 +222,18 @@ describe('closed organisations (ACC-168)', () => {
           const picked: Record<string, unknown> = {};
           if (args.select.tokenVersion)
             picked['tokenVersion'] = row.tokenVersion;
-          if (args.select.organization)
+          if (args.select.organization) {
+            // Honour the NESTED select too, as Prisma does: a path asks for the
+            // organisation's status, and since ACC-204 its slug, by name.
+            const asked =
+              (args.select.organization as { select?: Record<string, boolean> })
+                .select ?? {};
+            const o = orgOf(row.organizationId);
             picked['organization'] = {
-              status: orgOf(row.organizationId).status,
+              ...(asked['status'] ? { status: o.status } : {}),
+              ...(asked['slug'] ? { slug: o.slug } : {}),
             };
+          }
           return Promise.resolve(picked);
         }
         return Promise.resolve(withOrg(row, args.include));
@@ -358,7 +374,14 @@ describe('closed organisations (ACC-168)', () => {
   afterEach(() => jest.useRealTimers());
 
   const req = (over: Record<string, unknown> = {}) =>
-    ({ headers: {}, cookies: {}, ip: '10.0.0.1', ...over }) as never;
+    // ACC-204 — from al-nakheel's own address (ORG_A, whose users these
+    // requests carry), so refresh() reaches the closed-organisation rule.
+    ({
+      headers: { origin: 'https://al-nakheel.accreditme.app' },
+      cookies: {},
+      ip: '10.0.0.1',
+      ...over,
+    }) as never;
   const res = () => ({
     cookie: jest.fn(),
     clearCookie: jest.fn(),
@@ -383,10 +406,25 @@ describe('closed organisations (ACC-168)', () => {
 
   const tokenFor = (userId: string, organizationId: string, tokenVersion = 1) =>
     signAccessToken({ sub: userId, organizationId, tokenVersion }, JWT_SECRET);
+  // ACC-204 — every request comes from its own organisation's address (an
+  // impersonation token from the platform's), so these specs keep asking about
+  // closed organisations, not about addresses.
+  const ownOrigin = (token: string): string => {
+    const claims = JSON.parse(
+      Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'),
+    ) as { organizationId: string; impersonatedBy?: string };
+    const slug = claims.impersonatedBy
+      ? 'platform'
+      : orgOf(claims.organizationId).slug;
+    return `https://${slug}.accreditme.app`;
+  };
   const ctx = (token: string): ExecutionContext =>
     ({
       switchToHttp: () => ({
-        getRequest: () => ({ cookies: { access_token: token }, headers: {} }),
+        getRequest: () => ({
+          cookies: { access_token: token },
+          headers: { origin: ownOrigin(token) },
+        }),
       }),
     }) as unknown as ExecutionContext;
   const request = (token: string) => guard.canActivate(ctx(token));
@@ -642,7 +680,8 @@ describe('closed organisations (ACC-168)', () => {
       where: { id: 'u-hessa', organizationId: ORG_A },
       select: {
         tokenVersion: true,
-        organization: { select: { status: true } },
+        // ACC-204 — the address check's slug rides on the same join.
+        organization: { select: { status: true, slug: true } },
       },
     });
   });
