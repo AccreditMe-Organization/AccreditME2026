@@ -21,8 +21,10 @@
  * environment variable, not code.
  */
 
+import type { AiEffort } from '../../providers/ai/ai.provider';
+
+export type { AiEffort };
 export type AiTier = 'STANDARD' | 'PREMIUM';
-export type AiEffort = 'low' | 'medium' | 'high';
 
 /** Every feature that may call the model. A cost row alone is not enough. */
 export const AI_FEATURE_KEYS = ['task_description_drafting', 'document_summary', 'morning_briefing'] as const;
