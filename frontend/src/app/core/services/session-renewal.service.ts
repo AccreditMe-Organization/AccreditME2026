@@ -32,13 +32,15 @@
 
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, finalize, shareReplay } from 'rxjs';
+import { Observable, finalize, shareReplay, tap } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { SessionAddressState } from '../tenant/session-address-state';
 
 @Injectable({ providedIn: 'root' })
 export class SessionRenewalService {
   private readonly http = inject(HttpClient);
   private readonly refreshUrl = `${environment.apiUrl}/auth/refresh`;
+  private readonly addressState = inject(SessionAddressState);
 
   /** The refresh currently in flight, or null when none is. */
   private inFlight: Observable<unknown> | null = null;
@@ -53,6 +55,10 @@ export class SessionRenewalService {
   renew(): Observable<unknown> {
     if (!this.inFlight) {
       this.inFlight = this.http.post(this.refreshUrl, {}).pipe(
+        // ACC-204 — a refresh refused because this browser's session belongs to
+        // another organisation's address is recorded, so the sign-in page can
+        // say so. The refusal itself still fails the renewal, as any does.
+        tap({ error: (err: unknown) => this.addressState.note(err) }),
         // finalize, not tap: the slot must clear on error and on unsubscribe
         // too, or one failed refresh would wedge renewal for the whole
         // session and every later 401 would replay that failure.

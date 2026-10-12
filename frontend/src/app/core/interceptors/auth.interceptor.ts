@@ -72,6 +72,7 @@ import { Router } from '@angular/router';
 import { catchError, switchMap, throwError } from 'rxjs';
 import { AuthService } from '../services/auth.service';
 import { SessionRenewalService } from '../services/session-renewal.service';
+import { SessionAddressState } from '../tenant/session-address-state';
 
 /**
  * Auth endpoints whose own 401 must never be answered with a renewal.
@@ -90,6 +91,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
   const renewalService = inject(SessionRenewalService);
   const router = inject(Router);
+  const addressState = inject(SessionAddressState);
 
   const withCredentialsReq = req.clone({ withCredentials: true });
 
@@ -119,6 +121,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       //   /auth/login   the form shows "wrong credentials"
       //   /auth/logout  the caller is already navigating
       if (isNoRenewalRequest(req)) return throwError(() => error);
+
+      // ACC-204 — this browser's session belongs to another organisation's
+      // address (another tab signed in there). Renewing would be refused the
+      // same way, so don't: the session is over HERE, the same way a failed
+      // renewal ends it — locally only. Never /auth/logout, which would end the
+      // session the other address is using.
+      if (addressState.note(error)) return endSession(error);
 
       return renewalService.renew().pipe(
         // Renewal worked: replay the original request exactly once. A second
