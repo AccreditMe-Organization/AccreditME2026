@@ -173,13 +173,17 @@ around; anything above it may be used freely.
   United States" is a poor answer in a Gulf tender. Not a one-line fix: the
   volume is region-bound with 5 GB attached, and `REDIS_URL` is `preserve()`d,
   so recreating the service produces a URL something has to carry across.
-- File storage: AWS S3 — **NOT PROVISIONED.** No bucket, no credentials, no
-  AWS variable in `.railway/railway.ts`. **Region DECIDED (Ahmad, 7 Oct):
-  `eu-central-1` (Frankfurt) for now, beside the database; both move to the
-  Gulf before the first real customer.** The code that uses it is built
-  (ACC-177, `foundation/file-storage/`): until the bucket and the four `AWS_*`
-  variables exist, every upload is refused with "File storage isn't set up
-  yet" — by design, never a default region.
+- File storage: **the Supabase storage host, which is S3-compatible** —
+  AccreditMe cloud files are stored there, reached through the S3 provider
+  (`foundation/file-storage/`, ACC-177) with its endpoint setting, not on AWS.
+  The `AWS_*` variables are set in Railway's dashboard and `preserve()`d in
+  `.railway/railway.ts` (ACC-130); their values belong there and are not
+  repeated in this file. Storage moves to the Gulf with the database before the
+  first real customer (Ahmad, 7 Oct). Where the variables are absent (a fresh
+  local clone), every upload is still refused with "File storage isn't set up
+  yet" — by design, never a default.
+  Corrected 2026-10-12: this line read "AWS S3 — NOT PROVISIONED" after the
+  storage had gone live (ACC-130 / ACC-189 used it).
 - On-premises storage alternative: MinIO (S3-compatible)
 - CDN: none in front. Vercel serves the app from its own edge, and the API is a
   direct CNAME. Cloudflare is NOT used; proxying the API through anything would
@@ -615,8 +619,8 @@ SSO tenants are redirected to their IdP. Local tenants use Better Auth directly.
 
 ### Storage Providers Per Tenant
 ```
-Option 1: AWS S3 (default) — AccreditMe's own bucket, eu-central-1 for now;
-        not provisioned yet, see Infrastructure
+Option 1: AccreditMe cloud (default) — the S3 provider against the Supabase
+        storage host (S3-compatible); see Infrastructure
 Option 2: MinIO on customer infrastructure (on-premises S3-compatible)
 Option 3: Local filesystem / NAS mount (legacy on-premises)
 Option 4: The customer's own SharePoint document library (ACC-185) — prepared
@@ -1622,8 +1626,8 @@ Extra storage:        per 10 GB block
 ```
 Tier 1/2 (cloud):
   Database: Supabase automated daily backup, 30-day point-in-time recovery
-  Files: AWS S3 versioning + cross-region replication — PLANNED;
-         no bucket exists yet, see Infrastructure
+  Files: versioning + cross-region replication — PLANNED, not set up;
+         files are on the Supabase storage host, see Infrastructure
   RTO: 4 hours (Tier 1), 2 hours (Tier 2)
   RPO: 24 hours (Tier 1), 4 hours (Tier 2)
 
@@ -4119,12 +4123,14 @@ complete, not just the currently-in-review ones.
 
   **Where things actually are:** database `aws-1-eu-central-1` (Frankfurt),
   application `europe-west4-drams3a` (Amsterdam), Redis and its volume `sfo`
-  (San Francisco — ACC-143). S3 is not provisioned at all.
+  (San Francisco — ACC-143). Files on the Supabase storage host
+  (S3-compatible; corrected 2026-10-12 — this read "S3 is not provisioned at
+  all").
 
   **Frankfurt is where the instance is. It was not chosen for residency, and
   calling it deliberate would assert a decision nobody took** — the same error
-  as replacing a wrong claim with a confident-sounding one, which is why S3
-  above reads "not provisioned" rather than naming a region. Moving the
+  as replacing a wrong claim with a confident-sounding one, which is why file
+  storage above names no region. Moving the
   application to Amsterdam WAS a decision, and a correct one, but it addressed
   application-to-database latency; it does nothing for a Gulf user's round trip
   to Europe, which is unavoidable while both sit in the EU.
@@ -4286,9 +4292,10 @@ BETTER_AUTH_SECRET=
 JWT_SECRET=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
-# AccreditMe's own bucket (ACC-177). Region decided: eu-central-1 for now.
-# Left blank here: S3 is not provisioned, and a placeholder would become a
-# setting nobody chose. All four blank = "File storage isn't set up yet".
+# AccreditMe cloud storage (ACC-177): the S3 provider against the Supabase
+# storage host. The real values live in Railway's dashboard only. Left blank
+# here, because a placeholder would become a setting nobody chose. All blank =
+# "File storage isn't set up yet".
 AWS_REGION=
 AWS_S3_BUCKET=
 # Optional: an S3-compatible endpoint instead of AWS (local testing, Tier 2/3).
