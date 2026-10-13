@@ -139,7 +139,7 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
                 <button type="button" class="am-ai__secondary" (click)="edited.emit()">{{ 'ai.assist.edit' | translate }}</button>
                 <button type="button" class="am-ai__text-button" (click)="discarded.emit()">{{ 'ai.assist.discard' | translate }}</button>
                 @if (actionsExtra(); as extra) {
-                  <span class="am-ai__actions-extra"><ng-container [ngTemplateOutlet]="extra" /></span>
+                  <span class="am-ai__actions-extra ms-auto"><ng-container [ngTemplateOutlet]="extra" /></span>
                 }
               </div>
             }
@@ -208,23 +208,21 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         border: 1px solid var(--am-primary-600);
         cursor: pointer;
       }
-      /* ACC-197 — on a field's label row: exactly that row's own line
-         (text-sm, 1.25rem), so the trigger shares the row and adds no height. */
-      .am-ai--label-row .am-ai__trigger,
-      .am-ai--label-row .am-ai__trigger-row .am-ai__text-button {
-        box-sizing: border-box;
+      /* ACC-197 — on a field's label row: the trigger and Cancel are exactly
+         that row's own line (text-sm, 1.25rem), so the row grows by nothing.
+         One short selector: this component's styles are near their budget. */
+      .am-ai--label-row button {
+        display: inline-flex;
+        align-items: center;
         height: 1.25rem;
         padding-block: 0;
         line-height: 1;
-      }
-      .am-ai--label-row .am-ai__trigger-row .am-ai__text-button {
-        display: inline-flex;
-        align-items: center;
       }
       .am-ai__trigger:focus-visible,
       .am-ai__secondary:focus-visible,
       .am-ai__primary:focus-visible,
       .am-ai__text-button:focus-visible,
+      .am-ai__fold:focus-visible,
       .am-ai__result:focus-visible {
         outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
         outline-offset: var(--am-focus-ring-offset);
@@ -283,10 +281,6 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         color: var(--am-primary-700);
         cursor: pointer;
       }
-      .am-ai__fold:focus-visible {
-        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
-        outline-offset: var(--am-focus-ring-offset);
-      }
       /* Two lines of body text, in every supported browser (Firefox 115 ESR
          included): a max-height in the body's own line-height token. */
       .am-ai__body--clamped {
@@ -324,11 +318,6 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         display: flex;
         gap: var(--am-space-8);
         margin-block-start: var(--am-space-8);
-      }
-      /* ACC-197 — a host's own action, at the row's far end. */
-      .am-ai__actions-extra {
-        margin-inline-start: auto;
-        display: inline-flex;
       }
       .am-ai__refusal {
         border-radius: var(--am-radius-card);
@@ -419,7 +408,8 @@ export class AiAssistComponent {
   /**
    * ACC-197 — opt-in: the trigger (and Cancel beside it) is drawn at the
    * height of a field label's own line, 1.25rem, so it can share that row
-   * without making it taller. Off by default.
+   * without making it taller. Off by default. FOR A TRIGGER-ONLY INSTANCE
+   * (`hideResult`): it sizes every button this instance draws.
    */
   readonly labelRow = input(false);
   /**
