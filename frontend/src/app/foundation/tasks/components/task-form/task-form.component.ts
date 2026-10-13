@@ -56,7 +56,7 @@
 // Choosing nobody is still allowed and still creates an UNASSIGNED task — the
 // picker's outcome line says so.
 
-import { Component, DestroyRef, OnInit, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, Injector, OnInit, afterNextRender, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -77,6 +77,9 @@ import {
   createAssignGroup,
   toAssignTarget,
 } from '../task-assignee-picker/task-assignee-picker.component';
+import { TaskDraftStore } from './task-draft.store';
+import { TaskDraftTriggerComponent } from './task-draft-trigger.component';
+import { TaskDraftCardComponent } from './task-draft-card.component';
 
 const SOURCE_TYPES = [
   'MEETING',
@@ -113,7 +116,12 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
     OverlaySelectComponent,
     InlineCalendarComponent,
     TaskAssigneePickerComponent,
+    TaskDraftTriggerComponent,
+    TaskDraftCardComponent,
   ],
+  // ACC-197 — one draft state per dialog: it outlives the step switch and ends
+  // with the form.
+  providers: [TaskDraftStore],
   template: `
     <form id="taskForm" [formGroup]="form" (ngSubmit)="onSubmit()" class="am-task-form flex flex-col gap-4">
       @if (step() === 1) {
@@ -218,13 +226,33 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
       } @else {
         <!-- ── Step 2 — the substance ──────────────────────────────────── -->
         <div class="flex flex-col gap-1">
-          <label for="description" class="text-sm font-medium">
-            {{ 'task.description' | translate }}
-          </label>
-          <textarea pTextarea id="description" formControlName="description" rows="3"></textarea>
-          <small class="am-hint">{{ 'task.descriptionHint' | translate }}</small>
+          <!-- ACC-197 — "Draft with AI" shares the label row, at the end
+               edge, and adds no height. Absent when AI is not available. -->
+          <div class="flex items-center justify-between gap-2">
+            <label for="description" class="text-sm font-medium">
+              {{ 'task.description' | translate }}
+            </label>
+            <app-task-draft-trigger (requested)="draftFromNote()" />
+          </div>
+          <textarea #descriptionField pTextarea id="description" formControlName="description" rows="3"></textarea>
+          <!-- ACC-197 — the hint steps aside with the two blocks below (§2.1):
+               it is advice for writing the note, and the suggestion needs
+               its line. -->
+          @if (!draft.unsettled()) {
+            <small class="am-hint">{{ 'task.descriptionHint' | translate }}</small>
+          }
         </div>
 
+        <!-- ACC-197 — the working line, the suggestion or a refusal, under the
+             field it is about. -->
+        <app-task-draft-card (accepted)="acceptDraft($event.focus)" (titleChosen)="useDraftTitle()" />
+
+        <!-- ACC-197 (§2.1) — while the working line or a suggestion shows, it
+             TAKES THE PLACE of the two blocks below, as the calendar does on
+             step 1: with them, step 2 would be 496 / 509 px against the 420
+             cap. They return on Accept or Discard, and Create task waits
+             until then (§2.2). A refusal hides nothing. -->
+        @if (!draft.unsettled()) {
         <!-- ACC-163 — Complete is refused until the assignee has added
              evidence. The hint says so, because the assignee is the one who
              meets the consequence and the creator is the one choosing it. -->
@@ -259,6 +287,7 @@ const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
               <input pInputText id="sourceId" formControlName="sourceId" />
             </div>
           </div>
+        }
         }
       }
 
@@ -643,6 +672,10 @@ export class TaskFormComponent implements OnInit {
   readonly dueDates = inject(DueDateService);
   private readonly layers = inject(LayerStackService);
   private readonly destroyRef = inject(DestroyRef);
+  /** ACC-197 — "Draft with AI": its state, for this dialog. */
+  readonly draft = inject(TaskDraftStore);
+  private readonly descriptionField = viewChild<ElementRef<HTMLTextAreaElement>>('descriptionField');
+  private readonly injector = inject(Injector);
 
   readonly saved = output<void>();
   readonly cancelled = output<void>();
@@ -962,6 +995,13 @@ export class TaskFormComponent implements OnInit {
     });
     this.form.controls.priority.valueChanges.subscribe((value) => this.onPriorityChanged(value ?? 'MEDIUM'));
 
+    // ACC-197 — New task only (Edit is not drawn). A refusal is about the note
+    // as it was: editing the note clears it.
+    if (!task) {
+      this.draft.loadAvailability();
+      this.form.controls.description.valueChanges.subscribe(() => this.draft.noteEdited());
+    }
+
     this.ready.emit(this);
     this.titleValid.set(this.form.controls.title.valid);
     this.form.valueChanges.subscribe(() => {
@@ -1151,6 +1191,16 @@ export class TaskFormComponent implements OnInit {
       return;
     }
 
+    // ACC-197 (§2.2) — the working line or a suggestion is showing, so two of
+    // the blocks on step 2 are hidden: Create waits until it is accepted or
+    // discarded. From step 1 too — the person is taken to it. A refusal does
+    // not block.
+    if (this.draft.unsettled()) {
+      this.step.set(2);
+      this.draft.askToSettle();
+      return;
+    }
+
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       // Send the user to the step that holds the problem rather than leaving
@@ -1170,6 +1220,8 @@ export class TaskFormComponent implements OnInit {
     // task, a real, supported outcome — a task worth recording now is worth
     // recording before its owner is known.
     const assignTo = toAssignTarget(this.form.controls.assignTo, this.lockedSourceId());
+    // ACC-197 — what the person took from an AI draft, for the audit row.
+    const aiDraft = this.draft.claimFor(!!(value.description ?? '').trim());
     this.taskService
       .create({
         title: value.title!,
@@ -1180,6 +1232,7 @@ export class TaskFormComponent implements OnInit {
         dueDate: value.dueDate ? value.dueDate.toISOString() : undefined,
         ...(assignTo ? { assignTo } : {}),
         requiresEvidence: value.requiresEvidence ?? false,
+        ...(aiDraft ? { aiDraft } : {}),
       })
       .subscribe({
         next: () => {
@@ -1191,6 +1244,37 @@ export class TaskFormComponent implements OnInit {
           this.saveError.set(extractErrorMessage(err, 'task.errorAction'));
         },
       });
+  }
+
+  // ── ACC-197 — Draft with AI ────────────────────────────────────────────
+
+  /** The trigger: the note is the Description field's own text. */
+  draftFromNote(): void {
+    const value = this.form.getRawValue();
+    this.draft.request({
+      note: value.description ?? '',
+      title: value.title ?? '',
+      // The record is context only when the dialog was opened from one.
+      sourceType: this.isSourceLocked() ? this.lockedSourceType() : null,
+      sourceId: this.isSourceLocked() ? this.lockedSourceId() : null,
+    });
+  }
+
+  /** Accept, and Edit (which also puts the cursor in the field). */
+  acceptDraft(focus: boolean): void {
+    const description = this.draft.accept();
+    if (!description) return;
+    this.form.controls.description.setValue(description);
+    this.form.controls.description.markAsDirty();
+    if (focus) afterNextRender(() => this.descriptionField()?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  /** "Use this title" changes only the Title; the suggestion stays to be accepted or not. */
+  useDraftTitle(): void {
+    const title = this.draft.useTitle();
+    if (!title) return;
+    this.form.controls.title.setValue(title);
+    this.form.controls.title.markAsDirty();
   }
 
   /** ACC-174 — the creator's edit: only what changed is sent. */
