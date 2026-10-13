@@ -172,16 +172,59 @@ describe('User record dialogs (ACC-120 slice 5)', () => {
 
   // ── Edit profile: a placed person (ACC-222) ─────────────────────────────
   describe('Edit profile — a placed person moves only through Transfer (ACC-222)', () => {
-    const POSITIONS = [{ id: 'pos-senior', nameEn: 'Senior Physician', nameAr: null }];
-    const UNITS = [{ id: 'unit-im', nameEn: 'Internal Medicine', nameAr: null, parentId: null, code: 'IM' }];
+    // The record's own references: the names the record header shows.
+    const PLACED: IUserDto = {
+      ...RECORD,
+      references: {
+        position: { nameEn: 'Senior Physician', nameAr: null },
+        primaryOrgUnit: { nameEn: 'Internal Medicine', nameAr: null },
+        actingOrgUnit: null,
+        manager: null,
+        actingUser: null,
+      },
+    };
+    // Lists that DISAGREE with the references, so a fact read from a list
+    // instead of the record would show the wrong name and fail.
+    const POSITIONS = [{ id: 'pos-senior', nameEn: 'FROM THE LIST', nameAr: null }];
+    const UNITS = [{ id: 'unit-im', nameEn: 'FROM THE LIST', nameAr: null, parentId: null, code: 'IM' }];
     // A picker by the control it binds: the field wrapper's inputId does not
     // reach app-overlay-select, so '#ep-position' would match nothing either way.
     const picker = (name: string): HTMLElement | null => q(`app-overlay-select[formcontrolname="${name}"]`);
     const placed = (h: Host): void => {
+      h.user.set(PLACED);
       h.placement.set(true);
       h.positions.set(POSITIONS as never[]);
       h.orgUnits.set(UNITS as never[]);
     };
+
+    it("reads the facts from the record's own references, at once, with no list loaded", () => {
+      open('profile', (h) => {
+        h.user.set(PLACED);
+        h.placement.set(true);
+        // positions and orgUnits stay empty: still loading, or not permitted.
+      });
+
+      expect(q('[data-ep-fact-position]')!.textContent!.trim()).toBe('Senior Physician');
+      expect(q('[data-ep-fact-unit]')!.textContent!.trim()).toBe('Internal Medicine');
+    });
+
+    it('shows "—" for a fact the record has no reference for', () => {
+      open('profile', (h) => {
+        h.user.set({ ...PLACED, references: { ...PLACED.references!, primaryOrgUnit: null } });
+        h.placement.set(true);
+      });
+
+      expect(q('[data-ep-fact-unit]')!.textContent!.trim()).toBe('—');
+    });
+
+    it('puts Name and Language on one row in the placed shape only', () => {
+      open('profile', placed);
+      expect(q('[data-ep-identity]')!.classList.contains('am-ep-pair')).toBe(true);
+
+      host.user.set(INVITED);
+      fixture.detectChanges();
+      expect(q('[data-ep-identity]')!.classList.contains('am-ep-pair')).toBe(false);
+    });
 
     it('shows position and unit as read-only facts with the Transfer line, in ONE step', () => {
       open('profile', placed);
