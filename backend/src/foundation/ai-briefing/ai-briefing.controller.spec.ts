@@ -9,10 +9,12 @@ const PERMISSIONS_KEY = 'permissions';
 describe('AiBriefingController (ACC-198)', () => {
   const service = { read: jest.fn().mockResolvedValue({}), make: jest.fn().mockResolvedValue({}) };
   const controller = new AiBriefingController(service as unknown as AiBriefingService);
+  // The decorated handler itself, where @Permissions() stores its metadata.
+  const handler = (name: 'make' | 'read'): unknown => Object.getOwnPropertyDescriptor(AiBriefingController.prototype, name)?.value;
 
   it('POST needs tenant:manage_config; GET is self-scoped and needs nothing', () => {
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, AiBriefingController.prototype.make)).toEqual(['tenant:manage_config']);
-    expect(Reflect.getMetadata(PERMISSIONS_KEY, AiBriefingController.prototype.read)).toBeUndefined();
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler('make') as object)).toEqual(['tenant:manage_config']);
+    expect(Reflect.getMetadata(PERMISSIONS_KEY, handler('read') as object)).toBeUndefined();
   });
 
   it('passes the caller, the organisation and the language through', async () => {

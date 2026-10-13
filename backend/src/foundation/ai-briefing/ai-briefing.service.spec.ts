@@ -26,6 +26,11 @@ const AI_ON = {
 };
 const OPEN_FEATURE = [{ featureKey: 'morning_briefing', creditCost: 5, restricted: true, allowedOrganizationIds: [ORG] }];
 
+/** A mock's arguments for one call, typed so a spec never reads `any`. */
+function argsOf(fn: jest.Mock, call = 0): unknown[] {
+  return (fn.mock.calls as unknown[][])[call] ?? [];
+}
+
 function setup() {
   const prisma = {
     organization: { findFirst: jest.fn().mockResolvedValue(AI_ON) },
@@ -94,7 +99,7 @@ describe('AiBriefingService.make (ACC-198)', () => {
     expect(request.prompt).not.toContain('task-1');
     expect(request.system).toContain('English');
 
-    const saved = (prisma.aiBriefing.update.mock.calls[0]![0] as { data: Record<string, unknown> }).data;
+    const saved = (argsOf(prisma.aiBriefing.update)[0] as { data: Record<string, unknown> }).data;
     expect(saved).toEqual(
       expect.objectContaining({
         language: 'en',
@@ -111,7 +116,7 @@ describe('AiBriefingService.make (ACC-198)', () => {
     tasks.getMyTasks.mockResolvedValue([]);
     await service.make(ADMIN, ORG, 'ar', NOW);
     expect(ai.run).not.toHaveBeenCalled();
-    expect((prisma.aiBriefing.update.mock.calls[0]![0] as { data: Record<string, unknown> }).data).toEqual(
+    expect((argsOf(prisma.aiBriefing.update)[0] as { data: Record<string, unknown> }).data).toEqual(
       expect.objectContaining({ creditCost: 0, lead: 'لا شيء متأخر أو مستحق اليوم، ولا شيء بانتظارك.', focus: [], groups: [] }),
     );
   });
@@ -128,7 +133,7 @@ describe('AiBriefingService.make (ACC-198)', () => {
   it('the claim is one INSERT … ON CONFLICT that only takes a free or stale claim', async () => {
     const { service, prisma } = setup();
     await service.make(ADMIN, ORG, 'en', NOW);
-    const sql = (prisma.$queryRaw.mock.calls[0]![0] as TemplateStringsArray).join('?');
+    const sql = (argsOf(prisma.$queryRaw)[0] as TemplateStringsArray).join('?');
     expect(sql).toContain('INSERT INTO "AiBriefing"');
     expect(sql).toContain('ON CONFLICT ("organizationId", "userId") DO UPDATE');
     expect(sql).toContain('"generatingSince" IS NULL OR "AiBriefing"."generatingSince" <');
@@ -140,9 +145,9 @@ describe('AiBriefingService.make (ACC-198)', () => {
     const e = await refusal(service.make(ADMIN, ORG, 'en', NOW));
     expect((e as AiRefusalException).code).toBe('AI_CREDITS_EXHAUSTED');
     expect(prisma.aiBriefing.update).not.toHaveBeenCalled();
-    const release = (prisma.$executeRaw.mock.calls[0]![0] as TemplateStringsArray).join('?');
+    const release = (argsOf(prisma.$executeRaw)[0] as TemplateStringsArray).join('?');
     expect(release).toContain('SET "generatingSince" = NULL WHERE "id" = ? AND "generatingSince" = ?');
-    expect(prisma.$executeRaw.mock.calls[0]!.slice(1)).toEqual(['row-1', NOW]);
+    expect(argsOf(prisma.$executeRaw).slice(1)).toEqual(['row-1', NOW]);
   });
 
   it('not available here (feature not open, or AI off) → AI_NOT_ENABLED before any claim', async () => {
@@ -182,7 +187,7 @@ describe('AiBriefingService.read (ACC-198)', () => {
     expect(view.creditCost).toBe(5);
     expect(view.greeting).toBe('morning');
     expect(view.briefing!.language).toBe('ar');
-    expect(view.briefing!.focus).toEqual([{ item: expect.objectContaining({ id: 'task-1', done: true }), reason: 'متأخرة أسبوعًا' }]);
+    expect(view.briefing!.focus).toEqual([{ item: expect.objectContaining({ id: 'task-1', done: true }) as unknown, reason: 'متأخرة أسبوعًا' }]);
     expect(view.briefing!.groups[1]!.items[0]!.done).toBe(false);
   });
 
@@ -211,9 +216,9 @@ describe('AiBriefingService.read (ACC-198)', () => {
     await service.read(ADMIN, ORG, NOW);
     await service.make(ADMIN, ORG, 'en', NOW);
     expect(prisma.aiBriefing.findFirst).toHaveBeenCalledWith({ where: { organizationId: ORG, userId: ADMIN.id, generatedAt: { not: null } } });
-    expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG }) }));
-    expect(prisma.notification.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG, userId: ADMIN.id }) }));
-    const claimParams = prisma.$queryRaw.mock.calls[0]!.slice(1) as unknown[];
+    expect(prisma.task.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG }) as unknown }));
+    expect(prisma.notification.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ organizationId: ORG, userId: ADMIN.id }) as unknown }));
+    const claimParams = argsOf(prisma.$queryRaw).slice(1);
     expect(claimParams).toContain(ORG);
     expect(claimParams).toContain(ADMIN.id);
     expect(claimParams).not.toContain(OTHER_ORG);

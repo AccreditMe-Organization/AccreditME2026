@@ -41,16 +41,16 @@ describe('AI briefing claim against a real database (ACC-198)', () => {
     },
   };
   const tasks = {
-    getMyTasks: async () => [{ id: 'task-1', title: 'Late', status: 'PENDING', dueAt: new Date('2026-10-01T00:00:00Z') }],
-    getAvailableToPick: async () => [],
+    getMyTasks: () => Promise.resolve([{ id: 'task-1', title: 'Late', status: 'PENDING', dueAt: new Date('2026-10-01T00:00:00Z') }]),
+    getAvailableToPick: () => Promise.resolve([]),
   };
   const service = new AiBriefingService(
     prisma,
     ai as unknown as AiService,
     tasks as unknown as TaskService,
-    { awaitingDecision: async () => [] } as unknown as TaskRequestService,
-    { getForUser: async () => ({ data: [] }) } as unknown as NotificationService,
-    { getEffectiveTimeZone: async () => 'Asia/Riyadh' } as unknown as WorkingCalendarService,
+    { awaitingDecision: () => Promise.resolve([]) } as unknown as TaskRequestService,
+    { getForUser: () => Promise.resolve({ data: [] }) } as unknown as NotificationService,
+    { getEffectiveTimeZone: () => Promise.resolve('Asia/Riyadh') } as unknown as WorkingCalendarService,
   );
   const ADMIN_PERMS = ['tenant:manage_config'];
 
