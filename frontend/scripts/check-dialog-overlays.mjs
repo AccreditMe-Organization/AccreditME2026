@@ -69,18 +69,12 @@ const appDir = join(root, 'src', 'app');
 // and is no longer scanned. Its year filter is still a p-select and still
 // correct — four options, below CLAUDE.md's five-option threshold, so PrimeNG's
 // scroll-chaining close cannot be reached.
-const ALLOWED = [
-  {
-    file: 'src/app/foundation/user/components/user-profile/user-profile.component.ts',
-    tag: 'p-datepicker',
-    count: 3,
-    reason:
-      "Page-level: actingOrgUnitUntil, outOfOfficeFrom and outOfOfficeTo sit in " +
-      "the profile form on the page. The dialog this file hosts holds only " +
-      "<app-transfer-user-wizard>, which is a separate file and is scanned on " +
-      "its own. Reported because resolution is per file, not per template region.",
-  },
-];
+// user-profile's entry — its three page-level p-datepickers — was REMOVED in
+// ACC-120 slice 5, with the page: the user record page that replaced it picks
+// every date in a dialog, through the inline calendar, and has no page-level
+// control left to over-report. The list is now empty, which is the point of an
+// allowlist rather than a baseline: nothing is excused.
+const ALLOWED = [];
 
 const OVERLAY_TAGS =
   /<(p-select|p-multiSelect|p-multiselect|p-datepicker|p-datePicker|p-overlayPanel|p-overlaypanel|p-autoComplete|p-autocomplete|p-cascadeSelect)\b([^>]*)>/g;

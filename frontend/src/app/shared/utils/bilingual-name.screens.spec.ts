@@ -40,7 +40,6 @@ import { UserListComponent } from '../../foundation/user/components/user-list/us
 import { UserStatusActionsService } from '../../foundation/user/services/user-status-actions.service';
 import { InviteUserComponent } from '../../foundation/user/components/invite-user/invite-user.component';
 import { LookupValueListComponent } from '../../foundation/lookup/components/lookup-value-list/lookup-value-list.component';
-import { UserRoleAssignmentComponent } from '../../foundation/roles/components/user-role-assignment/user-role-assignment.component';
 import { RoleFormComponent } from '../../foundation/roles/components/role-form/role-form.component';
 import { LookupValueFormComponent } from '../../foundation/lookup/components/lookup-value-form/lookup-value-form.component';
 import { preserveDocumentLanguage } from '../../../testing/document-language';
@@ -363,11 +362,10 @@ describe('swept screens fall back to the English name (ACC-160)', () => {
       expect(c.stageName('missing')).toBe('missing');
     });
 
-    it("user role assignment: a user's roles are named in Arabic", () => {
-      const c = build(UserRoleAssignmentComponent, { userId: 'u1' });
-      expect(c.roleName(as({ nameEn: 'Auditor', nameAr: 'مدقق' }))).toBe('مدقق');
-      expect(c.roleName(as({ nameEn: 'Auditor', nameAr: null }))).toBe('Auditor');
-    });
+    // "user role assignment" was here. The component went with the old profile
+    // page (ACC-120 slice 5); the user record page's Roles panel names roles
+    // through LanguageService.bilingual(), pinned in user-record.component.spec
+    // (test 15).
   });
 });
 
