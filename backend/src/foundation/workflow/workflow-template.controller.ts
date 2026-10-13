@@ -73,11 +73,12 @@ export class WorkflowTemplateController {
 
   // ACC-55 — add/update return IWorkflowTransitionWriteResult
   // ({ transition, permissionWarning }) rather than the bare transition. The
-  // warning is advice about a record that has already been saved, never a
-  // rejection: requiredPermission cannot be validated strictly, because
-  // seedTemplates() itself writes deliberate forward references to unbuilt
-  // modules (workflow.seed.ts:66-81). Reads are unchanged and still return
-  // the bare shape — resolving the warning costs two queries per transition.
+  // warning is advice about a record that has already been saved. Since
+  // ACC-120 slice 5 a newly chosen key that no role can be given is refused
+  // (400, see assertTransitionPermissionGrantable); the warning still covers
+  // keys a transition already held, such as the seed's forward references
+  // (workflow.seed.ts:66-81). Reads are unchanged and still return the bare
+  // shape — resolving the warning costs two queries per transition.
   @Post('transitions')
   @Permissions(WORKFLOWS_PERMISSIONS.MANAGE)
   addTransition(
