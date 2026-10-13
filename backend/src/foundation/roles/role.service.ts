@@ -28,6 +28,23 @@ import {
   assertTenantRetainsAnActiveAdministrator,
   captureAdministratorBaseline,
 } from './tenant-administrator.invariant';
+import { PERMISSIONS_NOT_YET_CHECKED } from '../../common/constants/permissions';
+import {
+  PermissionNotInUseException,
+  PlatformPermissionNotAllowedException,
+  PlatformRoleNotAssignableException,
+  PlatformRoleNotEditableException,
+  RolePermissionsChangedException,
+} from './role-permission-refusal';
+
+// The seeded role that exists in every organisation and means something only in
+// the platform organisation (ACC-13). Its key is fixed by SYSTEM_ROLE_SEED.
+const PLATFORM_ADMIN_KEY = 'PLATFORM_ADMIN';
+
+const NOT_YET_CHECKED = new Set<string>(PERMISSIONS_NOT_YET_CHECKED);
+const isPlatformPermission = (key: string): boolean => key.startsWith('platform:');
+
+type RoleTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 
 export interface ListRolesFilters {
   search?: string;
@@ -276,7 +293,27 @@ export class RoleService {
   async getRoleById(id: string, organizationId: string): Promise<IRole> {
     const role = await this.prisma.role.findFirst({ where: { id, organizationId } });
     if (!role) throw new NotFoundException('Role not found');
-    return this.attachPermissions(role);
+
+    // ACC-120 slice 5 (D8) — the matrix's "held by N users", and how many of
+    // them hold it through a head position. ACTIVE only, joined to User, exactly
+    // as getRoles() counts: an invited or deactivated person cannot sign in, so
+    // a change to the role reaches nobody through them yet. One person holds a
+    // role at most once (@@unique([userId, roleId])), so nobody is counted twice.
+    const activeHolder = { roleId: role.id, user: { organizationId, status: 'ACTIVE' as const } };
+    const [withPermissions, activeHolderCount, headPositionHolderCount] = await Promise.all([
+      this.attachPermissions(role),
+      this.prisma.userRole.count({ where: activeHolder }),
+      this.prisma.userRole.count({
+        where: {
+          ...activeHolder,
+          OR: [
+            { grantedViaHeadPositionId: { not: null } },
+            { grantedViaHeadPositionOrgUnitId: { not: null } },
+          ],
+        },
+      }),
+    ]);
+    return { ...withPermissions, activeHolderCount, headPositionHolderCount };
   }
 
   async createRole(
@@ -290,6 +327,22 @@ export class RoleService {
     if (existing) {
       throw new ConflictException(`A role named '${dto.nameEn}' already exists`);
     }
+
+    // ACC-120 slice 5 (R1, R2) — a new role GAINS every key it is created
+    // with, so the save's two refusals apply here as well: no platform key
+    // inside a tenant, and no key that no code checks yet. Without this the
+    // rule would be one Create away from bypassed.
+    const createKeys = [...new Set(dto.permissionKeys ?? [])];
+    if (createKeys.some(isPlatformPermission)) {
+      const org = await this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { isPlatformOrg: true },
+      });
+      const platformKeys = createKeys.filter(isPlatformPermission);
+      if (!org?.isPlatformOrg) throw new PlatformPermissionNotAllowedException(platformKeys);
+    }
+    const unusedKeys = createKeys.filter((k) => NOT_YET_CHECKED.has(k));
+    if (unusedKeys.length > 0) throw new PermissionNotInUseException(unusedKeys);
 
     const permissionIds = dto.permissionKeys
       ? await this.resolvePermissionIds(dto.permissionKeys)
@@ -452,27 +505,100 @@ export class RoleService {
       );
     }
 
-    const permissionIds = await this.resolvePermissionIds(dto.permissionKeys);
+    // ACC-120 slice 5 (R1c) — the Platform Administrator role, inside a tenant,
+    // is not edited at all: it is seeded into every organisation and means
+    // something only in the platform organisation, where PlatformGuard can pass.
+    // Refused the way the root role is, before anything is read or locked.
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { isPlatformOrg: true },
+    });
+    const isTenant = !org?.isPlatformOrg;
+    if (isTenant && role.key === PLATFORM_ADMIN_KEY) {
+      throw new PlatformRoleNotEditableException();
+    }
 
-    // ACC-120 — one transaction, which these two writes never had. A failure
-    // between them left the role with NO permissions at all: the delete had
-    // committed and the write had not.
+    const requested = [...new Set(dto.permissionKeys)];
+    // Unknown keys are a 404 before anything is locked, exactly as before.
+    const idByKey = await this.resolvePermissionIdsByKey(requested);
+
+    // ACC-120 slice 5 — the save, as ONE transaction under the role's row lock.
+    //
+    // THE LOCK (D4). Two administrators saving the same role at once used to
+    // race: each deleted and rewrote the set, and the later write silently
+    // replaced the earlier. SELECT … FOR UPDATE makes the second wait for the
+    // first to commit, then read what it wrote — which is what lets the
+    // comparison below see it. Scoped by id AND organisation, like every query.
+    //
+    // THE COMPARISON (D4). When the caller sends the set it loaded, the save
+    // goes ahead only if the role still holds exactly that set (as a SET, so
+    // order and duplicates do not matter). The FULL set: keys this save cannot
+    // change still count, because they are still what the caller saw.
+    //
+    // WHAT A SAVE CANNOT CHANGE (R1, R2). Platform keys and keys no code checks
+    // yet are KEPT as the role holds them, whatever the request sends; a request
+    // that tries to ADD one is refused rather than quietly ignored.
+    let before: string[] = [];
+    let after: string[] = [];
     await this.prisma.$transaction(async (tx) => {
-      await tx.rolePermission.deleteMany({ where: { roleId } });
-      if (permissionIds.length > 0) {
+      await this.lockRoleRow(tx, role.id, organizationId);
+      const currentRows = await tx.rolePermission.findMany({
+        where: { roleId: role.id },
+        include: { permission: true },
+      });
+      const current = new Map(
+        currentRows.map((rp) => [`${rp.permission.module}:${rp.permission.action}`, rp.permissionId]),
+      );
+      before = [...current.keys()].sort();
+
+      if (
+        dto.expectedPermissionKeys !== undefined &&
+        !sameSet(current.keys(), dto.expectedPermissionKeys)
+      ) {
+        throw new RolePermissionsChangedException();
+      }
+
+      const gainedPlatform = requested.filter(
+        (k) => isTenant && isPlatformPermission(k) && !current.has(k),
+      );
+      if (gainedPlatform.length > 0) throw new PlatformPermissionNotAllowedException(gainedPlatform);
+
+      const gainedUnused = requested.filter((k) => NOT_YET_CHECKED.has(k) && !current.has(k));
+      if (gainedUnused.length > 0) throw new PermissionNotInUseException(gainedUnused);
+
+      const kept = before.filter((k) => isPlatformPermission(k) || NOT_YET_CHECKED.has(k));
+      const editable = requested.filter((k) => !isPlatformPermission(k) && !NOT_YET_CHECKED.has(k));
+      after = [...new Set([...editable, ...kept])].sort();
+
+      await tx.rolePermission.deleteMany({ where: { roleId: role.id } });
+      if (after.length > 0) {
         await tx.rolePermission.createMany({
-          data: permissionIds.map((permissionId) => ({ roleId, permissionId })),
+          data: after.map((k) => ({
+            roleId: role.id,
+            // A kept key already has its id on the row being replaced; a
+            // requested one was resolved above. One of the two always exists.
+            permissionId: (current.get(k) ?? idByKey.get(k)) as string,
+          })),
         });
       }
     });
 
+    // D5 — before and after, and what moved. After the commit, never while the
+    // lock is held (the lockTaskRow rule).
+    const beforeSet = new Set(before);
+    const afterSet = new Set(after);
     await this.auditLog.log({
       tenantId: organizationId,
       actorId,
       action: 'UPDATE',
       objectType: 'RolePermission',
       objectId: roleId,
-      after: { permissions: dto.permissionKeys },
+      before: { permissions: before },
+      after: { permissions: after },
+      metadata: {
+        added: after.filter((k) => !beforeSet.has(k)),
+        removed: before.filter((k) => !afterSet.has(k)),
+      },
     });
 
     return this.attachPermissions(role);
@@ -489,6 +615,7 @@ export class RoleService {
       module: p.module,
       action: p.action,
       description: p.description,
+      inUse: !NOT_YET_CHECKED.has(`${p.module}:${p.action}`),
     }));
   }
 
@@ -532,6 +659,18 @@ export class RoleService {
       where: { id: dto.roleId, organizationId },
     });
     if (!role) throw new NotFoundException('Role not found');
+
+    // ACC-120 slice 5 (R1) — the Platform Administrator role is seeded into
+    // every organisation but is not something to hand out inside a tenant. The
+    // roles list already hides it there; this is the rule, the list is the
+    // courtesy. Escalation through roles:manage more widely is ACC-221.
+    if (role.key === PLATFORM_ADMIN_KEY) {
+      const org = await this.prisma.organization.findUnique({
+        where: { id: organizationId },
+        select: { isPlatformOrg: true },
+      });
+      if (!org?.isPlatformOrg) throw new PlatformRoleNotAssignableException();
+    }
 
     const user = await this.prisma.user.findFirst({
       where: { id: userId, organizationId },
@@ -752,6 +891,31 @@ export class RoleService {
 
   // ── Internal helpers ─────────────────────────────────────────────────────────
 
+  // SELECT … FOR UPDATE on the role, scoped by id AND organisation — the same
+  // shape as TaskService.lockTaskRow(). A row that does not exist locks nothing.
+  private async lockRoleRow(tx: RoleTx, id: string, organizationId: string): Promise<void> {
+    await tx.$queryRaw`SELECT id FROM "Role" WHERE id = ${id} AND "organizationId" = ${organizationId} FOR UPDATE`;
+  }
+
+  // key -> permission id for the keys given; any unknown key is a 404.
+  private async resolvePermissionIdsByKey(permissionKeys: string[]): Promise<Map<string, string>> {
+    if (permissionKeys.length === 0) return new Map();
+    const permissions = await this.prisma.permission.findMany({
+      where: {
+        OR: permissionKeys.map((k) => {
+          const [module, action] = k.split(':') as [string, string];
+          return { module, action };
+        }),
+      },
+    });
+    const idByKey = new Map(permissions.map((p) => [`${p.module}:${p.action}`, p.id]));
+    const unknown = permissionKeys.filter((k) => !idByKey.has(k));
+    if (unknown.length > 0) {
+      throw new NotFoundException(`Unknown permission key(s): ${unknown.join(', ')}`);
+    }
+    return idByKey;
+  }
+
   private async resolvePermissionIds(permissionKeys: string[]): Promise<string[]> {
     const pairs = permissionKeys.map((k) => {
       const [module, action] = k.split(':') as [string, string];
@@ -800,4 +964,13 @@ export class RoleService {
       updatedAt: role.updatedAt,
     };
   }
+}
+
+/** The same keys, ignoring order and duplicates. */
+function sameSet(a: Iterable<string>, b: Iterable<string>): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  if (left.size !== right.size) return false;
+  for (const k of left) if (!right.has(k)) return false;
+  return true;
 }
