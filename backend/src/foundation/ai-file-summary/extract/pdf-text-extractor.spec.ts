@@ -6,6 +6,11 @@ import { makePdf } from './pdf-fixture';
 // ACC-193 — real pdfjs-dist, in a real worker thread, under Jest (§4.1).
 const HANG = join(__dirname, 'hang.fixture.mjs');
 
+// Real pdfjs in real worker threads: each read cold-starts a worker and loads
+// pdfjs, and a full suite (CI's small machines especially) contends for CPU.
+// 30 s is the extractor's own production deadline; Jest's default 5 s flaked.
+jest.setTimeout(30_000);
+
 async function readAll(extractor: PdfTextExtractor, pdf: Uint8Array, maxPages = 100, stopAfter = Infinity, deadline?: number) {
   const pages: string[] = [];
   const result = await extractor.read(pdf, {

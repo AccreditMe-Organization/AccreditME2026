@@ -13,6 +13,11 @@ import { PdfTextExtractor } from './pdf-text-extractor';
 import { makePdf } from './pdf-fixture';
 
 const pdf = new PdfTextExtractor();
+
+// Real pdfjs in real worker threads: each read cold-starts a worker and loads
+// pdfjs, and a full suite (CI's small machines especially) contends for CPU.
+// 30 s is the extractor's own production deadline; Jest's default 5 s flaked.
+jest.setTimeout(30_000);
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 describe('summarizableKind (decision 3)', () => {
