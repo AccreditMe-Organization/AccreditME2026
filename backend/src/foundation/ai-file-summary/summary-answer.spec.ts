@@ -73,6 +73,15 @@ describe('ACC-224 — unitCount, for the AI log\'s description', () => {
   });
 });
 
+describe('ACC-197 — numbers are digits in a summary, in both languages', () => {
+  it.each(['en', 'ar'] as const)('the %s prompt asks for digits and a percent sign, and still keeps names and codes as written', (language) => {
+    const prompt = summarySystemPrompt(language);
+    expect(prompt).toContain('Write every number in digits (0-9), even when the document spells it out, and a percentage as "90%".');
+    expect(prompt).toContain('Keep names and codes exactly as written.');
+    expect(prompt).not.toContain('numbers exactly as written');
+  });
+});
+
 describe('the prompt (ACC-193)', () => {
   it('writes in the reader\'s language whatever the file\'s, and marks the file\'s text as data, never instructions', () => {
     const en = summarySystemPrompt('en');
