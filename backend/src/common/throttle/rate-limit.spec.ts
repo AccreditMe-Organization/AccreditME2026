@@ -1,4 +1,4 @@
-import { Controller, Get, INestApplication, Logger } from '@nestjs/common';
+import { Controller, Get, INestApplication, Logger, Post } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -16,7 +16,7 @@ import { TenantGuard } from '../guards/tenant.guard';
 import { HttpExceptionFilter } from '../filters/http-exception.filter';
 import { configureHttp } from '../config/http.config';
 import { AccreditMeThrottlerGuard } from './accreditme-throttler.guard';
-import { throttlerOptions } from './throttle.config';
+import { perUser, throttlerOptions } from './throttle.config';
 import { RATE_LIMITS } from './rate-limits';
 
 // AuthController's module graph imports better-auth, which is ESM-only.
@@ -32,6 +32,13 @@ const SECRET = 'rate-limit-spec-secret';
 class ProbeController {
   @Get()
   ok(): { ok: true } {
+    return { ok: true };
+  }
+
+  /** ACC-197 — a route under the per-user tier POST /tasks/draft carries. */
+  @Post('draft')
+  @perUser(RATE_LIMITS.taskDraft)
+  draft(): { ok: true } {
     return { ok: true };
   }
 }
@@ -209,6 +216,32 @@ describe('rate limiting (ACC-129)', () => {
     // Same address, different user: untouched.
     expect((await probe(userB)).status).toBe(200);
     expect(warnings().join('\n')).toContain('user:user-a');
+  });
+
+  // ACC-197 (Q3) — the tier POST /tasks/draft carries: ten a minute per USER,
+  // on its own counter, whoever else shares the address.
+  it('a per-user route refuses the eleventh request in a minute, for that user and that route only', async () => {
+    const userA = `access_token=${sessionFor('user-a')}`;
+    const userB = `access_token=${sessionFor('user-b')}`;
+    const draft = (cookie: string) =>
+      request(server())
+        .post('/api/v1/probe/draft')
+        .set('X-Forwarded-For', '203.0.113.60')
+        .set('Cookie', cookie);
+
+    const a = await times(RATE_LIMITS.taskDraft.limit, () => draft(userA));
+    expect(a).toHaveLength(10);
+    expect(a.every((s) => s === 201)).toBe(true);
+    const refused = await draft(userA);
+    expect(refused.status).toBe(429);
+    expect((refused.body as { code: string }).code).toBe('RATE_LIMITED');
+    expect(warnings().join(' | ')).toContain('user:user-a');
+
+    // Same address, different user: untouched.
+    expect((await draft(userB)).status).toBe(201);
+    // The same user's other routes keep their own counter.
+    const probe = await request(server()).get('/api/v1/probe').set('X-Forwarded-For', '203.0.113.60').set('Cookie', userA);
+    expect(probe.status).toBe(200);
   });
 
   it('counts a forged session by address, so an invented token buys no fresh bucket', async () => {

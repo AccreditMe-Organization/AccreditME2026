@@ -51,6 +51,7 @@ import { TaskAssignmentService } from './task-assignment.service';
 import { LookupService } from '../lookup/lookup.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
+import { TaskDraftService } from '../ai-task-draft/task-draft.service';
 import { TaskAuthorityService } from './task-authority.service';
 
 const TENANT_ID = 'org-a';
@@ -123,6 +124,8 @@ describe('Child list gated by its parent (ACC-101)', () => {
         // ACC-173 — the controller's request routes; never reached here.
         { provide: TaskRequestService, useValue: {} },
         { provide: TaskEvidenceService, useValue: {} },
+        // ACC-197 — the controller's draft routes; never reached here.
+        { provide: TaskDraftService, useValue: {} },
         {
           provide: TaskAuthorityService,
           useValue: {

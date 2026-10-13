@@ -5,6 +5,8 @@ import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
+import { TaskDraftService } from '../ai-task-draft/task-draft.service';
+import { RATE_LIMITS } from '../../common/throttle/rate-limits';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { PermissionGuard } from '../../common/guards/permission.guard';
 import { PERMISSIONS_KEY } from '../../common/decorators/permissions.decorator';
@@ -101,6 +103,11 @@ describe('TaskController', () => {
   };
 
   // ACC-177 — file evidence, the evidence list, downloads and deletes.
+  // ACC-197
+  const drafts = {
+    availability: jest.fn().mockResolvedValue({ available: true }),
+    draft: jest.fn().mockResolvedValue({ draftId: 'log-1', title: null, lines: [], description: '' }),
+  };
   const evidence = {
     addFile: jest.fn().mockResolvedValue({ id: 'evidence-2' }),
     list: jest.fn().mockResolvedValue({ items: [], canAdd: true }),
@@ -158,6 +165,7 @@ describe('TaskController', () => {
         { provide: TaskAssignmentService, useValue: assignment },
         { provide: TaskRequestService, useValue: requests },
         { provide: TaskEvidenceService, useValue: evidence },
+        { provide: TaskDraftService, useValue: drafts },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -252,6 +260,33 @@ describe('TaskController', () => {
     );
 
     expect(required).toBeUndefined();
+  });
+
+  // ACC-197 — "Draft with AI" is gated like creating a task, both routes.
+  describe('task drafting (ACC-197)', () => {
+    it('both draft routes require tasks:create', () => {
+      const reflector = new Reflector();
+      expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.getDraftAvailability)).toEqual([TASKS_PERMISSIONS.CREATE]);
+      expect(reflector.get(PERMISSIONS_KEY, TaskController.prototype.draft)).toEqual([TASKS_PERMISSIONS.CREATE]);
+    });
+
+    it('POST /tasks/draft carries its own per-user limit: ten a minute (Q3)', () => {
+      const handler = Object.getOwnPropertyDescriptor(TaskController.prototype, 'draft')!.value as object;
+      expect(Reflect.getMetadata('THROTTLER:LIMITdefault', handler)).toBe(RATE_LIMITS.taskDraft.limit);
+      expect(Reflect.getMetadata('THROTTLER:TTLdefault', handler)).toBe(RATE_LIMITS.taskDraft.ttl);
+      expect(RATE_LIMITS.taskDraft).toEqual({ limit: 10, ttl: 60_000 });
+    });
+
+    it("availability is asked for the caller’s own organisation", async () => {
+      await expect(controller.getDraftAvailability('org-a')).resolves.toEqual({ available: true });
+      expect(drafts.availability).toHaveBeenCalledWith('org-a');
+    });
+
+    it('draft forwards the caller, their permissions and their organisation — never one from the body', async () => {
+      const dto = { note: 'follow up hand rub stock', language: 'en' as const, sourceType: 'COMMITTEE' as const, sourceId: 'c1' };
+      await controller.draft(dto, 'org-a', 'user-1', ['tasks:create', 'committees:view']);
+      expect(drafts.draft).toHaveBeenCalledWith({ id: 'user-1', permissions: ['tasks:create', 'committees:view'] }, 'org-a', dto);
+    });
   });
 
   it('the non-self-scoped task endpoints remain permission-gated', () => {

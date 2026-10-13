@@ -119,6 +119,10 @@ const mockPrisma = {
   userRole: {
     findMany: jest.fn(),
   },
+  // ACC-197 — the AI log a "drafted with AI" claim is checked against.
+  aiInteractionLog: {
+    findFirst: jest.fn(),
+  },
 };
 
 // ACC-51 — attachAssigneesToUnassignedStageTasks() wraps its per-task writes
@@ -325,6 +329,86 @@ describe('TaskService', () => {
       expect(mockPrisma.task.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ requiresEvidence: false }) }),
       );
+    });
+  });
+
+  // ACC-197 — "drafted with AI" on the task's CREATE audit row. The dialog's
+  // claim is CHECKED against the AI log; a claim that does not check out never
+  // blocks the task, it only goes unmarked.
+  describe('create — the AI draft marker (ACC-197)', () => {
+    const DTO = {
+      title: 'Restock and check hand rub on ward 6A',
+      description: 'Purpose: keep ward 6A supplied.',
+      sourceType: 'COMMITTEE' as const,
+      sourceId: 'committee-1',
+      assigneeUserIds: [USER_A],
+    };
+    const CLAIM = { id: 'log-1', description: true, title: false };
+    const auditCall = () => (mockAuditLog.log.mock.calls as Array<[Record<string, unknown>]>).find((c) => c[0]['action'] === 'CREATE')![0];
+
+    beforeEach(() => {
+      mockPrisma.task.create.mockResolvedValue({ ...BASE_TASK, assignees: [] });
+      mockPrisma.aiInteractionLog.findFirst.mockResolvedValue({ id: 'log-1' });
+    });
+
+    it('a claim that checks out marks the audit row: the call, and what was accepted', async () => {
+      await service.create({ ...DTO, aiDraft: CLAIM }, ORG_A, ACTOR);
+
+      expect(auditCall()['metadata']).toEqual({ aiDraft: { interactionId: 'log-1', description: true, title: false } });
+      expect(auditCall()['actorId']).toBe(ACTOR);
+    });
+
+    it('checks the claim against THIS person, THIS organisation, this feature, a successful call, in the last 24 hours', async () => {
+      const before = Date.now();
+      await service.create({ ...DTO, aiDraft: CLAIM }, ORG_A, ACTOR);
+
+      const { where, select } = (mockPrisma.aiInteractionLog.findFirst.mock.calls[0] as [{ where: Record<string, unknown>; select: unknown }])[0];
+      expect(where).toEqual({
+        id: 'log-1',
+        organizationId: ORG_A,
+        actorId: ACTOR,
+        feature: 'task_description_drafting',
+        success: true,
+        createdAt: { gte: expect.any(Date) },
+      });
+      const since = (where['createdAt'] as { gte: Date }).gte.getTime();
+      expect(before - since).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 5);
+      expect(before - since).toBeLessThan(24 * 60 * 60 * 1000 + 5000);
+      expect(select).toEqual({ id: true });
+    });
+
+    it('should NOT return records belonging to a different tenant', async () => {
+      // The draft id is real, but it is another organisation's (or another
+      // person's, or too old): the scoped lookup finds nothing.
+      mockPrisma.aiInteractionLog.findFirst.mockResolvedValue(null);
+
+      const task = await service.create({ ...DTO, aiDraft: CLAIM }, ORG_A, ACTOR);
+
+      expect(task).toBeDefined();
+      expect(mockPrisma.task.create).toHaveBeenCalledTimes(1);
+      expect(auditCall()).not.toHaveProperty('metadata');
+      expect((mockPrisma.aiInteractionLog.findFirst.mock.calls[0] as [{ where: { organizationId: string } }])[0].where.organizationId).toBe(ORG_A);
+    });
+
+    it('a lookup that fails never fails the task: created, unmarked', async () => {
+      mockPrisma.aiInteractionLog.findFirst.mockRejectedValue(new Error('db down'));
+
+      await expect(service.create({ ...DTO, aiDraft: CLAIM }, ORG_A, ACTOR)).resolves.toBeDefined();
+      expect(auditCall()).not.toHaveProperty('metadata');
+    });
+
+    it('no claim, or a claim that accepted nothing, makes no lookup and leaves the audit row exactly as before', async () => {
+      await service.create(DTO, ORG_A, ACTOR);
+      await service.create({ ...DTO, aiDraft: { id: 'log-1', description: false, title: false } }, ORG_A, ACTOR);
+
+      expect(mockPrisma.aiInteractionLog.findFirst).not.toHaveBeenCalled();
+      for (const call of mockAuditLog.log.mock.calls as Array<[Record<string, unknown>]>) expect(call[0]).not.toHaveProperty('metadata');
+    });
+
+    it('"Use this title" alone is recorded as the title only', async () => {
+      await service.create({ ...DTO, aiDraft: { id: 'log-1', description: false, title: true } }, ORG_A, ACTOR);
+
+      expect(auditCall()['metadata']).toEqual({ aiDraft: { interactionId: 'log-1', description: false, title: true } });
     });
   });
 

@@ -24,6 +24,7 @@ import { TaskService } from './task.service';
 import { TaskAssignmentService } from './task-assignment.service';
 import { TaskRequestService } from './task-request.service';
 import { TaskEvidenceService } from './task-evidence.service';
+import { TaskDraftService } from '../ai-task-draft/task-draft.service';
 
 describe('Task routes — static paths are not swallowed by :id (ACC-167)', () => {
   let app: INestApplication<App>;
@@ -63,6 +64,11 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
     listCommitteeMembers: jest.fn().mockResolvedValue([]),
   };
 
+  const drafts = {
+    availability: jest.fn().mockResolvedValue({ available: true }),
+    draft: jest.fn().mockResolvedValue({}),
+  };
+
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [TaskController],
@@ -71,6 +77,8 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
         { provide: TaskAssignmentService, useValue: assignment },
         { provide: TaskRequestService, useValue: requests },
         { provide: TaskEvidenceService, useValue: evidence },
+        // ACC-197 — the draft routes need tasks:create; this caller holds nothing.
+        { provide: TaskDraftService, useValue: drafts },
       ],
     })
       .overrideGuard(TenantGuard)
@@ -119,6 +127,20 @@ describe('Task routes — static paths are not swallowed by :id (ACC-167)', () =
 
     expect(res.status).toBe(200);
     expect(delegate()).toHaveBeenCalledTimes(1);
+    expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
+  });
+
+  // ACC-197 — both draft routes are gated (tasks:create), so this caller is
+  // refused BY THE GUARD on the draft route itself, and neither the draft
+  // service nor the ':id' handlers run.
+  it('GET /tasks/draft/availability and POST /tasks/draft are refused 403 for a caller without tasks:create', async () => {
+    const availability = await request(app.getHttpServer()).get('/tasks/draft/availability');
+    const draft = await request(app.getHttpServer()).post('/tasks/draft').send({ note: 'follow up hand rub stock', language: 'en' });
+
+    expect(availability.status).toBe(403);
+    expect(draft.status).toBe(403);
+    expect(drafts.availability).not.toHaveBeenCalled();
+    expect(drafts.draft).not.toHaveBeenCalled();
     expect(taskService.getByIdForViewer).not.toHaveBeenCalled();
   });
 
