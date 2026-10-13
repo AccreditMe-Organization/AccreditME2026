@@ -213,9 +213,9 @@ NOTE>>>
 | Record purpose sent | first 500 characters | context, not the subject |
 | Input, worst case | under 3,000 tokens by our high estimate (UTF-8 bytes ÷ 3) | `inputTokenCap: 3000` is added to `ai.config.ts`, and a spec builds the worst-case prompt in Arabic and asserts it fits |
 | Output | 2,000 tokens (unchanged) | thinking plus a JSON answer of about 550 characters; the summary's 1,000–1,200-character answers used 392–673 |
-| Title out | 70 characters | one line beside "Use this title" |
-| Purpose / To do / Done when out | 140 / 200 / 140 characters | 2 + 3 + 2 lines in the card, which is what §2.1's budget holds; the layout spec is the judge |
-| Description after Accept | about 520 characters | far inside the field's 2,000 |
+| Title out | **60** characters (planned 70; see §15) | one line in the card |
+| Purpose / To do / Done when out | **120 / 180 / 120** characters (planned 140 / 200 / 140; see §15) | 2 + 3 + 2 lines in the card, which is what §2.1's budget holds; the layout spec is the judge |
+| Description after Accept | about 460 characters | far inside the field's 2,000 |
 | Drafts per user | **10 a minute** (Q3) | the first AI call an ordinary user can repeat without limit; see Q3 |
 
 **No claim row, unlike the summary and the briefing.** Those save a record, so two runs must not race. A draft saves nothing; the trigger is disabled while working, and the rate limit bounds a script.
@@ -438,13 +438,98 @@ If Q4 is answered "show it on the task now", that would need a nullable column o
 ## 14. Progress
 
 - [x] Ahmad approves the plan (Q1–Q12 as recommended, plus §2.2; 13 Oct)
-- [ ] Shared pieces: `interactionId`, `ai-availability.ts`, `text-cut.ts`
-- [ ] `foundation/ai-task-draft/`: prompt, parse, record context, refusals, service
-- [ ] Routes, DTOs, the rate-limit tier
-- [ ] `create()`: the verified audit marker
-- [ ] Frontend: `task-draft-assist`, the form wiring, the substitution, i18n
-- [ ] The summary's digits sentence (§12)
-- [ ] Specs and mutation checks (§11); the layout spec in both languages
-- [ ] SYSTEM-REFERENCE and CLAUDE.md
-- [ ] The gate, then stop before pushing
+- [x] Shared pieces: `interactionId`, `ai-availability.ts`, `text-cut.ts`
+- [x] `foundation/ai-task-draft/`: prompt, parse, record context, refusals, service
+- [x] Routes, DTOs, the rate-limit tier
+- [x] `create()`: the verified audit marker
+- [x] Frontend: the trigger, the card, the store, the form wiring, the substitution, i18n
+- [x] The summary's digits sentence (§12)
+- [x] Specs and mutation checks (§11); the layout spec in both languages
+- [x] SYSTEM-REFERENCE and CLAUDE.md
+- [x] The gate, then stop before pushing
 - [ ] After the merge: the live proof
+
+---
+
+## 15. Built — measurements, and where the build differs from the plan
+
+### 15.1 Step 2 against the 420px cap
+
+Measured by `task-form.draft.layout.spec.ts`: New task in the real dialog shell (the step strip in the header, the actions in the footer), the real theme, the real font, the real translations, both languages. Every request is answered by the test, so **no task is created**. English / Arabic, in px:
+
+| State | English | Arabic |
+|---|---|---|
+| Idle, trigger shown | 280 | 289 |
+| Idle, no trigger (AI not available) | 280 | 289 |
+| Working | 237 | 252 |
+| Suggestion at its worst: every part and the title at its cap | 355 | 386 |
+| The same, with "Accept or discard the suggestion first." under the card | **377** | **410** |
+| Suggestion one eighth LONGER than the caps, with that line | 377 | 410 |
+| Suggestion of unbroken widest letters at the caps, with that line | 377 | 410 |
+| Refusal: credits used up (the longest sentence) | 348 | 363 |
+| Refusal: nothing to suggest | 327 | 363 |
+| Refusal: the call failed, with Try again | 366 | 381 |
+| Standalone screen (source typed by hand): idle | 279 | 290 |
+| Standalone screen: refusal with Try again | 365 | 382 |
+
+Every state is under the cap in both languages. The trigger adds 0 px, and the spec also asserts that it sits wholly inside the dialog body (whose top edge would clip anything poking above the label row).
+
+### 15.2 Differences from the approved plan
+
+1. **The caps came down: 60 / 120 / 180 / 120** (planned 70 / 140 / 200 / 140). This is the plan's own rule (§2.1: "if the worst case does not fit, the caps come down; the 420 does not move"). At the planned caps the Arabic worst case measured 410 px with the suggestion at exactly eight lines and no room for one wider word. At the new caps, prose one eighth longer than the caps still fits in eight lines.
+2. **The card is drawn smaller than the drawing.** The three lines are at the meta type step (12 px English, 13 px Arabic), not the body step; the title is one line of text instead of a bordered row; and **"Use this title" sits at the far end of the Accept · Edit · Discard row**. Drawn as planned (body step, boxed title row) the worst case measured **507 px English and 585 px Arabic**, and no caps a useful draft could live with would have closed 165 px.
+3. **The description's hint steps aside too.** §2.1 named Evidence required and Source. The hint under Description ("Plain text. What a surveyor will read as the statement of work.") also gives way while the working line or a suggestion shows. Without that, the Arabic worst case goes over the cap. It returns with the other two.
+4. **The suggestion's text is held to eight lines**, and scrolls inside the card past that. Character caps bound prose, not pixels: a run of very wide letters at the caps would need 17 to 19 lines. This is the inner-scroll escape `EditDialogComponent` documents (ACC-120), and its one condition holds: nothing in the block opens a floating panel. With it, no wording can push the dialog body over its cap. Ordinary prose at the caps never scrolls.
+5. **A refusal does not hide the blocks below it.** §2.1's recommendation said "a suggestion (or a refusal, or the working line)". As built, only the working line and a suggestion do. A refusal fits with everything showing (382 px at most), and §2.2 already says a refusal does not block Create task, so hiding fields the person is allowed to save would only have made them unreadable for no gain.
+6. **The trigger is 20 px tall** (one label line), not the shared trigger's usual height. Taller, it either made the row taller or poked above the dialog body, which clips it.
+7. **`am-ai-assist` gained three opt-in inputs, not one:** `hideResult` (planned as the split), `labelRow` (difference 6) and `actionsExtra` (difference 2). All default off. The briefing's and the summary's specs are unchanged and green (Q8).
+8. **Frontend files:** the plan's one `task-draft-assist/` became three files beside the form — `task-draft.store.ts`, `task-draft-trigger.component.ts`, `task-draft-card.component.ts` — because the trigger and the card are in two places and step 2's markup is destroyed when the person goes Back, so the draft's state has to live above both.
+9. **A spec the plan did not list:** `draft-record-context.spec.ts`. A mutation check found that dropping `organizationId` from the MEETING read left every test green; it is pinned now.
+10. **One existing rule in `am-ai-assist`'s stylesheet was merged, with no change to what is drawn.** The build refuses a component stylesheet over 4 kB, and the new rules took this one to 4.25 kB. The fold control's focus ring was a second rule with the same two declarations as every other control's; it is now one more selector on that rule. The far end of the action row is the `ms-auto` utility class instead of a rule. The stylesheet is 3.93 kB. The briefing's and the summary's specs are unchanged and green.
+11. **One existing spec file gained a line:** `task-form.edit.spec.ts` now calls `preserveDocumentLanguage()`. The form holds the draft store, which reads `LanguageService`, so its Arabic case writes `<html dir>` like any Arabic session, and the global guard requires it to be put back. No assertion in that file changed.
+
+### 15.3 Mutation checks
+
+Each breaks one thing; each turned a named test red, and was reverted.
+
+| Mutation | Red in |
+|---|---|
+| Drop `assertCanView` | `task-draft.service.spec` (403 naming the permission; the tenant test) |
+| Drop `organizationId` from the committee read | `task-draft.service.spec` |
+| Drop `organizationId` from the meeting read | `draft-record-context.spec` (added for this) |
+| Skip the too-short check | `task-draft.service.spec` |
+| Treat "insufficient" as a draft | `task-draft.service.spec` |
+| Drop `accept()` | `task-draft.service.spec` |
+| Trust the `aiDraft` claim without the lookup | `task.service.spec` |
+| Drop `organizationId` from the claim lookup | `task.service.spec` |
+| Raise a cap | `draft-answer.spec` |
+| Put the note in the log description | `task-draft.service.spec` |
+| The hint stays while a suggestion shows | layout spec (Arabic) |
+| Create task sends while a suggestion is unsettled | `task-form.draft.spec` |
+| The text block is not held to eight lines | layout spec |
+| The trigger is not drawn at the label line | layout spec |
+| The suggestion is drawn at the body step again | layout spec |
+| A refusal blocks Create task | `task-form.draft.spec` |
+| The two lower blocks stay while a suggestion shows | layout spec |
+
+### 15.4 Real drafts, from the local key
+
+Made by calling the provider directly with the real prompt and the real parser — no gateway, no database, so no organisation's credits. Note: "follow up hand rub stock ward 6A", on the Infection Control Committee. Model `claude-sonnet-5-5`, at the built caps.
+
+**English** (464 input tokens, 166 output):
+
+> Title: Follow up hand rub stock on ward 6A
+>
+> Purpose: Adequate hand rub stock on ward 6A supports hand hygiene and infection prevention and control.
+> To do: Check the current hand rub stock on ward 6A, find out whether supplies are low, and follow up on any restocking needed. Report the findings to the committee.
+> Done when: Ward 6A's hand rub stock has been checked, any shortage has been followed up, and the outcome is reported.
+
+**Arabic** (467 input tokens, 226 output):
+
+> العنوان: متابعة مخزون معقم اليدين في العنبر 6A
+>
+> الغرض: ضمان توفر معقم اليدين في العنبر 6A دعمًا لإجراءات الوقاية من العدوى ومكافحتها.
+> المطلوب: مراجعة كمية معقم اليدين المتوفرة في العنبر 6A، ومقارنتها بالاحتياج، ثم متابعة أي نقص مع الجهة المسؤولة عن التوريد.
+> يُعدّ منجزًا: تم تسجيل مخزون معقم اليدين في العنبر 6A وتمت معالجة أي نقص تبيّن.
+
+An Arabic note carrying "90%" kept the digits, and "do the thing" came back as "nothing to suggest".
