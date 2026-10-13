@@ -426,13 +426,46 @@ The database (read-only check) shows all four with `purgedAt` 13:21:16 UTC. **`A
 
 - [x] Ahmad approves the plan (Q1–Q3, as recommended; 13 Oct)
 - [x] Follow-up ticket for Word's ligature, tanween and punctuation quirks: **ACC-225** (lane B, Medium, Bug), not built here
-- [ ] `bidi-js` added (if Q2 as recommended); lockfile regenerated in WSL
-- [ ] Fixtures committed with their README
-- [ ] Worker posts items; `pdf-page-text.ts`; extractor wired
-- [ ] Persian-form fold (if Q1 as recommended)
-- [ ] `POINT_CAP` 300, boundary cut, `unitCount()`
-- [ ] Specs (§8); mutations 1–8 seen red, then reverted
-- [ ] Lint, typecheck, Jest, isolation, `test:db`, `check:*` — all green
-- [ ] SYSTEM-REFERENCE §17.9 and CLAUDE.md
+- [x] `bidi-js` 1.1.0 added, exact; lockfile regenerated with npm in WSL (one new entry; `require-from-string` was already in the tree)
+- [x] Fixtures committed with their README (`extract/fixtures/`)
+- [x] Worker posts items; `pdf-page-text.ts`; extractor wired
+- [x] Persian-form fold (Q1)
+- [x] `POINT_CAP` 300, boundary cut, `unitCount()`
+- [x] Specs (§8); mutations seen red, then reverted (§13)
+- [x] Lint (added lines), typecheck, Jest, isolation, `test:db`, `check:*` — all green (§13)
+- [x] Post-build: the built extractor reads every fixture through the worker shipped in `dist/` (§13)
+- [x] SYSTEM-REFERENCE §17.9 and CLAUDE.md
 - [ ] Stop before pushing; Ahmad runs `/ready-to-pr`
 - [ ] After merge: the live re-test (§9)
+
+---
+
+## 13. Built — results, and where it differs from the plan
+
+**Results (13 Oct, on `fix/ACC-224-arabic-pdf-order`):**
+- **Typecheck:** clean.
+- **Jest:** 156 suites, 3,329 tests, all passing.
+- **Tenant isolation pattern:** 187 passing.
+- **`test:db`:** 4 suites, 24 tests, against the local throwaway Postgres.
+- **Every discovered `check:*` script** exits 0: 2 backend, 12 frontend.
+- **Lint:** no problems on any line this branch added (8 files), prettier off. CI does not lint, and the repo is not prettier-clean.
+- **Post-build:** `nest build`, then the BUILT extractor read all six fixtures and both 13 Oct live files through `dist/…/pdf-text.worker.mjs`. Only that worker shipped (no fixture worker), `bidi-js` resolves from `dist/`, and no worker was left running.
+
+**Mutations, each red and naming its test, then reverted:**
+1. plain reversal of an rtl item;
+2. "reverse the line, re-reverse Latin runs";
+3. no "runs rightwards" check;
+4. `WORD_GAP_EM` 0.5;
+5. `WORD_GAP_EM` 0;
+6. no mark attachment;
+7. `POINT_CAP` 200;
+8. `unitCount()` always plural;
+9. no Persian fold (added).
+
+**Differences from the plan:**
+- **A surrogate-pair repair was written and then REMOVED.** Mutating it changed nothing: `bidi-js` keeps a pair together when it reverses a run (checked directly). The emoji spec stays, as a guard across upgrades.
+- **The "today" reference is a test worker**, `legacy-join.fixture.mjs`. It holds the pre-ACC-224 join verbatim and sends each page as ONE stored item, so the parity test compares the new raw text plus one space against it. It is not shipped (`*.fixture.mjs`).
+- **The known limit of §3 is pinned by a test** ("ICU-2 ward في"), so a change to it is seen.
+- **The cut also ends a sentence at "? "**, and drops a trailing comma (`,` `،` `;` `؛` `:`) before "…".
+- **A first full Jest run failed on resources, not code**: a Jest worker out of memory, `ENOBUFS`, and a segfault in `better-auth.config.spec.ts`. The segfault came from an `npm ci --ignore-scripts` used to install `bidi-js` locally, which skipped native install scripts. A normal `npm ci` fixed it, and the whole gate was re-run clean; the numbers above are from that run.
+- **The model's text for the live Arabic file** is 716 characters (with `[page 1]`); §5 counted 717 before the fold.

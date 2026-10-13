@@ -9583,6 +9583,31 @@ build's differences: `backend/Plans/step-193-ai-file-summary.md`. Module:
     TWO workers per process (`ExtractionSlots`, §14.1) — no slot in time is 503
     `SUMMARY_BUSY`. The worker posts page by page; the main thread stops it when
     the budget is spent. Corrupt, protected or timed out → `SUMMARY_FILE_UNREADABLE`.
+  - **Reading order (ACC-224).** The worker posts each page's text ITEMS with
+    their positions, and `extract/pdf-page-text.ts` (`pageText()`) builds the
+    text on the main thread (about 0.65 ms for a dense Arabic page).
+    - **Which lines change:** a line with Arabic or Hebrew letters whose
+      right-to-left items run RIGHTWARDS is stored in visual order. Chrome does
+      this: one glyph per item, word spaces as their own items.
+    - **How it is rebuilt:** the line is put back together in visual order. A
+      word space comes from a space item or a gap over 0.15 em (measured: 0.000
+      em inside a word, 0.278 em across a space). Each right-to-left item is
+      first returned to its visual form by the same algorithm (pdfjs keeps
+      `١٤٤٧` in reading order inside an `rtl` item). The line is then reordered
+      with the Unicode bidi algorithm (`bidi-js` 1.1.0, exact), so `95%`,
+      `IPC-07`, dates and Latin words keep their own order.
+    - **Base direction:** the line's letter majority; on a tie, the page's; on
+      a page tie, right-to-left.
+    - **Chrome's Persian yeh and heh forms** (U+FBFE/FBFF, U+FBAC/FBAD/06BE)
+      are folded to Arabic ي and ه in such a line only.
+    - **Every other line is joined EXACTLY as before** — Word's logical order,
+      English, and a line pdfjs returns as one item. It is pinned against the
+      old join (`legacy-join.fixture.mjs`) on real Chrome and Word fixtures
+      (`extract/fixtures/`, with a README on how to remake them).
+    - **Known limit:** a short wrapped fragment inside an Arabic paragraph
+      whose letters are mostly Latin ("في ICU-2 ward") takes a left-to-right
+      base, so its parts are in the wrong order; its words stay right.
+    - **Word's ligature and tanween quirks** (`األقسام`) are ACC-225's.
   - **TXT and CSV** — copies of the viewer's own decoder and RFC 4180 reader,
     checked against the frontend's cases; CSV keeps the header and 500 data rows.
   - NFKC, control characters dropped; tokens estimated HIGH (UTF-8 bytes ÷ 3);
@@ -9591,10 +9616,11 @@ build's differences: `backend/Plans/step-193-ai-file-summary.md`. Module:
     reaches the model, so none is charged.
 - **The call:** `AiService.run('document_summary', …)` with `accept` — an empty
   answer, one cut short, or JSON we cannot read is REFUNDED by the gateway (Q3).
-  The answer is `{ overview, keyPoints }`, capped (800; 6 × 200); plain text
-  becomes the overview. The log's description is counts only
-  (`StoredFile <id> summary · 12 pages`); a real input count over the cap is a
-  warning line, never a failure.
+  The answer is `{ overview, keyPoints }`, capped (800; 6 × 300 since ACC-224),
+  each cut at a sentence end or a word boundary, never inside a word; plain
+  text becomes the overview. The log's description is counts only
+  (`StoredFile <id> summary · 12 pages`, `· 1 page`); a real input count over
+  the cap is a warning line, never a failure.
 - **One per file and language** (`AiFileSummary`, unique `(storedFileId,
   language)`): an `INSERT … ON CONFLICT … WHERE` claim, stale after 3 minutes;
   a saved one is returned with no call, one in flight is 409

@@ -3590,6 +3590,12 @@ Q1–Q7, three additions): `backend/Plans/step-193-ai-file-summary.md`. Briefly:
   `nest build` copies (`nest-cli.json` assets); **a new `*.worker.mjs` ships the
   same way**. Its optional native dependency means **the backend lockfile is
   regenerated on Linux** (WSL), never by hand.
+- **A PDF LINE STORED IN VISUAL ORDER IS READ IN READING ORDER (ACC-224).**
+  Chrome stores Arabic left to right on the page, one glyph per item; such a
+  line (right-to-left items running rightwards) is rebuilt and reordered with
+  the Unicode bidi algorithm (`bidi-js`, exact pin) in `pdf-page-text.ts`.
+  **Every other line is joined exactly as before**, pinned against the old join
+  on real Chrome and Word fixtures. Word's ligature quirks are ACC-225's.
 - **ONE SUMMARY PER FILE PER LANGUAGE, made on request, never redone** — a new
   upload is a new file. The reader's interface language, whatever the file's.
 - **NOTHING THE MODEL DID NOT ANSWER IS CHARGED, AND NOTHING UNUSABLE IS
