@@ -179,6 +179,44 @@ describe('AiService.run (ACC-194)', () => {
     });
   });
 
+  describe('the opt-in accept() (ACC-193, Q3)', () => {
+    it('an answer accept() rejects is refunded into the same period, logged at cost 0 with counts only, and refused AI_PROVIDER_FAILED', async () => {
+      const { service, provider, credits, prisma } = setup();
+      provider.complete.mockResolvedValue({ content: `${MARKER} half a sent`, model: 'm', inputTokens: 900, outputTokens: 4000, truncated: true });
+      const accept = jest.fn().mockReturnValue(false);
+      const e = await refusal(service.run('task_description_drafting', { organizationId: ORG }, { ...request, accept }));
+      expect(e.code).toBe('AI_PROVIDER_FAILED');
+      expect(accept).toHaveBeenCalledWith(`${MARKER} half a sent`, true);
+      expect(credits.refund).toHaveBeenCalledWith(ORG, 2, PERIOD_START);
+      expect(prisma.aiInteractionLog.create).toHaveBeenCalledTimes(1);
+      const data = (prisma.aiInteractionLog.create.mock.calls[0] as [{ data: Record<string, unknown> }])[0].data;
+      expect(data).toEqual(
+        expect.objectContaining({
+          success: false,
+          creditCost: 0,
+          inputTokens: 900,
+          outputTokens: 4000,
+          responseSummary: `unusable: ${MARKER.length + 12} characters out (stopped at the output limit)`,
+        }),
+      );
+      expect(JSON.stringify(data)).not.toContain(`${MARKER} half`);
+    });
+
+    it('an answer accept() takes is charged and returned as usual', async () => {
+      const { service, credits } = setup();
+      const result = await service.run('task_description_drafting', { organizationId: ORG }, { ...request, accept: () => true });
+      expect(result.content).toBe('A drafted description.');
+      expect(credits.refund).not.toHaveBeenCalled();
+    });
+
+    it('with no accept(), a cut-short answer is still charged — the briefing\'s behaviour is unchanged', async () => {
+      const { service, provider, credits } = setup();
+      provider.complete.mockResolvedValue({ content: 'partial', model: 'm', inputTokens: 1, outputTokens: 1, truncated: true });
+      await expect(service.run('task_description_drafting', { organizationId: ORG }, request)).resolves.toEqual(expect.objectContaining({ truncated: true }));
+      expect(credits.refund).not.toHaveBeenCalled();
+    });
+  });
+
   it('a log write that fails never fails the call the organisation paid for', async () => {
     const { service, prisma } = setup();
     prisma.aiInteractionLog.create.mockRejectedValue(new Error('db down'));
