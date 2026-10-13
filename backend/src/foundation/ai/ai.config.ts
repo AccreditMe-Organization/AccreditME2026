@@ -40,7 +40,10 @@ export interface AiFeatureCallConfig {
 }
 
 export const AI_FEATURES: Readonly<Record<AiFeatureKey, AiFeatureCallConfig>> = {
-  task_description_drafting: { tier: 'STANDARD', effort: 'low', maxTokens: 2000 },
+  // ACC-197 — the input is bounded by construction: a note of at most 2,000
+  // characters, a title, a record's name and 500 characters of its purpose.
+  // draft-answer.spec.ts builds the worst case in Arabic and asserts it fits.
+  task_description_drafting: { tier: 'STANDARD', effort: 'low', maxTokens: 2000, inputTokenCap: 3000 },
   document_summary: { tier: 'STANDARD', effort: 'medium', maxTokens: 4000, inputTokenCap: 30_000 },
   // ACC-198 (D13) — 4000, up from 3000: the answer is JSON (the lead plus up
   // to three focus picks with reasons), thinking counts against the same
