@@ -435,7 +435,7 @@ The database (read-only check) shows all four with `purgedAt` 13:21:16 UTC. **`A
 - [x] Lint (added lines), typecheck, Jest, isolation, `test:db`, `check:*` — all green (§13)
 - [x] Post-build: the built extractor reads every fixture through the worker shipped in `dist/` (§13)
 - [x] SYSTEM-REFERENCE §17.9 and CLAUDE.md
-- [ ] Stop before pushing; Ahmad runs `/ready-to-pr`
+- [x] Stopped before pushing; Ahmad ran `/ready-to-pr` (13 Oct): both typechecks and `ng build` clean, backend 3,329 and frontend 1,596 tests, isolation 187, all 14 `check:*` scans exit 0
 - [ ] After merge: the live re-test (§9)
 
 ---
