@@ -81,6 +81,9 @@ describe('TaskFormComponent — due control (ACC-96)', () => {
     // ACC-174 — the SLA limit per priority. Far off here, so the date tests
     // above are about the date rules alone; the limit has its own spec.
     httpMock.expectOne(`${environment.apiUrl}/tasks/sla-preview`).flush(FAR_LIMITS);
+    // ACC-197 — whether to show "Draft with AI". Not available here, so this
+    // file's form is exactly the form it was; drafting has its own spec.
+    httpMock.expectOne(`${environment.apiUrl}/tasks/draft/availability`).flush({ available: false });
   };
 
   beforeEach(() => {

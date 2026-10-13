@@ -71,6 +71,8 @@ describe('TaskFormComponent — the SLA limit and Edit (ACC-174)', () => {
     http.match(`${environment.apiUrl}/working-calendar`).forEach((r) => r.flush(CALENDAR));
     http.match((r) => r.url.startsWith(`${environment.apiUrl}/working-calendar/holidays`)).forEach((r) => r.flush([]));
     http.expectOne(task ? `${API}/${task.id}/sla-preview` : `${API}/sla-preview`).flush(preview);
+    // ACC-197 — New task asks whether to show "Draft with AI"; Edit never does.
+    if (!task) http.expectOne(`${API}/draft/availability`).flush({ available: false });
     fixture.detectChanges();
   }
 
