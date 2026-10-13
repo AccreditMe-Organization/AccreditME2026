@@ -16,7 +16,7 @@ import { refusalCode } from '../../../../core/http/refusal';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitDto, buildOrgUnitCascadeOptions } from '../../../organization/services/org-unit.service';
 import { DueDateService } from '../../../tasks/services/due-date.service';
-import { IUserDto, UpdateUserProfileDto, UserService } from '../../services/user.service';
+import { IBilingualNameDto, IUserDto, UpdateUserProfileDto, UserService } from '../../services/user.service';
 import { CoverOption } from './out-of-office-dialog.component';
 import { DateView } from './date-view';
 
@@ -75,9 +75,11 @@ const LANGUAGE_OPTIONS = [
  * then where they sit. Without placement it is the first step alone, and the
  * strip renders nothing (below two steps). Final heights are on the PR.
  *
- * The placed shape (ACC-222) is one step: name, language, the two facts on one
- * row with the Transfer line, manager, and the acting pair. Measured against
- * the same cap in both languages; the heights are on the ACC-222 PR.
+ * The placed shape (ACC-222) is one step: Name and Language on one row, the two
+ * facts on one row with the Transfer line, manager, and the acting pair. With
+ * Name and Language stacked it measured 407px in English and 424px in Arabic —
+ * over the cap — so they share a row in THIS shape only: 328px English, 343px
+ * Arabic. The stepped shape keeps them stacked (158/162, then 320/328).
  */
 @Component({
   selector: 'app-edit-profile-dialog',
@@ -112,24 +114,29 @@ const LANGUAGE_OPTIONS = [
       } @else {
         <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col">
           @if (step() === 1) {
-            <am-field
-              [label]="'user.name' | translate"
-              [control]="form.controls.name"
-              inputId="ep-name"
-              [forceShowErrors]="showErrors()"
-              [errorMessages]="{ required: 'userRecord.editProfileDialog.nameRequired' }"
-            >
-              <input pInputText id="ep-name" formControlName="name" autocomplete="off" />
-            </am-field>
+            <!-- ACC-222 — Name and Language share a row in the placed shape
+                 only: one step there measured 424px in Arabic against the 420
+                 cap. The stepped shape keeps them stacked. -->
+            <div [class.am-ep-pair]="placementLocked()" data-ep-identity>
+              <am-field
+                [label]="'user.name' | translate"
+                [control]="form.controls.name"
+                inputId="ep-name"
+                [forceShowErrors]="showErrors()"
+                [errorMessages]="{ required: 'userRecord.editProfileDialog.nameRequired' }"
+              >
+                <input pInputText id="ep-name" formControlName="name" autocomplete="off" />
+              </am-field>
 
-            <am-field [label]="'user.language' | translate" [control]="form.controls.language" inputId="ep-language">
-              <app-overlay-select
-                formControlName="language"
-                [options]="languageOptions"
-                optionLabel="label"
-                optionValue="value"
-              />
-            </am-field>
+              <am-field [label]="'user.language' | translate" [control]="form.controls.language" inputId="ep-language">
+                <app-overlay-select
+                  formControlName="language"
+                  [options]="languageOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                />
+              </am-field>
+            </div>
 
             @if (placementLocked()) {
               <dl class="am-ep-facts" data-ep-placement-facts>
@@ -441,16 +448,11 @@ export class EditProfileDialogComponent {
     this.positions().map((p) => ({ label: this.languageService.bilingual(p.nameEn, p.nameAr), value: p.id })),
   );
   readonly unitOptions = computed(() => buildOrgUnitCascadeOptions([...this.orgUnits()], null, null));
-  // The read-only facts (ACC-222). A position or unit not in the loaded lists
-  // shows "—" rather than an id.
-  readonly positionLabel = computed(() => {
-    const id = this.user()?.positionId;
-    return this.positionOptions().find((o) => o.value === id)?.label ?? '—';
-  });
-  readonly unitLabel = computed(() => {
-    const unit = this.orgUnits().find((u) => u.id === this.user()?.primaryOrgUnitId);
-    return unit ? this.languageService.bilingual(unit.nameEn, unit.nameAr) : '—';
-  });
+  // The read-only facts (ACC-222), from the record's OWN references — the
+  // names the record header shows — never the position or unit lists, which
+  // are permission-gated and may still be loading when the dialog opens.
+  readonly positionLabel = computed(() => this.referenceName(this.user()?.references?.position));
+  readonly unitLabel = computed(() => this.referenceName(this.user()?.references?.primaryOrgUnit));
   /** Never the person themselves: nobody is their own manager. */
   readonly managerOptions = computed(() => this.managers().filter((m) => m.id !== this.user()?.id));
 
@@ -481,6 +483,10 @@ export class EditProfileDialogComponent {
         this.dateView.close();
       });
     });
+  }
+
+  private referenceName(name: IBilingualNameDto | null | undefined): string {
+    return name ? this.languageService.bilingual(name.nameEn, name.nameAr) : '—';
   }
 
   /** To placement — once the first step holds up. */
