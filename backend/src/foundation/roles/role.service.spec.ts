@@ -1091,6 +1091,58 @@ describe('RoleService', () => {
       expect(state.held()).toEqual(['platform:admin', 'users:view']);
     });
 
+    // ── F2: in the platform organisation, platform keys are ordinary keys ────
+    it('in the PLATFORM organisation a ticked platform key is GRANTED, not silently dropped', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
+      const state = stageRolePermissions(['users:view']);
+
+      await service.assignPermissions(
+        'role-1',
+        { permissionKeys: ['users:view', 'platform:admin'] },
+        ORG_A,
+        ACTOR,
+      );
+
+      expect(state.held()).toEqual(['platform:admin', 'users:view']);
+    });
+
+    it('in the PLATFORM organisation an unticked platform key is REMOVED, not kept', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
+      const state = stageRolePermissions(['platform:admin', 'platform:impersonate', 'users:view']);
+
+      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+
+      // platform:admin goes; platform:impersonate is not in use (R2), so it is
+      // kept as held — the R2 rule is the same in every organisation.
+      expect(state.held()).toEqual(['platform:impersonate', 'users:view']);
+    });
+
+    it('in the PLATFORM organisation keys no code checks yet still follow R2', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
+      const state = stageRolePermissions(['documents:view', 'users:view']);
+
+      // Held: kept although not sent.
+      await service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR);
+      expect(state.held()).toEqual(['documents:view', 'users:view']);
+
+      // Not held: refused.
+      const code = await codeOf(
+        service.assignPermissions('role-1', { permissionKeys: ['users:view', 'kpi:verify'] }, ORG_A, ACTOR),
+      );
+      expect(code).toBe('PERMISSION_NOT_IN_USE');
+    });
+
+    it('in the PLATFORM organisation a role may be created with a platform key', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
+      mockPrisma.role.findFirst.mockResolvedValue(null);
+      mockPrisma.permission.findMany.mockResolvedValue([{ id: 'perm-p', module: 'platform', action: 'admin' }]);
+      mockPrisma.role.create.mockResolvedValue(makeRole({ id: 'role-new' }));
+
+      await service.createRole({ nameEn: 'Operator', permissionKeys: ['platform:admin'] } as never, ORG_A, ACTOR);
+
+      expect(mockPrisma.role.create).toHaveBeenCalled();
+    });
+
     // ── R2: keys not in use yet ───────────────────────────────────────────────
     it('refuses GAINING a key no code checks yet with 400 PERMISSION_NOT_IN_USE', async () => {
       const state = stageRolePermissions(['committees:view']);

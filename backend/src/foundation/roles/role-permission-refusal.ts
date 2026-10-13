@@ -74,3 +74,18 @@ export class PermissionNotInUseException extends BadRequestException {
     });
   }
 }
+
+/** The catalogue has no such key (F1: a transition's requiredPermission). */
+export const PERMISSION_UNKNOWN = 'PERMISSION_UNKNOWN';
+
+export class PermissionUnknownException extends BadRequestException {
+  constructor(readonly keys: readonly string[]) {
+    super({
+      statusCode: 400,
+      message: 'These permissions do not exist.',
+      error: 'Bad Request',
+      code: PERMISSION_UNKNOWN,
+      keys,
+    });
+  }
+}

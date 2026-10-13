@@ -28,21 +28,21 @@ import {
   assertTenantRetainsAnActiveAdministrator,
   captureAdministratorBaseline,
 } from './tenant-administrator.invariant';
-import { PERMISSIONS_NOT_YET_CHECKED } from '../../common/constants/permissions';
 import {
-  PermissionNotInUseException,
-  PlatformPermissionNotAllowedException,
   PlatformRoleNotAssignableException,
   PlatformRoleNotEditableException,
   RolePermissionsChangedException,
 } from './role-permission-refusal';
+import {
+  assertGrantable,
+  isFixedInOrganisation,
+  isPermissionInUse,
+  isPlatformPermission,
+} from './permission-grantability';
 
 // The seeded role that exists in every organisation and means something only in
 // the platform organisation (ACC-13). Its key is fixed by SYSTEM_ROLE_SEED.
 const PLATFORM_ADMIN_KEY = 'PLATFORM_ADMIN';
-
-const NOT_YET_CHECKED = new Set<string>(PERMISSIONS_NOT_YET_CHECKED);
-const isPlatformPermission = (key: string): boolean => key.startsWith('platform:');
 
 type RoleTx = Parameters<Parameters<PrismaService['$transaction']>[0]>[0];
 
@@ -332,17 +332,18 @@ export class RoleService {
     // with, so the save's two refusals apply here as well: no platform key
     // inside a tenant, and no key that no code checks yet. Without this the
     // rule would be one Create away from bypassed.
+    // The organisation is read only when a platform key is asked for — the one
+    // case where it changes the answer.
     const createKeys = [...new Set(dto.permissionKeys ?? [])];
-    if (createKeys.some(isPlatformPermission)) {
-      const org = await this.prisma.organization.findUnique({
-        where: { id: organizationId },
-        select: { isPlatformOrg: true },
-      });
-      const platformKeys = createKeys.filter(isPlatformPermission);
-      if (!org?.isPlatformOrg) throw new PlatformPermissionNotAllowedException(platformKeys);
-    }
-    const unusedKeys = createKeys.filter((k) => NOT_YET_CHECKED.has(k));
-    if (unusedKeys.length > 0) throw new PermissionNotInUseException(unusedKeys);
+    const isPlatformOrg = createKeys.some(isPlatformPermission)
+      ? (
+          await this.prisma.organization.findUnique({
+            where: { id: organizationId },
+            select: { isPlatformOrg: true },
+          })
+        )?.isPlatformOrg === true
+      : false;
+    assertGrantable(createKeys, isPlatformOrg);
 
     const permissionIds = dto.permissionKeys
       ? await this.resolvePermissionIds(dto.permissionKeys)
@@ -535,9 +536,12 @@ export class RoleService {
     // order and duplicates do not matter). The FULL set: keys this save cannot
     // change still count, because they are still what the caller saw.
     //
-    // WHAT A SAVE CANNOT CHANGE (R1, R2). Platform keys and keys no code checks
-    // yet are KEPT as the role holds them, whatever the request sends; a request
-    // that tries to ADD one is refused rather than quietly ignored.
+    // WHAT A SAVE CANNOT CHANGE (R1, R2). Keys no code checks yet, everywhere,
+    // and platform keys inside a tenant, are KEPT as the role holds them,
+    // whatever the request sends; a request that tries to ADD one is refused
+    // rather than quietly ignored. In the PLATFORM organisation platform keys
+    // are ordinary keys (F2): ticked is granted, unticked is removed.
+    // permission-grantability.ts holds the rule, shared with transitions.
     let before: string[] = [];
     let after: string[] = [];
     await this.prisma.$transaction(async (tx) => {
@@ -558,16 +562,14 @@ export class RoleService {
         throw new RolePermissionsChangedException();
       }
 
-      const gainedPlatform = requested.filter(
-        (k) => isTenant && isPlatformPermission(k) && !current.has(k),
+      assertGrantable(
+        requested.filter((k) => !current.has(k)),
+        !isTenant,
       );
-      if (gainedPlatform.length > 0) throw new PlatformPermissionNotAllowedException(gainedPlatform);
 
-      const gainedUnused = requested.filter((k) => NOT_YET_CHECKED.has(k) && !current.has(k));
-      if (gainedUnused.length > 0) throw new PermissionNotInUseException(gainedUnused);
-
-      const kept = before.filter((k) => isPlatformPermission(k) || NOT_YET_CHECKED.has(k));
-      const editable = requested.filter((k) => !isPlatformPermission(k) && !NOT_YET_CHECKED.has(k));
+      const fixed = (k: string): boolean => isFixedInOrganisation(k, !isTenant);
+      const kept = before.filter(fixed);
+      const editable = requested.filter((k) => !fixed(k));
       after = [...new Set([...editable, ...kept])].sort();
 
       await tx.rolePermission.deleteMany({ where: { roleId: role.id } });
@@ -615,7 +617,7 @@ export class RoleService {
       module: p.module,
       action: p.action,
       description: p.description,
-      inUse: !NOT_YET_CHECKED.has(`${p.module}:${p.action}`),
+      inUse: isPermissionInUse(`${p.module}:${p.action}`),
     }));
   }
 
