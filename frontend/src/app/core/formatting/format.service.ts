@@ -122,6 +122,16 @@ export class FormatService {
       : `${gregorian}${separator}${time}`;
   }
 
+  // ACC-198 — the time of day alone, 24-hour, in the tenant's zone ("07:40"):
+  // for a line that already says which day it is ("made by AI at 07:40" on
+  // today's briefing). Anything that needs its day says it with dateTime.
+  timeOfDay(value: DateInput): string {
+    const at = toDate(value);
+    if (!at) return EMPTY_VALUE;
+    const { language, timeZone } = this.snapshot();
+    return this.time(at, language, timeZone);
+  }
+
   // How long ago (or until) an instant, for recency summaries only. Anything a
   // person acts on or cites is shown absolutely (date/dateTime), with this at
   // most beside it.

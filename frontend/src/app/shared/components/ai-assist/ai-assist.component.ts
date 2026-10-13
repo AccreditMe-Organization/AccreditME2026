@@ -115,6 +115,16 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
               }
             </div>
           }
+          <!-- A refusal after a later press never takes away a result the
+               person already has (ACC-198, D1): it stays below, still marked. -->
+          @if (hasResult() && resultTemplate(); as tpl) {
+            <section class="am-ai__result" [attr.aria-label]="tag() || ('ai.assist.resultLabel' | translate)">
+              @if (tag()) {
+                <p class="am-ai__tag"><span aria-hidden="true">✦</span> {{ tag() }}</p>
+              }
+              <ng-container [ngTemplateOutlet]="tpl" />
+            </section>
+          }
         }
       }
 

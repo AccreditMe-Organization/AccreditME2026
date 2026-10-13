@@ -179,4 +179,23 @@ describe('AiAssistComponent (ACC-198)', () => {
     render();
     expect(trigger().textContent).toContain('Make a new briefing');
   });
+
+  it('a refusal after a result keeps the earlier result below the refusal, still marked as AI', () => {
+    host.state.set('refusal');
+    host.hasResult.set(true);
+    host.refusal.set({ kind: 'creditsUsedUp', messageKey: 'ai.refusal.creditsUsedUp', params: { date: '21 Oct 2026' } });
+    render();
+    const refusal = el().querySelector('.am-ai__refusal')!;
+    const body = el().querySelector('.result-body')!;
+    expect(body.textContent).toContain('Two tasks are overdue.');
+    expect(refusal.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(el().querySelector('.am-ai__tag')!.textContent).toContain('Your briefing · made by AI');
+  });
+
+  it('a refusal with no earlier result shows no result area', () => {
+    host.state.set('refusal');
+    host.refusal.set({ kind: 'unavailable', messageKey: 'ai.refusal.unavailable', params: {} });
+    render();
+    expect(el().querySelector('.result-body')).toBeNull();
+  });
 });

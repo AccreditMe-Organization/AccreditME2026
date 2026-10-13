@@ -1153,7 +1153,34 @@
     "viewAll": "View all",
     "noOpenTasks": "You have no open tasks.",
     "notifications": "Recent Notifications",
-    "noNotifications": "No recent notifications."
+    "noNotifications": "No recent notifications.",
+    "briefing": {
+      "label": "Your briefing",
+      "intro": "A short AI summary of your overdue and due-today work, and what waits for your decision.",
+      "trigger": "Prepare my briefing",
+      "again": "Make a new briefing",
+      "working": "Preparing your briefing…",
+      "tagWorking": "Your briefing · being prepared",
+      "tagMade": "Your briefing · made by AI at {{time}} from your tasks and notifications",
+      "greeting": {
+        "morning": "Good morning, {{name}}.",
+        "afternoon": "Good afternoon, {{name}}.",
+        "evening": "Good evening, {{name}}."
+      },
+      "focus": "Focus on these first",
+      "done": "done",
+      "showAll": "Show the full list",
+      "due": "due {{date}}",
+      "moreTime": "More time to {{date}}",
+      "hold": "Hold until {{date}}",
+      "groups": {
+        "overdue": "Overdue · {{n}}",
+        "dueToday": "Due today · {{n}}",
+        "decision": "Waiting for your decision · {{n}}",
+        "pool": "Waiting to be picked up · {{n}}",
+        "notification": "New since yesterday · {{n}}"
+      }
+    }
   },
   "list": {
     "noResults": "No matching results",
@@ -1406,6 +1433,12 @@
       "stageTasks": {
         "one": "{{count}} task",
         "other": "{{count}} tasks"
+      }
+    },
+    "home": {
+      "briefingCredits": {
+        "one": "· {{count}} credit",
+        "other": "· {{count}} credits"
       }
     }
   },

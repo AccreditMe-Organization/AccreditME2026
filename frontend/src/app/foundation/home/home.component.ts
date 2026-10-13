@@ -11,6 +11,7 @@ import { NotificationService, NotificationDto } from '../notification/services/n
 import { AuthService } from '../../core/services/auth.service';
 import { LanguageService } from '../../core/services/language.service';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
+import { HomeBriefingComponent } from './home-briefing.component';
 
 // HomeComponent — ACC-70. The post-login landing page.
 //
@@ -39,7 +40,7 @@ import { PageHeaderComponent } from '../../shared/components/page-header/page-he
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [PageHeaderComponent, AmDateTimePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
+  imports: [PageHeaderComponent, HomeBriefingComponent, AmDateTimePipe, RouterLink, TranslatePipe, TableModule, TagModule, CardComponent],
   template: `
     <div class="flex flex-col gap-6">
       <!-- ACC-79 — no purpose line. "Your open work and recent activity"
@@ -50,7 +51,11 @@ import { PageHeaderComponent } from '../../shared/components/page-header/page-he
         [tabTitle]="'nav.home' | translate"
       />
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      <!-- ACC-198 — the AI briefing, above the accepted panels at full width.
+           Renders nothing at all unless a tenant admin may make one here. -->
+      <app-home-briefing (showAll)="showFullList()" />
+
+      <div id="home-panels" tabindex="-1" class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start outline-none">
         <app-card>
           <div class="flex items-center justify-between mb-3">
             <h3 class="text-lg font-medium">{{ 'home.myTasks' | translate }}</h3>
@@ -158,6 +163,13 @@ export class HomeComponent implements OnInit {
   ngOnInit(): void {
     this.loadTasks();
     this.loadNotifications();
+  }
+
+  // ACC-198 — the briefing's "Show the full list": the panels below, focused.
+  showFullList(): void {
+    const panels = document.getElementById('home-panels');
+    panels?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    panels?.focus({ preventScroll: true });
   }
 
   private loadTasks(): void {
