@@ -186,3 +186,56 @@ never called (A3).
 - **A4** — if no seeded persona has `admin:access` + `users:view` without the
   write permissions, no role is created or changed to make one; the read-only
   check runs with the closest persona and reports what it held.
+
+## As built (CC-88, 13 Oct)
+
+### Dialog bodies, measured in the browser against the 420px cap
+
+| Dialog | English | Arabic |
+|---|---|---|
+| Edit profile, own record (one step) | 158 | 162 |
+| Edit profile with placement, BEFORE stepping | **511 — over** | **526 — over** |
+| Edit profile with placement, step 1 (profile) | 158 | 162 |
+| Edit profile with placement, step 2 (placement) | 320 | 328 |
+| Edit profile, the date view | 271 | 275 |
+| Out of office, the fields | 295 | 291 |
+| Out of office, the date view | 271 | 275 |
+| Two-step sign-in setup, step 1 | 112 | 119 |
+
+Measured with compact density, the actions in the footer and the acting
+unit paired with its end date already applied, so the overflow was content;
+stepped on the form's own seam (ACC-120's rule). Two-step setup step 2 and
+Turn off were not opened live: step 2 needs `/auth/mfa/setup` (A3), and Turn
+off needs an account with two-step sign-in on (none has). Both are covered
+by specs.
+
+### Changes from the plan, each with its reason
+
+1. **Edit profile is stepped when it carries placement** — measured over the
+   cap (above).
+2. **Edit profile sends the language only when it was changed** — found in the
+   browser pass: Yasser has no saved language, and the old form (and the
+   first build of this one) sent the picker's "en" on any save, pinning him to
+   English on a name edit. A test and a mutation pin it.
+3. **The status confirms stay ConfirmationService confirms**, moved into one
+   shared service both screens call, rather than rebuilt as shell dialogs: the
+   Users list's wording and flow, unchanged, is what both screens now show.
+4. **The Users list's Transfer dialog also binds `[dirty]`** — the wizard
+   gained `dirtyChange` for the record page, and the list hosts the same
+   wizard.
+5. **Edit profile offers no × on the placement pickers** — clearing never
+   worked (an empty choice is sent as "unchanged", D5), so the × is not
+   offered rather than offered and ignored.
+6. **Two scan edits**: `check:dialog-overlays`' last allowlist entry (the old
+   profile's three page-level date pickers) is deleted with the page, leaving
+   the list empty; `check:icon-labels`' baseline is lowered 29 → 19 at the
+   scan's request (dev was already 9 under; the deleted role section took
+   the 10th). `check:action-gating` gains one allowlist entry, for the per-date
+   clear (×) inside Out of office — form state, like task-form's.
+
+### Mutations — every one seen red, then restored
+
+T1–T7, T9–T15 (T4 and T11 in each of their dialogs), A1, A2, T8 on the
+RecordPanel spec, and three for the changes above (the language sent only
+when changed; Next refusing an empty name; the step strip shown with
+placement): 24 in all, all red.
