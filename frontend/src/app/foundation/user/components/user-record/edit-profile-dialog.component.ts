@@ -1,4 +1,5 @@
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -11,6 +12,7 @@ import { StepStripComponent, StepStripItem } from '../../../../shared/components
 import { FormatService } from '../../../../core/formatting';
 import { LanguageService } from '../../../../core/services/language.service';
 import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
+import { refusalCode } from '../../../../core/http/refusal';
 import { IOrgPositionDto } from '../../../org-position/services/org-position.service';
 import { OrgUnitDto, buildOrgUnitCascadeOptions } from '../../../organization/services/org-unit.service';
 import { DueDateService } from '../../../tasks/services/due-date.service';
@@ -40,13 +42,19 @@ const LANGUAGE_OPTIONS = [
  * `users:manage` (`user.service.ts` updateProfile), so they are not offered:
  * a field the save would silently drop is not a field.
  *
- * ## Placement edits behave exactly as before (CC-88, D5)
+ * ## A placed person moves only through Transfer (ACC-222)
  *
- * Position and unit still change here directly, beside Transfer, and the body
- * still sends an empty choice as "unchanged" — so a placement field cannot be
- * CLEARED from this dialog, and never could: the old form's × on these pickers
- * sent nothing and saved nothing. The × is therefore not offered, rather than
- * offered and ignored.
+ * Once a person is ACTIVE and has a primary unit, their position and unit are
+ * shown here as read-only facts with one line pointing at Transfer, and the
+ * save sends neither: the server refuses a change with 409 `USE_TRANSFER`,
+ * which is shown as a translated sentence. Manager and the acting unit stay
+ * editable. With the placement pickers gone the dialog is ONE step. An INVITED
+ * person, or an ACTIVE one with no unit yet, is still placed here, stepped as
+ * before.
+ *
+ * Where the pickers are offered, the body still sends an empty choice as
+ * "unchanged" (CC-88, D5) — so a placement field cannot be CLEARED from this
+ * dialog, and never could. The × is therefore not offered.
  *
  * ## The language
  *
@@ -66,12 +74,17 @@ const LANGUAGE_OPTIONS = [
  * steps, on the seam the form already has: who the person is (name, language),
  * then where they sit. Without placement it is the first step alone, and the
  * strip renders nothing (below two steps). Final heights are on the PR.
+ *
+ * The placed shape (ACC-222) is one step: name, language, the two facts on one
+ * row with the Transfer line, manager, and the acting pair. Measured against
+ * the same cap in both languages; the heights are on the ACC-222 PR.
  */
 @Component({
   selector: 'app-edit-profile-dialog',
   standalone: true,
   imports: [
     ReactiveFormsModule,
+    NgTemplateOutlet,
     TranslatePipe,
     ButtonModule,
     InputTextModule,
@@ -117,6 +130,21 @@ const LANGUAGE_OPTIONS = [
                 optionValue="value"
               />
             </am-field>
+
+            @if (placementLocked()) {
+              <dl class="am-ep-facts" data-ep-placement-facts>
+                <div class="am-ep-fact">
+                  <dt class="am-ep-fact__label">{{ 'user.position' | translate }}</dt>
+                  <dd class="am-ep-fact__value" data-ep-fact-position>{{ positionLabel() }}</dd>
+                </div>
+                <div class="am-ep-fact">
+                  <dt class="am-ep-fact__label">{{ 'user.primaryOrgUnit' | translate }}</dt>
+                  <dd class="am-ep-fact__value" data-ep-fact-unit>{{ unitLabel() }}</dd>
+                </div>
+              </dl>
+              <p class="am-ep-note" data-ep-use-transfer>{{ 'userRecord.editProfileDialog.useTransfer' | translate }}</p>
+              <ng-container [ngTemplateOutlet]="delegationTpl" />
+            }
           } @else {
             <div class="flex flex-col" data-ep-placement>
               <am-field [label]="'user.position' | translate" [control]="form.controls.positionId" inputId="ep-position">
@@ -143,61 +171,68 @@ const LANGUAGE_OPTIONS = [
                 />
               </am-field>
 
-              <am-field [label]="'user.manager' | translate" [control]="form.controls.managerId" inputId="ep-manager">
-                <app-overlay-select
-                  formControlName="managerId"
-                  [options]="managerOptions()"
-                  optionLabel="name"
-                  optionValue="id"
-                  [itemTemplate]="personItemTpl"
-                />
-              </am-field>
-
-              <div class="am-ep-pair">
-                <am-field
-                  [label]="'user.actingOrgUnit' | translate"
-                  [control]="form.controls.actingOrgUnitId"
-                  inputId="ep-acting-unit"
-                >
-                  <app-overlay-select
-                    formControlName="actingOrgUnitId"
-                    [options]="unitOptions()"
-                    optionLabel="label"
-                    optionValue="value"
-                    optionGroupLabel="label"
-                    optionGroupChildren="items"
-                  />
-                </am-field>
-                <am-field
-                  [label]="'user.actingOrgUnitUntil' | translate"
-                  [control]="form.controls.actingOrgUnitUntil"
-                  inputId="ep-acting-until"
-                >
-                  <div class="am-ep-date">
-                    <input
-                      pInputText
-                      dir="ltr"
-                      readonly
-                      id="ep-acting-until"
-                      class="am-ep-date__text"
-                      [value]="untilText()"
-                      [placeholder]="'task.request.chooseDate' | translate"
-                      (click)="dateView.openFor('until')"
-                      data-ep-until
-                    />
-                    <button
-                      type="button"
-                      class="am-ep-date__button"
-                      [attr.aria-label]="'task.request.chooseDate' | translate"
-                      (click)="dateView.openFor('until')"
-                    >
-                      <i class="pi pi-calendar" aria-hidden="true"></i>
-                    </button>
-                  </div>
-                </am-field>
-              </div>
+              <ng-container [ngTemplateOutlet]="delegationTpl" />
             </div>
           }
+
+          <!-- Manager and the acting unit: not placement (ACC-222), so they are
+               editable in both shapes. Declared INSIDE the form, so its
+               formControlNames resolve against this form wherever it renders. -->
+          <ng-template #delegationTpl>
+            <am-field [label]="'user.manager' | translate" [control]="form.controls.managerId" inputId="ep-manager">
+              <app-overlay-select
+                formControlName="managerId"
+                [options]="managerOptions()"
+                optionLabel="name"
+                optionValue="id"
+                [itemTemplate]="personItemTpl"
+              />
+            </am-field>
+
+            <div class="am-ep-pair">
+              <am-field
+                [label]="'user.actingOrgUnit' | translate"
+                [control]="form.controls.actingOrgUnitId"
+                inputId="ep-acting-unit"
+              >
+                <app-overlay-select
+                  formControlName="actingOrgUnitId"
+                  [options]="unitOptions()"
+                  optionLabel="label"
+                  optionValue="value"
+                  optionGroupLabel="label"
+                  optionGroupChildren="items"
+                />
+              </am-field>
+              <am-field
+                [label]="'user.actingOrgUnitUntil' | translate"
+                [control]="form.controls.actingOrgUnitUntil"
+                inputId="ep-acting-until"
+              >
+                <div class="am-ep-date">
+                  <input
+                    pInputText
+                    dir="ltr"
+                    readonly
+                    id="ep-acting-until"
+                    class="am-ep-date__text"
+                    [value]="untilText()"
+                    [placeholder]="'task.request.chooseDate' | translate"
+                    (click)="dateView.openFor('until')"
+                    data-ep-until
+                  />
+                  <button
+                    type="button"
+                    class="am-ep-date__button"
+                    [attr.aria-label]="'task.request.chooseDate' | translate"
+                    (click)="dateView.openFor('until')"
+                  >
+                    <i class="pi pi-calendar" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </am-field>
+            </div>
+          </ng-template>
 
           @if (error()) {
             <p class="am-ep-error" role="alert">{{ error()! | translate }}</p>
@@ -238,7 +273,7 @@ const LANGUAGE_OPTIONS = [
             (onClick)="dialog.requestClose()"
           />
         }
-        @if (step() === 1 && canEditPlacement()) {
+        @if (step() === 1 && stepped()) {
           <p-button type="button" [label]="'common.next' | translate" (onClick)="next()" data-ep-next />
         } @else {
           <p-button type="button" [label]="'common.save' | translate" [loading]="saving()" (onClick)="submit()" data-ep-save />
@@ -266,6 +301,32 @@ const LANGUAGE_OPTIONS = [
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         gap: var(--am-space-12);
+      }
+      .am-ep-facts {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: var(--am-space-12);
+        margin: 0;
+      }
+      .am-ep-fact {
+        display: flex;
+        flex-direction: column;
+        gap: var(--am-space-4);
+        min-width: 0;
+      }
+      .am-ep-fact__label {
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
+      }
+      .am-ep-fact__value {
+        margin: 0;
+        color: var(--am-ink-900);
+        overflow-wrap: anywhere;
+      }
+      .am-ep-note {
+        margin: var(--am-space-8) 0 var(--am-space-12);
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
       }
       .am-ep-error {
         margin: 0;
@@ -351,7 +412,18 @@ export class EditProfileDialogComponent {
   readonly error = signal<string | null>(null);
   readonly showErrors = signal(false);
   readonly step = signal<1 | 2>(1);
-  readonly steps = computed<readonly StepStripItem[]>(() => (this.canEditPlacement() ? PLACEMENT_STEPS : []));
+  /**
+   * ACC-222 — an ACTIVE person with a primary unit moves only through
+   * Transfer: their position and unit are read-only facts here. The same rule
+   * the server enforces (`user.service.ts` updateProfile, USE_TRANSFER).
+   */
+  readonly placementLocked = computed(() => {
+    const user = this.user();
+    return this.canEditPlacement() && user?.status === 'ACTIVE' && !!user.primaryOrgUnitId;
+  });
+  /** Stepped only where the placement pickers are offered. */
+  readonly stepped = computed(() => this.canEditPlacement() && !this.placementLocked());
+  readonly steps = computed<readonly StepStripItem[]>(() => (this.stepped() ? PLACEMENT_STEPS : []));
   private readonly until = signal<Date | null>(null);
 
   readonly form = this.fb.group({
@@ -369,6 +441,16 @@ export class EditProfileDialogComponent {
     this.positions().map((p) => ({ label: this.languageService.bilingual(p.nameEn, p.nameAr), value: p.id })),
   );
   readonly unitOptions = computed(() => buildOrgUnitCascadeOptions([...this.orgUnits()], null, null));
+  // The read-only facts (ACC-222). A position or unit not in the loaded lists
+  // shows "—" rather than an id.
+  readonly positionLabel = computed(() => {
+    const id = this.user()?.positionId;
+    return this.positionOptions().find((o) => o.value === id)?.label ?? '—';
+  });
+  readonly unitLabel = computed(() => {
+    const unit = this.orgUnits().find((u) => u.id === this.user()?.primaryOrgUnitId);
+    return unit ? this.languageService.bilingual(unit.nameEn, unit.nameAr) : '—';
+  });
   /** Never the person themselves: nobody is their own manager. */
   readonly managerOptions = computed(() => this.managers().filter((m) => m.id !== this.user()?.id));
 
@@ -443,8 +525,12 @@ export class EditProfileDialogComponent {
     }
     if (this.canEditPlacement()) {
       // As the profile page sent them (D5): an empty choice means unchanged.
-      dto.positionId = value.positionId ?? undefined;
-      dto.primaryOrgUnitId = value.primaryOrgUnitId ?? undefined;
+      // A placed person's position and unit are never sent (ACC-222): they
+      // change only through Transfer.
+      if (!this.placementLocked()) {
+        dto.positionId = value.positionId ?? undefined;
+        dto.primaryOrgUnitId = value.primaryOrgUnitId ?? undefined;
+      }
       dto.managerId = value.managerId ?? undefined;
       dto.actingOrgUnitId = value.actingOrgUnitId ?? undefined;
       dto.actingOrgUnitUntil = value.actingOrgUnitUntil ? value.actingOrgUnitUntil.toISOString() : undefined;
@@ -465,7 +551,12 @@ export class EditProfileDialogComponent {
       },
       error: (err: unknown) => {
         this.saving.set(false);
-        this.error.set(extractErrorMessage(err, 'user.errorSave'));
+        // ACC-222 — the refusal by its code, in this screen's own words.
+        this.error.set(
+          refusalCode(err) === 'USE_TRANSFER'
+            ? 'userRecord.editProfileDialog.useTransferRefused'
+            : extractErrorMessage(err, 'user.errorSave'),
+        );
       },
     });
   }
