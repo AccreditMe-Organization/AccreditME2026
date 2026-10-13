@@ -1145,6 +1145,7 @@ POST /auth/accept-invitation      20 / min per address
 POST /auth/forgot-password         3 / hour per organisation + email
                                   AND 20 / hour per address
 POST /auth/reset-password         20 / hour per address
+POST /tasks/draft                 10 / min per signed-in USER (ACC-197)
 GET  /health                      not limited — the only exemption
 ```
 
@@ -1198,9 +1199,10 @@ GET  /health                      not limited — the only exemption
 - **Not covered:** Better Auth's own rate limiter only runs for requests through
   its HTTP handler, and we call `auth.api.*` server-side — so this guard is the
   only limit. File upload now exists (ACC-177) and is covered by the global
-  per-user limit; there is no upload-specific tier. AI limits do not exist
-  because the feature does not; the tiers this section once listed were never
-  implemented.
+  per-user limit; there is no upload-specific tier. The one AI-specific tier is
+  `POST /tasks/draft` above (`perUser()`, ACC-197): a draft is the first AI
+  call an ordinary user can repeat. The summary and the briefing have none —
+  each is made once per file or per press, behind a claim row.
 
 ### Account Lockout — REAL SINCE ACC-120 SLICE 9b, AND NOT THE SAME CONTROL
 
@@ -3642,6 +3644,44 @@ D1–D13): `backend/Plans/step-198-morning-briefing.md`. The decisions, briefly:
   runs unless pressed, D9), the weekend rule (D10), the 8-second vanish (D11).
 - **The migration and the live proof run AFTER the deploy**, never before (the
   `AiBriefing` table must not reach the shared database first).
+
+## Key Architecture Decisions (ACC-197)
+
+AI task drafting ("Draft with AI" on New task). Full mechanism and the
+measurements: SYSTEM-REFERENCE.md §17.10 (and §10.19 for `am-ai-assist`). Plan
+and Ahmad's answers (13 Oct, Q1–Q12 and the Create-task rule):
+`backend/Plans/step-197-task-drafting.md`. Briefly:
+
+- **A DRAFT IS A SUGGESTION AND NOTHING ELSE.** Nothing is stored, and no task
+  is created: the person accepts, edits or discards it, and Create task is
+  still the only thing that makes a task. `tasks:create` gates it; New task
+  only.
+- **WHOEVER MAY SEE THE RECORD MAY DRAFT FROM IT, AND NOBODY ELSE** —
+  `ObjectVisibilityService.assertCanView()` before the record is read (ACC-101).
+  The record gives its type, its name and a committee's Purpose; never a
+  person's name. The note is sent as data between markers, never as
+  instructions.
+- **NOTHING UNUSABLE IS CHARGED.** A note too short: no call. An empty,
+  cut-short or unreadable answer, or "the note does not say what the task is"
+  (`DRAFT_NOTHING_TO_SUGGEST`): refunded by the gateway's `accept()`. 2 credits
+  a successful draft; 10 drafts a minute per user.
+- **THE CAPS ARE THE CARD'S BUDGET** — title 60, Purpose 120, To do 180, Done
+  when 120 characters, measured against the 420px cap in both languages. They
+  came down from 70 / 140 / 200 / 140; the 420 did not move. The text block is
+  also held to eight lines and scrolls inside itself past that, so no wording
+  can push the dialog body over its cap.
+- **A SUGGESTION TAKES THE PLACE OF WHAT IS BELOW IT** — the hint, Evidence
+  required and Source — while the working line or a suggestion shows, like
+  step 1's calendar. **So Create task waits**: "Accept or discard the
+  suggestion first." under the card, focus moved to it. A refusal hides nothing
+  and blocks nothing.
+- **THE AUDIT ROW SAYS A DRAFT WAS USED, AND THE SERVER CHECKS IT.** The dialog
+  claims it (`aiDraft`); `TaskService.create()` marks the CREATE audit row only
+  when the AI log has that call, by that person, in that organisation, in the
+  last 24 hours. A claim that fails the check never blocks the task.
+- **`am-ai-assist` gained `hideResult`, `labelRow` and `actionsExtra`** —
+  opt-in, default off: a trigger on a field's label row, its result elsewhere.
+- **No migration.** The live proof runs AFTER the deploy.
 
 ## Open / Deferred Items
 

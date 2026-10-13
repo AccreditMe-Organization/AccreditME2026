@@ -6817,6 +6817,14 @@ reference ("AccreditMe AI for Users"), and nothing about any one feature.
   line-height token (`max-height: 2 × --am-type-body-line`, so it holds in
   Firefox 115 ESR too) with "Show all"; `tagNote` is a quiet line under the tag,
   OUTSIDE the clamp, hidden when folded ("Summary made 9 Oct 2026 · saved").
+- **Opt-in since ACC-197** (New task's "Draft with AI" uses all three; the
+  briefing and the summary none): `hideResult` draws the trigger ALONE, with no
+  result area and no live region, so a second instance with `hideTrigger` can
+  draw the result somewhere else (one live region for the pair); `labelRow`
+  draws that trigger, and Cancel beside it, exactly one label line tall
+  (1.25rem), so it shares a field's label row without making it taller;
+  `actionsExtra` is a host's own action (a `TemplateRef`) at the far end of
+  Accept / Edit / Discard, and only with `accept`.
 - **What it does NOT do:** price anything, call the gateway, decide who may
   press, or save anything. Those belong to the feature, so the pattern cannot
   drift into one feature's rules.
@@ -8505,7 +8513,7 @@ pinned by `rate-limits.spec.ts`.
 | piece | file | what it does |
 |---|---|---|
 | the numbers | `rate-limits.ts` | every limit, in one object |
-| the throttlers | `throttle.config.ts` | `default` (600/min per user, 300/min per address; `perAddress()` replaces it on the public auth routes) and `reset-email` (3/hour per organisation + email, only where `@LimitResetsPerEmail()` marks the route) |
+| the throttlers | `throttle.config.ts` | `default` (600/min per user, 300/min per address; `perAddress()` replaces it on the public auth routes, and `perUser()` tightens it on a signed-in one — `POST /tasks/draft`, 10/min, ACC-197) and `reset-email` (3/hour per organisation + email, only where `@LimitResetsPerEmail()` marks the route) |
 | who is counted | `throttle-identity.ts` | `user:<id>` for a verified session, `ip:<address>` otherwise, `email:<hash>` for password reset. Cached per request |
 | the refusal | `accreditme-throttler.guard.ts`, `rate-limited.exception.ts` | 429 `RATE_LIMITED` in the API's error shape, a standard `Retry-After`, one warning line |
 | the client address | `common/config/http.config.ts` | `trust proxy` + cookie parsing, shared by `main.ts` and the tests |
@@ -9656,3 +9664,105 @@ build's differences: `backend/Plans/step-193-ai-file-summary.md`. Module:
   file. Working: "Reading 12 pages…" / "the first 100 pages" / rows / "the
   file". A saved summary shows at once, clamped. Moving on, closing or switching
   language stops waiting here.
+
+### 17.10 AI task drafting (ACC-197)
+
+Plan, Ahmad's decisions (13 Oct: Q1–Q12 and the Create-task rule) and the
+build's differences and measurements: `backend/Plans/step-197-task-drafting.md`.
+Module: `foundation/ai-task-draft/` (no controller of its own; the routes are
+the task controller's).
+
+- **What it is:** on New task, step 2, "✦ Draft with AI" turns the short note
+  in Description into a suggestion — Purpose, To do, Done when, and a title.
+  **Nothing is stored and nothing is created**: the person accepts, edits or
+  discards it, and a task exists only when they press Create task
+  (`POST /tasks`, unchanged). New task only; Edit task has no trigger.
+- **Routes:** `GET /tasks/draft/availability` → `{ available }` (says nothing
+  about the balance) and `POST /tasks/draft` (`{ note, language, title?,
+  sourceType?, sourceId? }`), both `tasks:create`. The POST is limited to
+  **10 a minute per user** (`RATE_LIMITS.taskDraft`, `perUser()`), the first
+  AI call an ordinary user can repeat.
+- **`TaskDraftService.draft()`, in order:**
+  1. fewer than 8 letters → 409 `DRAFT_NOTE_TOO_SHORT`; no call, no charge;
+  2. `sourceType` and `sourceId` go together (400);
+  3. with a record: `ObjectVisibilityService.assertCanView()` — 403 naming the
+     permission before any read, 404 for a record that is not the caller's
+     (§1.9). The record's words shape the answer, so this is the same
+     entitlement as opening it;
+  4. `aiFeatureAvailability()` (shared with the summary and the briefing since
+     this ticket) — not available → the gateway's `AI_NOT_ENABLED`;
+  5. the record's context (`draft-record-context.ts`): a committee's name and
+     Purpose (first 500 characters), a meeting's title; any other type
+     contributes nothing. Read by id AND `organizationId`. Never a person's name;
+  6. `AiService.run('task_description_drafting', …)` with `accept`.
+- **The prompt** (`draft-answer.ts`): the note travels between `<<<NOTE` and
+  `NOTE>>>` and is DATA, never instructions; the language is the reader's
+  interface language; numbers stay in digits; the caps are stated from the same
+  constants the parser enforces.
+- **The answer** is JSON `{ title, purpose, toDo, doneWhen }` or
+  `{ insufficient: true }`. An empty answer, one cut short, or JSON we cannot
+  read is refunded by the gateway (`AI_PROVIDER_FAILED`); "the note does not
+  say what the task is" is refunded too and becomes 409
+  `DRAFT_NOTHING_TO_SUGGEST`. Each part is cut at a sentence end or a word
+  boundary (`foundation/ai/text-cut.ts`).
+- **The caps are the card's budget:** title 60, Purpose 120, To do 180, Done
+  when 120 characters. They were 70 / 140 / 200 / 140 and came down when the
+  card was measured (below). Raise one only with
+  `task-form.draft.layout.spec.ts` beside it.
+- **Cost:** 2 credits a successful draft (`AiFeatureCost`); "Draft again" is a
+  new call. Input is under 3,000 tokens by the high estimate (`inputTokenCap`,
+  pinned by a spec that builds the worst-case Arabic prompt). The log's
+  description is ids and counts — `task draft · COMMITTEE <id> · note 32
+  characters` — never the note, the title or the record's name.
+- **`AiService.run()` returns `interactionId`** (the log row's id, or null)
+  since this ticket; the draft returns it as `draftId`.
+- **The audit marker:** `POST /tasks` accepts `aiDraft: { id, description,
+  title }` — what the person took from a draft. `TaskService.create()` checks
+  the claim against `AiInteractionLog` (that id, this organisation, this actor,
+  this feature, successful, within 24 hours) and only then adds
+  `metadata.aiDraft = { interactionId, description, title }` to the task's
+  CREATE audit row. A claim that does not check out leaves the task created and
+  unmarked, with one warning line: it never blocks a task.
+
+**The screen** (`foundation/tasks/components/task-form/`):
+
+- `TaskDraftStore` is provided by `TaskFormComponent`, so the draft outlives the
+  step switch (step 2's markup is destroyed on Back) and ends with the dialog.
+  Closing the dialog cancels the wait; Back does not.
+- `app-task-draft-trigger` (`am-ai-assist` with `hideResult` and `labelRow`)
+  sits on the Description label row and adds no height; it is ABSENT, not
+  disabled, when AI is not available. `app-task-draft-card` (`hideTrigger`,
+  `accept`, `actionsExtra`) draws the working line, the suggestion or a refusal
+  under the field.
+- **Substitution (plan §2.1):** while the working line or a suggestion shows,
+  it takes the place of the description's hint, Evidence required and Source —
+  the same move as step 1's calendar. A refusal hides nothing.
+- **Create task waits (plan §2.2):** while the working line or a suggestion
+  shows, Create task does not send. "Accept or discard the suggestion first."
+  appears under the card and focus moves to the card — from step 1 too, which
+  is taken to step 2. A refusal does not block Create task.
+- **Accept** replaces the note with the three labelled lines; **Edit** does the
+  same and puts the cursor in the field; **Discard** changes nothing; **Use
+  this title** sets only the Title. Editing the note clears a refusal.
+- **Refusals are shown from their CODE**: `DRAFT_NOTE_TOO_SHORT`,
+  `DRAFT_NOTHING_TO_SUGGEST`, `RATE_LIMITED`, else `aiRefusal()` (§17.7).
+- **The 420px cap, measured** (`task-form.draft.layout.spec.ts`, in the real
+  dialog shell, both languages, no task created). English / Arabic:
+
+  | state | body height |
+  |---|---|
+  | idle, with or without the trigger | 280 / 289 |
+  | working | 237 / 252 |
+  | suggestion at its worst (every part and the title at its cap) | 355 / 386 |
+  | the same, with "Accept or discard the suggestion first." | 377 / 410 |
+  | refusal, longest sentence | 348 / 363 |
+  | refusal, failed, with Try again | 366 / 381 |
+  | standalone screen: idle; refusal with Try again | 279 / 290; 365 / 382 |
+
+  The suggestion is drawn at the meta type step with the title on a line; at
+  the body step with a boxed title it measured 507 / 585. Its text block is
+  **held to eight lines** and scrolls inside itself past that (the inner-scroll
+  escape documented on `EditDialogComponent`, ACC-120: nothing in it opens a
+  floating panel), so no wording can
+  push the body over the cap; prose one eighth longer than the caps still fits
+  with nothing scrolling.
