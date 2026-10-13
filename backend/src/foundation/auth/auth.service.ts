@@ -1132,6 +1132,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid password');
     }
 
+    // KNOWN BROKEN — ACC-164. For an account that HAS two-step sign-in on,
+    // which is the only account this method is for, the sign-in above answers
+    // with `twoFactorRedirect` and no user, so this line refuses every attempt
+    // with "Invalid password" whatever was typed. Turning two-step sign-in off
+    // therefore never works. Left as it is until ACC-164 (ACC-120 slice 5
+    // moved the screen, not the behaviour; SYSTEM-REFERENCE.md §1.12 records it).
     const signInBody = (await signInResult.json()) as { user?: { id: string } };
     if (!signInBody.user?.id) throw new UnauthorizedException('Invalid password');
 
