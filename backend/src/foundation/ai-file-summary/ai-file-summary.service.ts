@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { AiService } from '../ai/ai.service';
 import { AiRefusalException } from '../ai/ai-refusal';
-import { aiBalanceOf, openAiFeatures } from '../ai/ai-balance';
+import { aiFeatureAvailability } from '../ai/ai-availability';
 import { AI_FEATURES } from '../ai/ai.config';
 import { StoredFileService } from '../file-storage/stored-file.service';
 import { MIN_LETTERS, readFileText, summarizableKind, IFileText, COVERAGE_UNIT } from './extract/file-text';
@@ -227,26 +227,7 @@ export class AiFileSummaryService {
   }
 
   private async availability(organizationId: string): Promise<{ available: true } | { available: false; reason: 'NO_ALLOWANCE' | 'SWITCHED_OFF' | 'FEATURE_NOT_AVAILABLE' }> {
-    const [org, features] = await Promise.all([
-      this.prisma.organization.findFirst({
-        where: { id: organizationId },
-        select: {
-          aiMonthlyCredits: true,
-          aiPendingMonthlyCredits: true,
-          aiCreditsUsed: true,
-          aiCreditsPeriodStart: true,
-          aiCreditsRenewsAt: true,
-          bootstrappedAt: true,
-          createdAt: true,
-          settings: true,
-        },
-      }),
-      openAiFeatures(this.prisma, organizationId),
-    ]);
-    if (!org || !features.some((f) => f.key === SUMMARY_FEATURE)) return { available: false, reason: 'FEATURE_NOT_AVAILABLE' };
-    const balance = aiBalanceOf(org);
-    if (!balance.enabled) return { available: false, reason: balance.monthlyCredits > 0 ? 'SWITCHED_OFF' : 'NO_ALLOWANCE' };
-    return { available: true };
+    return aiFeatureAvailability(this.prisma, organizationId, SUMMARY_FEATURE);
   }
 
   private summaryOf(row: AiFileSummary, file: SummarizableFile): IFileSummary {
