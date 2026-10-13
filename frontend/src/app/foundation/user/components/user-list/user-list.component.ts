@@ -345,6 +345,7 @@ export type RowAction =
           [userId]="u.id"
           (saved)="onTransferSaved()"
           (cancelled)="transferVisible.set(false)"
+          (dirtyChange)="transferDirty.set($event)"
         />
       }
     </ng-template>
@@ -352,6 +353,7 @@ export type RowAction =
       [(visible)]="transferVisible"
       [header]="'user.transfer.title' | translate"
       [content]="transferTpl"
+      [dirty]="transferDirty()"
       width="640px"
     />
 
@@ -430,6 +432,7 @@ export class UserListComponent implements OnInit {
   readonly list = viewChild.required<DataListComponent<IUserDto>>('list');
   readonly transferVisible = signal(false);
   readonly transferUser = signal<IUserDto | null>(null);
+  readonly transferDirty = signal(false);
 
   readonly error = signal<string | null>(null);
   readonly infoMessage = signal<string | null>(null);
@@ -730,10 +733,12 @@ export class UserListComponent implements OnInit {
   openTransfer(user: IUserDto): void {
     this.infoMessage.set(null);
     this.transferUser.set(user);
+    this.transferDirty.set(false);
     this.transferVisible.set(true);
   }
 
   onTransferSaved(): void {
+    this.transferDirty.set(false);
     this.transferVisible.set(false);
     this.list().reload();
   }
