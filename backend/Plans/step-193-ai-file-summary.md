@@ -442,7 +442,7 @@ On the LIVE site, signed in page-side (no password in any tool call):
 - [x] 6. `feat(shared)`: `am-ai-assist` gains an opt-in `collapsible` (`f0531d2`)
 - [x] 7. `feat(files)`: the viewer's Summarize button and panel, the host contract, task evidence as host, EN and AR words, the layout spec (`df2c6b2`)
 - [x] 8. `docs`: SYSTEM-REFERENCE §17.9 (file summaries) and §16 (a file's delete and purge delete its summaries), CLAUDE.md Key Architecture Decisions (ACC-193) (this commit)
-- [ ] STOP: lint, typecheck, unit tests, `test:db`, the `check:*` scans, the post-build smoke check; report. Ahmad pushes and runs /ready-to-pr.
+- [x] STOP: lint, typecheck, unit tests, `test:db`, the `check:*` scans, the post-build smoke check; report. Ahmad pushes and runs /ready-to-pr. (Done 13 Oct: backend 3,241 tests, isolation 184, `test:db` 21; frontend 1,596; every `check:*` 0; the dist smoke check reads a PDF. The real-worker specs got a 30 s timeout after one flaked at Jest's 5 s under load, `972b751`.)
 - [ ] After the deploy (a later prompt): the live proof in §10
 
 ---
