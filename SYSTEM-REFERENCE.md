@@ -335,10 +335,15 @@ elsewhere.**
      `PLATFORM_PERMISSION_NOT_ALLOWED`; gaining a key on
      `PERMISSIONS_NOT_YET_CHECKED` is 400 `PERMISSION_NOT_IN_USE`. Both
      bodies carry `keys`.
-  7. **Kept keys:** platform keys and not-yet-checked keys the role ALREADY
-     holds are kept whatever the request sends — the matrix never shows
-     them, so omitting them must not delete them. Everything else is
-     replaced exactly (`deleteMany` then `createMany`, inside the lock).
+  7. **Kept keys:** not-yet-checked keys the role ALREADY holds, in every
+     organisation, and platform keys it already holds INSIDE A TENANT, are
+     kept whatever the request sends — the matrix never shows them, so
+     omitting them must not delete them. **In the platform organisation
+     platform keys are ordinary keys** (CC-92 F2): ticked is granted,
+     unticked is removed. Everything else is replaced exactly (`deleteMany`
+     then `createMany`, inside the lock). The rule is
+     `foundation/roles/permission-grantability.ts`, which the transition
+     writes also read (§2, `requiredPermission`).
   8. **An empty list is allowed** — a role may grant nothing.
   9. After commit, one audit row: `before.permissions`,
      `after.permissions` (sorted), and `metadata.added` / `.removed`.
@@ -354,6 +359,20 @@ elsewhere.**
   from the list in the same change that starts checking it.**
   `permission.seed.ts` flattens only exports named `*_PERMISSIONS`, so the
   list is not seeded as keys.
+- **A workflow transition may not REQUIRE a key no role can be given**
+  (ACC-120 slice 5, CC-92 F1). `WorkflowTemplateService.addTransition()`, and
+  `updateTransition()` when `requiredPermission` CHANGES, refuse an unknown
+  key (400 `PERMISSION_UNKNOWN`), a platform key inside a tenant (400
+  `PLATFORM_PERMISSION_NOT_ALLOWED`) and a not-yet-checked key (400
+  `PERMISSION_NOT_IN_USE`), through the same `permission-grantability.ts`.
+  Null or blank is always allowed. A transition already holding such a key
+  keeps it through any other edit, or when the same key is sent back, and the
+  ACC-55 `permissionWarning` still reports it — **ACC-55's "report, never
+  reject" now applies only to keys a transition already holds.**
+  `seedTemplates()` writes transitions directly and is unaffected: measured
+  13 Oct, each tenant holds 38 transitions on not-yet-checked keys and 15 on
+  keys the catalogue does not have (`capa:*`, `incidents:manage`), all from
+  the seed. The editor's picker still offers every key until PR B filters it.
 - **`deactivateRole()` / `removeRoleFromUser()`** — both carry a
   **last-`TENANT_ADMIN` lockout guard**: deactivating the `TENANT_ADMIN`
   role while it has active assignments is blocked; removing a user's

@@ -137,6 +137,47 @@ organisation). Removing them is tracked on **ACC-221**.
   whatever the request sends. A not-in-use key the role does not already hold
   is refused with 400 `PERMISSION_NOT_IN_USE`. The 409 comparison uses the
   full set.
+- **F2 (CC-92) — in the platform organisation, platform keys are ordinary
+  keys**: ticked is granted, unticked is removed. Kept-if-held and
+  refused-if-gained applies to platform keys INSIDE A TENANT only. Not-in-use
+  keys follow R2 everywhere — which includes `platform:impersonate`, itself on
+  the list, so even the platform organisation keeps it as held and cannot give
+  it newly.
+- The rule lives in ONE file, `foundation/roles/permission-grantability.ts`,
+  read by the role save, `createRole()` and the transition writes (F1).
+
+### F1 — a transition may not require a key no role can be given (PR A, CC-92)
+
+- `POST workflow-templates/transitions`, and `PATCH …/transitions/:id` when
+  `requiredPermission` CHANGES, refuse: an unknown key (400
+  `PERMISSION_UNKNOWN`), a platform key inside a tenant (400
+  `PLATFORM_PERMISSION_NOT_ALLOWED`), a key nothing checks yet (400
+  `PERMISSION_NOT_IN_USE`). Null or blank is always allowed.
+- A transition that already holds such a key keeps it through any other edit,
+  and when the editor sends the same key back. The ACC-55 warning still
+  reports on such keys. **This reverses ACC-55's "report, never reject" for a
+  key a person picks**; `seedTemplates()` writes directly and still writes the
+  seed's forward references.
+- **The F1 SELECT (13 Oct, read only, no data changed):** in each of
+  al-manara and al-nakheel, 38 transitions require a not-in-use key, and none
+  requires a platform key. By workflow, identical in both: Document Request 2
+  (`documents:approve` 2), Document Lifecycle 10 (`documents:review` 4,
+  `documents:approve` 2, `documents:publish` 2, `documents:submit` 1,
+  `documents:manage_templates` 1), Change Request 2 (`documents:approve` 2),
+  Incident 4 (`incidents:investigate` 2, `incidents:close` 2), Audit 12
+  (`audits:execute` 6, `audits:report` 3, `audits:close` 2, `audits:create`
+  1), Meeting 8 (`meetings:manage` 7, `meetings:approve_minutes` 1). Committee
+  0. Separately, 15 per tenant require a key the catalogue does not have at
+  all: Corrective Action 13 (`capa:investigate` 7, `capa:approve` 5,
+  `capa:close` 1) and Incident 2 (`incidents:manage`). The platform
+  organisation has no workflow templates. Each tenant has 67 transitions, 65
+  with a key.
+- **PR B:** the transition editor's permission picker
+  (`workflow-transition-editor.component.ts`, around :893–903) offers every
+  key from `GET roles/permissions`. PR B filters it to `inUse` keys, and to
+  non-platform keys inside a tenant, while still showing a transition's
+  current key when it is not one of them, so an unrelated edit does not
+  blank it.
 
 ### Tests (PR A), each with one mutation that goes red
 
@@ -144,7 +185,10 @@ Tenant isolation (another tenant's role: 404, nothing written, no audit row;
 the lock query carries the organisation); concurrency (two saves from one
 loaded set — the second gets 409); R1 and R1c refusals; R2 preservation and
 refusal; empty list; audit before/after/added/removed; holder counts; the
-not-in-use list against the catalogue and the code.
+not-in-use list against the catalogue and the code. CC-92: F1's three
+refusals on create and on a changed key, the unchanged key kept (absent and
+sent back), clearing allowed; F2 granting and removing a platform key in the
+platform organisation, and R2 there.
 
 ## C–I (PR B, summarised from CC-90)
 
