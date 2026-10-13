@@ -239,3 +239,13 @@ T1–T7, T9–T15 (T4 and T11 in each of their dialogs), A1, A2, T8 on the
 RecordPanel spec, and three for the changes above (the language sent only
 when changed; Next refusing an empty name; the step strip shown with
 placement): 24 in all, all red.
+
+### Before the PR left draft (/ready-to-pr, 13 Oct)
+
+- **Dev moved** (ACC-198, df16243) and was merged in, not rebased; the merge
+  was clean. Every gate was re-run on the merged tree.
+- **Pre-PR checklist fixes**: a loading state for the record (the identity
+  card's shape, never a spinner) with a spec that it gives way to the record
+  or the error; the four inline `style` attributes in this slice's new markup
+  became Tailwind classes. Two more mutations, both red: no loading state, and
+  T15 re-run against the class.
