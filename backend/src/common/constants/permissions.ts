@@ -184,3 +184,64 @@ export const KPI_PERMISSIONS = {
 export const ADMIN_PERMISSIONS = {
   ACCESS: 'admin:access',
 } as const;
+
+// ACC-120 slice 5 (CC-91, R2) — the catalogue keys NO CODE CHECKS YET.
+//
+// A key is IN USE when some code decides something with it today: a backend
+// @Permissions()/hasPermission() check, a frontend gate, or a requiredPermission
+// on a seeded workflow transition of a record type that exists (Committee).
+// Every key below is either referenced nowhere, or only by seeded transitions
+// of record types not built yet (Meeting, Document, Audit, Incident).
+//
+// What it changes: GET roles/permissions marks these `inUse: false`; a role
+// cannot GAIN one through PATCH roles/:id/permissions (400
+// PERMISSION_NOT_IN_USE), and a role that already holds one KEEPS it whatever
+// the request sends — a box nothing reads is not something to tick, and
+// unticking it would quietly rewrite a seeded role for no effect.
+//
+// When a module starts checking a key, REMOVE it here in the same change.
+// permissions-in-use.spec.ts reads the source and fails both ways: a listed key
+// that code references, and an in-use key that nothing references.
+//
+// NOT a `*_PERMISSIONS` group: permission.seed.ts flattens only those, so this
+// list can never be seeded as extra keys.
+export const PERMISSIONS_NOT_YET_CHECKED: readonly string[] = [
+  NOTIFICATIONS_PERMISSIONS.VIEW,
+  NOTIFICATIONS_PERMISSIONS.MANAGE,
+  MEETINGS_PERMISSIONS.MANAGE,
+  MEETINGS_PERMISSIONS.RECORD_MINUTES,
+  MEETINGS_PERMISSIONS.APPROVE_MINUTES,
+  DOCUMENTS_PERMISSIONS.VIEW,
+  DOCUMENTS_PERMISSIONS.CREATE,
+  DOCUMENTS_PERMISSIONS.SUBMIT,
+  DOCUMENTS_PERMISSIONS.REVIEW,
+  DOCUMENTS_PERMISSIONS.APPROVE,
+  DOCUMENTS_PERMISSIONS.PUBLISH,
+  DOCUMENTS_PERMISSIONS.MANAGE_TEMPLATES,
+  DOCUMENTS_PERMISSIONS.MANAGE_NUMBERING,
+  STANDARDS_PERMISSIONS.VIEW,
+  STANDARDS_PERMISSIONS.MANAGE,
+  STANDARDS_PERMISSIONS.LINK_EVIDENCE,
+  AUDITS_PERMISSIONS.VIEW,
+  AUDITS_PERMISSIONS.CREATE,
+  AUDITS_PERMISSIONS.EXECUTE,
+  AUDITS_PERMISSIONS.REPORT,
+  AUDITS_PERMISSIONS.CLOSE,
+  INCIDENTS_PERMISSIONS.VIEW,
+  INCIDENTS_PERMISSIONS.REPORT,
+  INCIDENTS_PERMISSIONS.INVESTIGATE,
+  INCIDENTS_PERMISSIONS.APPROVE_PLAN,
+  INCIDENTS_PERMISSIONS.CLOSE,
+  BILLING_PERMISSIONS.VIEW,
+  BILLING_PERMISSIONS.MANAGE,
+  REPORTS_PERMISSIONS.VIEW,
+  REPORTS_PERMISSIONS.EXPORT,
+  PLATFORM_PERMISSIONS.IMPERSONATE,
+  KPI_PERMISSIONS.VIEW_OWN,
+  KPI_PERMISSIONS.VIEW_DEPARTMENT,
+  KPI_PERMISSIONS.VIEW_ALL,
+  KPI_PERMISSIONS.ENTER_DATA,
+  KPI_PERMISSIONS.VERIFY,
+  KPI_PERMISSIONS.MANAGE,
+  KPI_PERMISSIONS.MANAGE_SYSTEM,
+];

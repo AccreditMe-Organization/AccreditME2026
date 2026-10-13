@@ -9,8 +9,13 @@ export interface SeedPermission {
 // Flattens every {X}_PERMISSIONS constant object into {module, action} pairs.
 // Module name is the string before ':' in each permission value (e.g. "documents:view" → "documents").
 // Derived from permissions.ts rather than duplicated so the two can never drift apart.
-export const ALL_PERMISSIONS: SeedPermission[] = Object.values(PermissionConstants)
-  .flatMap((group) => Object.values(group as Record<string, string>))
+//
+// ONLY the `*_PERMISSIONS` groups (ACC-120 slice 5). permissions.ts also exports
+// PERMISSIONS_NOT_YET_CHECKED, a list of keys already declared above; flattening
+// every export would seed each of those a second time.
+export const ALL_PERMISSIONS: SeedPermission[] = Object.entries(PermissionConstants)
+  .filter(([name]) => name.endsWith('_PERMISSIONS'))
+  .flatMap(([, group]) => Object.values(group as Record<string, string>))
   .map((value) => {
     const [module, action] = value.split(':') as [string, string];
     return { module, action, description: value };
