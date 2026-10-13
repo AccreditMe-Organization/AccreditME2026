@@ -434,14 +434,14 @@ On the LIVE site, signed in page-side (no password in any tool call):
 **Progress:**
 
 - [x] 0. `docs(plans)`: this plan (`0408bba`); approval and the additions recorded in the next commit
-- [ ] 1. `chore(deps)`: `pdfjs-dist` 6.4.299 (exact) in the backend; lockfile regenerated on Linux (WSL); `nest-cli.json` assets for `*.worker.mjs`
-- [ ] 2. `chore(prisma)`: migrate — `AiFileSummary` (local throwaway Postgres; not the shared one)
-- [ ] 3. `feat(ai-file-summary)`: extraction — the PDF worker, TXT and CSV readers, normalisation, the token estimate and caps; specs
-- [ ] 4. `feat(ai)`: the gateway's opt-in `accept()` (Q3) — an unusable answer is refunded and refused like a provider failure
-- [ ] 5. `feat(ai-file-summary)`: the service — availability, the extraction slots (§14.1), claim, prompt, parse, save, audit, the delete and purge deletes (§14.3) — and the two endpoints on task evidence; unit specs, isolation specs, the `test:db` spec
-- [ ] 6. `feat(shared)`: `am-ai-assist` gains an opt-in `collapsible`
-- [ ] 7. `feat(files)`: the viewer's Summarize button and panel, the host contract, task evidence as host, EN and AR words, the layout spec
-- [ ] 8. `docs`: SYSTEM-REFERENCE §17.9 (file summaries) and §16 (a file's delete and purge delete its summaries), CLAUDE.md Key Architecture Decisions (ACC-193)
+- [x] 1. `chore(deps)`: `pdfjs-dist` 6.4.299 (exact) in the backend; lockfile regenerated on Linux (WSL); `nest-cli.json` assets for `*.worker.mjs` (`9452af3`)
+- [x] 2. `chore(prisma)`: migrate — `AiFileSummary` (local throwaway Postgres; not the shared one) (`8637622`)
+- [x] 3. `feat(ai-file-summary)`: extraction — the PDF worker, TXT and CSV readers, normalisation, the token estimate and caps; specs (`1ab4e51`)
+- [x] 4. `feat(ai)`: the gateway's opt-in `accept()` (Q3) — an unusable answer is refunded and refused like a provider failure (`3b5c4c1`)
+- [x] 5. `feat(ai-file-summary)`: the service — availability, the extraction slots (§14.1), claim, prompt, parse, save, audit, the delete and purge deletes (§14.3) — and the two endpoints on task evidence; unit specs, isolation specs, the `test:db` spec (`1a8327c`)
+- [x] 6. `feat(shared)`: `am-ai-assist` gains an opt-in `collapsible` (`f0531d2`)
+- [x] 7. `feat(files)`: the viewer's Summarize button and panel, the host contract, task evidence as host, EN and AR words, the layout spec (`df2c6b2`)
+- [x] 8. `docs`: SYSTEM-REFERENCE §17.9 (file summaries) and §16 (a file's delete and purge delete its summaries), CLAUDE.md Key Architecture Decisions (ACC-193) (this commit)
 - [ ] STOP: lint, typecheck, unit tests, `test:db`, the `check:*` scans, the post-build smoke check; report. Ahmad pushes and runs /ready-to-pr.
 - [ ] After the deploy (a later prompt): the live proof in §10
 
@@ -522,3 +522,53 @@ The soft delete updates the same `StoredFile` row, so the two serialise:
   - purge after delete → still nothing;
   - cross-tenant.
 - **Mutation checks:** removing the delete in `softDeleteInTx` turns the delete tests red; removing the `deletedAt` check at save turns the in-flight test red.
+
+---
+
+## 15. Where the build differs from the plan
+
+- **No public `fileForSummary()` wrapper.** `getSummary()` and `makeSummary()` live
+  in `TaskEvidenceService` beside `openView()` and call the private
+  `fileForViewer()` directly — the same single check, without an extra method.
+- **The bytes come from `StoredFileService.readBytes()`**, a new method beside
+  `openDownload()` with the download's refusals and failure mapping. The summary
+  never touches `StorageResolverService`, keeping "one place builds a provider"
+  inside file storage (ACC-177).
+- **TXT coverage counts BYTES, not characters**: the "read" and "total" only
+  decide whether "From the beginning of the file…" shows, and bytes avoid
+  decoding a 25 MB file twice.
+- **JSON we cannot parse is UNUSABLE (refunded), not "the text outside the
+  braces"**: in practice a broken JSON answer is a cut-short one, and showing
+  JSON fragments as an overview would read badly. Plain text with no `{` is
+  still taken as the overview (decision 9).
+- **The PDF worker posts one message per page**, and the main thread applies the
+  token budget and terminates it — so there is ONE estimator, in TypeScript.
+  `read()` takes the press's deadline (§14.1), and a slot that frees with no
+  time left counts as busy.
+- **`am-ai-assist` also gained `tagNote`** (beyond `collapsible` / `clamped`): the
+  "Summary made … · saved · From the first …" line must stay readable while the
+  overview is clamped, so it sits under the tag, outside the clamp.
+- **Cancel sits in the header**, beside the disabled "Summarizing…" button,
+  because `am-ai-assist` shows its own Cancel only with its trigger, which the
+  viewer hides (the trigger is the header button).
+- **"Being made" on opening** (GET says `inProgress`) shows the panel's line
+  with Try again that RE-READS; it never presses.
+- **A 404 during a press** (the file deleted meanwhile, §14.3) shows the
+  viewer's own "deleted" state.
+- **The viewer's styles were trimmed** to stay under the 4 kB component budget
+  (shared rules for the overview and key points), as ACC-189 did.
+- **The `test:db` restore case un-deletes the row directly**: `restore()` also
+  needs the file's task to exist, which the fixture has none of, and touches no
+  summary (its own spec proves it).
+- **PDF fixtures are Latin-1** (PDF string literals): an Arabic PDF is proved in
+  the live run (§10 step 8).
+- **Mutation checks**, each restored afterwards:
+  - **backend (8):** remove the soft-delete's delete → 2 unit + 2 db red; drop the
+    `deletedAt` check at save → 1 + 1; remove the claim's `WHERE` → 3 db red;
+    bypass `fileForViewer` → 3 red; remove the purge delete → 1 + 1; ignore the
+    PDF budget → 2; let an image be summarizable → 3; the gateway ignores
+    `accept()` → 1.
+  - **frontend (6):** an image offered Summarize → 1 red; a saved summary
+    unclamped → 1; a language switch ignored → 1; Cancel not stopping → 1; the
+    100-page cap forgotten → 1; Download before Summarize → 4 (every width and
+    language).

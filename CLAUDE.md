@@ -3573,6 +3573,40 @@ decisions, briefly:
   and the live AI call run AFTER the deploy**, never before: the columns must
   not reach the shared database first.
 
+## Key Architecture Decisions (ACC-193)
+
+The AI summary of an attached document ("Summarize" in the file viewer). Full
+mechanism: SYSTEM-REFERENCE.md §17.9. Plan, Ahmad's decisions (13 Oct: 1–12,
+Q1–Q7, three additions): `backend/Plans/step-193-ai-file-summary.md`. Briefly:
+
+- **WHOEVER MAY VIEW THE FILE MAY SUMMARISE IT, AND NOBODY ELSE** — the host's
+  routes go through the viewer's own `fileForViewer()`: the identical 404, no
+  second check, no `@Permissions`.
+- **THE SERVER READS THE TEXT; THE BROWSER NEVER SENDS IT.** PDF, TXT and CSV
+  only. PDFs are read by `pdfjs-dist` in a WORKER THREAD — the only way it runs
+  under the backend's Jest, and it keeps a 100-page parse off the API's event
+  loop — with at most TWO workers per process, 512 MB and one 30-second deadline
+  each; a press with no free slot is `SUMMARY_BUSY`. The worker is plain JS that
+  `nest build` copies (`nest-cli.json` assets); **a new `*.worker.mjs` ships the
+  same way**. Its optional native dependency means **the backend lockfile is
+  regenerated on Linux** (WSL), never by hand.
+- **ONE SUMMARY PER FILE PER LANGUAGE, made on request, never redone** — a new
+  upload is a new file. The reader's interface language, whatever the file's.
+- **NOTHING THE MODEL DID NOT ANSWER IS CHARGED, AND NOTHING UNUSABLE IS
+  EITHER.** No text, unreadable, busy, in progress: refused before the call. An
+  empty or cut-short answer: the gateway's opt-in `accept()` refunds it (Q3) —
+  the GATEWAY refunds, never the feature. A cancel after the provider was
+  reached is charged and the server saves it (Q2).
+- **A FILE'S SUMMARIES GO WITH THE FILE'S DELETE**, in the same transaction
+  (Ahmad); the purge deletes any left. A summary in flight when the file is
+  deleted is never saved: the save and the delete both take the `StoredFile` row
+  lock.
+- **When AI is off, Summarize is hidden** (no "paused" line: no such state
+  exists yet, ACC-196). A saved summary still shows, tagged as AI.
+- **`am-ai-assist` gained `collapsible`, `clamped` and `tagNote`** — opt-in,
+  default off.
+- **The migration, and the live proof (§10), run AFTER the deploy.**
+
 ## Key Architecture Decisions (ACC-198)
 
 The AI briefing on Home, on demand. Full mechanism: SYSTEM-REFERENCE.md §17.8

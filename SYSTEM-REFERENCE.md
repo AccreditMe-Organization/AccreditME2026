@@ -6737,6 +6737,13 @@ reference ("AccreditMe AI for Users"), and nothing about any one feature.
 - **Opt-in:** `cancellable` (Cancel while working → `cancel`) and `accept`
   (Accept / Edit / Discard → `accepted` / `edited` / `discarded`, for
   ACC-197's drafts). The briefing uses neither.
+- **Opt-in since ACC-193** (the file summary uses all three; the briefing none):
+  `collapsible` puts a ▴ / ▾ control on the tag line that folds the result to
+  that line (`aria-expanded`, `aria-controls`, the host's `collapseLabel` /
+  `expandLabel`); `clamped` opens the result at TWO LINES of the body's own
+  line-height token (`max-height: 2 × --am-type-body-line`, so it holds in
+  Firefox 115 ESR too) with "Show all"; `tagNote` is a quiet line under the tag,
+  OUTSIDE the clamp, hidden when folded ("Summary made 9 Oct 2026 · saved").
 - **What it does NOT do:** price anything, call the gateway, decide who may
   press, or save anything. Those belong to the feature, so the pattern cannot
   drift into one feature's rules.
@@ -9095,6 +9102,12 @@ Which record a file came from is read straight from that record's table, one
 case per owner type (Setup health's choice), so the module adds no dependency
 edge back into the modules that use it.
 
+**AI summaries (ACC-193) go with the file:** `StoredFileService.softDeleteInTx()`
+deletes the file's `AiFileSummary` rows in the SAME transaction (Ahmad, 13 Oct),
+so a restored file has none and Summarize is offered again; `purge()` deletes
+any left as a safety net (it keeps the `StoredFile` row, so the foreign-key
+cascade alone would never fire). §17.9.
+
 **Verified live against SeaweedFS (7 Oct)**: delete kept the object; restore
 brought it back and it downloaded; an all-or-nothing purge with one unknown id
 changed nothing; a purge deleted the object; a purged file could not be
@@ -9471,3 +9484,58 @@ Plan, Ahmad's answers (13 Oct, D1–D13) and the build's differences:
   `am-ai-assist` (§10.19). A failure that is not an AI refusal — including
   `AI_BRIEFING_IN_PROGRESS` from another tab — reads as "unavailable", with
   Try again.
+
+### 17.9 The AI summary of a stored file (ACC-193)
+
+Plan, Ahmad's decisions (13 Oct: 1–12, Q1–Q7, and three additions in §14) and the
+build's differences: `backend/Plans/step-193-ai-file-summary.md`. Module:
+`foundation/ai-file-summary/` (no controller of its own).
+
+- **Who:** exactly the viewer's entitlement. Task evidence hosts `GET` and `POST
+  /tasks/:id/evidence/:evidenceId/summary` (`?language=` / `{ language }`, `en`
+  or `ar`), both through `TaskEvidenceService.fileForViewer()` — the identical
+  404, and no `@Permissions`, like `/view`. The summary is visible to the same
+  people. GET never calls the model.
+- **Which files:** PDF, TXT and CSV by the server's type (`summarizableKind()`);
+  anything else 409 `SUMMARY_NOT_AVAILABLE_FOR_TYPE`. Available =
+  `document_summary` open to the organisation and AI on (the briefing's rule
+  without the permission); not available → the gateway's `AI_NOT_ENABLED`, and
+  the button is hidden (Q1); a saved summary still shows.
+- **The text is read on the SERVER** (`StoredFileService.readBytes()`, the
+  download's refusals, never past the row's size):
+  - **PDF** — `pdfjs-dist` 6.4.299 in a `worker_threads` worker
+    (`extract/pdf-text.worker.mjs`, plain JS, copied into `dist/` by
+    `nest-cli.json`'s assets), so it runs under Jest and off the API's event
+    loop: 512 MB, one 30-second deadline for the slot wait and the read, at most
+    TWO workers per process (`ExtractionSlots`, §14.1) — no slot in time is 503
+    `SUMMARY_BUSY`. The worker posts page by page; the main thread stops it when
+    the budget is spent. Corrupt, protected or timed out → `SUMMARY_FILE_UNREADABLE`.
+  - **TXT and CSV** — copies of the viewer's own decoder and RFC 4180 reader,
+    checked against the frontend's cases; CSV keeps the header and 500 data rows.
+  - NFKC, control characters dropped; tokens estimated HIGH (UTF-8 bytes ÷ 3);
+    the budget is the 30,000 input cap less the real system prompt and framing,
+    less 10% (§14.2). Fewer than 20 letters → `SUMMARY_NO_TEXT`. None of these
+    reaches the model, so none is charged.
+- **The call:** `AiService.run('document_summary', …)` with `accept` — an empty
+  answer, one cut short, or JSON we cannot read is REFUNDED by the gateway (Q3).
+  The answer is `{ overview, keyPoints }`, capped (800; 6 × 200); plain text
+  becomes the overview. The log's description is counts only
+  (`StoredFile <id> summary · 12 pages`); a real input count over the cap is a
+  warning line, never a failure.
+- **One per file and language** (`AiFileSummary`, unique `(storedFileId,
+  language)`): an `INSERT … ON CONFLICT … WHERE` claim, stale after 3 minutes;
+  a saved one is returned with no call, one in flight is 409
+  `AI_SUMMARY_IN_PROGRESS`. A failure before the save deletes the claim row.
+- **Never saved for a deleted file (§14.3):** the save locks the `StoredFile`
+  row (`FOR UPDATE`), which the delete also takes; a file deleted first saves
+  nothing, drops the claim, and the host answers its own 404. The browser's
+  Cancel only stops waiting — the server finishes and saves (Q2).
+- **Audit:** one `CREATE AiFileSummary` per summary, metadata only (file,
+  language, credits, units), never text (Q7).
+- **The viewer** (`shared/files/viewer/`): an optional `summary` host on the
+  request (`get`, `make`); "✦ Summarize" after "n / m" and before Download,
+  only while the file is shown and none exists in the reader's language; the
+  panel is `am-ai-assist` (§10.19) at the top of the drawer body, above the
+  file. Working: "Reading 12 pages…" / "the first 100 pages" / rows / "the
+  file". A saved summary shows at once, clamped. Moving on, closing or switching
+  language stops waiting here.
