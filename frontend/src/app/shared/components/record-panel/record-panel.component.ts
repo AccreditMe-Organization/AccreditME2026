@@ -1,7 +1,10 @@
-import { Component, input } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { TranslatePipe } from '@ngx-translate/core';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { MessageModule } from 'primeng/message';
+import { ButtonModule } from 'primeng/button';
+import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
 
 // ACC-76 — the object-detail pattern's building block. Committee is its first
 // consumer; Meeting Management is expected to reuse it rather than rebuild it.
@@ -26,10 +29,31 @@ import { MessageModule } from 'primeng/message';
 // makes the five-across layout read as a row rather than a ragged edge. It is
 // a min-height in practice — see bodyHeight — because Arabic runs longer and
 // clipping a row is worse than a slightly uneven edge.
+//
+// ## THE OPT-IN OUTCOME (ACC-120 slice 5)
+//
+// ACC-104 left a record page with no panel-level outcome, and the Committee
+// page hand-rolls one per panel — a centred spinner, an error on one panel
+// only, no Retry. Binding `[outcome]` instead hands the panel the shared
+// state machine (core/request-outcome), and the panel then renders artboard
+// 8's states itself:
+//
+//   idle      nothing — an answer inside 200ms never flashes a shape
+//   loading   skeleton rows, never a centred spinner
+//   empty     the empty state below, unchanged
+//   error     the message, Retry (emits `retry`) and the error id when the
+//             server sent one; the count reads "—", not a number it does not have
+//   denied    ABSENT. The host element is hidden, so the grid reflows as if the
+//             panel were never there (Template 2: "the panel is absent")
+//   rows      the projected rows
+//
+// OPT-IN, so nothing changes for a caller that does not bind it: `loading`,
+// `isEmpty` and `error` still drive the Committee page exactly as before.
 @Component({
   selector: 'app-record-panel',
   standalone: true,
-  imports: [TranslatePipe, ProgressSpinnerModule, MessageModule],
+  imports: [TranslatePipe, ProgressSpinnerModule, MessageModule, ButtonModule, NgTemplateOutlet],
+  host: { '[style.display]': "isDenied() ? 'none' : null", '[attr.data-outcome]': 'outcome()?.status ?? null' },
   template: `
     <section
       class="flex flex-col min-w-0 rounded-lg bg-[var(--am-card)] border border-[var(--am-border)]"
@@ -43,7 +67,7 @@ import { MessageModule } from 'primeng/message';
           >
             {{ heading() }}
           </h3>
-          @if (count() !== null) {
+          @if (shownCount() !== null) {
             <!-- Tabular numerals so counts across a row of panels line up, and
                  dir=ltr so the numeral does not reorder inside Arabic. -->
             <span
@@ -51,7 +75,7 @@ import { MessageModule } from 'primeng/message';
               style="unicode-bidi: isolate; font-variant-numeric: tabular-nums"
               class="text-[11.5px] font-semibold px-1.5 py-px rounded text-[var(--am-text-secondary)] bg-[var(--am-surface)]"
             >
-              {{ count() }}
+              {{ shownCount() }}
             </span>
           }
           @if (badge()) {
@@ -74,7 +98,34 @@ import { MessageModule } from 'primeng/message';
       </header>
 
       <div class="overflow-y-auto" [style.min-height.px]="bodyHeight()">
-        @if (error()) {
+        @if (outcome(); as o) {
+          @switch (o.status) {
+            @case ('loading') {
+              <div class="flex flex-col gap-3 px-4 py-4" aria-busy="true" data-panel-skeleton>
+                <span class="am-skeleton-bar w-3/4"></span>
+                <span class="am-skeleton-bar w-1/2"></span>
+                <span class="am-skeleton-bar w-2/3"></span>
+              </div>
+            }
+            @case ('error') {
+              <div class="flex flex-col items-start gap-2 p-4" role="alert" data-panel-error>
+                <p-message severity="error" [text]="(error() ?? 'recordPanel.errorLoad') | translate" />
+                @if (o.errorId) {
+                  <span dir="ltr" class="text-xs text-[var(--am-text-secondary)]" style="unicode-bidi: isolate">
+                    {{ 'recordPanel.errorId' | translate: { id: o.errorId } }}
+                  </span>
+                }
+                <p-button size="small" [outlined]="true" [label]="'common.retry' | translate" (onClick)="retry.emit()" />
+              </div>
+            }
+            @case ('empty') {
+              <ng-container [ngTemplateOutlet]="emptyTpl" />
+            }
+            @case ('rows') {
+              <ng-container [ngTemplateOutlet]="rowsTpl" />
+            }
+          }
+        } @else if (error()) {
           <div class="p-4">
             <p-message severity="error" [text]="error()! | translate" />
           </div>
@@ -83,29 +134,36 @@ import { MessageModule } from 'primeng/message';
             <p-progressSpinner styleClass="w-8 h-8" strokeWidth="4" />
           </div>
         } @else if (isEmpty()) {
-          <!-- The reference's empty state: a muted placeholder mark, the fact,
-               and a sentence saying what will live here. The sentence is what
-               separates "this module has not shipped" from "this committee has
-               none", and a reader cannot tell the difference without it. -->
-          <div
-            class="flex flex-col items-center justify-center gap-1.5 text-center px-6 py-4 h-full"
-            [style.min-height.px]="bodyHeight()"
-          >
-            <span
-              class="w-[34px] h-[34px] rounded-lg border border-dashed border-[var(--am-border)] bg-[var(--am-surface)]"
-            ></span>
-            <span class="text-[13px] font-medium mt-0.5">{{ emptyTitle() }}</span>
-            @if (emptyMessage()) {
-              <span class="text-xs text-[var(--am-text-secondary)] max-w-[30ch]">
-                {{ emptyMessage() }}
-              </span>
-            }
-          </div>
+          <ng-container [ngTemplateOutlet]="emptyTpl" />
         } @else {
-          <ng-content />
+          <ng-container [ngTemplateOutlet]="rowsTpl" />
         }
       </div>
     </section>
+
+    <ng-template #emptyTpl>
+      <!-- The reference's empty state: a muted placeholder mark, the fact,
+           and a sentence saying what will live here. The sentence is what
+           separates "this module has not shipped" from "this committee has
+           none", and a reader cannot tell the difference without it. -->
+      <div
+        class="flex flex-col items-center justify-center gap-1.5 text-center px-6 py-4 h-full"
+        [style.min-height.px]="bodyHeight()"
+      >
+        <span
+          class="w-[34px] h-[34px] rounded-lg border border-dashed border-[var(--am-border)] bg-[var(--am-surface)]"
+        ></span>
+        <span class="text-[13px] font-medium mt-0.5">{{ emptyTitle() }}</span>
+        @if (emptyMessage()) {
+          <span class="text-xs text-[var(--am-text-secondary)] max-w-[30ch]">
+            {{ emptyMessage() }}
+          </span>
+        }
+      </div>
+    </ng-template>
+    <!-- ONE default slot, reached from either path. Two <ng-content /> without a
+         selector would project the rows into only one of them. -->
+    <ng-template #rowsTpl><ng-content /></ng-template>
   `,
 })
 export class RecordPanelComponent {
@@ -135,4 +193,19 @@ export class RecordPanelComponent {
   // A translation KEY, unlike the strings above — it names an app-level
   // failure ('task.errorLoad'), not tenant data.
   readonly error = input<string | null>(null);
+
+  /**
+   * The shared request outcome, when the caller uses it. Overrides `loading`
+   * and `isEmpty`; `error`, if also bound, supplies the message's key.
+   */
+  readonly outcome = input<RequestOutcome<unknown> | null>(null);
+  /** The error state's Retry. The caller re-runs its request. */
+  readonly retry = output<void>();
+
+  protected readonly isDenied = computed(() => this.outcome()?.status === 'denied');
+
+  /** "—" on a failed request: a count the panel does not have is not a number. */
+  protected readonly shownCount = computed<number | string | null>(() =>
+    this.outcome()?.status === 'error' && this.count() !== null ? '—' : this.count(),
+  );
 }
