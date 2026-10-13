@@ -44,6 +44,17 @@ moved a person without any of that.
   in both languages. If it is over, compaction first (the two facts on one
   row); if still over, stop and report rather than raise the cap or step it
   back.
+  **Measured (CC-95, CC-95a, 13 Oct; Hessa editing Noura Al-Ghamdi):** with the
+  facts on one row and Name and Language stacked, 407px English and **424px
+  Arabic — over**. Stopped and reported. Ahmad's decision (CC-95a, option 1):
+  **Name and Language share a row in the placed shape ONLY** — 328px English,
+  343px Arabic. The stepped shape is unchanged: step 1 158/162, step 2
+  320/328 (measured on the same record marked INVITED in the page's memory; no
+  seeded person has that shape).
+- **F4 (CC-95a).** The two facts read their names from the record's own
+  references (`user.references.position`, `user.references.primaryOrgUnit`,
+  the names the record header shows), never the position or unit lists — those
+  are permission-gated and may still be loading when the dialog opens.
 - **The Users list does not open this dialog** (measured: the only caller of
   `UserService.updateProfile` on the frontend is `edit-profile-dialog`), so it
   needs no change.

@@ -7225,6 +7225,17 @@ enum UserStatus { ACTIVE, INACTIVE, INVITED, SUSPENDED }
   exempts the invite that would fill the vacancy. Both checks derive
   from the same two lookups (`targetPosition`/`targetOrgUnit`),
   computed once, not twice.
+- **`updateProfile()` — a placed person moves only through Transfer
+  (ACC-222).** For an ACTIVE user who already has a `primaryOrgUnitId`, a
+  CHANGE to `positionId` or `primaryOrgUnitId` is refused with **409
+  `USE_TRANSFER`** (body `fields`: the ones that changed;
+  `foundation/user/user-refusal.ts`), before the position is looked up or
+  anything is written. Sending the current value back, or leaving a field out,
+  is not a change. Still placed here: an INVITED user, and an ACTIVE user with
+  no unit yet (first placement). Manager and the acting unit are not placement
+  and stay editable. A self-edit without `users:manage` drops the placement
+  fields (below), so it is never refused. Measured 13 Oct: every ACTIVE tenant
+  user is placed (al-manara 22, al-nakheel 24), so the rule covers them all.
 - **`updateProfile()`** — the self-vs-admin split confirmed directly:
   `isSelf = actorId === id`, `isAdmin = actorPermissions.includes('users:manage')`,
   rejects if neither. Admin-only fields (`positionId`,
@@ -7615,9 +7626,16 @@ inline calendar replaces the fields, `date-view.ts`):
   **Stepped when it carries placement**, because it measured over the cap
   with every compaction applied (511px English, 526px Arabic): profile (name,
   language), then placement (158/162 and 320/328 after). Without placement it
-  is one step and no strip renders. Placement still changes position and unit
-  directly, beside Transfer, and an empty choice still means "unchanged" — so
-  a placement field cannot be cleared here, and never could (the old form's ×
+  is one step and no strip renders. **A placed person moves only through
+  Transfer (ACC-222):** for an ACTIVE person with a primary unit, position and
+  unit are read-only facts — named from the record's own `references`, never
+  the position or unit lists — with the line "To move this person to another
+  unit or position, use Transfer.", and the save sends neither. That shape is
+  ONE step with Name and Language on one row (328px English, 343px Arabic;
+  stacked it measured 407 / 424, over the cap). Manager and the acting unit
+  stay editable. The stepped shape above is for an INVITED person or an ACTIVE
+  one with no unit yet; there an empty choice still means "unchanged" — so a
+  placement field cannot be cleared here, and never could (the old form's ×
   sent nothing); the × is not offered. **The language is sent only when it
   was changed**: the old form sent the picker's value on every save, which
   pinned anyone with no saved language — who follows the organisation's — to
