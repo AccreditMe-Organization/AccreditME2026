@@ -69,7 +69,7 @@ const STEPS: readonly StepStripItem[] = [
           <img [src]="s.qrCodeDataUrl" [attr.alt]="'user.mfa.scanQrCode' | translate" class="am-two-step-qr" />
           <p class="am-two-step-intro">
             {{ 'user.mfa.manualEntryKey' | translate }}
-            <code dir="ltr" class="font-mono" style="unicode-bidi: isolate" data-two-step-secret>{{ s.secret }}</code>
+            <code dir="ltr" class="font-mono [unicode-bidi:isolate]" data-two-step-secret>{{ s.secret }}</code>
           </p>
           <am-field
             [label]="'user.mfa.verificationCode' | translate"

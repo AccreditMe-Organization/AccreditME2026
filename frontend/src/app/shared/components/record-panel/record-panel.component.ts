@@ -111,7 +111,7 @@ import { RequestOutcome } from '../../../core/request-outcome/request-outcome';
               <div class="flex flex-col items-start gap-2 p-4" role="alert" data-panel-error>
                 <p-message severity="error" [text]="(error() ?? 'recordPanel.errorLoad') | translate" />
                 @if (o.errorId) {
-                  <span dir="ltr" class="text-xs text-[var(--am-text-secondary)]" style="unicode-bidi: isolate">
+                  <span dir="ltr" class="text-xs text-[var(--am-text-secondary)] [unicode-bidi:isolate]">
                     {{ 'recordPanel.errorId' | translate: { id: o.errorId } }}
                   </span>
                 }

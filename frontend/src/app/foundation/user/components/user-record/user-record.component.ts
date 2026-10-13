@@ -108,6 +108,20 @@ interface Fact {
       <p-message severity="error" [text]="loadError()! | translate" data-user-load-error />
     }
 
+    @if (!user() && !loadError()) {
+      <!-- While the record loads: the identity card's shape, not a spinner
+           (artboard 8 — no centred spinner for an initial load). -->
+      <section
+        class="rounded-lg bg-[var(--am-card)] border border-[var(--am-border)] px-[18px] py-4 flex flex-col gap-3"
+        aria-busy="true"
+        data-user-loading
+      >
+        <span class="am-skeleton-bar w-1/3"></span>
+        <span class="am-skeleton-bar w-1/2"></span>
+        <span class="am-skeleton-bar w-2/3"></span>
+      </section>
+    }
+
     @if (user(); as u) {
       <div class="flex flex-col gap-3">
         <section class="rounded-lg bg-[var(--am-card)] border border-[var(--am-border)]" data-user-identity>
@@ -124,8 +138,7 @@ interface Fact {
                 <div class="flex flex-wrap items-center gap-2 mt-1">
                   <span
                     dir="ltr"
-                    style="unicode-bidi: isolate"
-                    class="text-[13px] text-[var(--am-text-secondary)]"
+                    class="text-[13px] text-[var(--am-text-secondary)] [unicode-bidi:isolate]"
                     data-user-email
                     >{{ u.email }}</span
                   >
@@ -225,7 +238,7 @@ interface Fact {
           <p-message severity="error" [text]="message | translate" data-user-action-error />
         }
 
-        <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(330px, 1fr))" data-user-panels>
+        <div class="grid gap-3 grid-cols-[repeat(auto-fit,minmax(330px,1fr))]" data-user-panels>
           @if (canViewRoles() && rolesHandle()) {
             <app-record-panel
               data-panel="roles"

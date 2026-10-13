@@ -379,7 +379,24 @@ describe('UserRecordComponent (ACC-120 slice 5)', () => {
 
     const email = ctx.el.querySelector('[data-user-email]') as HTMLElement;
     expect(email.getAttribute('dir')).toBe('ltr');
-    expect(email.style.unicodeBidi).toBe('isolate');
+    expect(getComputedStyle(email).unicodeBidi).toBe('isolate');
+  });
+
+  it("shows the identity card's shape while the record loads, and the record once it arrives", () => {
+    const ctx = render({ viewer: ME, recordId: ME });
+    expect(ctx.el.querySelector('[data-user-loading]')).not.toBeNull();
+    expect(ctx.el.querySelector('[data-user-identity]')).toBeNull();
+    flushUser(ctx, record({ id: ME }));
+    expect(ctx.el.querySelector('[data-user-loading]')).toBeNull();
+    expect(ctx.el.querySelector('[data-user-identity]')).not.toBeNull();
+  });
+
+  it('a failed load shows the error, not an endless skeleton', () => {
+    const ctx = render({ viewer: ME, recordId: ME });
+    ctx.http.expectOne((r) => r.url.endsWith(`/users/${ME}`)).flush({}, { status: 500, statusText: 'Server Error' });
+    ctx.fixture.detectChanges();
+    expect(ctx.el.querySelector('[data-user-load-error]')).not.toBeNull();
+    expect(ctx.el.querySelector('[data-user-loading]')).toBeNull();
   });
 
   // ── Kept from the old profile spec (ACC-79) ─────────────────────────────
