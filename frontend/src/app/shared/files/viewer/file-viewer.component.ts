@@ -12,6 +12,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { Subscription } from 'rxjs';
 import { FormatService } from '../../../core/formatting';
@@ -27,10 +28,17 @@ import { FileImageViewComponent, ImageZoom } from './renderers/image-view.compon
 import { FilePdfViewComponent, PDF_ZOOM_STEPS, PdfZoom } from './renderers/pdf-view.component';
 import { FileStatePanelComponent, StatePanelTone } from './renderers/state-panel.component';
 import { FileTextViewComponent } from './renderers/text-view.component';
+import { AiAssistComponent, AiAssistState } from '../../components/ai-assist/ai-assist.component';
+import type { AiRefusal } from '../../../core/ai/ai-refusal';
+import { refusalCode } from '../../../core/http/refusal';
+import { IFileSummaryView, IN_PROGRESS_REFUSAL, SUMMARY_IN_PROGRESS_CODE, SummaryLanguage, summaryRefusal } from './file-summary.model';
 import { decodeText, textLines } from './text-decode';
 
 /** The CSV table keeps at most this many DATA rows (the drawing). */
 export const CSV_PREVIEW_ROWS = 500;
+/** ACC-193 — Summarize reads at most this many PDF pages, or this many CSV rows (the backend's caps). */
+const SUMMARY_PAGE_CAP = 100;
+const SUMMARY_ROW_CAP = 500;
 /** A PDF this long says, in the footer, that pages render as they are reached. */
 const PDF_FOOTER_FROM_PAGES = 10;
 /** Image zoom steps, as multiples of the actual pixels. */
@@ -72,12 +80,20 @@ interface IPanel {
  *   prefetching. The file shown is the version that was opened.
  * - Previous / next walk the list it was opened from; "n / total" counts
  *   files. A type with no preview is still a stop.
+ * - ACC-193 — SUMMARIZE (a host that passes `summary`): "✦ Summarize" in the
+ *   action group after "← n / m →" and before Download, for PDF, TXT and CSV,
+ *   only while the file is shown, AI is available, and no summary exists in
+ *   the reader's language. The summary sits ABOVE the file inside the drawer
+ *   body (the one scroller), in am-ai-assist. A saved one shows at once,
+ *   clamped to two lines; moving on, closing or switching language cancels
+ *   the request here (the server still finishes and saves it, Q2).
  */
 @Component({
   selector: 'am-file-viewer',
   standalone: true,
   imports: [
     TranslatePipe,
+    AiAssistComponent,
     DrawerComponent,
     FilePdfViewComponent,
     FileImageViewComponent,
@@ -147,6 +163,24 @@ interface IPanel {
             </button>
           </span>
         }
+        @if (canSummarize() || summaryPhase() === 'working') {
+          <button
+            type="button"
+            class="am-drawer__button am-drawer__button--text am-fview__summarize"
+            data-am-summarize
+            [disabled]="summaryPhase() === 'working'"
+            [attr.aria-busy]="summaryPhase() === 'working'"
+            (click)="summarize()"
+          >
+            <span class="am-fview__spark" aria-hidden="true">✦</span>
+            {{ (summaryPhase() === 'working' ? 'files.viewer.summary.summarizing' : 'files.viewer.summary.summarize') | translate }}
+          </button>
+          @if (summaryPhase() === 'working') {
+            <button type="button" class="am-drawer__button am-drawer__button--text" data-am-summary-cancel (click)="cancelSummary()">
+              {{ 'ai.assist.cancel' | translate }}
+            </button>
+          }
+        }
         <span class="am-fview__rule" aria-hidden="true"></span>
         @if (canDownload()) {
           <button type="button" class="am-drawer__button am-drawer__button--text am-fview__download" data-am-download (click)="download()">
@@ -214,6 +248,40 @@ interface IPanel {
           }
         </div>
       }
+
+      @if (showSummaryPanel()) {
+        <div class="am-fview__summary" data-am-summary>
+          <am-ai-assist
+            [state]="assistState()"
+            [triggerLabel]="'files.viewer.summary.summarize' | translate"
+            [hideTrigger]="true"
+            placement="inline"
+            [tag]="summaryTag()"
+            [tagNote]="summaryNote()"
+            [workingText]="summaryWorkingText()"
+            [refusal]="summaryRefusal()"
+            [hasResult]="!!summary()"
+            [collapsible]="true"
+            [clamped]="summarySaved()"
+            [collapseLabel]="'files.viewer.summary.collapse' | translate"
+            [expandLabel]="'files.viewer.summary.expand' | translate"
+            [resultTemplate]="summaryTpl"
+            (retry)="retrySummary()"
+          />
+        </div>
+      }
+      <ng-template #summaryTpl>
+        @if (summary(); as s) {
+          <p class="am-fview__summary-overview" [attr.lang]="s.language" [attr.dir]="s.language === 'ar' ? 'rtl' : 'ltr'">{{ s.overview }}</p>
+          @if (s.keyPoints.length) {
+            <ul class="am-fview__summary-points" [attr.lang]="s.language" [attr.dir]="s.language === 'ar' ? 'rtl' : 'ltr'" [attr.aria-label]="'files.viewer.summary.keyPoints' | translate">
+              @for (point of s.keyPoints; track $index) {
+                <li dir="auto">{{ point }}</li>
+              }
+            </ul>
+          }
+        }
+      </ng-template>
 
       @switch (state().status) {
         @case ('loading') {
@@ -456,6 +524,23 @@ interface IPanel {
       .am-fview__footer-end {
         color: var(--am-ink-500);
       }
+      .am-fview__spark {
+        color: var(--am-primary-600);
+      }
+      .am-fview__summary {
+        padding: var(--am-space-12) var(--am-space-20) 0;
+      }
+      .am-fview__summary-overview,
+      .am-fview__summary-points {
+        margin: 0;
+        font-size: var(--am-type-body-size);
+        line-height: var(--am-type-body-line);
+      }
+      .am-fview__summary-points {
+        margin-block-start: var(--am-space-6);
+        padding-inline-start: var(--am-space-20);
+        color: var(--am-ink-700);
+      }
     `,
   ],
 })
@@ -556,6 +641,161 @@ export class FileViewerComponent {
     }
   });
 
+  // ---------------------------------------------------------------------
+  // ACC-193 — Summarize
+  // ---------------------------------------------------------------------
+
+  /** The reader's interface language right now (decision 8): the top bar's EN / ع counts. */
+  readonly summaryLanguage = computed<SummaryLanguage>(() => (this.language.isArabic() ? 'ar' : 'en'));
+  readonly summaryView = signal<IFileSummaryView | null>(null);
+  /** 'idle' covers "nothing yet" and "shown": what shows is decided by the view. */
+  readonly summaryPhase = signal<'idle' | 'working' | 'refusal'>('idle');
+  readonly summaryRefusal = signal<AiRefusal | null>(null);
+  /** The summary was already saved when this file opened (a second visit): clamped, "· saved". */
+  readonly summarySaved = signal(false);
+  private summaryFetch: Subscription | null = null;
+  private summaryPress: Subscription | null = null;
+  /** The last refusal was "being made": Try again re-reads instead of pressing. */
+  private refusedInProgress = false;
+
+  readonly summaryKind = computed(() => {
+    const kind = previewKindFor(this.file().mimeType);
+    return this.request().summary && (kind === 'pdf' || kind === 'text' || kind === 'csv') ? kind : null;
+  });
+  /** The file itself is on screen — not loading, not one of its problem states. */
+  readonly fileShown = computed(() => ['pdf', 'text', 'csv'].includes(this.state().status));
+  readonly summary = computed(() => this.summaryView()?.summary ?? null);
+  readonly canSummarize = computed(() => {
+    const view = this.summaryView();
+    return !!this.summaryKind() && this.fileShown() && !!view?.available && !view.summary && !view.inProgress && this.summaryPhase() !== 'working';
+  });
+  readonly showSummaryPanel = computed(() => !!this.summaryKind() && this.fileShown() && (this.summaryPhase() !== 'idle' || !!this.summary()));
+  readonly assistState = computed<AiAssistState>(() => {
+    const phase = this.summaryPhase();
+    if (phase === 'working') return 'working';
+    if (phase === 'refusal') return 'refusal';
+    return this.summary() ? 'result' : 'idle';
+  });
+  readonly summaryTag = computed(() =>
+    this.translate.instant(this.summaryPhase() === 'working' ? 'files.viewer.summary.summarizing' : 'files.viewer.summary.tag'),
+  );
+  /** "Reading 12 pages…", "Reading the first 100 pages…", "Reading 2,140 rows…", "Reading the file…" (Q4). */
+  readonly summaryWorkingText = computed(() => {
+    const kind = this.summaryKind();
+    if (kind === 'pdf' && this.pdfPages() > 0) {
+      const pages = this.pdfPages();
+      return pages > SUMMARY_PAGE_CAP
+        ? this.format.count('files.summary.readingFirstPages', SUMMARY_PAGE_CAP)
+        : this.format.count('files.summary.readingPages', pages);
+    }
+    const csv = this.csvState();
+    if (kind === 'csv' && csv) {
+      return csv.total > SUMMARY_ROW_CAP
+        ? this.format.count('files.summary.readingFirstRows', SUMMARY_ROW_CAP)
+        : this.format.count('files.summary.readingRows', csv.total);
+    }
+    return this.translate.instant('files.viewer.summary.readingFile');
+  });
+  /** "Summary made 9 Oct 2026 · saved · From the first 100 pages of 412." */
+  readonly summaryNote = computed(() => {
+    const s = this.summary();
+    if (!s) return '';
+    const made = this.translate.instant(this.summarySaved() ? 'files.viewer.summary.madeSaved' : 'files.viewer.summary.made', {
+      date: this.format.date(s.madeAt),
+    });
+    const c = s.coverage;
+    if (!c) return made;
+    const coverage =
+      c.unit === 'pages'
+        ? this.format.count('files.summary.fromPages', c.read, { total: this.format.number(c.total) })
+        : c.unit === 'rows'
+          ? this.format.count('files.summary.fromRows', c.read, { total: this.format.number(c.total) })
+          : this.translate.instant('files.viewer.summary.fromText');
+    return `${made} · ${coverage}`;
+  });
+
+  summarize(): void {
+    const host = this.request().summary;
+    if (!host || this.summaryPhase() === 'working') return;
+    this.summaryPress?.unsubscribe();
+    this.summaryPhase.set('working');
+    this.summaryRefusal.set(null);
+    this.summaryPress = host.make(this.file(), this.summaryLanguage()).subscribe({
+      next: (view) => {
+        this.summaryPress = null;
+        this.summaryView.set(view);
+        this.summarySaved.set(false);
+        this.summaryPhase.set('idle');
+      },
+      error: (err: unknown) => {
+        this.summaryPress = null;
+        // The file was deleted meanwhile, or is no longer ours to see: the viewer's own state.
+        if (err instanceof HttpErrorResponse && err.status === 404) {
+          this.showProblem('deleted');
+          return;
+        }
+        this.refusedInProgress = refusalCode(err) === SUMMARY_IN_PROGRESS_CODE;
+        this.summaryRefusal.set(summaryRefusal(err, this.format));
+        this.summaryPhase.set('refusal');
+      },
+    });
+  }
+
+  /** Cancel stops waiting here; the server finishes and saves (Q2), so the next look shows it. */
+  cancelSummary(): void {
+    this.summaryPress?.unsubscribe();
+    this.summaryPress = null;
+    this.summaryPhase.set('idle');
+    this.refreshSummary();
+  }
+
+  retrySummary(): void {
+    if (this.refusedInProgress) this.refreshSummary();
+    else this.summarize();
+  }
+
+  /** The saved summary for this file in this language — never a model call. */
+  private refreshSummary(): void {
+    this.summaryFetch?.unsubscribe();
+    this.summaryFetch = null;
+    const host = this.request().summary;
+    if (!host || !this.summaryKind()) return;
+    const file = this.file();
+    this.summaryFetch = host.get(file, this.summaryLanguage()).subscribe({
+      next: (view) => {
+        this.summaryFetch = null;
+        this.summaryView.set(view);
+        this.summarySaved.set(!!view.summary);
+        if (!view.summary && view.inProgress) {
+          this.refusedInProgress = true;
+          this.summaryRefusal.set(IN_PROGRESS_REFUSAL);
+          this.summaryPhase.set('refusal');
+        } else {
+          this.summaryRefusal.set(null);
+          this.summaryPhase.set('idle');
+        }
+      },
+      // Never an error in the viewer: no button and no panel.
+      error: () => {
+        this.summaryFetch = null;
+        this.summaryView.set(null);
+      },
+    });
+  }
+
+  /** Leaving the file, closing, or switching language: forget it here and stop waiting. */
+  private resetSummary(): void {
+    this.summaryFetch?.unsubscribe();
+    this.summaryPress?.unsubscribe();
+    this.summaryFetch = null;
+    this.summaryPress = null;
+    this.summaryView.set(null);
+    this.summaryRefusal.set(null);
+    this.summaryPhase.set('idle');
+    this.summarySaved.set(false);
+    this.refusedInProgress = false;
+  }
+
   readonly footer = computed<{ start: string; end: string } | null>(() => {
     const s = this.state();
     const t = (key: string, params?: Record<string, unknown>): string => this.translate.instant(key, params);
@@ -598,6 +838,17 @@ export class FileViewerComponent {
         this.started = true;
         this.index.set(Math.min(Math.max(request.startIndex, 0), request.files.length - 1));
         this.load();
+      });
+    });
+
+    // ACC-193 — the summary follows the file AND the reader's language.
+    effect(() => {
+      this.file();
+      this.summaryLanguage();
+      untracked(() => {
+        if (!this.started || this.closing) return;
+        this.resetSummary();
+        this.refreshSummary();
       });
     });
 
@@ -647,11 +898,13 @@ export class FileViewerComponent {
     if (this.closing) return;
     this.closing = true;
     const last = this.file();
+    this.resetSummary();
     this.releaseFile();
     this.closed.emit(last);
   }
 
   showProblem(problem: FileViewProblem): void {
+    this.resetSummary();
     this.releaseFile();
     this.state.set({ status: 'problem', problem });
   }

@@ -254,6 +254,23 @@ describe('TaskEvidenceListComponent — the file viewer (ACC-189)', () => {
     expect(TestBed.inject(FilesService).open).toHaveBeenCalled();
   });
 
+  it('ACC-193: Summarize reads and makes through the evidence summary route, in the language asked', () => {
+    const fixture = setup({ items: [FILE_ROW], canAdd: true, closed: false });
+    (fixture.nativeElement.querySelector('[data-am-evidence-file="ev-1"]') as HTMLElement).click();
+    const r = request();
+    expect(r.summary).toBeDefined();
+
+    r.summary!.get(r.files[0]!, 'ar').subscribe();
+    const read = http.expectOne((req) => req.url === `${API}/ev-1/summary` && req.method === 'GET');
+    expect(read.request.params.get('language')).toBe('ar');
+    read.flush({ available: true, inProgress: false, summary: null });
+
+    r.summary!.make(r.files[0]!, 'en').subscribe();
+    const make = http.expectOne((req) => req.url === `${API}/ev-1/summary` && req.method === 'POST');
+    expect(make.request.body).toEqual({ language: 'en' });
+    make.flush({ available: true, inProgress: false, summary: null });
+  });
+
   it('on close, focus returns to the name of the file LAST SHOWN, not the one first opened', () => {
     const fixture = setup({ items: [FILE_ROW, SECOND_FILE], canAdd: true, closed: false });
     (fixture.nativeElement.querySelector('[data-am-evidence-file="ev-1"]') as HTMLElement).click();

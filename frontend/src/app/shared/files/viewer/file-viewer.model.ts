@@ -1,5 +1,6 @@
 import { Observable } from 'rxjs';
 import { IFileDownload } from '../files.service';
+import { IFileSummaryHost } from './file-summary.model';
 
 /**
  * ACC-189 — the in-app file viewer's contract. A HOST (task evidence today;
@@ -32,6 +33,11 @@ export interface IFileViewerRequest {
    * return focus to that row — not to the one the viewer was opened from.
    */
   closed?: (lastShown: IViewableFile) => void;
+  /**
+   * ACC-193 — the host's AI summary routes. Optional: a host that passes none
+   * gets no Summarize. Both carry exactly the host's view entitlement.
+   */
+  summary?: IFileSummaryHost;
 }
 
 /** Which renderer a file gets. Anything not listed is download only (ACC-192). */

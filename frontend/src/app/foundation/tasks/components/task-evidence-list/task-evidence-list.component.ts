@@ -344,6 +344,11 @@ export class TaskEvidenceListComponent {
         if (target) this.download(target);
       },
       closed: (last) => this.focusFile(last.id),
+      // ACC-193 — Summarize: exactly the view's entitlement, on the server.
+      summary: {
+        get: (file, language) => this.taskService.getEvidenceSummary(taskId, file.id, language),
+        make: (file, language) => this.taskService.makeEvidenceSummary(taskId, file.id, language),
+      },
     });
   }
 

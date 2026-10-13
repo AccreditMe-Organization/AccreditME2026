@@ -25,6 +25,7 @@ import ar from '../../../../assets/i18n/ar.json';
         [resultTemplate]="body()"
         [collapsible]="collapsible()"
         [clamped]="clamped()"
+        [tagNote]="tagNote()"
         collapseLabel="Collapse summary"
         expandLabel="Expand summary"
         (trigger)="events.push('trigger')"
@@ -47,6 +48,7 @@ class HostComponent {
   readonly hasResult = signal(false);
   readonly collapsible = signal(false);
   readonly clamped = signal(false);
+  readonly tagNote = signal('');
   readonly dir = signal<'ltr' | 'rtl'>('ltr');
   readonly bodyTpl = viewChild<TemplateRef<unknown>>('bodyTpl');
   readonly body = () => this.bodyTpl() ?? null;
@@ -253,6 +255,20 @@ describe('collapsible and clamped (ACC-193, Q5) — opt-in', () => {
       render();
       expect(body.classList).not.toContain('am-ai__body--clamped');
       expect(el().querySelector('.am-ai__show-all')).toBeNull();
+    });
+
+    it('tagNote: a quiet line under the tag, OUTSIDE the clamp, gone when folded', () => {
+      host.state.set('result');
+      host.clamped.set(true);
+      host.collapsible.set(true);
+      host.tagNote.set('Summary made 9 Oct 2026 · saved');
+      render();
+      const note = el().querySelector('.am-ai__tag-note') as HTMLElement;
+      expect(note.textContent?.trim()).toBe('Summary made 9 Oct 2026 · saved');
+      expect(el().querySelector('.am-ai__body')!.contains(note)).toBeFalse();
+      (el().querySelector('.am-ai__fold') as HTMLButtonElement).click();
+      render();
+      expect(el().querySelector('.am-ai__tag-note')).toBeNull();
     });
 
     it('the clamp is two lines of the body\'s own line height', () => {

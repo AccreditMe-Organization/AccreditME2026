@@ -114,6 +114,9 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
                 }
               </div>
             }
+            @if (tagNote() && !folded()) {
+              <p class="am-ai__tag-note">{{ tagNote() }}</p>
+            }
             <div class="am-ai__body" [id]="bodyId" [hidden]="folded()" [class.am-ai__body--clamped]="clamped() && !shownAll()">
               @if (resultTemplate(); as tpl) {
                 <ng-container [ngTemplateOutlet]="tpl" />
@@ -232,6 +235,11 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         font-size: var(--am-type-meta-size);
         font-weight: 600;
         color: var(--am-primary-700);
+      }
+      .am-ai__tag-note {
+        margin: 0 0 var(--am-space-6);
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
       }
       .am-ai__tag-row {
         display: flex;
@@ -380,6 +388,12 @@ export class AiAssistComponent {
   readonly collapsible = input(false);
   /** ACC-193 — opt-in: the result opens at two lines with "Show all" (a saved result, second visit). */
   readonly clamped = input(false);
+  /**
+   * ACC-193 — opt-in: a quiet line under the tag ("Summary made 9 Oct 2026 ·
+   * saved · From the first 100 pages of 412."), outside the clamp, so it stays
+   * readable when the result opens at two lines.
+   */
+  readonly tagNote = input('');
   /** The fold control's accessible names ("Collapse summary"); generic words when empty. */
   readonly collapseLabel = input('');
   readonly expandLabel = input('');
