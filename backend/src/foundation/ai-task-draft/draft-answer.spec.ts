@@ -39,6 +39,8 @@ describe('the prompt (ACC-197 §3)', () => {
     const prompt = draftSystemPrompt('en');
     expect(prompt).toContain('Write every number in digits (0-9), and a percentage as "90%"');
     expect(prompt).toContain('Never invent a person, a date, a number or a deadline');
+    // Each part is shown after OUR label, so it must read on from it.
+    expect(prompt).toContain('write it to read naturally after that label, and never repeat the label');
     expect(prompt).toContain('{"insufficient": true}');
   });
 
