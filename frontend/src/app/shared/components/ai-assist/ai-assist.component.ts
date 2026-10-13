@@ -41,6 +41,11 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
  *     again.
  *   - ANNOUNCED: results and refusals arrive in a polite live region, and
  *     focus moves to the result.
+ *   - SPLIT (opt-in, ACC-197): `hideResult` draws the trigger alone, and a
+ *     second instance with `hideTrigger` draws the result somewhere else.
+ *     `labelRow` draws that trigger at the height of a field label's own
+ *     line; `actionsExtra` adds a host's own action to the end of the
+ *     Accept / Edit / Discard row.
  *   - COLLAPSIBLE (opt-in, ACC-193 Q5): `collapsible` puts a ▴ / ▾ control on
  *     the tag line that folds the result to that line; `clamped` opens it at
  *     two lines with "Show all" (a saved result on a second visit). Off by
@@ -59,7 +64,7 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
   standalone: true,
   imports: [NgTemplateOutlet, TranslatePipe],
   template: `
-    <div class="am-ai" [class]="'am-ai am-ai--' + placement()">
+    <div class="am-ai" [class]="'am-ai am-ai--' + placement()" [class.am-ai--label-row]="labelRow()">
       @if (!hideTrigger()) {
         <div class="am-ai__trigger-row">
           <button
@@ -82,6 +87,7 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         </div>
       }
 
+      @if (!hideResult()) {
       @switch (state()) {
         @case ('working') {
           <div class="am-ai__result am-ai__result--working" role="status">
@@ -132,6 +138,9 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
                 <button type="button" class="am-ai__primary" (click)="accepted.emit()">{{ 'ai.assist.accept' | translate }}</button>
                 <button type="button" class="am-ai__secondary" (click)="edited.emit()">{{ 'ai.assist.edit' | translate }}</button>
                 <button type="button" class="am-ai__text-button" (click)="discarded.emit()">{{ 'ai.assist.discard' | translate }}</button>
+                @if (actionsExtra(); as extra) {
+                  <span class="am-ai__actions-extra"><ng-container [ngTemplateOutlet]="extra" /></span>
+                }
               </div>
             }
           </section>
@@ -161,6 +170,7 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
       }
 
       <p class="sr-only" aria-live="polite">{{ announcement() | translate: announcementParams() }}</p>
+      }
     </div>
   `,
   styles: [
@@ -197,6 +207,19 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         color: var(--am-primary-700);
         border: 1px solid var(--am-primary-600);
         cursor: pointer;
+      }
+      /* ACC-197 — on a field's label row: exactly that row's own line
+         (text-sm, 1.25rem), so the trigger shares the row and adds no height. */
+      .am-ai--label-row .am-ai__trigger,
+      .am-ai--label-row .am-ai__trigger-row .am-ai__text-button {
+        box-sizing: border-box;
+        height: 1.25rem;
+        padding-block: 0;
+        line-height: 1;
+      }
+      .am-ai--label-row .am-ai__trigger-row .am-ai__text-button {
+        display: inline-flex;
+        align-items: center;
       }
       .am-ai__trigger:focus-visible,
       .am-ai__secondary:focus-visible,
@@ -302,6 +325,11 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         gap: var(--am-space-8);
         margin-block-start: var(--am-space-8);
       }
+      /* ACC-197 — a host's own action, at the row's far end. */
+      .am-ai__actions-extra {
+        margin-inline-start: auto;
+        display: inline-flex;
+      }
       .am-ai__refusal {
         border-radius: var(--am-radius-card);
         padding: var(--am-space-12);
@@ -380,6 +408,26 @@ export class AiAssistComponent {
   readonly cancellable = input(false);
   readonly accept = input(false);
   readonly hideTrigger = input(false);
+  /**
+   * ACC-197 — opt-in: the trigger ALONE, with no result area and no
+   * announcement. For a place where the trigger sits on a field's label row
+   * and the result is drawn elsewhere by a second instance with `hideTrigger`
+   * (New task: the trigger beside "Description", the suggestion under the
+   * field). Off by default, so every other place is unchanged.
+   */
+  readonly hideResult = input(false);
+  /**
+   * ACC-197 — opt-in: the trigger (and Cancel beside it) is drawn at the
+   * height of a field label's own line, 1.25rem, so it can share that row
+   * without making it taller. Off by default.
+   */
+  readonly labelRow = input(false);
+  /**
+   * ACC-197 — opt-in: a host's own action, drawn at the far end of the
+   * Accept / Edit / Discard row (New task: "Use this title"). Only with
+   * `accept`. Null by default.
+   */
+  readonly actionsExtra = input<TemplateRef<unknown> | null>(null);
   readonly placement = input<AiAssistPlacement>('card');
   readonly resultTemplate = input<TemplateRef<unknown> | null>(null);
   /** True when a result already exists (even after a later refusal), so the trigger reads againLabel. */
