@@ -41,6 +41,10 @@ const RECORD: IUserDto = {
   updatedAt: '2026-09-07T00:00:00.000Z',
 };
 
+// ACC-222 — the stepped dialog is for a person not yet placed for good: an
+// INVITED one (RECORD itself is ACTIVE with a unit, so it gets the read-only shape).
+const INVITED: IUserDto = { ...RECORD, status: 'INVITED' };
+
 @Component({
   standalone: true,
   imports: [EditProfileDialogComponent, OutOfOfficeDialogComponent, TwoStepSetupDialogComponent, TwoStepOffDialogComponent],
@@ -53,6 +57,8 @@ const RECORD: IUserDto = {
           [user]="user()"
           [isOwn]="isOwn()"
           [canEditPlacement]="placement()"
+          [positions]="positions()"
+          [orgUnits]="orgUnits()"
         />
       }
       @case ('ooo') {
@@ -78,6 +84,8 @@ class Host {
   readonly user = signal<IUserDto | null>(RECORD);
   readonly isOwn = signal(false);
   readonly placement = signal(false);
+  readonly positions = signal<never[]>([]);
+  readonly orgUnits = signal<never[]>([]);
   enabled = false;
 }
 
@@ -162,6 +170,119 @@ describe('User record dialogs (ACC-120 slice 5)', () => {
     return body;
   };
 
+  // ── Edit profile: a placed person (ACC-222) ─────────────────────────────
+  describe('Edit profile — a placed person moves only through Transfer (ACC-222)', () => {
+    const POSITIONS = [{ id: 'pos-senior', nameEn: 'Senior Physician', nameAr: null }];
+    const UNITS = [{ id: 'unit-im', nameEn: 'Internal Medicine', nameAr: null, parentId: null, code: 'IM' }];
+    // A picker by the control it binds: the field wrapper's inputId does not
+    // reach app-overlay-select, so '#ep-position' would match nothing either way.
+    const picker = (name: string): HTMLElement | null => q(`app-overlay-select[formcontrolname="${name}"]`);
+    const placed = (h: Host): void => {
+      h.placement.set(true);
+      h.positions.set(POSITIONS as never[]);
+      h.orgUnits.set(UNITS as never[]);
+    };
+
+    it('shows position and unit as read-only facts with the Transfer line, in ONE step', () => {
+      open('profile', placed);
+
+      expect(q('[data-ep-placement-facts]')).not.toBeNull();
+      expect(q('[data-ep-fact-position]')!.textContent!.trim()).toBe('Senior Physician');
+      expect(q('[data-ep-fact-unit]')!.textContent!.trim()).toBe('Internal Medicine');
+      expect(q('[data-ep-use-transfer]')!.textContent!.trim()).toBe(
+        'To move this person to another unit or position, use Transfer.',
+      );
+      // No pickers for position or unit, and no second step.
+      expect(picker('positionId')).toBeNull();
+      expect(picker('primaryOrgUnitId')).toBeNull();
+      expect(q('[data-ep-next]')).toBeNull();
+      expect(document.querySelectorAll('am-step-strip li').length).toBe(0);
+      expect(q('[data-ep-save]')).not.toBeNull();
+      // Manager and the acting unit are still here, editable.
+      expect(picker('managerId')).not.toBeNull();
+      expect(picker('actingOrgUnitId')).not.toBeNull();
+      expect(q('#ep-acting-until')).not.toBeNull();
+    });
+
+    it('says the Transfer line in Arabic', () => {
+      open('profile', placed);
+      TestBed.inject(TranslateService).use('ar');
+      fixture.detectChanges();
+
+      expect(q('[data-ep-use-transfer]')!.textContent!.trim()).toBe(
+        'لنقل هذا الشخص إلى وحدة أو مسمى وظيفي آخر، استخدم «نقل».',
+      );
+    });
+
+    it('the save sends NO position or unit, but still sends the manager', () => {
+      open('profile', placed);
+      type('#ep-name', 'Dr. Yasser Al-Amri (edited)');
+      click('[data-ep-save]');
+
+      const body = patchBody();
+      expect(body['name']).toBe('Dr. Yasser Al-Amri (edited)');
+      expect('positionId' in body).toBe(false);
+      expect('primaryOrgUnitId' in body).toBe(false);
+      expect(body['managerId']).toBe('mgr-1');
+    });
+
+    it('shows a 409 USE_TRANSFER as its translated sentence, never the English message', () => {
+      open('profile', (h) => {
+        h.user.set({ ...RECORD, primaryOrgUnitId: null });
+        h.placement.set(true);
+      });
+      click('[data-ep-next]');
+      click('[data-ep-save]');
+      http.expectOne((r) => r.method === 'PATCH').flush(
+        {
+          statusCode: 409,
+          message: 'SERVER ENGLISH: use transfer',
+          error: 'Conflict',
+          code: 'USE_TRANSFER',
+          fields: ['primaryOrgUnitId'],
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      fixture.detectChanges();
+
+      const alert = q('[role="alert"]')!.textContent!.trim();
+      expect(alert).toBe("This person's unit or position can only be changed with Transfer. Nothing was saved.");
+      expect(document.body.textContent).not.toContain('SERVER ENGLISH');
+    });
+
+    it('an ACTIVE person with NO unit keeps the stepped dialog (first placement)', () => {
+      open('profile', (h) => {
+        h.user.set({ ...RECORD, primaryOrgUnitId: null });
+        h.placement.set(true);
+      });
+
+      expect(q('[data-ep-placement-facts]')).toBeNull();
+      expect(document.querySelectorAll('am-step-strip li').length).toBe(2);
+      click('[data-ep-next]');
+      expect(picker('positionId')).not.toBeNull();
+      expect(picker('primaryOrgUnitId')).not.toBeNull();
+    });
+
+    it('an INVITED person keeps the stepped dialog with the pickers', () => {
+      open('profile', (h) => {
+        h.user.set(INVITED);
+        h.placement.set(true);
+      });
+
+      expect(q('[data-ep-placement-facts]')).toBeNull();
+      expect(q('[data-ep-use-transfer]')).toBeNull();
+      click('[data-ep-next]');
+      expect(picker('positionId')).not.toBeNull();
+    });
+
+    it('a viewer who may not change placement sees no facts and no Transfer line', () => {
+      open('profile');
+
+      expect(q('[data-ep-placement-facts]')).toBeNull();
+      expect(q('[data-ep-use-transfer]')).toBeNull();
+    });
+  });
+
   // ── Edit profile ────────────────────────────────────────────────────────
   describe('Edit profile', () => {
     it('4 · the placement fields render only when the viewer may change them', () => {
@@ -171,6 +292,7 @@ describe('User record dialogs (ACC-120 slice 5)', () => {
       expect(q('[data-ep-next]')).toBeNull(); // one step: Save, not Next
       expect(document.querySelectorAll('am-step-strip li').length).toBe(0);
       expect(q('[data-ep-save]')).not.toBeNull();
+      host.user.set(INVITED);
       host.placement.set(true);
       fixture.detectChanges();
       click('[data-ep-next]');
@@ -181,7 +303,10 @@ describe('User record dialogs (ACC-120 slice 5)', () => {
     // Measured over the 420px cap with placement (511 / 526), so it is stepped
     // on its own seam: who the person is, then where they sit.
     it('with placement: two steps, Next holds an empty name, Back returns, Save sends both', () => {
-      open('profile', (h) => h.placement.set(true));
+      open('profile', (h) => {
+        h.user.set(INVITED);
+        h.placement.set(true);
+      });
       expect(document.querySelectorAll('am-step-strip li').length).toBe(2);
       expect(q('[data-ep-save]')).toBeNull();
       type('#ep-name', '');
