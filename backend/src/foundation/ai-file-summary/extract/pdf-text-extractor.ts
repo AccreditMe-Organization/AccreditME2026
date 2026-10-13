@@ -2,6 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { Worker } from 'node:worker_threads';
 import { dirname, join, sep } from 'node:path';
 import { ExtractionBusyError, ExtractionSlots } from './extraction-slots';
+import { IPdfTextItem, pageText } from './pdf-page-text';
 
 /** ACC-193 — the PDF could not be read: corrupt, protected, too large to parse, or too slow. */
 export class PdfUnreadableError extends Error {
@@ -15,7 +16,8 @@ export interface IPdfReadOptions {
   /** Read no page past this one. */
   maxPages: number;
   /**
-   * Called with each page's text, in order. Return false to stop: the worker
+   * Called with each page's text, in order — in reading order, built by
+   * pageText() from the worker's items (ACC-224). Return false to stop: the worker
    * is terminated at once and no further page is read (the token budget, §4.3).
    */
   onPage: (n: number, text: string) => boolean;
@@ -105,14 +107,14 @@ export class PdfTextExtractor {
         Math.max(0, deadline - Date.now()),
       );
 
-      worker.on('message', (message: { type: string; numPages?: number; n?: number; text?: string; name?: string }) => {
+      worker.on('message', (message: { type: string; numPages?: number; n?: number; items?: IPdfTextItem[]; name?: string }) => {
         if (settled) return;
         if (message.type === 'meta') {
           numPages = message.numPages ?? 0;
         } else if (message.type === 'page') {
           let more = false;
           try {
-            more = opts.onPage(message.n ?? 0, message.text ?? '');
+            more = opts.onPage(message.n ?? 0, pageText(message.items ?? []));
           } catch (error) {
             finish(() => reject(error instanceof Error ? error : new Error(String(error))));
             return;
