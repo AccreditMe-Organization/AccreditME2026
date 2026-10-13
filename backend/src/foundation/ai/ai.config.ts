@@ -42,7 +42,11 @@ export interface AiFeatureCallConfig {
 export const AI_FEATURES: Readonly<Record<AiFeatureKey, AiFeatureCallConfig>> = {
   task_description_drafting: { tier: 'STANDARD', effort: 'low', maxTokens: 2000 },
   document_summary: { tier: 'STANDARD', effort: 'medium', maxTokens: 4000, inputTokenCap: 30_000 },
-  morning_briefing: { tier: 'STANDARD', effort: 'low', maxTokens: 3000 },
+  // ACC-198 (D13) — 4000, up from 3000: the answer is JSON (the lead plus up
+  // to three focus picks with reasons), thinking counts against the same
+  // limit, and a truncated JSON answer is unusable. Only a ceiling: the credit
+  // price is flat.
+  morning_briefing: { tier: 'STANDARD', effort: 'low', maxTokens: 4000 },
 };
 
 export const DEFAULT_ANTHROPIC_MODELS: Readonly<Record<AiTier, string>> = {
