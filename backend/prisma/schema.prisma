@@ -445,6 +445,7 @@ model Organization {
   meetings                 Meeting[]
   auditLogs                AuditLog[]
   aiInteractionLogs        AiInteractionLog[]
+  aiBriefings              AiBriefing[]
   loginAttempts            LoginAttempt[]
   refreshTokens            RefreshToken[]
   userTransferEvents       UserTransferEvent[] // ACC-46 Section 2.6.f
@@ -594,6 +595,7 @@ model User {
   meetings                        Meeting[]                  @relation("MeetingOrganizer")
   auditLogs                       AuditLog[]
   aiInteractionLogs               AiInteractionLog[]
+  aiBriefings                     AiBriefing[]
   position                        OrgPosition?               @relation(fields: [positionId], references: [id])
   primaryOrgUnit                  OrgUnit?                   @relation(fields: [primaryOrgUnitId], references: [id])
   actingOrgUnit                   OrgUnit?                   @relation("UserActingOrgUnit", fields: [actingOrgUnitId], references: [id])
@@ -2040,6 +2042,32 @@ model AiInteractionLog {
   @@index([actorId])
   @@index([feature])
   @@index([createdAt])
+}
+
+// ACC-198 — a user's latest AI briefing on Home, made on demand by a tenant
+// admin. ONE row per user (the latest replaces the last). The lead and the
+// focus reasons are the model's text about the user's own work, so they live
+// here, in a tenant-owned table, never in the platform's AiInteractionLog
+// (ACC-194 D5). Items, dates and links are a snapshot our code built.
+model AiBriefing {
+  id              String    @id @default(cuid())
+  organizationId  String
+  userId          String
+  language        String // 'en' | 'ar' — the language it was written in
+  lead            String // the model's lead, or a sentence our code wrote
+  focus           Json // [{ type, id, reason }] — validated against the items sent (D13)
+  groups          Json // [{ kind, items: [{ type, id, title, ... }] }] — built by our code
+  creditCost      Int // 5, or 0 for a quiet day (the model is not called)
+  generatedAt     DateTime? // when the current briefing was made
+  generatingSince DateTime? // the in-flight claim: one run per user (D7)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
 }
 
 // ---------------------------------------------------------------------------

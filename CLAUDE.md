@@ -3573,6 +3573,36 @@ decisions, briefly:
   and the live AI call run AFTER the deploy**, never before: the columns must
   not reach the shared database first.
 
+## Key Architecture Decisions (ACC-198)
+
+The AI briefing on Home, on demand. Full mechanism: SYSTEM-REFERENCE.md §17.8
+(the briefing) and §10.19 (`am-ai-assist`). Plan and Ahmad's answers (13 Oct,
+D1–D13): `backend/Plans/step-198-morning-briefing.md`. The decisions, briefly:
+
+- **MADE ONLY WHEN A TENANT ADMIN PRESSES** (Ahmad, 12 Oct) — never by a job.
+  `tenant:manage_config` gates the press; 5 credits a run through
+  `AiService.run()`; a quiet day makes no call and costs nothing.
+- **THE MODEL WRITES A LEAD AND, OPTIONALLY, UP TO THREE FOCUS PICKS — NOTHING
+  ELSE** (D13). It picks only by the ids we sent; our code drops any it does not
+  recognise and builds every item, date and link itself. No valid pick, no
+  "Focus on these first". `morning_briefing`'s `maxTokens` is 4,000 for the
+  JSON answer.
+- **ONE RUN PER USER**, by one `INSERT … ON CONFLICT … WHERE` claim, stale
+  after 3 minutes; a second press is 409 `AI_BRIEFING_IN_PROGRESS` before any
+  call. Two admins get their own briefings (D7).
+- **One briefing per user, replaced on each press, shown only on the day it was
+  made** (tenant's zone, D3), in the language it was made in (D4), with done
+  markers checked live. A saved one stays visible with no button if the feature
+  closes (D12).
+- **Refusals only after a press, inside the card** (D1); before a press, Home is
+  ordinary. A failed press keeps the earlier briefing below the refusal.
+- **`am-ai-assist` is the one AI pattern.** Every AI place uses it — ACC-193 and
+  ACC-197 next. It draws; the feature prices, gates and saves.
+- **Dropped from the drawing, deliberately:** "turn off my briefing" (nothing
+  runs unless pressed, D9), the weekend rule (D10), the 8-second vanish (D11).
+- **The migration and the live proof run AFTER the deploy**, never before (the
+  `AiBriefing` table must not reach the shared database first).
+
 ## Open / Deferred Items
 
 - **CORRECTED 2026-10-01 — browser verification does NOT require

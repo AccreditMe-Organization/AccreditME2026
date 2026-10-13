@@ -1,3 +1,4 @@
+import { provideRouter } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -92,6 +93,7 @@ describe('MyTasksComponent — due dates (ACC-94)', () => {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
@@ -166,6 +168,7 @@ describe('MyTasksComponent — statuses and actions (ACC-163)', () => {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
@@ -342,6 +345,7 @@ describe('MyTasksComponent — pools (ACC-167)', () => {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
@@ -449,6 +453,7 @@ describe('MyTasksComponent — requests and holds (ACC-173)', () => {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
@@ -603,6 +608,7 @@ describe('MyTasksComponent — edit, cancel and reopen (ACC-174)', () => {
     TestBed.configureTestingModule({
       imports: [MyTasksComponent],
       providers: [
+        provideRouter([]),
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
