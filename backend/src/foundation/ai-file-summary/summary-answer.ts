@@ -1,4 +1,4 @@
-import { IFileText, SummarizableKind, estimateTokens } from './extract/file-text';
+import { CoverageUnit, IFileText, SummarizableKind, estimateTokens } from './extract/file-text';
 
 /**
  * ACC-193 — what we send the model, and how we read what comes back.
@@ -12,7 +12,8 @@ import { IFileText, SummarizableKind, estimateTokens } from './extract/file-text
 export type SummaryLanguage = 'en' | 'ar';
 
 export const OVERVIEW_CAP = 800;
-export const POINT_CAP = 200;
+/** ACC-224 (Q3): 300, not 200 — a real point on 13 Oct ran to about 245 characters and lost its last clause. */
+export const POINT_CAP = 300;
 export const POINTS_MAX = 6;
 export const OPEN_TEXT = '<<<FILE TEXT';
 export const CLOSE_TEXT = 'FILE TEXT>>>';
@@ -52,6 +53,12 @@ export function readLine(fileText: Pick<IFileText, 'unit' | 'unitsRead' | 'units
   return unitsRead < unitsTotal ? 'the beginning of the file' : 'the whole file';
 }
 
+/** "1 page", "12 pages", "1 row", "378 bytes" — for the AI log's description, which operators read (English). */
+export function unitCount(count: number, unit: CoverageUnit): string {
+  const noun = unit === 'pages' ? 'page' : unit === 'rows' ? 'row' : 'byte';
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 export function summaryPrompt(fileName: string, kind: SummarizableKind, fileText: IFileText): string {
   const { before, after } = summaryFraming(fileName, kind, readLine(fileText));
   return `${before}${fileText.text}${after}`;
@@ -67,12 +74,21 @@ export function textBudget(inputCap: number, language: SummaryLanguage, fileName
   return Math.max(0, Math.floor((inputCap - overhead) * 0.9));
 }
 
+/**
+ * At most `cap` characters, never cut inside a word (ACC-224): at the last
+ * sentence end past half the cap; else at the last word boundary past half the
+ * cap, with "…"; only one unbroken run longer than half the cap is cut hard.
+ */
 function trimTo(text: string, cap: number): string {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (clean.length <= cap) return clean;
   const cut = clean.slice(0, cap);
-  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('؟ '), cut.lastIndexOf('! '), cut.lastIndexOf('。'));
-  return end > cap / 2 ? cut.slice(0, end + 1) : `${cut.trimEnd()}…`;
+  const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('? '), cut.lastIndexOf('؟ '), cut.lastIndexOf('! '), cut.lastIndexOf('。'));
+  if (sentence > cap / 2) return cut.slice(0, sentence + 1);
+  // The character just past the cap being a space makes the cap itself a boundary.
+  const space = clean[cap] === ' ' ? cap : cut.lastIndexOf(' ');
+  if (space > cap / 2) return `${clean.slice(0, space).replace(/[\s,،;؛:]+$/u, '')}…`;
+  return `${cut.trimEnd()}…`;
 }
 
 function firstJsonObject(text: string): unknown {
@@ -88,8 +104,9 @@ function firstJsonObject(text: string): unknown {
 
 /**
  * The model's answer, or null when it is unusable. Never throws:
- *   - JSON with an overview → it (≤ 800, cut at a sentence) and up to 6 key
- *     points (each ≤ 200, empty and non-string ones dropped);
+ *   - JSON with an overview → it (≤ 800) and up to 6 key points (each ≤ 300),
+ *     each cut at a sentence end or a word boundary; empty and non-string
+ *     points dropped;
  *   - plain text with no JSON at all → the text as the overview, no points;
  *   - empty, JSON with no overview, or JSON we cannot parse → null.
  */

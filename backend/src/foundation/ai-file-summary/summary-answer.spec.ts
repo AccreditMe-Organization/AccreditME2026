@@ -10,8 +10,68 @@ import {
   summaryPrompt,
   summarySystemPrompt,
   textBudget,
+  unitCount,
 } from './summary-answer';
 import { estimateTokens } from './extract/file-text';
+
+describe('ACC-224 — a key point is cut at a boundary, never inside a word', () => {
+  /** The point the model wrote on 13 Oct, which the 200 cap cut after "and". */
+  const FIVE_MOMENTS =
+    'Hands must be cleaned with alcohol gel or soap and water at five moments: before touching a patient, before a clean or aseptic procedure, after body fluid exposure risk, after touching a patient, and after touching patient surroundings.';
+
+  const pointOf = (point: string): string => parseSummaryAnswer(JSON.stringify({ overview: 'An overview.', keyPoints: [point] }))!.keyPoints[0]!;
+
+  it('the cap is 300 (Q3), read here rather than copied', () => {
+    expect(POINT_CAP).toBe(300);
+  });
+
+  it('the 13 Oct point is kept whole', () => {
+    expect(FIVE_MOMENTS.length).toBeGreaterThan(200);
+    expect(pointOf(FIVE_MOMENTS)).toBe(FIVE_MOMENTS);
+  });
+
+  it('a 320-character point with no sentence end is cut at a word boundary, with "…"', () => {
+    const point = Array.from({ length: 40 }, (_, i) => `word${i}x`).join(' ').slice(0, 320);
+    const cut = pointOf(point);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(cut.length).toBeLessThanOrEqual(POINT_CAP + 1);
+    const kept = cut.slice(0, -1);
+    // Every kept word is a whole word of the original.
+    expect(point.startsWith(kept)).toBe(true);
+    expect(point[kept.length]).toBe(' ');
+  });
+
+  it('a long point with a sentence end past half the cap is cut there, with no "…"', () => {
+    const point = `${'A first sentence that runs for a while. '.repeat(6)}And a second part that would not fit at all because it keeps going.`;
+    const cut = pointOf(point);
+    expect(cut.endsWith('.')).toBe(true);
+    expect(cut.length).toBeLessThanOrEqual(POINT_CAP);
+    expect(point.startsWith(cut)).toBe(true);
+  });
+
+  it('an Arabic point is cut at a word boundary too, and a trailing comma is dropped before "…"', () => {
+    const point = Array.from({ length: 60 }, () => 'نظافة، اليدين').join(' ');
+    const cut = pointOf(point);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(cut).not.toMatch(/[،,]…$/);
+    expect(point.startsWith(cut.slice(0, -1))).toBe(true);
+  });
+
+  it('only one unbroken run longer than half the cap is cut hard', () => {
+    expect(pointOf('x'.repeat(400))).toBe(`${'x'.repeat(POINT_CAP)}…`);
+  });
+});
+
+describe('ACC-224 — unitCount, for the AI log\'s description', () => {
+  it('"1 page", not "1 pages"; plurals otherwise', () => {
+    expect(unitCount(1, 'pages')).toBe('1 page');
+    expect(unitCount(12, 'pages')).toBe('12 pages');
+    expect(unitCount(1, 'rows')).toBe('1 row');
+    expect(unitCount(24, 'rows')).toBe('24 rows');
+    expect(unitCount(1, 'text')).toBe('1 byte');
+    expect(unitCount(378, 'text')).toBe('378 bytes');
+  });
+});
 
 describe('the prompt (ACC-193)', () => {
   it('writes in the reader\'s language whatever the file\'s, and marks the file\'s text as data, never instructions', () => {

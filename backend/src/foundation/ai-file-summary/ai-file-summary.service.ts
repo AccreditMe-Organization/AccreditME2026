@@ -11,7 +11,7 @@ import { StoredFileService } from '../file-storage/stored-file.service';
 import { MIN_LETTERS, readFileText, summarizableKind, IFileText, COVERAGE_UNIT } from './extract/file-text';
 import { PdfTextExtractor, PdfUnreadableError, PDF_READ_TIMEOUT_MS } from './extract/pdf-text-extractor';
 import { ExtractionBusyError } from './extract/extraction-slots';
-import { SummaryLanguage, acceptSummaryAnswer, parseSummaryAnswer, summaryPrompt, summarySystemPrompt, textBudget } from './summary-answer';
+import { SummaryLanguage, acceptSummaryAnswer, parseSummaryAnswer, summaryPrompt, summarySystemPrompt, textBudget, unitCount } from './summary-answer';
 import { SummaryFileGoneError, SummaryRefusalException } from './summary-refusal';
 import { IFileSummary, IFileSummaryView } from './interfaces/ai-file-summary.interface';
 
@@ -106,7 +106,7 @@ export class AiFileSummaryService {
       const result = await this.ai.run(
         SUMMARY_FEATURE,
         { organizationId, actorId },
-        { system, prompt, description: `StoredFile ${file.id} summary · ${fileText.unitsRead} ${fileText.unit === 'text' ? 'bytes' : fileText.unit}`, accept: acceptSummaryAnswer },
+        { system, prompt, description: `StoredFile ${file.id} summary · ${unitCount(fileText.unitsRead, fileText.unit)}`, accept: acceptSummaryAnswer },
       );
       if (result.inputTokens > SUMMARY_INPUT_CAP) {
         // §14.2: the estimate let too much through. Counts only; never fails the request.

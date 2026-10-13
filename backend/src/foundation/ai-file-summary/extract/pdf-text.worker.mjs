@@ -11,7 +11,10 @@
 // workerData: { bytes: Uint8Array, maxPages: number, standardFontDataUrl: string }
 // Messages, in order:
 //   { type: 'meta', numPages }
-//   { type: 'page', n, text }      — once per page, n = 1, 2, …, up to maxPages
+//   { type: 'page', n, items }     — once per page, n = 1, 2, …, up to maxPages;
+//                                    items: { s, rtl, x, y, w, size, eol }[]. The text
+//                                    is built on the main thread, in reading order, by
+//                                    pdf-page-text.ts (ACC-224).
 //   { type: 'done' }
 //   { type: 'error', name }        — the PDF could not be read (corrupt, protected, …)
 // The parent may terminate the worker at any point, e.g. when its token budget is spent.
@@ -37,14 +40,14 @@ try {
   for (let n = 1; n <= last; n++) {
     const page = await doc.getPage(n);
     const content = await page.getTextContent();
-    let text = '';
+    const items = [];
     for (const item of content.items) {
       if (!('str' in item)) continue;
-      text += item.str;
-      text += item.hasEOL ? '\n' : ' ';
+      const [, , c, d, x, y] = item.transform;
+      items.push({ s: item.str, rtl: item.dir === 'rtl', x, y, w: item.width, size: Math.hypot(c, d), eol: Boolean(item.hasEOL) });
     }
     page.cleanup();
-    parentPort.postMessage({ type: 'page', n, text });
+    parentPort.postMessage({ type: 'page', n, items });
   }
   parentPort.postMessage({ type: 'done' });
 } catch (error) {
