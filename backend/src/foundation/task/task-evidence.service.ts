@@ -6,6 +6,10 @@ import { StoredFileService } from '../file-storage/stored-file.service';
 import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
 import { TaskService, TaskViewer } from './task.service';
 import { ITaskEvidenceList, ITaskEvidenceView } from './interfaces/task-evidence.interface';
+import { AiFileSummaryService } from '../ai-file-summary/ai-file-summary.service';
+import { SummaryFileGoneError } from '../ai-file-summary/summary-refusal';
+import { SummaryLanguage } from '../ai-file-summary/summary-answer';
+import { IFileSummaryView } from '../ai-file-summary/interfaces/ai-file-summary.interface';
 
 // The same line lockOpenForActiveAssignee() draws: evidence may change on any
 // task that is not closed — an on-hold one included.
@@ -50,6 +54,7 @@ export class TaskEvidenceService {
     private readonly storedFiles: StoredFileService,
     private readonly objectVisibility: ObjectVisibilityService,
     private readonly auditLog: AuditLogService,
+    private readonly summaries: AiFileSummaryService,
   ) {}
 
   async addFile(
@@ -155,7 +160,32 @@ export class TaskEvidenceService {
     return this.storedFiles.openView(file);
   }
 
-  /** The one entitlement and lookup behind both download and view. */
+  /**
+   * ACC-193 — an evidence file's saved AI summary in the reader's language, and
+   * whether Summarize may be offered. EXACTLY the viewer's entitlement and the
+   * same identical 404 (decision 1): fileForViewer(), not a second check.
+   */
+  async getSummary(taskId: string, evidenceId: string, organizationId: string, viewer: TaskViewer, language: SummaryLanguage): Promise<IFileSummaryView> {
+    const file = await this.fileForViewer(taskId, evidenceId, organizationId, viewer);
+    return this.summaries.read(file, organizationId, language);
+  }
+
+  /**
+   * ACC-193 — make the summary (or return the saved one). The viewer's
+   * entitlement first; a file deleted while it was being made is the viewer's
+   * own 404, and nothing is saved (§14.3).
+   */
+  async makeSummary(taskId: string, evidenceId: string, organizationId: string, viewer: TaskViewer, language: SummaryLanguage): Promise<IFileSummaryView> {
+    const file = await this.fileForViewer(taskId, evidenceId, organizationId, viewer);
+    try {
+      return await this.summaries.make(file, organizationId, viewer.id, language);
+    } catch (error) {
+      if (error instanceof SummaryFileGoneError) throw new NotFoundException('Evidence not found');
+      throw error;
+    }
+  }
+
+  /** The one entitlement and lookup behind download, view and the AI summary. */
   private async fileForViewer(taskId: string, evidenceId: string, organizationId: string, viewer: TaskViewer) {
     await this.assertCanSeeEvidence(taskId, organizationId, viewer);
     const evidence = await this.prisma.taskEvidence.findFirst({

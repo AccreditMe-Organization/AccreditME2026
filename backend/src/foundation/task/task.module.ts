@@ -11,6 +11,7 @@ import { TaskRequestService } from './task-request.service';
 import { TaskSlaService } from './task-sla.service';
 import { TaskEvidenceService } from './task-evidence.service';
 import { FileStorageModule } from '../file-storage/file-storage.module';
+import { AiFileSummaryModule } from '../ai-file-summary/ai-file-summary.module';
 import { LookupModule } from '../lookup/lookup.module';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
@@ -32,6 +33,8 @@ import { LookupModule } from '../lookup/lookup.module';
     forwardRef(() => TenantModule),
     // ACC-177 — file evidence stores through StoredFileService.
     FileStorageModule,
+    // ACC-193 — an evidence file's AI summary.
+    AiFileSummaryModule,
     // ACC-208 (B5) — the committee-role catalogue reads LookupService's own
     // resolution (hidden values, label overrides). forwardRef: LookupModule
     // reaches TenantModule, which reaches this module through the workflow engine.

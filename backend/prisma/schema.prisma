@@ -446,6 +446,7 @@ model Organization {
   auditLogs                AuditLog[]
   aiInteractionLogs        AiInteractionLog[]
   aiBriefings              AiBriefing[]
+  aiFileSummaries          AiFileSummary[]
   loginAttempts            LoginAttempt[]
   refreshTokens            RefreshToken[]
   userTransferEvents       UserTransferEvent[] // ACC-46 Section 2.6.f
@@ -596,6 +597,7 @@ model User {
   auditLogs                       AuditLog[]
   aiInteractionLogs               AiInteractionLog[]
   aiBriefings                     AiBriefing[]
+  aiFileSummariesGenerated        AiFileSummary[]            @relation("AiFileSummaryGeneratedBy")
   position                        OrgPosition?               @relation(fields: [positionId], references: [id])
   primaryOrgUnit                  OrgUnit?                   @relation(fields: [primaryOrgUnitId], references: [id])
   actingOrgUnit                   OrgUnit?                   @relation("UserActingOrgUnit", fields: [actingOrgUnitId], references: [id])
@@ -1714,11 +1716,12 @@ model StoredFile {
   msDriveId      String?
   msItemId       String?
 
-  organization Organization  @relation(fields: [organizationId], references: [id])
-  uploadedBy   User          @relation("StoredFileUploadedBy", fields: [uploadedById], references: [id])
-  deletedBy    User?         @relation("StoredFileDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
-  restoredBy   User?         @relation("StoredFileRestoredBy", fields: [restoredById], references: [id], onDelete: SetNull)
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  uploadedBy   User            @relation("StoredFileUploadedBy", fields: [uploadedById], references: [id])
+  deletedBy    User?           @relation("StoredFileDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  restoredBy   User?           @relation("StoredFileRestoredBy", fields: [restoredById], references: [id], onDelete: SetNull)
   taskEvidence TaskEvidence?
+  aiSummaries  AiFileSummary[]
 
   @@unique([organizationId, storageKey])
   @@index([organizationId, deletedAt])
@@ -2042,6 +2045,37 @@ model AiInteractionLog {
   @@index([actorId])
   @@index([feature])
   @@index([createdAt])
+}
+
+// ACC-193 — an AI summary of a stored file, ONE per language, made on request
+// by anyone who may view the file and shown again with no new call. The
+// overview and key points are the model's text about the customer's file, so
+// they live here, in a tenant-owned table, never in AiInteractionLog (ACC-194
+// D5). Deleted with the file's delete (the soft delete, Ahmad, 13 Oct) and
+// again at purge, as a safety net — purge keeps the StoredFile row, so the
+// cascade below covers only a hard delete.
+model AiFileSummary {
+  id              String    @id @default(cuid())
+  organizationId  String
+  storedFileId    String
+  language        String // 'en' | 'ar' — the reader's language when it was made
+  overview        String? // null only while the first claim is in flight
+  keyPoints       Json      @default("[]") // string[]
+  unitsRead       Int? // pages (PDF), data rows (CSV) or characters (TXT) read
+  unitsTotal      Int? // the file's total in the same unit
+  creditCost      Int       @default(0)
+  generatedById   String?
+  generatedAt     DateTime? // when the current summary was made
+  generatingSince DateTime? // the in-flight claim: one run per file and language
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  storedFile   StoredFile   @relation(fields: [storedFileId], references: [id], onDelete: Cascade)
+  generatedBy  User?        @relation("AiFileSummaryGeneratedBy", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@unique([storedFileId, language])
+  @@index([organizationId])
 }
 
 // ACC-198 — a user's latest AI briefing on Home, made on demand by a tenant

@@ -36,6 +36,7 @@ describe('RecycleBinService (ACC-177)', () => {
     storedFile: { findMany: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
     task: { findMany: jest.fn(), findFirst: jest.fn() },
     taskEvidence: { updateMany: jest.fn() },
+    aiFileSummary: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
   (prisma as unknown as Record<string, unknown>)['$transaction'] = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
   const storedFiles = { removeBytes: jest.fn().mockResolvedValue(undefined), reviewWarning: jest.fn().mockResolvedValue(undefined) };
@@ -128,10 +129,18 @@ describe('RecycleBinService (ACC-177)', () => {
       expect(storedFiles.reviewWarning).toHaveBeenCalledWith('org-a');
     });
 
+    it('ACC-193: a safety net — the purge deletes any AI summaries of those files in the same transaction (the daily job purges through here too)', async () => {
+      prisma.storedFile.findMany.mockResolvedValue([file('f1'), file('f2')]);
+      prisma.storedFile.updateMany.mockResolvedValue({ count: 2 });
+      await service.purge('org-a', ['f1', 'f2'], null);
+      expect(prisma.aiFileSummary.deleteMany).toHaveBeenCalledWith({ where: { storedFileId: { in: ['f1', 'f2'] }, organizationId: 'org-a' } });
+    });
+
     it('is all or nothing — one id not in the bin and nothing is purged', async () => {
       prisma.storedFile.findMany.mockResolvedValue([file('f1')]);
       await expect(service.purge('org-a', ['f1', 'f-other'], 'admin-1')).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.storedFile.updateMany).not.toHaveBeenCalled();
+      expect(prisma.aiFileSummary.deleteMany).not.toHaveBeenCalled();
       expect(storedFiles.removeBytes).not.toHaveBeenCalled();
     });
 

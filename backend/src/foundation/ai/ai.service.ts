@@ -22,6 +22,28 @@ export interface AiRunRequest {
    * the log keeps no prompt or answer (ACC-194, D5).
    */
   description: string;
+  /**
+   * ACC-193 (Q3) — opt-in. Called with the answer before anything is logged as
+   * a success; returning false means the answer is UNUSABLE (empty, or cut short
+   * by the output limit), and the gateway treats it exactly like a provider
+   * failure: refunded into the same period, logged at cost 0, refused
+   * AI_PROVIDER_FAILED. A feature that passes nothing is charged for any answer,
+   * as before (the briefing, ACC-198).
+   */
+  accept?: (content: string, truncated: boolean) => boolean;
+}
+
+/** ACC-193 — the caller's accept() refused the answer. Refunded like a provider failure. */
+export class AiUnusableAnswerError extends Error {
+  constructor(
+    readonly contentLength: number,
+    readonly truncated: boolean,
+    readonly inputTokens: number,
+    readonly outputTokens: number,
+  ) {
+    super('The answer was unusable');
+    this.name = 'AiUnusableAnswerError';
+  }
 }
 
 export interface AiRunResult {
@@ -51,7 +73,8 @@ export interface AiRunResult {
  *   5. Call the provider.
  *   6. Success: log with the cost.
  *   7. Failure: refund — only into the period the credits came from — log with
- *      cost 0, refuse AI_PROVIDER_FAILED. A failed call costs nothing.
+ *      cost 0, refuse AI_PROVIDER_FAILED. A failed call costs nothing. An answer
+ *      the caller's opt-in accept() rejects (ACC-193, Q3) is a failure too.
  *
  * The "credits used up" notice (D10) goes to the tenant admins once per credit
  * period, at the first of: a reservation that leaves less than the cheapest
@@ -99,6 +122,9 @@ export class AiService {
         maxTokens: feature.maxTokens,
         effort: feature.effort,
       });
+      if (request.accept && !request.accept(answer.content, answer.truncated)) {
+        throw new AiUnusableAnswerError(answer.content.length, answer.truncated, answer.inputTokens, answer.outputTokens);
+      }
       await this.log({
         organizationId,
         actorId,
@@ -123,7 +149,13 @@ export class AiService {
       };
     } catch (error) {
       const refunded = await this.credits.refund(organizationId, price.creditCost, reserved.periodStart);
-      const why = error instanceof AiProviderCallError ? `${error.status ?? 'no response'} ${error.kind}` : (error as Error).name;
+      const unusable = error instanceof AiUnusableAnswerError ? error : null;
+      const why =
+        error instanceof AiProviderCallError
+          ? `${error.status ?? 'no response'} ${error.kind}`
+          : unusable
+            ? `unusable answer${unusable.truncated ? ', stopped at the output limit' : ''}`
+            : (error as Error).name;
       this.logger.warn(
         `AI call failed for org ${organizationId}, feature ${featureKey} (${why}); ${refunded ? 'credits refunded' : 'period already renewed, nothing to refund'}.`,
       );
@@ -133,13 +165,14 @@ export class AiService {
         model,
         featureKey,
         promptSummary: `${featureKey} · ${request.description} · ${request.prompt.length} characters in`,
-        responseSummary: null,
+        // Counts only, as on a success: never the answer's text (D5).
+        responseSummary: unusable ? `unusable: ${unusable.contentLength} characters out${unusable.truncated ? ' (stopped at the output limit)' : ''}` : null,
         durationMs: Date.now() - startedAt,
         success: false,
         creditCost: 0,
         tier: feature.tier,
-        inputTokens: null,
-        outputTokens: null,
+        inputTokens: unusable ? unusable.inputTokens : null,
+        outputTokens: unusable ? unusable.outputTokens : null,
       });
       throw new AiRefusalException('AI_PROVIDER_FAILED');
     }

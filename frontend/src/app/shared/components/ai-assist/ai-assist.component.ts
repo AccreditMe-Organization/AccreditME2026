@@ -9,6 +9,7 @@ import {
   Injector,
   input,
   output,
+  signal,
   viewChild,
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
@@ -40,6 +41,10 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
  *     again.
  *   - ANNOUNCED: results and refusals arrive in a polite live region, and
  *     focus moves to the result.
+ *   - COLLAPSIBLE (opt-in, ACC-193 Q5): `collapsible` puts a ▴ / ▾ control on
+ *     the tag line that folds the result to that line; `clamped` opens it at
+ *     two lines with "Show all" (a saved result on a second visit). Off by
+ *     default, so the briefing is unchanged.
  *
  * It makes NO request. The host calls its own endpoint and sets `state`; the
  * model is reached only through the backend's AiService (check:ai-gateway).
@@ -89,11 +94,38 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         }
         @case ('result') {
           <section #resultRegion class="am-ai__result" tabindex="-1" [attr.aria-label]="tag() || ('ai.assist.resultLabel' | translate)">
-            @if (tag()) {
-              <p class="am-ai__tag"><span aria-hidden="true">✦</span> {{ tag() }}</p>
+            @if (tag() || collapsible()) {
+              <div class="am-ai__tag-row">
+                @if (tag()) {
+                  <p class="am-ai__tag"><span aria-hidden="true">✦</span> {{ tag() }}</p>
+                }
+                @if (collapsible()) {
+                  <button
+                    type="button"
+                    class="am-ai__fold"
+                    [attr.aria-expanded]="!folded()"
+                    [attr.aria-controls]="bodyId"
+                    [attr.aria-label]="folded() ? expandLabel() || ('ai.assist.expand' | translate) : collapseLabel() || ('ai.assist.collapse' | translate)"
+                    [attr.title]="folded() ? expandLabel() || ('ai.assist.expand' | translate) : collapseLabel() || ('ai.assist.collapse' | translate)"
+                    (click)="folded.set(!folded())"
+                  >
+                    <span aria-hidden="true">{{ folded() ? '▾' : '▴' }}</span>
+                  </button>
+                }
+              </div>
             }
-            @if (resultTemplate(); as tpl) {
-              <ng-container [ngTemplateOutlet]="tpl" />
+            @if (tagNote() && !folded()) {
+              <p class="am-ai__tag-note">{{ tagNote() }}</p>
+            }
+            <div class="am-ai__body" [id]="bodyId" [hidden]="folded()" [class.am-ai__body--clamped]="clamped() && !shownAll()">
+              @if (resultTemplate(); as tpl) {
+                <ng-container [ngTemplateOutlet]="tpl" />
+              }
+            </div>
+            @if (clamped() && !shownAll() && !folded()) {
+              <button type="button" class="am-ai__text-button am-ai__show-all" [attr.aria-controls]="bodyId" (click)="shownAll.set(true)">
+                {{ 'ai.assist.showAll' | translate }}
+              </button>
             }
             @if (accept()) {
               <div class="am-ai__actions">
@@ -203,6 +235,44 @@ export type AiAssistPlacement = 'card' | 'inline' | 'header';
         font-size: var(--am-type-meta-size);
         font-weight: 600;
         color: var(--am-primary-700);
+      }
+      .am-ai__tag-note {
+        margin: 0 0 var(--am-space-6);
+        font-size: var(--am-type-meta-size);
+        color: var(--am-ink-500);
+      }
+      .am-ai__tag-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--am-space-8);
+      }
+      .am-ai__fold {
+        flex: none;
+        font: inherit;
+        font-size: var(--am-type-meta-size);
+        line-height: 1;
+        min-width: 28px;
+        min-height: 28px;
+        border-radius: var(--am-radius-button);
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--am-primary-700);
+        cursor: pointer;
+      }
+      .am-ai__fold:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: var(--am-focus-ring-offset);
+      }
+      /* Two lines of body text, in every supported browser (Firefox 115 ESR
+         included): a max-height in the body's own line-height token. */
+      .am-ai__body--clamped {
+        max-height: calc(var(--am-type-body-line) * 2);
+        overflow: hidden;
+      }
+      .am-ai__show-all {
+        padding-inline: 0;
+        margin-block-start: var(--am-space-4);
       }
       .am-ai__working-text {
         margin: 0;
@@ -314,6 +384,19 @@ export class AiAssistComponent {
   readonly resultTemplate = input<TemplateRef<unknown> | null>(null);
   /** True when a result already exists (even after a later refusal), so the trigger reads againLabel. */
   readonly hasResult = input(false);
+  /** ACC-193 (Q5) — opt-in: a ▴ / ▾ on the tag line folds the result to that line. */
+  readonly collapsible = input(false);
+  /** ACC-193 — opt-in: the result opens at two lines with "Show all" (a saved result, second visit). */
+  readonly clamped = input(false);
+  /**
+   * ACC-193 — opt-in: a quiet line under the tag ("Summary made 9 Oct 2026 ·
+   * saved · From the first 100 pages of 412."), outside the clamp, so it stays
+   * readable when the result opens at two lines.
+   */
+  readonly tagNote = input('');
+  /** The fold control's accessible names ("Collapse summary"); generic words when empty. */
+  readonly collapseLabel = input('');
+  readonly expandLabel = input('');
 
   readonly trigger = output<void>();
   readonly cancel = output<void>();
@@ -323,6 +406,13 @@ export class AiAssistComponent {
   readonly discarded = output<void>();
 
   private readonly resultRegion = viewChild<ElementRef<HTMLElement>>('resultRegion');
+
+  private static nextId = 0;
+  readonly bodyId = `am-ai-body-${AiAssistComponent.nextId++}`;
+  /** Folded to the tag line (collapsible only). */
+  readonly folded = signal(false);
+  /** "Show all" pressed while clamped. */
+  readonly shownAll = signal(false);
 
   readonly triggerWords = computed(() => ((this.state() === 'result' || this.hasResult()) && this.againLabel() ? this.againLabel() : this.triggerLabel()));
 

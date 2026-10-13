@@ -1415,6 +1415,32 @@
       "pages": {
         "one": "{{count}} page",
         "other": "{{count}} pages"
+      },
+      "summary": {
+        "readingPages": {
+          "one": "Reading {{count}} page…",
+          "other": "Reading {{count}} pages…"
+        },
+        "readingFirstPages": {
+          "one": "Reading the first page…",
+          "other": "Reading the first {{count}} pages…"
+        },
+        "readingRows": {
+          "one": "Reading {{count}} row…",
+          "other": "Reading {{count}} rows…"
+        },
+        "readingFirstRows": {
+          "one": "Reading the first row…",
+          "other": "Reading the first {{count}} rows…"
+        },
+        "fromPages": {
+          "one": "From the first page of {{total}}.",
+          "other": "From the first {{count}} pages of {{total}}."
+        },
+        "fromRows": {
+          "one": "From the first row of {{total}}.",
+          "other": "From the first {{count}} rows of {{total}}."
+        }
       }
     },
     "workflow": {
@@ -1601,6 +1627,22 @@
       },
       "from": {
         "taskEvidence": "From a task's evidence"
+      },
+      "summary": {
+        "summarize": "Summarize",
+        "summarizing": "Summarizing…",
+        "readingFile": "Reading the file…",
+        "tag": "AI summary · may miss or misread details · check the file",
+        "made": "Summary made {{date}}",
+        "madeSaved": "Summary made {{date}} · saved",
+        "fromText": "From the beginning of the file; the rest was too long to read.",
+        "collapse": "Collapse summary",
+        "expand": "Expand summary",
+        "keyPoints": "Key points",
+        "noText": "This file has no readable text to summarize.",
+        "unreadable": "This file couldn't be read for a summary.",
+        "busy": "Summaries are busy right now. Try again in a moment.",
+        "inProgress": "A summary of this file is being made. Check again in a minute."
       }
     }
   },
@@ -1698,7 +1740,10 @@
       "resultLabel": "AI result",
       "accept": "Accept",
       "edit": "Edit",
-      "discard": "Discard"
+      "discard": "Discard",
+      "showAll": "Show all",
+      "collapse": "Collapse",
+      "expand": "Expand"
     }
   },
   "recordPanel": {

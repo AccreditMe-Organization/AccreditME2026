@@ -1,4 +1,5 @@
 import { Injectable, inject } from '@angular/core';
+import { IFileSummaryView, SummaryLanguage } from '../../../shared/files/viewer/file-summary.model';
 import { HttpClient, HttpEvent, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -534,6 +535,16 @@ export class TaskService {
   /** ACC-189 — the in-app viewer's mint: the download's entitlement, 409 for a type it does not render. */
   viewEvidence(taskId: string, evidenceId: string): Observable<IFileDownloadDto> {
     return this.http.get<IFileDownloadDto>(`${this.base}/${taskId}/evidence/${evidenceId}/view`);
+  }
+
+  /** ACC-193 — an evidence file's saved AI summary in this language, and whether Summarize may be offered. */
+  getEvidenceSummary(taskId: string, evidenceId: string, language: SummaryLanguage): Observable<IFileSummaryView> {
+    return this.http.get<IFileSummaryView>(`${this.base}/${taskId}/evidence/${evidenceId}/summary`, { params: { language } });
+  }
+
+  /** ACC-193 — make it (or get the saved one): the view's entitlement, 15 credits, never charged for a refusal. */
+  makeEvidenceSummary(taskId: string, evidenceId: string, language: SummaryLanguage): Observable<IFileSummaryView> {
+    return this.http.post<IFileSummaryView>(`${this.base}/${taskId}/evidence/${evidenceId}/summary`, { language });
   }
 
   removeEvidence(taskId: string, evidenceId: string): Observable<void> {
