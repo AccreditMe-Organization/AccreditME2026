@@ -44,9 +44,11 @@ const LANGUAGE_OPTIONS = [
  *
  * ## The language
  *
- * Saving your OWN language switches the session to it at once (ACC-19). An
- * administrator setting someone else's never changes what the administrator
- * sees.
+ * Sent only when it was changed: a person with no saved language follows the
+ * organisation's, and saving a name must not pin them to whatever the picker
+ * happened to show. Saving your OWN language switches the session to it at
+ * once (ACC-19); an administrator setting someone else's never changes what
+ * the administrator sees.
  *
  * ## Density
  *
@@ -386,10 +388,15 @@ export class EditProfileDialogComponent {
       return;
     }
     const value = this.form.getRawValue();
-    const dto: UpdateUserProfileDto = {
-      name: value.name!.trim(),
-      language: value.language ?? undefined,
-    };
+    const dto: UpdateUserProfileDto = { name: value.name!.trim() };
+    // The language only when it was CHANGED. A person with no saved language
+    // follows the organisation's (LanguageService: user → organisation →
+    // 'en'), and the picker can only show one of the two options — so sending
+    // what it shows would pin them to English on an unrelated name edit. The
+    // old profile form did exactly that.
+    if (this.form.controls.language.dirty) {
+      dto.language = value.language ?? undefined;
+    }
     if (this.canEditPlacement()) {
       // As the profile page sent them (D5): an empty choice means unchanged.
       dto.positionId = value.positionId ?? undefined;

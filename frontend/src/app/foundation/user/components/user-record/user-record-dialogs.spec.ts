@@ -215,7 +215,26 @@ describe('User record dialogs (ACC-120 slice 5)', () => {
       open('profile');
       click('[data-ep-save]');
       const body = patchBody();
-      expect(Object.keys(body).sort()).toEqual(['language', 'name']);
+      expect(Object.keys(body).sort()).toEqual(['name']);
+    });
+
+    // Found in the browser pass: the old form sent the picker's language on
+    // every save, so editing a name pinned someone with no saved language
+    // (who follows the organisation's) to English.
+    it('an unchanged language is not sent, so no saved preference is invented', () => {
+      open('profile', (h) => h.user.set({ ...RECORD, language: null }));
+      type('#ep-name', 'Dr. Yasser Al-Amri');
+      click('[data-ep-save]');
+      expect(patchBody()).toEqual({ name: 'Dr. Yasser Al-Amri' });
+    });
+
+    it('a changed language is sent', () => {
+      open('profile', (h) => h.user.set({ ...RECORD, language: null }));
+      const dialog = fixture.debugElement.children[0].componentInstance as EditProfileDialogComponent;
+      dialog.form.controls.language.setValue('ar');
+      dialog.form.controls.language.markAsDirty();
+      click('[data-ep-save]');
+      expect(patchBody()).toEqual({ name: 'Dr. Yasser Al-Amri', language: 'ar' });
     });
   });
 
