@@ -58,6 +58,39 @@ a sidebar link to a screen not yet loaded does nothing, until a hard refresh.
 5. Revert the trivial change. Nothing is deployed, and the deployed app and API
    are not used.
 
+## What the reproduction showed (13 Oct, local)
+
+Hessa on `al-nakheel.localhost`, staying on Home; the Roles lazy route changed
+trivially and rebuilt in place (one chunk gone, one new); then the Roles
+sidebar link clicked in the old tab.
+
+| | Before the fix | After the fix |
+|---|---|---|
+| The old chunk's address | 200, `text/html` (the page), `immutable` for a year | 404 |
+| Full page loads after the click | 0 | 1, of `/roles` |
+| Where the tab ends up | still Home | Roles ("Roles & Permissions") |
+| The page request's cache | — | `public, max-age=0, must-revalidate` |
+
+- Before, the console read "Failed to fetch dynamically imported module" and
+  nothing else happened.
+- The builds used the development configuration (so the API is the relative
+  `/api/v1`: the local backend only) with `--output-hashing all`, because
+  production hashes every file name. With unhashed names the reloaded page
+  reused its cached `main.js` under the year-long rule — a test-setup artifact,
+  not a production case.
+- The test server presented the page's origin on the dev port (4200), because
+  the backend holds a local session to that port. Nothing in the backend
+  changed.
+- The trivial change was reverted. Nothing was deployed.
+
+## Open, not decided
+
+The year-long cache rule for `.js` and `.css` matches by path, so a 404 for a
+missing chunk may carry it too. That name is a content hash: it returns only if
+a later build reproduces the identical chunk (a straight revert), and only a
+browser that asked for it while it was missing would hold the 404. Not verified
+on Vercel itself, since nothing was deployed for this.
+
 ## Tests
 
 - Specs: a chunk failure reloads once, to the target URL; a repeat within the
