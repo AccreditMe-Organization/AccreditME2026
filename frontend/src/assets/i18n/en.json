@@ -1656,6 +1656,16 @@
       "featureNotAvailable": "This AI feature isn't available for your organization.",
       "creditsUsedUp": "Your organization has used all its AI credits for this period. They renew on {{date}}.",
       "unavailable": "AI isn't available right now. Try again later."
+    },
+    "assist": {
+      "working": "Working…",
+      "cancel": "Cancel",
+      "retry": "Try again",
+      "ready": "AI result ready",
+      "resultLabel": "AI result",
+      "accept": "Accept",
+      "edit": "Edit",
+      "discard": "Discard"
     }
   }
 }
