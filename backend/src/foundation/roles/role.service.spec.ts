@@ -1081,14 +1081,21 @@ describe('RoleService', () => {
       expect(mockPrisma.rolePermission.deleteMany).not.toHaveBeenCalled();
     });
 
-    it('leaves the Platform Administrator role editable in the PLATFORM organisation', async () => {
+    it('refuses ANY save on the Platform Administrator role in the PLATFORM organisation too (CC-93)', async () => {
+      // Dropping platform:admin here would leave nobody able to pass
+      // PlatformGuard, so the role is frozen everywhere, not only in tenants.
       mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });
       mockPrisma.role.findFirst.mockResolvedValue(makeRole({ key: 'PLATFORM_ADMIN', isSystem: true }));
       const state = stageRolePermissions(['platform:admin']);
 
-      await service.assignPermissions('role-1', { permissionKeys: ['platform:admin', 'users:view'] }, ORG_A, ACTOR);
+      const code = await codeOf(
+        service.assignPermissions('role-1', { permissionKeys: ['users:view'] }, ORG_A, ACTOR),
+      );
 
-      expect(state.held()).toEqual(['platform:admin', 'users:view']);
+      expect(code).toBe('PLATFORM_ROLE_NOT_EDITABLE');
+      expect(state.held()).toEqual(['platform:admin']);
+      expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
     });
 
     it('inside a TENANT a held in-use platform key is kept, unticked or sent back', async () => {

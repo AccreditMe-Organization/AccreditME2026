@@ -313,12 +313,17 @@ elsewhere.**
      is 404, before anything is locked or written.
   2. **`TENANT_ADMIN` is refused** (409, unchanged — the root role's set is
      frozen, see the Permission System section of CLAUDE.md).
-  3. **Inside a tenant, `PLATFORM_ADMIN` is refused the same way** (409
-     `PLATFORM_ROLE_NOT_EDITABLE`). The role is seeded into every tenant
-     with `platform:admin` and `platform:impersonate`, inert there because
-     `PlatformGuard` also needs `isPlatformOrg`; those rows are KEPT by
-     design for now, and removing them is tracked on ACC-221. In the
-     platform organisation it stays editable.
+  3. **`PLATFORM_ADMIN` is refused the same way, in EVERY organisation**
+     (409 `PLATFORM_ROLE_NOT_EDITABLE`; CC-93 widened it from tenants
+     only). In the platform organisation it is what `PlatformGuard` reads,
+     and a save dropping `platform:admin` would leave nobody able to reach
+     the platform screens — the tenant-administrator invariant excludes the
+     platform organisation, so nothing else would stop it. Inside a tenant
+     it is seeded with `platform:admin` and `platform:impersonate`, inert
+     there because `PlatformGuard` also needs `isPlatformOrg`; those rows
+     are KEPT by design for now, and removing them is tracked on ACC-221.
+     Every other platform-org role is editable, platform keys included
+     (step 7).
   4. Inside one transaction: **`SELECT … FOR UPDATE` on the Role row**,
      scoped by `id` and `organizationId` (the `TaskService.lockTaskRow()`
      shape), then the current set is read.

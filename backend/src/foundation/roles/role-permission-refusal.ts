@@ -9,7 +9,7 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 
 /** The role's set changed since the caller loaded it (D4). */
 export const ROLE_PERMISSIONS_CHANGED = 'ROLE_PERMISSIONS_CHANGED';
-/** The Platform Administrator role cannot be edited inside a tenant (R1c). */
+/** The Platform Administrator role's set is frozen in every organisation (R1c, CC-93). */
 export const PLATFORM_ROLE_NOT_EDITABLE = 'PLATFORM_ROLE_NOT_EDITABLE';
 /** A tenant role may not gain a platform:* key (R1). */
 export const PLATFORM_PERMISSION_NOT_ALLOWED = 'PLATFORM_PERMISSION_NOT_ALLOWED';
@@ -33,7 +33,7 @@ export class PlatformRoleNotEditableException extends ConflictException {
   constructor() {
     super({
       statusCode: 409,
-      message: 'The Platform Administrator role cannot be changed inside an organisation.',
+      message: 'The Platform Administrator role has a fixed permission set and cannot be changed.',
       error: 'Conflict',
       code: PLATFORM_ROLE_NOT_EDITABLE,
     });

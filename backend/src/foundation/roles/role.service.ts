@@ -506,18 +506,22 @@ export class RoleService {
       );
     }
 
-    // ACC-120 slice 5 (R1c) — the Platform Administrator role, inside a tenant,
-    // is not edited at all: it is seeded into every organisation and means
-    // something only in the platform organisation, where PlatformGuard can pass.
-    // Refused the way the root role is, before anything is read or locked.
+    // ACC-120 slice 5 (R1c, CC-93) — the Platform Administrator role's set is
+    // FROZEN IN EVERY ORGANISATION, refused the way the root role is, before
+    // anything is read or locked. Inside a tenant it means nothing (PlatformGuard
+    // also needs isPlatformOrg). In the platform organisation it is what
+    // PlatformGuard reads: a save that dropped platform:admin would leave nobody
+    // able to reach the platform screens, and no holder invariant covers the
+    // platform organisation. Every OTHER platform-org role stays editable (F2).
+    if (role.key === PLATFORM_ADMIN_KEY) {
+      throw new PlatformRoleNotEditableException();
+    }
+
     const org = await this.prisma.organization.findUnique({
       where: { id: organizationId },
       select: { isPlatformOrg: true },
     });
     const isTenant = !org?.isPlatformOrg;
-    if (isTenant && role.key === PLATFORM_ADMIN_KEY) {
-      throw new PlatformRoleNotEditableException();
-    }
 
     const requested = [...new Set(dto.permissionKeys)];
     // Unknown keys are a 404 before anything is locked, exactly as before.

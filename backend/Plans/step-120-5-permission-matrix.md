@@ -108,9 +108,13 @@ product order, new modules appended.
   `PLATFORM_PERMISSION_NOT_ALLOWED`.
 - `POST users/:userId/roles` refuses the Platform Administrator role inside a
   tenant: 400 `PLATFORM_ROLE_NOT_ASSIGNABLE`.
-- **R1c** — inside a tenant, any permission save on the Platform
-  Administrator role is refused with 409 `PLATFORM_ROLE_NOT_EDITABLE`, the
-  same way the root role is.
+- **R1c** — any permission save on the Platform Administrator role is
+  refused with 409 `PLATFORM_ROLE_NOT_EDITABLE`, the same way the root role
+  is. **In EVERY organisation, the platform organisation included** (CC-93):
+  there the role is what PlatformGuard reads, and a save that dropped
+  `platform:admin` would leave nobody able to reach the platform screens — no
+  holder invariant covers the platform organisation. Inside a tenant the role
+  is inert, so freezing it costs nothing there either.
 
 **The seeded Platform Administrator role keeps its two platform keys in every
 tenant — by design, for now** (CC-91a). The R1 SELECT (13 Oct) found exactly
@@ -142,7 +146,8 @@ organisation). Removing them is tracked on **ACC-221**.
   refused-if-gained applies to platform keys INSIDE A TENANT only. Not-in-use
   keys follow R2 everywhere — which includes `platform:impersonate`, itself on
   the list, so even the platform organisation keeps it as held and cannot give
-  it newly.
+  it newly. F2 applies to every platform-org role EXCEPT Platform
+  Administrator, which R1c freezes everywhere (CC-93).
 - The rule lives in ONE file, `foundation/roles/permission-grantability.ts`,
   read by the role save, `createRole()` and the transition writes (F1).
 
