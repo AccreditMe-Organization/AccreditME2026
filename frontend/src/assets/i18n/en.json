@@ -1787,7 +1787,9 @@
     "editProfileDialog": {
       "nameRequired": "Enter a name.",
       "placement": "Placement",
-      "stepProfile": "Profile"
+      "stepProfile": "Profile",
+      "useTransfer": "To move this person to another unit or position, use Transfer.",
+      "useTransferRefused": "This person's unit or position can only be changed with Transfer. Nothing was saved."
     },
     "outOfOfficeDialog": {
       "hint": "While these dates are set, work a workflow sends to this person goes to the cover person instead.",

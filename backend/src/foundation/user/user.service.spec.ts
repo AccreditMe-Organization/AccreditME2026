@@ -2380,6 +2380,175 @@ describe('UserService', () => {
     });
   });
 
+  // ACC-222 — once a person is ACTIVE and has a primary unit, their unit or
+  // position changes only through Transfer.
+  describe('updateProfile — a placed person moves only through Transfer (ACC-222)', () => {
+    const PLACED = {
+      id: 'user-1',
+      organizationId: ORG_A,
+      name: 'Placed Person',
+      status: 'ACTIVE',
+      positionId: 'pos-1',
+      primaryOrgUnitId: 'unit-1',
+      managerId: null,
+      actingOrgUnitId: null,
+      actingOrgUnitUntil: null,
+    };
+    const ADMIN = ['users:manage'];
+    const refusalOf = async (p: Promise<unknown>): Promise<{ code?: string; fields?: string[]; statusCode?: number }> => {
+      try {
+        await p;
+        return {};
+      } catch (e) {
+        return (e as { getResponse?: () => { code?: string; fields?: string[]; statusCode?: number } }).getResponse?.() ?? {};
+      }
+    };
+    const positionAssignable = (): void => {
+      mockPrisma.orgPosition.findFirst.mockResolvedValueOnce({
+        id: 'pos-x',
+        isSingleAssignee: false,
+        isUnitHeadPosition: false,
+        isActive: true,
+      });
+    };
+
+    it('refuses a change of UNIT with 409 USE_TRANSFER, writing nothing', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(PLACED);
+
+      const r = await refusalOf(
+        service.updateProfile('user-1', { primaryOrgUnitId: 'unit-2' }, ORG_A, 'admin-1', ADMIN),
+      );
+
+      expect(r.statusCode).toBe(409);
+      expect(r.code).toBe('USE_TRANSFER');
+      expect(r.fields).toEqual(['primaryOrgUnitId']);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+
+    it('refuses a change of POSITION, before the position is even looked up', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(PLACED);
+
+      const r = await refusalOf(service.updateProfile('user-1', { positionId: 'pos-2' }, ORG_A, 'admin-1', ADMIN));
+
+      expect(r.code).toBe('USE_TRANSFER');
+      expect(r.fields).toEqual(['positionId']);
+      expect(mockPrisma.orgPosition.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a change of BOTH, naming both', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(PLACED);
+
+      const r = await refusalOf(
+        service.updateProfile('user-1', { positionId: 'pos-2', primaryOrgUnitId: 'unit-2' }, ORG_A, 'admin-1', ADMIN),
+      );
+
+      expect(r.code).toBe('USE_TRANSFER');
+      expect(r.fields).toEqual(['positionId', 'primaryOrgUnitId']);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('sending the CURRENT unit and position back is not a change, and saves', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(PLACED);
+      mockPrisma.user.update.mockResolvedValue({ ...PLACED, name: 'Renamed' });
+      positionAssignable();
+
+      await service.updateProfile(
+        'user-1',
+        { name: 'Renamed', positionId: 'pos-1', primaryOrgUnitId: 'unit-1' },
+        ORG_A,
+        'admin-1',
+        ADMIN,
+      );
+
+      const call = mockPrisma.user.update.mock.calls[0][0];
+      expect(call.data.name).toBe('Renamed');
+      expect(call.data.positionId).toBe('pos-1');
+      expect(call.data.primaryOrgUnitId).toBe('unit-1');
+    });
+
+    it('still saves the MANAGER and the ACTING unit of a placed person', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(PLACED);
+      mockPrisma.user.update.mockResolvedValue(PLACED);
+
+      await service.updateProfile(
+        'user-1',
+        { managerId: 'mgr-1', actingOrgUnitId: 'unit-3', actingOrgUnitUntil: '2026-11-01T00:00:00.000Z' },
+        ORG_A,
+        'admin-1',
+        ADMIN,
+      );
+
+      const call = mockPrisma.user.update.mock.calls[0][0];
+      expect(call.data.managerId).toBe('mgr-1');
+      expect(call.data.actingOrgUnitId).toBe('unit-3');
+    });
+
+    it('still places an INVITED person here, unit and position both', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...PLACED, status: 'INVITED' });
+      mockPrisma.user.update.mockResolvedValue(PLACED);
+      positionAssignable();
+
+      await service.updateProfile(
+        'user-1',
+        { positionId: 'pos-2', primaryOrgUnitId: 'unit-2' },
+        ORG_A,
+        'admin-1',
+        ADMIN,
+      );
+
+      const call = mockPrisma.user.update.mock.calls[0][0];
+      expect(call.data.positionId).toBe('pos-2');
+      expect(call.data.primaryOrgUnitId).toBe('unit-2');
+    });
+
+    it('still places an ACTIVE person who has NO unit yet (their first placement)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue({ ...PLACED, primaryOrgUnitId: null });
+      mockPrisma.user.update.mockResolvedValue(PLACED);
+      positionAssignable();
+
+      await service.updateProfile(
+        'user-1',
+        { positionId: 'pos-2', primaryOrgUnitId: 'unit-2' },
+        ORG_A,
+        'admin-1',
+        ADMIN,
+      );
+
+      const call = mockPrisma.user.update.mock.calls[0][0];
+      expect(call.data.primaryOrgUnitId).toBe('unit-2');
+      expect(call.data.positionId).toBe('pos-2');
+    });
+
+    it('a self-edit without users:manage is unaffected: placement is dropped, not refused', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(PLACED);
+      mockPrisma.user.update.mockResolvedValue(PLACED);
+
+      await service.updateProfile('user-1', { name: 'Me', primaryOrgUnitId: 'unit-2' }, ORG_A, 'user-1', []);
+
+      const call = mockPrisma.user.update.mock.calls[0][0];
+      expect(call.data).not.toHaveProperty('primaryOrgUnitId');
+    });
+
+    itEnforcesTenantIsolation('updateProfile: a person in another tenant is 404 and nothing is written', async () => {
+      // The person is read by id AND organisation; from ORG_B the ORG_A person
+      // does not exist, so neither the rule nor the write is reached.
+      mockPrisma.user.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(where.organizationId === ORG_A ? PLACED : null),
+      );
+
+      await expect(
+        service.updateProfile('user-1', { primaryOrgUnitId: 'unit-2' }, ORG_B, 'admin-b', ADMIN),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'user-1', organizationId: ORG_B }) }),
+      );
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+      expect(mockAuditLog.log).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateProfile', () => {
     const EXISTING = { id: 'user-1', organizationId: ORG_A, name: 'Old Name' };
 
