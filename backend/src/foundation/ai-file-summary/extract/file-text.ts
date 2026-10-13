@@ -99,18 +99,26 @@ export interface IFileText {
  * Reads what the summary will send, never more than `budget` tokens by
  * estimateTokens(). Throws PdfUnreadableError / ExtractionBusyError (PDF only).
  */
-export async function readFileText(kind: SummarizableKind, bytes: Uint8Array, budget: number, pdf: PdfTextExtractor): Promise<IFileText> {
-  if (kind === 'pdf') return readPdf(bytes, budget, pdf);
+export async function readFileText(
+  kind: SummarizableKind,
+  bytes: Uint8Array,
+  budget: number,
+  pdf: PdfTextExtractor,
+  /** One deadline for the slot wait and the PDF read (§14.1). */
+  deadline?: number,
+): Promise<IFileText> {
+  if (kind === 'pdf') return readPdf(bytes, budget, pdf, deadline);
   if (kind === 'csv') return readCsv(bytes, budget);
   return readTxt(bytes, budget);
 }
 
-async function readPdf(bytes: Uint8Array, budget: number, pdf: PdfTextExtractor): Promise<IFileText> {
+async function readPdf(bytes: Uint8Array, budget: number, pdf: PdfTextExtractor, deadline?: number): Promise<IFileText> {
   const parts: string[] = [];
   let used = 0;
   let pagesRead = 0;
   const { numPages } = await pdf.read(bytes, {
     maxPages: SUMMARY_PAGE_CAP,
+    deadline,
     onPage: (n, raw) => {
       const page = `[page ${n}]\n${normalizeText(raw)}`;
       const cost = estimateTokens(page) + 1;

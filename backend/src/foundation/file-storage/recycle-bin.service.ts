@@ -148,6 +148,11 @@ export class RecycleBinService {
         data: { purgedAt: new Date() },
       });
       if (updated.count !== ids.length) throw new NotFoundException('File not found');
+      // ACC-193 — a safety net: a file's AI summaries were deleted with the
+      // file's delete (StoredFileService.softDeleteInTx), so this should find
+      // none. Purge keeps the StoredFile row, so the foreign-key cascade alone
+      // would never fire.
+      await tx.aiFileSummary.deleteMany({ where: { storedFileId: { in: ids }, organizationId } });
       return found;
     });
 

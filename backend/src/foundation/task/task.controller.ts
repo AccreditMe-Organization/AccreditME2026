@@ -28,6 +28,8 @@ import { RejectTaskDto } from './dto/reject-task.dto';
 import { AddTaskEvidenceDto } from './dto/add-task-evidence.dto';
 import { GetMyTasksQueryDto } from './dto/get-my-tasks-query.dto';
 import { ReleaseTaskDto } from './dto/release-task.dto';
+import { EvidenceSummaryQueryDto, MakeEvidenceSummaryDto } from './dto/evidence-summary.dto';
+import { IFileSummaryView } from '../ai-file-summary/interfaces/ai-file-summary.interface';
 import { CancelTaskDto, ReopenTaskDto, UpdateTaskDto } from './dto/update-task.dto';
 import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './dto/task-request.dto';
 import { TaskRequestService } from './task-request.service';
@@ -549,6 +551,34 @@ export class TaskController {
     @CurrentUserPermissions() actorPermissions: string[],
   ): Promise<IFileDownload> {
     return this.evidence.openView(id, evidenceId, tenantId, viewer(userId, actorPermissions));
+  }
+
+  // ACC-193 — the AI summary of an evidence file: exactly the view's
+  // entitlement (checked in the service), so no @Permissions, like /view.
+  // GET never calls the model; POST makes it, or returns the saved one.
+  @Get(':id/evidence/:evidenceId/summary')
+  getEvidenceSummary(
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @Query() query: EvidenceSummaryQueryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IFileSummaryView> {
+    return this.evidence.getSummary(id, evidenceId, tenantId, viewer(userId, actorPermissions), query.language);
+  }
+
+  @Post(':id/evidence/:evidenceId/summary')
+  @HttpCode(HttpStatus.OK)
+  makeEvidenceSummary(
+    @Param('id') id: string,
+    @Param('evidenceId') evidenceId: string,
+    @Body() dto: MakeEvidenceSummaryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() actorPermissions: string[],
+  ): Promise<IFileSummaryView> {
+    return this.evidence.makeSummary(id, evidenceId, tenantId, viewer(userId, actorPermissions), dto.language);
   }
 
   @Delete(':id/evidence/:evidenceId')

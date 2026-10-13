@@ -107,6 +107,8 @@ describe('TaskController', () => {
     download: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '2026-10-07T10:15:00.000Z' }),
     openView: jest.fn().mockResolvedValue({ url: 'https://signed', viaApi: false, expiresAt: '2026-10-07T10:15:00.000Z' }),
     remove: jest.fn().mockResolvedValue(undefined),
+    getSummary: jest.fn().mockResolvedValue({ available: true, inProgress: false, summary: null }),
+    makeSummary: jest.fn().mockResolvedValue({ available: true, inProgress: false, summary: null }),
   };
 
   const requests = {
@@ -335,7 +337,7 @@ describe('TaskController', () => {
 
   // ACC-177 — the evidence routes carry no route permission: who may is
   // decided from the task row, exactly as addEvidence() is.
-  it.each(['addFileEvidence', 'listEvidence', 'downloadEvidence', 'viewEvidence', 'removeEvidence'] as const)(
+  it.each(['addFileEvidence', 'listEvidence', 'downloadEvidence', 'viewEvidence', 'removeEvidence', 'getEvidenceSummary', 'makeEvidenceSummary'] as const)(
     '%s requires NO route permission — the service decides from the task',
     (method) => {
       const required = new Reflector().get<string[] | undefined>(PERMISSIONS_KEY, TaskController.prototype[method]);
@@ -360,6 +362,12 @@ describe('TaskController', () => {
 
     await controller.removeEvidence('task-1', 'ev-1', TENANT_ID, USER_ID);
     expect(evidence.remove).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, USER_ID);
+
+    // ACC-193 — the AI summary takes exactly what the view takes, plus the reader's language.
+    await controller.getEvidenceSummary('task-1', 'ev-1', { language: 'ar' }, TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
+    expect(evidence.getSummary).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS }, 'ar');
+    await controller.makeEvidenceSummary('task-1', 'ev-1', { language: 'en' }, TENANT_ID, USER_ID, VIEWER_PERMISSIONS);
+    expect(evidence.makeSummary).toHaveBeenCalledWith('task-1', 'ev-1', TENANT_ID, { id: USER_ID, permissions: VIEWER_PERMISSIONS }, 'en');
   });
 
   it('getUnassigned delegates to the service with the current tenant', async () => {

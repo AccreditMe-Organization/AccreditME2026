@@ -7,6 +7,8 @@ import { ObjectVisibilityService } from '../../common/services/object-visibility
 import { AuditLogService } from '../../common/services/audit-log.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { itEnforcesTenantIsolation } from '../../common/testing/tenant-isolation';
+import { AiFileSummaryService } from '../ai-file-summary/ai-file-summary.service';
+import { SummaryFileGoneError } from '../ai-file-summary/summary-refusal';
 
 const ORG = 'org-a';
 const ASSIGNEE = 'user-assignee';
@@ -95,12 +97,15 @@ describe('TaskEvidenceService (ACC-177)', () => {
   };
   const visibility = { assertCanViewOrNotFound: jest.fn().mockRejectedValue(new NotFoundException('Task not found')) };
   const auditLog = { log: jest.fn().mockResolvedValue(undefined) };
+  const SUMMARY_VIEW = { available: true, inProgress: false, summary: null };
+  const summaries = { read: jest.fn().mockResolvedValue(SUMMARY_VIEW), make: jest.fn().mockResolvedValue(SUMMARY_VIEW) };
   const service = new TaskEvidenceService(
     prisma as unknown as PrismaService,
     tasks as unknown as TaskService,
     storedFiles as unknown as StoredFileService,
     visibility as unknown as ObjectVisibilityService,
     auditLog as unknown as AuditLogService,
+    summaries as unknown as AiFileSummaryService,
   );
   const viewer = (id: string, permissions: string[] = []) => ({ id, permissions });
 
@@ -247,6 +252,61 @@ describe('TaskEvidenceService (ACC-177)', () => {
       await expect(service.download('task-1', 'ev-1', 'org-b', viewer(ASSIGNEE))).rejects.toThrow('Task not found');
       expect(prisma.task.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'task-1', organizationId: 'org-b' } }));
       expect(storedFiles.openDownload).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the AI summary (ACC-193): exactly the viewer\'s entitlement', () => {
+    it('reads and makes through the SAME lookup as view and download, in the reader\'s language', async () => {
+      await expect(service.getSummary('task-1', 'ev-1', ORG, viewer(ASSIGNEE), 'ar')).resolves.toBe(SUMMARY_VIEW);
+      expect(summaries.read).toHaveBeenCalledWith(STORED, ORG, 'ar');
+      await service.makeSummary('task-1', 'ev-1', ORG, viewer(ASSIGNEE), 'en');
+      expect(summaries.make).toHaveBeenCalledWith(STORED, ORG, ASSIGNEE, 'en');
+      expect(prisma.taskEvidence.findFirst).toHaveBeenCalledWith({
+        where: { id: 'ev-1', taskId: 'task-1', organizationId: ORG, deletedAt: null, type: 'ATTACHMENT' },
+        include: { storedFile: true },
+      });
+    });
+
+    it('whoever may view may summarise: a tasks:view holder who is not on the task', async () => {
+      visibility.assertCanViewOrNotFound.mockResolvedValue(undefined);
+      await expect(service.makeSummary('task-1', 'ev-1', ORG, viewer(OTHER, ['tasks:view']), 'en')).resolves.toBe(SUMMARY_VIEW);
+    });
+
+    it('anyone who may not view gets the IDENTICAL 404 the viewer gives, for read and make, before any summary work', async () => {
+      const viewError = await service.openView('task-1', 'ev-1', ORG, viewer(OTHER)).catch((e: unknown) => e);
+      const readError = await service.getSummary('task-1', 'ev-1', ORG, viewer(OTHER), 'en').catch((e: unknown) => e);
+      const makeError = await service.makeSummary('task-1', 'ev-1', ORG, viewer(OTHER), 'en').catch((e: unknown) => e);
+      for (const error of [readError, makeError]) {
+        expect(error).toBeInstanceOf(NotFoundException);
+        expect((error as NotFoundException).getResponse()).toEqual((viewError as NotFoundException).getResponse());
+      }
+      expect(summaries.read).not.toHaveBeenCalled();
+      expect(summaries.make).not.toHaveBeenCalled();
+    });
+
+    it('a link, a deleted file or another task\'s evidence is "Evidence not found", as for the viewer', async () => {
+      prisma.taskEvidence.findFirst.mockResolvedValue(null);
+      await expect(service.makeSummary('task-1', 'ev-x', ORG, viewer(ASSIGNEE), 'en')).rejects.toThrow('Evidence not found');
+      prisma.taskEvidence.findFirst.mockResolvedValue({ ...EVIDENCE, storedFile: { ...STORED, deletedAt: new Date() } });
+      await expect(service.getSummary('task-1', 'ev-1', ORG, viewer(ASSIGNEE), 'en')).rejects.toThrow('Evidence not found');
+      expect(summaries.make).not.toHaveBeenCalled();
+      expect(summaries.read).not.toHaveBeenCalled();
+    });
+
+    it('§14.3: a file deleted while its summary was made is the viewer\'s own 404', async () => {
+      summaries.make.mockRejectedValueOnce(new SummaryFileGoneError());
+      const error = await service.makeSummary('task-1', 'ev-1', ORG, viewer(ASSIGNEE), 'en').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect((error as NotFoundException).message).toBe('Evidence not found');
+    });
+
+    itEnforcesTenantIsolation('a summary is never read or made for another organisation\'s task or file', async () => {
+      prisma.task.findFirst.mockResolvedValue(null);
+      await expect(service.getSummary('task-1', 'ev-1', 'org-b', viewer(ASSIGNEE), 'en')).rejects.toThrow('Task not found');
+      await expect(service.makeSummary('task-1', 'ev-1', 'org-b', viewer(ASSIGNEE), 'en')).rejects.toThrow('Task not found');
+      expect(prisma.task.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'task-1', organizationId: 'org-b' } }));
+      expect(summaries.read).not.toHaveBeenCalled();
+      expect(summaries.make).not.toHaveBeenCalled();
     });
   });
 

@@ -7,6 +7,7 @@ import { CreateTaskDto } from './create-task.dto';
 import { ReassignTaskDto } from './reassign-task.dto';
 import { AssignmentCommitteeRolesQueryDto, AssignmentHoldersQueryDto } from './assignment-query.dto';
 import { ApproveTaskRequestDto, CreateTaskRequestDto, DeclineTaskRequestDto } from './task-request.dto';
+import { EvidenceSummaryQueryDto, MakeEvidenceSummaryDto } from './evidence-summary.dto';
 
 // ACC-163 — these DTOs ARE the refusal for most bad input, so they are tested
 // through a pipe configured exactly as main.ts configures the app's, not by
@@ -39,6 +40,19 @@ async function messages(promise: Promise<unknown>): Promise<string[]> {
   }
   throw new Error('Expected a 400, but the input was accepted');
 }
+
+describe('the evidence summary DTOs (ACC-193)', () => {
+  it('take English or Arabic, as a query and as a body', async () => {
+    await expect(run(EvidenceSummaryQueryDto, { language: 'ar' }, 'query')).resolves.toEqual({ language: 'ar' });
+    await expect(run(MakeEvidenceSummaryDto, { language: 'en' })).resolves.toEqual({ language: 'en' });
+  });
+
+  it('refuse any other language, a missing one, and any other field', async () => {
+    await expect(run(MakeEvidenceSummaryDto, { language: 'fr' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(run(EvidenceSummaryQueryDto, {}, 'query')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(run(MakeEvidenceSummaryDto, { language: 'en', text: 'the browser never sends text' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
 
 describe('RejectTaskDto', () => {
   it('accepts a reason, trimmed', async () => {

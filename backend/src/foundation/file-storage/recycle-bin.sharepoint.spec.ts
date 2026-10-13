@@ -33,6 +33,8 @@ const file = (id: string, provider: string) => ({
 describe('RecycleBinService — SharePoint files (ACC-185)', () => {
   const prisma = {
     storedFile: { findMany: jest.fn(), updateMany: jest.fn() },
+    // ACC-193 — the purge also deletes any AI summaries of the files (a safety net).
+    aiFileSummary: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
   (prisma as unknown as Record<string, unknown>)['$transaction'] = jest.fn((cb: (tx: unknown) => unknown) => cb(prisma));
   const storedFiles = { removeBytes: jest.fn().mockResolvedValue(undefined), reviewWarning: jest.fn().mockResolvedValue(undefined) };

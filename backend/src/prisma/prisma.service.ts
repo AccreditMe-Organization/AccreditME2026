@@ -91,6 +91,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get aiCreditPack() { return this._client.aiCreditPack; }
   get aiFeatureCost() { return this._client.aiFeatureCost; }
   get aiBriefing() { return this._client.aiBriefing; }
+  get aiFileSummary() { return this._client.aiFileSummary; }
   get setupCondition() { return this._client.setupCondition; }
   get setupConditionRun() { return this._client.setupConditionRun; }
 

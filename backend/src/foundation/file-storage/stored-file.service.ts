@@ -275,16 +275,53 @@ export class StoredFileService {
   }
 
   /**
+   * ACC-193 — a file's bytes, for a reader the CALLER HAS ALREADY ENTITLED (the
+   * AI summary reads the stored file on the server). Refused exactly like a
+   * download: a deleted file never, and a provider failure as the same
+   * refusal (STORAGE_ACCESS_WITHDRAWN, FILE_UNAVAILABLE, STORAGE_UNAVAILABLE).
+   * At most the file's own size is read: the upload cap bounds it.
+   */
+  async readBytes(
+    file: IStoredFileLocation & { id: string; storageKey: string; sizeBytes: number; deletedAt: Date | null },
+  ): Promise<Buffer> {
+    if (file.deletedAt) throw new StorageRefusalException('FILE_UNAVAILABLE');
+    try {
+      const provider = await this.resolver.forFile(file);
+      const stream = await provider.getStream(file.storageKey, file.msItemId ?? null);
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of stream) {
+        const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        size += piece.length;
+        // A stored object larger than its row says is not read past its size.
+        if (size > file.sizeBytes) throw new StorageRefusalException('FILE_UNAVAILABLE');
+        chunks.push(piece);
+      }
+      return Buffer.concat(chunks, size);
+    } catch (error) {
+      throw await this.providerFailure(error, 'read', file.organizationId, 'file');
+    }
+  }
+
+  /**
    * A delete, inside the caller's transaction. It HIDES the file at once and
    * KEEPS its bytes: the file is in the recycle bin for 30 days, restorable by
    * a tenant admin, and purged after (RecycleBinService). The caller writes
    * the audit row.
+   *
+   * ACC-193 (Ahmad, 13 Oct) — the file's AI summaries are deleted in the SAME
+   * transaction: a restored file has none, and Summarize is offered again.
+   * Updating the StoredFile row takes its row lock, which a summary's save
+   * also takes (AiFileSummaryService), so a summary in flight is never saved
+   * against a deleted file.
    */
-  async softDeleteInTx(tx: Pick<PrismaService, 'storedFile'>, fileId: string, organizationId: string, actorId: string) {
-    return tx.storedFile.update({
+  async softDeleteInTx(tx: Pick<PrismaService, 'storedFile' | 'aiFileSummary'>, fileId: string, organizationId: string, actorId: string) {
+    const file = await tx.storedFile.update({
       where: { id: fileId, organizationId },
       data: { deletedAt: new Date(), deletedById: actorId },
     });
+    await tx.aiFileSummary.deleteMany({ where: { storedFileId: fileId, organizationId } });
+    return file;
   }
 
   /**

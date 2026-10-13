@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { StoredFileService } from './stored-file.service';
 import { StorageRefusalException } from './storage-refusal';
 import { StorageResolverService } from './storage-resolver.service';
@@ -42,6 +43,7 @@ describe('StoredFileService (ACC-177)', () => {
       create: jest.fn((args: { data: Record<string, unknown> }) => Promise.resolve({ id: 'file-1', ...args.data })),
       update: jest.fn().mockResolvedValue({}),
     },
+    aiFileSummary: { deleteMany: jest.fn().mockResolvedValue({ count: 2 }) },
     $queryRaw: jest.fn().mockResolvedValue([]),
   };
   const notices = { storageAlmostFull: jest.fn().mockResolvedValue(undefined) };
@@ -296,6 +298,42 @@ describe('StoredFileService (ACC-177)', () => {
     expect(provider.delete).not.toHaveBeenCalled();
   });
 
+  it('ACC-193 §14.3: a delete removes the file\'s AI summaries in the SAME transaction, so a restored file has none', async () => {
+    await service.softDeleteInTx(prisma as never, 'file-1', 'org-a', 'user-1');
+    expect(prisma.aiFileSummary.deleteMany).toHaveBeenCalledWith({ where: { storedFileId: 'file-1', organizationId: 'org-a' } });
+    // The StoredFile row is updated first: that takes its row lock, which a summary's save also takes.
+    expect(prisma.storedFile.update.mock.invocationCallOrder[0]!).toBeLessThan(prisma.aiFileSummary.deleteMany.mock.invocationCallOrder[0]!);
+  });
+
+  describe('readBytes (ACC-193) — the AI summary reads a file the caller already entitled', () => {
+    const stored = { ...s3, organizationId: 'org-a', id: 'file-1', storageKey: 'org-a/x', sizeBytes: 11, deletedAt: null, msItemId: null };
+
+    it('reads the whole object through the file\'s own provider', async () => {
+      provider.getStream.mockResolvedValue(Readable.from([Buffer.from('hello '), Buffer.from('world')]));
+      await expect(service.readBytes(stored)).resolves.toEqual(Buffer.from('hello world'));
+      expect(resolver.forFile).toHaveBeenCalledWith(stored);
+      expect(provider.getStream).toHaveBeenCalledWith('org-a/x', null);
+    });
+
+    it('a deleted file is refused before the provider is asked', async () => {
+      const r = await refusal(service.readBytes({ ...stored, deletedAt: new Date() }));
+      expect(r?.code).toBe('FILE_UNAVAILABLE');
+      expect(provider.getStream).not.toHaveBeenCalled();
+    });
+
+    it('an object larger than its row says is not read past its size', async () => {
+      provider.getStream.mockResolvedValue(Readable.from([Buffer.from('this is far more than eleven bytes')]));
+      expect((await refusal(service.readBytes(stored)))?.code).toBe('FILE_UNAVAILABLE');
+    });
+
+    it('a provider failure is refused like a download\'s, its message kept for the log', async () => {
+      provider.getStream.mockRejectedValue(new Error('NoSuchBucket: accreditme-files'));
+      const r = await refusal(service.readBytes(stored));
+      expect(r?.code).toBe('STORAGE_UNAVAILABLE');
+      expect(JSON.stringify(r?.body)).not.toContain('accreditme-files');
+    });
+  });
+
   itEnforcesTenantIsolation("cloudUsageBytes counts only the organisation's own files", async () => {
     await service.cloudUsageBytes(prisma as never, 'org-b');
     expect(prisma.storedFile.aggregate).toHaveBeenCalledWith({
@@ -314,5 +352,6 @@ describe('StoredFileService (ACC-177)', () => {
   itEnforcesTenantIsolation('softDeleteInTx updates by id AND organisation', async () => {
     await service.softDeleteInTx(prisma as never, 'file-1', 'org-b', 'user-1');
     expect(prisma.storedFile.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'file-1', organizationId: 'org-b' } }));
+    expect(prisma.aiFileSummary.deleteMany).toHaveBeenCalledWith({ where: { storedFileId: 'file-1', organizationId: 'org-b' } });
   });
 });
