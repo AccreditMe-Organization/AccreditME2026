@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { AiBriefingService, BriefingViewer } from './ai-briefing.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
@@ -68,7 +68,7 @@ function setup() {
     notifications as unknown as NotificationService,
     calendar as unknown as WorkingCalendarService,
   );
-  return { service, prisma, ai, tasks, requests, notifications };
+  return { service, prisma, ai, tasks, requests, notifications, calendar };
 }
 
 async function refusal(promise: Promise<unknown>): Promise<unknown> {
@@ -109,6 +109,35 @@ describe('AiBriefingService.make (ACC-198)', () => {
         focus: [{ key: 'T1', reason: 'It is a week late.' }], // the invented ZZ dropped
       }),
     );
+  });
+
+  it('ACC-220: the prompt is worded in the TENANT\'s zone and carries no machine date', async () => {
+    const { service, ai, calendar } = setup();
+    calendar.getEffectiveTimeZone.mockResolvedValue('Pacific/Honolulu'); // 06:00Z is 20:00 on Monday the 12th there
+    await service.make(ADMIN, ORG, 'en', NOW);
+    const request = argsOf(ai.run)[2] as { prompt: string };
+    expect(request.prompt.split('\n')[0]).toBe('Today: Monday 12 October 2026');
+    expect(request.prompt).toContain('- T1 | Close CAPA-0912 | overdue by 7 days');
+    expect(request.prompt).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+  });
+
+  it('ACC-220: a dated lead is saved as OURS, its valid pick kept, and the log says why with no text', async () => {
+    const { service, prisma, ai } = setup();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    ai.run.mockResolvedValue({
+      content: '{"lead": "Overdue since 2026-10-06T09:00:00.000Z.", "focus": [{"key": "T1", "reason": "A week late."}]}',
+      creditCost: 5,
+      inputTokens: 100,
+      outputTokens: 60,
+      truncated: false,
+    });
+    await service.make(ADMIN, ORG, 'en', NOW);
+    const saved = (argsOf(prisma.aiBriefing.update)[0] as { data: Record<string, unknown> }).data;
+    expect(saved).toEqual(expect.objectContaining({ lead: 'Here is your work for today.', focus: [{ key: 'T1', reason: 'A week late.' }], creditCost: 5 }));
+    const lines = warn.mock.calls.map((c) => String(c[0]));
+    expect(lines.some((l) => l.includes('the lead held a machine date; ours was used'))).toBe(true);
+    expect(lines.join(' ')).not.toContain('2026-10-06');
+    warn.mockRestore();
   });
 
   it('a quiet day calls no model, costs nothing, and reads the drawing\'s sentence', async () => {

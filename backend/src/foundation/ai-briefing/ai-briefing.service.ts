@@ -132,10 +132,17 @@ export class AiBriefingService {
         const result = await this.ai.run(
           'morning_briefing',
           { organizationId, actorId: viewer.id },
-          { system: briefingSystemPrompt(language), prompt: briefingPrompt(groups, language, now), description: countsDescription(groups) },
+          { system: briefingSystemPrompt(language), prompt: briefingPrompt(groups, language, now, zone), description: countsDescription(groups) },
         );
         const answer = parseBriefingAnswer(result.content, groups, language);
-        if (answer.fallback) this.logger.warn(`Briefing for user ${viewer.id} in org ${organizationId}: the answer had no usable lead; ours was used.`);
+        // Counts only — never the text (ACC-194 D5).
+        if (answer.fallback) {
+          const why = answer.datesFound.lead ? 'the lead held a machine date' : 'the answer had no usable lead';
+          this.logger.warn(`Briefing for user ${viewer.id} in org ${organizationId}: ${why}; ours was used.`);
+        }
+        if (answer.datesFound.droppedPicks > 0) {
+          this.logger.warn(`Briefing for user ${viewer.id} in org ${organizationId}: ${answer.datesFound.droppedPicks} focus pick(s) dropped for holding a machine date.`);
+        }
         lead = answer.lead;
         focus = answer.focus;
         creditCost = result.creditCost;
