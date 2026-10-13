@@ -1816,5 +1816,56 @@
       "edit": "تعديل",
       "discard": "تجاهل"
     }
+  },
+  "recordPanel": {
+    "errorLoad": "تعذّر تحميل هذا القسم.",
+    "errorId": "رقم الخطأ: {{id}}"
+  },
+  "userRecord": {
+    "actingIn": "يعمل بالإنابة في",
+    "actingUntil": "{{unit}}، حتى {{date}}",
+    "outOfOffice": "خارج المكتب",
+    "outOfOfficeRange": "{{from}} – {{to}}",
+    "outOfOfficeFromOnly": "من {{from}}",
+    "outOfOfficeToOnly": "حتى {{to}}",
+    "coveredBy": "البديل: {{name}}",
+    "neverSignedIn": "لا يوجد تسجيل دخول بعد",
+    "invitedOn": "تاريخ الدعوة",
+    "editProfile": "تعديل الملف الشخصي",
+    "roles": {
+      "heading": "الأدوار",
+      "empty": "لا توجد أدوار",
+      "emptyBody": "الأدوار تحدد ما يمكن لهذا الشخص رؤيته وفعله.",
+      "fromPosition": "مرتبط بمنصب الرئاسة {{position}}",
+      "fromPositionUnnamed": "مرتبط بمنصب رئاسة"
+    },
+    "twoStep": {
+      "heading": "التحقق بخطوتين",
+      "on": "مفعّل. يُطلب رمز من تطبيق المصادقة عند كل تسجيل دخول.",
+      "off": "غير مفعّل. يكفي إدخال كلمة المرور لتسجيل الدخول.",
+      "loadError": "تعذّر تحميل حالة التحقق بخطوتين.",
+      "setUp": "إعداد",
+      "turnOff": "إيقاف",
+      "setupTitle": "إعداد التحقق بخطوتين",
+      "stepPassword": "كلمة المرور",
+      "stepApp": "تطبيق المصادقة",
+      "passwordIntro": "أدخل كلمة المرور للبدء، ثم امسح رمزًا بتطبيق المصادقة.",
+      "passwordRequired": "أدخل كلمة المرور.",
+      "codeInvalid": "أدخل الرمز المكوّن من 6 أرقام.",
+      "continue": "متابعة",
+      "offTitle": "إيقاف التحقق بخطوتين"
+    },
+    "editProfileDialog": {
+      "nameRequired": "أدخل الاسم.",
+      "placement": "الموقع في المنظمة",
+      "stepProfile": "الملف الشخصي"
+    },
+    "outOfOfficeDialog": {
+      "hint": "خلال هذه الفترة، يُحوَّل العمل الذي يرسله سير العمل إلى هذا الشخص إلى البديل.",
+      "cover": "البديل",
+      "toBeforeFrom": "تاريخ الانتهاء قبل تاريخ البدء.",
+      "clearAll": "مسح الكل",
+      "clearDate": "مسح {{label}}"
+    }
   }
 }

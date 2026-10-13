@@ -17,8 +17,10 @@ export const USER_ROUTES: Routes = [
     path: ':id',
     canActivate: [ownProfileGuard],
     loadComponent: () =>
-      import('./components/user-profile/user-profile.component').then(
-        (m) => m.UserProfileComponent,
+      // ACC-120 slice 5 — the user record page, which replaced the profile
+      // form. One page for your own record and someone else's.
+      import('./components/user-record/user-record.component').then(
+        (m) => m.UserRecordComponent,
       ),
   },
 ];

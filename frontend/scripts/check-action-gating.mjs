@@ -130,6 +130,12 @@ const ALLOWLIST = new Map([
     'Clears the chosen due date inside the form. Form state, not a saved change.',
   ],
   [
+    'foundation/user/components/user-record/out-of-office-dialog.component.ts#pi-times',
+    'Clears one chosen date inside the Out of office form (ACC-120 slice 5). Form ' +
+      'state, not a saved change; the dialog itself opens only behind ' +
+      'canSetOutOfOffice on the user record page.',
+  ],
+  [
     'foundation/tasks/components/task-add-evidence-dialog/task-add-evidence-dialog.component.ts#pi-times',
     'Takes a chosen file off the upload list before anything is sent (ACC-177). ' +
       'Local state only; removing evidence already added is the gated trash ' +

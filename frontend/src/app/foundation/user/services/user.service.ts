@@ -62,10 +62,13 @@ export interface UpdateUserProfileDto {
   actingOrgUnitUntil?: string;
 }
 
+// ACC-120 slice 5 — all three REQUIRED, null where empty. The endpoint
+// replaces the whole window (a field left out is written as null), so a
+// partial body would silently clear what it did not mention (CC-88, A2).
 export interface UpdateOutOfOfficeDto {
-  outOfOfficeFrom?: string;
-  outOfOfficeTo?: string;
-  actingUserId?: string;
+  outOfOfficeFrom: string | null;
+  outOfOfficeTo: string | null;
+  actingUserId: string | null;
 }
 
 export interface ListUsersFilters {

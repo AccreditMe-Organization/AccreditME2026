@@ -5477,6 +5477,9 @@ actingOrgUnitId` (re-verification target above) — the latter 3 pass
 `excludeId: null` since a user isn't an org unit and has no
 self/descendant relationship to exclude, unlike a unit picking its
 own parent.
+*ACC-120 slice 5: the two `user-profile` pickers moved, unchanged, into the
+user record page's Edit profile dialog (`edit-profile-dialog.primaryOrgUnitId`,
+`.actingOrgUnitId`).*
 
 ##### `groupsSelectable` — are group nodes themselves choices? (ACC-55)
 
@@ -5532,6 +5535,9 @@ against `listbox.mjs`, not assumed).
 `invite-user.managerId`, `committee-member-form.userId` (the first
 real-consumer proof, ACC-42 Phase 3), `user-profile.managerId`,
 `user-profile.actingUserId`.
+*ACC-120 slice 5: those two now live in `edit-profile-dialog.managerId` and
+`out-of-office-dialog.actingUserId`; `user-role-assignment`'s `[(ngModel)]`
+role picker (§10.7.4) went with that component.*
 
 #### 10.7.4 `ngModel` binding support
 
@@ -5608,6 +5614,31 @@ different height from its siblings in a larger font with horizontal
 scroll they did not have. It also could not be told to reload after a
 create. The pattern is: `RecordPanelComponent` + your own rows + a
 direct service call.
+
+#### 10.8.1 The opt-in request outcome (ACC-120 slice 5)
+
+ACC-104 left a record page with no panel-level outcome, and the Committee
+page hand-rolls one per panel: a centred spinner, an error state on Tasks
+only, no Retry (and that error is never cleared — ACC-217). Binding
+**`[outcome]`** instead hands the panel the shared state machine
+(`core/request-outcome/request-outcome.ts`), and the panel renders
+artboard 8's states itself:
+
+| Outcome | The panel shows |
+|---|---|
+| `idle` | nothing — an answer inside 200ms never flashes a shape |
+| `loading` | skeleton bars, **never** a centred spinner |
+| `empty` | the empty state above, unchanged |
+| `error` | the message (the `error` key if bound, else `recordPanel.errorLoad`), the error id when the server sent one, and Retry, which emits **`(retry)`**; the count reads "—" |
+| `denied` | **absent** — the host element is hidden, so the grid reflows as if the panel were never there (Template 2: "the panel is absent") |
+| `rows` | the projected rows |
+
+**Opt-in, so nothing changes for a caller that does not bind it.**
+`loading`, `isEmpty` and `error` still drive the Committee page exactly as
+before, and a spec pins that path. The user record page (§12.10) is the
+first consumer. The default rows slot is ONE `<ng-content>` inside a
+template reached from either path: two unselected `<ng-content>`s would
+project the rows into only one of them.
 
 ### 10.9 `WorkflowStageIndicatorComponent` (ACC-76)
 
@@ -7287,12 +7318,15 @@ from the start (per Section 11's standing rule):
 
 | Method | Endpoint | Caller(s) found |
 |---|---|---|
-| `listUsers()` | `GET /users` | `committee-detail`, `committee-member-form`, `user-profile`, `user-list`, `invite-user` |
-| `getById()` | `GET /users/:id` | `user-profile.component.ts:331` |
+| `listUsers()` | `GET /users` | `committee-detail`, `committee-member-form`, `user-record`, `user-list`, `invite-user` |
+| `getById()` | `GET /users/:id` | `user-record.component.ts` (and the transfer wizard) |
 | `invite()` | `POST /users/invite` | `invite-user.component.ts:136` |
-| `updateProfile()` | `PATCH /users/:id/profile` | `user-profile.component.ts:361` |
-| `updateOutOfOffice()` | `PATCH /users/:id/out-of-office` | `user-profile.component.ts:394` |
-| `deactivate()` | `POST /users/:id/deactivate` | `user-list.component.ts:180` |
+| `updateProfile()` | `PATCH /users/:id/profile` | `edit-profile-dialog.component.ts` |
+| `updateOutOfOffice()` | `PATCH /users/:id/out-of-office` | `out-of-office-dialog.component.ts` |
+| `deactivate()` / `reactivate()` / `revokeInvitation()` | `POST /users/:id/…` | `user-status-actions.service.ts`, called by `user-list` and `user-record` |
+
+*Updated ACC-120 slice 5: `user-profile.component.ts` is deleted; the user
+record page (§12.10) and its dialogs are the callers.*
 
 **No dead endpoints in this system** — every method wired, and
 `listUsers()` is reused across both User Management's own screens and
@@ -7439,7 +7473,87 @@ this was a deliberate choice, not a default). Up to 5 visible steps
 a `p-step`'s number badge is literally its declared `[value]`, so the
 Replacement step's conditional presence shifts every step after it.
 Reuses `OverlaySelectComponent` (Section 10.7) for its pickers, not
-`p-select`. Entry point: `user-profile.component.ts`.
+`p-select`. **Two hosts, both on `EditDialogComponent` since ACC-120 slice
+5**: the Users list's row menu and the user record page (§12.10), each
+through a TemplateRef so every opening starts at step one, each binding the
+wizard's `dirtyChange` to the shell's `[dirty]`. The raw `p-dialog` on the
+old profile page is gone with that page.
+
+### 12.10 The User Record Page (ACC-120 slice 5)
+
+`frontend/src/app/foundation/user/components/user-record/` — replaced the
+profile form. Built to Templates "2 Record page", copying the Committee
+record page for structure: an identity card (initials, the name as H1, the
+email LTR-isolated, the Users list's status chip) over a fact strip
+(position, unit, manager, acting unit, out of office with the cover person,
+last sign-in — or the invitation date for someone invited), then panels.
+**Every change is a dialog; no inline editing, no page-level Save.** Plan
+and Ahmad's answers: `backend/Plans/step-120-5-user-record.md`.
+
+**One page for your own record and someone else's.** The route keeps
+`ownProfileGuard` (your own id always; anyone else's needs `admin:access` +
+`users:view`, §1.10). `isOwn` — route id equals the session user — is known
+before the record loads, and each action is gated on what its endpoint
+enforces:
+
+| Action | Shown when |
+|---|---|
+| Edit profile | own record, or `users:manage`; the placement fields only with `users:manage` (the server drops them otherwise) |
+| Out of office | own record, or `users:manage`; an active user |
+| Transfer | `users:transfer`, an active user in a unit (the list's rule) |
+| Deactivate | `users:deactivate`, an active user, **not your own record** |
+| Reactivate | `users:reactivate`, an inactive user |
+| Revoke invitation | `users:invite`, an invited user; afterwards back to `/users`, since the record is deleted |
+| Manage roles | `roles:manage`, on the Roles panel; the existing dialog, hosted as the list hosts it |
+| Two-step sign-in | own record only — the endpoints act on the caller |
+
+**The status actions are written once**, in `UserStatusActionsService`
+(`statusActionFor()` decides which applies; the three confirms are the
+Users list's, moved). Both screens call it, so they cannot disagree — and
+both now leave **Deactivate off the viewer's own record and own row**: the
+backend allows it, subject only to the last-administrator rule, and the
+first thing it does is end the caller's sessions.
+
+**Panels: Roles and Two-step sign-in, each with its own request outcome**
+(§10.8.1). Roles lists every grant — position grants first, marked "comes
+with the head position", named from the record's own references when the
+grant's position and unit are the record's; direct grants with their date.
+There is no "granted by" (UserRole has none). Every row is shown rather
+than Template 2's 3–6 with a hand-off: a person holds a handful, and there
+is no per-user roles list to hand off to.
+
+**Four panels are left OUT, not empty**: Committees, Tasks, Sessions and
+Access history have no per-user endpoint. ACC-216 adds the reads
+(CommitteeMember; AuditLog objectType `User` and UserTransferEvent;
+RefreshToken; tasks after a visibility decision). A spec pins their absence.
+
+**Dialogs** (all on the shell, `[dirty]`, field wrapper with `[control]`,
+no floating PrimeNG panel — a date is picked in the DATE VIEW, where the
+inline calendar replaces the fields, `date-view.ts`):
+
+- **Edit profile** — compact density (seven field blocks with placement).
+  **Stepped when it carries placement**, because it measured over the cap
+  with every compaction applied (511px English, 526px Arabic): profile (name,
+  language), then placement (158/162 and 320/328 after). Without placement it
+  is one step and no strip renders. Placement still changes position and unit
+  directly, beside Transfer, and an empty choice still means "unchanged" — so
+  a placement field cannot be cleared here, and never could (the old form's ×
+  sent nothing); the × is not offered. **The language is sent only when it
+  was changed**: the old form sent the picker's value on every save, which
+  pinned anyone with no saved language — who follows the organisation's — to
+  English on a name edit. Saving your OWN language switches the session at
+  once.
+- **Out of office** — **always sends all three fields**, null where empty:
+  the endpoint replaces the whole window, so a partial body would clear what
+  it left out. Without `users:view` the cover picker holds only today's cover
+  person, named from the references.
+- **Two-step sign-in setup** — the same two requests, on the flow's own seam
+  (password → QR code and code). The backup codes are never rendered.
+- **Turn off two-step sign-in** — the same request as before, and the same
+  outcome: it cannot succeed (§1.12, ACC-164).
+
+**Not offered, because nothing serves it:** Resend invitation, password
+change, the Hijri display preference (ACC-98), sessions.
 
 ---
 

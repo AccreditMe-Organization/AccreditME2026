@@ -1,4 +1,5 @@
-import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
@@ -15,11 +16,11 @@ import { extractErrorMessage } from '../../../../shared/utils/http-error.util';
 import { OverlaySelectComponent } from '../../../../shared/components/overlay-select/overlay-select.component';
 
 // ACC-46 Section 2.6.b — the transfer wizard. Pure content, no dialog
-// wrapper of its own — the caller wraps it in a raw p-dialog, same
-// convention as workflow-transition-editor.component.ts's own "Configure
-// Actions" dialog (a p-dialog directly in the parent template, not
-// EditDialogComponent — see this component's own 2.6.b.1 plan section for
-// why neither EditDialogComponent nor a fully custom stepper fit here).
+// wrapper of its own. Both hosts — the Users list (ACC-79) and the user
+// record page (ACC-120 slice 5) — wrap it in EditDialogComponent through a
+// TemplateRef, so every opening starts at step one, and bind its
+// `dirtyChange` to the shell's `[dirty]`. The raw p-dialog the 2.6.b.1 plan
+// section chose is gone from both.
 //
 // Shell: a thin wrapper around PrimeNG's own p-stepper family
 // (Section 2.6.b.1 of backend/Plans/step-46-manager-transfer-escalation-
@@ -287,6 +288,14 @@ export class TransferUserWizardComponent implements OnInit {
   readonly userId = input.required<string>();
   readonly saved = output<void>();
   readonly cancelled = output<void>();
+  /**
+   * ACC-120 slice 5 — whether a choice has been made and not yet saved, so the
+   * host's dialog shell can ask before Escape or ✕ throws it away. False again
+   * once the transfer has gone through: the result screen holds nothing to
+   * lose.
+   */
+  readonly dirtyChange = output<boolean>();
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
@@ -361,6 +370,9 @@ export class TransferUserWizardComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.form.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.dirtyChange.emit(this.form.dirty && !this.submitResult()));
     this.userService.getById(this.userId()).subscribe({ next: (u) => this.departingUser.set(u) });
     this.orgUnitService.getFlat().subscribe({ next: (units) => this.orgUnits.set(units) });
   }
@@ -517,16 +529,19 @@ export class TransferUserWizardComponent implements OnInit {
               error: result.promotionError ?? '',
             }),
           });
+          this.dirtyChange.emit(false);
         } else if (this.isPromotion()) {
           this.submitResult.set({
             promotionCompleted: true,
             message: this.translate.instant('user.transfer.promotionSuccess', { name, unit }),
           });
+          this.dirtyChange.emit(false);
         } else {
           this.submitResult.set({
             promotionCompleted: true,
             message: this.translate.instant('user.transfer.transferSuccess', { name, unit }),
           });
+          this.dirtyChange.emit(false);
         }
       },
       error: (err: unknown) => {

@@ -1700,5 +1700,56 @@
       "edit": "Edit",
       "discard": "Discard"
     }
+  },
+  "recordPanel": {
+    "errorLoad": "This could not be loaded.",
+    "errorId": "Error ID: {{id}}"
+  },
+  "userRecord": {
+    "actingIn": "Acting in",
+    "actingUntil": "{{unit}}, until {{date}}",
+    "outOfOffice": "Out of office",
+    "outOfOfficeRange": "{{from}} – {{to}}",
+    "outOfOfficeFromOnly": "From {{from}}",
+    "outOfOfficeToOnly": "Until {{to}}",
+    "coveredBy": "Covered by {{name}}",
+    "neverSignedIn": "Never signed in",
+    "invitedOn": "Invited",
+    "editProfile": "Edit profile",
+    "roles": {
+      "heading": "Roles",
+      "empty": "No roles",
+      "emptyBody": "Roles decide what this person can see and do.",
+      "fromPosition": "Comes with the head position {{position}}",
+      "fromPositionUnnamed": "Comes with a head position"
+    },
+    "twoStep": {
+      "heading": "Two-step sign-in",
+      "on": "On. A code from an authenticator app is asked for at every sign-in.",
+      "off": "Off. Signing in needs only your password.",
+      "loadError": "The two-step sign-in status could not be loaded.",
+      "setUp": "Set up",
+      "turnOff": "Turn off",
+      "setupTitle": "Set up two-step sign-in",
+      "stepPassword": "Your password",
+      "stepApp": "Authenticator app",
+      "passwordIntro": "Enter your password to start. You then scan a code with an authenticator app.",
+      "passwordRequired": "Enter your password.",
+      "codeInvalid": "Enter the 6-digit code.",
+      "continue": "Continue",
+      "offTitle": "Turn off two-step sign-in"
+    },
+    "editProfileDialog": {
+      "nameRequired": "Enter a name.",
+      "placement": "Placement",
+      "stepProfile": "Profile"
+    },
+    "outOfOfficeDialog": {
+      "hint": "While these dates are set, work a workflow sends to this person goes to the cover person instead.",
+      "cover": "Cover person",
+      "toBeforeFrom": "The end date is before the start date.",
+      "clearAll": "Clear all",
+      "clearDate": "Clear {{label}}"
+    }
   }
 }

@@ -2490,7 +2490,9 @@ Section 1.8 (module entitlements). The decisions, briefly:
   displayed language from the reader's UI language, nor offer a UI-language
   switch as the way to reach a document's original.
 - **Every user can open their own profile.** `users/:id` uses
-  `ownProfileGuard` (own id always allowed, anyone else's needs `users:view`);
+  `ownProfileGuard` (own id always allowed; anyone else's needs `admin:access`
+  + `users:view` since ACC-123 — corrected in ACC-120 slice 5, which made that
+  page the user record page, SYSTEM-REFERENCE §12.10);
   before this the list's `users:view` requirement bounced non-admins from
   their own profile, leaving "My Profile" in the user menu dead.
 
