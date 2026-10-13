@@ -9318,6 +9318,20 @@ Plan, Ahmad's answers (13 Oct, D1–D13) and the build's differences:
   third; a reason is up to 160 characters, the lead up to 400. Plain text becomes
   the lead; broken JSON falls back to OUR lead, logged. **Every item, date and
   link is built by our code.** No valid pick → no "Focus on these first".
+- **The model never sees a machine date (ACC-220).** `briefingPrompt()` opens
+  with `Today: Tuesday 13 October 2026` and words each item's timing in the
+  tenant's zone (`timingPhrase()`): "overdue by 20 days", "overdue since 09:00
+  today", "due today at 15:00", "due tomorrow at 10:00", "due Mon 26 Oct",
+  "asks for more time until Mon 26 Oct", "arrived 3 hours ago". Calendar days
+  between local dates — wording, not an SLA. English for both languages; the
+  model says it in the briefing's. A held task due earlier today is "due today",
+  never "overdue" (ACC-173). The system prompt forbids writing or copying a date,
+  clock time or timestamp. **The guard** (`hasMachineDate()`, after cutting
+  out the titles we sent): an ISO date or timestamp, a day-first date with a
+  four-digit year, or a clock with seconds, in Western or Arabic-Indic digits. A
+  dated lead → OUR lead, the valid picks kept; a dated reason → that pick
+  dropped; a bare "15:00" is allowed. Logged as counts only. A briefing saved
+  before the fix keeps its text until its day ends.
 - **A quiet day makes no model call and costs 0**: the lead is our sentence.
 - **One run per USER, in one statement.** `INSERT … ON CONFLICT
   ("organizationId","userId") DO UPDATE SET "generatingSince" = now WHERE

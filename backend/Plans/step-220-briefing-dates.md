@@ -2,7 +2,8 @@
 
 Linear: **ACC-220** (lane B, Medium, Bug; related to ACC-198 and ACC-219).
 Branch: `fix/ACC-220-briefing-dates`, from `origin/dev` at `df16243`.
-Status: **PLAN — waiting for Ahmad's approval.** Nothing is built yet.
+Status: **APPROVED as written (Ahmad, 13 Oct), including the recommendations on
+Q1, Q2 and Q3 (§6). Built; waiting for Ahmad to push.**
 
 **Scope:**
 - **What changes:** what we send the model, what we tell it, and how we read its answer.
@@ -198,8 +199,37 @@ Note for that day: **briefings saved before this fix keep their text.** The guar
 
 **Progress:**
 
-- [ ] 0. `docs(plans)`: this plan
-- [ ] 1. `fix(ai-briefing)`: the prompt sends wording, not machine dates; the system-prompt rule; the guard; specs
-- [ ] 2. `docs`: SYSTEM-REFERENCE §17.8, and this plan's progress
+- [x] 0. `docs(plans)`: this plan (`c554ce4`)
+- [x] 1. `fix(ai-briefing)`: the prompt sends wording, not machine dates; the system-prompt rule; the guard; specs (`111fabc`)
+- [x] 2. `docs`: SYSTEM-REFERENCE §17.8, and this plan's progress (this commit)
 - [ ] STOP: lint, typecheck, unit tests, `test:db`, the `check:*` scans; report. Ahmad pushes and runs /ready-to-pr.
 - [ ] After the deploy (a later prompt): the live re-test in §5
+
+---
+
+## 8. Where the build differs from the plan
+
+- **`timingPhrase()` also takes the item's GROUP**, i.e.
+  `timingPhrase(item, kind, zone, now)`, not `(item, zone, now)` as in §2.1.
+  - **Why:** a held task due earlier today sits in DUE TODAY, because a held
+    task is never overdue (ACC-173). From the date alone it would have been
+    worded "overdue since 06:00 today".
+  - **Now:** a past due time is worded overdue only outside DUE TODAY, and a
+    test pins it.
+- **`IBriefingAnswer.datesFound` is `{ lead, droppedPicks }`**, as planned.
+  The existing answer tests compare whole objects, so they now include it.
+- **The service's warning line splits in two:**
+  - "the lead held a machine date; ours was used" (or the old "no usable
+    lead"), and
+  - "N focus pick(s) dropped for holding a machine date".
+
+  Both are counts only; a test checks that no date text reaches the log.
+- **Mutation checks, as planned in §4** (each restored afterwards; 70 tests in
+  the briefing specs):
+  1. sending the raw `dueAt` again: **12 red**, including every
+     prompt-carries-no-date test and both midnight tests;
+  2. removing the guard: **13 red**, every guard test and the service's
+     dated-lead test;
+  3. working out "today" and item dates in UTC: **9 red**, including both
+     midnight tests, the request crossing midnight, and the Wednesday-in-Riyadh
+     "today" test.
