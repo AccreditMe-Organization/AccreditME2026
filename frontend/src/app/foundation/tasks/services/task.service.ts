@@ -206,6 +206,37 @@ export interface CreateTaskDto {
   dueDate?: string;
   // ACC-163 — Complete is refused until at least one piece of evidence exists.
   requiresEvidence?: boolean;
+  // ACC-197 — the creator accepted an AI draft in this dialog. The server
+  // checks the claim against its AI log before marking the audit row.
+  aiDraft?: { id: string; description: boolean; title: boolean };
+}
+
+// ACC-197 — "Draft with AI" on New task. Nothing is stored: the draft comes
+// back, and a task exists only when the person presses Create task.
+export interface DraftTaskDto {
+  note: string;
+  /** The reader's interface language: the draft is written in it. */
+  language: 'en' | 'ar';
+  title?: string;
+  /** The record the task is about, when the dialog was opened from one. Both or neither. */
+  sourceType?: string;
+  sourceId?: string;
+}
+
+export interface ITaskDraftLine {
+  /** "Purpose:", "To do:", "Done when:" — the server's, in the reader's language. */
+  label: string;
+  text: string;
+}
+
+export interface ITaskDraft {
+  /** Sent back with Create task, so the audit row can be marked. Null if the call could not be logged. */
+  draftId: string | null;
+  /** A suggested title, or null when there is none worth showing. */
+  title: string | null;
+  lines: ITaskDraftLine[];
+  /** What Accept puts in the Description field. */
+  description: string;
 }
 
 // ACC-167 — who a task goes to, chosen the way the organisation is shaped:
@@ -508,6 +539,16 @@ export class TaskService {
   getTaskSlaPreview(id: string, restart = false): Observable<SlaPreviewDto> {
     const params = restart ? new HttpParams().set('restart', 'true') : new HttpParams();
     return this.http.get<SlaPreviewDto>(`${this.base}/${id}/sla-preview`, { params });
+  }
+
+  /** ACC-197 — whether to show "Draft with AI" at all. Says nothing about the balance. */
+  getDraftAvailability(): Observable<{ available: boolean }> {
+    return this.http.get<{ available: boolean }>(`${this.base}/draft/availability`);
+  }
+
+  /** ACC-197 — a draft from the note: 2 credits, never charged for a refusal. Creates nothing. */
+  draftDescription(dto: DraftTaskDto): Observable<ITaskDraft> {
+    return this.http.post<ITaskDraft>(`${this.base}/draft`, dto);
   }
 
   addEvidence(taskId: string, dto: AddTaskEvidenceDto): Observable<{ id: string }> {
