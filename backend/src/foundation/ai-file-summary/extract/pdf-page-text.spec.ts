@@ -128,7 +128,7 @@ describe('pageText — a visual-order line (ACC-224 §2.3)', () => {
     expect(pageText([...englishLine, ...tie]).split('\n')[1]!.trim()).toBe('ABCD سجلا');
   });
 
-  it('a character outside the Basic Multilingual Plane survives the reordering whole', () => {
+  it('a character outside the Basic Multilingual Plane survives the reordering whole (bidi-js keeps a surrogate pair together)', () => {
     const items = visualLine([rev('ملف'), ' ', '📄']);
     expect(pageText(items).trim()).toBe('📄 ملف');
   });

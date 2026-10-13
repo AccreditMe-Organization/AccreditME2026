@@ -147,13 +147,7 @@ function reorderLine(line: readonly IPdfTextItem[], pageDirection: Direction): s
 
   const direction = majority(visual, pageDirection);
   const reading = bidi.getReorderedString(visual, bidi.getEmbeddingLevels(visual, direction));
-  return (
-    reading
-      // The algorithm works on UTF-16 units: put back a surrogate pair it reversed.
-      .replace(/([\uDC00-\uDFFF])([\uD800-\uDBFF])/g, '$2$1')
-      .replace(PERSIAN_YEH, 'ي')
-      .replace(PERSIAN_HEH, 'ه')
-  );
+  return reading.replace(PERSIAN_YEH, 'ي').replace(PERSIAN_HEH, 'ه');
 }
 
 function lineText(line: readonly IPdfTextItem[], pageDirection: Direction): string {
