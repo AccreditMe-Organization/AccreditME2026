@@ -57,6 +57,7 @@ import {
 import { ITransferContext } from './interfaces/transfer-context.interface';
 import { ITransferResult } from './interfaces/transfer-result.interface';
 import { buildTenantUrl } from '../../common/config/app-url.config';
+import { PlacementField, UseTransferException } from './user-refusal';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -1079,6 +1080,23 @@ export class UserService {
     // Discussion 3.
     const data: Record<string, unknown> = { name: dto.name, language: dto.language };
     if (isAdmin) {
+      // ACC-222 — once a person is ACTIVE and has a primary unit, their unit or
+      // position changes only through Transfer (transferUser() above), which
+      // does what a move needs: the replacement for a single-holder position,
+      // the head-authority grant and the head events. Refused before anything
+      // is validated or written. Sending the current value back, or leaving a
+      // field out, is not a change. An INVITED person, and an ACTIVE one with no
+      // unit yet (their first placement), are still placed here. Manager and the
+      // acting unit are not placement and stay editable.
+      if (existing.status === 'ACTIVE' && existing.primaryOrgUnitId) {
+        const changed: PlacementField[] = [];
+        if (dto.positionId !== undefined && dto.positionId !== existing.positionId) changed.push('positionId');
+        if (dto.primaryOrgUnitId !== undefined && dto.primaryOrgUnitId !== existing.primaryOrgUnitId) {
+          changed.push('primaryOrgUnitId');
+        }
+        if (changed.length > 0) throw new UseTransferException(changed);
+      }
+
       // ACC-40 Section 2.1/2.2 — only runs when positionId is actually
       // being set/changed by this call (mirrors the Prisma undefined-means-
       // untouched semantics data['positionId'] itself relies on below).
