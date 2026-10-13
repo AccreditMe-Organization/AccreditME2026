@@ -1421,6 +1421,29 @@ describe('WorkflowTemplateService', () => {
       expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
     });
 
+    itEnforcesTenantIsolation("transition platform-key check reads the caller's own organisation, never another's", async () => {
+      // ORG_A is the platform organisation; ORG_B is a tenant. A tenant asking
+      // for a platform key must be judged by ITS OWN organisation row.
+      stageLookupsSucceed();
+      mockPrisma.organization.findUnique.mockImplementation(({ where }: { where: { id?: string } }) =>
+        Promise.resolve({ isPlatformOrg: where.id === ORG_A }),
+      );
+
+      const code = await codeOf(
+        service.addTransition(
+          { fromStageId: 'stage-1', toStageId: 'stage-2', labelEn: 'Approve', labelAr: 'اعتماد', triggerCondition: 'ROLE_BASED', requiredPermission: 'platform:admin' } as never,
+          ORG_B,
+          ACTOR,
+        ),
+      );
+
+      expect(code).toBe('PLATFORM_PERMISSION_NOT_ALLOWED');
+      expect(mockPrisma.organization.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: ORG_B } }),
+      );
+      expect(mockPrisma.workflowTransition.create).not.toHaveBeenCalled();
+    });
+
     it('allows a platform key on create in the PLATFORM organisation', async () => {
       stageLookupsSucceed();
       mockPrisma.organization.findUnique.mockResolvedValue({ isPlatformOrg: true });

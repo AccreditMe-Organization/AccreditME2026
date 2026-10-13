@@ -1324,6 +1324,30 @@ describe('RoleService', () => {
     });
   });
 
+  describe('getRoleById — holder counts, tenant isolation (ACC-120 slice 5, D8)', () => {
+    itEnforcesTenantIsolation("getRoleById holder counts: another tenant's role is 404 and nothing is counted", async () => {
+      // The role is read by id AND organisation; another tenant's id finds
+      // nothing, so neither count runs.
+      mockPrisma.role.findFirst.mockImplementation(({ where }: { where: { id: string; organizationId: string } }) =>
+        Promise.resolve(where.organizationId === ORG_A ? BASE_ROLE : null),
+      );
+
+      await expect(service.getRoleById('role-1', ORG_B)).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.role.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'role-1', organizationId: ORG_B }) }),
+      );
+      expect(mockPrisma.userRole.count).not.toHaveBeenCalled();
+
+      // In its own organisation, both counts count only that organisation's users.
+      mockPrisma.userRole.count.mockResolvedValue(0);
+      await service.getRoleById('role-1', ORG_A);
+      expect(mockPrisma.userRole.count).toHaveBeenCalledTimes(2);
+      for (const [args] of mockPrisma.userRole.count.mock.calls as [{ where: { user: { organizationId: string } } }][]) {
+        expect(args.where.user.organizationId).toBe(ORG_A);
+      }
+    });
+  });
+
   describe('listAllPermissions — inUse (ACC-120 slice 5, R2)', () => {
     it('marks a key no code checks yet inUse: false, and every other key true', async () => {
       mockPrisma.permission.findMany.mockResolvedValue([
