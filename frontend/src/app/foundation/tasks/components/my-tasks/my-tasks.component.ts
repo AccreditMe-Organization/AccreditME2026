@@ -1,4 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Observable } from 'rxjs';
 import { AmDatePipe, AmDateTimePipe, FormatService } from '../../../../core/formatting';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -139,7 +141,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
               </tr>
             </ng-template>
             <ng-template pTemplate="body" let-request>
-              <tr>
+              <tr [attr.data-request-row]="request.id" tabindex="-1" [class.am-row--sought]="soughtRequestId() === request.id">
                 <td>{{ request.task.title }}</td>
                 <td>
                   <span class="block">{{ askedLine(request) }}</span>
@@ -179,7 +181,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
               </tr>
             </ng-template>
             <ng-template pTemplate="body" let-task>
-              <tr>
+              <tr [attr.data-task-row]="task.id" tabindex="-1" [class.am-row--sought]="soughtTaskId() === task.id">
                 <td><p-tag [value]="task.sourceType" severity="info" /></td>
                 <td>
                   <span class="block">{{ task.title }}</span>
@@ -245,7 +247,7 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
         </ng-template>
 
         <ng-template pTemplate="body" let-task>
-          <tr>
+          <tr [attr.data-task-row]="task.id" tabindex="-1" [class.am-row--sought]="soughtTaskId() === task.id">
             <td><p-tag [value]="task.sourceType" severity="info" /></td>
             <td>
               <span class="block">{{ task.title }}</span>
@@ -476,6 +478,20 @@ const FILTERS: { value: FilterValue; labelKey: string }[] = [
         flex-direction: column;
         gap: var(--am-space-8);
       }
+      /* ACC-198 — the row a briefing link points at (?task= / ?request=), as
+         ACC-208's committee page marks it, on the inline-start edge. */
+      .am-row--sought {
+        background: var(--am-primary-50);
+        box-shadow: inset 3px 0 0 var(--am-primary-600);
+      }
+      :host-context([dir='rtl']) .am-row--sought {
+        box-shadow: inset -3px 0 0 var(--am-primary-600);
+      }
+      [data-task-row]:focus-visible,
+      [data-request-row]:focus-visible {
+        outline: var(--am-focus-ring-width) solid var(--am-focus-ring);
+        outline-offset: -2px;
+      }
     `,
   ],
 })
@@ -485,6 +501,22 @@ export class MyTasksComponent implements OnInit {
   private readonly translate = inject(TranslateService);
   private readonly language = inject(LanguageService);
   private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
+
+  /**
+   * ACC-198 — a briefing item's link: ?task=<id> (a row in My tasks or
+   * Available) or ?request=<id> (a row in Waiting for your decision). The row
+   * is scrolled to, focused and highlighted, as ACC-208's committee page does;
+   * the parameter is removed so a refresh is ordinary. A task no longer here
+   * (completed, reassigned) just leaves the page as it is.
+   */
+  readonly soughtTaskId = signal<string | null>(null);
+  readonly soughtRequestId = signal<string | null>(null);
+  private pendingTaskId: string | null = null;
+  private pendingRequestId: string | null = null;
 
   readonly filters = FILTERS;
   selectedFilter: FilterValue | null = null;
@@ -518,7 +550,51 @@ export class MyTasksComponent implements OnInit {
   readonly reopenVisible = signal(false);
 
   ngOnInit(): void {
+    this.watchSought();
     this.reloadAll();
+  }
+
+  private watchSought(): void {
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const task = params.get('task');
+      const request = params.get('request');
+      if (!task && !request) return;
+      this.pendingTaskId = task;
+      this.pendingRequestId = request;
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { task: null, request: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      this.showSought();
+    });
+  }
+
+  /** Called after every list loads: the sought row may be in any of the three. */
+  private showSought(): void {
+    const taskId = this.pendingTaskId;
+    const requestId = this.pendingRequestId;
+    let selector: string | null = null;
+    if (taskId && (this.tasks().some((t) => t.id === taskId) || this.available().some((t) => t.id === taskId))) {
+      this.pendingTaskId = null;
+      this.soughtTaskId.set(taskId);
+      selector = `[data-task-row="${taskId}"]`;
+    } else if (requestId && this.awaiting().some((r) => r.id === requestId)) {
+      this.pendingRequestId = null;
+      this.soughtRequestId.set(requestId);
+      selector = `[data-request-row="${requestId}"]`;
+    }
+    if (!selector) return;
+    const target = selector;
+    afterNextRender(
+      () => {
+        const row = document.querySelector<HTMLElement>(target);
+        row?.scrollIntoView({ block: 'center' });
+        row?.focus({ preventScroll: true });
+      },
+      { injector: this.injector },
+    );
   }
 
   reloadAll(): void {
@@ -722,7 +798,10 @@ export class MyTasksComponent implements OnInit {
 
   loadAwaiting(): void {
     this.taskService.getAwaitingDecision().subscribe({
-      next: (requests) => this.awaiting.set(requests),
+      next: (requests) => {
+        this.awaiting.set(requests);
+        this.showSought();
+      },
       // Like Available: an addition to the page, absent on failure.
       error: () => this.awaiting.set([]),
     });
@@ -751,7 +830,10 @@ export class MyTasksComponent implements OnInit {
 
   loadAvailable(): void {
     this.taskService.getAvailable().subscribe({
-      next: (tasks) => this.available.set(tasks),
+      next: (tasks) => {
+        this.available.set(tasks);
+        this.showSought();
+      },
       // The section is an addition to the page, not the page: a failure here
       // leaves it absent rather than putting an error over the viewer's own list.
       error: () => this.available.set([]),
@@ -765,6 +847,7 @@ export class MyTasksComponent implements OnInit {
       next: (tasks) => {
         this.tasks.set(tasks);
         this.loading.set(false);
+        this.showSought();
       },
       error: () => {
         this.error.set('task.errorLoad');

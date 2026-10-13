@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #F4F7FA; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #2D3748; }
+  a { color: #2E6FA3; }
+  a:hover { color: #1F5480; }
+  @keyframes amPulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+</style>
+</helmet>
+
+<div style="max-width: 1440px; margin-inline: auto; padding: 20px 20px 64px; font-size: 14px; line-height: 1.5;">
+
+  <div style="margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #5A6779;">AccreditMe · 10 Oct 2026 · AI for users · on the File Viewer drawer, Task Screens (New task, assignee picker), App Shell (Home) and Meeting Screens</div>
+    <h1 style="margin: 4px 0 0; font-size: 28px; line-height: 1.2; font-weight: 600; letter-spacing: -0.015em;">AI for users</h1>
+    <p style="margin: 6px 0 0; font-size: 14px; color: #4A5568; max-width: 108ch; text-wrap: pretty;">One shared AI pattern (am-ai-assist), then five places that use it. AI suggests, a person reviews and accepts, the system records it. With AI off, every accepted screen looks exactly as drawn. Users never see credits, providers or models, except in the “used up” refusal.</p>
+  </div>
+
+  <section style="background: #fff; border: 1px solid #C5DAEA; border-radius: 10px; padding: 16px 18px; margin-block-end: 14px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #1F5480; margin-block-end: 8px;">The decisions, in one place</div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px;">
+      <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="8"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="font-size: 12.5px; font-weight: 600; margin-block-end: 3px;">{{ d.t }}</div><div style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ d.b }}</div></div></sc-for>
+    </div>
+  </section>
+
+  <section id="a1" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">1</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">The shared AI pattern · am-ai-assist</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">A trigger, a result area, and the states between. Every AI place in the product is this component.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 14px;">
+      <sc-for list="{{ states }}" as="s" hint-placeholder-count="8">
+        <div dir="{{ s.dir }}" style="{{ s.frame }}">
+          <div style="{{ s.capStyle }}">{{ s.cap }}</div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-block-end: 8px;">
+            <span style="{{ s.labStyle }}">{{ s.label }}</span>
+            <span style="display: flex; gap: 6px; align-items: center;"><sc-if value="{{ s.trigText }}" hint-placeholder-val="{{ false }}"><span role="status" style="{{ s.trigTextStyle }}">{{ s.trigText }}</span></sc-if><button style="{{ s.trig.style }}"><span aria-hidden="true" style="{{ s.trig.markStyle }}">{{ s.trig.mark }}</span>{{ s.trig.text }}</button><sc-if value="{{ s.trig.cancel }}" hint-placeholder-val="{{ false }}"><button style="{{ s.cancelStyle }}">{{ s.trig.cancel }}</button></sc-if></span>
+          </div>
+          <div style="{{ s.areaStyle }}">
+            <sc-if value="{{ s.isField }}" hint-placeholder-val="{{ false }}"><div style="{{ s.fieldStyle }}">{{ s.field }}</div></sc-if>
+            <sc-if value="{{ s.isWorking }}" hint-placeholder-val="{{ false }}"><div role="status" aria-live="polite" style="display: flex; flex-direction: column; gap: 7px;"><span style="{{ s.workTitle }}">{{ s.workText }}</span><span style="display: block; height: 10px; width: 92%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s ease-in-out infinite;"></span><span style="display: block; height: 10px; width: 78%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s ease-in-out infinite;"></span><span style="display: block; height: 10px; width: 64%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s ease-in-out infinite;"></span></div></sc-if>
+            <sc-if value="{{ s.isSugg }}" hint-placeholder-val="{{ false }}">
+              <div role="region" aria-label="{{ s.sugg.tag }}" style="{{ s.sugg.box }}">
+                <div style="{{ s.sugg.tagStyle }}"><span aria-hidden="true">✦</span><span>{{ s.sugg.tag }}</span></div>
+                <div style="{{ s.sugg.textStyle }}">{{ s.sugg.text }}</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 10px;"><sc-for list="{{ s.sugg.btns }}" as="b" hint-placeholder-count="3"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ s.isRefusal }}" hint-placeholder-val="{{ false }}">
+              <div role="status" style="{{ s.ref.box }}"><div style="{{ s.ref.tStyle }}"><span aria-hidden="true">{{ s.ref.g }}</span> {{ s.ref.t }}</div><sc-if value="{{ s.ref.btn }}" hint-placeholder-val="{{ false }}"><button style="{{ s.ref.btnStyle }}">{{ s.ref.btn }}</button></sc-if></div>
+            </sc-if>
+          </div>
+          <div style="{{ s.noteStyle }}">{{ s.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · the pattern</div>
+        <sc-for list="{{ patternNotes }}" as="n" hint-placeholder-count="8"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for>
+      </div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · every AI place</div>
+        <sc-for list="{{ outPattern }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="a2" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">2</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Summarize in the File Viewer</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The accepted drawer, normal width (60%, min 720). The summary opens in a collapsible panel above the file, inside the scrolling area.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 640px), 1fr)); gap: 16px;">
+      <sc-for list="{{ viewers }}" as="v" hint-placeholder-count="6">
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ v.cap }}</div>
+          <div dir="{{ v.dir }}" style="{{ v.frame }}">
+            <div style="display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; border-block-end: 1px solid #E2E8F0; background: #fff;">
+              <span style="flex: 1 1 auto; min-width: 0;"><span style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; line-height: 20px; font-weight: 600;"><span dir="ltr" style="unicode-bidi: isolate;">Hand hygiene audit, Ward 4B · September 2026.pdf</span></span><span style="{{ v.metaStyle }}">{{ v.meta }}</span></span>
+              <span style="flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; max-width: 62%;">
+                <span style="{{ v.navStyle }}"><button aria-label="Previous file" style="{{ v.navBtn }}">{{ v.prev }}</button><span>2 / 5</span><button aria-label="Next file" style="{{ v.navBtn }}">{{ v.next }}</button></span>
+                <sc-if value="{{ v.trig }}" hint-placeholder-val="{{ false }}"><button style="{{ v.trig.style }}"><span aria-hidden="true" style="{{ v.trig.markStyle }}">{{ v.trig.mark }}</span>{{ v.trig.text }}</button></sc-if>
+                <sc-if value="{{ v.trigText }}" hint-placeholder-val="{{ false }}"><span role="status" style="{{ v.trigTextStyle }}">{{ v.trigText }}</span></sc-if>
+                <sc-for list="{{ v.acts }}" as="i" hint-placeholder-count="3"><button aria-label="{{ i.a }}" style="{{ i.style }}">{{ i.l }}</button></sc-for>
+              </span>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 14px; border-block-end: 1px solid #E2E8F0; background: #FBFCFD;"><sc-for list="{{ v.tools }}" as="t" hint-placeholder-count="4"><span style="{{ t.style }}">{{ t.l }}</span></sc-for></div>
+            <div style="background: #EDF1F6; padding: 12px 14px; height: 300px; overflow: hidden; display: flex; flex-direction: column; gap: 10px;">
+              <sc-if value="{{ v.panel }}" hint-placeholder-val="{{ false }}">
+                <div role="region" aria-label="{{ v.panel.tag }}" style="{{ v.panel.box }}">
+                  <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; align-items: center;"><span style="{{ v.panel.tagStyle }}"><span aria-hidden="true">✦</span> {{ v.panel.tag }}</span><span style="display: flex; gap: 10px; align-items: center;"><span style="{{ v.panel.whenStyle }}">{{ v.panel.when }}</span><button aria-label="{{ v.panel.collapse }}" style="border: none; background: none; color: #4A5568; font-size: 12px;">▴</button></span></div>
+                  <sc-if value="{{ v.panel.working }}" hint-placeholder-val="{{ false }}"><div role="status" style="display: flex; flex-direction: column; gap: 6px; margin-block-start: 8px;"><span style="{{ v.panel.textStyle }}">{{ v.panel.workText }}</span><span style="display: block; height: 9px; width: 90%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s infinite;"></span><span style="display: block; height: 9px; width: 70%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s infinite;"></span></div></sc-if>
+                  <sc-if value="{{ v.panel.text }}" hint-placeholder-val="{{ false }}"><div style="{{ v.panel.textStyle }}">{{ v.panel.text }}</div><ul style="{{ v.panel.listStyle }}"><sc-for list="{{ v.panel.points }}" as="p" hint-placeholder-count="3"><li style="margin-block-end: 2px;">{{ p }}</li></sc-for></ul></sc-if>
+                  <sc-if value="{{ v.panel.ref }}" hint-placeholder-val="{{ false }}"><div style="{{ v.panel.refStyle }}">{{ v.panel.ref }}</div><sc-if value="{{ v.panel.refBtn }}" hint-placeholder-val="{{ false }}"><button style="margin-block-start: 6px; background: #fff; color: #2D3748; border: 1px solid #5A6779; border-radius: 6px; padding: 4px 10px; font-family: inherit; font-size: 12.5px;">{{ v.panel.refBtn }}</button></sc-if></sc-if>
+                </div>
+              </sc-if>
+              <div style="flex: 1 1 auto; min-height: 60px; background: #fff; border: 1px solid #CBD5E0; border-radius: 2px; padding: 14px 18px; box-shadow: 0 1px 2px rgba(16,24,40,0.08);" dir="ltr">
+                <div style="font-size: 12px; font-weight: 700;">Hand Hygiene Compliance Audit · Ward 4B</div>
+                <div style="font-size: 10.5px; color: #4A5568;">September 2026 · Infection Prevention &amp; Control · page 3 of 12</div>
+                <div style="display: flex; flex-direction: column; gap: 5px; margin-block-start: 8px;"><span style="height: 6px; width: 96%; background: #E2E8F0;"></span><span style="height: 6px; width: 88%; background: #E2E8F0;"></span><span style="height: 6px; width: 92%; background: #E2E8F0;"></span><span style="height: 6px; width: 60%; background: #E2E8F0;"></span></div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ v.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · summarize</div><sc-for list="{{ viewerNotes }}" as="n" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · summarize</div><sc-for list="{{ outViewer }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for></div>
+    </div>
+  </section>
+
+  <section id="a3" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">3 · 5</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">New task · Draft with AI (step 2) and the workload hint (step 1)</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">The accepted two-step Form 560: step 1 compact (Task Screens round 3), step 2 standard (Templates). Each body measured below its frame.</span>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start;">
+      <sc-for list="{{ dialogs }}" as="d" hint-placeholder-count="5">
+        <div style="{{ d.outer }}">
+          <div dir="{{ d.dir }}" style="{{ d.capStyle }}">{{ d.cap }}</div>
+          <div dir="{{ d.dir }}" style="{{ d.frame }}">
+            <div style="{{ d.headStyle }}"><span style="min-width: 0;"><span style="{{ d.titleStyle }}">{{ d.title }}</span><span style="{{ d.ctxStyle }}">{{ d.ctx }}</span></span><span aria-label="Close" style="color: #5A6779; font-size: 13px;">✕</span></div>
+            <div style="padding: 16px 20px;">
+              <sc-for list="{{ d.items }}" as="it" hint-placeholder-count="4">
+                <div style="{{ it.wrap }}">
+                  <sc-if value="{{ it.isField }}" hint-placeholder-val="{{ true }}">
+                    <div style="{{ it.labRow }}"><span style="{{ it.labStyle }}">{{ it.label }}<span style="font-weight: 400; color: #5A6779;">{{ it.tag }}</span></span><sc-if value="{{ it.trig }}" hint-placeholder-val="{{ false }}"><button style="{{ it.trig.style }}"><span aria-hidden="true" style="{{ it.trig.markStyle }}">{{ it.trig.mark }}</span>{{ it.trig.text }}</button></sc-if></div>
+                    <div style="{{ it.box }}"><span style="{{ it.valStyle }}">{{ it.value }}</span><sc-if value="{{ it.action }}" hint-placeholder-val="{{ false }}"><span style="{{ it.actStyle }}">{{ it.action }}</span></sc-if></div>
+                    <sc-if value="{{ it.help }}" hint-placeholder-val="{{ false }}"><div style="{{ it.helpStyle }}">{{ it.help }}</div></sc-if>
+                  </sc-if>
+                  <sc-if value="{{ it.isSugg }}" hint-placeholder-val="{{ false }}">
+                    <div role="region" aria-label="{{ it.tag }}" style="{{ it.box }}">
+                      <div style="{{ it.tagStyle }}"><span aria-hidden="true">✦</span> {{ it.tag }}</div>
+                      <sc-for list="{{ it.paras }}" as="p" hint-placeholder-count="3"><div style="{{ it.textStyle }}"><strong style="font-weight: 600;">{{ p.k }}</strong> {{ p.v }}</div></sc-for>
+                      <sc-if value="{{ it.titleSugg }}" hint-placeholder-val="{{ false }}"><div style="{{ it.titleRow }}"><span style="min-width: 0; flex: 1 1 auto;">{{ it.titleSugg }}</span><button style="{{ it.smallBtn }}">{{ it.titleBtn }}</button></div></sc-if>
+                      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 8px;"><sc-for list="{{ it.btns }}" as="b" hint-placeholder-count="3"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ it.isHint }}" hint-placeholder-val="{{ false }}">
+                    <div role="status" style="{{ it.box }}">
+                      <div style="{{ it.textStyle }}"><span aria-hidden="true" style="color: #1F5480;">✦</span> {{ it.text }}</div>
+                      <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 4px;"><sc-for list="{{ it.btns }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ it.isPair }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ it.grid }}"><sc-for list="{{ it.cols }}" as="c" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ c.labStyle }}">{{ c.label }}<span style="font-weight: 400; color: #5A6779;">{{ c.tag }}</span></div><sc-if value="{{ c.isBox }}" hint-placeholder-val="{{ true }}"><div style="{{ c.box }}"><span style="{{ c.valStyle }}">{{ c.value }}</span><span style="{{ c.actStyle }}">{{ c.action }}</span></div></sc-if><sc-if value="{{ c.segs }}" hint-placeholder-val="{{ false }}"><div role="radiogroup" aria-label="{{ c.label }}" style="{{ c.segWrap }}"><sc-for list="{{ c.segs }}" as="g" hint-placeholder-count="4"><span role="radio" style="{{ g.style }}">{{ g.l }}</span></sc-for></div></sc-if></div></sc-for></div>
+                    <div role="status" style="{{ it.slotStyle }}"><span style="display: block;">{{ it.slot }}</span><sc-if value="{{ it.hbtns }}" hint-placeholder-val="{{ false }}"><span style="display: flex; flex-wrap: wrap; gap: 0 16px; margin-block-start: 4px;"><sc-for list="{{ it.hbtns }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></sc-if></div>
+                  </sc-if>
+                  <sc-if value="{{ it.isPresets }}" hint-placeholder-val="{{ false }}"><div style="display: flex; flex-wrap: wrap; gap: 6px;"><sc-for list="{{ it.chips }}" as="p" hint-placeholder-count="4"><span style="{{ it.chipStyle }}">{{ p }}</span></sc-for></div></sc-if>
+                  <sc-if value="{{ it.isCheck }}" hint-placeholder-val="{{ false }}"><div style="display: flex; align-items: center; gap: 8px;"><span role="checkbox" aria-checked="false" style="flex: none; width: 16px; height: 16px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 3px; background: #fff;"></span><span style="{{ it.tStyle }}">{{ it.text }}</span></div></sc-if>
+                  <sc-if value="{{ it.isPicker }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ it.labStyle }}">{{ it.label }}</div>
+                    <div role="listbox" style="border: 1px solid #8A94A6; border-radius: 4px; overflow: hidden;"><sc-for list="{{ it.rows }}" as="r" hint-placeholder-count="3"><div role="option" style="{{ r.row }}"><span style="flex: 1 1 auto; min-width: 0;"><span style="{{ r.nStyle }}">{{ r.n }}</span><span style="{{ r.pStyle }}">{{ r.p }}</span></span><span style="{{ r.cStyle }}">{{ r.c }}</span></div></sc-for></div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <div style="{{ d.footStyle }}"><span style="font-size: 12px; color: #5A6779;">{{ d.footLeft }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ d.buttons }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ d.measure }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · draft and workload</div><sc-for list="{{ taskNotes }}" as="n" hint-placeholder-count="8"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · draft · workload hint</div><sc-for list="{{ outTask }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for></div>
+    </div>
+  </section>
+
+  <section id="a4" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">4</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Morning briefing on Home</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Above the accepted Home panels, full content width. Nora Al-Otaibi, Quality Officer, Cardiology · Sunday 11 Oct 2026.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 640px), 1fr)); gap: 16px;">
+      <sc-for list="{{ briefings }}" as="b" hint-placeholder-count="5">
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ b.cap }}</div>
+          <div dir="{{ b.dir }}" style="{{ b.frame }}">
+            <sc-if value="{{ b.card }}" hint-placeholder-val="{{ true }}">
+              <div role="region" aria-label="{{ b.card.aria }}" style="{{ b.card.box }}">
+                <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: baseline;"><span style="{{ b.card.helloStyle }}">{{ b.card.hello }}</span><span style="{{ b.card.tagStyle }}"><span aria-hidden="true">✦</span> {{ b.card.tag }}</span></div>
+                <sc-if value="{{ b.card.working }}" hint-placeholder-val="{{ false }}"><div role="status" style="display: flex; flex-direction: column; gap: 7px; margin-block-start: 10px;"><span style="{{ b.card.lineStyle }}">{{ b.card.workText }}</span><span style="display: block; height: 10px; width: 80%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s infinite;"></span><span style="display: block; height: 10px; width: 64%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s infinite;"></span><span style="display: block; height: 10px; width: 72%; border-radius: 3px; background: #E9EEF4; animation: amPulse 1.6s infinite;"></span></div></sc-if>
+                <sc-if value="{{ b.card.lead }}" hint-placeholder-val="{{ false }}"><div style="{{ b.card.lineStyle }}">{{ b.card.lead }}</div></sc-if>
+                <sc-for list="{{ b.card.groups }}" as="g" hint-placeholder-count="3">
+                  <div style="margin-block-start: 10px;">
+                    <div style="{{ g.headStyle }}">{{ g.head }}</div>
+                    <sc-for list="{{ g.items }}" as="i" hint-placeholder-count="2"><div style="{{ g.rowStyle }}"><a href="#a4" style="{{ g.linkStyle }}">{{ i.t }}</a><span style="{{ g.metaStyle }}">{{ i.m }}</span></div></sc-for>
+                  </div>
+                </sc-for>
+                <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-block-start: 12px; padding-block-start: 8px; border-block-start: 1px solid #E2E8F0;"><a href="#a4" style="{{ b.card.linkStyle }}">{{ b.card.full }}</a><a href="#a4" style="{{ b.card.offStyle }}">{{ b.card.off }}</a></div>
+              </div>
+            </sc-if>
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-block-start: 12px;">
+              <sc-for list="{{ b.panels }}" as="p" hint-placeholder-count="2"><div style="background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 9px 12px;"><div style="display: flex; justify-content: space-between; gap: 8px;"><span style="font-size: 13px; font-weight: 600;">{{ p.t }}</span><span style="font-size: 12px; color: #4A5568;">{{ p.c }}</span></div><div style="font-size: 12px; color: #5A6779; margin-block-start: 4px;">{{ p.s }}</div></div></sc-for>
+            </div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ b.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · briefing</div><sc-for list="{{ homeNotes }}" as="n" hint-placeholder-count="7"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · briefing</div><sc-for list="{{ outHome }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for></div>
+    </div>
+  </section>
+
+  <section id="a6" style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; border-block-end: 1px solid #E2E8F0; padding-block-end: 10px; margin-block-end: 14px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: #8A94A6;">6</span>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Meetings AI · Infection Prevention &amp; Control · 24 Sep and 29 Oct 2026</h2>
+      <span style="font-size: 12.5px; color: #5A6779;">Page panels on the accepted meeting page, never dialogs: each can be long, and each is the secretary's working surface.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 620px), 1fr)); gap: 16px; align-items: start;">
+      <sc-for list="{{ meetings }}" as="m" hint-placeholder-count="4">
+        <div>
+          <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">{{ m.cap }}</div>
+          <div dir="{{ m.dir }}" style="{{ m.frame }}">
+            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-block-end: 1px solid #E2E8F0;"><span style="{{ m.titleStyle }}">{{ m.title }}</span><sc-if value="{{ m.trig }}" hint-placeholder-val="{{ false }}"><button style="{{ m.trig.style }}"><span aria-hidden="true" style="{{ m.trig.markStyle }}">{{ m.trig.mark }}</span>{{ m.trig.text }}</button></sc-if></div>
+            <div style="padding: 10px 12px;">
+              <sc-if value="{{ m.input }}" hint-placeholder-val="{{ false }}"><div style="{{ m.inputLab }}">{{ m.inputLabel }}</div><div style="{{ m.inputBox }}">{{ m.input }}</div></sc-if>
+              <div role="region" aria-label="{{ m.tag }}" style="{{ m.box }}">
+                <div style="{{ m.tagStyle }}"><span aria-hidden="true">✦</span> {{ m.tag }}</div>
+                <sc-for list="{{ m.rows }}" as="r" hint-placeholder-count="4">
+                  <div style="{{ r.row }}">
+                    <sc-if value="{{ r.check }}" hint-placeholder-val="{{ false }}"><span role="checkbox" aria-checked="{{ r.aria }}" style="{{ r.boxStyle }}">{{ r.mark }}</span></sc-if>
+                    <span style="flex: 1 1 auto; min-width: 0;"><span style="{{ r.tStyle }}">{{ r.t }}</span><sc-if value="{{ r.d }}" hint-placeholder-val="{{ false }}"><span style="{{ r.dStyle }}">{{ r.d }}</span></sc-if><sc-if value="{{ r.src }}" hint-placeholder-val="{{ false }}"><a href="#a6" style="{{ r.srcStyle }}">{{ r.src }}</a></sc-if></span>
+                    <sc-if value="{{ r.acts }}" hint-placeholder-val="{{ false }}"><span style="flex: none; display: flex; gap: 8px;"><sc-for list="{{ r.acts }}" as="a" hint-placeholder-count="3"><a href="#a6" style="{{ a.style }}">{{ a.l }}</a></sc-for></span></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;"><span style="{{ m.footStyle }}">{{ m.foot }}</span><span style="display: flex; gap: 8px;"><sc-for list="{{ m.btns }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ m.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; margin-block-start: 16px;">
+      <sc-for list="{{ confirms }}" as="d" hint-placeholder-count="3">
+        <div style="{{ d.outer }}">
+          <div dir="{{ d.dir }}" style="{{ d.capStyle }}">{{ d.cap }}</div>
+          <div dir="{{ d.dir }}" style="{{ d.frame }}">
+            <div style="{{ d.headStyle }}"><span style="min-width: 0;"><span style="{{ d.titleStyle }}">{{ d.title }}</span><span style="{{ d.ctxStyle }}">{{ d.ctx }}</span></span><span aria-label="Close" style="color: #5A6779; font-size: 13px;">✕</span></div>
+            <div style="padding: 16px 20px;"><div style="{{ d.noteStyle }}">{{ d.note }}</div><div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-block-start: 12px;"><sc-for list="{{ d.pairs }}" as="q" hint-placeholder-count="2"><div style="min-width: 0;"><div style="{{ d.labStyle }}">{{ q.k }}</div><div style="{{ d.valStyle }}">{{ q.v }}</div></div></sc-for></div></div>
+            <div style="{{ d.footStyle }}"><span></span><span style="display: flex; gap: 8px;"><sc-for list="{{ d.buttons }}" as="b" hint-placeholder-count="2"><button style="{{ b.style }}">{{ b.label }}</button></sc-for></span></div>
+          </div>
+          <div style="font-size: 11.5px; color: #5A6779; margin-block-start: 6px; text-wrap: pretty;">{{ d.measure }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px; margin-block-start: 14px;">
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;">Reasoning · meetings</div><sc-for list="{{ meetNotes }}" as="n" hint-placeholder-count="8"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 4px 0; font-size: 12px;"><span style="color: #2E6FA3; font-weight: 700;">·</span><span style="color: #4A5568; text-wrap: pretty;"><strong>{{ n.k }}</strong> {{ n.v }}</span></div></sc-for></div>
+      <div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px;"><div style="font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;">Six request outcomes · meetings AI</div><sc-for list="{{ outMeet }}" as="o" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 4px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12px; font-weight: 600;">{{ o.k }}</span><span style="font-size: 12px; color: #4A5568; text-wrap: pretty;">{{ o.v }}</span></div></sc-for></div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #E2E8F0; border-radius: 10px; padding: 18px 20px 20px; margin-block-end: 14px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px;">
+      <div>
+        <h2 style="margin: 0 0 10px; font-size: 18px; font-weight: 600;">Every dialog body, both languages · cap 420</h2>
+        <sc-for list="{{ measures }}" as="m" hint-placeholder-count="5"><div style="display: flex; gap: 10px; padding: 6px 0; border-block-end: 1px solid #F0F3F7; font-size: 12px;"><span style="flex: 1 1 0; min-width: 0; font-weight: 500;">{{ m.d }}</span><span style="flex: none; width: 110px; color: #5A6779;">{{ m.s }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.en }}</span><span style="flex: none; width: 46px; text-align: end; font-variant-numeric: tabular-nums;">{{ m.ar }}</span></div></sc-for>
+        <div style="padding: 8px 0; font-size: 11.5px; color: #5A6779; text-wrap: pretty;">Step 1 compact (Task Screens round 3): field block EN 71, AR 76; gaps 8; presets 24 / 26. Step 2 standard (Templates): three-row textarea EN 119, AR 130; gaps 12; checkbox row EN 24, AR 26. AI suggestion card: tag 18 (AR 20) + text lines × 20 (AR 22) + actions 28 + padding 20. Confirm sentence EN 21, AR 24 a line; pairs EN 40, AR 44.</div>
+      </div>
+      <div>
+        <h2 style="margin: 0 0 10px; font-size: 18px; font-weight: 600;">Changes to accepted screens</h2>
+        <sc-for list="{{ changes }}" as="c" hint-placeholder-count="6"><div style="display: grid; grid-template-columns: minmax(0, 180px) 1fr; gap: 12px; padding: 7px 0; border-block-end: 1px solid #F0F3F7;"><span style="font-size: 12.5px; font-weight: 600;">{{ c.s }}</span><span style="font-size: 12.5px; color: #4A5568; text-wrap: pretty;">{{ c.w }}</span></div></sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section style="background: #fff; border: 1px solid #FEDF89; border-radius: 10px; padding: 18px 20px 20px;">
+    <h2 style="margin: 0 0 12px; font-size: 20px; font-weight: 600;">Questions for the product owner · all answered, 10 Oct 2026</h2>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px;">
+      <sc-for list="{{ questions }}" as="q" hint-placeholder-count="10"><div style="border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 12px;"><div style="display: flex; gap: 8px; align-items: baseline;"><span style="flex: none; font-size: 11px; font-weight: 700; color: #B54708;">{{ q.n }}</span><span style="font-size: 13px; font-weight: 600; text-wrap: pretty;">{{ q.q }}</span></div><sc-for list="{{ q.opts }}" as="o" hint-placeholder-count="2"><div style="display: grid; grid-template-columns: auto 1fr; gap: 8px; padding: 3px 0 0; font-size: 12px;"><span style="color: #5A6779;">–</span><span style="color: #4A5568; text-wrap: pretty;">{{ o }}</span></div></sc-for></div></sc-for>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const iso = (t) => "\u2066" + t + "\u2069";
+    const AF = "font-family: 'IBM Plex Sans Arabic', sans-serif;";
+    // shared AI tokens: mark ✦ + dashed left rule (inline-start) + "AI" tag text; tint is secondary
+    const trig = (text, ar, st) => ({ text, mark: st === "work" ? "◌" : "✦",
+      style: "display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 600; border-radius: 6px; padding: 4px 10px; white-space: nowrap; " + (st === "work" ? "background: #F4F7FA; color: #4A5568; border: 1px solid #CBD5E0; cursor: progress;" : "background: #fff; color: #1F5480; border: 1px solid #2E6FA3;"),
+      markStyle: "font-size: 12px; color: #2E6FA3;" + (st === "work" ? " animation: amPulse 1.2s infinite;" : "") });
+    const btn = (label, kind, ar) => ({ label, style: "font-family: inherit; font-size: " + (ar ? 13.5 : 12.5) + "px; border-radius: 6px; padding: 5px 11px; white-space: nowrap; " + ({ primary: "background: #2E6FA3; color: #fff; border: 1px solid #1F5480; font-weight: 600;", secondary: "background: #fff; color: #2D3748; border: 1px solid #5A6779; font-weight: 500;", text: "background: transparent; color: #2E6FA3; border: 1px solid transparent; font-weight: 500;" })[kind] });
+    const sbox = "background: #F7FAFD; border: 1px solid #C5DAEA; border-inline-start: 3px dashed #2E6FA3; border-radius: 6px; padding: 10px 12px;";
+    const tagS = (ar) => "display: flex; align-items: center; gap: 6px; font-size: " + (ar ? 12.5 : 11.5) + "px; line-height: " + (ar ? 20 : 18) + "px; font-weight: 700; color: #1F5480;" + (ar ? "" : " letter-spacing: 0.02em;");
+    const txt = (ar) => "font-size: " + (ar ? 14 : 13) + "px; line-height: " + (ar ? 22 : 20) + "px; color: #2D3748; text-wrap: pretty;";
+    const refusal = (kind, ar) => {
+      const R = ar ? { off: ["", "", ""], credits: ["◔", "نفد رصيد الذكاء الاصطناعي لمؤسستك لهذا الشهر. يتجدد في " + iso("1 Nov 2026") + ". يمكن لمسؤول النظام إضافة المزيد.", null], paused: ["⏸", "ميزات الذكاء الاصطناعي متوقفة مؤقتًا من AccreditMe. حاول لاحقًا.", null], failed: ["!", "تعذّر على الذكاء الاصطناعي الرد الآن. حاول مرة أخرى.", "حاول مرة أخرى"] }
+        : { off: ["○", "Ask your administrator to turn on AI features.", null], credits: ["◔", "Your organisation's AI credits for this month are used up. They renew on 1 Nov 2026. Your administrator can add more.", null], paused: ["⏸", "AI features are paused by AccreditMe. Try again later.", null], failed: ["!", "AI couldn't answer just now. Try again.", "Try again"] };
+      const r = R[kind];
+      return { g: r[0], t: r[1], btn: r[2], box: "border-radius: 6px; padding: 10px 12px; border: 1px solid " + (kind === "failed" ? "#FECDCA; background: #FEF3F2;" : "#E2E8F0; background: #F4F7FA;"), tStyle: txt(ar) + (kind === "failed" ? " color: #B42318; font-weight: 500;" : ""), btnStyle: btn("", "secondary", ar).style + " margin-block-start: 8px;" };
+    };
+    const S = (o) => {
+      const ar = !!o.ar;
+      return Object.assign({ isField: false, isWorking: false, isSugg: false, isRefusal: false, sugg: {}, ref: {}, field: "", workText: "", trigText: "" }, o, {
+        trigTextStyle: "display: inline-flex; align-items: center; gap: 6px; font-size: " + (ar ? 13 : 12) + "px; font-weight: 500; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px; padding: 3px 10px;",
+        dir: ar ? "rtl" : "ltr", frame: "border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 14px; background: #fff;" + (ar ? " " + AF : ""),
+        capStyle: ar ? "font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 8px;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 8px;",
+        labStyle: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 500; color: #4A5568;", cancelStyle: btn("", "text", ar).style, areaStyle: "min-height: 92px;",
+        fieldStyle: "border: 1px solid #8A94A6; border-radius: 4px; padding: 8px 10px; min-height: 76px; box-sizing: border-box; " + txt(ar) + (o.ph ? " color: #8A94A6;" : ""),
+        workTitle: "font-size: " + (ar ? 13 : 12) + "px; color: #4A5568;",
+        noteStyle: (ar ? "font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; direction: ltr; " : "") + "font-size: 11.5px; color: #5A6779; margin-block-start: 8px; text-wrap: pretty;"
+      });
+    };
+    const sug = (tag, text, ar, accepted) => ({ tag, text, box: sbox, tagStyle: tagS(ar), textStyle: txt(ar), btns: accepted ? [] : [btn(ar ? "قبول" : "Accept", "primary", ar), btn(ar ? "تعديل" : "Edit", "secondary", ar), btn(ar ? "تجاهل" : "Discard", "text", ar)] });
+    const D = "Follow up hand-rub stock on ward 6A.";
+    const DESC = "Purpose: make sure ward 6A never runs out of alcohol hand rub, which the September audit linked to low compliance. What to do: check stock at every dispenser and in the store, reorder through Supply, and agree a weekly check with the charge nurse. Done when: every dispenser is full and a weekly check is on the ward rota.";
+    const states = [
+      S({ cap: "1 · Idle · trigger beside its field", label: "Description", trig: trig("Draft with AI"), isField: 1, field: "follow up hand rub stock ward 6A", note: "Spark plus words, never an icon alone. The trigger sits on the field's label row, at the end edge, so it never adds height." }),
+      S({ cap: "2 · Working", label: "Description", trig: Object.assign(trig("Working…", false, "work"), { cancel: "Cancel" }), isWorking: 1, workText: "Drafting a description from your note…", note: "The field's text is kept and stays editable. Leaving the form or closing it cancels the request; nothing is charged for a cancelled one that hadn't started, and no result appears later." }),
+      S({ cap: "3 · The suggestion", label: "Description", trig: trig("Draft again"), isSugg: 1, sugg: sug("AI suggestion · check before using", DESC), note: "Marked four ways: the ✦ mark, the words “AI suggestion”, a dashed rule on the inline-start edge, and fourth a light tint, never the only cue. Accept puts it in the field; Edit does the same and moves focus into the field; Discard removes it." }),
+      S({ cap: "4 · Accepted · ordinary content", label: "Description", trig: trig("Draft again"), isField: 1, field: DESC, note: "Once accepted it is the person's text, with no AI marking. The audit trail records “description drafted with AI, accepted by Nora Al-Otaibi”." }),
+      S({ cap: "5 · Credits used up", label: "Description", trig: trig("Draft with AI"), isRefusal: 1, ref: refusal("credits"), note: "The only place a user ever reads the word credits. Replaces the result area; the field above it is untouched." }),
+      S({ cap: "6 · Paused by AccreditMe · trigger replaced in place", label: "Description", trig: { text: "", mark: "", style: "display: none;", markStyle: "" }, trigText: "⏸ AI features are paused by AccreditMe", isField: 1, field: "follow up hand rub stock ward 6A", note: "Not a button that refuses after a click: the trigger itself is replaced by this line, as Platform AI's pause switch says. It returns when AccreditMe resumes AI." }),
+      S({ cap: "7 · Provider couldn't answer", label: "Description", trig: trig("Draft with AI"), isRefusal: 1, ref: refusal("failed"), note: "Try again repeats the same request. A failed request isn't charged." }),
+      S({ cap: "8 · Off by the organisation's administrator · trigger hidden", label: "Description", trig: { text: "", mark: "", style: "display: none;", markStyle: "" }, isField: 1, field: "follow up hand rub stock ward 6A", note: "Hidden: users never meet a dead button, and the accepted screens are exactly what they see. A saved AI result (a summary) still shows, marked as AI, with no new requests." }),
+      S({ cap: "8b · Turned off by AccreditMe · trigger replaced in place", label: "Description", trig: { text: "", mark: "", style: "display: none;", markStyle: "" }, trigText: "AI features are turned off for your organisation. Contact AccreditMe.", isField: 1, field: "follow up hand rub stock ward 6A", note: "Follows Platform AI: when AccreditMe switches AI off for this organisation, each trigger is replaced by this line, because only AccreditMe can turn it back on." }),
+      S({ ar: 1, cap: "٣ · الاقتراح · العربية", label: "الوصف", trig: trig("صياغة بالذكاء الاصطناعي", true), isSugg: 1, sugg: sug("اقتراح من الذكاء الاصطناعي · راجعه قبل الاستخدام", "الغرض: ضمان عدم نفاد معقّم اليدين في الجناح " + iso("6A") + "، إذ ربط تدقيق سبتمبر انخفاض الامتثال بنقصه. المطلوب: فحص المخزون عند كل موزّع وفي المستودع، وطلب الكمية عبر الإمداد، والاتفاق على فحص أسبوعي مع رئيسة التمريض. يُعدّ منجزًا عندما تكون كل الموزّعات ممتلئة والفحص الأسبوعي مدرجًا في جدول الجناح.", true), note: "The note was English; the suggestion is in the reader's language. The dashed rule moves to the right edge (inline-start)." }),
+      S({ ar: 1, cap: "٥ · نفاد الرصيد · العربية", label: "الوصف", trig: trig("صياغة بالذكاء الاصطناعي", true), isRefusal: 1, ref: refusal("credits", true), note: "Dates are isolated LTR runs." })
+    ];
+
+    // viewer
+    const vt = (ar) => trig(ar ? "تلخيص" : "Summarize", ar);
+    const vbtn = "font-family: inherit; font-size: 12.5px; height: 30px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 6px; background: #fff; color: #2D3748; padding: 0 9px; white-space: nowrap;";
+    const vacts = (ar) => [{ l: ar ? "⤓ تنزيل" : "⤓ Download", a: ar ? "تنزيل" : "Download" }, { l: ar ? "⤢ توسيع" : "⤢ Expand", a: ar ? "توسيع إلى ملء الشاشة" : "Expand to full screen" }, { l: "✕", a: ar ? "إغلاق" : "Close" }].map(a => Object.assign(a, { style: vbtn + (a.l === "✕" ? " width: 30px; padding: 0;" : "") }));
+    const vtools = (ar) => (ar ? ["الصفحة " + iso("3") + " من " + iso("12"), "ملاءمة العرض", "ملاءمة الصفحة", "−  " + iso("100%") + "  +"] : ["Page 3 of 12", "Fit width", "Fit page", "−  100%  +"]).map((l, i) => ({ l, style: "font-size: " + (ar ? 13 : 12) + "px; color: #2D3748;" + (i ? " border: 1px solid #CBD5E0; border-radius: 4px; padding: 1px 8px; background: #fff;" : " font-weight: 500;") }));
+    const SUMEN = { text: "Ward 4B's hand hygiene compliance in September was 71%, below the 90% target and down from 78% in August. Most missed moments were before patient contact during the night shift.", points: ["Night shift: 58% · day shift: 79%", "Two of six dispensers were empty on 3 of 5 audit days", "Recommended: daily dispenser check and a night-shift refresher"] };
+    const SUMAR = { text: "بلغ الامتثال لنظافة اليدين في الجناح " + iso("4B") + " خلال سبتمبر " + iso("71%") + "، دون الهدف " + iso("90%") + " وأقل من " + iso("78%") + " في أغسطس. وكانت معظم الفرص الفائتة قبل ملامسة المريض في المناوبة الليلية.", points: ["المناوبة الليلية: " + iso("58%") + " · النهارية: " + iso("79%"), "كان موزّعان من ستة فارغين في " + iso("3") + " من " + iso("5") + " أيام تدقيق", "التوصية: فحص يومي للموزّعات وتدريب تذكيري للمناوبة الليلية"] };
+    const panel = (o, ar) => Object.assign({ working: false, text: "", points: [], ref: null, refBtn: null, when: "", workText: "" }, o, {
+      box: sbox + " background: #fff;", tagStyle: tagS(ar), whenStyle: "font-size: " + (ar ? 12.5 : 11.5) + "px; color: #4A5568;", textStyle: txt(ar) + " margin-block-start: 6px;",
+      listStyle: "margin: 6px 0 0; padding-inline-start: 18px; " + txt(ar), refStyle: txt(ar) + " margin-block-start: 6px;", collapse: ar ? "طي الملخص" : "Collapse summary"
+    });
+    const TAGEN = "AI summary · may miss or misread details · check the file", TAGAR = "ملخص بالذكاء الاصطناعي · قد يُغفل تفاصيل أو يخطئ في قراءتها · راجع الملف";
+    const V = (o) => { const ar = !!o.ar; return Object.assign({ panel: null, trig: null, trigText: "" }, o, { dir: ar ? "rtl" : "ltr", acts: vacts(ar), tools: vtools(ar), prev: ar ? "→" : "←", next: ar ? "←" : "→",
+      navStyle: "display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: #2D3748;", navBtn: vbtn + " width: 30px; padding: 0;",
+      trigTextStyle: "display: inline-flex; align-items: center; font-size: " + (ar ? 13 : 12) + "px; font-weight: 500; color: #4A5568; background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 6px; padding: 4px 10px;", frame: "border: 1px solid #CBD5E0; border-radius: 8px; overflow: hidden; box-shadow: 0 12px 28px rgba(16,24,40,0.14); background: #fff;" + (ar ? " " + AF : ""), metaStyle: "display: block; font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779;" }); };
+    const MEN = "PDF · 2.4 MB · From the IPC meeting's attachments", MAR = "PDF · " + iso("2.4 MB") + " · من مرفقات اجتماع مكافحة العدوى";
+    const viewers = [
+      V({ cap: "Before · Summarize in the accepted header", meta: MEN, trig: vt(), note: "Exactly where: in the header's action group, after “← 2 / 5 →” and before “⤓ Download”, then Expand and Close. The file name, its meta line and the page toolbar are the accepted ones, unchanged. Offered for PDF, TXT and CSV; absent for Word, Excel, PowerPoint and HEIC." }),
+      V({ cap: "Working", meta: MEN, trig: Object.assign(vt(), trig("Summarizing…", false, "work")), panel: panel({ tag: TAGEN, working: true, workText: "Reading 12 pages…" }), note: "The panel opens at once with a calm placeholder; the file stays readable underneath. Moving to another file or closing the drawer cancels the request." }),
+      V({ cap: "The summary · English", meta: MEN, trig: null, panel: panel(Object.assign({ tag: TAGEN, when: "Summary made 9 Oct 2026" }, SUMEN)), note: "Above the file, not beside it: at 60% the drawer is 864px wide at 1440, and a side panel would leave an A4 page too narrow to read. The panel collapses to its tag line with ▴." }),
+      V({ ar: 1, cap: "الملخص · بالعربية لملف إنجليزي", meta: MAR, panel: panel(Object.assign({ tag: TAGAR, when: "أُعدّ الملخص في " + iso("9 Oct 2026") }, SUMAR), true), note: "Made in the reader's language from an English PDF. An English reader opening the same file gets a separate English summary, made on request: one summary per language." }),
+      V({ cap: "Second visit · saved summary, no new call", meta: MEN, panel: panel(Object.assign({ tag: TAGEN, when: "Summary made 9 Oct 2026 · saved" }, SUMEN)), note: "Shown at once, collapsed to two lines with “Show all”. Summarize is absent because a summary already exists in the reader's language; an Arabic reader opening the same file still sees Summarize until an Arabic one is made. A new upload of the file shows the button again." }),
+      V({ cap: "Refusal after a click · credits used up", meta: MEN, trig: vt(), panel: panel({ tag: TAGEN, ref: refusal("credits").t }), note: "Provider failure reads the same way in the same panel, with Try again. No modal." }),
+      V({ cap: "Paused by AccreditMe · Summarize replaced in place", meta: MEN, trigText: "⏸ AI features are paused by AccreditMe", note: "No button to press and be refused. When AccreditMe has turned AI off for the organisation, the same place reads “AI features are turned off for your organisation. Contact AccreditMe.” Off by the organisation's administrator: Summarize is simply absent. A saved summary still shows in all three cases." })
+    ];
+
+    // dialogs
+    const K = (ar) => {
+      const lab = ar ? 13 : 12, labLh = ar ? 20 : 18, val = ar ? 14 : 13, help = ar ? 12.5 : 11.5, helpLh = ar ? 20 : 17;
+      return {
+        field: (o, top) => Object.assign({ isField: true, trig: null, action: null, help: null }, o, { wrap: "margin-block-start: " + (top || 0) + "px;", tag: o.req ? (ar ? " · مطلوب" : " · required") : o.opt ? (ar ? " · اختياري" : " · optional") : "",
+          labRow: "display: flex; justify-content: space-between; align-items: center; gap: 8px; height: " + labLh + "px; margin-block-end: " + (o.std ? 4 : 2) + "px;",
+          trig: o.trig ? Object.assign({}, o.trig, { style: o.trig.style + " padding: 0 8px; line-height: " + (labLh - 2) + "px;" }) : null,
+          labStyle: "font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568;",
+          box: o.area ? "box-sizing: border-box; height: " + (o.std ? (ar ? 82 : 76) : (ar ? 74 : 68)) + "px; border: 1px solid #8A94A6; border-radius: 4px; padding: 6px 10px; overflow: hidden;" : "display: flex; align-items: center; gap: 6px; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: #fff; border: 1px solid #8A94A6;",
+          valStyle: (o.area ? "" : "flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; ") + "font-size: " + val + "px; line-height: " + (ar ? 22 : 20) + "px; color: #2D3748;",
+          actStyle: "flex: none; font-size: " + (val - 1.5) + "px; color: #5A6779; white-space: nowrap;", helpStyle: "font-size: " + help + "px; line-height: " + helpLh + "px; min-height: " + helpLh + "px; margin-block-start: " + (o.std ? 4 : 2) + "px; color: " + (o.info ? "#1F5480" : "#5A6779") + "; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" }),
+        pair: (cols, slot, o, top) => { o = o || {}; return { isPair: true, wrap: "margin-block-start: " + (top || 0) + "px;", grid: "display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px;",
+          cols: cols.map(c => ({ label: c.label, tag: c.req ? (ar ? " · مطلوب" : " · required") : c.opt ? (ar ? " · اختياري" : " · optional") : "", value: c.value || "", action: c.action || "", isBox: !c.segs,
+            segs: c.segs ? c.segs.map((g, i) => ({ l: (g === c.sel ? "✓ " : "") + g, style: "flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; font-size: " + (val - 1) + "px; white-space: nowrap; overflow: hidden;" + (i ? " border-inline-start: 1px solid #8A94A6;" : "") + (g === c.sel ? " font-weight: 600; color: #1F5480; background: #E4EEF6;" : " color: #2D3748; background: #fff;") })) : null,
+            segWrap: "display: flex; height: 32px; box-sizing: border-box; border: 1px solid #8A94A6; border-radius: 4px; overflow: hidden;",
+            labStyle: "font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;",
+            box: "display: flex; align-items: center; gap: 6px; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 4px; background: #fff; border: 1px solid #8A94A6;",
+            valStyle: "flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: " + val + "px; color: #2D3748;", actStyle: "flex: none; font-size: " + (val - 1.5) + "px; color: #5A6779;" })),
+          slot, hbtns: o.hint ? o.hint.map(b => ({ label: b, style: "font-family: inherit; font-size: " + (ar ? 13.5 : 12.5) + "px; line-height: " + (ar ? 24 : 22) + "px; font-weight: 600; color: #2E6FA3; background: none; border: none; padding: 0; cursor: pointer;" })) : null,
+          slotStyle: "margin-block-start: 2px; font-size: " + help + "px; line-height: " + helpLh + "px; min-height: " + (helpLh * (o.lines || 2)) + "px; text-wrap: pretty; color: " + (o.hint ? "#2D3748" : o.info ? "#1F5480" : "#5A6779") + ";" + (o.hint ? " border-inline-start: 2px dashed #2E6FA3; padding-inline-start: 8px;" : "") }; },
+        presets: (chips, top) => ({ isPresets: true, wrap: "margin-block-start: " + (top || 0) + "px;", chips, chipStyle: "display: inline-flex; align-items: center; height: " + (ar ? 26 : 24) + "px; box-sizing: border-box; padding: 0 9px; border: 1px solid #8A94A6; border-radius: 999px; font-size: " + (ar ? 12.5 : 11.5) + "px; color: #2D3748; background: #fff; white-space: nowrap;" }),
+        sugg: (o, top) => Object.assign({ isSugg: true, titleSugg: null }, o, { wrap: "margin-block-start: " + (top || 0) + "px;", box: sbox, tagStyle: tagS(ar), textStyle: txt(ar) + " margin-block-start: 2px;",
+          titleRow: "display: flex; align-items: center; gap: 8px; margin-block-start: 6px; padding: 4px 8px; border: 1px solid #C5DAEA; border-radius: 4px; background: #fff; " + txt(ar), smallBtn: btn("", "secondary", ar).style + " padding: 2px 8px;",
+          btns: [btn(ar ? "قبول" : "Accept", "primary", ar), btn(ar ? "تعديل" : "Edit", "secondary", ar), btn(ar ? "تجاهل" : "Discard", "text", ar)] }),
+        hint: (text, btns, top) => ({ isHint: true, wrap: "margin-block-start: " + (top || 0) + "px;", text, box: sbox + " padding: 8px 10px;", textStyle: "font-size: " + help + "px; line-height: " + helpLh + "px; color: #2D3748;", btns: btns.map((b, i) => btn(b, i ? "text" : "secondary", ar)).map(b => Object.assign(b, { style: b.style + " padding: 2px 8px;" })) }),
+        check: (text, top) => ({ isCheck: true, wrap: "margin-block-start: " + (top || 0) + "px;", text, tStyle: "font-size: " + val + "px; line-height: " + (ar ? 26 : 24) + "px; font-weight: 500;" }),
+        picker: (label, rows, top) => ({ isPicker: true, wrap: "margin-block-start: " + (top || 0) + "px;", label, labStyle: "font-size: " + lab + "px; line-height: " + labLh + "px; font-weight: 500; color: #4A5568; margin-block-end: 2px;",
+          rows: rows.map(r => ({ n: r[0], p: r[1], c: r[2], row: "display: flex; align-items: center; gap: 10px; height: " + (ar ? 48 : 44) + "px; box-sizing: border-box; padding: 0 10px; border-block-end: 1px solid #F0F3F7;" + (r[3] ? " background: #E4EEF6;" : ""), nStyle: "display: block; font-size: " + val + "px; font-weight: 500;", pStyle: "display: block; font-size: " + help + "px; color: #5A6779;", cStyle: "flex: none; font-size: " + help + "px; font-variant-numeric: tabular-nums; " + (r[4] ? "font-weight: 600; color: #B54708;" : "color: #4A5568;") })) }),
+        make: (x) => ({ cap: x.cap, dir: ar ? "rtl" : "ltr", title: x.title, ctx: x.ctx, items: x.items, buttons: x.buttons.map(b => btn(b[0], b[1], ar)), footLeft: x.footLeft || "", measure: x.measure,
+          capStyle: ar ? AF + " font-size: 12px; font-weight: 700; color: #5A6779; margin-block-end: 6px;" : "font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5A6779; margin-block-end: 6px;",
+          outer: "flex: 0 1 " + x.w + "px; min-width: 0;", frame: "width: 100%; max-width: " + x.w + "px; background: #fff; border: 1px solid #CBD5E0; border-radius: 8px; box-shadow: 0 12px 28px rgba(16,24,40,0.14); overflow: hidden;" + (ar ? " " + AF : ""),
+          headStyle: "display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 20px; border-block-end: 1px solid #E2E8F0;", titleStyle: "display: block; font-size: " + (ar ? 17 : 16) + "px; line-height: 1.4; font-weight: 600;", ctxStyle: "display: block; font-size: " + (ar ? 12.5 : 12) + "px; color: #5A6779; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+          footStyle: "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 20px; border-block-start: 1px solid #E2E8F0; background: #F4F7FA;",
+          noteStyle: "font-size: " + (ar ? 14.5 : 14) + "px; line-height: " + (ar ? 24 : 21) + "px; text-wrap: pretty;", labStyle: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 500; color: #5A6779;", valStyle: "font-size: " + (ar ? 14 : 13) + "px; line-height: " + (ar ? 22 : 20) + "px; font-weight: 600;" })
+      };
+    };
+    const E = K(false), A = K(true);
+    const dialogs = [
+      E.make({ w: 560, cap: "Step 2 · Draft with AI · the suggestion showing", title: "New task", ctx: "Infection Prevention & Control · 24 Sep 2026 · from item 2", footLeft: "Step 2 of 2",
+        items: [E.field({ label: "Description", opt: 1, area: 1, std: 1, help: "\u00a0", value: "follow up hand rub stock ward 6A", trig: trig("Draft again") }, 0),
+          E.sugg({ tag: "AI suggestion · check before using", paras: [{ k: "Purpose:", v: "keep ward 6A supplied with hand rub, which the September audit linked to low compliance." }, { k: "To do:", v: "check every dispenser and the store, reorder through Supply, agree a weekly check." }, { k: "Done when:", v: "every dispenser is full and the weekly check is on the rota." }], titleSugg: "Title: “Restock and check hand rub on ward 6A”", titleBtn: "Use this title" }, 12),
+          E.check("Evidence required to complete it", 12)],
+        buttons: [["Back", "text"], ["Create task", "primary"]],
+        measure: "Standard density, as Templates' step 2. Description textarea 119 (label 18, the AI trigger sharing its row, + 4 + 76 + 4 + slot 17) + 12 + card 216 (tag 18, 6 lines × 20 = 120, title row 30, actions 28, padding 20) + 12 + checkbox 24 = 383. Arabic 130 + 12 + card 220 (tag 20, 4 lines × 22 = 88, title row 37, actions 33, padding 22, Arabic wraps shorter) + 12 + 26 = 400." }),
+      A.make({ w: 560, cap: "الخطوة 2 · الصياغة بالذكاء الاصطناعي · العربية", title: "مهمة جديدة", ctx: "مكافحة العدوى · " + iso("24 Sep 2026"), footLeft: "الخطوة " + iso("2") + " من " + iso("2"),
+        items: [A.field({ label: "الوصف", opt: 1, area: 1, std: 1, help: "\u00a0", value: "follow up hand rub stock ward 6A", trig: trig("صياغة مجددًا", true) }, 0),
+          A.sugg({ tag: "اقتراح من الذكاء الاصطناعي · راجعه قبل الاستخدام", paras: [{ k: "الغرض:", v: "توفير معقّم اليدين في الجناح " + iso("6A") + " باستمرار، إذ ربط تدقيق سبتمبر ضعف الامتثال بنقصه." }, { k: "المطلوب:", v: "فحص كل موزّع وفي المستودع، وطلب الكمية عبر الإمداد، وفحص أسبوعي مع رئيسة التمريض." }, { k: "يُعدّ منجزًا:", v: "عندما تمتلئ كل الموزّعات ويُدرج الفحص الأسبوعي في جدول الجناح." }], titleSugg: "العنوان: «إعادة تعبئة معقّم اليدين وفحصه في الجناح " + iso("6A") + "»", titleBtn: "استخدام العنوان" }, 12),
+          A.check("الدليل مطلوب لإنجازها", 12)],
+        buttons: [["رجوع", "text"], ["إنشاء المهمة", "primary"]], measure: "400 of 420, at standard density." }),
+      E.make({ w: 560, cap: "Step 1 · the picker with workload counts", title: "New task", ctx: "Infection Prevention & Control · 24 Sep 2026", footLeft: "Step 1 of 2",
+        items: [E.picker("Person · Quality Officer, Cardiology", [["Nora Al-Otaibi", "Quality Officer · Cardiology", "12 open · 3 overdue", 1, 1], ["Sara Al-Mutairi", "Quality Officer · Cardiology", "4 open"], ["Khalid Al-Zahrani", "Quality Officer · Cardiology", "7 open · 1 overdue"]], 0)],
+        buttons: [["Cancel", "text"], ["Next", "primary"]], measure: "The open picker panel, not the body. Counts sit at the row's end edge in the existing 44px row (AR 48), so rows don't grow. Plain counts, not AI: overdue is amber, weight 600, and worded." }),
+      E.make({ w: 560, cap: "Step 1 · Nora chosen · the workload hint (Task Screens round 3 layout)", title: "New task", ctx: "Infection Prevention & Control · 24 Sep 2026", footLeft: "Step 1 of 2",
+        items: [E.field({ label: "Title", req: 1, value: "Restock and check hand rub on ward 6A", help: "\u00a0" }, 0),
+          E.field({ label: "Org unit", req: 1, value: "Cardiology", action: "▼", help: "\u00a0" }, 8),
+          E.pair([{ label: "Position", req: 1, value: "Quality Officer", action: "▼" }, { label: "Person", opt: 1, value: "Nora Al-Otaibi", action: "▼" }], "✦ AI · Goes to Nora Al-Otaibi, who has 12 open tasks, 3 overdue. Sara Al-Mutairi (Quality Officer, Cardiology) has 4 open.", { hint: ["Assign Sara instead", "Keep Nora"] }, 8),
+          E.pair([{ label: "Due", req: 1, value: "15 Oct 2026, 16:00 +03", action: "▢" }, { label: "Priority", req: 1, segs: ["Low", "Medium", "High", "Critical"], sel: "Medium" }], "Latest 23 Oct 2026 · Medium priority limit", { lines: 1, info: 1 }, 8),
+          E.presets(["+1h", "+2h", "End of working day", "Tomorrow 09:00"], 8)],
+        buttons: [["Cancel", "text"], ["Next", "primary"]],
+        measure: "Accepted step 1 is 357 (Title 71 + 8 + Org unit 71 + 8 + Position | Person 54 + slot 34 + 8 + Due | Priority 71 + 8 + presets 24). The hint is the slot's own text with two text buttons on one line, no card: 34 + 4 + 24 = 62, so 357 − 34 + 62 = 385." }),
+      A.make({ w: 560, cap: "الخطوة 1 · تلميح عبء العمل · العربية", title: "مهمة جديدة", ctx: "مكافحة العدوى · " + iso("24 Sep 2026"), footLeft: "الخطوة " + iso("1") + " من " + iso("2"),
+        items: [A.field({ label: "العنوان", req: 1, value: "إعادة تعبئة معقّم اليدين وفحصه في الجناح " + iso("6A"), help: "\u00a0" }, 0),
+          A.field({ label: "الوحدة التنظيمية", req: 1, value: "أمراض القلب", action: "▼", help: "\u00a0" }, 8),
+          A.pair([{ label: "المنصب", req: 1, value: "مسؤول الجودة", action: "▼" }, { label: "الشخص", opt: 1, value: "نورة العتيبي", action: "▼" }], "✦ ذكاء اصطناعي · تذهب إلى نورة العتيبي، ولديها " + iso("12") + " مهمة مفتوحة منها " + iso("3") + " متأخرة. لدى سارة المطيري (مسؤولة الجودة، أمراض القلب) " + iso("4") + " مهام مفتوحة.", { hint: ["إسناد إلى سارة", "إبقاء نورة"] }, 8),
+          A.pair([{ label: "الاستحقاق", req: 1, value: "15 Oct 2026, 16:00 +03", action: "▢" }, { label: "الأولوية", req: 1, segs: ["منخفضة", "متوسطة", "عالية", "حرجة"], sel: "متوسطة" }], "آخر موعد " + iso("23 Oct 2026") + " · حد الأولوية المتوسطة", { lines: 1, info: 1 }, 8),
+          A.presets(["+" + iso("1") + " س", "+" + iso("2") + " س", "نهاية يوم العمل", "غدًا " + iso("09:00")], 8)],
+        buttons: [["إلغاء", "text"], ["التالي", "primary"]], measure: "Accepted 382. Hint slot 40 + 4 + 26 = 70 replaces the 40 slot: 382 − 40 + 70 = 412 of 420." })
+    ];
+
+    // home
+    const bc = (o, ar) => Object.assign({ working: false, lead: null, groups: [], workText: "" }, o, {
+      aria: ar ? "موجزك اليومي" : "Your briefing", box: sbox + " background: #fff; padding: 14px 16px;", helloStyle: "font-size: " + (ar ? 19 : 18) + "px; font-weight: 600;", tagStyle: tagS(ar) + " font-weight: 600;", lineStyle: txt(ar) + " margin-block-start: 4px;",
+      groups: (o.groups || []).map(g => ({ head: g.h, items: g.i.map(i => ({ t: i[0], m: i[1] })), headStyle: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 700; " + (g.warn ? "color: #B42318;" : "color: #4A5568;"), rowStyle: "display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 3px 0;", linkStyle: "font-size: " + (ar ? 14 : 13) + "px; font-weight: 500; text-decoration: none;", metaStyle: "font-size: " + (ar ? 12.5 : 11.5) + "px; color: #5A6779;" })),
+      linkStyle: "font-size: " + (ar ? 13.5 : 12.5) + "px; font-weight: 600; text-decoration: none;", offStyle: "font-size: " + (ar ? 13 : 12) + "px; text-decoration: none; color: #4A5568;"
+    });
+    const panels = (ar, full) => ar ? [{ t: "مهامي", c: iso("9"), s: "متأخرتان " + iso("2") + " · " + iso("3") + " اليوم" }, { t: "بانتظار إجرائي", c: iso("2"), s: "طلب مهلة · مراجعة مستند" }] : [{ t: "My tasks", c: "9", s: full ? "2 overdue · 3 due today · 4 later" : "2 overdue · 3 due today" }, { t: "Awaiting my action", c: "2", s: "More-time request · Document review" }];
+    const H = (o) => { const ar = !!o.ar; return Object.assign({ card: null }, o, { dir: ar ? "rtl" : "ltr", panels: o.panels || panels(ar, !o.card), frame: "background: #F4F7FA; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px;" + (ar ? " " + AF : "") }); };
+    const TAG = "Your briefing · made by AI at 07:40 from your tasks and notifications";
+    const briefings = [
+      H({ cap: "Busy day", card: bc({ hello: "Good morning, Nora.", tag: TAG, lead: "Two tasks are overdue and three are due today. Two items wait for your decision, and there is one new notification.",
+        groups: [{ h: "Overdue · 2", warn: 1, i: [["Close CAPA-0912", "due 7 Oct · Medication Safety"], ["Submit September hand hygiene figures", "due 9 Oct · Infection Prevention & Control"]] }, { h: "Due today · 3", i: [["Check isolation room 3 signage", "12:00 · Infection Prevention & Control"], ["Review ward 4B night-shift rota", "16:00"], ["Confirm attendance for the 29 Oct IPC meeting", "17:00"]] }, { h: "Waiting for your decision · 2", i: [["More time · Update hand-hygiene audit tool", "Dr. Huda Zahrani asks to 20 Oct"], ["Document · Hand hygiene policy v4", "review since 9 Oct"]] }, { h: "New since yesterday · 1", i: [["You were mentioned in the IPC meeting minutes", "item 2"]] }],
+        full: "Show the full list", off: "Turn off my briefing" }), note: "Every item is a link to the task, approval or notification itself. Overdue leads, in danger ink with its count in words. The accepted panels stay below, unchanged." }),
+      H({ ar: 1, cap: "يوم مزدحم · العربية", card: bc({ hello: "صباح الخير يا نورة.", tag: "موجزك · أعدّه الذكاء الاصطناعي في " + iso("07:40") + " من مهامك وإشعاراتك", lead: "لديك مهمتان متأخرتان وثلاث مستحقة اليوم، وعنصران بانتظار قرارك.",
+        groups: [{ h: "متأخرة · " + iso("2"), warn: 1, i: [["إغلاق CAPA-0912", "مستحقة " + iso("7 Oct") + " · سلامة الأدوية"], ["تقديم أرقام نظافة اليدين لشهر سبتمبر", "مستحقة " + iso("9 Oct")]] }, { h: "مستحقة اليوم · " + iso("3"), i: [["فحص لافتات غرفة العزل " + iso("3"), iso("12:00")], ["مراجعة جدول المناوبة الليلية للجناح " + iso("4B"), iso("16:00")], ["تأكيد الحضور لاجتماع " + iso("29 Oct"), iso("17:00")]] }, { h: "بانتظار قرارك · " + iso("2"), i: [["مهلة إضافية · تحديث أداة تدقيق نظافة اليدين", "د. هدى الزهراني حتى " + iso("20 Oct")], ["مستند · سياسة نظافة اليدين الإصدار " + iso("4"), "منذ " + iso("9 Oct")]] }],
+        full: "عرض القائمة الكاملة", off: "إيقاف موجزي" }, true), note: "Written in Arabic for an Arabic reader, from the same tasks; record names are tenant data in the reader's language." }),
+      H({ cap: "Quiet day", panels: [{ t: "My tasks", c: "4", s: "None overdue · none due today" }, { t: "Awaiting my action", c: "1", s: "Document review" }], card: bc({ hello: "Good morning, Nora.", tag: TAG, lead: "Nothing is overdue or due today. One document waits for your review.", groups: [{ h: "Waiting for your decision · 1", i: [["Document · Hand hygiene policy v4", "review since 9 Oct"]] }], full: "Show the full list", off: "Turn off my briefing" }), note: "Short and calm. With nothing at all, it reads “Nothing is overdue or due today, and nothing waits for you.”" }),
+      H({ cap: "Working · first open of the day", card: bc({ hello: "Good morning, Nora.", tag: "Your briefing · being prepared", working: true, workText: "Preparing today's briefing…", full: "Show the full list", off: "Turn off my briefing" }), note: "The accepted panels below are already live, so nothing waits on AI. If it takes over 8 seconds, the card quietly disappears and the ordinary list is first." }),
+      H({ cap: "AI off, credits used up, paused or failed · the ordinary Home", card: null, note: "No briefing and no error: the accepted Home exactly as drawn, with its full lists. A user who turned the briefing off sees the same, plus “Turn on my briefing” in their profile." })
+    ];
+
+    // meetings
+    const MT = (o) => { const ar = !!o.ar; return Object.assign({ trig: null, input: null }, o, { dir: ar ? "rtl" : "ltr", frame: "background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;" + (ar ? " " + AF : ""), titleStyle: "font-size: " + (ar ? 15 : 14) + "px; font-weight: 600;", box: sbox, tagStyle: tagS(ar) + " margin-block-end: 4px;", inputLab: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 500; color: #4A5568; margin-block-end: 4px;", inputBox: "border: 1px solid #8A94A6; border-radius: 4px; padding: 8px 10px; margin-block-end: 10px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 18px; color: #2D3748; white-space: pre-wrap;", footStyle: "font-size: " + (ar ? 13 : 12) + "px; color: #4A5568;", btns: o.btns.map(b => btn(b[0], b[1], ar)) }); };
+    const row = (o, ar) => Object.assign({ check: false, d: null, src: null, acts: null, aria: "false", mark: "" }, o, {
+      row: "display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; border-block-end: 1px solid #E2E8F0;" + (o.dropped ? " opacity: 0.6;" : ""),
+      boxStyle: "flex: none; width: 16px; height: 16px; box-sizing: border-box; border-radius: 3px; margin-block-start: 2px; font-size: 11px; line-height: 14px; text-align: center; " + (o.on ? "background: #2E6FA3; border: 1px solid #1F5480; color: #fff;" : "background: #fff; border: 1px solid #8A94A6;"),
+      aria: o.on ? "true" : "false", mark: o.on ? "✓" : "",
+      tStyle: "display: block; font-size: " + (ar ? 14 : 13) + "px; font-weight: " + (o.decision ? 700 : 600) + ";" + (o.dropped ? " text-decoration: line-through;" : ""), dStyle: "display: block; " + txt(ar) + " font-size: " + (ar ? 13.5 : 12.5) + "px;", srcStyle: "display: block; font-size: " + (ar ? 12.5 : 11.5) + "px; text-decoration: none;",
+      acts: o.acts ? o.acts.map(a => ({ l: a, style: "font-size: " + (ar ? 13 : 12) + "px; font-weight: 600; text-decoration: none;" + (a === "Drop" || a === "حذف" ? " color: #B42318;" : "") })) : null
+    });
+    const meetings = [
+      MT({ cap: "6.1 · Agenda suggestions · next IPC meeting, 29 Oct 2026 · Planned", title: "Agenda · suggested items", trig: trig("Suggest agenda items"), tag: "AI suggestions · tick the ones to add",
+        rows: [
+          row({ check: 1, on: 1, t: "Repair of the negative-pressure alarm, room 3", d: "Due 15 Oct and still open: overdue. Raised at item 4 on 24 Sep.", src: "Open action · IPC, 24 Sep 2026, item 4 ↗" }),
+          row({ check: 1, on: 1, t: "Ward action plans, 4B and 6A", d: "Due 25 Oct, agreed at item 2 on 24 Sep to be presented at this meeting.", src: "Open action · IPC, 24 Sep 2026, item 2 ↗" }),
+          row({ check: 1, t: "Hand-hygiene audit tool update", d: "Dr. Huda Zahrani has asked for more time, to 20 Oct.", src: "Open action · more time asked · item 2 ↗" }),
+          row({ check: 1, t: "Approve isolation policy IPC-04, revision 3", d: "Waiting for the committee's approval since 30 Sep.", src: "Pending approval · IPC-04 rev 3 ↗" })
+        ], foot: "2 of 4 ticked · added at the end of the 29 Oct agenda, in this order", btns: [["Discard all", "text"], ["Add 2 items", "primary"]], note: "Drawn on the next meeting, which is Planned: suggestions come from the 24 Sep meeting's open actions and from pending approvals. Each says why and links its source. Nothing is added until “Add 2 items”, which names the count." }),
+      MT({ cap: "6.2 · Minutes drafting · Minutes draft stage", title: "Minutes · draft from notes", trig: trig("Draft minutes"), inputLabel: "Rough notes", input: "item 2 hh audit 4B 71% night shift worst\nagreed: re-audit 4B+6A nov, ward mgrs action plans next mtg\nhuda to update audit tool by 15 oct", tag: "AI suggestion · check before using",
+        rows: [
+          row({ t: "2 · Hand-hygiene compliance, Q3", d: "Discussion: Compliance on ward 4B was 71% in September, against a 90% target; the night shift had the most missed moments." }),
+          row({ t: "Decision", decision: 1, d: "▸ Wards 4B and 6A will be re-audited in November. Ward managers will present action plans at the next meeting." })
+        ], foot: "Lands in the minutes editor per agenda item; decisions marked “Decision ▸”", btns: [["Discard", "text"], ["Edit", "secondary"], ["Accept into minutes", "primary"]], note: "Drafted in the meeting's format, per agenda item. Decisions are marked with a label and a ▸ glyph, not colour. Accept fills the discussion and decision fields; returned-comment handling from Meeting Screens is unchanged." }),
+      MT({ cap: "6.3 · Action items drafted with the minutes", title: "Action items · suggested", tag: "AI suggestions · confirm, edit or drop each",
+        rows: [
+          row({ t: "Re-audit wards 4B and 6A", d: "Waiting for Infection Control Nurse · due 30 Nov 2026 · High · from item 2", acts: ["Confirm ✓", "Edit", "Drop"] }),
+          row({ t: "Present ward action plans", d: "Ward managers, 4B and 6A · due 25 Oct 2026 · Medium · from item 2", acts: ["Confirmed ✓", "Edit"] }),
+          row({ t: "Update hand-hygiene audit tool", d: "Dr. Huda Zahrani · due 15 Oct 2026 · Medium · from item 2", acts: ["Confirmed ✓", "Edit"] }),
+          row({ t: "Order new dispensers for 4B", dropped: 1, d: "Dropped by Nora Al-Otaibi", acts: ["Undo"] })
+        ], foot: "2 confirmed · 1 to decide · 1 dropped", btns: [["Create 2 tasks…", "primary"]], note: "Assignee, due date and priority follow the task rules already drawn (priority limit, the assignee picker's outcome). Edit opens New task prefilled. Tasks are created only for confirmed ones, after a confirm that names the count." }),
+      MT({ cap: "6.4 · Summary for absent members · after approval", title: "Summary for absent members", trig: trig("Draft summary"), tag: "AI suggestion · review before sending",
+        rows: [
+          row({ t: "To · 3 members who were absent", d: "Tariq Suleiman (apologies) · Dana Chalabi (apologies) · Hessa Al-Mutairi (absent)" }),
+          row({ t: "What they'll receive", d: "A notification and email: “What the IPC meeting on 24 Sep decided”, this summary, and a link to the approved minutes." }),
+          row({ t: "Summary", d: "The committee agreed to re-audit wards 4B and 6A in November after September compliance fell to 71%. Ward managers will bring action plans to the next meeting. The isolation room 3 alarm will be repaired by 15 Oct; the room stays closed until then." })
+        ], foot: "Sent from Nora Al-Otaibi (Secretary); recorded on the meeting", btns: [["Discard", "text"], ["Edit", "secondary"], ["Send to 3 members…", "primary"]], note: "Offered only after the minutes are approved and locked. Guests aren't included; they see the minutes after approval anyway." }),
+      MT({ ar: 1, cap: "٦.١ · اقتراحات جدول الأعمال · اجتماع " + iso("29 Oct 2026") + " · العربية", title: "جدول الأعمال · بنود مقترحة", trig: trig("اقتراح بنود", true), tag: "اقتراحات الذكاء الاصطناعي · حدّد ما تريد إضافته",
+        rows: [row({ check: 1, on: 1, t: "إصلاح إنذار الضغط السالب، الغرفة " + iso("3"), d: "مستحق " + iso("15 Oct") + " وما زال مفتوحًا: متأخر. أُثير في البند " + iso("4") + " يوم " + iso("24 Sep") + ".", src: "إجراء مفتوح · مكافحة العدوى، " + iso("24 Sep 2026") + "، البند " + iso("4") + " ↗" }, true),
+          row({ check: 1, on: 1, t: "خطط عمل الجناحين " + iso("4B") + " و" + iso("6A"), d: "مستحقة " + iso("25 Oct") + "، اتُّفق على عرضها في هذا الاجتماع.", src: "إجراء مفتوح · البند " + iso("2") + " ↗" }, true),
+          row({ check: 1, t: "تحديث أداة تدقيق نظافة اليدين", d: "طلبت د. هدى الزهراني مهلة حتى " + iso("20 Oct") + ".", src: "إجراء مفتوح · طلب مهلة ↗" }, true),
+          row({ check: 1, t: "اعتماد سياسة العزل IPC-04، المراجعة " + iso("3"), d: "بانتظار اعتماد اللجنة منذ " + iso("30 Sep") + ".", src: "اعتماد معلّق ↗" }, true)],
+        foot: "حُدّد " + iso("2") + " من " + iso("4"), btns: [["تجاهل الكل", "text"], ["إضافة بندين", "primary"]], note: "Checkboxes sit at the inline start (right); source links stay links; dates and codes are isolated LTR runs." }),
+      MT({ ar: 1, cap: "٦.٢ · صياغة المحضر · العربية · " + iso("24 Sep 2026"), title: "المحضر · صياغة من الملاحظات", trig: trig("صياغة المحضر", true), inputLabel: "ملاحظات أولية", input: "بند 2 تدقيق نظافة اليدين 4B ‏71%‏ الأسوأ ليلًا\nاتفقنا: إعادة تدقيق 4B و6A في نوفمبر، خطط عمل من مديري الأجنحة\nهدى تحدّث أداة التدقيق قبل 15 أكتوبر", tag: "اقتراح من الذكاء الاصطناعي · راجعه قبل الاستخدام",
+        rows: [row({ t: iso("2") + " · الامتثال لنظافة اليدين، الربع الثالث", d: "النقاش: بلغ الامتثال في الجناح " + iso("4B") + " خلال سبتمبر " + iso("71%") + " مقابل هدف " + iso("90%") + "، وكانت المناوبة الليلية الأكثر فواتًا للفرص." }, true),
+          row({ t: "قرار", decision: 1, d: "◂ يُعاد تدقيق الجناحين " + iso("4B") + " و" + iso("6A") + " في نوفمبر، ويعرض مديرو الأجنحة خطط العمل في الاجتماع القادم." }, true)],
+        foot: "يُدرج في محرر المحضر لكل بند؛ القرارات معلّمة بـ «قرار ◂»", btns: [["تجاهل", "text"], ["تعديل", "secondary"], ["قبول في المحضر", "primary"]], note: "The decision marker mirrors for RTL: “قرار ◂”, pointing into the text from the right. A label and a glyph, never colour." })
+    ];
+    const C = (ar) => K(ar);
+    const confirms = [
+      E.make({ w: 420, cap: "Create action items · Confirm 420", title: "Create 2 tasks?", ctx: "From the IPC minutes · 24 Sep 2026", items: [], buttons: [["Not yet", "text"], ["Create 2 tasks", "primary"]], measure: "" }),
+      E.make({ w: 420, cap: "Send summary · Confirm 420", title: "Send the summary to 3 members?", ctx: "Infection Prevention & Control · 24 Sep 2026", items: [], buttons: [["Not yet", "text"], ["Send", "primary"]], measure: "" }),
+      A.make({ w: 420, cap: "إنشاء المهام · العربية", title: "إنشاء مهمتين؟", ctx: "من محضر مكافحة العدوى · " + iso("24 Sep 2026"), items: [], buttons: [["ليس الآن", "text"], ["إنشاء مهمتين", "primary"]], measure: "" })
+    ];
+    Object.assign(confirms[0], { note: "Two tasks are created from the confirmed action items, each linked to item 2. The undecided and dropped ones aren't.", pairs: [{ k: "Created", v: "2 tasks" }, { k: "Not created", v: "1 undecided · 1 dropped" }], measure: "Sentence 42 (2 × 21) + 12 + pairs 40 = 94. Arabic 48 (2 × 24) + 12 + 44 = 104." });
+    Object.assign(confirms[1], { note: "Tariq Suleiman, Dana Chalabi and Hessa Al-Mutairi get the summary and a link to the approved minutes.", pairs: [{ k: "Recipients", v: "3 absent members" }, { k: "Sent as", v: "Notification and email" }], measure: "Sentence 42 (2 × 21) + 12 + pairs 40 = 94. Arabic 48 + 12 + 44 = 104." });
+    Object.assign(confirms[2], { note: "تُنشأ مهمتان من الإجراءات المؤكدة، كل منهما مرتبطة بالبند " + iso("2") + ". لا تُنشأ المعلّقة أو المحذوفة.", pairs: [{ k: "تُنشأ", v: "مهمتان" }, { k: "لا تُنشأ", v: "واحدة معلّقة · واحدة محذوفة" }], measure: "104 of 420." });
+
+    return {
+      states, viewers, dialogs, briefings, meetings, confirms,
+      decisions: [
+        { t: "1 · One component, am-ai-assist", b: "Trigger, working state, suggestion, refusals. Every AI place uses it, so “AI suggestion” looks and behaves the same everywhere." },
+        { t: "2 · Marked four ways, never by colour alone", b: "The ✦ mark, the words (“AI suggestion · check before using”), a dashed rule on the inline-start edge, then a light tint. Accepted text loses all of them." },
+        { t: "3 · Off hides; AccreditMe's stops say so", b: "Off by the organisation's administrator: triggers hidden. Paused or turned off by AccreditMe: each trigger is replaced in place by a line saying so. Credits and failure refuse inside the result area after a click, never a modal." },
+        { t: "4 · Credits appear once", b: "Only in the “used up” refusal. No cost labels on buttons, no counters for ordinary users." },
+        { t: "5 · The viewer's summary sits above the file", b: "A side panel would make an A4 page unreadable at the drawer's 60% width. Above, it collapses to a line, and is saved with the file." },
+        { t: "6 · New task fits without a third step", b: "The draft lives on step 2 (Description, standard density); the workload hint becomes the text of step 1's outcome slot. 383 / 400 and 385 / 412 against 420." },
+        { t: "7 · Briefing first, accepted Home below", b: "Made once per working day at first open; the ordinary panels are already live underneath, so nothing ever waits on AI." },
+        { t: "8 · Meetings AI never acts alone", b: "Agenda items are ticked, minutes accepted, action items confirmed one by one with a count before creation, and the absent-member summary reviewed before sending." }
+      ],
+      patternNotes: [
+        { k: "Trigger wording is the action.", v: "“Draft with AI”, “Summarize”, “Suggest agenda items”, “Draft minutes”. Always a word; the ✦ is decoration, aria-hidden." },
+        { k: "Working is calm.", v: "The trigger reads “Working…” with Cancel; the result area shows three pulsing lines and what it's doing. The source field stays editable." },
+        { k: "Leaving cancels.", v: "Closing the dialog, drawer or page cancels the request; no result arrives later and nothing is saved. A cancelled request that already reached the provider is charged, because the provider was paid." },
+        { k: "Accept, Edit, Discard.", v: "Accept puts it in place. Edit does the same and moves focus into the field. Discard removes it. Draft again replaces the suggestion, never stacks a second." },
+        { k: "Announced, keyboard-first.", v: "Results arrive in a polite live region (“AI suggestion ready, 3 actions”) and focus moves to the suggestion's region; every button is reachable by Tab in reading order." },
+        { k: "Two kinds of “no”.", v: "Before a click: paused by AccreditMe and turned off by AccreditMe replace the trigger in place; off by the organisation's administrator hides it. After a click: credits used up (with the renewal date) and provider failure (with Try again) appear in the result area." },
+        { k: "Reader's language.", v: "Output is written in the reader's interface language whatever the source language; names and codes stay as they are." },
+        { k: "Recorded.", v: "The audit trail notes where AI drafted something and who accepted it; the text itself is the person's once accepted." }
+      ],
+      outPattern: [
+        { k: "Loading", v: "The working state (drawn)." }, { k: "Populated", v: "The suggestion (drawn)." },
+        { k: "Empty", v: "AI returned nothing useful: “AI couldn't suggest anything from this. Add more detail and try again.” Not charged." },
+        { k: "Denied", v: "Off by the administrator: hidden. Paused or off by AccreditMe: replaced in place by a line. A user who can't use the underlying screen never sees it." },
+        { k: "Error", v: "Provider failure: the refusal with Try again (drawn)." }, { k: "Partial", v: "A suggestion cut short is discarded, never shown half; it reads as the failure refusal." }
+      ],
+      viewerNotes: [
+        { k: "Who can summarize.", v: "Anyone who can view the file; the summary is visible to the same people. One summary per language, made on request." },
+        { k: "Saved with the file.", v: "“Summary made 9 Oct 2026”. A second visit shows it at once with no new call; the header has no Summarize button until a new upload replaces the file." },
+        { k: "Long files.", v: "Capped at the first 100 pages: a 412-page PDF reads “Reading the first 100 pages…” while working, and the summary says “From the first 100 pages of 412.” under its tag." },
+        { k: "Not offered yet.", v: "Word, Excel, PowerPoint and HEIC have no preview, so no Summarize either; absent, not disabled." },
+        { k: "SharePoint withdrawn or file deleted.", v: "The viewer's own states apply; Summarize disappears with the file." },
+        { k: "Keyboard.", v: "Summarize is in the header's tab order before Download. ▴ collapses the panel; the summary is announced when ready." }
+      ],
+      outViewer: [
+        { k: "Loading", v: "The working panel above the file (drawn)." }, { k: "Populated", v: "The summary, first and second visit (drawn)." },
+        { k: "Empty", v: "A scanned PDF with no text: “This file has no readable text to summarize.” Not charged." },
+        { k: "Denied", v: "Anyone who can open the file can summarize it; otherwise the viewer itself is denied." },
+        { k: "Error", v: "The failure refusal in the panel, with Try again." }, { k: "Partial", v: "A CSV over 500 rows is summarized from the rows shown, and says so: “From the first 500 rows of 2,140.”" }
+      ],
+      taskNotes: [
+        { k: "The note is the Description field itself.", v: "The user types a short note there and presses Draft with AI on the label row. Accept replaces the note with the description." },
+        { k: "Purpose, to do, done when.", v: "Three labelled lines, so the result is a usable description rather than prose." },
+        { k: "A better title is a separate choice.", v: "“Use this title” changes only the title on step 1; accepting the description doesn't." },
+        { k: "Counts are not AI.", v: "“12 open · 3 overdue” comes straight from the tasks, at the row's end, in every picker, AI on or off." },
+        { k: "The hint is AI, and only suggests eligible people.", v: "Someone the same assignment rules allow (same unit and position, or the same committee role). Shown when the chosen person has 50% more open tasks than the least-loaded eligible person." },
+        { k: "The hint is the outcome slot's text.", v: "It starts “Goes to Nora Al-Otaibi…”, the outcome itself, marked “✦ AI ·” with a dashed rule and no card. Keep Nora returns the slot to the plain outcome sentence; Assign Sara instead updates Person and the outcome." },
+        { k: "No hint in a pool.", v: "When the task goes to a pool or a single-holder position, no person is chosen, so no hint." },
+        { k: "Built later.", v: "Counts and hint are drawn now and built later; until then step 1 is exactly as accepted." }
+      ],
+      outTask: [
+        { k: "Loading", v: "Working state in the Description area; counts load with the picker rows (“— open”)." }, { k: "Populated", v: "As drawn." },
+        { k: "Empty", v: "A note too short: “Add a few words about the task, then try again.” Not charged." }, { k: "Denied", v: "AI off: Draft with AI and the hint are hidden; counts still show." },
+        { k: "Error", v: "Refusal in the Description area; the hint simply doesn't appear on failure." }, { k: "Partial", v: "Counts fail for one person: “—” for them, and no hint for that choice." }
+      ],
+      homeNotes: [
+        { k: "Made once per working day.", v: "At the first Home visit on a working day; it stays until the next one. It doesn't regenerate on refresh, so it's charged once a day per user." },
+        { k: "Live items, saved wording.", v: "Item links point to live records: a task completed since 07:40 stays, with “done” beside it." },
+        { k: "Overdue leads.", v: "Then due today, then approvals, then notifications; each group named with its count." },
+        { k: "Show the full list.", v: "Scrolls to the accepted panels below and opens their full views." },
+        { k: "Personal off switch.", v: "“Turn off my briefing” on the card; turn it back on in the user's profile." },
+        { k: "Never an error on Home.", v: "Off by the administrator or by AccreditMe, paused, credits used up, or failed: Home is simply the accepted one. Home never shows the paused or turned-off line." },
+        { k: "Non-working days.", v: "No briefing is made on a weekend or holiday; Home shows the ordinary list." }
+      ],
+      outHome: [
+        { k: "Loading", v: "Working card above live panels (drawn)." }, { k: "Populated", v: "Busy and quiet days (drawn)." },
+        { k: "Empty", v: "“Nothing is overdue or due today, and nothing waits for you.”" }, { k: "Denied", v: "AI off: no card at all." },
+        { k: "Error", v: "No card, no error; the ordinary Home." }, { k: "Partial", v: "If notifications fail to load, the briefing is made from tasks only and its tag says “from your tasks”." }
+      ],
+      meetNotes: [
+        { k: "Agenda sources.", v: "The committee's open tasks, open actions in earlier minutes, and pending approvals. Each suggestion names its reason and links its source." },
+        { k: "Who sees it.", v: "The secretary, or whoever can edit the agenda; others never see the trigger." },
+        { k: "Minutes in the meeting's format.", v: "Per agenda item: discussion and decision, with decisions marked “Decision ▸”. Accepted text becomes ordinary minutes, editable until distributed." },
+        { k: "Action items one by one.", v: "Confirm, Edit (New task prefilled) or Drop each; a count in the footer; creation only after “Create 2 tasks?” confirms." },
+        { k: "From item n.", v: "Created action items carry their agenda item, as Meeting Screens decided." },
+        { k: "Absent members only.", v: "Members marked Apologies or Absent; guests never. They get a notification and an email with the summary and a link." },
+        { k: "Reviewed before sending.", v: "Edit, Discard or Send; the sent summary is recorded on the meeting with who sent it." },
+        { k: "Quorum not met.", v: "The minutes draft keeps the “Quorum not met” line; AI never removes it." }
+      ],
+      outMeet: [
+        { k: "Loading", v: "Working state in each panel." }, { k: "Populated", v: "As drawn." },
+        { k: "Empty", v: "Agenda: “No open tasks, actions or approvals to suggest from.” Minutes: “Add notes first.”" },
+        { k: "Denied", v: "Triggers absent for anyone who can't edit the agenda or minutes; AI off hides them all." },
+        { k: "Error", v: "Refusal in the panel with Try again; rough notes are kept." }, { k: "Partial", v: "If one source fails (e.g. approvals), suggestions come from the rest and say “Approvals couldn't be checked.”" }
+      ],
+      measures: [["New task · step 2 · suggestion showing", "560 · standard", 383, 400], ["New task · step 1 · workload hint", "560 · compact", 385, 412], ["Create action items", "420 · confirm", 94, 104], ["Send absent summary", "420 · confirm", 94, 104]].map(m => ({ d: m[0], s: m[1], en: m[2] + "", ar: m[3] + "" })),
+      changes: [
+        { s: "New task · step 1 (Task Screens round 3)", w: "The Position | Person outcome slot grows from two lines to two lines plus one line of text buttons when AI shows a hint (357 → 385 EN, 382 → 412 AR). Due | Priority and the presets move down by 28 / 30. With AI off or no hint, step 1 is exactly as accepted." },
+        { s: "New task · step 2 (Templates, standard density)", w: "“Draft with AI” added to the Description label row at label height; the suggestion card appears below the textarea only after a request (383 EN, 400 AR with it). No height change at rest." },
+        { s: "Assignee picker (Task Screens)", w: "“12 open · 3 overdue” added at the end edge of each person row, inside the existing 44px (AR 48) row. Rows don't grow; the name and position lines keep their width minus the count's." },
+        { s: "File Viewer header", w: "“✦ Summarize” added in the action group, after “← 2 / 5 →” and before “⤓ Download”, for PDF, TXT and CSV. The action group may wrap to two rows at the minimum drawer width; the file name, meta line and page toolbar are unchanged. The file area gains a collapsible panel at its top." },
+        { s: "Home (App Shell)", w: "The briefing card is added above the accepted panels; the panels keep their size and order." },
+        { s: "Meeting page (Meeting Screens)", w: "AI triggers added to the Agenda and Minutes panel headers; suggestion panels open in flow inside those panels. The absent-member summary sits in the approved-minutes header area." }
+      ],
+      questions: [
+        { n: "Q1 · answered", q: "A saved AI result opened while AI is off for the organisation.", opts: ["Shown, marked as AI, with no new requests allowed."] },
+        { n: "Q2 · answered", q: "Is a request cancelled after it reached the provider charged?", opts: ["Yes: the provider was paid."] },
+        { n: "Q3 · answered", q: "Summaries in two languages for the same file.", opts: ["One summary per language, made on request (drawn). On a second visit Summarize is absent only when a summary already exists in the reader's language."] },
+        { n: "Q4 · answered", q: "Very long files.", opts: ["Capped at the first 100 pages, saying so: “From the first 100 pages of 412.”"] },
+        { n: "Q5 · answered", q: "When does the workload hint appear?", opts: ["When the chosen person has 50% more open tasks than the least-loaded eligible person."] },
+        { n: "Q6 · answered", q: "A briefing item completed after it was made.", opts: ["Kept, with “done” beside it (drawn)."] },
+        { n: "Q7 · answered", q: "Briefings for users who don't open Home.", opts: ["Made on first open only (drawn)."] },
+        { n: "Q8 · answered", q: "Language of drafted minutes.", opts: ["The secretary's interface language (drawn); no new committee setting."] },
+        { n: "Q9 · answered", q: "Can absent members reply to the summary?", opts: ["No: it's a notice with a link to the minutes."] },
+        { n: "Q10 · answered", q: "Is “drafted with AI” visible on the record?", opts: ["Yes, in the record's history."] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

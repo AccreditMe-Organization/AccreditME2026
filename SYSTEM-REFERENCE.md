@@ -6681,6 +6681,36 @@ secret is entered once and never rendered again.
 First consumer: the email provider screen (Section 4.7). The storage settings
 screen is the next.
 
+### 10.19 `am-ai-assist` — the One AI Pattern (ACC-198)
+
+`shared/components/ai-assist/`. Every place AI appears uses it: the briefing
+card first, then ACC-193 and ACC-197. It draws the AI layer from the design
+reference ("AccreditMe AI for Users"), and nothing about any one feature.
+
+- **States:** `idle` (the trigger), `working`, `result`, `refusal`. The
+  caller owns the state; the component never calls anything.
+- **The trigger** is the ✦ glyph (hidden from screen readers) plus words, never
+  an icon alone, with an optional quiet `triggerNote` after the words (the
+  briefing's "· 5 credits"). It reads `againLabel` once a result exists, and
+  is disabled and `aria-busy` while working. `hideTrigger` removes it.
+- **A result is marked four ways**: the ✦, the `tag` words, a dashed rule on
+  the INLINE-START edge (right in Arabic), and a tint. Its body is the caller's
+  `resultTemplate` (`TemplateRef`, for the reason EditDialogComponent uses
+  one). Focus moves to the result when it arrives, and an `aria-live` region
+  announces it.
+- **A refusal** shows the `aiRefusal()` words (§17.7): credits used up with
+  its renewal date (◔, no Try again); unavailable or failed in the danger box
+  (!, with Try again → `retry`); anything else (○). **If a result already
+  exists (`hasResult`), it stays BELOW the refusal**, still tagged — a failed
+  second press does not take the first answer away.
+- **Opt-in:** `cancellable` (Cancel while working → `cancel`) and `accept`
+  (Accept / Edit / Discard → `accepted` / `edited` / `discarded`, for
+  ACC-197's drafts). The briefing uses neither.
+- **What it does NOT do:** price anything, call the gateway, decide who may
+  press, or save anything. Those belong to the feature, so the pattern cannot
+  drift into one feature's rules.
+- Tokens only, logical CSS properties throughout.
+
 ## 11. Known Cross-Cutting Gaps
 
 **✅ Complete — built incrementally as each of Sections 1–10 above was
@@ -9108,8 +9138,8 @@ shared database before the deploy** (ACC-173's enum rule).
 
 Plan, Ahmad's answers (12 Oct, D1–D19) and the evidence:
 `backend/Plans/step-194-ai-foundation.md`. Verified against the code at the
-ACC-194 merge; no user feature calls the gateway yet (ACC-193, ACC-197 and
-ACC-198 are the first).
+ACC-194 merge. The first user feature to call the gateway is ACC-198's
+briefing (§17.8); ACC-193 and ACC-197 follow.
 
 ### 17.1 The one gateway
 
@@ -9256,7 +9286,60 @@ the text blocks and times out at 120 s.
   same balance without `features`.
 - `frontend/src/app/core/ai/ai-refusal.ts` → `aiRefusal(err, format)`:
   `notEnabled`, `featureNotAvailable`, `creditsUsedUp` (`{{date}}`),
-  `unavailable`; keys `ai.refusal.*` in EN and AR. No consumer yet.
+  `unavailable`; keys `ai.refusal.*` in EN and AR. First consumer: the
+  briefing card (§17.8).
 - The overage toggle is gone from the tenant AI credits screen and the platform
   tenant detail; `PATCH /tenant/ai-settings` still answers 200 and changes
   nothing that is read (removed in a later contract step).
+
+### 17.8 The on-demand briefing (ACC-198)
+
+Plan, Ahmad's answers (13 Oct, D1–D13) and the build's differences:
+`backend/Plans/step-198-morning-briefing.md`. The feature key is still
+`morning_briefing`; nothing runs unless a person presses.
+
+- **Who:** `POST /ai/briefing` needs `tenant:manage_config`.
+  `GET /ai/briefing` is self-scoped (a person's own briefing — ACC-101) and
+  answers `available: false` to anyone else. Home asks only when the viewer
+  holds the permission, so nobody else sends the request. `available` also needs
+  the feature open to the organisation (`openAiFeatures`) and AI on
+  (`aiBalanceOf().enabled`). Pressing while not available is
+  `AI_NOT_ENABLED` with ACC-194's reasons.
+- **What is gathered is what the presser may see**, through the services that
+  already answer for them: `getMyTasks`, `getAvailableToPick`, the
+  requests awaiting their decision, and their unread notifications.
+  `buildBriefingGroups()` (`briefing-groups.ts`) sorts them into overdue /
+  due today / waiting for your decision / waiting to be picked up / new since
+  yesterday (last 24 hours), with caps of 10 / 10 / 10 / 5 / 10 and titles cut to
+  120 characters. "Today" is the tenant's zone (`getEffectiveTimeZone`). A held task is never overdue.
+- **The model writes only a lead and up to three focus picks**, as JSON keyed
+  by the ids we sent (T1, R1, P1, N1). `parseBriefingAnswer()`
+  (`briefing-answer.ts`) drops unknown keys, duplicates and anything past the
+  third; a reason is up to 160 characters, the lead up to 400. Plain text becomes
+  the lead; broken JSON falls back to OUR lead, logged. **Every item, date and
+  link is built by our code.** No valid pick → no "Focus on these first".
+- **A quiet day makes no model call and costs 0**: the lead is our sentence.
+- **One run per USER, in one statement.** `INSERT … ON CONFLICT
+  ("organizationId","userId") DO UPDATE SET "generatingSince" = now WHERE
+  "generatingSince" IS NULL OR "generatingSince" < now − 3 min RETURNING
+  "id"`. No row returned → 409 `AI_BRIEFING_IN_PROGRESS`, before any call. A
+  failure releases the claim keyed on the row AND the claim time, so a stale
+  run cannot clear a newer claim. Proved against Postgres by
+  `ai-briefing.db-spec.ts` (`npm run test:db`): two presses by one user make
+  one model call; removing the claim's `WHERE` turns it red.
+- **Storage: `AiBriefing`**, one row per (organisation, user), replaced on each
+  press: `language`, `lead`, `focus` and `groups` (jsonb snapshots of OUR
+  items), `creditCost`, `generatedAt`, `generatingSince`. Cascades with
+  the organisation and the user. The AI log holds only counts ("Home briefing ·
+  2 overdue, …"), never text (ACC-194 D5).
+- **Read:** shown only on the day it was made, in the tenant's zone (D3), in
+  the language it was made in (D4), with `done` markers re-checked LIVE for
+  every task, request and notification, and a `greeting` by the tenant's time
+  of day (D6). Kept visible without a button if the feature later closes (D12).
+- **Links:** the server stores a target (`task`, `request`, `committee`)
+  and an id; the card maps them to `/tasks?task=`, `/tasks?request=` and
+  `/committees/:id`. My tasks scrolls to, focuses and marks the row.
+- **Frontend:** `foundation/home/home-briefing.component.ts` on
+  `am-ai-assist` (§10.19). A failure that is not an AI refusal — including
+  `AI_BRIEFING_IN_PROGRESS` from another tab — reads as "unavailable", with
+  Try again.

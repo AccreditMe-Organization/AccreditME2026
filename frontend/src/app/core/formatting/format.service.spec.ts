@@ -47,6 +47,14 @@ describe('FormatService (ACC-94)', () => {
       expect(format.dateTime('2026-09-15T21:30:00Z')).toBe('16 Sep 2026, 00:30');
       expect(format.dateTime('2026-09-15T13:59:00Z')).toBe('15 Sep 2026, 16:59');
     });
+
+    it('timeOfDay (ACC-198) is the same 24-hour time alone, in the tenant\'s zone, Latin digits in Arabic', () => {
+      expect(format.timeOfDay(at)).toBe('14:05');
+      expect(format.timeOfDay('2026-09-15T21:30:00Z')).toBe('00:30');
+      inArabic();
+      expect(format.timeOfDay(at)).toBe('14:05');
+      expect(format.timeOfDay(null)).toBe('—');
+    });
   });
 
   describe('time zone — the tenant\'s, never the browser\'s', () => {

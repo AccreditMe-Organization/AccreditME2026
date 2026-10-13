@@ -1,3 +1,5 @@
+import { NavigationAccessService } from '../../core/services/navigation-access.service';
+import { AiBriefingService } from './ai-briefing.service';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideTranslateService, provideTranslateLoader, TranslateNoOpLoader } from '@ngx-translate/core';
@@ -61,6 +63,7 @@ describe('HomeComponent', () => {
     tasksFail?: boolean;
     notificationsFail?: boolean;
     arabic?: boolean;
+    admin?: boolean;
   }): void {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -96,7 +99,11 @@ describe('HomeComponent', () => {
           },
         },
         { provide: AuthService, useValue: { currentUser: () => ({ name: 'Dr. Yasser Al-Amri' }) } },
-        { provide: LanguageService, useValue: { isArabic: () => opts.arabic ?? false } },
+        { provide: LanguageService, useValue: { isArabic: () => opts.arabic ?? false, bilingual: (en: string) => en } },
+        // ACC-198 — the briefing card asks only for a tenant admin; these stubs
+        // keep Home's own panels tested on their own.
+        { provide: NavigationAccessService, useValue: { hasPermission: () => opts.admin ?? false } },
+        { provide: AiBriefingService, useValue: { get: () => of({ available: true, creditCost: 5, greeting: 'morning', briefing: null }) } },
       ],
     });
     fixture = TestBed.createComponent(HomeComponent);
@@ -192,5 +199,20 @@ describe('HomeComponent', () => {
 
     expect(text()).toContain('Task 1');
     expect(fixture.componentInstance.notificationsLoading()).toBe(false);
+  });
+
+  // ACC-198 — the briefing card sits above the panels for a tenant admin only.
+  it("shows no briefing card, and asks nothing, for a user without tenant:manage_config", () => {
+    setup({});
+    expect((fixture.nativeElement as HTMLElement).querySelector(".am-briefing")).toBeNull();
+  });
+
+  it("shows the briefing card above the panels for a tenant admin", () => {
+    setup({ admin: true });
+    const el = fixture.nativeElement as HTMLElement;
+    const card = el.querySelector(".am-briefing");
+    expect(card).not.toBeNull();
+    const panels = el.querySelector("#home-panels")!;
+    expect(card!.compareDocumentPosition(panels) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
