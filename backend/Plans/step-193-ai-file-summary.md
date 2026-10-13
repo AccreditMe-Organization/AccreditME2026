@@ -2,7 +2,10 @@
 
 Linear: **ACC-193** (lane B, High).
 Branch: `feature/ACC-193-ai-summary`, from `origin/dev` at `d4d9dec`.
-Status: **PLAN — waiting for Ahmad's approval.** Nothing is built yet.
+Status: **APPROVED (Ahmad, 13 Oct), with all seven recommendations in §12 (Q1 hide,
+Q2 save, Q3 not charged via the gateway's opt-in `accept()`, Q4 the proposed
+wording, Q5 an opt-in `collapsible`, Q6 `pdfjs-dist` in a worker thread, Q7 an
+audit row with no text) and THREE ADDITIONS, recorded in §14. Being built.**
 
 **Sources, all read in full for this plan:**
 - the ticket;
@@ -396,6 +399,17 @@ New keys under `files.viewer.summary.*` in **en.json and ar.json**. The page and
 
 ## 10. The live proof (after the deploy, in a later prompt)
 
+**Ahmad's list (13 Oct) — the proof must include each of these:**
+- an English PDF summarised in **Arabic**;
+- an **Arabic PDF**;
+- a **TXT** and a **CSV**;
+- a **scanned PDF refused with no charge**;
+- a **second visit with no charge**;
+- a **user who can't view the file getting the same 404**;
+- a **deleted file whose summary row is gone**.
+
+The steps below cover them; step 9 is the deleted file.
+
 On the LIVE site, signed in page-side (no password in any tool call):
 
 1. **al-nakheel, as a user who can view a task's PDF evidence** (the ACC-189 proof files, or one uploaded by an assignee for the proof):
@@ -409,7 +423,9 @@ On the LIVE site, signed in page-side (no password in any tool call):
 5. **A text-free PDF** (an image-only PDF made for the proof): "This file has no readable text to summarize."; **no credits, no log row**.
 6. **Someone who cannot view that task's evidence:** GET and POST → the same 404 as `/view`.
 7. **al-manara's admin** (allocation 0) on one of their files: no Summarize button; `available: false`.
-8. **Clean-up:** al-nakheel's used credits back to 0, keeping the 2,000 allocation. The made summaries stay (they are what Ahmad will see), unless he says otherwise.
+8. **An Arabic PDF** (a short one made for the proof, if none exists on the tenant): summarised in the reader's language, the text read in logical order (R1 checked live).
+9. **A deleted file** (§14.3): delete the evidence of a file that has a summary. The `AiFileSummary` rows are gone at once (read-only check), and restoring it from the recycle bin shows Summarize again with no summary.
+10. **Clean-up:** al-nakheel's used credits back to 0, keeping the 2,000 allocation. The made summaries stay (they are what Ahmad will see), unless he says otherwise.
 
 ---
 
@@ -417,14 +433,15 @@ On the LIVE site, signed in page-side (no password in any tool call):
 
 **Progress:**
 
-- [ ] 0. `docs(plans)`: this plan
+- [x] 0. `docs(plans)`: this plan (`0408bba`); approval and the additions recorded in the next commit
 - [ ] 1. `chore(deps)`: `pdfjs-dist` 6.4.299 (exact) in the backend; lockfile regenerated on Linux (WSL); `nest-cli.json` assets for `*.worker.mjs`
 - [ ] 2. `chore(prisma)`: migrate — `AiFileSummary` (local throwaway Postgres; not the shared one)
 - [ ] 3. `feat(ai-file-summary)`: extraction — the PDF worker, TXT and CSV readers, normalisation, the token estimate and caps; specs
-- [ ] 4. `feat(ai-file-summary)`: the service — availability, claim, prompt, parse, save, audit, purge delete — and the two endpoints on task evidence; unit specs, isolation specs, the `test:db` spec
-- [ ] 5. `feat(shared)`: `am-ai-assist` gains an opt-in `collapsible`
-- [ ] 6. `feat(files)`: the viewer's Summarize button and panel, the host contract, task evidence as host, EN and AR words, the layout spec
-- [ ] 7. `docs`: SYSTEM-REFERENCE §17.9 (file summaries) and §16 (purge deletes summaries), CLAUDE.md Key Architecture Decisions (ACC-193)
+- [ ] 4. `feat(ai)`: the gateway's opt-in `accept()` (Q3) — an unusable answer is refunded and refused like a provider failure
+- [ ] 5. `feat(ai-file-summary)`: the service — availability, the extraction slots (§14.1), claim, prompt, parse, save, audit, the delete and purge deletes (§14.3) — and the two endpoints on task evidence; unit specs, isolation specs, the `test:db` spec
+- [ ] 6. `feat(shared)`: `am-ai-assist` gains an opt-in `collapsible`
+- [ ] 7. `feat(files)`: the viewer's Summarize button and panel, the host contract, task evidence as host, EN and AR words, the layout spec
+- [ ] 8. `docs`: SYSTEM-REFERENCE §17.9 (file summaries) and §16 (a file's delete and purge delete its summaries), CLAUDE.md Key Architecture Decisions (ACC-193)
 - [ ] STOP: lint, typecheck, unit tests, `test:db`, the `check:*` scans, the post-build smoke check; report. Ahmad pushes and runs /ready-to-pr.
 - [ ] After the deploy (a later prompt): the live proof in §10
 
@@ -451,3 +468,57 @@ On the LIVE site, signed in page-side (no password in any tool call):
 - **R3. The dependency.** It adds 35 MB and a native optional binary (`@napi-rs/canvas`, not used for text). The lockfile must be regenerated on Linux, or CI's `npm ci` fails. That is checked before the PR.
 - **R4. Prompt injection through file text.** The text is delimited and the system prompt marks it as data. The output is plain text rendered as text, with no links and no actions. The worst case is a misleading summary, which the tag warns about.
 - **R5. Cost.** Each language is 15 credits per file, made only on request. A file summarised in both languages costs 30, once.
+
+---
+
+## 14. Ahmad's three additions (13 Oct)
+
+### 14.1 At most 2 PDF extraction workers per server instance
+
+**A process-wide semaphore of 2 slots** guards the PDF worker (`PdfTextExtractor`). It is an in-memory count, correct per instance, like the rate-limit counters at one replica (CLAUDE.md, Rate Limiting).
+
+- **A third press waits for a free slot**, but only within the existing 30-second extraction timeout. The wait and the extraction share that one deadline: a press that waited 20 s has 10 s left to extract.
+- **If no slot frees in time:** refused **503 `SUMMARY_BUSY`**. No model call and no charge; the claim is released, and a first-try row is deleted. The panel reads "Summaries are busy right now. Try again in a moment." with **Try again**.
+- **TXT and CSV take no slot.** They are decoded in the request with no worker, bounded by the 25 MB upload cap.
+- A slot is always given back: `finally` around the worker, including on its timeout and on a crash.
+- **Why 2:** each worker may use up to 512 MB (§4.1), so two cap the extra memory at about 1 GB on one instance.
+
+### 14.2 The token cap is ours to keep, with margin
+
+- **The text budget is computed from the real system prompt and framing** (§4.3), and gets a further **10% margin**. The budget for the file's text is `floor((30,000 − overhead) × 0.9)` by `estimateTokens()`. Already conservative (bytes ÷ 3), it is now conservative twice.
+- **The gateway does not enforce the input cap, and is not made to.** It sends what it is given (§0). So a summary is never refused after the claim on account of size.
+- **If the provider's REAL input count comes back over 30,000**, the summary is still saved and charged as normal, and ONE warning line is logged, counts only: `StoredFile <id> summary: real input <n> tokens over the 30,000 cap (estimated <m>)`. It is the signal that the estimate's ratio needs tuning. It never fails the request.
+
+### 14.3 A file's summaries go with the file's DELETE (Ahmad's decision)
+
+**Deleting a file (the 30-day soft delete) deletes its summaries in the SAME transaction.**
+- `StoredFileService.softDeleteInTx()` gains `tx.aiFileSummary.deleteMany({ where: { storedFileId, organizationId } })` beside its `storedFile` update. Every delete path goes through it (evidence removal today).
+- **The purge-path deletes stay**, as a safety net (§3). They should find nothing.
+- **A restored file has no summary**, so Summarize is offered again. The restore itself needs no change: the rows are already gone.
+
+**A summary in flight when the file is deleted is never saved.** The save runs in ONE transaction:
+1. **lock the `StoredFile` row** (`SELECT … FOR UPDATE`) and check that `deletedAt` is still null;
+2. **then** update the claimed summary row.
+
+The soft delete updates the same `StoredFile` row, so the two serialise:
+
+| Who gets the lock first | Outcome |
+|---|---|
+| The save | The summary is saved, then the delete removes it with the file |
+| The delete | The save finds `deletedAt` set, writes nothing, and deletes its own claim row |
+
+**The browser** gets the viewer's own 404 ("this file was deleted"). The call was charged, because the provider was paid (Q2's reasoning). The log line says it was discarded, counts only.
+
+**Also covered:**
+- A claim row created in the window just after a delete is discarded by the same check at save.
+- The claim's own INSERT is preceded by the entitlement check, which refuses a deleted file.
+
+**Tests (added to §9):**
+- **Unit:** `softDeleteInTx` deletes the file's summaries (and only that organisation's); the save path discards when `deletedAt` is set, and deletes its claim row; restore leaves no summary; both purge paths still delete.
+- **`test:db`:**
+  - delete a file with English and Arabic summaries → both rows gone in the same transaction;
+  - restore → none, and POST makes a new one;
+  - **in flight:** a summary claimed, the file deleted, then the save attempted → nothing saved, no row left;
+  - purge after delete → still nothing;
+  - cross-tenant.
+- **Mutation checks:** removing the delete in `softDeleteInTx` turns the delete tests red; removing the `deletedAt` check at save turns the in-flight test red.
