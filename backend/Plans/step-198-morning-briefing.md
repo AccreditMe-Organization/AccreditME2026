@@ -516,12 +516,12 @@ Railway service himself.**
 **Progress:**
 
 - [x] 0. `docs(plans)`: this plan, and the drawing committed beside it (`c1e29f0`; decisions recorded in the next commit)
-- [ ] 1. `chore(prisma)`: migrate — the `AiBriefing` table (local throwaway Postgres; not the shared one)
-- [ ] 2. `feat(ai-briefing)`: gathering, prompt, claim, save, read (live done markers), endpoints; unit specs and the `test:db` claim spec
-- [ ] 3. `feat(shared)`: the `am-ai-assist` component and its specs
-- [ ] 4. `feat(tasks)`: `?task=` / `?request=` deep links on My tasks (scroll, focus, highlight)
-- [ ] 5. `feat(home)`: the briefing card (button, working, briefing, quiet day, refusals), EN and AR words
-- [ ] 6. `docs`: SYSTEM-REFERENCE §17 (the briefing) and §10 (`am-ai-assist`), CLAUDE.md Key Architecture Decisions (ACC-198)
+- [x] 1. `chore(prisma)`: migrate — the `AiBriefing` table (local throwaway Postgres; not the shared one) (`a01e75a`)
+- [x] 2. `feat(ai-briefing)`: gathering, prompt, claim, save, read (live done markers), endpoints; unit specs and the `test:db` claim spec (`ca6d95a`)
+- [x] 3. `feat(shared)`: the `am-ai-assist` component and its specs (`a493fe0`)
+- [x] 4. `feat(tasks)`: `?task=` / `?request=` deep links on My tasks (scroll, focus, highlight) (`1aed5cc`)
+- [x] 5. `feat(home)`: the briefing card (button, working, briefing, quiet day, refusals), EN and AR words (`f3f2250`)
+- [x] 6. `docs`: SYSTEM-REFERENCE §17.8 (the briefing) and §10.19 (`am-ai-assist`), CLAUDE.md Key Architecture Decisions (ACC-198), §13 below (this commit)
 - [ ] STOP 1: lint, typecheck, tests, `test:db`, scans; report
 - [ ] After deploy, STOP 2: the live proof (§8), restore, report
 
@@ -592,3 +592,27 @@ Railway service himself.**
 - **R7. My tasks deep links are new behaviour on a screen ACC-198 doesn't own.**
   They follow ACC-208's committee-page pattern exactly, so the risk is small, but
   the change is real.
+
+---
+
+## 13. Where the build differs from the plan
+
+- **D13 changed the answer's shape.** The model now answers in JSON (a lead
+  plus up to three picks), not plain text. A plain-text answer with no `{` is
+  still taken as the lead; broken JSON falls back to our lead, logged, and the
+  run is still charged (R4). `maxTokens` is 4,000 (was 3,000).
+- **`FormatService.timeOfDay()` was added** for the tag's "made by AI at 07:40".
+  The formatting layer had dates and date-times, but no time on its own.
+- **`am-ai-assist` keeps a result BELOW a refusal** when one exists. §6 did
+  not say what a refusal does to an earlier result; D1 needs the earlier
+  briefing to survive a failed second press, so the pattern does it for every
+  feature.
+- **Links:** the server stores a target and an id (§3.4); the frontend's
+  `linkOf()` is the one map from target to route. The server never stores a
+  URL.
+- **`AI_BRIEFING_IN_PROGRESS` reads as "unavailable", with Try again.** It has
+  no words of its own in `aiRefusal()`: it is reachable only from a second tab,
+  and Try again is the right answer there.
+- **The `test:db` spec's feature row is set open** (`restricted: false`)
+  because a local database seeded by ACC-194's proof holds the row restricted.
+  CI's database has no row until the spec creates it.
