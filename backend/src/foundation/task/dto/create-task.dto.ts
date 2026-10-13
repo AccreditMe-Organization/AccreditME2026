@@ -32,7 +32,7 @@ export class TaskAssigneeDelegationDto {
   delegationContextId!: string;
 }
 
-const TASK_SOURCE_TYPES = [
+export const TASK_SOURCE_TYPES = [
   'MEETING',
   'DOCUMENT',
   'AUDIT',
@@ -47,6 +47,24 @@ const TASK_SOURCE_TYPES = [
 ] as const;
 
 const TASK_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+
+// ACC-197 — the task was written with an AI draft the creator accepted in the
+// New task dialog. `id` is the draft's own id (POST /tasks/draft). It is a
+// claim, CHECKED by the service against the AI log before the audit row is
+// marked; a claim that does not check out is ignored, never refused.
+export class TaskAiDraftDto {
+  @IsString()
+  @IsNotEmpty()
+  id!: string;
+
+  // The description came from an accepted draft.
+  @IsBoolean()
+  description!: boolean;
+
+  // The title came from "Use this title".
+  @IsBoolean()
+  title!: boolean;
+}
 
 // Every task MUST have sourceType and sourceId — no standalone tasks, per
 // CLAUDE.md's non-negotiable rule. Both fields are required here, not
@@ -125,4 +143,11 @@ export class CreateTaskDto {
   @IsBoolean()
   @IsOptional()
   requiresEvidence?: boolean;
+
+  // ACC-197 — see TaskAiDraftDto. Set only by the New task dialog, and only
+  // after the creator accepted a draft.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskAiDraftDto)
+  aiDraft?: TaskAiDraftDto;
 }

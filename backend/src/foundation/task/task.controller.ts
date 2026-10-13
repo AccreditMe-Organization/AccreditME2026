@@ -54,6 +54,11 @@ import { ITaskEvidence, ITaskEvidenceList, ITaskEvidenceView } from './interface
 import { TaskEvidenceService } from './task-evidence.service';
 import { SingleFileUploadInterceptor } from '../file-storage/single-file-upload.interceptor';
 import { IFileDownload, IUploadedFile } from '../file-storage/interfaces/stored-file.interface';
+import { DraftTaskDto } from './dto/draft-task.dto';
+import { TaskDraftService } from '../ai-task-draft/task-draft.service';
+import { ITaskDraft, ITaskDraftAvailability } from '../ai-task-draft/interfaces/task-draft.interface';
+import { RATE_LIMITS } from '../../common/throttle/rate-limits';
+import { perUser } from '../../common/throttle/throttle.config';
 
 @Controller('tasks')
 @UseGuards(TenantGuard, PermissionGuard)
@@ -63,6 +68,7 @@ export class TaskController {
     private readonly assignment: TaskAssignmentService,
     private readonly requests: TaskRequestService,
     private readonly evidence: TaskEvidenceService,
+    private readonly drafts: TaskDraftService,
   ) {}
 
   // ACC-70 — deliberately NOT @Permissions(TASKS_PERMISSIONS.VIEW).
@@ -126,6 +132,33 @@ export class TaskController {
   @Permissions(TASKS_PERMISSIONS.CREATE)
   getSlaPreview(@CurrentTenant() tenantId: string): Promise<Record<string, { dueAt: Date; limitAt: Date }>> {
     return this.taskService.slaPreview(tenantId);
+  }
+
+  // ACC-197 — "Draft with AI" on New task. Both are gated like creating a
+  // task, and both are static paths declared before ':id'.
+  //
+  // Whether to show the trigger at all: AI is on for the organisation and the
+  // feature is open to it. Nothing about the balance.
+  @Get('draft/availability')
+  @Permissions(TASKS_PERMISSIONS.CREATE)
+  getDraftAvailability(@CurrentTenant() tenantId: string): Promise<ITaskDraftAvailability> {
+    return this.drafts.availability(tenantId);
+  }
+
+  // A draft is returned and NOT stored: a task exists only when the person
+  // presses Create task (POST /tasks below). 2 credits through the AI gateway;
+  // ten a minute per user (Q3).
+  @Post('draft')
+  @HttpCode(HttpStatus.OK)
+  @Permissions(TASKS_PERMISSIONS.CREATE)
+  @perUser(RATE_LIMITS.taskDraft)
+  draft(
+    @Body() dto: DraftTaskDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() userId: string,
+    @CurrentUserPermissions() permissions: string[],
+  ): Promise<ITaskDraft> {
+    return this.drafts.draft({ id: userId, permissions }, tenantId, dto);
   }
 
   // The assignment picker (decision 8). No @Permissions on any of these, by

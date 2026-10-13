@@ -13,6 +13,7 @@ import { TaskEvidenceService } from './task-evidence.service';
 import { FileStorageModule } from '../file-storage/file-storage.module';
 import { AiFileSummaryModule } from '../ai-file-summary/ai-file-summary.module';
 import { LookupModule } from '../lookup/lookup.module';
+import { AiTaskDraftModule } from '../ai-task-draft/ai-task-draft.module';
 
 // Not @Global() — matches WorkflowModule's reasoning, not NotificationModule's:
 // future functional modules that generate tasks will import TaskModule
@@ -35,6 +36,8 @@ import { LookupModule } from '../lookup/lookup.module';
     FileStorageModule,
     // ACC-193 — an evidence file's AI summary.
     AiFileSummaryModule,
+    // ACC-197 — "Draft with AI" on New task.
+    AiTaskDraftModule,
     // ACC-208 (B5) — the committee-role catalogue reads LookupService's own
     // resolution (hidden values, label overrides). forwardRef: LookupModule
     // reaches TenantModule, which reaches this module through the workflow engine.
